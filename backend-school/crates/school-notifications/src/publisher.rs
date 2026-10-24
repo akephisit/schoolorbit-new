@@ -88,9 +88,15 @@ impl NotificationService {
         notification: Notification,
         attempts: i32,
     ) -> Result<PreparedNotification, &'static str> {
-        let mut subscriptions = sqlx::query_as::<_, PushSubscription>(
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "notifications.prepare_stored",
+        )
+        .await
+        .map_err(|_| "notification_database_unavailable")?;
+        let mut subscriptions = school_database::DbSession::new(&mut *connection).query_as::<PushSubscription>("notifications.src.publisher.prepare_stored",
             "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id=$1 ORDER BY endpoint")
-            .bind(user_id).fetch_all(pool).await.map_err(|_| "notification_subscription_unavailable")?;
+            .bind(user_id).fetch_all().await.map_err(|_| "notification_subscription_unavailable")?;
         rotate_for_attempt(&mut subscriptions, attempts);
         Ok(PreparedNotification {
             notification,
@@ -114,10 +120,12 @@ impl NotificationService {
         user_id: Uuid,
         receipt: DeliveryReceipt,
     ) -> Result<(), &'static str> {
-        let mut connection = pool
-            .acquire()
-            .await
-            .map_err(|_| "notification_database_unavailable")?;
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "notifications.complete_delivery",
+        )
+        .await
+        .map_err(|_| "notification_database_unavailable")?;
         Self::complete_delivery_on_connection(&mut connection, user_id, receipt).await
     }
     pub(crate) async fn complete_delivery_on_connection(
@@ -126,10 +134,14 @@ impl NotificationService {
         receipt: DeliveryReceipt,
     ) -> Result<(), &'static str> {
         for endpoint in receipt.invalid_endpoints {
-            sqlx::query("DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2")
+            school_database::DbSession::new(&mut *connection)
+                .query(
+                    "notifications.src.publisher.complete_delivery_on_connection",
+                    "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
+                )
                 .bind(endpoint)
                 .bind(user_id)
-                .execute(&mut *connection)
+                .execute()
                 .await
                 .map_err(|_| "notification_subscription_unavailable")?;
         }
@@ -151,7 +163,8 @@ impl NotificationService {
         type_: NotificationType,
         link: Option<&str>,
     ) -> Result<Uuid, sqlx::Error> {
-        let mut connection = pool.acquire().await?;
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.send").await?;
         Self::send_on_connection(
             &mut connection,
             publisher,
@@ -187,9 +200,13 @@ impl NotificationService {
         };
         let mut tx = connection.begin().await?;
         // Direct notifications select their recipient once at acceptance, not retry.
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 AND status='active'")
+        school_database::DbSession::new(&mut *tx)
+            .scalar::<Uuid>(
+                "notifications.src.publisher.send_on_connection",
+                "SELECT id FROM users WHERE id=$1 AND status='active'",
+            )
             .bind(user_id)
-            .fetch_one(&mut *tx)
+            .fetch_one()
             .await?;
         let id = crate::dispatch::store_and_enqueue_in_transaction(&mut tx, &item)
             .await

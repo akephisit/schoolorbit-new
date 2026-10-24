@@ -1,4 +1,5 @@
 use crate::models::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -83,7 +84,7 @@ pub(super) fn push_personnel_filters(query: &mut QueryBuilder<Postgres>, filter:
     }
 }
 pub(super) async fn read_subject_groups(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     user: Uuid,
 ) -> Result<Vec<StaffSubjectGroupSummary>, AppError> {
     let mut query = QueryBuilder::<Postgres>::new("SELECT id,name FROM (");
@@ -92,7 +93,13 @@ pub(super) async fn read_subject_groups(
         .push(") groups WHERE user_id=")
         .push_bind(user)
         .push(" ORDER BY name,id");
-    Ok(query.build_query_as().fetch_all(pool).await?)
+    Ok(DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.staff_directory_query.read_subject_groups",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?)
 }
 
 pub(super) fn push_staff_access_filter(
@@ -195,6 +202,18 @@ pub async fn subject_groups_for_users(
     pool: &PgPool,
     user_ids: &[Uuid],
 ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_directory_query.subject_groups_for_users",
+    )
+    .await?;
+    subject_groups_for_users_on_connection(&mut connection, user_ids).await
+}
+
+pub async fn subject_groups_for_users_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_ids: &[Uuid],
+) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
     if user_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -206,5 +225,11 @@ pub async fn subject_groups_for_users(
         .push(") groups JOIN subject_groups sg ON sg.id=groups.id WHERE groups.user_id=ANY(")
         .push_bind(user_ids)
         .push(") ORDER BY sg.display_order NULLS LAST,groups.name,groups.id");
-    Ok(query.build_query_as().fetch_all(pool).await?)
+    Ok(DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.staff_directory_query.subject_groups_for_users_on_connection",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?)
 }

@@ -1,24 +1,52 @@
 use crate::models::Permission;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
 pub async fn list_permissions(pool: &PgPool) -> Result<Vec<Permission>, AppError> {
-    sqlx::query_as::<_, Permission>(
-        "SELECT * FROM permissions WHERE is_active = true ORDER BY module, action, code",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.permission_service.list_permissions",
     )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list permissions: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })
+    .await?;
+    list_permissions_on_connection(&mut connection).await
+}
+
+pub async fn list_permissions_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<Permission>, AppError> {
+    DbSession::new(connection)
+        .query_as::<Permission>(
+            "staff.services.permission_service.list_permissions_on_connection",
+            "SELECT * FROM permissions WHERE is_active = true ORDER BY module, action, code",
+        )
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to list permissions: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+        })
 }
 
 pub async fn list_permissions_by_module(
     pool: &PgPool,
 ) -> Result<HashMap<String, Vec<Permission>>, AppError> {
-    let permissions = list_permissions(pool).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.permission_service.list_permissions_by_module",
+    )
+    .await?;
+    list_permissions_by_module_on_connection(&mut connection).await
+}
+
+pub async fn list_permissions_by_module_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<HashMap<String, Vec<Permission>>, AppError> {
+    let permissions = list_permissions_on_connection(connection).await?;
     Ok(group_permissions_by_module(permissions))
 }
 

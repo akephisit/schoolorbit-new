@@ -2,6 +2,7 @@ use super::queries::detail;
 use super::{models::*, policy::*, repository::*};
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use school_workflow::process::{ProcessSourcePort, StartProcessInput};
@@ -33,12 +34,15 @@ pub async fn create(
     if !input.period.evidence_file_ids.is_empty() {
         return Err(invalid("กรุณาสร้างร่างก่อนแนบหลักฐาน"));
     }
-    let typ: Json<LeaveType> =
-        sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1 FOR SHARE")
-            .bind(input.period.type_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
+    let typ: Json<LeaveType> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.lifecycle.create",
+            "SELECT document FROM staff_leave_types WHERE id=$1 FOR SHARE",
+        )
+        .bind(input.period.type_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
     if typ.archived {
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
@@ -69,7 +73,7 @@ pub async fn create(
         created_at: Utc::now(),
     };
     let hash = process::payload_hash(&s)?;
-    sqlx::query("INSERT INTO staff_leave_requests(id,owner_id,type_id,status,revision,document,amount,content_hash) VALUES($1,$2,$3,'draft',1,$4,$5,$6)").bind(id).bind(actor.user_id).bind(s.type_id).bind(Json(&s)).bind(quantity).bind(&hash).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("staff.leave.lifecycle.create", "INSERT INTO staff_leave_requests(id,owner_id,type_id,status,revision,document,amount,content_hash) VALUES($1,$2,$3,'draft',1,$4,$5,$6)").bind(id).bind(actor.user_id).bind(s.type_id).bind(Json(&s)).bind(quantity).bind(&hash).execute().await?;
     let r = Record {
         document: Json(s),
         policy_id: None,
@@ -329,11 +333,14 @@ pub async fn submit(
     if r.document.revision != input.expected_revision {
         return Err(stale());
     }
-    let typ: Json<LeaveType> =
-        sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1 FOR SHARE")
-            .bind(r.document.type_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let typ: Json<LeaveType> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.lifecycle.submit",
+            "SELECT document FROM staff_leave_types WHERE id=$1 FOR SHARE",
+        )
+        .bind(r.document.type_id)
+        .fetch_one()
+        .await?;
     if typ.archived {
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
@@ -362,19 +369,27 @@ pub async fn submit(
         return Err(invalid("วันที่ขอไม่ครบระยะเวลาแจ้งล่วงหน้าตามเกณฑ์โรงเรียน"));
     }
     let year = quota_year(r.document.start_date, p.quota_year_start_month)?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.leave.lifecycle.submit",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
         .bind(format!("staff_leave_owner:{}", r.document.owner_id))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     check_overlaps(&mut tx, &r, &p).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.leave.lifecycle.submit",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
         .bind(format!(
             "staff_leave:{}:{}:{}",
             r.document.owner_id, r.document.type_id, year
         ))
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    let used:i64=sqlx::query_scalar("SELECT coalesce(sum(amount),0)::bigint FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(id).fetch_one(&mut *tx).await?;
+    let used:i64=DbSession::new(&mut *tx).scalar("staff.leave.lifecycle.submit", "SELECT coalesce(sum(amount),0)::bigint FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(id).fetch_one().await?;
     if p.annual_limit.is_some_and(|cap| used + quantity > cap) {
         return Err(invalid("ยอดอนุมัติและคำขอที่รอพิจารณารวมกันเกินสิทธิ์ตามเกณฑ์โรงเรียน"));
     }
@@ -389,7 +404,7 @@ pub async fn submit(
         super::files::validate_evidence(&mut tx, actor.user_id, id, &r.evidence_file_ids).await?;
     r.content_hash = process::payload_hash(&(period_from(&r), &p, cat, &snapshots))?;
     // Persist source state before Workflow validates it; all writes roll back together.
-    sqlx::query("UPDATE staff_leave_requests SET status='submitted',document=$2,quota_year_start=$3 WHERE id=$1").bind(id).bind(&r.document).bind(year).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("staff.leave.lifecycle.submit", "UPDATE staff_leave_requests SET status='submitted',document=$2,quota_year_start=$3 WHERE id=$1").bind(id).bind(&r.document).bind(year).execute().await?;
     start(
         &mut tx,
         actor,
@@ -577,12 +592,12 @@ pub async fn cancel(
             r.document.revision,
             &p,
         ))?;
-        sqlx::query(
+        DbSession::new(&mut *tx).query("staff.leave.lifecycle.cancel",
             "UPDATE staff_leave_requests SET status='cancellation_pending',document=$2 WHERE id=$1",
         )
         .bind(id)
         .bind(&r.document)
-        .execute(&mut *tx)
+        .execute()
         .await?;
         start(
             &mut tx,
@@ -698,7 +713,7 @@ async fn check_overlaps(
     r: &Record,
     p: &LeavePolicyVersion,
 ) -> Result<(), AppError> {
-    let rows:Vec<(Json<LeaveRequestSummary>,Json<LeavePolicyVersion>)>=sqlx::query_as("SELECT r.document,p.document FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE r.owner_id=$1 AND r.id<>$2 AND r.status IN ('submitted','approved','cancellation_pending') AND (r.document->>'startDate')::date<=$3 AND (r.document->>'endDate')::date>=$4").bind(r.document.owner_id).bind(r.document.id).bind(r.document.end_date).bind(r.document.start_date).fetch_all(&mut **tx).await?;
+    let rows:Vec<(Json<LeaveRequestSummary>,Json<LeavePolicyVersion>)>=DbSession::new(&mut **tx).query_as("staff.leave.lifecycle.check_overlaps", "SELECT r.document,p.document FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE r.owner_id=$1 AND r.id<>$2 AND r.status IN ('submitted','approved','cancellation_pending') AND (r.document->>'startDate')::date<=$3 AND (r.document->>'endDate')::date>=$4").bind(r.document.owner_id).bind(r.document.id).bind(r.document.end_date).bind(r.document.start_date).fetch_all().await?;
     if rows
         .iter()
         .any(|(other, policy)| periods_overlap(&period_from(r), p, other, policy))

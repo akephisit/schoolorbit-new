@@ -14,7 +14,8 @@ pub use pool_manager::{
 };
 pub use school_mapping::get_school_database_info;
 pub use tenant_pool::{
-    ObservedConnection, TenantDatabaseOperation, TenantPool, TenantPoolRetention,
+    ObservedConnection, ObservedTransaction, TenantDatabaseOperation, TenantPool,
+    TenantPoolRetention,
 };
 
 #[derive(Clone)]

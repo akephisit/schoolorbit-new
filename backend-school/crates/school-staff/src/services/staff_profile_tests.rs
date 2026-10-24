@@ -463,3 +463,91 @@ async fn staff_licence_attachment_scope_revision_lifecycle_rollback_and_private_
         .teaching_license_file_id
         .is_none());
 }
+
+#[tokio::test]
+async fn staff_generated_username_and_profile_reads_work_with_one_connection() {
+    let pool = pool("staff_generated_username_one_slot", 115).await;
+    let actor = person(&pool).await;
+    let request = serde_json::from_value(serde_json::json!({
+        "password":"Synthetic-123!", "role_ids":[],
+        "title":"นาย", "first_name":"สร้าง", "last_name":"ทดสอบ"
+    }))
+    .unwrap();
+    let user = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        staff_service::create_staff(&pool, request, actor),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id=$1")
+        .bind(user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(username, "T0001");
+    sqlx::query("INSERT INTO staff_info(user_id,teaching_license_number,teaching_license_expiry) VALUES($1,'synthetic-license',current_date+30)")
+        .bind(user).execute(&pool).await.unwrap();
+    let mut connection = pool.acquire().await.unwrap();
+    let private = staff_service::get_staff_profile_on_connection(&mut connection, user, true)
+        .await
+        .unwrap();
+    let redacted = staff_service::get_staff_profile_on_connection(&mut connection, user, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        private
+            .staff_info
+            .as_ref()
+            .unwrap()
+            .teaching_license_number
+            .as_deref(),
+        Some("synthetic-license")
+    );
+    assert!(private
+        .staff_info
+        .as_ref()
+        .unwrap()
+        .teaching_license_expiry
+        .is_some());
+    assert_eq!(private.id, redacted.id);
+    assert_eq!(private.username, redacted.username);
+    assert_eq!(private.display_name, redacted.display_name);
+    assert_eq!(private.roles.len(), redacted.roles.len());
+    assert!(redacted.national_id.is_none());
+    assert!(redacted.staff_info.as_ref().is_some_and(|info| info
+        .teaching_license_number
+        .is_none()
+        && info.teaching_license_file_id.is_none()
+        && info.teaching_license_expiry.is_none()));
+}
+
+#[tokio::test]
+async fn staff_generated_username_query_errors_propagate_before_inserting_a_user() {
+    let pool = pool("staff_username_query_error", 115).await;
+    let actor = person(&pool).await;
+    // The isolated view makes only username discovery fail. Its OFFSET prevents
+    // pulling the outer username filter ahead of this controlled fixture error.
+    sqlx::raw_sql("ALTER TABLE users RENAME TO username_lookup_users;
+        CREATE FUNCTION reject_username_lookup() RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='synthetic_username_lookup_failure'; END $$;
+        CREATE VIEW users AS SELECT * FROM username_lookup_users WHERE reject_username_lookup() OFFSET 0;")
+        .execute(&pool).await.unwrap();
+    let request = serde_json::from_value(serde_json::json!({
+        "password":"Synthetic-123!", "role_ids":[],
+        "title":"นาย", "first_name":"สร้าง", "last_name":"ทดสอบ"
+    }))
+    .unwrap();
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        staff_service::create_staff(&pool, request, actor),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert_eq!(error.database_code().as_deref(), Some("P0001"));
+    let users: i64 = sqlx::query_scalar("SELECT count(*) FROM username_lookup_users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(users, 1);
+}

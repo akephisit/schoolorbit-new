@@ -228,12 +228,12 @@ pub async fn enqueue_in_transaction(
             }
         })
         .collect();
-    let inserted: Vec<Uuid> = sqlx::query_scalar(r#"INSERT INTO notification_dispatch_jobs(id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type,link)
+    let inserted: Vec<Uuid> = school_database::DbSession::new(&mut **tx).scalar("notifications.src.dispatch.enqueue_in_transaction", r#"INSERT INTO notification_dispatch_jobs(id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type,link)
         SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type,link FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid,dedup_key text,title text,message text,type text,link text)
-        ON CONFLICT DO NOTHING RETURNING id"#).bind(Json(&input)).fetch_all(&mut **tx).await?;
-    let existing: Vec<Job> = sqlx::query_as(r#"SELECT DISTINCT j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token
+        ON CONFLICT DO NOTHING RETURNING id"#).bind(Json(&input)).fetch_all().await?;
+    let existing: Vec<Job> = school_database::DbSession::new(&mut **tx).query_as("notifications.src.dispatch.enqueue_in_transaction", r#"SELECT DISTINCT j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token
         FROM notification_dispatch_jobs j JOIN jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,dedup_key text)
-        ON j.id=n.id OR j.notification_id=n.notification_id OR (j.source_kind=n.source_kind AND j.recipient_id=n.recipient_id AND j.dedup_key=n.dedup_key)"#).bind(Json(&input)).fetch_all(&mut **tx).await?;
+        ON j.id=n.id OR j.notification_id=n.notification_id OR (j.source_kind=n.source_kind AND j.recipient_id=n.recipient_id AND j.dedup_key=n.dedup_key)"#).bind(Json(&input)).fetch_all().await?;
     let index = JobIndex::new(&existing);
     let inserted: HashSet<_> = inserted.into_iter().collect();
     let mut outcomes = Vec::with_capacity(items.len());
@@ -262,33 +262,39 @@ pub async fn store_and_enqueue_in_transaction(
         return Err(integrity("notification_identity_conflict"));
     }
     // Queue before inbox is also the cancellation lock order.
-    sqlx::query("SELECT id FROM notification_dispatch_jobs WHERE id=$1 FOR UPDATE")
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "notifications.src.dispatch.store_and_enqueue_in_transaction",
+            "SELECT id FROM notification_dispatch_jobs WHERE id=$1 FOR UPDATE",
+        )
         .bind(item.id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     insert_inbox(&mut **tx, item).await?;
-    sqlx::query(
-        "UPDATE notification_dispatch_jobs SET stored_at=coalesce(stored_at,now()) WHERE id=$1",
-    )
-    .bind(item.id)
-    .execute(&mut **tx)
-    .await?;
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "notifications.src.dispatch.store_and_enqueue_in_transaction",
+            "UPDATE notification_dispatch_jobs SET stored_at=coalesce(stored_at,now()) WHERE id=$1",
+        )
+        .bind(item.id)
+        .execute()
+        .await?;
     Ok(item.notification_id)
 }
 async fn insert_inbox(
     connection: &mut PgConnection,
     item: &QueuedNotification,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING")
-        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).execute(&mut *connection).await?;
+    school_database::DbSession::new(&mut *connection).query("notifications.src.dispatch.insert_inbox", "INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING")
+        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).execute().await?;
     validate_inbox(connection, item).await
 }
 async fn validate_inbox(
     connection: &mut PgConnection,
     item: &QueuedNotification,
 ) -> Result<(), AppError> {
-    let matches:bool=sqlx::query_scalar("SELECT user_id IS NOT DISTINCT FROM $2 AND title=$3 AND message=$4 AND type=$5 AND link IS NOT DISTINCT FROM $6 FROM notifications WHERE id=$1")
-        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).fetch_one(connection).await?;
+    let matches:bool=school_database::DbSession::new(connection).scalar("notifications.src.dispatch.validate_inbox", "SELECT user_id IS NOT DISTINCT FROM $2 AND title=$3 AND message=$4 AND type=$5 AND link IS NOT DISTINCT FROM $6 FROM notifications WHERE id=$1")
+        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).fetch_one().await?;
     if !matches {
         return Err(integrity("notification_inbox_identity_conflict"));
     }
@@ -298,7 +304,7 @@ pub async fn progress_on_connection(
     connection: &mut PgConnection,
     ids: &[Uuid],
 ) -> Result<Vec<NotificationProgress>, AppError> {
-    let rows:Vec<NotificationProgress>=sqlx::query_as("SELECT notification_id,stored_at,published_at FROM notification_dispatch_jobs WHERE notification_id=ANY($1)").bind(ids).fetch_all(connection).await?;
+    let rows:Vec<NotificationProgress>=school_database::DbSession::new(connection).query_as("notifications.src.dispatch.progress_on_connection", "SELECT notification_id,stored_at,published_at FROM notification_dispatch_jobs WHERE notification_id=ANY($1)").bind(ids).fetch_all().await?;
     require_complete_progress(ids, &rows)?;
     Ok(rows)
 }
@@ -315,31 +321,37 @@ pub async fn cancel_identified_in_transaction(
     ids: &[Uuid],
     remove_inbox: bool,
 ) -> Result<(), AppError> {
-    let owned:Vec<Uuid>=sqlx::query_scalar("SELECT notification_id FROM notification_dispatch_jobs WHERE source_kind=$1 AND notification_id=ANY($2) ORDER BY id FOR UPDATE")
-        .bind(source.as_str()).bind(ids).fetch_all(&mut **tx).await?;
+    let owned:Vec<Uuid>=school_database::DbSession::new(&mut **tx).scalar("notifications.src.dispatch.cancel_identified_in_transaction", "SELECT notification_id FROM notification_dispatch_jobs WHERE source_kind=$1 AND notification_id=ANY($2) ORDER BY id FOR UPDATE")
+        .bind(source.as_str()).bind(ids).fetch_all().await?;
     if remove_inbox {
-        sqlx::query("DELETE FROM notifications WHERE id=ANY($1)")
+        school_database::DbSession::new(&mut **tx)
+            .query(
+                "notifications.src.dispatch.cancel_identified_in_transaction",
+                "DELETE FROM notifications WHERE id=ANY($1)",
+            )
             .bind(&owned)
-            .execute(&mut **tx)
+            .execute()
             .await?;
     }
-    sqlx::query(
+    school_database::DbSession::new(&mut **tx).query("notifications.src.dispatch.cancel_identified_in_transaction",
         "DELETE FROM notification_dispatch_jobs WHERE source_kind=$1 AND notification_id=ANY($2)",
     )
     .bind(source.as_str())
     .bind(&owned)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
 pub async fn claim(pool: &PgPool) -> Result<Vec<ClaimedNotification>, AppError> {
-    let rows:Vec<Job>=sqlx::query_as(r#"WITH due AS (
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.claim").await?;
+    let rows:Vec<Job>=school_database::DbSession::new(&mut *connection).query_as("notifications.src.dispatch.claim", r#"WITH due AS (
         SELECT id FROM notification_dispatch_jobs j WHERE published_at IS NULL AND next_attempt_at<=now()
         ORDER BY next_attempt_at,id LIMIT $1 FOR UPDATE OF j SKIP LOCKED
     ) UPDATE notification_dispatch_jobs j SET lease_token=gen_random_uuid(),
         next_attempt_at=now()+interval '120 seconds',attempts=j.attempts+1 FROM due WHERE j.id=due.id
         RETURNING j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token,j.attempts"#)
-        .bind(DELIVERY_BATCH_SIZE).fetch_all(pool).await?;
+        .bind(DELIVERY_BATCH_SIZE).fetch_all().await?;
     rows.into_iter()
         .filter_map(|j| {
             j.lease_token.map(|lease_token| {
@@ -357,7 +369,8 @@ pub async fn materialize(
     claimed: &ClaimedNotification,
     eligibility: &dyn DeliveryEligibilityPort,
 ) -> Result<Option<Notification>, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "notifications.materialize").await?;
     let allowed = eligibility
         .authorize_on_connection(
             &mut tx,
@@ -365,8 +378,8 @@ pub async fn materialize(
             claimed.notification.recipient_id,
         )
         .await?;
-    let job:Option<Job>=sqlx::query_as("SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
-        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional(&mut *tx).await?;
+    let job:Option<Job>=school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.materialize", "SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
+        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional().await?;
     let Some(job) = job else {
         tx.commit().await?;
         return Ok(None);
@@ -375,28 +388,28 @@ pub async fn materialize(
         return Err(integrity("notification_identity_conflict"));
     }
     if !allowed {
-        sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute().await?;
         tx.commit().await?;
         return Ok(None);
     }
     if job.stored_at.is_none() {
         insert_inbox(&mut tx, &claimed.notification).await?;
-        sqlx::query(
+        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize",
             "UPDATE notification_dispatch_jobs SET stored_at=now() WHERE id=$1 AND lease_token=$2",
         )
         .bind(job.id)
         .bind(claimed.lease_token)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
-    let notification = sqlx::query_as(
+    let notification = school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.materialize",
         "SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1",
     )
     .bind(job.notification_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional()
     .await?;
     if notification.is_none() {
-        sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute().await?;
         tracing::warn!(error_code="notification_inbox_missing",notification_id=%job.notification_id,"Previously stored notification is absent");
     } else {
         validate_inbox(&mut tx, &claimed.notification).await?;
@@ -405,8 +418,11 @@ pub async fn materialize(
     Ok(notification)
 }
 pub async fn acknowledge(pool: &PgPool, claimed: &ClaimedNotification) -> Result<(), AppError> {
-    sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now()")
-        .bind(claimed.notification.id).bind(claimed.lease_token).execute(pool).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.acknowledge")
+            .await?;
+    school_database::DbSession::new(&mut *connection).query("notifications.src.dispatch.acknowledge", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now()")
+        .bind(claimed.notification.id).bind(claimed.lease_token).execute().await?;
     Ok(())
 }
 /// Fence endpoint cleanup and acknowledgment together against a stale claim.
@@ -415,9 +431,10 @@ pub(crate) async fn finish_delivery(
     claimed: &ClaimedNotification,
     receipt: crate::publisher::DeliveryReceipt,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    let current: Option<Job> = sqlx::query_as("SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
-        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional(&mut *tx).await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "notifications.finish_delivery").await?;
+    let current: Option<Job> = school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.finish_delivery", "SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
+        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional().await?;
     let Some(current) = current else {
         tx.commit().await?;
         return Ok(());
@@ -432,8 +449,8 @@ pub(crate) async fn finish_delivery(
     )
     .await;
     if delivery.is_ok() {
-        sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND next_attempt_at>now()")
-            .bind(claimed.notification.id).bind(claimed.lease_token).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.finish_delivery", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND next_attempt_at>now()")
+            .bind(claimed.notification.id).bind(claimed.lease_token).execute().await?;
     }
     tx.commit().await?;
     delivery.map_err(|_| AppError::ServiceUnavailable("notification_transport_unavailable".into()))
@@ -445,7 +462,9 @@ pub struct QueueStatus {
     pub due: bool,
 }
 pub async fn status(pool: &PgPool) -> Result<QueueStatus, AppError> {
-    Ok(sqlx::query_as("SELECT EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL) pending,EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL AND next_attempt_at<=now()) due").fetch_one(pool).await?)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.status").await?;
+    Ok(school_database::DbSession::new(&mut *connection).query_as("notifications.src.dispatch.status", "SELECT EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL) pending,EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL AND next_attempt_at<=now()) due").fetch_one().await?)
 }
 
 #[cfg(test)]

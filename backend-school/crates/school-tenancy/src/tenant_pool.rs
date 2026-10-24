@@ -284,3 +284,137 @@ impl TenantPool {
         })
     }
 }
+
+/// Domain-selected native pool-owned transaction, with its logical lease retained.
+/// The transaction policy, isolation and commit/rollback decisions remain with callers.
+pub struct ObservedTransaction {
+    transaction: sqlx::Transaction<'static, sqlx::Postgres>,
+    retention: Option<TenantPoolRetention>,
+    observation: TransactionHold,
+}
+impl std::ops::Deref for ObservedTransaction {
+    type Target = sqlx::Transaction<'static, sqlx::Postgres>;
+    fn deref(&self) -> &Self::Target {
+        &self.transaction
+    }
+}
+impl std::ops::DerefMut for ObservedTransaction {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.transaction
+    }
+}
+impl ObservedTransaction {
+    pub async fn commit(self) -> Result<(), sqlx::Error> {
+        let Self {
+            transaction,
+            retention,
+            observation,
+        } = self;
+        let result = transaction.commit().await;
+        drop(retention);
+        drop(observation);
+        result
+    }
+    pub async fn rollback(self) -> Result<(), sqlx::Error> {
+        let Self {
+            transaction,
+            retention,
+            observation,
+        } = self;
+        let result = transaction.rollback().await;
+        drop(retention);
+        drop(observation);
+        result
+    }
+}
+struct TransactionHold {
+    operation: &'static str,
+    started: Instant,
+}
+impl Drop for TransactionHold {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = self.operation,
+            hold_us = self.started.elapsed().as_micros() as u64,
+            resource = "transaction",
+            "Tenant database transaction hold ended"
+        );
+    }
+}
+struct TransactionBegin {
+    operation: &'static str,
+    started: Instant,
+    status: &'static str,
+}
+impl Drop for TransactionBegin {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = self.operation,
+            begin_wait_us = self.started.elapsed().as_micros() as u64,
+            status = self.status,
+            "Tenant database transaction begin ended"
+        );
+    }
+}
+impl TenantPool {
+    /// Explicit domain work boundary. This preserves SQLx's pool-owned transaction
+    /// lifetime; begin_wait includes acquisition AND PostgreSQL BEGIN, not query time.
+    pub async fn begin_observed(
+        pool: &PgPool,
+        operation: &'static str,
+    ) -> Result<ObservedTransaction, sqlx::Error> {
+        let mut observation = TransactionBegin {
+            operation,
+            started: Instant::now(),
+            status: "cancelled",
+        };
+        let retention = match Self::retain_for_pool(pool) {
+            Ok(retention) => retention,
+            Err(_) => {
+                observation.status = "error";
+                return Err(sqlx::Error::Protocol(
+                    "tenant_operation_lease_unavailable".into(),
+                ));
+            }
+        };
+        let transaction = match pool.begin().await {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                observation.status = "error";
+                return Err(error);
+            }
+        };
+        observation.status = "ok";
+        Ok(ObservedTransaction {
+            transaction,
+            retention,
+            observation: TransactionHold {
+                operation,
+                started: Instant::now(),
+            },
+        })
+    }
+}
+
+#[cfg(test)]
+mod transaction_api_tests {
+    use super::*;
+    async fn domain_transaction_port(_: &mut sqlx::Transaction<'_, sqlx::Postgres>) {}
+    async fn owned_scope(pool: &PgPool) -> Result<(ObservedTransaction, i32), sqlx::Error> {
+        Ok((
+            TenantPool::begin_observed(pool, "test.owned_scope").await?,
+            7,
+        ))
+    }
+    async fn type_probe(pool: &PgPool) -> Result<(), sqlx::Error> {
+        let (mut transaction, scope) = owned_scope(pool).await?;
+        assert_eq!(scope, 7);
+        domain_transaction_port(&mut transaction).await;
+        let _connection: &mut sqlx::PgConnection = &mut transaction;
+        transaction.rollback().await
+    }
+    #[test]
+    fn owned_guard_preserves_native_domain_transaction_and_connection_ports() {
+        let _probe = type_probe;
+    }
+}

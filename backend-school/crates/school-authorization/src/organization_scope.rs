@@ -13,7 +13,9 @@ pub async fn accessible_exact_units_for_permission(
     actor_user_id: Uuid,
     permission_code: &str,
 ) -> Result<Vec<Uuid>, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
     accessible_exact_units_for_permission_on_connection(
         &mut connection,
         actor_user_id,
@@ -36,7 +38,9 @@ pub async fn has_exact_unit_permission(
     organization_unit_id: Uuid,
     permission_code: &str,
 ) -> Result<bool, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
     Ok(query_exact_units_for_permission(
         &mut connection,
         actor_user_id,
@@ -70,7 +74,9 @@ pub async fn accessible_tree_units_for_permission(
     actor_user_id: Uuid,
     permission_code: &str,
 ) -> Result<Vec<Uuid>, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
     accessible_tree_units_for_permission_on_connection(
         &mut connection,
         actor_user_id,

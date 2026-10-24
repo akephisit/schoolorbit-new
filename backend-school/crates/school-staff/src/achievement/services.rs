@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 
@@ -17,6 +18,19 @@ pub struct AchievementMutationResult {
 
 pub async fn list_achievements(
     pool: &PgPool,
+    actor: &ActorContext,
+    filter: AchievementListFilter,
+) -> Result<Vec<Achievement>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.achievement.services.list_achievements",
+    )
+    .await?;
+    list_achievements_on_connection(&mut connection, actor, filter).await
+}
+
+pub async fn list_achievements_on_connection(
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     filter: AchievementListFilter,
 ) -> Result<Vec<Achievement>, AppError> {
@@ -55,7 +69,11 @@ pub async fn list_achievements(
 
     query.push_str(" ORDER BY a.achievement_date DESC, a.created_at DESC");
 
-    let mut query_builder = sqlx::query_as::<_, Achievement>(sqlx::AssertSqlSafe(query));
+    let mut db_session_query_builder = DbSession::new(connection);
+    let mut query_builder = db_session_query_builder.query_as::<Achievement>(
+        "staff.achievement.services.list_achievements_on_connection",
+        sqlx::AssertSqlSafe(query),
+    );
     if let Some(user_id) = scoped_user_id {
         query_builder = query_builder.bind(user_id);
     }
@@ -66,8 +84,11 @@ pub async fn list_achievements(
         query_builder = query_builder.bind(end);
     }
 
-    query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Failed to list achievements: {}", e);
+    query_builder.fetch_all().await.map_err(|e| {
+        tracing::error!(
+            "Failed to list achievements: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })
 }
@@ -79,10 +100,17 @@ pub async fn create_achievement(
 ) -> Result<Achievement, AppError> {
     let target_user_id = target_achievement_user_id(payload.user_id, actor.user_id);
     achievement_access_policy::can_create_achievement_for(actor, target_user_id)?;
-    validate_achievement_image(pool, payload.image_file_id, target_user_id).await?;
+    if payload.image_file_id.is_some() {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "staff.achievement.services.create_achievement.preflight",
+        )
+        .await?;
+        validate_achievement_image(&mut connection, payload.image_file_id, target_user_id).await?;
+    }
 
     let mut transaction = pool.begin().await.map_err(achievement_write_error)?;
-    let achievement = sqlx::query_as::<_, Achievement>(
+    let achievement = DbSession::new(&mut *transaction).query_as::<Achievement>("staff.achievement.services.create_achievement",
         "INSERT INTO staff_achievements (user_id, title, description, achievement_date, image_file_id, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *,
@@ -97,7 +125,7 @@ pub async fn create_achievement(
     .bind(payload.achievement_date)
     .bind(&payload.image_file_id)
     .bind(actor.user_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one()
     .await
     .map_err(achievement_write_error)?;
     finalize_achievement_image(&mut transaction, payload.image_file_id).await?;
@@ -114,13 +142,24 @@ pub async fn update_achievement(
     id: Uuid,
     payload: UpdateAchievementRequest,
 ) -> Result<AchievementMutationResult, AppError> {
-    let (owner_id, old_file_id) = get_achievement_owner_and_file_id(pool, id).await?;
-    achievement_access_policy::can_update_achievement(actor, owner_id)?;
-    validate_achievement_image(pool, payload.image_file_id, owner_id).await?;
+    let old_file_id = {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "staff.achievement.services.update_achievement.preflight",
+        )
+        .await?;
+        let (owner_id, old_file_id) =
+            get_achievement_owner_and_file_id(&mut connection, id).await?;
+        achievement_access_policy::can_update_achievement(actor, owner_id)?;
+        validate_achievement_image(&mut connection, payload.image_file_id, owner_id).await?;
+        old_file_id
+    };
 
     let mut transaction = pool.begin().await.map_err(achievement_write_error)?;
-    let achievement = sqlx::query_as::<_, Achievement>(
-        "UPDATE staff_achievements SET
+    let achievement = DbSession::new(&mut *transaction)
+        .query_as::<Achievement>(
+            "staff.achievement.services.update_achievement",
+            "UPDATE staff_achievements SET
             title = COALESCE($1, title),
             description = COALESCE($2, description),
             achievement_date = COALESCE($3, achievement_date),
@@ -132,15 +171,15 @@ pub async fn update_achievement(
          NULL::text as user_display_name,
          NULL::text as user_last_name,
          NULL::uuid as user_profile_image_file_id",
-    )
-    .bind(payload.title)
-    .bind(payload.description)
-    .bind(payload.achievement_date)
-    .bind(payload.image_file_id)
-    .bind(id)
-    .fetch_one(&mut *transaction)
-    .await
-    .map_err(achievement_write_error)?;
+        )
+        .bind(payload.title)
+        .bind(payload.description)
+        .bind(payload.achievement_date)
+        .bind(payload.image_file_id)
+        .bind(id)
+        .fetch_one()
+        .await
+        .map_err(achievement_write_error)?;
     finalize_achievement_image(&mut transaction, payload.image_file_id).await?;
     transaction
         .commit()
@@ -159,45 +198,74 @@ pub async fn delete_achievement(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    let (owner_id, file_id) = get_achievement_owner_and_file_id(pool, id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.achievement.services.delete_achievement",
+    )
+    .await?;
+    delete_achievement_on_connection(&mut connection, actor, id).await
+}
+
+pub async fn delete_achievement_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    let (owner_id, file_id) = get_achievement_owner_and_file_id(connection, id).await?;
     achievement_access_policy::can_delete_achievement(actor, owner_id)?;
 
-    sqlx::query("DELETE FROM staff_achievements WHERE id = $1")
+    DbSession::new(connection)
+        .query(
+            "staff.achievement.services.delete_achievement_on_connection",
+            "DELETE FROM staff_achievements WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to delete achievement: {}", e);
+            tracing::error!(
+                "Failed to delete achievement: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ลบข้อมูลไม่สำเร็จ".to_string())
         })?;
     Ok(file_id)
 }
 
 async fn get_achievement_owner_and_file_id(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
 ) -> Result<(Uuid, Option<Uuid>), AppError> {
-    sqlx::query_as("SELECT user_id, image_file_id FROM staff_achievements WHERE id = $1")
+    DbSession::new(connection)
+        .query_as(
+            "staff.achievement.services.get_achievement_owner_and_file_id",
+            "SELECT user_id, image_file_id FROM staff_achievements WHERE id = $1",
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to get achievement file relationship: {}", error);
+            tracing::error!(
+                "Failed to get achievement file relationship: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("Database error".to_string())
         })?
         .ok_or(AppError::NotFound("ไม่พบข้อมูล".to_string()))
 }
 
 async fn validate_achievement_image(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     file_id: Option<Uuid>,
     owner_user_id: Uuid,
 ) -> Result<(), AppError> {
     let Some(file_id) = file_id else {
         return Ok(());
     };
-    let valid = sqlx::query_scalar::<_, bool>(
-        r#"
+    let valid = DbSession::new(connection)
+        .scalar::<bool>(
+            "staff.achievement.services.validate_achievement_image",
+            r#"
 SELECT EXISTS(
     SELECT 1
     FROM files
@@ -208,15 +276,18 @@ SELECT EXISTS(
       AND deleted_at IS NULL
 )
 "#,
-    )
-    .bind(file_id)
-    .bind(owner_user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to validate achievement image: {}", error);
-        AppError::InternalServerError("Database error".to_string())
-    })?;
+        )
+        .bind(file_id)
+        .bind(owner_user_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to validate achievement image: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("Database error".to_string())
+        })?;
     if valid {
         Ok(())
     } else {
@@ -233,18 +304,21 @@ async fn finalize_achievement_image(
     let Some(file_id) = file_id else {
         return Ok(());
     };
-    sqlx::query(
+    DbSession::new(&mut **transaction).query("staff.achievement.services.finalize_achievement_image",
         "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(file_id)
-    .execute(&mut **transaction)
+    .execute()
     .await
     .map_err(achievement_write_error)?;
     Ok(())
 }
 
 fn achievement_write_error(error: sqlx::Error) -> AppError {
-    tracing::error!("Failed to write achievement file relationship: {}", error);
+    tracing::error!(
+        "Failed to write achievement file relationship: {}",
+        school_database::error_class(&error)
+    );
     AppError::InternalServerError("บันทึกข้อมูลไม่สำเร็จ".to_string())
 }
 

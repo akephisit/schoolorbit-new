@@ -1,6 +1,7 @@
 use super::staff_directory_query::push_staff_access_filter;
 use crate::{models::StaffListAccess, personnel::PersonnelStatusFilter, rank_milestones::*};
 use chrono::{NaiveDate, Utc};
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -77,6 +78,19 @@ pub async fn get_rank_milestone_overview(
     query: RankMilestoneOverviewQuery,
     access: StaffListAccess,
 ) -> Result<RankMilestoneOverview, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.rank_milestone_service.get_rank_milestone_overview",
+    )
+    .await?;
+    get_rank_milestone_overview_on_connection(&mut connection, query, access).await
+}
+
+pub async fn get_rank_milestone_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: RankMilestoneOverviewQuery,
+    access: StaffListAccess,
+) -> Result<RankMilestoneOverview, AppError> {
     let page = query.page.unwrap_or(1);
     if !(1..=10_000).contains(&page) {
         return Err(AppError::BadRequest("หน้ารายการไม่ถูกต้อง".into()));
@@ -91,7 +105,13 @@ pub async fn get_rank_milestone_overview(
     if status != PersonnelStatusFilter::All {
         sql.push(" AND u.status=").push_bind(status.as_str());
     }
-    let rows: Vec<Row> = sql.build_query_as().fetch_all(pool).await?;
+    let rows: Vec<Row> = DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.rank_milestone_service.get_rank_milestone_overview_on_connection",
+            sql.build_query_as(),
+        )
+        .fetch_all()
+        .await?;
     let mut counts = RankMilestoneCounts::default();
     let filtered_total = rows.len() as i64;
     let mut items = Vec::new();

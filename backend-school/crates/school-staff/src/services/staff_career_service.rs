@@ -1,5 +1,6 @@
 use crate::{audit::AuditLogBuilder, career::*};
 use chrono::{NaiveDate, Utc};
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Deserialize;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
@@ -39,11 +40,14 @@ pub(crate) fn career_json_sql(
 const CURRENT_MATCH: &str = "h.id=ANY(ARRAY[info.current_personnel_type_history_id,info.current_job_position_history_id,info.current_academic_rank_history_id])";
 
 async fn lock_staff(tx: &mut Transaction<'_, Postgres>, staff_id: Uuid) -> Result<(), AppError> {
-    let found: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND user_type='staff' FOR UPDATE")
-            .bind(staff_id)
-            .fetch_optional(&mut **tx)
-            .await?;
+    let found: Option<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.staff_career_service.lock_staff",
+            "SELECT id FROM users WHERE id=$1 AND user_type='staff' FOR UPDATE",
+        )
+        .bind(staff_id)
+        .fetch_optional()
+        .await?;
     found.ok_or_else(|| AppError::NotFound("ไม่พบบุคลากร".into()))?;
     Ok(())
 }
@@ -60,10 +64,14 @@ async fn read_entry(
         LEFT JOIN staff_job_positions position ON position.id=h.job_position_id
         WHERE h.id=$1 AND h.user_id=$2"
     );
-    let row: Option<Json<StaffCareerEntry>> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
+    let row: Option<Json<StaffCareerEntry>> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.staff_career_service.read_entry",
+            sqlx::AssertSqlSafe(sql.as_str()),
+        )
         .bind(entry_id)
         .bind(staff_id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?;
     Ok(row.map(|Json(entry)| entry))
 }
@@ -83,10 +91,14 @@ async fn current_entry(
         LEFT JOIN staff_job_positions position ON position.id=h.job_position_id
         WHERE info.user_id=$1"
     );
-    let row: Option<Json<StaffCareerEntry>> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
+    let row: Option<Json<StaffCareerEntry>> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.staff_career_service.current_entry",
+            sqlx::AssertSqlSafe(sql.as_str()),
+        )
         .bind(staff_id)
         .bind(kind.as_str())
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?;
     Ok(row.map(|Json(entry)| entry))
 }
@@ -154,8 +166,8 @@ async fn validate_chronology(
         return Ok(());
     };
     let latest: Option<NaiveDate> = if is_current {
-        sqlx::query_scalar("SELECT max(effective_date) FROM staff_career_history WHERE user_id=$1 AND kind=$2 AND ($3::uuid IS NULL OR id<>$3)")
-            .bind(staff_id).bind(input.fact.kind().as_str()).bind(excluded).fetch_one(&mut **tx).await?
+        DbSession::new(&mut **tx).scalar("staff.services.staff_career_service.validate_chronology", "SELECT max(effective_date) FROM staff_career_history WHERE user_id=$1 AND kind=$2 AND ($3::uuid IS NULL OR id<>$3)")
+            .bind(staff_id).bind(input.fact.kind().as_str()).bind(excluded).fetch_one().await?
     } else {
         current_entry(tx, staff_id, input.fact.kind())
             .await?
@@ -183,9 +195,9 @@ async fn insert_entry(
     input: &StaffCareerEntryInput,
 ) -> Result<(), AppError> {
     let (personnel, position, rank) = fact_columns(&input.fact);
-    sqlx::query("INSERT INTO staff_career_history(id,user_id,kind,personnel_type,job_position_id,academic_rank,effective_date,order_date,order_number,note,source,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'staff_entry',$11,$11)")
+    DbSession::new(&mut **tx).query("staff.services.staff_career_service.insert_entry", "INSERT INTO staff_career_history(id,user_id,kind,personnel_type,job_position_id,academic_rank,effective_date,order_date,order_number,note,source,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'staff_entry',$11,$11)")
         .bind(id).bind(staff_id).bind(input.fact.kind().as_str()).bind(personnel).bind(position).bind(rank)
-        .bind(input.effective_date).bind(input.order_date).bind(&input.order_number).bind(&input.note).bind(actor_id).execute(&mut **tx).await.map_err(|error| {
+        .bind(input.effective_date).bind(input.order_date).bind(&input.order_number).bind(&input.note).bind(actor_id).execute().await.map_err(|error| {
             if error.as_database_error().is_some_and(|database| database.constraint() == Some("staff_career_history_pkey")) { conflict() } else { error.into() }
         })?;
     Ok(())
@@ -198,14 +210,14 @@ async fn project_current(
     fact: &StaffCareerFact,
 ) -> Result<(), AppError> {
     let (personnel, position, rank) = fact_columns(fact);
-    sqlx::query("UPDATE staff_info SET
+    DbSession::new(&mut **tx).query("staff.services.staff_career_service.project_current", "UPDATE staff_info SET
         personnel_type=CASE WHEN $2='personnel_type' THEN $3 ELSE personnel_type END,
         current_personnel_type_history_id=CASE WHEN $2='personnel_type' THEN $6 ELSE current_personnel_type_history_id END,
         job_position_id=CASE WHEN $2='job_position' THEN $4 ELSE job_position_id END,
         current_job_position_history_id=CASE WHEN $2='job_position' THEN $6 ELSE current_job_position_history_id END,
         academic_rank=CASE WHEN $2='academic_rank' THEN $5 ELSE academic_rank END,
         current_academic_rank_history_id=CASE WHEN $2='academic_rank' THEN $6 ELSE current_academic_rank_history_id END WHERE user_id=$1")
-        .bind(staff_id).bind(fact.kind().as_str()).bind(personnel).bind(position).bind(rank).bind(id).execute(&mut **tx).await?;
+        .bind(staff_id).bind(fact.kind().as_str()).bind(personnel).bind(position).bind(rank).bind(id).execute().await?;
     Ok(())
 }
 
@@ -255,9 +267,9 @@ async fn correct_entry(
     validate_position(tx, input, Some(before)).await?;
     validate_chronology(tx, staff_id, input, before.is_current, Some(before.id)).await?;
     let (personnel, position, rank) = fact_columns(&input.fact);
-    let revision: i64 = sqlx::query_scalar("UPDATE staff_career_history SET personnel_type=$2,job_position_id=$3,academic_rank=$4,effective_date=$5,order_date=$6,order_number=$7,note=$8,updated_by=$9,updated_at=NOW(),revision=revision+1 WHERE id=$1 RETURNING revision")
+    let revision: i64 = DbSession::new(&mut **tx).scalar("staff.services.staff_career_service.correct_entry", "UPDATE staff_career_history SET personnel_type=$2,job_position_id=$3,academic_rank=$4,effective_date=$5,order_date=$6,order_number=$7,note=$8,updated_by=$9,updated_at=NOW(),revision=revision+1 WHERE id=$1 RETURNING revision")
         .bind(before.id).bind(personnel).bind(position).bind(rank).bind(input.effective_date).bind(input.order_date)
-        .bind(&input.order_number).bind(&input.note).bind(actor_id).fetch_one(&mut **tx).await?;
+        .bind(&input.order_number).bind(&input.note).bind(actor_id).fetch_one().await?;
     if before.is_current {
         project_current(tx, staff_id, before.id, &input.fact).await?;
     }
@@ -373,11 +385,14 @@ pub async fn append_staff_career_history(
     let entry = normalize_career_entry(&input.entry, today())?;
     let mut tx = pool.begin().await?;
     lock_staff(&mut tx, staff_id).await?;
-    let existing_owner: Option<Uuid> =
-        sqlx::query_scalar("SELECT user_id FROM staff_career_history WHERE id=$1")
-            .bind(input.id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let existing_owner: Option<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.services.staff_career_service.append_staff_career_history",
+            "SELECT user_id FROM staff_career_history WHERE id=$1",
+        )
+        .bind(input.id)
+        .fetch_optional()
+        .await?;
     if let Some(owner) = existing_owner {
         if owner != staff_id {
             return Err(conflict());
@@ -473,6 +488,19 @@ pub async fn list_staff_career_history(
     staff_id: Uuid,
     query: StaffCareerHistoryQuery,
 ) -> Result<StaffCareerHistoryPage, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_career_service.list_staff_career_history",
+    )
+    .await?;
+    list_staff_career_history_on_connection(&mut connection, staff_id, query).await
+}
+
+pub async fn list_staff_career_history_on_connection(
+    connection: &mut sqlx::PgConnection,
+    staff_id: Uuid,
+    query: StaffCareerHistoryQuery,
+) -> Result<StaffCareerHistoryPage, AppError> {
     let size = query.page_size.unwrap_or(20);
     if !(1..=50).contains(&size) {
         return Err(AppError::BadRequest(
@@ -481,11 +509,15 @@ pub async fn list_staff_career_history(
     }
     let sql = history_read_sql();
     let (exists, cursor_valid, Json(mut data)): (bool, bool, Json<HistoryRead>) =
-        sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
+        DbSession::new(connection)
+            .query_as(
+                "staff.services.staff_career_service.list_staff_career_history_on_connection",
+                sqlx::AssertSqlSafe(sql.as_str()),
+            )
             .bind(staff_id)
             .bind(query.cursor)
             .bind(size + 1)
-            .fetch_one(pool)
+            .fetch_one()
             .await?;
     if !exists {
         return Err(AppError::NotFound("ไม่พบบุคลากร".into()));

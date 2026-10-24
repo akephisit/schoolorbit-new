@@ -9,6 +9,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-tenancy = { workspace = true }
 school-database = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }

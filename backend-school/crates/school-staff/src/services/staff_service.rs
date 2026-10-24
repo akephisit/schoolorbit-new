@@ -9,6 +9,7 @@ use super::{
 use crate::models::*;
 use chrono::NaiveDate;
 use school_crypto as field_encryption;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
@@ -122,21 +123,26 @@ async fn insert_user_roles(
     let role_ids: Vec<Uuid> = rows.iter().map(|row| row.role_id).collect();
     let primary_flags: Vec<bool> = rows.iter().map(|row| row.is_primary).collect();
 
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_service.insert_user_roles",
+            "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
          SELECT $1, role_id, is_primary, CURRENT_DATE
          FROM UNNEST($2::uuid[], $3::bool[]) AS rows(role_id, is_primary)
          ON CONFLICT DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(&role_ids)
-    .bind(&primary_flags)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("❌ Failed to assign roles: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .bind(&role_ids)
+        .bind(&primary_flags)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "❌ Failed to assign roles: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -196,7 +202,7 @@ async fn insert_organization_memberships(
         .map(|row| row.responsibilities.clone())
         .collect();
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("staff.services.staff_service.insert_organization_memberships",
         "INSERT INTO organization_members (
             user_id, organization_unit_id, position_code, position_title,
             is_primary, responsibilities, started_at
@@ -212,10 +218,10 @@ async fn insert_organization_memberships(
     .bind(&position_titles)
     .bind(&primary_flags)
     .bind(&responsibilities)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Failed to assign organization units: {}", e);
+        tracing::error!("❌ Failed to assign organization units: {}", school_database::error_class(&e));
         AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
     })?;
 
@@ -227,17 +233,19 @@ async fn reconcile_organization_memberships(
     user_id: Uuid,
     rows: &[OrganizationMembershipBulkRow],
 ) -> Result<(), AppError> {
-    let existing: Vec<(Uuid, Uuid)> = sqlx::query_as(
-        r#"
+    let existing: Vec<(Uuid, Uuid)> = DbSession::new(&mut **tx)
+        .query_as(
+            "staff.services.staff_service.reconcile_organization_memberships",
+            r#"
         SELECT id, organization_unit_id FROM organization_members
         WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
           AND started_at < coalesce(ended_at, 'infinity'::date)
         ORDER BY id FOR UPDATE
         "#,
-    )
-    .bind(user_id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .fetch_all()
+        .await?;
     let mut seen = std::collections::HashSet::new();
     for (_, unit_id) in &existing {
         if !seen.insert(*unit_id) {
@@ -258,33 +266,39 @@ async fn reconcile_organization_memberships(
         .map(|row| row.responsibilities.as_deref())
         .collect();
     // Explicit removal ends an assignment; a cancelled future interval becomes empty.
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_service.reconcile_organization_memberships",
+            r#"
         UPDATE organization_members SET ended_at = greatest(started_at, CURRENT_DATE)
         WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
           AND started_at < coalesce(ended_at, 'infinity'::date)
           AND NOT (organization_unit_id = ANY($2))
         "#,
-    )
-    .bind(user_id)
-    .bind(&selected)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .bind(&selected)
+        .execute()
+        .await?;
     // Clear flags before applying the validated set so update order cannot create conflicts.
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_service.reconcile_organization_memberships",
+            r#"
         UPDATE organization_members SET is_primary = false
         WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
           AND started_at < coalesce(ended_at, 'infinity'::date)
           AND organization_unit_id = ANY($2) AND is_primary IS TRUE
         "#,
-    )
-    .bind(user_id)
-    .bind(&selected)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        r#"
+        )
+        .bind(user_id)
+        .bind(&selected)
+        .execute()
+        .await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_service.reconcile_organization_memberships",
+            r#"
         UPDATE organization_members m
         SET position_code = requested.position_code, position_title = requested.position_title,
             is_primary = requested.is_primary, responsibilities = requested.responsibilities
@@ -294,17 +308,19 @@ async fn reconcile_organization_memberships(
           AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
           AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
         "#,
-    )
-    .bind(user_id)
-    .bind(&selected)
-    .bind(&positions)
-    .bind(&titles)
-    .bind(&flags)
-    .bind(&responsibilities)
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query(
-        r#"
+        )
+        .bind(user_id)
+        .bind(&selected)
+        .bind(&positions)
+        .bind(&titles)
+        .bind(&flags)
+        .bind(&responsibilities)
+        .execute()
+        .await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_service.reconcile_organization_memberships",
+            r#"
         INSERT INTO organization_members (
             user_id, organization_unit_id, position_code, position_title,
             is_primary, responsibilities, started_at
@@ -324,15 +340,15 @@ async fn reconcile_organization_memberships(
             is_primary = EXCLUDED.is_primary, responsibilities = EXCLUDED.responsibilities,
             ended_at = NULL
         "#,
-    )
-    .bind(user_id)
-    .bind(&selected)
-    .bind(&positions)
-    .bind(&titles)
-    .bind(&flags)
-    .bind(&responsibilities)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .bind(&selected)
+        .bind(&positions)
+        .bind(&titles)
+        .bind(&flags)
+        .bind(&responsibilities)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -350,22 +366,27 @@ async fn validate_active_staff_roles(
         return Ok(());
     }
 
-    let valid_role_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id
+    let valid_role_ids: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.staff_service.validate_active_staff_roles",
+            "SELECT id
          FROM roles
          WHERE id = ANY($1)
            AND user_type = 'staff'
            AND is_active = true
          ORDER BY id
          FOR SHARE",
-    )
-    .bind(&requested_role_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!(%error, "failed to validate staff role assignments");
-        AppError::InternalServerError("ไม่สามารถตรวจสอบบทบาทที่ระบุได้".to_string())
-    })?;
+        )
+        .bind(&requested_role_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "failed to validate staff role assignments"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบบทบาทที่ระบุได้".to_string())
+        })?;
 
     if valid_role_ids.len() != requested_role_ids.len() {
         return Err(AppError::BadRequest(
@@ -393,8 +414,10 @@ async fn validate_active_organization_assignments(
         .iter()
         .map(|row| row.responsibilities.as_deref())
         .collect();
-    let units: Vec<(Uuid, bool, bool)> = sqlx::query_as(
-        r#"
+    let units: Vec<(Uuid, bool, bool)> = DbSession::new(&mut **tx)
+        .query_as(
+            "staff.services.staff_service.validate_active_organization_assignments",
+            r#"
         SELECT ou.id, ou.unit_type = 'subject_group', ou.is_active OR EXISTS (
             SELECT 1 FROM organization_members m
             WHERE m.user_id = $6 AND m.organization_unit_id = ou.id
@@ -411,15 +434,15 @@ async fn validate_active_organization_assignments(
         JOIN organization_units ou ON ou.id = requested.unit_id
         ORDER BY ou.id FOR SHARE OF ou
         "#,
-    )
-    .bind(&ids)
-    .bind(&positions)
-    .bind(&titles)
-    .bind(&flags)
-    .bind(&responsibilities)
-    .bind(existing_user_id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(&ids)
+        .bind(&positions)
+        .bind(&titles)
+        .bind(&flags)
+        .bind(&responsibilities)
+        .bind(existing_user_id)
+        .fetch_all()
+        .await?;
     if units.len() != rows.len() {
         return Err(AppError::BadRequest("ไม่พบหน่วยงานที่ระบุ".into()));
     }
@@ -504,6 +527,19 @@ pub async fn list_staff(
     filter: StaffListFilter,
     access: StaffListAccess,
 ) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_service.list_staff",
+    )
+    .await?;
+    list_staff_on_connection(&mut connection, filter, access).await
+}
+
+pub async fn list_staff_on_connection(
+    connection: &mut sqlx::PgConnection,
+    filter: StaffListFilter,
+    access: StaffListAccess,
+) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
     validate_directory_filters(&filter)?;
     let page_params = staff_page_params(&filter);
 
@@ -523,23 +559,26 @@ pub async fn list_staff(
         .push(" OFFSET ")
         .push_bind(page_params.offset);
 
-    let staff_rows = query
-        .build_query_as::<(
-            Uuid,
-            String,
-            Option<String>,
-            String,
-            String,
-            String,
-            Option<Uuid>,
-            String,
-            Option<sqlx::types::Json<StaffJobPositionSummary>>,
-            Option<String>,
-        )>()
-        .fetch_all(pool)
+    let staff_rows = DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.staff_service.list_staff_on_connection",
+            query.build_query_as::<(
+                Uuid,
+                String,
+                Option<String>,
+                String,
+                String,
+                String,
+                Option<Uuid>,
+                String,
+                Option<sqlx::types::Json<StaffJobPositionSummary>>,
+                Option<String>,
+            )>(),
+        )
+        .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
             AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
         })?;
 
@@ -547,12 +586,15 @@ pub async fn list_staff(
         "SELECT COUNT(DISTINCT u.id) FROM user_display_names u WHERE u.user_type = 'staff'",
     );
     push_staff_list_filters(&mut count_query, &filter, search_pattern.as_deref(), access);
-    let total: i64 = count_query
-        .build_query_scalar()
-        .fetch_one(pool)
+    let total: i64 = DbSession::new(connection)
+        .prepared_scalar(
+            "staff.services.staff_service.list_staff_on_connection",
+            count_query.build_query_scalar(),
+        )
+        .fetch_one()
         .await
         .map_err(|e| {
-            tracing::error!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
             AppError::InternalServerError("เกิดข้อผิดพลาดในการนับข้อมูล".to_string())
         })?;
 
@@ -560,25 +602,26 @@ pub async fn list_staff(
     let mut roles = HashMap::<Uuid, Vec<String>>::new();
     let mut organizations = HashMap::<Uuid, Vec<String>>::new();
     if !ids.is_empty() {
-        let (role_rows, organization_rows) = tokio::try_join!(
-            sqlx::query_as::<_, (Uuid, String)>(
+        let (role_rows, organization_rows) = async {
+            let role_rows = DbSession::new(connection).query_as::<(Uuid, String)>("staff.services.staff_service.list_staff_on_connection",
                 "SELECT ur.user_id, r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id
                  WHERE ur.user_id = ANY($1) AND ur.ended_at IS NULL
                  ORDER BY ur.is_primary DESC, r.level DESC, r.name, r.id"
             )
             .bind(&ids)
-            .fetch_all(pool),
-            sqlx::query_as::<_, (Uuid, String)>(
+            .fetch_all().await?;
+            let organization_rows = DbSession::new(connection).query_as::<(Uuid, String)>("staff.services.staff_service.list_staff_on_connection",
                 "SELECT om.user_id, ou.name FROM organization_members om
                  JOIN organization_units ou ON ou.id = om.organization_unit_id
                  WHERE om.user_id = ANY($1) AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
                  ORDER BY om.is_primary DESC, ou.name, ou.id"
             )
             .bind(&ids)
-            .fetch_all(pool)
-        )
+            .fetch_all().await?;
+            Ok::<_, sqlx::Error>((role_rows, organization_rows))
+        }.await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to load staff directory relations");
+            tracing::error!(error_class = school_database::error_class(&e), "Failed to load staff directory relations");
             AppError::InternalServerError("โหลดบทบาทและสังกัดบุคลากรไม่สำเร็จ".to_string())
         })?;
         for (id, name) in role_rows {
@@ -687,7 +730,20 @@ pub async fn get_staff_profile(
     staff_id: Uuid,
     include_pii: bool,
 ) -> Result<StaffProfileResponse, AppError> {
-    let mut user = sqlx::query_as::<_, UserBasicRow>(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_service.get_staff_profile",
+    )
+    .await?;
+    get_staff_profile_on_connection(&mut connection, staff_id, include_pii).await
+}
+
+pub async fn get_staff_profile_on_connection(
+    connection: &mut sqlx::PgConnection,
+    staff_id: Uuid,
+    include_pii: bool,
+) -> Result<StaffProfileResponse, AppError> {
+    let mut user = DbSession::new(connection).query_as::<UserBasicRow>("staff.services.staff_service.get_staff_profile_on_connection",
         "SELECT id, username, national_id, email, title, first_name, last_name, title_en, first_name_en, last_name_en,
                 (SELECT display_name FROM user_display_names names WHERE names.id=users.id) AS display_name, nickname, phone,
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date, resigned_date,
@@ -696,10 +752,10 @@ pub async fn get_staff_profile(
          WHERE id = $1 AND user_type = 'staff'",
     )
     .bind(staff_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", school_database::error_class(&e));
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
@@ -714,20 +770,24 @@ pub async fn get_staff_profile(
         user.national_id = None;
     }
 
-    // Independent profile regions — run in parallel
-    let staff_info_fut = staff_info_service::read_staff_info(pool, staff_id);
+    // Reuse the caller connection for all independent profile regions.
+    let staff_info_res =
+        staff_info_service::read_staff_info_on_connection(connection, staff_id).await;
 
-    let roles_fut = sqlx::query_as::<_, RoleRow>(
-        "SELECT r.id, r.code, r.name, r.name_en, r.user_type, r.level, ur.is_primary
+    let roles_res = DbSession::new(connection)
+        .query_as::<RoleRow>(
+            "staff.services.staff_service.get_staff_profile_on_connection",
+            "SELECT r.id, r.code, r.name, r.name_en, r.user_type, r.level, ur.is_primary
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
          ORDER BY ur.is_primary DESC, r.level DESC",
-    )
-    .bind(staff_id)
-    .fetch_all(pool);
+        )
+        .bind(staff_id)
+        .fetch_all()
+        .await;
 
-    let organization_units_fut = sqlx::query_as::<_, OrganizationUnitRow>(
+    let organization_units_res = DbSession::new(connection).query_as::<OrganizationUnitRow>("staff.services.staff_service.get_staff_profile_on_connection",
         "SELECT ou.id, ou.code, ou.name, ou.category, ou.unit_type, ou.subject_group_id,
                 om.position_code, om.position_title, om.is_primary, om.responsibilities
          FROM organization_members om
@@ -736,10 +796,12 @@ pub async fn get_staff_profile(
          ORDER BY om.is_primary DESC",
     )
     .bind(staff_id)
-    .fetch_all(pool);
+    .fetch_all().await;
 
-    let teaching_fut = sqlx::query_as::<_, TeachingAssignmentRow>(
-        r#"SELECT learning_group.id AS learning_group_id,
+    let teaching_res = DbSession::new(connection)
+        .query_as::<TeachingAssignmentRow>(
+            "staff.services.staff_service.get_staff_profile_on_connection",
+            r#"SELECT learning_group.id AS learning_group_id,
                   learning_group.code AS learning_group_code,
                   learning_group.name AS learning_group_name,
                   subject.id AS subject_id,
@@ -763,12 +825,15 @@ pub async fn get_staff_profile(
            JOIN academic_years year ON year.id = learning_group.academic_year_id
            WHERE teacher.teacher_id = $1
            ORDER BY year.year DESC, term.sequence_no, subject.code, learning_group.code"#,
-    )
-    .bind(staff_id)
-    .fetch_all(pool);
+        )
+        .bind(staff_id)
+        .fetch_all()
+        .await;
 
-    let advisor_fut = sqlx::query_as::<_, AdvisorHomeroomRow>(
-        r#"SELECT homeroom.id AS homeroom_id,
+    let advisor_res = DbSession::new(connection)
+        .query_as::<AdvisorHomeroomRow>(
+            "staff.services.staff_service.get_staff_profile_on_connection",
+            r#"SELECT homeroom.id AS homeroom_id,
                   homeroom.name AS homeroom_name,
                   homeroom.code AS homeroom_code,
                   year.id AS academic_year_id,
@@ -780,18 +845,12 @@ pub async fn get_staff_profile(
            JOIN academic_years year ON year.id = homeroom.academic_year_id
            WHERE advisor.user_id = $1
            ORDER BY year.year DESC, homeroom.name"#,
-    )
-    .bind(staff_id)
-    .fetch_all(pool);
+        )
+        .bind(staff_id)
+        .fetch_all()
+        .await;
 
-    let (staff_info_res, roles_res, organization_units_res, teaching_res, advisor_res, groups_res) = tokio::join!(
-        staff_info_fut,
-        roles_fut,
-        organization_units_fut,
-        teaching_fut,
-        advisor_fut,
-        read_subject_groups(pool, staff_id)
-    );
+    let groups_res = read_subject_groups(connection, staff_id).await;
 
     let mut staff_info = staff_info_res?;
     if !include_pii {
@@ -929,7 +988,10 @@ pub async fn create_staff(
         })?;
 
     let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("❌ Failed to start transaction: {}", e);
+        tracing::error!(
+            "❌ Failed to start transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -956,23 +1018,24 @@ pub async fn create_staff(
     let username = match payload.username.as_deref() {
         Some(u) if !u.is_empty() => u.to_string(),
         _ => {
-            let next_num: i64 = sqlx::query_scalar(
-                r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
+            let next_num: i64 = DbSession::new(&mut *tx)
+                .scalar::<Option<i64>>(
+                    "staff.services.staff_service.create_staff",
+                    r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
                    WHERE NOT EXISTS (
                        SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
                    )"#,
-            )
-            .fetch_one(pool)
-            .await
-            .unwrap_or(Some(1))
-            .unwrap_or(1);
+                )
+                .fetch_one()
+                .await?
+                .unwrap_or(1);
             let generated = format!("T{:04}", next_num);
             tracing::info!("🔑 Generated staff username: {}", generated);
             generated
         }
     };
 
-    let user_id: Uuid = sqlx::query_scalar(
+    let user_id: Uuid = DbSession::new(&mut *tx).scalar("staff.services.staff_service.create_staff",
         "INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
             phone, emergency_contact, line_id, date_of_birth, gender, address,
@@ -998,10 +1061,10 @@ pub async fn create_staff(
     .bind(payload.hired_date)
     .bind(&payload.profile_image_file_id)
     .bind(&payload.title_en).bind(&payload.first_name_en).bind(&payload.last_name_en)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Failed to create user: {}", e);
+        tracing::error!("❌ Failed to create user: {}", school_database::error_class(&e));
         let msg = e.to_string();
         if msg.contains("duplicate key value violates unique constraint") {
             if msg.contains("users_username_key") {
@@ -1031,7 +1094,10 @@ pub async fn create_staff(
     }
 
     tx.commit().await.map_err(|e| {
-        tracing::error!("❌ Failed to commit transaction: {}", e);
+        tracing::error!(
+            "❌ Failed to commit transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
     })?;
 
@@ -1047,7 +1113,10 @@ pub async fn update_staff(
     actor_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("❌ Failed to start transaction: {}", e);
+        tracing::error!(
+            "❌ Failed to start transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -1060,22 +1129,24 @@ pub async fn update_staff(
         validate_active_organization_assignments(&mut tx, organization_assignments, Some(staff_id))
             .await?;
     }
-    let old_file_id = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let old_file_id = DbSession::new(&mut *tx).query_as::<(Option<Uuid>,)>("staff.services.staff_service.update_staff",
         "SELECT profile_image_file_id FROM users WHERE id = $1 AND user_type = 'staff' FOR UPDATE",
     )
     .bind(staff_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to lock staff profile image relationship: {}", error);
+        tracing::error!("Failed to lock staff profile image relationship: {}", school_database::error_class(&error));
         AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบบุคลากร".to_string()))?
     .0;
     normalize_updated_names(&mut tx, staff_id, &mut payload).await?;
     if let Some(file_id) = payload.profile_image_file_id {
-        let valid = sqlx::query_scalar::<_, bool>(
-            r#"
+        let valid = DbSession::new(&mut *tx)
+            .scalar::<bool>(
+                "staff.services.staff_service.update_staff",
+                r#"
 SELECT EXISTS(
     SELECT 1
     FROM files
@@ -1086,33 +1157,36 @@ SELECT EXISTS(
       AND deleted_at IS NULL
 )
 "#,
-        )
-        .bind(file_id)
-        .bind(staff_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to validate staff profile image: {}", error);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
-        })?;
+            )
+            .bind(file_id)
+            .bind(staff_id)
+            .fetch_one()
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to validate staff profile image: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
+            })?;
         if !valid {
             return Err(AppError::ValidationError(
                 "ไฟล์รูปโปรไฟล์ไม่พร้อมใช้งาน".to_string(),
             ));
         }
-        sqlx::query(
+        DbSession::new(&mut *tx).query("staff.services.staff_service.update_staff",
             "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
         )
         .bind(file_id)
-        .execute(&mut *tx)
+        .execute()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to finalize staff profile image: {}", error);
+            tracing::error!("Failed to finalize staff profile image: {}", school_database::error_class(&error));
             AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
         })?;
     }
 
-    let result = sqlx::query(
+    let result = DbSession::new(&mut *tx).query("staff.services.staff_service.update_staff",
         "UPDATE users
          SET
             title = COALESCE($2, title),
@@ -1149,10 +1223,10 @@ SELECT EXISTS(
     .bind(&payload.status)
     .bind(&payload.profile_image_file_id)
     .bind(&payload.title_en).bind(&payload.first_name_en).bind(&payload.last_name_en)
-    .execute(&mut *tx)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", school_database::error_class(&e));
         AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
     })?;
 
@@ -1168,12 +1242,19 @@ SELECT EXISTS(
     }
 
     if let Some(role_ids) = &payload.role_ids {
-        sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
+        DbSession::new(&mut *tx)
+            .query(
+                "staff.services.staff_service.update_staff",
+                "DELETE FROM user_roles WHERE user_id = $1",
+            )
             .bind(staff_id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(|e| {
-                tracing::error!("❌ Failed to delete roles: {}", e);
+                tracing::error!(
+                    "❌ Failed to delete roles: {}",
+                    school_database::error_class(&e)
+                );
                 AppError::InternalServerError("ไม่สามารถอัพเดตบทบาทได้".to_string())
             })?;
 
@@ -1187,7 +1268,10 @@ SELECT EXISTS(
     }
 
     tx.commit().await.map_err(|e| {
-        tracing::error!("❌ Failed to commit transaction: {}", e);
+        tracing::error!(
+            "❌ Failed to commit transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
     })?;
 
@@ -1200,18 +1284,32 @@ SELECT EXISTS(
 
 /// Soft-delete staff (set status='inactive')
 pub async fn soft_delete_staff(pool: &PgPool, staff_id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query(
-        "UPDATE users
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_service.soft_delete_staff",
+    )
+    .await?;
+    soft_delete_staff_on_connection(&mut connection, staff_id).await
+}
+
+pub async fn soft_delete_staff_on_connection(
+    connection: &mut sqlx::PgConnection,
+    staff_id: Uuid,
+) -> Result<(), AppError> {
+    let result = DbSession::new(connection)
+        .query(
+            "staff.services.staff_service.soft_delete_staff_on_connection",
+            "UPDATE users
          SET status = 'inactive', updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
-    )
-    .bind(staff_id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("❌ Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการลบบุคลากร".to_string())
-    })?;
+        )
+        .bind(staff_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการลบบุคลากร".to_string())
+        })?;
 
     if result.rows_affected() == 0 {
         Err(AppError::NotFound("ไม่พบบุคลากร".to_string()))
@@ -1223,6 +1321,18 @@ pub async fn soft_delete_staff(pool: &PgPool, staff_id: Uuid) -> Result<(), AppE
 /// Public staff profile — limited fields, no national_id, no permission required (auth only)
 pub async fn get_public_staff_profile(
     pool: &PgPool,
+    staff_id: Uuid,
+) -> Result<PublicStaffProfile, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_service.get_public_staff_profile",
+    )
+    .await?;
+    get_public_staff_profile_on_connection(&mut connection, staff_id).await
+}
+
+pub async fn get_public_staff_profile_on_connection(
+    connection: &mut sqlx::PgConnection,
     staff_id: Uuid,
 ) -> Result<PublicStaffProfile, AppError> {
     #[derive(sqlx::FromRow)]
@@ -1242,15 +1352,15 @@ pub async fn get_public_staff_profile(
         hired_date: Option<NaiveDate>,
     }
 
-    let user_rec = sqlx::query_as::<_, PublicUserRow>(
+    let user_rec = DbSession::new(connection).query_as::<PublicUserRow>("staff.services.staff_service.get_public_staff_profile_on_connection",
         "SELECT id, username, first_name, last_name, display_name, nickname, email, user_type, status, profile_image_file_id, title, phone, hired_date
          FROM user_display_names WHERE id = $1 AND user_type = 'staff'",
     )
     .bind(staff_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Database error (user): {}", e);
+        tracing::error!("❌ Database error (user): {}", school_database::error_class(&e));
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
@@ -1263,15 +1373,17 @@ pub async fn get_public_staff_profile(
         level: Option<i32>,
     }
 
-    let roles = sqlx::query_as::<_, PublicRoleRow>(
-        "SELECT r.id, r.code, r.name, r.level
+    let roles = DbSession::new(connection)
+        .query_as::<PublicRoleRow>(
+            "staff.services.staff_service.get_public_staff_profile_on_connection",
+            "SELECT r.id, r.code, r.name, r.level
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1",
-    )
-    .bind(staff_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(staff_id)
+        .fetch_all()
+        .await?;
 
     #[derive(sqlx::FromRow)]
     struct PublicOrganizationUnitRow {
@@ -1282,14 +1394,14 @@ pub async fn get_public_staff_profile(
         position_title: Option<String>,
     }
 
-    let organization_units = sqlx::query_as::<_, PublicOrganizationUnitRow>(
+    let organization_units = DbSession::new(connection).query_as::<PublicOrganizationUnitRow>("staff.services.staff_service.get_public_staff_profile_on_connection",
         "SELECT ou.id, ou.code, ou.name, om.position_code, om.position_title
          FROM organization_members om
          JOIN organization_units ou ON om.organization_unit_id = ou.id
          WHERE om.user_id = $1 AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)",
     )
     .bind(staff_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(PublicStaffProfile {

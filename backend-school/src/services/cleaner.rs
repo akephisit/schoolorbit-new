@@ -350,7 +350,7 @@ mod phase_tests {
         }
     }
     async fn fixture(name: &str) -> PgPool {
-        let pool = school_test_db::create_named_test_pool(name).await;
+        let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
         school_test_db::run_test_migrations(&pool).await;
         let actor = Uuid::new_v4();
         let file = Uuid::new_v4();
@@ -472,10 +472,12 @@ mod phase_tests {
             )
             .await
         });
+        let mut observer = pool.acquire().await.unwrap();
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
+                sqlx::query("SELECT pg_stat_clear_snapshot()").execute(&mut *observer).await.unwrap();
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))")
-                    .bind(blocker_pid).fetch_one(&pool).await.unwrap();
+                    .bind(blocker_pid).fetch_one(&mut *observer).await.unwrap();
                 if waiting { break; } tokio::task::yield_now().await;
             }
         }).await.unwrap();

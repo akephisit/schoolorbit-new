@@ -1,5 +1,6 @@
 use crate::models::*;
 use chrono::{DateTime, NaiveDate, Utc};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
@@ -33,8 +34,22 @@ pub async fn get_user_roles(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<UserRoleAssignmentResponse>, AppError> {
-    let rows = sqlx::query_as::<_, UserRoleAssignmentRow>(
-        r#"SELECT
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.user_role_service.get_user_roles",
+    )
+    .await?;
+    get_user_roles_on_connection(&mut connection, user_id).await
+}
+
+pub async fn get_user_roles_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<UserRoleAssignmentResponse>, AppError> {
+    let rows = DbSession::new(connection)
+        .query_as::<UserRoleAssignmentRow>(
+            "staff.services.user_role_service.get_user_roles_on_connection",
+            r#"SELECT
             ur.id,
             ur.user_id,
             ur.role_id,
@@ -66,14 +81,14 @@ pub async fn get_user_roles(
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL AND r.is_active = true
          GROUP BY ur.id, r.id
          ORDER BY ur.is_primary DESC, r.level DESC, r.name"#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error: {}", school_database::error_class(&e));
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -118,48 +133,73 @@ pub async fn assign_user_role(
     user_id: Uuid,
     payload: AssignRoleRequest,
 ) -> Result<AssignRoleOutcome, AppError> {
-    let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.user_role_service.assign_user_role",
+    )
+    .await?;
+    assign_user_role_on_connection(&mut connection, user_id, payload).await
+}
+
+pub async fn assign_user_role_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    payload: AssignRoleRequest,
+) -> Result<AssignRoleOutcome, AppError> {
+    let user_type: Option<String> = DbSession::new(connection)
+        .scalar(
+            "staff.services.user_role_service.assign_user_role_on_connection",
+            "SELECT user_type FROM users WHERE id = $1",
+        )
         .bind(user_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to fetch user: {}", e);
+            tracing::error!("Failed to fetch user: {}", school_database::error_class(&e));
             AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้".to_string())
         })?;
 
-    let role_user_type: Option<String> =
-        sqlx::query_scalar("SELECT user_type FROM roles WHERE id = $1 AND is_active = true")
-            .bind(payload.role_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to fetch role: {}", e);
-                AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลบทบาทได้".to_string())
-            })?;
+    let role_user_type: Option<String> = DbSession::new(connection)
+        .scalar(
+            "staff.services.user_role_service.assign_user_role_on_connection",
+            "SELECT user_type FROM roles WHERE id = $1 AND is_active = true",
+        )
+        .bind(payload.role_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch role: {}", school_database::error_class(&e));
+            AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลบทบาทได้".to_string())
+        })?;
 
     if let Some(outcome) = assign_role_outcome_for_types(user_type, role_user_type) {
         return Ok(outcome);
     }
 
-    let user_role_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO user_roles (user_id, role_id, is_primary, started_at, notes)
+    let user_role_id: Uuid = DbSession::new(connection)
+        .scalar(
+            "staff.services.user_role_service.assign_user_role_on_connection",
+            "INSERT INTO user_roles (user_id, role_id, is_primary, started_at, notes)
          VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    )
-    .bind(user_id)
-    .bind(payload.role_id)
-    .bind(payload.is_primary.unwrap_or(false))
-    .bind(
-        payload
-            .started_at
-            .unwrap_or_else(|| chrono::Utc::now().naive_utc().date()),
-    )
-    .bind(payload.notes)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to assign role: {}", e);
-        AppError::InternalServerError("ไม่สามารถมอบหมายบทบาทได้".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .bind(payload.role_id)
+        .bind(payload.is_primary.unwrap_or(false))
+        .bind(
+            payload
+                .started_at
+                .unwrap_or_else(|| chrono::Utc::now().naive_utc().date()),
+        )
+        .bind(payload.notes)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to assign role: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถมอบหมายบทบาทได้".to_string())
+        })?;
 
     Ok(AssignRoleOutcome::Created(user_role_id))
 }
@@ -169,18 +209,33 @@ pub async fn remove_user_role(
     user_id: Uuid,
     role_id: Uuid,
 ) -> Result<bool, AppError> {
-    let result = sqlx::query(
-        "UPDATE user_roles SET ended_at = CURRENT_DATE, updated_at = NOW()
-         WHERE user_id = $1 AND role_id = $2 AND ended_at IS NULL",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.user_role_service.remove_user_role",
     )
-    .bind(user_id)
-    .bind(role_id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    .await?;
+    remove_user_role_on_connection(&mut connection, user_id, role_id).await
+}
+
+pub async fn remove_user_role_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    role_id: Uuid,
+) -> Result<bool, AppError> {
+    let result = DbSession::new(connection)
+        .query(
+            "staff.services.user_role_service.remove_user_role_on_connection",
+            "UPDATE user_roles SET ended_at = CURRENT_DATE, updated_at = NOW()
+         WHERE user_id = $1 AND role_id = $2 AND ended_at IS NULL",
+        )
+        .bind(user_id)
+        .bind(role_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error: {}", school_database::error_class(&e));
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(result.rows_affected() > 0)
 }
@@ -206,8 +261,22 @@ fn assign_role_outcome_for_types(
 }
 
 pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar(
-        "SELECT DISTINCT p.code
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.user_role_service.get_user_permissions",
+    )
+    .await?;
+    get_user_permissions_on_connection(&mut connection, user_id).await
+}
+
+pub async fn get_user_permissions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    DbSession::new(connection)
+        .scalar(
+            "staff.services.user_role_service.get_user_permissions_on_connection",
+            "SELECT DISTINCT p.code
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id AND r.is_active = true
          JOIN role_permissions rp ON r.id = rp.role_id
@@ -220,14 +289,14 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
                  AND active_user.status = 'active'
            )
          ORDER BY p.code",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })
+        )
+        .bind(user_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error: {}", school_database::error_class(&e));
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })
 }
 
 #[cfg(test)]

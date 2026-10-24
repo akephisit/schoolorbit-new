@@ -83,7 +83,9 @@ pub async fn resolve_academic_resource_list_filter(
             ..AcademicResourceListFilter::default()
         });
     }
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
     resolve_academic_resource_list_filter_on_connection(&mut connection, actor, permissions).await
 }
 

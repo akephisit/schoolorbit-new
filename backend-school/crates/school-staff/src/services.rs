@@ -1,3 +1,4 @@
+use school_database::DbSession;
 pub mod dashboard_service;
 pub mod organization_delegation_service;
 pub mod organization_member_service;
@@ -23,11 +24,14 @@ async fn lock_audit_actor(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     actor_user_id: uuid::Uuid,
 ) -> Result<(), school_errors::AppError> {
-    let actor: Option<uuid::Uuid> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
-            .bind(actor_user_id)
-            .fetch_optional(&mut **tx)
-            .await?;
+    let actor: Option<uuid::Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.lock_audit_actor",
+            "SELECT id FROM users WHERE id = $1 FOR KEY SHARE",
+        )
+        .bind(actor_user_id)
+        .fetch_optional()
+        .await?;
     actor
         .map(|_| ())
         .ok_or_else(|| school_errors::AppError::NotFound("ไม่พบผู้ดำเนินการ".into()))

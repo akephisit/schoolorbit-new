@@ -153,6 +153,21 @@ impl Drop for PendingPool {
     }
 }
 
+struct PhysicalAdmissionObservation {
+    started: Instant,
+    status: &'static str,
+}
+impl Drop for PhysicalAdmissionObservation {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = "tenant_physical_budget",
+            admission_us = self.started.elapsed().as_micros() as u64,
+            status = self.status,
+            "Tenant physical connection budget admission ended"
+        );
+    }
+}
+
 pub struct PoolManager {
     background_turns: Arc<crate::background::TenantTurnExecutor>,
     pools: Arc<RwLock<HashMap<String, PoolEntry>>>,
@@ -220,7 +235,11 @@ impl PoolManager {
     }
     async fn reserve(&self) -> Result<OwnedSemaphorePermit, String> {
         let deadline = tokio::time::Instant::now() + self.admission_timeout;
-        tokio::time::timeout_at(deadline, async {
+        let mut observation = PhysicalAdmissionObservation {
+            started: Instant::now(),
+            status: "cancelled",
+        };
+        let result = tokio::time::timeout_at(deadline, async {
             let _admission = self.admission.lock().await;
             loop {
                 if let Ok(permit) = self
@@ -251,8 +270,17 @@ impl PoolManager {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
-        .await
-        .map_err(|_| "Tenant connection budget admission timed out".to_string())?
+        .await;
+        match result {
+            Ok(result) => {
+                observation.status = if result.is_ok() { "ok" } else { "error" };
+                result
+            }
+            Err(_) => {
+                observation.status = "timeout";
+                Err("Tenant connection budget admission timed out".to_string())
+            }
+        }
     }
     async fn get_or_create_pool_with<F, Fut>(
         &self,

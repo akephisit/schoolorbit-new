@@ -11,6 +11,19 @@ pub async fn can_approve_organization_work(
     actor: &ActorContext,
     organization_unit_id: Uuid,
 ) -> Result<(), AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.organization_access_policy.can_approve_organization_work",
+    )
+    .await?;
+    can_approve_organization_work_on_connection(&mut connection, actor, organization_unit_id).await
+}
+
+pub async fn can_approve_organization_work_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    organization_unit_id: Uuid,
+) -> Result<(), AppError> {
     if has_school_wide_organization_authorization(actor) {
         return Ok(());
     }
@@ -19,8 +32,8 @@ pub async fn can_approve_organization_work(
         return Err(AppError::Forbidden("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้".to_string()));
     }
 
-    if !organization_delegation_service::is_organization_unit_leader(
-        pool,
+    if !organization_delegation_service::is_organization_unit_leader_on_connection(
+        connection,
         actor.user_id,
         organization_unit_id,
     )

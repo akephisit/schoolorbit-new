@@ -2,6 +2,7 @@ use super::configuration::list_types;
 use super::{models::*, policy::*, repository::*};
 use chrono::Utc;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use school_workflow::process_models::*;
@@ -31,16 +32,30 @@ pub async fn routing_options(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<LeaveRoutingOptions, AppError> {
-    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    let users=sqlx::query_as::<_,(Uuid,String)>("SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY display_name,id LIMIT 500").fetch_all(pool).await?.into_iter().map(|(id,display_name)|LeaveRoutingUser{id,display_name}).collect();
-    let organizations: Vec<LeaveRoutingOrganization> = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,name FROM organization_units WHERE is_active ORDER BY name,id LIMIT 500",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.leave.queries.routing_options",
     )
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|(id, name)| LeaveRoutingOrganization { id, name })
-    .collect();
+    .await?;
+    routing_options_on_connection(&mut connection, actor).await
+}
+
+pub async fn routing_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+) -> Result<LeaveRoutingOptions, AppError> {
+    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
+    let users=DbSession::new(connection).query_as::<(Uuid,String)>("staff.leave.queries.routing_options_on_connection", "SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY display_name,id LIMIT 500").fetch_all().await?.into_iter().map(|(id,display_name)|LeaveRoutingUser{id,display_name}).collect();
+    let organizations: Vec<LeaveRoutingOrganization> = DbSession::new(connection)
+        .query_as::<(Uuid, String)>(
+            "staff.leave.queries.routing_options_on_connection",
+            "SELECT id,name FROM organization_units WHERE is_active ORDER BY name,id LIMIT 500",
+        )
+        .fetch_all()
+        .await?
+        .into_iter()
+        .map(|(id, name)| LeaveRoutingOrganization { id, name })
+        .collect();
     // Positions are the provider's closed organization-role vocabulary.
     let positions = organizations
         .iter()
@@ -92,7 +107,7 @@ pub async fn detail(
     let current_instance = if r.document.status == LeaveStatus::CancellationPending {
         r.instance_id
     } else {
-        sqlx::query_scalar("SELECT id FROM process_instances WHERE source_module='staff_leave' AND source_type='staff_leave_request' AND source_id=$1").bind(id).fetch_optional(&mut *tx).await?
+        DbSession::new(&mut *tx).scalar("staff.leave.queries.detail", "SELECT id FROM process_instances WHERE source_module='staff_leave' AND source_type='staff_leave_request' AND source_id=$1").bind(id).fetch_optional().await?
     };
     let i = instance(&mut tx, current_instance).await?;
     let own =
@@ -131,7 +146,7 @@ pub async fn detail(
     } else {
         vec![]
     };
-    let history=sqlx::query_scalar::<_,Json<LeaveHistoryEntry>>("SELECT entry FROM staff_leave_history WHERE request_id=$1 ORDER BY (entry->>'revision')::bigint,id").bind(id).fetch_all(&mut *tx).await?.into_iter().map(|e|e.0).collect();
+    let history=DbSession::new(&mut *tx).scalar::<Json<LeaveHistoryEntry>>("staff.leave.queries.detail", "SELECT entry FROM staff_leave_history WHERE request_id=$1 ORDER BY (entry->>'revision')::bigint,id").bind(id).fetch_all().await?.into_iter().map(|e|e.0).collect();
     let result = LeaveRequestDetail {
         process_purpose: if r.document.status == LeaveStatus::CancellationPending {
             LeaveProcessPurpose::Cancellation
@@ -165,6 +180,17 @@ pub async fn list(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<LeaveRequestPage, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.queries.list")
+            .await?;
+    list_on_connection(&mut connection, actor, q).await
+}
+
+pub async fn list_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    q: LeaveListQuery,
+) -> Result<LeaveRequestPage, AppError> {
     actor.require_any_permission(&[
         codes::STAFF_LEAVE_READ_OWN,
         codes::STAFF_LEAVE_READ_ASSIGNED,
@@ -187,13 +213,24 @@ pub async fn list(
         .map(serde_json::to_value)
         .transpose()
         .map_err(|_| invalid("สถานะไม่ถูกต้อง"))?;
-    let mut items:Vec<_>=sqlx::query_scalar::<_,Json<LeaveRequestSummary>>("SELECT r.document FROM staff_leave_requests r WHERE ($1 OR ($2 AND r.owner_id=$3) OR ($4 AND EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$3 AND i.source_module='staff_leave' AND (i.source_id=r.id OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=r.id AND h.entry->>'action'='cancellation_requested' AND i.source_id=h.id))))) AND ($5::text IS NULL OR r.document->>'kind'=$5) AND ($6::text IS NULL OR r.status=$6) ORDER BY r.created_at DESC,r.id DESC LIMIT $7 OFFSET $8").bind(actor.has_permission(codes::STAFF_LEAVE_READ_SCHOOL)).bind(actor.has_permission(codes::STAFF_LEAVE_READ_OWN)).bind(actor.user_id).bind(actor.has_permission(codes::STAFF_LEAVE_READ_ASSIGNED)).bind(kind).bind(status.as_ref().and_then(|s|s.as_str())).bind(limit+1).bind(offset).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let mut items:Vec<_>=DbSession::new(connection).scalar::<Json<LeaveRequestSummary>>("staff.leave.queries.list_on_connection", "SELECT r.document FROM staff_leave_requests r WHERE ($1 OR ($2 AND r.owner_id=$3) OR ($4 AND EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$3 AND i.source_module='staff_leave' AND (i.source_id=r.id OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=r.id AND h.entry->>'action'='cancellation_requested' AND i.source_id=h.id))))) AND ($5::text IS NULL OR r.document->>'kind'=$5) AND ($6::text IS NULL OR r.status=$6) ORDER BY r.created_at DESC,r.id DESC LIMIT $7 OFFSET $8").bind(actor.has_permission(codes::STAFF_LEAVE_READ_SCHOOL)).bind(actor.has_permission(codes::STAFF_LEAVE_READ_OWN)).bind(actor.user_id).bind(actor.has_permission(codes::STAFF_LEAVE_READ_ASSIGNED)).bind(kind).bind(status.as_ref().and_then(|s|s.as_str())).bind(limit+1).bind(offset).fetch_all().await?.into_iter().map(|r|r.0).collect();
     let has_more = items.len() > limit as usize;
     items.truncate(limit as usize);
     Ok(LeaveRequestPage { items, has_more })
 }
 pub async fn usage(
     pool: &PgPool,
+    actor: &ActorContext,
+    q: LeaveUsageQuery,
+) -> Result<LeaveUsageReport, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.queries.usage")
+            .await?;
+    usage_on_connection(&mut connection, actor, q).await
+}
+
+pub async fn usage_on_connection(
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     q: LeaveUsageQuery,
 ) -> Result<LeaveUsageReport, AppError> {
@@ -211,7 +248,7 @@ pub async fn usage(
             "exit"
         }
     });
-    let items:Vec<LeaveUsageItem>=sqlx::query_scalar::<_,Json<LeaveUsageItem>>("SELECT jsonb_build_object('userId',r.owner_id,'displayName',max(r.document->>'ownerName'),'typeId',r.type_id,'typeName',max(r.document->>'typeName'),'unit',max(r.document->>'unit'),'quotaYearStart',r.quota_year_start,'approvedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status IN ('approved','cancellation_pending')),0),'reservedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status='submitted'),0),'annualLimit',(array_agg(p.document ORDER BY p.version DESC))[1]->'annualLimit','policyVersionId',(array_agg(p.id ORDER BY p.version DESC))[1]) FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4 AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending') GROUP BY r.owner_id,r.type_id,r.quota_year_start ORDER BY r.owner_id,r.type_id,r.quota_year_start LIMIT 5001").bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let items:Vec<LeaveUsageItem>=DbSession::new(connection).scalar::<Json<LeaveUsageItem>>("staff.leave.queries.usage_on_connection", "SELECT jsonb_build_object('userId',r.owner_id,'displayName',max(r.document->>'ownerName'),'typeId',r.type_id,'typeName',max(r.document->>'typeName'),'unit',max(r.document->>'unit'),'quotaYearStart',r.quota_year_start,'approvedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status IN ('approved','cancellation_pending')),0),'reservedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status='submitted'),0),'annualLimit',(array_agg(p.document ORDER BY p.version DESC))[1]->'annualLimit','policyVersionId',(array_agg(p.id ORDER BY p.version DESC))[1]) FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4 AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending') GROUP BY r.owner_id,r.type_id,r.quota_year_start ORDER BY r.owner_id,r.type_id,r.quota_year_start LIMIT 5001").bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all().await?.into_iter().map(|r|r.0).collect();
     if items.len() > 5000 {
         return Err(invalid("รายงานมีรายการมากเกินไป กรุณาลดช่วงวันที่"));
     }

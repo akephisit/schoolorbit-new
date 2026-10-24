@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -31,12 +32,23 @@ impl ProfileCutoverStatus {
     }
 }
 pub async fn read_profile_cutover(pool: &PgPool) -> Result<ProfileCutoverStatus, AppError> {
-    let (completed,old_columns,invalid_owners,views): (bool,i64,i64,bool)=sqlx::query_as(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.profile_cutover.read_profile_cutover",
+    )
+    .await?;
+    read_profile_cutover_on_connection(&mut connection).await
+}
+
+pub async fn read_profile_cutover_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<ProfileCutoverStatus, AppError> {
+    let (completed,old_columns,invalid_owners,views): (bool,i64,i64,bool)=DbSession::new(connection).query_as("staff.profile_cutover.read_profile_cutover_on_connection",
         "SELECT coalesce((SELECT completed AND completed_at IS NOT NULL AND users_fingerprint ~ '^[a-f0-9]{32}$' AND staff_fingerprint ~ '^[a-f0-9]{32}$' FROM staff_profile_cutover_audit WHERE migration_version=114),false),
         (SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='staff_info' AND column_name IN ('education_level','major','university')),
         (SELECT count(*) FROM staff_educations e JOIN users u ON u.id=e.staff_id WHERE u.user_type<>'staff'),
         to_regclass(current_schema()||'.staff_highest_education') IS NOT NULL AND to_regclass(current_schema()||'.user_display_names') IS NOT NULL")
-        .fetch_one(pool).await?;
+        .fetch_one().await?;
     let checks = vec![
         ProfileCutoverCheck {
             code: "STAFF_PROFILE_VALUES_PRESERVED",
