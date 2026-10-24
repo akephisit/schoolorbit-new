@@ -10,6 +10,8 @@ api-docs = [
 ]
 
 [dependencies]
+school-tenancy = { workspace = true }
+school-database = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
@@ -27,6 +29,7 @@ utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+school-test-db = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

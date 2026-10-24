@@ -34,7 +34,7 @@ async function fillDocument(page: Page) {
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 }
 async function choosePerson(page: Page, label: string, name: string) {
-	await page.getByRole('button', { name: label, exact: true }).click();
+	await page.getByRole('combobox', { name: label, exact: true }).click();
 	await page.getByRole('option', { name, exact: true }).click();
 }
 async function addRequiredRecipient(page: Page) {
@@ -74,7 +74,25 @@ test('detail directed send replays an accepted lost response with the exact firs
 	await expect(form).toHaveCount(0);
 	expect(api.sends).toHaveLength(2);
 	expect(api.sends[1]).toEqual(first);
-	expect(api.detail()).toEqual(accepted);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	const receipt = structuredClone(api.detail().myReadReceipt);
+	expect(receipt).toEqual({
+		correspondenceId,
+		userId: actor,
+		documentRevision: accepted.document.revision,
+		firstReadAt: expect.any(String)
+	});
+	expect(Number.isFinite(Date.parse(receipt!.firstReadAt))).toBe(true);
+	if (accepted.myReadReceipt) expect(receipt).toEqual(accepted.myReadReceipt);
+	const acknowledged = { ...accepted, myReadReceipt: receipt };
+	expect(api.detail()).toEqual(acknowledged);
+
+	const readCount = api.readRequests.length;
+	await page.reload();
+	await expect.poll(() => api.readRequests.length).toBeGreaterThan(readCount);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	expect(api.detail()).toEqual(acknowledged);
+	expect(api.sends).toEqual([first, first]);
 });
 
 for (const width of [390, 1440])
@@ -102,7 +120,7 @@ for (const width of [390, 1440])
 				.last()
 				.click();
 			await expect(
-				page.getByRole('button', { name: 'ผู้พิจารณาสั่งการคนแรก *', exact: true })
+				page.getByRole('combobox', { name: 'ผู้พิจารณาสั่งการคนแรก *', exact: true })
 			).toContainText('ครูผู้รับคนที่สอง');
 			await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 			await page.getByRole('button', { name: 'ยืนยันส่งหนังสือ', exact: true }).click();
@@ -124,7 +142,7 @@ test('directed send replays the frozen first assignee after an accepted response
 	});
 	await fillDocument(page);
 	await expect(
-		page.getByRole('button', { name: 'ผู้พิจารณาสั่งการคนแรก *', exact: true })
+		page.getByRole('combobox', { name: 'ผู้พิจารณาสั่งการคนแรก *', exact: true })
 	).toContainText('ครูผู้รับคนที่สอง');
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await page.getByRole('button', { name: 'ยืนยันส่งหนังสือ', exact: true }).click();
@@ -274,11 +292,11 @@ test('settings preserve separate register drafts and save exact configured defau
 	await choosePerson(page, 'ผู้พิจารณาสั่งการคนแรกที่แนะนำ', 'ครูผู้รับคนที่สอง');
 	await page.getByRole('radio', { name: 'หนังสือส่ง', exact: true }).click();
 	await expect(
-		page.getByRole('button', { name: 'ผู้พิจารณาสั่งการคนแรกที่แนะนำ', exact: true })
+		page.getByRole('combobox', { name: 'ผู้พิจารณาสั่งการคนแรกที่แนะนำ', exact: true })
 	).toContainText('ให้ผู้ลงทะเบียนเลือกทุกครั้ง');
 	await page.getByRole('radio', { name: 'หนังสือรับ', exact: true }).click();
 	await expect(
-		page.getByRole('button', { name: 'ผู้พิจารณาสั่งการคนแรกที่แนะนำ', exact: true })
+		page.getByRole('combobox', { name: 'ผู้พิจารณาสั่งการคนแรกที่แนะนำ', exact: true })
 	).toContainText('ครูผู้รับคนที่สอง');
 	await capture(page, '06-register-routing-settings.png');
 	await page.getByRole('button', { name: 'บันทึกการตั้งค่า', exact: true }).click();
@@ -337,7 +355,7 @@ test('mobile instructions keep recipient type and review controls readable and r
 	const api = await mockDirectedCorrespondence(page, { scenario: 'decide' });
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'พิจารณาสั่งการ', exact: true }).click();
-	const kind = page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true });
+	const kind = page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true });
 	await expect(kind).toContainText('หน่วยงาน');
 	await expect(kind).toBeVisible();
 	await expect(
@@ -372,7 +390,7 @@ for (const recoverReviewer of [false, true])
 		await expect(page.getByRole('button', { name: 'ดำเนินการแล้ว', exact: true })).toHaveCount(0);
 		await page.getByRole('button', { name: label, exact: true }).click();
 		await expect(
-			page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
+			page.getByRole('combobox', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
 		).toHaveCount(0);
 		await choosePerson(page, 'ผู้รับผิดชอบใหม่', 'ครูสำรอง ทดสอบ');
 		await page.getByRole('button', { name: `ยืนยัน${label}`, exact: true }).click();

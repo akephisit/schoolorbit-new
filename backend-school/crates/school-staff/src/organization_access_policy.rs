@@ -11,16 +11,45 @@ pub async fn can_approve_organization_work(
     actor: &ActorContext,
     organization_unit_id: Uuid,
 ) -> Result<(), AppError> {
-    if has_school_wide_organization_authorization(actor) {
+    if !requires_unit_leader_lookup(actor)? {
         return Ok(());
     }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.organization_access_policy.can_approve_organization_work",
+    )
+    .await?;
+    require_unit_leader_on_connection(&mut connection, actor, organization_unit_id).await
+}
 
+pub async fn can_approve_organization_work_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    organization_unit_id: Uuid,
+) -> Result<(), AppError> {
+    if !requires_unit_leader_lookup(actor)? {
+        return Ok(());
+    }
+    require_unit_leader_on_connection(connection, actor, organization_unit_id).await
+}
+
+fn requires_unit_leader_lookup(actor: &ActorContext) -> Result<bool, AppError> {
+    if has_school_wide_organization_authorization(actor) {
+        return Ok(false);
+    }
     if !actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT) {
         return Err(AppError::Forbidden("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้".to_string()));
     }
+    Ok(true)
+}
 
-    if !organization_delegation_service::is_organization_unit_leader(
-        pool,
+async fn require_unit_leader_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    organization_unit_id: Uuid,
+) -> Result<(), AppError> {
+    if !organization_delegation_service::is_organization_unit_leader_on_connection(
+        connection,
         actor.user_id,
         organization_unit_id,
     )
@@ -131,5 +160,17 @@ mod tests {
         let actor = actor(Uuid::new_v4(), &[]);
 
         assert!(!can_revoke_organization_delegation(&actor, Uuid::new_v4()));
+    }
+    #[tokio::test]
+    async fn approve_policy_denies_missing_permission_without_connecting() {
+        let pool = disconnected_pool();
+        let actor = actor(Uuid::new_v4(), &[]);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            can_approve_organization_work(&pool, &actor, Uuid::new_v4()),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
     }
 }

@@ -6,6 +6,7 @@ use crate::{
     repository::{self, ProjectRecord, RequestRecord},
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -14,11 +15,15 @@ pub(crate) async fn summary(
     tx: &mut Transaction<'_, Postgres>,
     r: &ProjectRecord,
 ) -> Result<BudgetProjectSummary, AppError> {
-    let unit: String = sqlx::query_scalar("SELECT name FROM organization_units WHERE id=$1")
+    let unit: String = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.src.queries.summary",
+            "SELECT name FROM organization_units WHERE id=$1",
+        )
         .bind(r.document.project.organization_unit_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
-    let (planned,reserved,paid,available):(i64,i64,i64,i64)=sqlx::query_as("SELECT coalesce(sum(planned),0)::bigint,coalesce(sum(reserved),0)::bigint,coalesce(sum(paid),0)::bigint,coalesce(sum(planned+adjusted-reserved-paid),0)::bigint FROM budget_allocations WHERE project_id=$1").bind(r.id).fetch_one(&mut **tx).await?;
+    let (planned,reserved,paid,available):(i64,i64,i64,i64)=DbSession::new(&mut **tx).query_as("budget.src.queries.summary", "SELECT coalesce(sum(planned),0)::bigint,coalesce(sum(reserved),0)::bigint,coalesce(sum(paid),0)::bigint,coalesce(sum(planned+adjusted-reserved-paid),0)::bigint FROM budget_allocations WHERE project_id=$1").bind(r.id).fetch_one().await?;
     project_summary_from(r, unit, (planned, reserved, paid, available))
 }
 fn project_summary_from(
@@ -65,11 +70,16 @@ pub async fn workspace(
 ) -> Result<BudgetProjectWorkspace, AppError> {
     let read_scope = policy::read_scope(pool, a, false).await?;
     let scope = policy::update_scope(pool, a).await?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.workspace").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.queries.workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let r:ProjectRecord=sqlx::query_as("SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))?;
+    let r:ProjectRecord=DbSession::new(&mut *tx).query_as("budget.src.queries.workspace", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))?;
     policy::require_read_in_transaction(&mut tx, a, &r, &read_scope).await?;
     let i = process::load(&mut tx, r.instance_id).await?;
     let mut capabilities = policy::capabilities(
@@ -121,25 +131,34 @@ pub async fn projects(
         .map(|v| money::text(v, 200))
         .transpose()?;
     let filter=format!("{PROJECT_SCOPE} AND ($6::uuid IS NULL OR p.fiscal_year_id=$6) AND ($7::uuid IS NULL OR p.organization_unit_id=$7) AND ($8::text IS NULL OR p.status=$8) AND ($9::text IS NULL OR strpos(lower(p.document->'project'->>'name'),lower($9))>0)");
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.projects").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.queries.projects",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT count(*) FROM budget_projects p WHERE {filter}"
-    )))
-    .bind(s.school)
-    .bind(s.own)
-    .bind(a.user_id)
-    .bind(&s.units)
-    .bind(s.assigned)
-    .bind(q.fiscal_year_id)
-    .bind(q.organization_unit_id)
-    .bind(q.status.map(|x| x.as_str()))
-    .bind(&search)
-    .fetch_one(&mut *tx)
-    .await?;
-    let rows:Vec<ProjectRecord>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT p.id,p.owner_id,p.revision,p.status,p.attempt_id,p.accepted_version,p.accepted_snapshot_id,p.document,p.instance_id FROM budget_projects p WHERE {filter} ORDER BY p.created_at DESC,p.id DESC LIMIT $10 OFFSET $11"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.organization_unit_id).bind(q.status.map(|x|x.as_str())).bind(search).bind(limit).bind(offset).fetch_all(&mut *tx).await?;
+    let total: i64 = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.src.queries.projects",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT count(*) FROM budget_projects p WHERE {filter}"
+            )),
+        )
+        .bind(s.school)
+        .bind(s.own)
+        .bind(a.user_id)
+        .bind(&s.units)
+        .bind(s.assigned)
+        .bind(q.fiscal_year_id)
+        .bind(q.organization_unit_id)
+        .bind(q.status.map(|x| x.as_str()))
+        .bind(&search)
+        .fetch_one()
+        .await?;
+    let rows:Vec<ProjectRecord>=DbSession::new(&mut *tx).query_as("budget.src.queries.projects", sqlx::AssertSqlSafe(format!("SELECT p.id,p.owner_id,p.revision,p.status,p.attempt_id,p.accepted_version,p.accepted_snapshot_id,p.document,p.instance_id FROM budget_projects p WHERE {filter} ORDER BY p.created_at DESC,p.id DESC LIMIT $10 OFFSET $11"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.organization_unit_id).bind(q.status.map(|x|x.as_str())).bind(search).bind(limit).bind(offset).fetch_all().await?;
     let items = project_summaries(&mut tx, &rows).await?;
     tx.commit().await?;
     Ok(BudgetProjectPage {
@@ -155,7 +174,7 @@ pub(crate) async fn balances(
 ) -> Result<Vec<BudgetBalance>, AppError> {
     let accounts = repository::accounts(tx, id).await?;
     use std::collections::HashMap;
-    let loans:Vec<(Uuid,Uuid,Uuid,i64)>=sqlx::query_as("SELECT (l.document->'from'->>'activityId')::uuid,(l.document->'from'->>'fundId')::uuid,(l.document->'from'->>'expenseCategoryId')::uuid,sum(l.amount-l.repaid)::bigint FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE a.from_project_id=$1 AND l.repaid<l.amount GROUP BY 1,2,3").bind(id).fetch_all(&mut **tx).await?;
+    let loans:Vec<(Uuid,Uuid,Uuid,i64)>=DbSession::new(&mut **tx).query_as("budget.src.queries.balances", "SELECT (l.document->'from'->>'activityId')::uuid,(l.document->'from'->>'fundId')::uuid,(l.document->'from'->>'expenseCategoryId')::uuid,sum(l.amount-l.repaid)::bigint FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE a.from_project_id=$1 AND l.repaid<l.amount GROUP BY 1,2,3").bind(id).fetch_all().await?;
     let loans = loans
         .into_iter()
         .map(|(a, f, c, n)| ((a, f, c), n))
@@ -184,19 +203,20 @@ pub(crate) async fn balances(
         .collect())
 }
 pub(crate) async fn require_request_read(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     r: &RequestRecord,
 ) -> Result<(), AppError> {
-    let p = repository::project(pool, r.project_id).await?;
-    let s = policy::read_scope(pool, a, false).await?;
+    let p = repository::project_on_connection(connection, r.project_id).await?;
+    let s = policy::read_scope_on_connection(connection, a, false).await?;
+
     let assigned = if s.assigned {
-        sqlx::query_scalar::<_, bool>(
+        DbSession::new(&mut *connection).scalar::<bool>("budget.src.queries.require_request_read",
             "SELECT EXISTS(SELECT 1 FROM process_participants WHERE instance_id=$1 AND user_id=$2)",
         )
         .bind(r.instance_id)
         .bind(a.user_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?
     } else {
         false
@@ -218,7 +238,7 @@ pub(crate) async fn request_summary(
     tx: &mut Transaction<'_, Postgres>,
     r: &RequestRecord,
 ) -> Result<BudgetRequestSummary, AppError> {
-    let (total,reserved,paid):(i64,i64,i64)=sqlx::query_as("SELECT coalesce(sum(amount),0)::bigint,coalesce(sum(reserved),0)::bigint,coalesce(sum(paid),0)::bigint FROM budget_request_lines WHERE request_id=$1").bind(r.id).fetch_one(&mut **tx).await?;
+    let (total,reserved,paid):(i64,i64,i64)=DbSession::new(&mut **tx).query_as("budget.src.queries.request_summary", "SELECT coalesce(sum(amount),0)::bigint,coalesce(sum(reserved),0)::bigint,coalesce(sum(paid),0)::bigint FROM budget_request_lines WHERE request_id=$1").bind(r.id).fetch_one().await?;
     request_summary_from(r, (total, reserved, paid))
 }
 fn request_summary_from(
@@ -254,12 +274,17 @@ pub async fn request_detail(
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
     let read_scope = policy::read_scope(pool, a, false).await?;
     let update_scope = policy::update_scope(pool, a).await?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.request_detail").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.queries.request_detail",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let r:RequestRecord=sqlx::query_as("SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1").bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))?;
-    let p:ProjectRecord=sqlx::query_as("SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(r.project_id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))?;
+    let r:RequestRecord=DbSession::new(&mut *tx).query_as("budget.src.queries.request_detail", "SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))?;
+    let p:ProjectRecord=DbSession::new(&mut *tx).query_as("budget.src.queries.request_detail", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(r.project_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))?;
     require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
     let update = require_request_update_with_scope(a, &r, &p, &update_scope).is_ok();
     let lines = repository::request_lines(&mut tx, id).await?;
@@ -303,12 +328,17 @@ pub async fn requests(
     let s = policy::read_scope(pool, a, false).await?;
     let (limit, offset) = money::paging(&q)?;
     let filter="($1 OR ($2 AND r.owner_id=$3) OR p.organization_unit_id=ANY($4) OR ($5 AND EXISTS(SELECT 1 FROM process_participants pp WHERE pp.instance_id=r.instance_id AND pp.user_id=$3))) AND ($6::uuid IS NULL OR r.project_id=$6) AND ($7::uuid IS NULL OR r.activity_id=$7) AND ($8::text IS NULL OR r.status=$8) AND ($9::uuid IS NULL OR p.fiscal_year_id=$9)";
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.requests").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.queries.requests",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let total:i64=sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE {filter}"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.activity_id).bind(q.status.map(|x|x.as_str())).bind(q.fiscal_year_id).fetch_one(&mut *tx).await?;
-    let rows:Vec<RequestRecord>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT r.id,r.project_id,r.activity_id,r.owner_id,r.revision,r.status,r.document,r.instance_id,r.created_at FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE {filter} ORDER BY r.created_at DESC,r.id DESC LIMIT $10 OFFSET $11"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.activity_id).bind(q.status.map(|x|x.as_str())).bind(q.fiscal_year_id).bind(limit).bind(offset).fetch_all(&mut *tx).await?;
+    let total:i64=DbSession::new(&mut *tx).scalar("budget.src.queries.requests", sqlx::AssertSqlSafe(format!("SELECT count(*) FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE {filter}"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.activity_id).bind(q.status.map(|x|x.as_str())).bind(q.fiscal_year_id).fetch_one().await?;
+    let rows:Vec<RequestRecord>=DbSession::new(&mut *tx).query_as("budget.src.queries.requests", sqlx::AssertSqlSafe(format!("SELECT r.id,r.project_id,r.activity_id,r.owner_id,r.revision,r.status,r.document,r.instance_id,r.created_at FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE {filter} ORDER BY r.created_at DESC,r.id DESC LIMIT $10 OFFSET $11"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.activity_id).bind(q.status.map(|x|x.as_str())).bind(q.fiscal_year_id).bind(limit).bind(offset).fetch_all().await?;
     let items = request_summaries(&mut tx, &rows).await?;
     tx.commit().await?;
     Ok(BudgetRequestPage {
@@ -324,24 +354,35 @@ pub async fn payments(
     id: Uuid,
     q: BudgetListQuery,
 ) -> Result<BudgetPaymentPage, AppError> {
-    let r = repository::request(pool, id).await?;
-    require_request_read(pool, a, &r).await?;
-    let (limit, offset) = money::paging(&q)?;
-    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM budget_payments WHERE request_id=$1")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    let mut rows:Vec<BudgetPayment>=sqlx::query_scalar::<_,Json<BudgetPayment>>("SELECT document FROM budget_payments WHERE request_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3").bind(id).bind(limit).bind(offset).fetch_all(pool).await?.into_iter().map(|x|x.0).collect();
-    let ids = rows.iter().map(|x| x.id).collect::<Vec<_>>();
-    let refunds: Vec<BudgetRefund> = sqlx::query_scalar::<_, Json<BudgetRefund>>(
-        "SELECT document FROM budget_refunds WHERE payment_id=ANY($1) ORDER BY created_at,id",
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.queries.payments.preflight",
     )
-    .bind(ids)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|x| x.0)
-    .collect();
+    .await?;
+    let r = repository::request_on_connection(&mut preflight, id).await?;
+    require_request_read(&mut preflight, a, &r).await?;
+    let (limit, offset) = money::paging(&q)?;
+    let total: i64 = DbSession::new(&mut *preflight)
+        .scalar(
+            "budget.src.queries.payments",
+            "SELECT count(*) FROM budget_payments WHERE request_id=$1",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
+    let mut rows:Vec<BudgetPayment>=DbSession::new(&mut *preflight).scalar::<Json<BudgetPayment>>("budget.src.queries.payments", "SELECT document FROM budget_payments WHERE request_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3").bind(id).bind(limit).bind(offset).fetch_all().await?.into_iter().map(|x|x.0).collect();
+    let ids = rows.iter().map(|x| x.id).collect::<Vec<_>>();
+    let refunds: Vec<BudgetRefund> = DbSession::new(&mut *preflight)
+        .scalar::<Json<BudgetRefund>>(
+            "budget.src.queries.payments",
+            "SELECT document FROM budget_refunds WHERE payment_id=ANY($1) ORDER BY created_at,id",
+        )
+        .bind(ids)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .map(|x| x.0)
+        .collect();
     for p in &mut rows {
         p.refunds = refunds
             .iter()
@@ -362,24 +403,32 @@ pub async fn resource_process(
     kind: BudgetResourceKind,
     id: Uuid,
 ) -> Result<BudgetProcessDetail, AppError> {
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.queries.resource_process.preflight",
+    )
+    .await?;
     let instance = match kind {
         BudgetResourceKind::Project => {
-            let r = repository::project(pool, id).await?;
-            policy::require_read(pool, a, &r).await?;
+            let r = repository::project_on_connection(&mut preflight, id).await?;
+            policy::require_read(&mut preflight, a, &r).await?;
             r.instance_id
         }
         BudgetResourceKind::Request => {
-            let r = repository::request(pool, id).await?;
-            require_request_read(pool, a, &r).await?;
+            let r = repository::request_on_connection(&mut preflight, id).await?;
+            require_request_read(&mut preflight, a, &r).await?;
             r.instance_id
         }
         BudgetResourceKind::Adjustment => {
-            let r = crate::adjustments::record(pool, id).await?;
-            crate::adjustments::require_read(pool, a, &r).await?;
+            let r = crate::adjustments::record_on_connection(&mut preflight, id).await?;
+            crate::adjustments::require_read(&mut preflight, a, &r).await?;
             r.instance_id
         }
     };
-    let mut tx = pool.begin().await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.resource_process")
+            .await?;
     let process = process::load(&mut tx, instance).await?;
     tx.commit().await?;
     Ok(BudgetProcessDetail { process })
@@ -393,14 +442,18 @@ pub async fn history(
 ) -> Result<BudgetHistoryPage, AppError> {
     resource_process(pool, a, kind, id).await?;
     let (limit, offset) = money::paging(&q)?;
-    let total: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM budget_history WHERE resource_kind=$1 AND resource_id=$2",
-    )
-    .bind(kind.as_str())
-    .bind(id)
-    .fetch_one(pool)
-    .await?;
-    let items=sqlx::query_scalar::<_,Json<BudgetHistoryEntry>>("SELECT document FROM budget_history WHERE resource_kind=$1 AND resource_id=$2 ORDER BY revision DESC,id DESC LIMIT $3 OFFSET $4").bind(kind.as_str()).bind(id).bind(limit).bind(offset).fetch_all(pool).await?.into_iter().map(|x|x.0).collect();
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.queries.history").await?;
+    let total: i64 = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "budget.src.queries.history",
+            "SELECT count(*) FROM budget_history WHERE resource_kind=$1 AND resource_id=$2",
+        )
+        .bind(kind.as_str())
+        .bind(id)
+        .fetch_one()
+        .await?;
+    let items=DbSession::new(&mut *database_stage_0).scalar::<Json<BudgetHistoryEntry>>("budget.src.queries.history", "SELECT document FROM budget_history WHERE resource_kind=$1 AND resource_id=$2 ORDER BY revision DESC,id DESC LIMIT $3 OFFSET $4").bind(kind.as_str()).bind(id).bind(limit).bind(offset).fetch_all().await?.into_iter().map(|x|x.0).collect();
     Ok(BudgetHistoryPage {
         items,
         total,
@@ -432,11 +485,16 @@ pub async fn dashboard(
             download_predicate.replace(&format!("@scope{i}@"), &format!("${}", i + 8));
     }
     let filter=format!("{PROJECT_SCOPE} AND {download_predicate} AND ($6::uuid IS NULL OR p.fiscal_year_id=$6) AND ($7::uuid IS NULL OR p.id=$7) AND ($8::uuid IS NULL OR p.organization_unit_id=$8)");
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.dashboard").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.queries.dashboard",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let rows:Vec<Json<BudgetDashboardRow>>=sqlx::query_scalar(sqlx::AssertSqlSafe(format!("WITH loan_totals AS (SELECT a.from_project_id AS project_id,(l.document->'from'->>'activityId')::uuid AS activity_id,(l.document->'from'->>'fundId')::uuid AS fund_id,(l.document->'from'->>'expenseCategoryId')::uuid AS expense_category_id,sum(l.amount-l.repaid)::bigint AS outstanding FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE l.repaid<l.amount GROUP BY 1,2,3,4) SELECT jsonb_build_object('projectId',b.project_id,'projectName',s.document->'project'->>'name','activityId',b.activity_id,'activityTitle',coalesce((SELECT x->>'title' FROM jsonb_array_elements(s.document->'activities') x WHERE (x->>'id')::uuid=b.activity_id),(SELECT x->>'title' FROM budget_plan_snapshots old CROSS JOIN LATERAL jsonb_array_elements(old.document->'activities') x WHERE old.project_id=p.id AND (x->>'id')::uuid=b.activity_id ORDER BY old.version DESC LIMIT 1),'กิจกรรมเดิม'),'fundId',b.fund_id,'fundName',f.name,'expenseCategoryId',b.expense_category_id,'expenseCategoryName',c.name,'plannedSatang',b.planned::text,'adjustedSatang',b.adjusted::text,'currentSatang',(b.planned+b.adjusted)::text,'reservedSatang',b.reserved::text,'paidSatang',b.paid::text,'availableSatang',(b.planned+b.adjusted-b.reserved-b.paid)::text,'loanOutstandingSatang',coalesce(lt.outstanding,0)::text) FROM budget_allocations b JOIN budget_projects p ON p.id=b.project_id JOIN budget_plan_snapshots s ON s.id=p.accepted_snapshot_id JOIN budget_funds f ON f.id=b.fund_id JOIN budget_expense_categories c ON c.id=b.expense_category_id LEFT JOIN loan_totals lt ON lt.project_id=b.project_id AND lt.activity_id=b.activity_id AND lt.fund_id=b.fund_id AND lt.expense_category_id=b.expense_category_id WHERE {filter} ORDER BY p.id,b.activity_id,b.fund_id,b.expense_category_id LIMIT 10001"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.project_id).bind(q.organization_unit_id).bind(download.school).bind(download.own).bind(a.user_id).bind(download.units).bind(download.assigned).fetch_all(&mut *tx).await?;
+    let rows:Vec<Json<BudgetDashboardRow>>=DbSession::new(&mut *tx).scalar("budget.src.queries.dashboard", sqlx::AssertSqlSafe(format!("WITH loan_totals AS (SELECT a.from_project_id AS project_id,(l.document->'from'->>'activityId')::uuid AS activity_id,(l.document->'from'->>'fundId')::uuid AS fund_id,(l.document->'from'->>'expenseCategoryId')::uuid AS expense_category_id,sum(l.amount-l.repaid)::bigint AS outstanding FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE l.repaid<l.amount GROUP BY 1,2,3,4) SELECT jsonb_build_object('projectId',b.project_id,'projectName',s.document->'project'->>'name','activityId',b.activity_id,'activityTitle',coalesce((SELECT x->>'title' FROM jsonb_array_elements(s.document->'activities') x WHERE (x->>'id')::uuid=b.activity_id),(SELECT x->>'title' FROM budget_plan_snapshots old CROSS JOIN LATERAL jsonb_array_elements(old.document->'activities') x WHERE old.project_id=p.id AND (x->>'id')::uuid=b.activity_id ORDER BY old.version DESC LIMIT 1),'กิจกรรมเดิม'),'fundId',b.fund_id,'fundName',f.name,'expenseCategoryId',b.expense_category_id,'expenseCategoryName',c.name,'plannedSatang',b.planned::text,'adjustedSatang',b.adjusted::text,'currentSatang',(b.planned+b.adjusted)::text,'reservedSatang',b.reserved::text,'paidSatang',b.paid::text,'availableSatang',(b.planned+b.adjusted-b.reserved-b.paid)::text,'loanOutstandingSatang',coalesce(lt.outstanding,0)::text) FROM budget_allocations b JOIN budget_projects p ON p.id=b.project_id JOIN budget_plan_snapshots s ON s.id=p.accepted_snapshot_id JOIN budget_funds f ON f.id=b.fund_id JOIN budget_expense_categories c ON c.id=b.expense_category_id LEFT JOIN loan_totals lt ON lt.project_id=b.project_id AND lt.activity_id=b.activity_id AND lt.fund_id=b.fund_id AND lt.expense_category_id=b.expense_category_id WHERE {filter} ORDER BY p.id,b.activity_id,b.fund_id,b.expense_category_id LIMIT 10001"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.project_id).bind(q.organization_unit_id).bind(download.school).bind(download.own).bind(a.user_id).bind(download.units).bind(download.assigned).fetch_all().await?;
     tx.commit().await?;
     if rows.len() > 10000 {
         return Err(invalid("รายงานเกิน 10,000 แถว กรุณากรองปีงบประมาณหรือโครงการ"));
@@ -592,12 +650,12 @@ pub(crate) async fn require_request_read_in_transaction(
         return Ok(());
     }
     if s.assigned
-        && sqlx::query_scalar::<_, bool>(
+        && DbSession::new(&mut **tx).scalar::<bool>("budget.src.queries.require_request_read_in_transaction",
             "SELECT EXISTS(SELECT 1 FROM process_participants WHERE instance_id=$1 AND user_id=$2)",
         )
         .bind(r.instance_id)
         .bind(a.user_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?
     {
         return Ok(());
@@ -635,15 +693,17 @@ async fn project_summaries(
         .iter()
         .map(|r| r.document.project.organization_unit_id)
         .collect::<Vec<_>>();
-    let names: HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,name FROM organization_units WHERE id=ANY($1)",
-    )
-    .bind(units)
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .collect();
-    let sums:Vec<(Uuid,i64,i64,i64,i64)>=sqlx::query_as("SELECT project_id,sum(planned)::bigint,sum(reserved)::bigint,sum(paid)::bigint,sum(planned+adjusted-reserved-paid)::bigint FROM budget_allocations WHERE project_id=ANY($1) GROUP BY project_id").bind(ids).fetch_all(&mut **tx).await?;
+    let names: HashMap<Uuid, String> = DbSession::new(&mut **tx)
+        .query_as::<(Uuid, String)>(
+            "budget.src.queries.project_summaries",
+            "SELECT id,name FROM organization_units WHERE id=ANY($1)",
+        )
+        .bind(units)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect();
+    let sums:Vec<(Uuid,i64,i64,i64,i64)>=DbSession::new(&mut **tx).query_as("budget.src.queries.project_summaries", "SELECT project_id,sum(planned)::bigint,sum(reserved)::bigint,sum(paid)::bigint,sum(planned+adjusted-reserved-paid)::bigint FROM budget_allocations WHERE project_id=ANY($1) GROUP BY project_id").bind(ids).fetch_all().await?;
     let sums = sums
         .into_iter()
         .map(|(id, p, r, s, a)| (id, (p, r, s, a)))
@@ -671,7 +731,7 @@ async fn request_summaries(
         return Ok(vec![]);
     }
     let ids = rows.iter().map(|r| r.id).collect::<Vec<_>>();
-    let sums:Vec<(Uuid,i64,i64,i64)>=sqlx::query_as("SELECT request_id,sum(amount)::bigint,sum(reserved)::bigint,sum(paid)::bigint FROM budget_request_lines WHERE request_id=ANY($1) GROUP BY request_id").bind(ids).fetch_all(&mut **tx).await?;
+    let sums:Vec<(Uuid,i64,i64,i64)>=DbSession::new(&mut **tx).query_as("budget.src.queries.request_summaries", "SELECT request_id,sum(amount)::bigint,sum(reserved)::bigint,sum(paid)::bigint FROM budget_request_lines WHERE request_id=ANY($1) GROUP BY request_id").bind(ids).fetch_all().await?;
     let sums = sums
         .into_iter()
         .map(|(id, a, r, p)| (id, (a, r, p)))

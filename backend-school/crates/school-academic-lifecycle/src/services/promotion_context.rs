@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use std::collections::{BTreeSet, HashMap};
@@ -11,18 +12,21 @@ use school_academic_core::models::{GradeProgression, GradeProgressionKind, Grade
 pub(crate) async fn policy_options(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<PromotionPolicyOptions, AppError> {
-    let grades: Vec<crate::models::PromotionGradeReference> = sqlx::query_as(
+    let grades: Vec<crate::models::PromotionGradeReference> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_context.policy_options",
         "SELECT id,level_type,year,is_active IS TRUE AS is_active FROM grade_levels ORDER BY CASE level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END,year,id LIMIT 501"
-    ).fetch_all(&mut **tx).await?;
-    let programs: Vec<crate::models::PromotionProgramReference> = sqlx::query_as(
+    ).fetch_all().await?;
+    let programs: Vec<crate::models::PromotionProgramReference> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_context.policy_options",
         "SELECT program.id,program.code,program.name_th AS name,version.id AS curriculum_level_id,version.name_th AS level_name,curriculum.name AS edition_name,program.status FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id ORDER BY version.name_th,curriculum.name,version.id,program.display_order,program.code,program.id LIMIT 5001"
-    ).fetch_all(&mut **tx).await?;
-    let row_version =
-        sqlx::query_scalar("SELECT row_version FROM grade_level_progression_sets WHERE id=1")
-            .fetch_one(&mut **tx)
-            .await?;
-    let progressions: Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions ORDER BY from_grade_level_id,transition_kind,id LIMIT 5001")
-        .fetch_all(&mut **tx).await?;
+    ).fetch_all().await?;
+    let row_version = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_context.policy_options",
+            "SELECT row_version FROM grade_level_progression_sets WHERE id=1",
+        )
+        .fetch_one()
+        .await?;
+    let progressions: Vec<GradeProgression>=DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_context.policy_options", "SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions ORDER BY from_grade_level_id,transition_kind,id LIMIT 5001")
+        .fetch_all().await?;
     if grades.len() > 500 || programs.len() > 5000 || progressions.len() > 5000 {
         return Err(AppError::ValidationError(
             "ข้อมูลอ้างอิงเกินขอบเขตการแสดงผล กรุณาติดต่อผู้ดูแลระบบ".into(),
@@ -44,11 +48,13 @@ pub(crate) async fn validate_promotion_rules(
     tx: &mut Transaction<'_, Postgres>,
     rules: &[PromotionRuleInput],
 ) -> Result<i64, AppError> {
-    let version = sqlx::query_scalar(
-        "SELECT row_version FROM grade_level_progression_sets WHERE id=1 FOR SHARE",
-    )
-    .fetch_one(&mut **tx)
-    .await?;
+    let version = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_context.validate_promotion_rules",
+            "SELECT row_version FROM grade_level_progression_sets WHERE id=1 FOR SHARE",
+        )
+        .fetch_one()
+        .await?;
     let grades: Vec<Uuid> = rules
         .iter()
         .flat_map(|rule| [Some(rule.from_grade_level_id), rule.target_grade_level_id])
@@ -56,11 +62,14 @@ pub(crate) async fn validate_promotion_rules(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let found: Vec<Uuid> =
-        sqlx::query_scalar("SELECT id FROM grade_levels WHERE id=ANY($1) ORDER BY id FOR SHARE")
-            .bind(&grades)
-            .fetch_all(&mut **tx)
-            .await?;
+    let found: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_context.validate_promotion_rules",
+            "SELECT id FROM grade_levels WHERE id=ANY($1) ORDER BY id FOR SHARE",
+        )
+        .bind(&grades)
+        .fetch_all()
+        .await?;
     if found.len() != grades.len() {
         return Err(AppError::ValidationError("ไม่พบระดับชั้นในเกณฑ์เลื่อนชั้น".into()));
     }
@@ -76,16 +85,16 @@ pub(crate) async fn validate_promotion_rules(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let found: Vec<(Uuid,Uuid)> = sqlx::query_as("SELECT program.id,version.id FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version")
-        .bind(&programs).fetch_all(&mut **tx).await?;
+    let found: Vec<(Uuid,Uuid)> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_context.validate_promotion_rules", "SELECT program.id,version.id FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version")
+        .bind(&programs).fetch_all().await?;
     if found.len() != programs.len() {
         return Err(AppError::ValidationError(
             "ไม่พบแผนการเรียนในเกณฑ์เลื่อนชั้น".into(),
         ));
     }
     let curricula: HashMap<Uuid, Uuid> = found.into_iter().collect();
-    let progressions: Vec<GradeProgression> = sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE is_active AND from_grade_level_id=ANY($1) ORDER BY id")
-        .bind(&grades).fetch_all(&mut **tx).await?;
+    let progressions: Vec<GradeProgression> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_context.validate_promotion_rules", "SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE is_active AND from_grade_level_id=ANY($1) ORDER BY id")
+        .bind(&grades).fetch_all().await?;
     for rule in rules {
         let curriculum = curricula
             .get(&rule.from_study_program_id)

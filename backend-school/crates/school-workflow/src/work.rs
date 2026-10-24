@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use school_database::DbSession;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
@@ -335,8 +336,10 @@ async fn insert_work_item_assignees(
 
     let rows = work_item_assignee_bulk_rows(assignees);
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.work.insert_work_item_assignees",
+            r#"
         INSERT INTO work_item_assignees (
             work_item_id, assignee_type, user_id, organization_unit_id, position_code
         )
@@ -345,18 +348,21 @@ async fn insert_work_item_assignees(
              AS rows(assignee_type, user_id, organization_unit_id, position_code)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(item_id)
-    .bind(&rows.assignee_types)
-    .bind(&rows.user_ids)
-    .bind(&rows.organization_unit_ids)
-    .bind(&rows.position_codes)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to insert work item assignees: {}", error);
-        AppError::InternalServerError("ไม่สามารถมอบหมายงานได้".to_string())
-    })?;
+        )
+        .bind(item_id)
+        .bind(&rows.assignee_types)
+        .bind(&rows.user_ids)
+        .bind(&rows.organization_unit_ids)
+        .bind(&rows.position_codes)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert work item assignees: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถมอบหมายงานได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -374,13 +380,21 @@ pub async fn create_work_item(pool: &PgPool, input: CreateWorkItemInput) -> Resu
         .map(normalize_assignee_target)
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to begin work item transaction: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.work.create_work_item")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to begin work item transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
+            })?;
 
-    let item_id: Uuid = sqlx::query_scalar(
-        r#"
+    let item_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "workflow.src.work.create_work_item",
+            r#"
         INSERT INTO work_items (
             workflow_window_id, module_code, source_resource_type, source_resource_id,
             title, description, action_path, required_permission, metadata, created_by
@@ -388,28 +402,34 @@ pub async fn create_work_item(pool: &PgPool, input: CreateWorkItemInput) -> Resu
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id
         "#,
-    )
-    .bind(input.workflow_window_id)
-    .bind(&input.module_code)
-    .bind(&input.source_resource_type)
-    .bind(input.source_resource_id)
-    .bind(&input.title)
-    .bind(&input.description)
-    .bind(&input.action_path)
-    .bind(&input.required_permission)
-    .bind(Json(input.metadata))
-    .bind(input.created_by)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to insert work item: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
-    })?;
+        )
+        .bind(input.workflow_window_id)
+        .bind(&input.module_code)
+        .bind(&input.source_resource_type)
+        .bind(input.source_resource_id)
+        .bind(&input.title)
+        .bind(&input.description)
+        .bind(&input.action_path)
+        .bind(&input.required_permission)
+        .bind(Json(input.metadata))
+        .bind(input.created_by)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert work item: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
+        })?;
 
     insert_work_item_assignees(&mut tx, item_id, &assignees).await?;
 
     tx.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit work item transaction: {}", error);
+        tracing::error!(
+            "Failed to commit work item transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
     })?;
 
@@ -421,7 +441,14 @@ pub async fn list_my_work_items(
     actor: &school_authorization::ActorContext,
     filter: WorkItemFilter,
 ) -> Result<Vec<WorkItem>, AppError> {
-    let rows = query_my_work_items(pool, actor.user_id, &filter).await?;
+    let rows = {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "workflow.work.list_my_work_items.query_my_work_items",
+        )
+        .await?;
+        query_my_work_items(&mut read_stage, actor.user_id, &filter).await
+    }?;
     let mut items = map_work_item_rows(rows, Utc::now())?;
     let correspondence_ids: Vec<Uuid> = items
         .iter()
@@ -507,7 +534,7 @@ fn map_work_item_rows(
 }
 
 async fn query_my_work_items(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     user_id: Uuid,
     filter: &WorkItemFilter,
 ) -> Result<Vec<WorkItemAssignmentRow>, AppError> {
@@ -590,12 +617,18 @@ async fn query_my_work_items(
         "#,
     );
 
-    let rows = query
-        .build_query_as::<WorkItemAssignmentRow>()
-        .fetch_all(pool)
+    let rows = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "workflow.src.work.query_my_work_items",
+            query.build_query_as::<WorkItemAssignmentRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to list my work items: {}", error);
+            tracing::error!(
+                "Failed to list my work items: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงรายการงานได้".to_string())
         })?;
 
@@ -736,8 +769,8 @@ pub async fn create_work_item_in_transaction(
     actor: Uuid,
     users: &[Uuid],
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO work_items(id,workflow_window_id,module_code,source_resource_type,source_resource_id,title,action_path,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(id).bind(window).bind(module).bind(resource_type).bind(resource).bind(title).bind(action_path).bind(actor).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO work_item_assignees(id,work_item_id,assignee_type,user_id) SELECT uuidv7(),$1,'user',unnest($2::uuid[])").bind(id).bind(users).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.work.create_work_item_in_transaction", "INSERT INTO work_items(id,workflow_window_id,module_code,source_resource_type,source_resource_id,title,action_path,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(id).bind(window).bind(module).bind(resource_type).bind(resource).bind(title).bind(action_path).bind(actor).execute().await?;
+    DbSession::new(&mut **tx).query("workflow.src.work.create_work_item_in_transaction", "INSERT INTO work_item_assignees(id,work_item_id,assignee_type,user_id) SELECT uuidv7(),$1,'user',unnest($2::uuid[])").bind(id).bind(users).execute().await?;
     Ok(())
 }
 pub async fn mark_process_assignment_in_transaction(
@@ -746,7 +779,7 @@ pub async fn mark_process_assignment_in_transaction(
     user: Uuid,
     completed: bool,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE work_item_assignees SET status=CASE WHEN $3 THEN 'submitted' ELSE 'read' END,read_at=coalesce(read_at,now()),submitted_at=CASE WHEN $3 THEN now() ELSE submitted_at END WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read')").bind(item).bind(user).bind(completed).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.work.mark_process_assignment_in_transaction", "UPDATE work_item_assignees SET status=CASE WHEN $3 THEN 'submitted' ELSE 'read' END,read_at=coalesce(read_at,now()),submitted_at=CASE WHEN $3 THEN now() ELSE submitted_at END WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read')").bind(item).bind(user).bind(completed).execute().await?;
     Ok(())
 }
 pub(crate) async fn mark_process_read_in_transaction(
@@ -755,17 +788,21 @@ pub(crate) async fn mark_process_read_in_transaction(
     user: Uuid,
     at: DateTime<Utc>,
 ) -> Result<bool, AppError> {
-    let result = sqlx::query("UPDATE work_item_assignees SET status='read',read_at=coalesce(read_at,$3) WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read') AND (status<>'read' OR read_at IS NULL)")
-        .bind(item).bind(user).bind(at).execute(&mut **tx).await?;
+    let result = DbSession::new(&mut **tx).query("workflow.src.work.mark_process_read_in_transaction", "UPDATE work_item_assignees SET status='read',read_at=coalesce(read_at,$3) WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read') AND (status<>'read' OR read_at IS NULL)")
+        .bind(item).bind(user).bind(at).execute().await?;
     Ok(result.rows_affected() > 0)
 }
 pub async fn close_process_item_in_transaction(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     item: Option<Uuid>,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE work_items SET status='closed' WHERE id=$1")
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.work.close_process_item_in_transaction",
+            "UPDATE work_items SET status='closed' WHERE id=$1",
+        )
         .bind(item)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }

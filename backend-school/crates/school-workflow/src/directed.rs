@@ -6,6 +6,7 @@ use crate::{
 };
 use chrono::Utc;
 use school_authorization::{staff_users_with_all_permissions_on_connection, ActorContext};
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
@@ -51,11 +52,16 @@ pub async fn settings(
     actor: &ActorContext,
 ) -> Result<Vec<CorrespondenceRoutingSettings>, AppError> {
     require_settings_read(actor)?;
-    let rows: Vec<Json<CorrespondenceRoutingSettings>> = sqlx::query_scalar(
-        "SELECT definition FROM correspondence_routing_settings ORDER BY register",
-    )
-    .fetch_all(pool)
-    .await?;
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "workflow.directed.settings")
+            .await?;
+    let rows: Vec<Json<CorrespondenceRoutingSettings>> = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "workflow.src.directed.settings",
+            "SELECT definition FROM correspondence_routing_settings ORDER BY register",
+        )
+        .fetch_all()
+        .await?;
     Ok([
         CorrespondenceRegister::Incoming,
         CorrespondenceRegister::Outgoing,
@@ -73,22 +79,26 @@ pub(crate) async fn settings_in(
     tx: &mut Transaction<'_, Postgres>,
     register: CorrespondenceRegister,
 ) -> Result<CorrespondenceRoutingSettings, AppError> {
-    sqlx::query("SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))")
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.directed.settings_in",
+            "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
+        )
         .bind(format!(
             "correspondence-settings:{}",
             register_code(register)
         ))
-        .execute(&mut **tx)
+        .execute()
         .await?;
-    Ok(
-        sqlx::query_scalar::<_, Json<CorrespondenceRoutingSettings>>(
+    Ok(DbSession::new(&mut **tx)
+        .scalar::<Json<CorrespondenceRoutingSettings>>(
+            "workflow.src.directed.settings_in",
             "SELECT definition FROM correspondence_routing_settings WHERE register=$1 FOR SHARE",
         )
         .bind(register_code(register))
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
-        .map_or_else(|| defaults(register), |s| s.0),
-    )
+        .map_or_else(|| defaults(register), |s| s.0))
 }
 pub async fn save_settings(
     pool: &PgPool,
@@ -111,14 +121,20 @@ pub async fn save_settings(
     for selector in &request.eligible_decision_makers {
         process::validate_recipient(selector)?;
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.directed.save_settings")
+            .await?;
     // Serialize creation and update, including the not-yet-existing profile.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    DbSession::new(&mut *tx)
+        .query(
+            "workflow.src.directed.save_settings",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
         .bind(format!(
             "correspondence-settings:{}",
             register_code(request.register)
         ))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     let current = settings_in(&mut tx, request.register).await?;
     if process::receipt(
@@ -172,8 +188,8 @@ pub async fn save_settings(
             return Err(invalid("ผู้พิจารณาเริ่มต้นไม่อยู่ในรายชื่อที่กำหนด"));
         }
     }
-    sqlx::query("INSERT INTO correspondence_routing_settings(register,revision,definition,updated_by) VALUES($1,$2,$3,$4) ON CONFLICT(register) DO UPDATE SET revision=excluded.revision,definition=excluded.definition,updated_by=excluded.updated_by,updated_at=now()")
-        .bind(register_code(result.register)).bind(result.revision).bind(Json(&result)).bind(actor.user_id).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("workflow.src.directed.save_settings", "INSERT INTO correspondence_routing_settings(register,revision,definition,updated_by) VALUES($1,$2,$3,$4) ON CONFLICT(register) DO UPDATE SET revision=excluded.revision,definition=excluded.definition,updated_by=excluded.updated_by,updated_at=now()")
+        .bind(register_code(result.register)).bind(result.revision).bind(Json(&result)).bind(actor.user_id).execute().await?;
     tx.commit().await?;
     Ok(result)
 }
@@ -188,8 +204,8 @@ async fn resolve_many(
     for selector in selectors {
         process::validate_recipient(selector)?;
     }
-    let rows:Vec<(i64,Uuid,String)>=sqlx::query_as("WITH selectors AS (SELECT value,ordinality::bigint-1 AS idx FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY) SELECT DISTINCT s.idx,u.id,u.display_name FROM selectors s JOIN user_display_names u ON u.id=ANY($2) AND ((s.value->>'kind'='user' AND u.id=(s.value->>'userId')::uuid) OR (s.value->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s.value->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s.value->>'kind'='organization_position' AND m.position_code=s.value->>'positionCode') OR (s.value->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')))))) ORDER BY s.idx,u.id")
-        .bind(Json(selectors)).bind(eligible).fetch_all(&mut **tx).await?;
+    let rows:Vec<(i64,Uuid,String)>=DbSession::new(&mut **tx).query_as("workflow.src.directed.resolve_many", "WITH selectors AS (SELECT value,ordinality::bigint-1 AS idx FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY) SELECT DISTINCT s.idx,u.id,u.display_name FROM selectors s JOIN user_display_names u ON u.id=ANY($2) AND ((s.value->>'kind'='user' AND u.id=(s.value->>'userId')::uuid) OR (s.value->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s.value->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s.value->>'kind'='organization_position' AND m.position_code=s.value->>'positionCode') OR (s.value->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')))))) ORDER BY s.idx,u.id")
+        .bind(Json(selectors)).bind(eligible).fetch_all().await?;
     let mut result = vec![vec![]; selectors.len()];
     for (index, user_id, display_name) in rows {
         result[index as usize].push(ProcessRecipientSnapshot {
@@ -235,8 +251,8 @@ async fn eligible_ids(
     }
     let mut ids = BTreeSet::new();
     // Unavailable configured positions do not hide unrelated eligible staff.
-    let rows:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT u.id FROM users u CROSS JOIN jsonb_array_elements($1::jsonb) s WHERE u.id=ANY($2) AND ((s->>'kind'='user' AND u.id=(s->>'userId')::uuid) OR (s->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')) OR (s->>'kind'='organization_position' AND m.position_code=s->>'positionCode'))))) ORDER BY u.id")
-        .bind(Json(&profile.eligible_decision_makers)).bind(permitted).fetch_all(&mut **tx).await?;
+    let rows:Vec<Uuid>=DbSession::new(&mut **tx).scalar("workflow.src.directed.eligible_ids", "SELECT DISTINCT u.id FROM users u CROSS JOIN jsonb_array_elements($1::jsonb) s WHERE u.id=ANY($2) AND ((s->>'kind'='user' AND u.id=(s->>'userId')::uuid) OR (s->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')) OR (s->>'kind'='organization_position' AND m.position_code=s->>'positionCode'))))) ORDER BY u.id")
+        .bind(Json(&profile.eligible_decision_makers)).bind(permitted).fetch_all().await?;
     ids.extend(rows);
     Ok(ids)
 }
@@ -245,7 +261,9 @@ pub async fn selection_options(
     register: CorrespondenceRegister,
     search: &str,
 ) -> Result<(Vec<CorrespondenceUserOption>, Vec<CorrespondenceUserOption>), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.directed.selection_options")
+            .await?;
     let profile = settings_in(&mut tx, register).await?;
     let permitted = staff_users_with_all_permissions_on_connection(
         &mut tx,
@@ -256,7 +274,7 @@ pub async fn selection_options(
     )
     .await?;
     let first = eligible_ids(&mut tx, &profile, &permitted).await?;
-    let people:Vec<(Uuid,String)>=sqlx::query_as("SELECT id,display_name FROM user_display_names WHERE id=ANY($1) AND ($2='' OR display_name ILIKE '%'||$2||'%') ORDER BY first_name,last_name,id LIMIT 500").bind(permitted).bind(search).fetch_all(&mut *tx).await?;
+    let people:Vec<(Uuid,String)>=DbSession::new(&mut *tx).query_as("workflow.src.directed.selection_options", "SELECT id,display_name FROM user_display_names WHERE id=ANY($1) AND ($2='' OR display_name ILIKE '%'||$2||'%') ORDER BY first_name,last_name,id LIMIT 500").bind(permitted).bind(search).fetch_all().await?;
     let reviewers: Vec<_> = people
         .into_iter()
         .map(|(id, display_name)| CorrespondenceUserOption { id, display_name })
@@ -292,7 +310,7 @@ pub(crate) async fn start(
     {
         return Err(invalid("ผู้พิจารณาคนแรกไม่อยู่ในรายชื่อที่โรงเรียนกำหนด"));
     }
-    let existing:Option<Json<ProcessInstance>>=sqlx::query_scalar("SELECT definition FROM process_instances WHERE source_module='correspondence' AND source_type='correspondence' AND source_id=$1 FOR UPDATE").bind(record.id).fetch_optional(&mut **tx).await?;
+    let existing:Option<Json<ProcessInstance>>=DbSession::new(&mut **tx).scalar("workflow.src.directed.start", "SELECT definition FROM process_instances WHERE source_module='correspondence' AND source_type='correspondence' AND source_id=$1 FOR UPDATE").bind(record.id).fetch_optional().await?;
     if existing
         .as_ref()
         .is_some_and(|i| i.status != ProcessStatus::RevisionRequested)
@@ -337,8 +355,8 @@ pub(crate) async fn start(
             }],
         }),
     };
-    sqlx::query("INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,'correspondence','correspondence',$2,NULL,NULL,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET template_id=NULL,template_version=NULL,revision=excluded.revision,definition=excluded.definition")
-        .bind(instance.id).bind(record.id).bind(instance.revision).bind(Json(&instance)).bind(actor.user_id).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.directed.start", "INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,'correspondence','correspondence',$2,NULL,NULL,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET template_id=NULL,template_version=NULL,revision=excluded.revision,definition=excluded.definition")
+        .bind(instance.id).bind(record.id).bind(instance.revision).bind(Json(&instance)).bind(actor.user_id).execute().await?;
     activate(tx, &mut instance, 0, false).await?;
     process::store(tx, &instance).await?;
     Ok(instance)
@@ -380,14 +398,14 @@ async fn activate(
         }
     };
     if !assignment.required && !review {
-        sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("workflow.src.directed.activate", "INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute().await?;
         let identity = format!("directed:{}:copy", assignment.id);
         process::notify_in_transaction(tx, instance, user, title, &identity, None).await?;
         return Ok(());
     }
     let window = Uuid::now_v7();
     let item = Uuid::now_v7();
-    sqlx::query("INSERT INTO workflow_windows(id,module_code,workflow_code,title,managed_by_permission,status,created_by,due_at) VALUES($1,'correspondence','process_directed',$2,$3,'open',$4,$5)").bind(window).bind(title).bind(codes::PROCESS_MANAGE_SCHOOL).bind(instance.created_by).bind(assignment.due_at.or(instance.due_at)).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.directed.activate", "INSERT INTO workflow_windows(id,module_code,workflow_code,title,managed_by_permission,status,created_by,due_at) VALUES($1,'correspondence','process_directed',$2,$3,'open',$4,$5)").bind(window).bind(title).bind(codes::PROCESS_MANAGE_SCHOOL).bind(instance.created_by).bind(assignment.due_at.or(instance.due_at)).execute().await?;
     work::create_work_item_in_transaction(
         tx,
         item,
@@ -401,7 +419,7 @@ async fn activate(
         &[user],
     )
     .await?;
-    sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.directed.activate", "INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute().await?;
     let identity = format!(
         "directed:{}:{}",
         assignment.id,
@@ -632,7 +650,7 @@ async fn route(
     let start = graph.assignments.len();
     graph.assignments.extend(children);
     if let Some(user) = reviewer_id {
-        sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("workflow.src.directed.route", "INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute().await?;
     }
     for child in start..graph_mut(instance)?.assignments.len() {
         activate(tx, instance, child, false).await?;
@@ -784,11 +802,14 @@ async fn reassign(
             parent = ancestor.parent_id;
         }
         if a.parent_id.is_none() && a.purpose == DirectedPurpose::Decide {
-            let register: String =
-                sqlx::query_scalar("SELECT register_kind FROM correspondence_records WHERE id=$1")
-                    .bind(instance.source.resource_id)
-                    .fetch_one(&mut **tx)
-                    .await?;
+            let register: String = DbSession::new(&mut **tx)
+                .scalar(
+                    "workflow.src.directed.reassign",
+                    "SELECT register_kind FROM correspondence_records WHERE id=$1",
+                )
+                .bind(instance.source.resource_id)
+                .fetch_one()
+                .await?;
             let register = match register.as_str() {
                 "incoming" => CorrespondenceRegister::Incoming,
                 "outgoing" => CorrespondenceRegister::Outgoing,
@@ -809,13 +830,13 @@ async fn reassign(
     } else {
         a.work_item_id
     };
-    sqlx::query("UPDATE process_notification_sources SET cancelled_at=now() WHERE work_item_id=$1 AND recipient_id=$2 AND cancelled_at IS NULL").bind(item).bind(old).execute(&mut **tx).await?;
-    sqlx::query(
+    DbSession::new(&mut **tx).query("workflow.src.directed.reassign", "UPDATE process_notification_sources SET cancelled_at=now() WHERE work_item_id=$1 AND recipient_id=$2 AND cancelled_at IS NULL").bind(item).bind(old).execute().await?;
+    DbSession::new(&mut **tx).query("workflow.src.directed.reassign",
         "UPDATE work_item_assignees SET status='dismissed' WHERE work_item_id=$1 AND user_id=$2",
     )
     .bind(item)
     .bind(old)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     work::close_process_item_in_transaction(tx, item).await?;
     replacement.reassigned_from = Some(old);

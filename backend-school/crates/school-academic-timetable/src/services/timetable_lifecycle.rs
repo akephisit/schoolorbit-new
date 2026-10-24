@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{NaiveDate, Utc};
@@ -38,8 +39,8 @@ async fn lock_draft(
         return Err(AppError::ValidationError("rowVersion ต้องมากกว่าศูนย์".into()));
     }
     timetable_version_service::require_version_term_write(tx, id).await?;
-    let context: DraftContext = sqlx::query_as("SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE")
-        .bind(id).fetch_optional(&mut **tx).await?.ok_or_else(|| AppError::NotFound("แบบร่างถูกลบแล้ว กรุณาเลือกรุ่นตารางสอนใหม่".into()))?;
+    let context: DraftContext = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.lock_draft", "SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE")
+        .bind(id).fetch_optional().await?.ok_or_else(|| AppError::NotFound("แบบร่างถูกลบแล้ว กรุณาเลือกรุ่นตารางสอนใหม่".into()))?;
     if context.status != TimetableVersionStatus::Draft {
         return Err(AppError::Conflict("ดำเนินการได้เฉพาะตารางสอนแบบร่าง".into()));
     }
@@ -57,7 +58,11 @@ pub async fn update_source(
     id: Uuid,
     request: UpdateTimetableDeliverySourceRequest,
 ) -> Result<TimetableVersion, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_lifecycle.update_source",
+    )
+    .await?;
     let context = lock_draft(&mut tx, id, request.row_version).await?;
     let source = delivery::published_source(
         &mut tx,
@@ -66,8 +71,8 @@ pub async fn update_source(
     )
     .await?;
     if source.id != context.delivery_version_id {
-        sqlx::query("UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1")
-            .bind(id).bind(source.id).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.update_source", "UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1")
+            .bind(id).bind(source.id).execute().await?;
         audit(&mut tx,actor,id,&context,"academic_timetable_version.source_updated",serde_json::json!({"previousDeliveryVersionId":context.delivery_version_id,"deliveryVersionId":source.id})).await?;
     }
     tx.commit().await?;
@@ -80,7 +85,11 @@ pub async fn delete_draft(
     id: Uuid,
     request: DeleteTimetableDraftRequest,
 ) -> Result<DeletedTimetableDraft, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_lifecycle.delete_draft",
+    )
+    .await?;
     let result = delete_in_transaction(&mut tx, actor, id, &request, true).await?;
     tx.commit().await?;
     Ok(result)
@@ -97,7 +106,7 @@ pub async fn delete_in_transaction(
         return Err(AppError::ValidationError("rowVersion ต้องมากกว่าศูนย์".into()));
     }
     timetable_version_service::require_version_term_write(tx, id).await?;
-    let context:DraftContext=sqlx::query_as("SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("รุ่นตารางถูกลบแล้ว".into()))?;
+    let context:DraftContext=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.delete_in_transaction", "SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("รุ่นตารางถูกลบแล้ว".into()))?;
     if !matches!(
         context.status,
         TimetableVersionStatus::Draft | TimetableVersionStatus::Cancelled
@@ -109,12 +118,12 @@ pub async fn delete_in_transaction(
             "แบบร่างเปลี่ยนไป กรุณาโหลดข้อมูลล่าสุดก่อนลบ".into(),
         ));
     }
-    let (supervision,handoff,preparation,dependent_version): (bool,bool,bool,bool)=sqlx::query_as("SELECT
+    let (supervision,handoff,preparation,dependent_version): (bool,bool,bool,bool)=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.delete_in_transaction", "SELECT
         EXISTS(SELECT 1 FROM supervision_observations observation JOIN academic_timetable_block_groups target ON target.id=observation.timetable_block_group_id JOIN academic_timetable_blocks block ON block.id=target.block_id WHERE block.timetable_version_id=$1),
         EXISTS(SELECT 1 FROM academic_teacher_handoff_runs WHERE timetable_version_id=$1),
         EXISTS(SELECT 1 FROM academic_term_preparation_runs run,jsonb_array_elements(run.outcome) outcome WHERE outcome->'targetIds' @> jsonb_build_array($1::text)),
         EXISTS(SELECT 1 FROM academic_timetable_versions WHERE source_version_id=$1)")
-        .bind(id).fetch_one(&mut **tx).await?;
+        .bind(id).fetch_one().await?;
     let reason = if supervision {
         Some("มีประวัตินิเทศอ้างอิงคาบในร่างนี้")
     } else if handoff {
@@ -129,29 +138,35 @@ pub async fn delete_in_transaction(
     if let Some(reason) = reason {
         return Err(AppError::Conflict(format!("ลบแบบร่างไม่ได้: {reason}")));
     }
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-    )
-    .bind(id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let count: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_timetable.services.timetable_lifecycle.delete_in_transaction",
+            "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     if request.expected_block_count < 0 || count != request.expected_block_count {
         return Err(AppError::Conflict(
             "จำนวนคาบในร่างเปลี่ยนไป กรุณาโหลดข้อมูลและยืนยันการลบอีกครั้ง".into(),
         ));
     }
     if apply {
-        sqlx::query("DELETE FROM academic_timetable_block_group_sync sync USING academic_timetable_blocks block WHERE sync.block_id=block.id AND block.timetable_version_id=$1")
-        .bind(id).execute(&mut **tx).await?;
-        sqlx::query("DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1")
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_lifecycle.delete_in_transaction", "DELETE FROM academic_timetable_block_group_sync sync USING academic_timetable_blocks block WHERE sync.block_id=block.id AND block.timetable_version_id=$1")
+        .bind(id).execute().await?;
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_timetable.services.timetable_lifecycle.delete_in_transaction",
+                "DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+            )
             .bind(id)
-            .execute(&mut **tx)
+            .execute()
             .await
             .map_err(delete_error)?;
         let deleted =
-        sqlx::query("DELETE FROM academic_timetable_versions WHERE id=$1 AND status IN('draft','cancelled')")
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_lifecycle.delete_in_transaction", "DELETE FROM academic_timetable_versions WHERE id=$1 AND status IN('draft','cancelled')")
             .bind(id)
-            .execute(&mut **tx)
+            .execute()
             .await
             .map_err(delete_error)?;
         if deleted.rows_affected() != 1 {
@@ -180,7 +195,11 @@ pub async fn preview(
     id: Uuid,
     request: PreviewTimetablePublicationRequest,
 ) -> Result<TimetablePublicationPreview, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_lifecycle.preview",
+    )
+    .await?;
     let context = lock_draft(&mut tx, id, request.row_version).await?;
     let result = build_preview(&mut tx, id, &context, request.effective_from).await?;
     tx.commit().await?;
@@ -199,11 +218,15 @@ pub async fn publish(
         &request.effective_from,
         &request.preview_hash,
     ))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_lifecycle.publish",
+    )
+    .await?;
     // Serializes lifecycle and idempotency with autosaves before consulting a receipt.
     timetable_version_service::require_version_term_write(&mut tx, id).await?;
-    let receipt: Option<(Uuid,String)>=sqlx::query_as("SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 FOR SHARE")
-        .bind(request.idempotency_key).fetch_optional(&mut *tx).await?;
+    let receipt: Option<(Uuid,String)>=DbSession::new(&mut *tx).query_as("academic_timetable.services.timetable_lifecycle.publish", "SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 FOR SHARE")
+        .bind(request.idempotency_key).fetch_optional().await?;
     if let Some((published_id, stored_hash)) = receipt {
         if published_id != id || stored_hash != request_hash {
             return Err(AppError::Conflict("idempotencyKey ถูกใช้กับคำขออื่นแล้ว".into()));
@@ -223,8 +246,8 @@ pub async fn publish(
             "ตารางยังไม่พร้อมเผยแพร่ กรุณาแก้รายการที่แจ้งก่อน".into(),
         ));
     }
-    let written = sqlx::query("UPDATE academic_timetable_versions SET effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
-        .bind(id).bind(request.effective_from).bind(actor).bind(request.idempotency_key).bind(&request_hash) .bind(request.row_version).execute(&mut *tx).await?;
+    let written = DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.publish", "UPDATE academic_timetable_versions SET effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
+        .bind(id).bind(request.effective_from).bind(actor).bind(request.idempotency_key).bind(&request_hash) .bind(request.row_version).execute().await?;
     if written.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "แบบร่างเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".into(),
@@ -239,8 +262,8 @@ async fn blocks(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
-    let ids: Vec<Uuid>=sqlx::query_scalar("SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active ORDER BY id FOR SHARE")
-        .bind(id).fetch_all(&mut **tx).await?;
+    let ids: Vec<Uuid>=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.blocks", "SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active ORDER BY id FOR SHARE")
+        .bind(id).fetch_all().await?;
     timetable_block_queries::get_blocks_on_connection(tx, &ids).await
 }
 
@@ -302,20 +325,25 @@ async fn resource_evidence(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let rooms = sqlx::query_as(
-        "SELECT id,status='ACTIVE' FROM rooms WHERE id=ANY($1) ORDER BY id FOR SHARE",
-    )
-    .bind(&room_ids)
-    .fetch_all(&mut **tx)
-    .await?;
-    let homerooms =
-        sqlx::query_as("SELECT id,is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE")
-            .bind(&homeroom_ids)
-            .fetch_all(&mut **tx)
-            .await?;
-    let periods = sqlx::query_as("SELECT id,bell_schedule_id,is_active,applicable_days FROM bell_schedule_periods WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(&period_ids).fetch_all(&mut **tx).await?;
-    let school_days = sqlx::query_scalar("SELECT year.school_days FROM academic_years year JOIN academic_terms term ON term.academic_year_id=year.id WHERE term.id=$1 FOR SHARE OF year").bind(term_id).fetch_one(&mut **tx).await?;
-    let schedule_ready:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms term JOIN bell_schedules schedule ON schedule.id=term.bell_schedule_id AND schedule.academic_year_id=term.academic_year_id WHERE term.id=$1 AND schedule.status='published' FOR SHARE OF schedule)").bind(term_id).fetch_one(&mut **tx).await?;
+    let rooms = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_timetable.services.timetable_lifecycle.resource_evidence",
+            "SELECT id,status='ACTIVE' FROM rooms WHERE id=ANY($1) ORDER BY id FOR SHARE",
+        )
+        .bind(&room_ids)
+        .fetch_all()
+        .await?;
+    let homerooms = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_timetable.services.timetable_lifecycle.resource_evidence",
+            "SELECT id,is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE",
+        )
+        .bind(&homeroom_ids)
+        .fetch_all()
+        .await?;
+    let periods = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT id,bell_schedule_id,is_active,applicable_days FROM bell_schedule_periods WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(&period_ids).fetch_all().await?;
+    let school_days = DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT year.school_days FROM academic_years year JOIN academic_terms term ON term.academic_year_id=year.id WHERE term.id=$1 FOR SHARE OF year").bind(term_id).fetch_one().await?;
+    let schedule_ready:bool=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT EXISTS(SELECT 1 FROM academic_terms term JOIN bell_schedules schedule ON schedule.id=term.bell_schedule_id AND schedule.academic_year_id=term.academic_year_id WHERE term.id=$1 AND schedule.status='published' FOR SHARE OF schedule)").bind(term_id).fetch_one().await?;
     Ok(PlacementResourceEvidence {
         rooms,
         homerooms,
@@ -387,20 +415,22 @@ async fn build_preview(
     let blocks = blocks(tx, id).await?;
     let content = timetable_source::content_hash(source.id, &blocks)?;
     let changed = if let Some(original_id) = context.source_version_id {
-        let original_source: Uuid = sqlx::query_scalar(
-            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
-        )
-        .bind(original_id)
-        .fetch_one(&mut **tx)
-        .await?;
+        let original_source: Uuid = DbSession::new(&mut **tx)
+            .scalar(
+                "academic_timetable.services.timetable_lifecycle.build_preview",
+                "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+            )
+            .bind(original_id)
+            .fetch_one()
+            .await?;
         let original_blocks = self::blocks(tx, original_id).await?;
         content != timetable_source::content_hash(original_source, &original_blocks)?
     } else {
         true
     };
     let mut findings = readiness(&source.snapshot, &blocks);
-    let (start,end,closed,duplicate): (NaiveDate,NaiveDate,Option<NaiveDate>,bool)=sqlx::query_as("SELECT term.start_date,year.end_date,term.closed_on,EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=term.id AND status='published' AND effective_from=$2) FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.id=$1")
-        .bind(context.academic_term_id).bind(date).fetch_one(&mut **tx).await?;
+    let (start,end,closed,duplicate): (NaiveDate,NaiveDate,Option<NaiveDate>,bool)=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.build_preview", "SELECT term.start_date,year.end_date,term.closed_on,EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=term.id AND status='published' AND effective_from=$2) FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.id=$1")
+        .bind(context.academic_term_id).bind(date).fetch_one().await?;
     if date < start || date > end || closed.is_some_and(|last| date > last) {
         findings.push(finding(
             TimetablePublicationFindingCode::InvalidDate,
@@ -452,7 +482,7 @@ async fn build_preview(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-    let teacher_states: Vec<(Uuid,String)>=sqlx::query_as("SELECT id,status::text FROM users WHERE id=ANY($1) AND user_type='staff' ORDER BY id FOR SHARE").bind(&teacher_ids).fetch_all(&mut **tx).await?;
+    let teacher_states: Vec<(Uuid,String)>=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.build_preview", "SELECT id,status::text FROM users WHERE id=ANY($1) AND user_type='staff' ORDER BY id FOR SHARE").bind(&teacher_ids).fetch_all().await?;
     if teacher_states.len() != teacher_ids.len()
         || teacher_states.iter().any(|(_, status)| status != "active")
     {
@@ -727,8 +757,8 @@ async fn audit(
     code: &str,
     payload: serde_json::Value,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO academic_audit_events(id,event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES(gen_random_uuid(),$1,'academic_timetable_version',$2,$3,$4,$5,$6)")
-        .bind(code).bind(id).bind(context.academic_year_id).bind(context.academic_term_id).bind(actor).bind(payload).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("academic_timetable.services.timetable_lifecycle.audit", "INSERT INTO academic_audit_events(id,event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES(gen_random_uuid(),$1,'academic_timetable_version',$2,$3,$4,$5,$6)")
+        .bind(code).bind(id).bind(context.academic_year_id).bind(context.academic_term_id).bind(actor).bind(payload).execute().await?;
     Ok(())
 }
 

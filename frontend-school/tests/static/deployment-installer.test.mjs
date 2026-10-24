@@ -1073,7 +1073,9 @@ test('local verification retains every API, architecture and database consumer g
 	assert.deepEqual(d.jobs.gate.needs, ['plan', 'prepare']);
 	assert.match(runner, /cargo.*'fmt'.*'--all'/);
 	assert.match(runner, /'check', '--workspace', '--all-targets'/);
-	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	for (const target of ['database_execution_architecture', 'static_architecture']) {
+		assert.match(runner, new RegExp(`run\\('cargo',\\s*\\['test',[^\\]]*'--test',\\s*'${target}'`));
+	}
 	assert.match(runner, /'api_contract::tests'/);
 	assert.match(runner, /generate-api-contracts.mjs.*--check/);
 	assert.match(runner, /export-openapi/);
@@ -1194,7 +1196,10 @@ test('runtime diagnostics preserve baseline checks and emit only collector aggre
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
 	assert.match(workflow, /source: scripts\/lib\/pipeline-runtime-observations\.py/);
-	assert.match(workflow, /'python3 -B \/opt\/stack\/deployment\/scripts\/lib\/pipeline-runtime-observations\.py'/);
+	assert.match(
+		workflow,
+		/'python3 -B \/opt\/stack\/deployment\/scripts\/lib\/pipeline-runtime-observations\.py'/
+	);
 	assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
 	assert.match(workflow, /timeout --signal=TERM --kill-after=5s 90s/);
 	assert.match(workflow, /BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes/);
@@ -1204,7 +1209,9 @@ test('runtime diagnostics preserve baseline checks and emit only collector aggre
 	assert.doesNotMatch(workflow, /capture_stdout|GITHUB_OUTPUT/);
 	assert.match(workflow, /pipeline-runtime-observation-artifacts\.py runtime/);
 	assert.match(workflow, /pipeline-runtime-observation-artifacts\.py probe/);
-	const artifact = workflow.split('name: Retain validated aggregate JSON')[1].split('      - name:')[0];
+	const artifact = workflow
+		.split('name: Retain validated aggregate JSON')[1]
+		.split('      - name:')[0];
 	assert.match(artifact, /uses: actions\/upload-artifact@v4/);
 	assert.match(artifact, /retention-days: 3/);
 	assert.match(artifact, /runtime-observation-artifacts\/runtime\.json/);

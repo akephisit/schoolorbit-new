@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::BTreeSet;
 
 use sqlx::PgPool;
@@ -185,12 +186,31 @@ async fn owning_organization_unit_id_for_subject(
     pool: &PgPool,
     subject_id: Uuid,
 ) -> Result<Option<Option<Uuid>>, AppError> {
-    sqlx::query_scalar("SELECT owning_organization_unit_id FROM subjects WHERE id = $1")
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.owning_organization_unit_id_for_subject",
+    )
+    .await?;
+    owning_organization_unit_id_for_subject_on_connection(&mut connection, subject_id).await
+}
+
+async fn owning_organization_unit_id_for_subject_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_id: Uuid,
+) -> Result<Option<Option<Uuid>>, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar(
+            "question-bank.src.access_policy.owning_organization_unit_id_for_subject_on_connection",
+            "SELECT owning_organization_unit_id FROM subjects WHERE id = $1",
+        )
         .bind(subject_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to fetch question bank subject: {}", error);
+            tracing::error!(
+                "Failed to fetch question bank subject: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาได้".to_string())
         })
 }
@@ -200,11 +220,29 @@ async fn subject_is_assigned_to_actor(
     subject_id: Option<Uuid>,
     actor_id: Uuid,
 ) -> Result<bool, AppError> {
+    if subject_id.is_none() {
+        return Ok(false);
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.subject_is_assigned_to_actor",
+    )
+    .await?;
+    subject_is_assigned_to_actor_on_connection(&mut connection, subject_id, actor_id).await
+}
+
+async fn subject_is_assigned_to_actor_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_id: Option<Uuid>,
+    actor_id: Uuid,
+) -> Result<bool, AppError> {
     let Some(subject_id) = subject_id else {
         return Ok(false);
     };
-    sqlx::query_scalar(
-        r#"
+    DbSession::new(&mut *connection)
+        .scalar(
+            "question-bank.src.access_policy.subject_is_assigned_to_actor_on_connection",
+            r#"
 SELECT EXISTS(
     SELECT 1
     FROM course_offering_details detail
@@ -216,15 +254,18 @@ SELECT EXISTS(
       AND teacher.teacher_id = $2
 )
 "#,
-    )
-    .bind(subject_id)
-    .bind(actor_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to check assigned question subject: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาที่รับผิดชอบได้".to_string())
-    })
+        )
+        .bind(subject_id)
+        .bind(actor_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to check assigned question subject: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาที่รับผิดชอบได้".to_string())
+        })
 }
 
 #[cfg(test)]

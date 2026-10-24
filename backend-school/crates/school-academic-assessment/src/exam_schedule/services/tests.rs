@@ -448,11 +448,11 @@ fn builds_invigilator_candidate_session_windows_for_each_staff_member() {
 fn get_invigilator_workspace_checks_round_before_assignment_queries() {
     let source = include_str!("invigilation.rs");
     let workspace_start = source
-        .find("pub async fn get_invigilator_workspace")
+        .find("pub async fn get_invigilator_workspace_on_connection")
         .unwrap();
     let workspace_body = &source[workspace_start..];
     let round_position = workspace_body
-        .find("fetch_round(pool, round_id).await?")
+        .find("fetch_round(connection, round_id).await?")
         .unwrap();
     let assignments_position = workspace_body
         .find("fetch_invigilator_assignment_summaries")
@@ -487,9 +487,7 @@ fn publish_round_locks_round_before_readiness_check() {
     let source = include_str!("publishing.rs");
     let publish_start = source.find("pub async fn publish_round").unwrap();
     let publish_body = &source[publish_start..];
-    let tx_position = publish_body
-        .find("let mut tx = pool.begin().await?")
-        .unwrap();
+    let tx_position = publish_body.find("TenantPool::begin_observed").unwrap();
     let lock_position = publish_body.find("FOR UPDATE").unwrap();
     let readiness_position = publish_body.find("fetch_workspace_counts_in_tx").unwrap();
     let update_position = publish_body.find("UPDATE academic_exam_rounds").unwrap();

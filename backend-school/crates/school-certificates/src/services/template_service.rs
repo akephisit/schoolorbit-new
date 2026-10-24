@@ -1,4 +1,6 @@
+use crate::access_policy::require_owner_action_on_connection;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::platform_types::{FileInspectionMetadata, PdfPageBox};
 use school_fonts::{
@@ -181,21 +183,33 @@ pub async fn list_templates(
 ) -> Result<Vec<CertificateTemplateDetail>, AppError> {
     let owner_id = campaign_owner(pool, campaign_id).await?;
     require_owner_action(pool, actor, owner_id, CertificateAction::Read).await?;
-    let rows = sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
-        "{TEMPLATE_SELECT} WHERE t.campaign_id = $1 ORDER BY t.created_at, t.id"
-    )))
-    .bind(campaign_id)
-    .fetch_all(pool)
-    .await
-    .map_err(template_db_error)?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.template_service.list_templates",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<TemplateRow>(
+            "certificates.services.template_service.list_templates",
+            sqlx::AssertSqlSafe(format!(
+                "{TEMPLATE_SELECT} WHERE t.campaign_id = $1 ORDER BY t.created_at, t.id"
+            )),
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)?;
     if rows.is_empty() {
         return Ok(Vec::new());
     }
     let template_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let mut assets_by_template = load_assets_for_templates(pool, &template_ids).await?;
-    let custom_headers = load_custom_headers(pool, campaign_id).await?;
-    let missing_counts = load_missing_counts(pool, &rows, &custom_headers).await?;
-    let capabilities = load_template_capabilities(pool, actor, owner_id).await;
+
+    let mut assets_by_template =
+        load_assets_for_templates(&mut database_stage_0, &template_ids).await?;
+    let custom_headers =
+        load_custom_headers_on_connection(&mut database_stage_0, campaign_id).await?;
+    let missing_counts = load_missing_counts(&mut database_stage_0, &rows, &custom_headers).await?;
+    let capabilities = load_template_capabilities(&mut database_stage_0, actor, owner_id).await;
     rows.into_iter()
         .map(|row| {
             let assets = assets_by_template.remove(&row.id).unwrap_or_default();
@@ -218,7 +232,15 @@ pub async fn get_template(
         CertificateAction::Read,
     )
     .await?;
-    build_detail(pool, actor, row).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.template_service.get_template.build_detail",
+        )
+        .await
+        .map_err(AppError::from)?;
+        build_detail(&mut read_stage, actor, row).await
+    }
 }
 
 pub async fn create_template(
@@ -233,23 +255,30 @@ pub async fn create_template(
     let owner_id = campaign_owner(pool, campaign_id).await?;
     require_owner_action(pool, actor, owner_id, CertificateAction::Create).await?;
 
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.create_template",
+    )
+    .await
+    .map_err(template_db_error)?;
     let locked_owner_id = lock_campaign_owner(&mut tx, campaign_id).await?;
     require_authorized_owner_unchanged(owner_id, locked_owner_id)?;
-    let template_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO certificate_templates
+    let template_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "certificates.services.template_service.create_template",
+            "INSERT INTO certificate_templates
             (campaign_id, name, normalized_name, allowed_recipient_types, created_by, updated_by)
          VALUES ($1, $2, $3, $4, $5, $5)
          RETURNING id",
-    )
-    .bind(campaign_id)
-    .bind(name)
-    .bind(normalized_name)
-    .bind(allowed.iter().map(|kind| kind.as_str()).collect::<Vec<_>>())
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(name)
+        .bind(normalized_name)
+        .bind(allowed.iter().map(|kind| kind.as_str()).collect::<Vec<_>>())
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(template_db_error)?;
     record_template_audit(
         &mut tx,
         actor.user_id,
@@ -265,7 +294,15 @@ pub async fn create_template(
     )
     .await?;
     tx.commit().await.map_err(template_db_error)?;
-    fetch_detail_with_capabilities(pool, actor, template_id).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.template_service.create_template.fetch_detail_with_capabilities",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+    }
 }
 
 pub async fn update_template(
@@ -299,7 +336,12 @@ pub async fn update_template(
         .map(validate_recipient_types)
         .transpose()?;
 
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.update_template",
+    )
+    .await
+    .map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
         authorization.owner_organization_unit_id,
@@ -390,15 +432,25 @@ pub async fn update_template(
     if changed_fields.is_empty() {
         drop(tx);
         return Ok(CertificateTemplateMutationOutcome {
-            template: fetch_detail_with_capabilities(pool, actor, template_id).await?,
+            template: {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "certificates.template_service.update_template.fetch_detail_with_capabilities",
+                )
+                .await
+                .map_err(AppError::from)?;
+                fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+            }?,
             detached_file_ids: Vec::new(),
         });
     }
 
     let next_name = requested_name.unwrap_or_else(|| locked.name.clone());
     let next_normalized_name = normalize_template_name(&next_name);
-    sqlx::query(
-        "UPDATE certificate_templates
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.template_service.update_template",
+            "UPDATE certificate_templates
          SET name = $2,
              normalized_name = $3,
              allowed_recipient_types = $4,
@@ -409,24 +461,24 @@ pub async fn update_template(
              updated_by = $9,
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(template_id)
-    .bind(next_name)
-    .bind(next_normalized_name)
-    .bind(
-        next_allowed
-            .iter()
-            .map(|kind| kind.as_str())
-            .collect::<Vec<_>>(),
-    )
-    .bind(next_margin)
-    .bind(payload.show_safe_area.unwrap_or(locked.show_safe_area))
-    .bind(sqlx::types::Json(&next_layout))
-    .bind(payload.is_active.unwrap_or(locked.is_active))
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(next_name)
+        .bind(next_normalized_name)
+        .bind(
+            next_allowed
+                .iter()
+                .map(|kind| kind.as_str())
+                .collect::<Vec<_>>(),
+        )
+        .bind(next_margin)
+        .bind(payload.show_safe_area.unwrap_or(locked.show_safe_area))
+        .bind(sqlx::types::Json(&next_layout))
+        .bind(payload.is_active.unwrap_or(locked.is_active))
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     record_template_audit(
         &mut tx,
         actor.user_id,
@@ -444,7 +496,15 @@ pub async fn update_template(
     tx.commit().await.map_err(template_db_error)?;
 
     Ok(CertificateTemplateMutationOutcome {
-        template: fetch_detail_with_capabilities(pool, actor, template_id).await?,
+        template: {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "certificates.template_service.update_template.fetch_detail_with_capabilities",
+            )
+            .await
+            .map_err(AppError::from)?;
+            fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+        }?,
         detached_file_ids: Vec::new(),
     })
 }
@@ -470,7 +530,12 @@ pub async fn attach_background(
     )
     .await?;
 
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.attach_background",
+    )
+    .await
+    .map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
         authorization.owner_organization_unit_id,
@@ -540,8 +605,10 @@ pub async fn attach_background(
         .map_err(layout_error)?;
 
     let label = paper_label(displayed_width, displayed_height);
-    sqlx::query(
-        "UPDATE certificate_templates
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.template_service.attach_background",
+            "UPDATE certificate_templates
          SET background_file_id = $2,
              crop_box_x = $3,
              crop_box_y = $4,
@@ -557,24 +624,24 @@ pub async fn attach_background(
              updated_by = $14,
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(template_id)
-    .bind(payload.file_id)
-    .bind(crop_box.x)
-    .bind(crop_box.y)
-    .bind(crop_box.width)
-    .bind(crop_box.height)
-    .bind(media_box.x)
-    .bind(media_box.y)
-    .bind(media_box.width)
-    .bind(media_box.height)
-    .bind(rotation)
-    .bind(label)
-    .bind(sqlx::types::Json(&next_layout))
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(payload.file_id)
+        .bind(crop_box.x)
+        .bind(crop_box.y)
+        .bind(crop_box.width)
+        .bind(crop_box.height)
+        .bind(media_box.x)
+        .bind(media_box.y)
+        .bind(media_box.width)
+        .bind(media_box.height)
+        .bind(rotation)
+        .bind(label)
+        .bind(sqlx::types::Json(&next_layout))
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     promote_file(&mut tx, payload.file_id).await?;
     record_template_audit(
         &mut tx,
@@ -598,7 +665,15 @@ pub async fn attach_background(
         .into_iter()
         .collect();
     Ok(CertificateTemplateMutationOutcome {
-        template: fetch_detail_with_capabilities(pool, actor, template_id).await?,
+        template: {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "certificates.template_service.attach_background.fetch_detail_with_capabilities",
+            )
+            .await
+            .map_err(AppError::from)?;
+            fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+        }?,
         detached_file_ids,
     })
 }
@@ -626,7 +701,12 @@ pub async fn attach_asset(
     let display_name = validate_asset_name(&payload.display_name)?;
     let expected_purpose = "certificate_template_image";
 
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.attach_asset",
+    )
+    .await
+    .map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
         authorization.owner_organization_unit_id,
@@ -645,31 +725,35 @@ pub async fn attach_asset(
         return Err(AppError::ValidationError("ชนิดไฟล์ไม่ตรงกับชนิดทรัพยากรแม่แบบ".to_string()).into());
     }
 
-    let asset_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO certificate_template_assets (
+    let asset_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "certificates.services.template_service.attach_asset",
+            "INSERT INTO certificate_template_assets (
             template_id, file_id, kind, display_name, created_by
          ) VALUES ($1, $2, $3, $4, $5)
          RETURNING id",
-    )
-    .bind(template_id)
-    .bind(payload.file_id)
-    .bind(payload.kind.as_str())
-    .bind(display_name)
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(payload.file_id)
+        .bind(payload.kind.as_str())
+        .bind(display_name)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(template_db_error)?;
     promote_file(&mut tx, payload.file_id).await?;
-    sqlx::query(
-        "UPDATE certificate_templates
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.template_service.attach_asset",
+            "UPDATE certificate_templates
          SET updated_by = $2, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(template_id)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     record_template_audit(
         &mut tx,
         actor.user_id,
@@ -685,7 +769,15 @@ pub async fn attach_asset(
     )
     .await?;
     tx.commit().await.map_err(template_db_error)?;
-    Ok(fetch_detail_with_capabilities(pool, actor, template_id).await?)
+    Ok({
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.template_service.attach_asset.fetch_detail_with_capabilities",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+    }?)
 }
 
 pub async fn list_fonts(
@@ -748,7 +840,12 @@ pub async fn delete_asset(
         authorization.owner_organization_unit_id,
     )
     .await?;
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.delete_asset",
+    )
+    .await
+    .map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
         authorization.owner_organization_unit_id,
@@ -765,27 +862,31 @@ pub async fn delete_asset(
         )
         .into());
     }
-    let file_id = sqlx::query_scalar::<_, Uuid>(
-        "DELETE FROM certificate_template_assets
+    let file_id = DbSession::new(&mut *tx)
+        .scalar::<Uuid>(
+            "certificates.services.template_service.delete_asset",
+            "DELETE FROM certificate_template_assets
          WHERE id = $1 AND template_id = $2
          RETURNING file_id",
-    )
-    .bind(asset_id)
-    .bind(template_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรแม่แบบ".to_string()))?;
-    sqlx::query(
-        "UPDATE certificate_templates
+        )
+        .bind(asset_id)
+        .bind(template_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรแม่แบบ".to_string()))?;
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.template_service.delete_asset",
+            "UPDATE certificate_templates
          SET updated_by = $2, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(template_id)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     record_template_audit(
         &mut tx,
         actor.user_id,
@@ -802,7 +903,15 @@ pub async fn delete_asset(
     .await?;
     tx.commit().await.map_err(template_db_error)?;
     Ok(CertificateTemplateMutationOutcome {
-        template: fetch_detail_with_capabilities(pool, actor, template_id).await?,
+        template: {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "certificates.template_service.delete_asset.fetch_detail_with_capabilities",
+            )
+            .await
+            .map_err(AppError::from)?;
+            fetch_detail_with_capabilities(&mut read_stage, actor, template_id).await
+        }?,
         detached_file_ids: vec![file_id],
     })
 }
@@ -826,7 +935,12 @@ pub async fn delete_template(
         authorization.owner_organization_unit_id,
     )
     .await?;
-    let mut tx = pool.begin().await.map_err(template_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.template_service.delete_template",
+    )
+    .await
+    .map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
         authorization.owner_organization_unit_id,
@@ -837,16 +951,18 @@ pub async fn delete_template(
     require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
     require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     if locked.issued_certificate_count > 0 {
-        sqlx::query(
-            "UPDATE certificate_templates
+        DbSession::new(&mut *tx)
+            .query(
+                "certificates.services.template_service.delete_template",
+                "UPDATE certificate_templates
              SET is_active = false, updated_by = $2, updated_at = clock_timestamp()
              WHERE id = $1",
-        )
-        .bind(template_id)
-        .bind(actor.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(template_db_error)?;
+            )
+            .bind(template_id)
+            .bind(actor.user_id)
+            .execute()
+            .await
+            .map_err(template_db_error)?;
         record_template_audit(
             &mut tx,
             actor.user_id,
@@ -871,28 +987,32 @@ pub async fn delete_template(
         });
     }
 
-    let has_candidate = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (
+    let has_candidate = DbSession::new(&mut *tx)
+        .scalar::<bool>(
+            "certificates.services.template_service.delete_template",
+            "SELECT EXISTS (
             SELECT 1 FROM certificate_candidates WHERE template_id = $1
          )",
-    )
-    .bind(template_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .fetch_one()
+        .await
+        .map_err(template_db_error)?;
     if has_candidate {
         return Err(
             AppError::Conflict("ยังมีรายชื่อผู้รับอ้างถึงแม่แบบนี้ กรุณาย้ายหรือลบรายชื่อก่อน".to_string()).into(),
         );
     }
 
-    let mut detached_file_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT file_id FROM certificate_template_assets WHERE template_id = $1",
-    )
-    .bind(template_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(template_db_error)?;
+    let mut detached_file_ids = DbSession::new(&mut *tx)
+        .scalar::<Uuid>(
+            "certificates.services.template_service.delete_template",
+            "SELECT file_id FROM certificate_template_assets WHERE template_id = $1",
+        )
+        .bind(template_id)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)?;
     if let Some(background_file_id) = locked.background_file_id {
         detached_file_ids.push(background_file_id);
     }
@@ -910,9 +1030,13 @@ pub async fn delete_template(
         ),
     )
     .await?;
-    sqlx::query("DELETE FROM certificate_templates WHERE id = $1")
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.template_service.delete_template",
+            "DELETE FROM certificate_templates WHERE id = $1",
+        )
         .bind(template_id)
-        .execute(&mut *tx)
+        .execute()
         .await
         .map_err(template_db_error)?;
     tx.commit().await.map_err(template_db_error)?;
@@ -948,19 +1072,20 @@ pub async fn variable_catalog(
 }
 
 async fn build_detail(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     row: TemplateRow,
 ) -> Result<CertificateTemplateDetail, AppError> {
-    let assets = load_assets(pool, row.id).await?;
-    let custom_headers = load_custom_headers(pool, row.campaign_id).await?;
-    let missing_count = load_missing_counts(pool, std::slice::from_ref(&row), &custom_headers)
-        .await?
-        .get(&row.id)
-        .copied()
-        .unwrap_or(0);
+    let assets = load_assets(connection, row.id).await?;
+    let custom_headers = load_custom_headers_on_connection(connection, row.campaign_id).await?;
+    let missing_count =
+        load_missing_counts(connection, std::slice::from_ref(&row), &custom_headers)
+            .await?
+            .get(&row.id)
+            .copied()
+            .unwrap_or(0);
     let capabilities =
-        load_template_capabilities(pool, actor, row.owner_organization_unit_id).await;
+        load_template_capabilities(connection, actor, row.owner_organization_unit_id).await;
     build_detail_from_parts(row, assets, missing_count, capabilities)
 }
 
@@ -1013,72 +1138,103 @@ fn build_detail_from_parts(
 }
 
 async fn load_template_capabilities(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     owner_id: Option<Uuid>,
 ) -> TemplateCapabilityFlags {
     TemplateCapabilityFlags {
-        can_read: require_owner_action(pool, actor, owner_id, CertificateAction::Read)
-            .await
-            .is_ok(),
-        can_update: require_owner_action(pool, actor, owner_id, CertificateAction::Update)
-            .await
-            .is_ok(),
-        can_delete: require_owner_action(pool, actor, owner_id, CertificateAction::Delete)
-            .await
-            .is_ok(),
+        can_read: require_owner_action_on_connection(
+            connection,
+            actor,
+            owner_id,
+            CertificateAction::Read,
+        )
+        .await
+        .is_ok(),
+        can_update: require_owner_action_on_connection(
+            connection,
+            actor,
+            owner_id,
+            CertificateAction::Update,
+        )
+        .await
+        .is_ok(),
+        can_delete: require_owner_action_on_connection(
+            connection,
+            actor,
+            owner_id,
+            CertificateAction::Delete,
+        )
+        .await
+        .is_ok(),
     }
 }
 
 async fn fetch_detail_with_capabilities(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     template_id: Uuid,
 ) -> Result<CertificateTemplateDetail, AppError> {
-    let row = fetch_template_row(pool, template_id).await?;
-    build_detail(pool, actor, row).await
+    let row = fetch_template_row_on_connection(connection, template_id).await?;
+    build_detail(connection, actor, row).await
 }
 
 async fn fetch_template_row(pool: &PgPool, template_id: Uuid) -> Result<TemplateRow, AppError> {
-    sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
-        "{TEMPLATE_SELECT} WHERE t.id = $1"
-    )))
-    .bind(template_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.fetch_template_row")
+            .await?;
+    fetch_template_row_on_connection(&mut connection, template_id).await
+}
+
+async fn fetch_template_row_on_connection(
+    connection: &mut sqlx::PgConnection,
+    template_id: Uuid,
+) -> Result<TemplateRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<TemplateRow>(
+            "certificates.services.template_service.fetch_template_row_on_connection",
+            sqlx::AssertSqlSafe(format!("{TEMPLATE_SELECT} WHERE t.id = $1")),
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
 }
 
 async fn lock_template(
     tx: &mut Transaction<'_, Postgres>,
     template_id: Uuid,
 ) -> Result<TemplateRow, AppError> {
-    sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
-        "{TEMPLATE_SELECT} WHERE t.id = $1 FOR UPDATE OF t"
-    )))
-    .bind(template_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
+    DbSession::new(&mut **tx)
+        .query_as::<TemplateRow>(
+            "certificates.services.template_service.lock_template",
+            sqlx::AssertSqlSafe(format!("{TEMPLATE_SELECT} WHERE t.id = $1 FOR UPDATE OF t")),
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
 }
 
 async fn lock_campaign_owner(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    let (owner_organization_unit_id, status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
-        "SELECT owner_organization_unit_id, status
+    let (owner_organization_unit_id, status) = DbSession::new(&mut **tx)
+        .query_as::<(Option<Uuid>, String)>(
+            "certificates.services.template_service.lock_campaign_owner",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
     if status == "purging" {
         return Err(AppError::Conflict(
             "certificate_campaign_purging".to_string(),
@@ -1126,44 +1282,62 @@ fn require_template_campaign_unchanged(
 }
 
 async fn campaign_owner(pool: &PgPool, campaign_id: Uuid) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id
-         FROM certificate_campaigns
-         WHERE id = $1 AND status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.campaign_owner")
+            .await?;
+    campaign_owner_on_connection(&mut connection, campaign_id).await
 }
 
-async fn load_assets(pool: &PgPool, template_id: Uuid) -> Result<Vec<AssetRow>, AppError> {
-    Ok(load_assets_for_templates(pool, &[template_id])
+async fn campaign_owner_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar::<Option<Uuid>>(
+            "certificates.services.template_service.campaign_owner_on_connection",
+            "SELECT owner_organization_unit_id
+         FROM certificate_campaigns
+         WHERE id = $1 AND status <> 'purging'",
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+}
+
+async fn load_assets(
+    connection: &mut sqlx::PgConnection,
+    template_id: Uuid,
+) -> Result<Vec<AssetRow>, AppError> {
+    Ok(load_assets_for_templates(connection, &[template_id])
         .await?
         .remove(&template_id)
         .unwrap_or_default())
 }
 
 async fn load_assets_for_templates(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     template_ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, Vec<AssetRow>>, AppError> {
     if template_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = sqlx::query_as::<_, AssetRow>(
-        "SELECT a.template_id, a.id, a.file_id, a.kind, a.display_name, a.created_at,
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<AssetRow>(
+            "certificates.services.template_service.load_assets_for_templates",
+            "SELECT a.template_id, a.id, a.file_id, a.kind, a.display_name, a.created_at,
                 f.lifecycle_status, f.inspection_metadata
          FROM certificate_template_assets a
          JOIN files f ON f.id = a.file_id
          WHERE a.template_id = ANY($1::uuid[])
          ORDER BY a.template_id, a.created_at, a.id",
-    )
-    .bind(template_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_ids)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)?;
     let mut grouped = BTreeMap::<Uuid, Vec<AssetRow>>::new();
     for row in rows {
         grouped.entry(row.template_id).or_default().push(row);
@@ -1202,8 +1376,10 @@ async fn load_uploaded_file(
     file_id: Uuid,
     expected_purpose: &str,
 ) -> Result<UploadedFileRow, AppError> {
-    let row = sqlx::query_as::<_, UploadedFileRow>(
-        "SELECT f.purpose_code,
+    let row = DbSession::new(&mut **tx)
+        .query_as::<UploadedFileRow>(
+            "certificates.services.template_service.load_uploaded_file",
+            "SELECT f.purpose_code,
                 f.lifecycle_status, f.retention_class,
                 f.inspection_metadata,
                 v.storage_status, v.scan_status
@@ -1216,14 +1392,14 @@ async fn load_uploaded_file(
            AND upload.purpose_code = $3
            AND f.purpose_code = $3
          FOR UPDATE OF f",
-    )
-    .bind(file_id)
-    .bind(template_id)
-    .bind(expected_purpose)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(template_db_error)?
-    .ok_or_else(|| AppError::Forbidden("ไฟล์นี้ไม่ได้อัปโหลดสำหรับแม่แบบและชนิดที่ระบุ".to_string()))?;
+        )
+        .bind(file_id)
+        .bind(template_id)
+        .bind(expected_purpose)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?
+        .ok_or_else(|| AppError::Forbidden("ไฟล์นี้ไม่ได้อัปโหลดสำหรับแม่แบบและชนิดที่ระบุ".to_string()))?;
     if row.purpose_code != expected_purpose || row.retention_class != "temporary" {
         return Err(AppError::Conflict(
             "ไฟล์นี้ถูกใช้งานหรือไม่ใช่ไฟล์ชั่วคราวที่แนบได้".to_string(),
@@ -1243,15 +1419,17 @@ fn require_ready_file(file: &UploadedFileRow) -> Result<(), AppError> {
 }
 
 async fn promote_file(tx: &mut Transaction<'_, Postgres>, file_id: Uuid) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE files
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.template_service.promote_file",
+            "UPDATE files
          SET retention_class = 'standard', expires_at = NULL, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(file_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(file_id)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     Ok(())
 }
 
@@ -1260,8 +1438,10 @@ async fn require_template_not_locked(
     template_id: Uuid,
     can_read_locked_request: bool,
 ) -> Result<(), super::request_service::CertificateServiceError> {
-    let request_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT candidate_lock.request_id
+    let request_id: Option<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.template_service.require_template_not_locked",
+            "SELECT candidate_lock.request_id
          FROM certificate_candidates candidate
          JOIN certificate_candidate_issue_locks candidate_lock
            ON candidate_lock.candidate_id = candidate.id
@@ -1270,11 +1450,11 @@ async fn require_template_not_locked(
            AND request.status IN ('pending', 'reviewing')
          ORDER BY request.submitted_at, request.id
          LIMIT 1",
-    )
-    .bind(template_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await
+        .map_err(template_db_error)?;
     if let Some(request_id) = request_id {
         Err(super::request_service::resource_locked_error(
             request_id,
@@ -1291,8 +1471,10 @@ async fn require_recipient_compatibility(
     allowed: &[RecipientType],
 ) -> Result<(), AppError> {
     let values = allowed.iter().map(|kind| kind.as_str()).collect::<Vec<_>>();
-    let incompatible: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
+    let incompatible: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.template_service.require_recipient_compatibility",
+            "SELECT EXISTS (
              SELECT 1 FROM certificate_candidates
              WHERE template_id = $1 AND deleted_at IS NULL
                AND NOT (recipient_type = ANY($2::text[]))
@@ -1301,12 +1483,12 @@ async fn require_recipient_compatibility(
              WHERE template_id = $1
                AND NOT (recipient_type = ANY($2::text[]))
          )",
-    )
-    .bind(template_id)
-    .bind(values)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(values)
+        .fetch_one()
+        .await
+        .map_err(template_db_error)?;
     if incompatible {
         Err(AppError::Conflict(
             "ไม่สามารถนำประเภทผู้รับที่มีรายการใช้งานอยู่แล้วออกได้".to_string(),
@@ -1333,17 +1515,19 @@ async fn validate_layout_asset_references(
         return Ok(());
     }
     let ids = expected.keys().copied().collect::<Vec<_>>();
-    let rows = sqlx::query_as::<_, (Uuid, String, String)>(
-        "SELECT asset.id, asset.kind, file.lifecycle_status
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<(Uuid, String, String)>(
+            "certificates.services.template_service.validate_layout_asset_references",
+            "SELECT asset.id, asset.kind, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = $1 AND asset.id = ANY($2::uuid[])",
-    )
-    .bind(template_id)
-    .bind(ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(ids)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)?;
     if rows.len() != expected.len()
         || rows.iter().any(|(id, kind, status)| {
             expected.get(id).is_none() || kind != "image" || status != "ready"
@@ -1403,25 +1587,29 @@ async fn sync_school_font_references(
         ));
     }
 
-    sqlx::query(
-        "INSERT INTO certificate_template_font_references (template_id, font_id)
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.template_service.sync_school_font_references",
+            "INSERT INTO certificate_template_font_references (template_id, font_id)
          SELECT $1, unnest($2::uuid[])
          ON CONFLICT (template_id, font_id) DO NOTHING",
-    )
-    .bind(template_id)
-    .bind(&font_ids)
-    .execute(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
-    sqlx::query(
-        "DELETE FROM certificate_template_font_references
+        )
+        .bind(template_id)
+        .bind(&font_ids)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.template_service.sync_school_font_references",
+            "DELETE FROM certificate_template_font_references
          WHERE template_id = $1 AND NOT (font_id = ANY($2::uuid[]))",
-    )
-    .bind(template_id)
-    .bind(&font_ids)
-    .execute(&mut **tx)
-    .await
-    .map_err(template_db_error)?;
+        )
+        .bind(template_id)
+        .bind(&font_ids)
+        .execute()
+        .await
+        .map_err(template_db_error)?;
     Ok(())
 }
 
@@ -1438,8 +1626,22 @@ pub(super) fn referenced_asset_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uui
 }
 
 async fn load_custom_headers(pool: &PgPool, campaign_id: Uuid) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT custom_key
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.load_custom_headers",
+    )
+    .await?;
+    load_custom_headers_on_connection(&mut connection, campaign_id).await
+}
+
+async fn load_custom_headers_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar::<String>(
+            "certificates.services.template_service.load_custom_headers_on_connection",
+            "SELECT DISTINCT custom_key
          FROM (
              SELECT jsonb_object_keys(custom_values) AS custom_key
              FROM certificate_candidates
@@ -1450,19 +1652,21 @@ async fn load_custom_headers(pool: &PgPool, campaign_id: Uuid) -> Result<Vec<Str
              WHERE campaign_id = $1
          ) custom_keys
          ORDER BY custom_key",
-    )
-    .bind(campaign_id)
-    .fetch_all(pool)
-    .await
-    .map_err(template_db_error)
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)
 }
 
 async fn load_custom_headers_tx(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT custom_key
+    DbSession::new(&mut **tx)
+        .scalar::<String>(
+            "certificates.services.template_service.load_custom_headers_tx",
+            "SELECT DISTINCT custom_key
          FROM (
              SELECT jsonb_object_keys(custom_values) AS custom_key
              FROM certificate_candidates
@@ -1473,11 +1677,11 @@ async fn load_custom_headers_tx(
              WHERE campaign_id = $1
          ) custom_keys
          ORDER BY custom_key",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(template_db_error)
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(template_db_error)
 }
 
 async fn count_missing_issued_variables_tx(
@@ -1493,9 +1697,13 @@ async fn count_missing_issued_variables_tx(
         template_id.to_string(),
         missing_variable_requirement(required, custom_headers)?,
     )]);
-    let rows = sqlx::query_as::<_, (Uuid, i64)>(MISSING_VARIABLE_COUNTS_SQL)
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<(Uuid, i64)>(
+            "certificates.services.template_service.count_missing_issued_variables_tx",
+            MISSING_VARIABLE_COUNTS_SQL,
+        )
         .bind(sqlx::types::Json(requirements))
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await
         .map_err(template_db_error)?;
     Ok(rows
@@ -1505,7 +1713,7 @@ async fn count_missing_issued_variables_tx(
 }
 
 async fn load_missing_counts(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     templates: &[TemplateRow],
     custom_headers: &[String],
 ) -> Result<BTreeMap<Uuid, i64>, AppError> {
@@ -1522,9 +1730,14 @@ async fn load_missing_counts(
     if requirements.is_empty() {
         return Ok(BTreeMap::new());
     }
-    sqlx::query_as::<_, (Uuid, i64)>(MISSING_VARIABLE_COUNTS_SQL)
+
+    DbSession::new(&mut *connection)
+        .query_as::<(Uuid, i64)>(
+            "certificates.services.template_service.load_missing_counts",
+            MISSING_VARIABLE_COUNTS_SQL,
+        )
         .bind(sqlx::types::Json(requirements))
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map(|rows| rows.into_iter().collect())
         .map_err(template_db_error)

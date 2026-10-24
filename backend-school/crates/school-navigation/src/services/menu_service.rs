@@ -8,14 +8,25 @@ use uuid::Uuid;
 // ============================================
 
 pub async fn list_menu_workspaces(pool: &PgPool) -> Result<Vec<MenuWorkspace>, AppError> {
-    sqlx::query_as::<_, MenuWorkspace>(
-        "SELECT id, code, name, name_en, icon, display_order, is_active
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.list_menu_workspaces")
+            .await?;
+    list_menu_workspaces_on_connection(&mut connection).await
+}
+
+pub async fn list_menu_workspaces_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<MenuWorkspace>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuWorkspace>(
+            "navigation.services.menu_service.list_menu_workspaces_on_connection",
+            "SELECT id, code, name, name_en, icon, display_order, is_active
          FROM menu_workspaces
          ORDER BY display_order, name",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu workspaces: {}", e)))
+        )
+        .fetch_all()
+        .await
+        .map_err(|e| super::database_failure("Failed to fetch menu workspaces", e))
 }
 
 pub struct CreateMenuWorkspaceInput {
@@ -31,21 +42,35 @@ pub async fn create_menu_workspace(
     pool: &PgPool,
     input: CreateMenuWorkspaceInput,
 ) -> Result<MenuWorkspace, AppError> {
-    sqlx::query_as::<_, MenuWorkspace>(
-        "INSERT INTO menu_workspaces
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "navigation.create_menu_workspace",
+    )
+    .await?;
+    create_menu_workspace_on_connection(&mut connection, input).await
+}
+
+pub async fn create_menu_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    input: CreateMenuWorkspaceInput,
+) -> Result<MenuWorkspace, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuWorkspace>(
+            "navigation.services.menu_service.create_menu_workspace_on_connection",
+            "INSERT INTO menu_workspaces
             (code, name, name_en, description, icon, display_order)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, code, name, name_en, icon, display_order, is_active",
-    )
-    .bind(&input.code)
-    .bind(&input.name)
-    .bind(&input.name_en)
-    .bind(&input.description)
-    .bind(&input.icon)
-    .bind(menu_display_order(input.display_order))
-    .fetch_one(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu workspace: {}", e)))
+        )
+        .bind(&input.code)
+        .bind(&input.name)
+        .bind(&input.name_en)
+        .bind(&input.description)
+        .bind(&input.icon)
+        .bind(menu_display_order(input.display_order))
+        .fetch_one()
+        .await
+        .map_err(|e| super::database_failure("Failed to create menu workspace", e))
 }
 
 pub struct UpdateMenuWorkspaceInput {
@@ -59,6 +84,19 @@ pub struct UpdateMenuWorkspaceInput {
 
 pub async fn update_menu_workspace(
     pool: &PgPool,
+    id: Uuid,
+    data: UpdateMenuWorkspaceInput,
+) -> Result<MenuWorkspace, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "navigation.update_menu_workspace",
+    )
+    .await?;
+    update_menu_workspace_on_connection(&mut connection, id, data).await
+}
+
+pub async fn update_menu_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
     data: UpdateMenuWorkspaceInput,
 ) -> Result<MenuWorkspace, AppError> {
@@ -114,25 +152,32 @@ pub async fn update_menu_workspace(
         qb = qb.bind(value);
     }
 
-    qb.fetch_optional(pool)
+    school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("navigation.menu.update", qb)
+        .fetch_optional()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to update menu workspace: {}", e))
-        })?
+        .map_err(|e| super::database_failure("Failed to update menu workspace", e))?
         .ok_or(AppError::NotFound("Menu workspace not found".to_string()))
 }
 
 pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppError> {
-    let workspace = sqlx::query_as::<_, MenuWorkspace>(
-        "SELECT id, code, name, name_en, icon, display_order, is_active
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "navigation.delete_menu_workspace.preflight",
+    )
+    .await?;
+    let workspace = school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuWorkspace>(
+            "navigation.services.menu_service.delete_menu_workspace",
+            "SELECT id, code, name, name_en, icon, display_order, is_active
          FROM menu_workspaces
          WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu workspace: {}", e)))?
-    .ok_or(AppError::NotFound("Menu workspace not found".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|e| super::database_failure("Failed to fetch menu workspace", e))?
+        .ok_or(AppError::NotFound("Menu workspace not found".to_string()))?;
 
     if matches!(workspace.code.as_str(), "home" | "operations" | "settings") {
         return Err(AppError::BadRequest(
@@ -140,33 +185,38 @@ pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppEr
         ));
     }
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+    drop(connection);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "navigation.delete_menu_workspace")
+            .await
+            .map_err(|e| super::database_failure("Transaction failed", e))?;
 
-    let moved = sqlx::query(
-        "UPDATE menu_groups
+    let moved = school_database::DbSession::new(&mut *tx)
+        .query(
+            "navigation.services.menu_service.delete_menu_workspace",
+            "UPDATE menu_groups
          SET workspace_code = 'operations', updated_at = NOW()
          WHERE workspace_code = $1",
-    )
-    .bind(&workspace.code)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to move menu groups: {}", e)))?
-    .rows_affected();
-
-    sqlx::query("DELETE FROM menu_workspaces WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
+        )
+        .bind(&workspace.code)
+        .execute()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to delete menu workspace: {}", e))
-        })?;
+        .map_err(|e| super::database_failure("Failed to move menu groups", e))?
+        .rows_affected();
+
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "navigation.services.menu_service.delete_menu_workspace",
+            "DELETE FROM menu_workspaces WHERE id = $1",
+        )
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|e| super::database_failure("Failed to delete menu workspace", e))?;
 
     tx.commit()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to commit", e))?;
 
     Ok(moved)
 }
@@ -179,25 +229,31 @@ pub async fn reorder_menu_workspaces(
         return Ok(0);
     }
 
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "navigation.reorder_menu_workspaces",
+    )
+    .await?;
+
     let ids: Vec<Uuid> = workspaces.iter().map(|(id, _)| *id).collect();
     let display_orders: Vec<i32> = workspaces
         .iter()
         .map(|(_, display_order)| *display_order)
         .collect();
 
-    sqlx::query(
-        "UPDATE menu_workspaces AS workspace
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "navigation.services.menu_service.reorder_menu_workspaces",
+            "UPDATE menu_workspaces AS workspace
          SET display_order = updates.display_order, updated_at = NOW()
          FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, display_order)
          WHERE workspace.id = updates.id",
-    )
-    .bind(&ids)
-    .bind(&display_orders)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        AppError::InternalServerError(format!("Failed to reorder menu workspaces: {}", e))
-    })?;
+        )
+        .bind(&ids)
+        .bind(&display_orders)
+        .execute()
+        .await
+        .map_err(|e| super::database_failure("Failed to reorder menu workspaces", e))?;
 
     Ok(ids.len())
 }
@@ -207,17 +263,28 @@ pub async fn reorder_menu_workspaces(
 // ============================================
 
 pub async fn list_menu_groups(pool: &PgPool) -> Result<Vec<MenuGroup>, AppError> {
-    sqlx::query_as::<_, MenuGroup>(
-        "SELECT menu_group.id, menu_group.code, menu_group.name, menu_group.name_en,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.list_menu_groups")
+            .await?;
+    list_menu_groups_on_connection(&mut connection).await
+}
+
+pub async fn list_menu_groups_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<MenuGroup>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuGroup>(
+            "navigation.services.menu_service.list_menu_groups_on_connection",
+            "SELECT menu_group.id, menu_group.code, menu_group.name, menu_group.name_en,
                 menu_group.icon, menu_group.workspace_code, menu_group.display_order,
                 menu_group.is_active
          FROM menu_groups AS menu_group
          JOIN menu_workspaces AS workspace ON workspace.code = menu_group.workspace_code
          ORDER BY workspace.display_order, menu_group.display_order, menu_group.name",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu groups: {}", e)))
+        )
+        .fetch_all()
+        .await
+        .map_err(|e| super::database_failure("Failed to fetch menu groups", e))
 }
 
 pub struct CreateMenuGroupInput {
@@ -234,22 +301,34 @@ pub async fn create_menu_group(
     pool: &PgPool,
     input: CreateMenuGroupInput,
 ) -> Result<MenuGroup, AppError> {
-    sqlx::query_as::<_, MenuGroup>(
-        "INSERT INTO menu_groups
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.create_menu_group")
+            .await?;
+    create_menu_group_on_connection(&mut connection, input).await
+}
+
+pub async fn create_menu_group_on_connection(
+    connection: &mut sqlx::PgConnection,
+    input: CreateMenuGroupInput,
+) -> Result<MenuGroup, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuGroup>(
+            "navigation.services.menu_service.create_menu_group_on_connection",
+            "INSERT INTO menu_groups
             (code, name, name_en, description, icon, workspace_code, display_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, code, name, name_en, icon, workspace_code, display_order, is_active",
-    )
-    .bind(&input.code)
-    .bind(&input.name)
-    .bind(&input.name_en)
-    .bind(&input.description)
-    .bind(&input.icon)
-    .bind(&input.workspace_code)
-    .bind(menu_display_order(input.display_order))
-    .fetch_one(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))
+        )
+        .bind(&input.code)
+        .bind(&input.name)
+        .bind(&input.name_en)
+        .bind(&input.description)
+        .bind(&input.icon)
+        .bind(&input.workspace_code)
+        .bind(menu_display_order(input.display_order))
+        .fetch_one()
+        .await
+        .map_err(|e| super::database_failure("Failed to create menu group", e))
 }
 
 pub struct UpdateMenuGroupInput {
@@ -264,6 +343,17 @@ pub struct UpdateMenuGroupInput {
 
 pub async fn update_menu_group(
     pool: &PgPool,
+    id: Uuid,
+    data: UpdateMenuGroupInput,
+) -> Result<MenuGroup, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.update_menu_group")
+            .await?;
+    update_menu_group_on_connection(&mut connection, id, data).await
+}
+
+pub async fn update_menu_group_on_connection(
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
     data: UpdateMenuGroupInput,
 ) -> Result<MenuGroup, AppError> {
@@ -326,22 +416,31 @@ pub async fn update_menu_group(
         qb = qb.bind(v);
     }
 
-    qb.fetch_optional(pool)
+    school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("navigation.menu.update", qb)
+        .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu group: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to update menu group", e))?
         .ok_or(AppError::NotFound("Menu group not found".to_string()))
 }
 
 pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError> {
-    let group = sqlx::query_as::<_, MenuGroup>(
-        "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
-         FROM menu_groups WHERE id = $1",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "navigation.delete_menu_group.preflight",
     )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::NotFound("Group not found".to_string()))?
-    .ok_or(AppError::NotFound("Group not found".to_string()))?;
+    .await?;
+    let group = school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuGroup>(
+            "navigation.services.menu_service.delete_menu_group",
+            "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
+         FROM menu_groups WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::NotFound("Group not found".to_string()))?
+        .ok_or(AppError::NotFound("Group not found".to_string()))?;
 
     if group.code == "other" {
         return Err(AppError::BadRequest(
@@ -349,38 +448,48 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
         ));
     }
 
-    let other_group = sqlx::query_as::<_, MenuGroup>(
-        "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
+    let other_group = school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuGroup>(
+            "navigation.services.menu_service.delete_menu_group",
+            "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
          FROM menu_groups WHERE code = 'other'",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|_| {
-        AppError::InternalServerError("'other' group not found in database".to_string())
-    })?;
-
-    let mut tx = pool
-        .begin()
+        )
+        .fetch_one()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+        .map_err(|_| {
+            AppError::InternalServerError("'other' group not found in database".to_string())
+        })?;
 
-    let moved = sqlx::query("UPDATE menu_items SET group_id = $1 WHERE group_id = $2")
+    drop(connection);
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "navigation.delete_menu_group")
+        .await
+        .map_err(|e| super::database_failure("Transaction failed", e))?;
+
+    let moved = school_database::DbSession::new(&mut *tx)
+        .query(
+            "navigation.services.menu_service.delete_menu_group",
+            "UPDATE menu_items SET group_id = $1 WHERE group_id = $2",
+        )
         .bind(other_group.id)
         .bind(id)
-        .execute(&mut *tx)
+        .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to move items: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to move items", e))?
         .rows_affected();
 
-    sqlx::query("DELETE FROM menu_groups WHERE id = $1")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "navigation.services.menu_service.delete_menu_group",
+            "DELETE FROM menu_groups WHERE id = $1",
+        )
         .bind(id)
-        .execute(&mut *tx)
+        .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to delete group: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to delete group", e))?;
 
     tx.commit()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to commit", e))?;
 
     Ok(moved)
 }
@@ -393,25 +502,39 @@ pub async fn list_menu_items(
     pool: &PgPool,
     group_id: Option<Uuid>,
 ) -> Result<Vec<MenuItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.list_menu_items")
+            .await?;
+    list_menu_items_on_connection(&mut connection, group_id).await
+}
+
+pub async fn list_menu_items_on_connection(
+    connection: &mut sqlx::PgConnection,
+    group_id: Option<Uuid>,
+) -> Result<Vec<MenuItem>, AppError> {
     if let Some(gid) = group_id {
-        sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
+        school_database::DbSession::new(&mut *connection)
+            .query_as::<MenuItem>(
+                "navigation.services.menu_service.list_menu_items_on_connection",
+                "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
                     group_id, parent_id, display_order, is_active
              FROM menu_items WHERE group_id = $1 ORDER BY display_order, name",
-        )
-        .bind(gid)
-        .fetch_all(pool)
-        .await
+            )
+            .bind(gid)
+            .fetch_all()
+            .await
     } else {
-        sqlx::query_as::<_, MenuItem>(
-            "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
+        school_database::DbSession::new(&mut *connection)
+            .query_as::<MenuItem>(
+                "navigation.services.menu_service.list_menu_items_on_connection",
+                "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
                     group_id, parent_id, display_order, is_active
              FROM menu_items ORDER BY group_id, display_order, name",
-        )
-        .fetch_all(pool)
-        .await
+            )
+            .fetch_all()
+            .await
     }
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu items: {}", e)))
+    .map_err(|e| super::database_failure("Failed to fetch menu items", e))
 }
 
 pub struct CreateMenuItemInput {
@@ -431,7 +554,17 @@ pub async fn create_menu_item(
     pool: &PgPool,
     input: CreateMenuItemInput,
 ) -> Result<MenuItem, AppError> {
-    sqlx::query_as::<_, MenuItem>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.create_menu_item")
+            .await?;
+    create_menu_item_on_connection(&mut connection, input).await
+}
+
+pub async fn create_menu_item_on_connection(
+    connection: &mut sqlx::PgConnection,
+    input: CreateMenuItemInput,
+) -> Result<MenuItem, AppError> {
+    school_database::DbSession::new(&mut *connection).query_as::<MenuItem>("navigation.services.menu_service.create_menu_item_on_connection",
         "INSERT INTO menu_items
             (code, name, name_en, description, path, icon, group_id, parent_id, required_permission, display_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -441,8 +574,8 @@ pub async fn create_menu_item(
     .bind(&input.code).bind(&input.name).bind(&input.name_en).bind(&input.description)
     .bind(&input.path).bind(&input.icon).bind(input.group_id).bind(input.parent_id)
     .bind(&input.required_permission).bind(menu_display_order(input.display_order))
-    .fetch_one(pool).await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu item: {}", e)))
+    .fetch_one().await
+    .map_err(|e| super::database_failure("Failed to create menu item", e))
 }
 
 pub struct UpdateMenuItemInput {
@@ -460,6 +593,17 @@ pub struct UpdateMenuItemInput {
 
 pub async fn update_menu_item(
     pool: &PgPool,
+    id: Uuid,
+    data: UpdateMenuItemInput,
+) -> Result<MenuItem, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.update_menu_item")
+            .await?;
+    update_menu_item_on_connection(&mut connection, id, data).await
+}
+
+pub async fn update_menu_item_on_connection(
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
     data: UpdateMenuItemInput,
 ) -> Result<MenuItem, AppError> {
@@ -544,18 +688,34 @@ pub async fn update_menu_item(
         qb = qb.bind(v);
     }
 
-    qb.fetch_optional(pool)
+    school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("navigation.menu.update", qb)
+        .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu item: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to update menu item", e))?
         .ok_or(AppError::NotFound("Menu item not found".to_string()))
 }
 
 pub async fn delete_menu_item(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM menu_items WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.delete_menu_item")
+            .await?;
+    delete_menu_item_on_connection(&mut connection, id).await
+}
+
+pub async fn delete_menu_item_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(), AppError> {
+    let result = school_database::DbSession::new(&mut *connection)
+        .query(
+            "navigation.services.menu_service.delete_menu_item_on_connection",
+            "DELETE FROM menu_items WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to delete menu item: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to delete menu item", e))?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Menu item not found".to_string()));
     }
@@ -569,16 +729,22 @@ pub async fn reorder_menu_items(
     if items.is_empty() {
         return Ok(0);
     }
+
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.reorder_menu_items")
+            .await?;
     let item_ids: Vec<Uuid> = items.iter().map(|(id, _, _)| *id).collect();
-    let existing_items = sqlx::query_as::<_, MenuItem>(
-        "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
+    let existing_items = school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuItem>(
+            "navigation.services.menu_service.reorder_menu_items",
+            "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
                 group_id, parent_id, display_order, is_active
          FROM menu_items WHERE id = ANY($1)",
-    )
-    .bind(&item_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch items batch: {}", e)))?;
+        )
+        .bind(&item_ids)
+        .fetch_all()
+        .await
+        .map_err(|e| super::database_failure("Failed to fetch items batch", e))?;
 
     use std::collections::HashMap;
     let current_groups: HashMap<Uuid, Option<Uuid>> =
@@ -597,20 +763,22 @@ pub async fn reorder_menu_items(
         }
     }
 
-    sqlx::query(
-        "UPDATE menu_items AS m
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "navigation.services.menu_service.reorder_menu_items",
+            "UPDATE menu_items AS m
          SET display_order = c.display_order, group_id = c.group_id, updated_at = NOW()
          FROM (SELECT unnest($1::uuid[]) as id,
                       unnest($2::int[]) as display_order,
                       unnest($3::uuid[]) as group_id) as c
          WHERE m.id = c.id",
-    )
-    .bind(&ids)
-    .bind(&orders)
-    .bind(&group_ids)
-    .execute(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to batch reorder items: {}", e)))?;
+        )
+        .bind(&ids)
+        .bind(&orders)
+        .bind(&group_ids)
+        .execute()
+        .await
+        .map_err(|e| super::database_failure("Failed to batch reorder items", e))?;
 
     Ok(ids.len())
 }
@@ -623,23 +791,29 @@ pub async fn reorder_menu_groups(
         return Ok(0);
     }
 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.reorder_menu_groups")
+            .await?;
+
     let ids: Vec<Uuid> = groups.iter().map(|(id, _)| *id).collect();
     let display_orders: Vec<i32> = groups
         .iter()
         .map(|(_, display_order)| *display_order)
         .collect();
 
-    sqlx::query(
-        "UPDATE menu_groups AS menu_group
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "navigation.services.menu_service.reorder_menu_groups",
+            "UPDATE menu_groups AS menu_group
          SET display_order = updates.display_order, updated_at = NOW()
          FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, display_order)
          WHERE menu_group.id = updates.id",
-    )
-    .bind(&ids)
-    .bind(&display_orders)
-    .execute(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to reorder groups: {}", e)))?;
+        )
+        .bind(&ids)
+        .bind(&display_orders)
+        .execute()
+        .await
+        .map_err(|e| super::database_failure("Failed to reorder groups", e))?;
 
     Ok(ids.len())
 }
@@ -649,13 +823,24 @@ pub async fn move_item_to_group(
     id: Uuid,
     group_id: Uuid,
 ) -> Result<MenuItem, AppError> {
-    sqlx::query_as::<_, MenuItem>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.move_item_to_group")
+            .await?;
+    move_item_to_group_on_connection(&mut connection, id, group_id).await
+}
+
+pub async fn move_item_to_group_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    group_id: Uuid,
+) -> Result<MenuItem, AppError> {
+    school_database::DbSession::new(&mut *connection).query_as::<MenuItem>("navigation.services.menu_service.move_item_to_group_on_connection",
         r#"UPDATE menu_items SET group_id = $1 WHERE id = $2
            RETURNING id, code, name, name_en, description, path, icon,
                      group_id, parent_id, required_permission, user_type, display_order, is_active"#
     )
-    .bind(group_id).bind(id).fetch_one(pool).await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to move item: {}", e)))
+    .bind(group_id).bind(id).fetch_one().await
+    .map_err(|e| super::database_failure("Failed to move item", e))
 }
 
 fn menu_display_order(display_order: Option<i32>) -> i32 {

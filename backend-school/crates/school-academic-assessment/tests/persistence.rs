@@ -281,3 +281,45 @@ async fn assessment_phase_controls_read_through_the_assessment_crate_boundary() 
         Some("academic_assessment_phase_controls")
     );
 }
+
+#[tokio::test]
+async fn assessment_detail_and_summary_share_the_callers_single_connection() {
+    let pool = populated_canonical_pool("assessment_borrowed_connection").await;
+    let (offering, term): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT learning_offering_id,academic_term_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    ).fetch_one(&pool).await.unwrap();
+    let mut connection = pool.acquire().await.unwrap();
+    let access = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let actor = Uuid::from_u128(0x50000000000000000000000000000002);
+    let plans = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        services::list_assessment_plans_on_connection(
+            &mut connection,
+            &list_query(term),
+            &access,
+            actor,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let detail = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        services::get_plan_detail_on_connection(&mut connection, offering),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let summary = plans
+        .iter()
+        .find(|plan| plan.offering_id == offering)
+        .unwrap();
+    assert_eq!(summary.plan_id, detail.id);
+    assert_eq!(detail.offering_id, offering);
+    assert_eq!(detail.academic_term_id, term);
+    assert!(!detail.phases.is_empty());
+    assert!(!detail.coordinator_candidates.is_empty());
+}

@@ -7,6 +7,7 @@ use crate::{
 };
 use chrono::{Datelike, Duration, Utc};
 use school_authorization::{accessible_exact_units_for_permission, ActorContext};
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use serde::{Deserialize, Serialize};
@@ -167,7 +168,12 @@ async fn exact_read_units(pool: &PgPool, actor: &ActorContext) -> Result<Vec<Uui
 }
 pub async fn require_read(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Result<(), AppError> {
     let units = exact_read_units(pool, actor).await?;
-    let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_records c WHERE c.id=$1 AND ($3 OR (c.created_by=$2 AND $4) OR (c.organization_unit_id=ANY($5)) OR ($6 AND EXISTS(SELECT 1 FROM process_participants p WHERE p.instance_id=c.instance_id AND p.user_id=$2))))").bind(id).bind(actor.user_id).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_SCHOOL,codes::CORRESPONDENCE_MANAGE_SCHOOL])).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_OWN,codes::CORRESPONDENCE_CREATE_OWN])).bind(units).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED])).fetch_one(pool).await?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.correspondence.require_read",
+    )
+    .await?;
+    let allowed:bool=DbSession::new(&mut *database_stage_0).scalar("workflow.src.correspondence.require_read", "SELECT EXISTS(SELECT 1 FROM correspondence_records c WHERE c.id=$1 AND ($3 OR (c.created_by=$2 AND $4) OR (c.organization_unit_id=ANY($5)) OR ($6 AND EXISTS(SELECT 1 FROM process_participants p WHERE p.instance_id=c.instance_id AND p.user_id=$2))))").bind(id).bind(actor.user_id).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_SCHOOL,codes::CORRESPONDENCE_MANAGE_SCHOOL])).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_OWN,codes::CORRESPONDENCE_CREATE_OWN])).bind(units).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED])).fetch_one().await?;
     if allowed {
         Ok(())
     } else {
@@ -176,19 +182,26 @@ pub async fn require_read(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Resu
 }
 pub async fn require_upload(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Result<(), AppError> {
     require_read(pool, actor, id).await?;
-    let (creator, status): (Uuid, String) = sqlx::query_as(
-        "SELECT created_by,summary->>'status' FROM correspondence_records WHERE id=$1",
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.correspondence.require_upload",
     )
-    .bind(id)
-    .fetch_one(pool)
     .await?;
+    let (creator, status): (Uuid, String) = DbSession::new(&mut *database_stage_0)
+        .query_as(
+            "workflow.src.correspondence.require_upload",
+            "SELECT created_by,summary->>'status' FROM correspondence_records WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     if creator == actor.user_id
         && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN)
         && matches!(status.as_str(), "draft" | "revision_requested")
     {
         return Ok(());
     }
-    let assigned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN process_instances i ON i.id=c.instance_id WHERE c.id=$1 AND i.definition->>'status'='active' AND (EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'steps'->((i.definition->>'currentStep')::int)->'recipients') r WHERE (r->>'userId')::uuid=$2 AND r->>'completedAt' IS NULL) OR EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'directed'->'assignments') a WHERE (a->>'required')::boolean AND ((a->>'status'='pending' AND a->'recipient'->>'userId'=$2::text) OR (a->>'status'='waiting_review' AND a->'reviewer'->>'userId'=$2::text)))))").bind(id).bind(actor.user_id).fetch_one(pool).await?;
+    let assigned:bool=DbSession::new(&mut *database_stage_0).scalar("workflow.src.correspondence.require_upload", "SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN process_instances i ON i.id=c.instance_id WHERE c.id=$1 AND i.definition->>'status'='active' AND (EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'steps'->((i.definition->>'currentStep')::int)->'recipients') r WHERE (r->>'userId')::uuid=$2 AND r->>'completedAt' IS NULL) OR EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'directed'->'assignments') a WHERE (a->>'required')::boolean AND ((a->>'status'='pending' AND a->'recipient'->>'userId'=$2::text) OR (a->>'status'='waiting_review' AND a->'reviewer'->>'userId'=$2::text)))))").bind(id).bind(actor.user_id).fetch_one().await?;
     if assigned && actor.has_permission(codes::CORRESPONDENCE_UPDATE_ASSIGNED) {
         Ok(())
     } else {
@@ -207,18 +220,22 @@ async fn locked(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<(CorrespondenceSummary, i64, Option<Uuid>), AppError> {
-    let (record,document,instance):(Json<CorrespondenceSummary>,i64,Option<Uuid>)=sqlx::query_as("SELECT summary,current_document_revision,instance_id FROM correspondence_records WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("ไม่พบหนังสือ".into()))?;
+    let (record,document,instance):(Json<CorrespondenceSummary>,i64,Option<Uuid>)=DbSession::new(&mut **tx).query_as("workflow.src.correspondence.locked", "SELECT summary,current_document_revision,instance_id FROM correspondence_records WHERE id=$1 FOR UPDATE").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบหนังสือ".into()))?;
     Ok((record.0, document, instance))
 }
 async fn save_record(
     tx: &mut Transaction<'_, Postgres>,
     record: &CorrespondenceSummary,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE correspondence_records SET revision=$2,summary=$3 WHERE id=$1")
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.correspondence.save_record",
+            "UPDATE correspondence_records SET revision=$2,summary=$3 WHERE id=$1",
+        )
         .bind(record.id)
         .bind(record.revision)
         .bind(Json(record))
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }
@@ -227,7 +244,7 @@ async fn document_in(
     id: Uuid,
     revision: i64,
 ) -> Result<CorrespondenceDocumentRevision, AppError> {
-    Ok(sqlx::query_scalar::<_,Json<CorrespondenceDocumentRevision>>("SELECT document FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2").bind(id).bind(revision).fetch_one(&mut **tx).await?.0)
+    Ok(DbSession::new(&mut **tx).scalar::<Json<CorrespondenceDocumentRevision>>("workflow.src.correspondence.document_in", "SELECT document FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2").bind(id).bind(revision).fetch_one().await?.0)
 }
 fn proposed_document(
     actor: Uuid,
@@ -272,12 +289,16 @@ async fn add_document(
     if process::payload_hash(&snapshots)? != process::payload_hash(&document.file_snapshots)? {
         return Err(stale());
     }
-    sqlx::query("INSERT INTO correspondence_document_revisions(correspondence_id,revision,document,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(document.revision).bind(Json(&document)).bind(actor).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO correspondence_file_links(correspondence_id,file_id,document_revision) SELECT $1,unnest($2::uuid[]),$3 ON CONFLICT DO NOTHING").bind(id).bind(files).bind(document.revision).execute(&mut **tx).await?;
-    sqlx::query("UPDATE correspondence_records SET current_document_revision=$2 WHERE id=$1")
+    DbSession::new(&mut **tx).query("workflow.src.correspondence.add_document", "INSERT INTO correspondence_document_revisions(correspondence_id,revision,document,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(document.revision).bind(Json(&document)).bind(actor).execute().await?;
+    DbSession::new(&mut **tx).query("workflow.src.correspondence.add_document", "INSERT INTO correspondence_file_links(correspondence_id,file_id,document_revision) SELECT $1,unnest($2::uuid[]),$3 ON CONFLICT DO NOTHING").bind(id).bind(files).bind(document.revision).execute().await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.correspondence.add_document",
+            "UPDATE correspondence_records SET current_document_revision=$2 WHERE id=$1",
+        )
         .bind(id)
         .bind(document.revision)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }
@@ -302,11 +323,14 @@ async fn append_history(
     reassignment: Option<(Uuid, Uuid)>,
     context: ActionHistoryContext,
 ) -> Result<Uuid, AppError> {
-    let actor_name: String =
-        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
-            .bind(actor)
-            .fetch_one(&mut **tx)
-            .await?;
+    let actor_name: String = DbSession::new(&mut **tx)
+        .scalar(
+            "workflow.src.correspondence.append_history",
+            "SELECT display_name FROM user_display_names WHERE id=$1",
+        )
+        .bind(actor)
+        .fetch_one()
+        .await?;
     let entry = ProcessHistoryEntry {
         id: Uuid::now_v7(),
         actor_id: actor,
@@ -326,7 +350,7 @@ async fn append_history(
         created_at: Utc::now(),
         revision,
     };
-    sqlx::query("INSERT INTO process_action_history(id,instance_id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4,$5)").bind(entry.id).bind(instance).bind(id).bind(actor).bind(Json(&entry)).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.correspondence.append_history", "INSERT INTO process_action_history(id,instance_id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4,$5)").bind(entry.id).bind(instance).bind(id).bind(actor).bind(Json(&entry)).execute().await?;
     Ok(entry.id)
 }
 pub async fn create(
@@ -352,18 +376,32 @@ pub async fn create(
     {
         return Err(invalid("ชื่อเรื่อง ผู้ส่ง เลขหนังสือ หรือลิงก์ต้นทางไม่ถูกต้อง"));
     }
-    if process::replay_exists(
-        pool,
-        actor.user_id,
-        request.request_id,
-        "correspondence_create",
-        Uuid::nil(),
-        &request,
-        true,
-    )
-    .await?
-    {
-        let old:Uuid=sqlx::query_scalar("SELECT resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor.user_id).bind(request.request_id).fetch_one(pool).await?;
+    if {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "workflow.correspondence.create.replay_exists",
+        )
+        .await?;
+        process::replay_exists(
+            &mut read_stage,
+            actor.user_id,
+            request.request_id,
+            "correspondence_create",
+            Uuid::nil(),
+            &request,
+            true,
+        )
+        .await
+    }? {
+        let old = {
+            let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "workflow.correspondence.create_replay",
+            )
+            .await?;
+            let old:Uuid=DbSession::new(&mut *connection).scalar("workflow.src.correspondence.create", "SELECT resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor.user_id).bind(request.request_id).fetch_one().await?;
+            old
+        };
         return detail(pool, actor, old).await;
     }
     validate_new_text_annotations(&request.annotations, &[])?;
@@ -381,7 +419,8 @@ pub async fn create(
     )?;
     validator.validate(&prepared, &[], None, "").await?;
     let id = Uuid::now_v7();
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.create").await?;
     if let Some(old) = process::creation_receipt(
         &mut tx,
         actor.user_id,
@@ -398,7 +437,7 @@ pub async fn create(
     let year = (Utc::now() + Duration::hours(7)).year() + 543;
     let settings = directed::settings_in(&mut tx, request.register).await?;
     let kind = enum_code(request.register)?;
-    let number:i64=sqlx::query_scalar("INSERT INTO correspondence_register_counters(register,year,last_number) VALUES($1,$2,1) ON CONFLICT(register,year) DO UPDATE SET last_number=correspondence_register_counters.last_number+1 RETURNING last_number").bind(&kind).bind(year).fetch_one(&mut *tx).await?;
+    let number:i64=DbSession::new(&mut *tx).scalar("workflow.src.correspondence.create", "INSERT INTO correspondence_register_counters(register,year,last_number) VALUES($1,$2,1) ON CONFLICT(register,year) DO UPDATE SET last_number=correspondence_register_counters.last_number+1 RETURNING last_number").bind(&kind).bind(year).fetch_one().await?;
     let record = CorrespondenceSummary {
         id,
         register_number: number,
@@ -420,7 +459,7 @@ pub async fn create(
         created_by: actor.user_id,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO correspondence_records(id,revision,created_by,organization_unit_id,summary,source_links,current_document_revision,register_number,register_year,register_kind) VALUES($1,1,$2,$3,$4,$5,1,$6,$7,$8)").bind(id).bind(actor.user_id).bind(record.organization_unit_id).bind(Json(&record)).bind(Json(&request.source_links)).bind(number).bind(year).bind(kind).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("workflow.src.correspondence.create", "INSERT INTO correspondence_records(id,revision,created_by,organization_unit_id,summary,source_links,current_document_revision,register_number,register_year,register_kind) VALUES($1,1,$2,$3,$4,$5,1,$6,$7,$8)").bind(id).bind(actor.user_id).bind(record.organization_unit_id).bind(Json(&record)).bind(Json(&request.source_links)).bind(number).bind(year).bind(kind).execute().await?;
     add_document(&mut tx, id, actor.user_id, prepared).await?;
     append_history(
         &mut tx,
@@ -448,17 +487,23 @@ pub async fn revise(
     request: ReviseCorrespondenceRequest,
 ) -> Result<CorrespondenceDetail, AppError> {
     require_read(pool, actor, id).await?;
-    if process::replay_exists(
-        pool,
-        actor.user_id,
-        request.request_id,
-        "correspondence_revise",
-        id,
-        &request,
-        false,
-    )
-    .await?
-    {
+    if {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "workflow.correspondence.revise.replay_exists",
+        )
+        .await?;
+        process::replay_exists(
+            &mut read_stage,
+            actor.user_id,
+            request.request_id,
+            "correspondence_revise",
+            id,
+            &request,
+            false,
+        )
+        .await
+    }? {
         return detail(pool, actor, id).await;
     }
     let before = detail(pool, actor, id).await?;
@@ -488,7 +533,8 @@ pub async fn revise(
         snapshots,
     )?;
     validator.validate(&prepared, &[], None, "").await?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.revise").await?;
     if process::receipt(
         &mut tx,
         actor.user_id,
@@ -640,7 +686,7 @@ impl process::ProcessSourcePort for CorrespondenceSource {
         actor: &ActorContext,
         instance: &ProcessInstance,
     ) -> Result<(), AppError> {
-        let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN organization_permission_delegations d ON d.organization_unit_id IS NOT DISTINCT FROM c.organization_unit_id JOIN permissions p ON p.id=d.permission_id WHERE c.id=$1 AND d.to_user_id=$2 AND d.revoked_at IS NULL AND d.started_at<=now() AND (d.expires_at IS NULL OR d.expires_at>now()) AND p.code=$3)").bind(instance.source.resource_id).bind(actor.user_id).bind(codes::CORRESPONDENCE_UPDATE_ASSIGNED).fetch_one(&mut **tx).await?;
+        let allowed:bool=DbSession::new(&mut **tx).scalar("workflow.src.correspondence.validate_delegated_authority", "SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN organization_permission_delegations d ON d.organization_unit_id IS NOT DISTINCT FROM c.organization_unit_id JOIN permissions p ON p.id=d.permission_id WHERE c.id=$1 AND d.to_user_id=$2 AND d.revoked_at IS NULL AND d.started_at<=now() AND (d.expires_at IS NULL OR d.expires_at>now()) AND p.code=$3)").bind(instance.source.resource_id).bind(actor.user_id).bind(codes::CORRESPONDENCE_UPDATE_ASSIGNED).fetch_one().await?;
         if allowed {
             Ok(())
         } else {
@@ -662,7 +708,8 @@ pub async fn send(
     request: SendCorrespondenceRequest,
 ) -> Result<CorrespondenceDetail, AppError> {
     require_read(pool, actor, id).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.send").await?;
     if process::receipt(
         &mut tx,
         actor.user_id,
@@ -706,10 +753,14 @@ pub async fn send(
     .await?;
     record.status = CorrespondenceStatus::InProgress;
     record.revision += 1;
-    sqlx::query("UPDATE correspondence_records SET instance_id=$2 WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "workflow.src.correspondence.send",
+            "UPDATE correspondence_records SET instance_id=$2 WHERE id=$1",
+        )
         .bind(id)
         .bind(instance.id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     save_record(&mut tx, &record).await?;
     append_history(
@@ -737,7 +788,9 @@ pub async fn directed_send(
     request: DirectedSendCorrespondenceRequest,
 ) -> Result<CorrespondenceDetail, AppError> {
     require_read(pool, actor, id).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.directed_send")
+            .await?;
     if process::receipt(
         &mut tx,
         actor.user_id,
@@ -765,10 +818,14 @@ pub async fn directed_send(
     let instance = directed::start(&mut tx, actor, &record, &request).await?;
     record.status = CorrespondenceStatus::InProgress;
     record.revision += 1;
-    sqlx::query("UPDATE correspondence_records SET instance_id=$2 WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "workflow.src.correspondence.directed_send",
+            "UPDATE correspondence_records SET instance_id=$2 WHERE id=$1",
+        )
         .bind(id)
         .bind(instance.id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     save_record(&mut tx, &record).await?;
     let assignment_id = instance
@@ -836,15 +893,15 @@ async fn read_receipt_in(
     id: Uuid,
     revision: i64,
 ) -> Result<CorrespondenceReadReceipt, AppError> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2)")
-        .bind(id).bind(revision).fetch_one(&mut **tx).await?;
+    let exists: bool = DbSession::new(&mut **tx).scalar("workflow.src.correspondence.read_receipt_in", "SELECT EXISTS(SELECT 1 FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2)")
+        .bind(id).bind(revision).fetch_one().await?;
     if !exists {
         return Err(invalid("ไม่พบฉบับเอกสาร"));
     }
-    sqlx::query("INSERT INTO correspondence_read_receipts(correspondence_id,user_id,document_revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
-        .bind(id).bind(actor).bind(revision).execute(&mut **tx).await?;
-    Ok(sqlx::query_as("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
-        .bind(id).bind(actor).fetch_one(&mut **tx).await?)
+    DbSession::new(&mut **tx).query("workflow.src.correspondence.read_receipt_in", "INSERT INTO correspondence_read_receipts(correspondence_id,user_id,document_revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind(id).bind(actor).bind(revision).execute().await?;
+    Ok(DbSession::new(&mut **tx).query_as("workflow.src.correspondence.read_receipt_in", "SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor).fetch_one().await?)
 }
 
 pub async fn read(
@@ -863,7 +920,11 @@ pub async fn read_with_changes(
     request: CorrespondenceReadRequest,
 ) -> Result<WorkflowMutation<CorrespondenceReadReceipt>, AppError> {
     require_read(pool, actor, id).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "workflow.correspondence.read_with_changes",
+    )
+    .await?;
     let (_, current_revision, instance_id) = locked(&mut tx, id).await?;
     let receipt = read_receipt_in(&mut tx, actor.user_id, id, request.document_revision).await?;
     let work_changed = if let Some(instance_id) =
@@ -888,7 +949,9 @@ async fn explicit_read(
     request: &ProcessActionRequest,
     instance_revision: bool,
 ) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.explicit_read")
+            .await?;
     let operation = if instance_revision {
         "process_correspondence_action"
     } else {
@@ -1025,17 +1088,23 @@ async fn act_impl(
     } else {
         "correspondence_action"
     };
-    if process::replay_exists(
-        pool,
-        actor.user_id,
-        request.request_id,
-        operation,
-        id,
-        &request,
-        false,
-    )
-    .await?
-    {
+    if {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "workflow.correspondence.act_impl.replay_exists",
+        )
+        .await?;
+        process::replay_exists(
+            &mut read_stage,
+            actor.user_id,
+            request.request_id,
+            operation,
+            id,
+            &request,
+            false,
+        )
+        .await
+    }? {
         return Ok(WorkflowMutation {
             value: detail(pool, actor, id).await?,
             work_changed: false,
@@ -1049,7 +1118,14 @@ async fn act_impl(
     let signing_time = Utc::now();
     let identity = if request.signature.is_some() {
         actor.require_permission(codes::CORRESPONDENCE_SIGN_OWN)?;
-        Some(signing_identity(pool, actor.user_id).await?)
+        Some({
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "workflow.correspondence.act_impl.signing_identity",
+            )
+            .await?;
+            signing_identity(&mut read_stage, actor.user_id).await
+        }?)
     } else {
         None
     };
@@ -1076,7 +1152,9 @@ async fn act_impl(
             )
             .await?;
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.correspondence.act_impl")
+            .await?;
     if process::receipt(
         &mut tx,
         actor.user_id,
@@ -1113,13 +1191,13 @@ async fn act_impl(
     if !request.annotations.is_empty() {
         let ids: Vec<_> = request.annotations.iter().map(|a| a.id).collect();
         let committed = document.annotations.iter().any(|a| ids.contains(&a.id))
-            || sqlx::query_scalar::<_, bool>(
+            || DbSession::new(&mut *tx).scalar::<bool>("workflow.src.correspondence.act_impl",
                 "SELECT EXISTS(SELECT 1 FROM process_action_history h CROSS JOIN LATERAL jsonb_array_elements(h.entry->'annotations') a WHERE h.correspondence_id=$1 AND (h.entry->>'documentRevision')::bigint=$2 AND (a->>'id')::uuid=ANY($3))",
             )
             .bind(id)
             .bind(doc)
             .bind(&ids)
-            .fetch_one(&mut *tx)
+            .fetch_one()
             .await?;
         if committed {
             return Err(invalid("รหัสบันทึกกำกับซ้ำกับรายการที่บันทึกแล้ว"));
@@ -1162,7 +1240,7 @@ async fn act_impl(
             &request.evidence_file_ids,
         )
         .await?;
-        sqlx::query("INSERT INTO correspondence_file_links(correspondence_id,file_id,document_revision) SELECT $1,unnest($2::uuid[]),$3 ON CONFLICT DO NOTHING").bind(id).bind(&request.evidence_file_ids).bind(doc).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("workflow.src.correspondence.act_impl", "INSERT INTO correspondence_file_links(correspondence_id,file_id,document_revision) SELECT $1,unnest($2::uuid[]),$3 ON CONFLICT DO NOTHING").bind(id).bind(&request.evidence_file_ids).bind(doc).execute().await?;
     }
     let manager_user_id = if can_manage_record_on_connection(&mut tx, actor, &record).await? {
         Some(actor.user_id)
@@ -1290,14 +1368,14 @@ async fn act_impl(
     .await?;
     if let Some(signature) = request.signature {
         let file_id = if let Some(asset) = signature.asset_id {
-            Some(sqlx::query_scalar::<_,Uuid>("SELECT a.file_id FROM correspondence_signature_assets a JOIN files f ON f.id=a.file_id WHERE a.id=$1 AND a.owner_id=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL FOR SHARE OF a,f").bind(asset).bind(actor.user_id).fetch_optional(&mut *tx).await?.ok_or_else(denied)?)
+            Some(DbSession::new(&mut *tx).scalar::<Uuid>("workflow.src.correspondence.act_impl", "SELECT a.file_id FROM correspondence_signature_assets a JOIN files f ON f.id=a.file_id WHERE a.id=$1 AND a.owner_id=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL FOR SHARE OF a,f").bind(asset).bind(actor.user_id).fetch_optional().await?.ok_or_else(denied)?)
         } else {
             None
         };
-        let overlays:Vec<Json<ProcessHistoryEntry>>=sqlx::query_scalar("SELECT entry FROM process_action_history WHERE correspondence_id=$1 AND (entry->>'documentRevision')::bigint=$2 ORDER BY created_at,id").bind(id).bind(doc).fetch_all(&mut *tx).await?;
+        let overlays:Vec<Json<ProcessHistoryEntry>>=DbSession::new(&mut *tx).scalar("workflow.src.correspondence.act_impl", "SELECT entry FROM process_action_history WHERE correspondence_id=$1 AND (entry->>'documentRevision')::bigint=$2 ORDER BY created_at,id").bind(id).bind(doc).fetch_all().await?;
         let (signer_name, signer_role) = identity.ok_or_else(denied)?;
         let signature_file_snapshot = if let Some(file_id) = file_id {
-            let(version_id,checksum):(Uuid,String)=sqlx::query_as("SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 FOR SHARE OF f").bind(file_id).fetch_one(&mut *tx).await?;
+            let(version_id,checksum):(Uuid,String)=DbSession::new(&mut *tx).query_as("workflow.src.correspondence.act_impl", "SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 FOR SHARE OF f").bind(file_id).fetch_one().await?;
             Some(CorrespondenceFileSnapshot {
                 file_id,
                 version_id,
@@ -1306,7 +1384,7 @@ async fn act_impl(
         } else {
             None
         };
-        let prior_signatures:Vec<Json<CorrespondenceSigningEvidence>>=sqlx::query_scalar("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 AND document_revision=$2 ORDER BY created_at,id").bind(id).bind(doc).fetch_all(&mut *tx).await?;
+        let prior_signatures:Vec<Json<CorrespondenceSigningEvidence>>=DbSession::new(&mut *tx).scalar("workflow.src.correspondence.act_impl", "SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 AND document_revision=$2 ORDER BY created_at,id").bind(id).bind(doc).fetch_all().await?;
         let signed_at = signing_time;
         let signed_layers = (
             &document.content_hash,
@@ -1336,7 +1414,7 @@ async fn act_impl(
             file_id,
             action_id,
         };
-        sqlx::query("INSERT INTO correspondence_signing_evidence(id,correspondence_id,document_revision,signer_id,asset_file_id,action_id,evidence) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(evidence.id).bind(id).bind(doc).bind(actor.user_id).bind(file_id).bind(action_id).bind(Json(&evidence)).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("workflow.src.correspondence.act_impl", "INSERT INTO correspondence_signing_evidence(id,correspondence_id,document_revision,signer_id,asset_file_id,action_id,evidence) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(evidence.id).bind(id).bind(doc).bind(actor.user_id).bind(file_id).bind(action_id).bind(Json(&evidence)).execute().await?;
     }
     save_record(&mut tx, &record).await?;
     tx.commit().await?;
@@ -1429,7 +1507,11 @@ pub async fn list(
     if search.len() > 300 {
         return Err(invalid("คำค้นยาวเกินกำหนด"));
     }
-    let rows = sqlx::query_as::<_, CorrespondenceListRow>(LIST_SQL)
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "workflow.correspondence.list")
+            .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<CorrespondenceListRow>("workflow.src.correspondence.list", LIST_SQL)
         .bind(actor.has_any_permission(&[
             codes::CORRESPONDENCE_READ_SCHOOL,
             codes::CORRESPONDENCE_MANAGE_SCHOOL,
@@ -1453,7 +1535,7 @@ pub async fn list(
         .bind(query.cursor)
         .bind(enum_code(query.view.unwrap_or_default())?)
         .bind(limit as i64 + 1)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     let counts = rows
         .first()
@@ -1670,28 +1752,34 @@ pub async fn detail(
     id: Uuid,
 ) -> Result<CorrespondenceDetail, AppError> {
     require_read(pool, actor, id).await?;
-    let(record,source_links,current,instance_id):(Json<CorrespondenceSummary>,Json<Vec<CorrespondenceSourceLink>>,i64,Option<Uuid>)=sqlx::query_as("SELECT summary,source_links,current_document_revision,instance_id FROM correspondence_records WHERE id=$1").bind(id).fetch_one(pool).await?;
-    let revisions:Vec<_>=sqlx::query_scalar::<_,Json<CorrespondenceDocumentRevision>>("SELECT document FROM correspondence_document_revisions WHERE correspondence_id=$1 ORDER BY revision").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "workflow.correspondence.detail")
+            .await?;
+    let(record,source_links,current,instance_id):(Json<CorrespondenceSummary>,Json<Vec<CorrespondenceSourceLink>>,i64,Option<Uuid>)=DbSession::new(&mut *database_stage_0).query_as("workflow.src.correspondence.detail", "SELECT summary,source_links,current_document_revision,instance_id FROM correspondence_records WHERE id=$1").bind(id).fetch_one().await?;
+    let revisions:Vec<_>=DbSession::new(&mut *database_stage_0).scalar::<Json<CorrespondenceDocumentRevision>>("workflow.src.correspondence.detail", "SELECT document FROM correspondence_document_revisions WHERE correspondence_id=$1 ORDER BY revision").bind(id).fetch_all().await?.into_iter().map(|r|r.0).collect();
     let document = revisions
         .iter()
         .find(|r| r.revision == current)
         .cloned()
         .ok_or_else(|| AppError::InternalServerError("ไม่พบฉบับเอกสาร".into()))?;
     let instance = if let Some(instance_id) = instance_id {
-        sqlx::query_scalar::<_, Json<ProcessInstance>>(
-            "SELECT definition FROM process_instances WHERE id=$1",
-        )
-        .bind(instance_id)
-        .fetch_optional(pool)
-        .await?
-        .map(|r| r.0)
+        DbSession::new(&mut *database_stage_0)
+            .scalar::<Json<ProcessInstance>>(
+                "workflow.src.correspondence.detail",
+                "SELECT definition FROM process_instances WHERE id=$1",
+            )
+            .bind(instance_id)
+            .fetch_optional()
+            .await?
+            .map(|r| r.0)
     } else {
         None
     };
-    let history=sqlx::query_scalar::<_,Json<ProcessHistoryEntry>>("SELECT entry FROM process_action_history WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
-    let signatures=sqlx::query_scalar::<_,Json<CorrespondenceSigningEvidence>>("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
-    let my_read_receipt = sqlx::query_as::<_, CorrespondenceReadReceipt>("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
-        .bind(id).bind(actor.user_id).fetch_optional(pool).await?;
+    let history=DbSession::new(&mut *database_stage_0).scalar::<Json<ProcessHistoryEntry>>("workflow.src.correspondence.detail", "SELECT entry FROM process_action_history WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all().await?.into_iter().map(|r|r.0).collect();
+    let signatures=DbSession::new(&mut *database_stage_0).scalar::<Json<CorrespondenceSigningEvidence>>("workflow.src.correspondence.detail", "SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all().await?.into_iter().map(|r|r.0).collect();
+    let my_read_receipt = DbSession::new(&mut *database_stage_0).query_as::<CorrespondenceReadReceipt>("workflow.src.correspondence.detail", "SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor.user_id).fetch_optional().await?;
+    drop(database_stage_0);
     let manager_reassign = can_manage_record(pool, actor, &record).await?;
     let actions = available_actions(actor, &record, instance.as_ref(), manager_reassign);
     let can_manage = can_revise(actor, &record);
@@ -1732,16 +1820,22 @@ pub async fn options(
     if search.len() > 200 {
         return Err(invalid("คำค้นยาวเกินกำหนด"));
     }
-    let users=sqlx::query_as::<_,(Uuid,String)>("SELECT id,display_name FROM user_display_names WHERE status='active' AND user_type='staff' AND ($1='' OR display_name ILIKE '%'||$1||'%') ORDER BY first_name,last_name,id LIMIT 200").bind(&search).fetch_all(pool).await?.into_iter().map(|(id,display_name)|CorrespondenceUserOption{id,display_name}).collect();
-    let organizations = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,name FROM organization_units WHERE is_active ORDER BY name,id LIMIT 500",
-    )
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|(id, name)| CorrespondenceOrganizationOption { id, name })
-    .collect();
-    let positions=sqlx::query_as::<_,(Uuid,String,String)>("SELECT DISTINCT m.organization_unit_id,m.position_code,coalesce(m.position_title,m.position_code) FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.organization_unit_id,m.position_code LIMIT 1000").fetch_all(pool).await?.into_iter().map(|(organization_unit_id,code,name)|CorrespondencePositionOption{organization_unit_id,code,name}).collect();
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "workflow.correspondence.options")
+            .await?;
+    let users=DbSession::new(&mut *database_stage_0).query_as::<(Uuid,String)>("workflow.src.correspondence.options", "SELECT id,display_name FROM user_display_names WHERE status='active' AND user_type='staff' AND ($1='' OR display_name ILIKE '%'||$1||'%') ORDER BY first_name,last_name,id LIMIT 200").bind(&search).fetch_all().await?.into_iter().map(|(id,display_name)|CorrespondenceUserOption{id,display_name}).collect();
+    let organizations = DbSession::new(&mut *database_stage_0)
+        .query_as::<(Uuid, String)>(
+            "workflow.src.correspondence.options",
+            "SELECT id,name FROM organization_units WHERE is_active ORDER BY name,id LIMIT 500",
+        )
+        .fetch_all()
+        .await?
+        .into_iter()
+        .map(|(id, name)| CorrespondenceOrganizationOption { id, name })
+        .collect();
+    let positions=DbSession::new(&mut *database_stage_0).query_as::<(Uuid,String,String)>("workflow.src.correspondence.options", "SELECT DISTINCT m.organization_unit_id,m.position_code,coalesce(m.position_title,m.position_code) FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.organization_unit_id,m.position_code LIMIT 1000").fetch_all().await?.into_iter().map(|(organization_unit_id,code,name)|CorrespondencePositionOption{organization_unit_id,code,name}).collect();
+    drop(database_stage_0);
     let (decision_makers, reviewers) = directed::selection_options(
         pool,
         query.register.unwrap_or(CorrespondenceRegister::Incoming),
@@ -1749,7 +1843,14 @@ pub async fn options(
     )
     .await?;
     Ok(CorrespondenceOptions {
-        stamp_context: stamp_context(pool, actor.user_id).await?,
+        stamp_context: {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "workflow.correspondence.options.stamp_context",
+            )
+            .await?;
+            stamp_context(&mut read_stage, actor.user_id).await
+        }?,
         users,
         organizations,
         positions,
@@ -1761,13 +1862,20 @@ pub async fn options(
     })
 }
 
-async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStampContext, AppError> {
-    let actor_display_name =
-        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
-            .bind(actor)
-            .fetch_one(pool)
-            .await?;
-    let position = current_correspondence_position(pool, actor).await?;
+async fn stamp_context(
+    connection: &mut sqlx::PgConnection,
+    actor: Uuid,
+) -> Result<CorrespondenceStampContext, AppError> {
+    let actor_display_name = DbSession::new(&mut *connection)
+        .scalar(
+            "workflow.src.correspondence.stamp_context",
+            "SELECT display_name FROM user_display_names WHERE id=$1",
+        )
+        .bind(actor)
+        .fetch_one()
+        .await?;
+
+    let position = current_correspondence_position(connection, actor).await?;
     let signer_title =
         position.and_then(|(code, title)| stamp_position_title(&code, title.as_deref()));
     Ok(CorrespondenceStampContext {
@@ -1778,13 +1886,16 @@ async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStamp
 }
 
 async fn current_correspondence_position(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: Uuid,
 ) -> Result<Option<(String, Option<String>)>, AppError> {
     // Both primary domains can coexist. Correspondence prefers administration only
     // when primary status ties; a primary learning area still beats a secondary unit.
-    Ok(sqlx::query_as(
-        r#"
+
+    Ok(DbSession::new(&mut *connection)
+        .query_as(
+            "workflow.src.correspondence.current_correspondence_position",
+            r#"
         SELECT m.position_code, m.position_title FROM organization_members m
         JOIN organization_units ou ON ou.id = m.organization_unit_id AND ou.is_active
         WHERE m.user_id = $1 AND m.started_at <= CURRENT_DATE
@@ -1792,10 +1903,10 @@ async fn current_correspondence_position(
         ORDER BY m.is_primary DESC NULLS LAST, (ou.unit_type <> 'subject_group') DESC, m.id
         LIMIT 1
     "#,
-    )
-    .bind(actor)
-    .fetch_optional(pool)
-    .await?)
+        )
+        .bind(actor)
+        .fetch_optional()
+        .await?)
 }
 
 fn stamp_position_title(code: &str, title: Option<&str>) -> Option<String> {
@@ -1820,7 +1931,12 @@ pub async fn signatures(
     actor: &ActorContext,
 ) -> Result<Vec<SignatureAsset>, AppError> {
     actor.require_permission(codes::CORRESPONDENCE_SIGN_OWN)?;
-    Ok(sqlx::query_as::<_,(Uuid,String,Uuid,chrono::DateTime<Utc>)>("SELECT id,label,file_id,created_at FROM correspondence_signature_assets WHERE owner_id=$1 ORDER BY created_at,id LIMIT 100").bind(actor.user_id).fetch_all(pool).await?.into_iter().map(|(id,label,file_id,created_at)|SignatureAsset{id,label,file_id,created_at}).collect())
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.correspondence.signatures",
+    )
+    .await?;
+    Ok(DbSession::new(&mut *database_stage_0).query_as::<(Uuid,String,Uuid,chrono::DateTime<Utc>)>("workflow.src.correspondence.signatures", "SELECT id,label,file_id,created_at FROM correspondence_signature_assets WHERE owner_id=$1 ORDER BY created_at,id LIMIT 100").bind(actor.user_id).fetch_all().await?.into_iter().map(|(id,label,file_id,created_at)|SignatureAsset{id,label,file_id,created_at}).collect())
 }
 pub async fn create_signature(
     pool: &PgPool,
@@ -1831,7 +1947,11 @@ pub async fn create_signature(
     if request.label.trim().is_empty() || request.label.chars().count() > 100 {
         return Err(invalid("กรุณาระบุชื่อลายเซ็นไม่เกิน 100 ตัวอักษร"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "workflow.correspondence.create_signature",
+    )
+    .await?;
     let id = Uuid::now_v7();
     let replay = process::creation_receipt(
         &mut tx,
@@ -1843,7 +1963,7 @@ pub async fn create_signature(
     )
     .await?;
     if let Some(old) = replay {
-        let(id,label,file_id,created_at):(Uuid,String,Uuid,chrono::DateTime<Utc>)=sqlx::query_as("SELECT id,label,file_id,created_at FROM correspondence_signature_assets WHERE id=$1 AND owner_id=$2").bind(old).bind(actor.user_id).fetch_one(&mut *tx).await?;
+        let(id,label,file_id,created_at):(Uuid,String,Uuid,chrono::DateTime<Utc>)=DbSession::new(&mut *tx).query_as("workflow.src.correspondence.create_signature", "SELECT id,label,file_id,created_at FROM correspondence_signature_assets WHERE id=$1 AND owner_id=$2").bind(old).bind(actor.user_id).fetch_one().await?;
         tx.commit().await?;
         return Ok(SignatureAsset {
             id,
@@ -1859,7 +1979,7 @@ pub async fn create_signature(
         file_id: request.file_id,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO correspondence_signature_assets(id,owner_id,label,file_id,created_at) VALUES($1,$2,$3,$4,$5)").bind(id).bind(actor.user_id).bind(&result.label).bind(result.file_id).bind(result.created_at).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("workflow.src.correspondence.create_signature", "INSERT INTO correspondence_signature_assets(id,owner_id,label,file_id,created_at) VALUES($1,$2,$3,$4,$5)").bind(id).bind(actor.user_id).bind(&result.label).bind(result.file_id).bind(result.created_at).execute().await?;
     tx.commit().await?;
     Ok(result)
 }
@@ -1868,7 +1988,13 @@ pub async fn instance_detail(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<ProcessInstance, AppError> {
-    let instance:Json<ProcessInstance>=sqlx::query_scalar("SELECT definition FROM process_instances WHERE id=$1 AND source_module='correspondence' AND source_type='correspondence'").bind(id).fetch_optional(pool).await?.ok_or_else(denied)?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.correspondence.instance_detail",
+    )
+    .await?;
+    let instance:Json<ProcessInstance>=DbSession::new(&mut *database_stage_0).scalar("workflow.src.correspondence.instance_detail", "SELECT definition FROM process_instances WHERE id=$1 AND source_module='correspondence' AND source_type='correspondence'").bind(id).fetch_optional().await?.ok_or_else(denied)?;
+    drop(database_stage_0);
     require_read(pool, actor, instance.source.resource_id).await?;
     Ok(instance.0)
 }
@@ -1924,7 +2050,7 @@ mod tests {
         sqlx::query("INSERT INTO organization_members(id,user_id,organization_unit_id,position_code,position_title,is_primary) VALUES($1,$2,$3,'head','หัวหน้ากลุ่มสาระ',true),($4,$2,$5,'head','หัวหน้าฝ่ายบริหาร',true)")
             .bind(Uuid::from_u128(1)).bind(actor).bind(area).bind(Uuid::from_u128(2)).bind(admin).execute(&pool).await.unwrap();
         assert_eq!(
-            stamp_context(&pool, actor)
+            stamp_context(&mut *pool.acquire().await.unwrap(), actor)
                 .await
                 .unwrap()
                 .signer_title
@@ -1932,12 +2058,16 @@ mod tests {
             Some("หัวหน้าฝ่ายบริหาร")
         );
         assert_eq!(
-            signing_identity(&pool, actor).await.unwrap().1.as_deref(),
+            signing_identity(&mut *pool.acquire().await.unwrap(), actor)
+                .await
+                .unwrap()
+                .1
+                .as_deref(),
             Some("หัวหน้าฝ่ายบริหาร")
         );
         sqlx::query("UPDATE organization_members SET is_primary=false WHERE user_id=$1 AND organization_unit_id=$2").bind(actor).bind(admin).execute(&pool).await.unwrap();
         assert_eq!(
-            stamp_context(&pool, actor)
+            stamp_context(&mut *pool.acquire().await.unwrap(), actor)
                 .await
                 .unwrap()
                 .signer_title
@@ -1950,7 +2080,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            signing_identity(&pool, actor).await.unwrap().1.as_deref(),
+            signing_identity(&mut *pool.acquire().await.unwrap(), actor)
+                .await
+                .unwrap()
+                .1
+                .as_deref(),
             Some("หัวหน้ากลุ่มสาระ")
         );
         pool.close().await;
@@ -2017,7 +2151,12 @@ pub async fn readable_ids(
         return Ok(vec![]);
     }
     let units = exact_read_units(pool, actor).await?;
-    Ok(sqlx::query_scalar("SELECT c.id FROM correspondence_records c WHERE c.id=ANY($1) AND ($3 OR (c.created_by=$2 AND $4) OR c.organization_unit_id=ANY($5) OR ($6 AND EXISTS(SELECT 1 FROM process_participants p WHERE p.instance_id=c.instance_id AND p.user_id=$2)))").bind(ids).bind(actor.user_id).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_SCHOOL,codes::CORRESPONDENCE_MANAGE_SCHOOL])).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_OWN,codes::CORRESPONDENCE_CREATE_OWN])).bind(units).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED])).fetch_all(pool).await?)
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.correspondence.readable_ids",
+    )
+    .await?;
+    Ok(DbSession::new(&mut *database_stage_0).scalar("workflow.src.correspondence.readable_ids", "SELECT c.id FROM correspondence_records c WHERE c.id=ANY($1) AND ($3 OR (c.created_by=$2 AND $4) OR c.organization_unit_id=ANY($5) OR ($6 AND EXISTS(SELECT 1 FROM process_participants p WHERE p.instance_id=c.instance_id AND p.user_id=$2)))").bind(ids).bind(actor.user_id).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_SCHOOL,codes::CORRESPONDENCE_MANAGE_SCHOOL])).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_OWN,codes::CORRESPONDENCE_CREATE_OWN])).bind(units).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED])).fetch_all().await?)
 }
 
 fn valid_source_url(value: &str) -> bool {
@@ -2067,15 +2206,19 @@ pub async fn act_instance_with_changes(
 }
 
 async fn signing_identity(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: Uuid,
 ) -> Result<(String, Option<String>), AppError> {
-    let name: String =
-        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
-            .bind(actor)
-            .fetch_one(pool)
-            .await?;
-    let role = current_correspondence_position(pool, actor)
+    let name: String = DbSession::new(&mut *connection)
+        .scalar(
+            "workflow.src.correspondence.signing_identity",
+            "SELECT display_name FROM user_display_names WHERE id=$1",
+        )
+        .bind(actor)
+        .fetch_one()
+        .await?;
+
+    let role = current_correspondence_position(connection, actor)
         .await?
         .map(|(code, title)| title.unwrap_or(code));
     Ok((name, role))

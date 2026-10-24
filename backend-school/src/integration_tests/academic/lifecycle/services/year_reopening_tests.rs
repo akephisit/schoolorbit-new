@@ -1,4 +1,4 @@
-use crate::integration_tests::academic::{core, cutover_test_support::apply_migrations_through};
+use crate::integration_tests::academic::core;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_permissions::registry::codes;
@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 async fn fixture(name: &str) -> (PgPool, ActorContext, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 76).await.unwrap();
     let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
         .fetch_one(&pool)
         .await

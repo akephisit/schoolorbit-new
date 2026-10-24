@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -46,7 +47,19 @@ struct LockedBlock {
 }
 
 pub async fn get_block(pool: &PgPool, block_id: Uuid) -> Result<TimetableBlock, AppError> {
-    timetable_block_queries::get_block(pool, block_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.get_block",
+    )
+    .await?;
+    get_block_on_connection(&mut connection, block_id).await
+}
+
+pub async fn get_block_on_connection(
+    connection: &mut sqlx::PgConnection,
+    block_id: Uuid,
+) -> Result<TimetableBlock, AppError> {
+    timetable_block_queries::get_block(connection, block_id).await
 }
 
 pub async fn list_student_blocks(
@@ -56,8 +69,32 @@ pub async fn list_student_blocks(
     student_id: Uuid,
     on_date: chrono::NaiveDate,
 ) -> Result<Vec<TimetableBlock>, AppError> {
-    let ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT DISTINCT block.id
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.list_student_blocks",
+    )
+    .await?;
+    list_student_blocks_on_connection(
+        &mut connection,
+        timetable_version_id,
+        academic_term_id,
+        student_id,
+        on_date,
+    )
+    .await
+}
+
+pub async fn list_student_blocks_on_connection(
+    connection: &mut sqlx::PgConnection,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    student_id: Uuid,
+    on_date: chrono::NaiveDate,
+) -> Result<Vec<TimetableBlock>, AppError> {
+    let ids: Vec<Uuid> = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.list_student_blocks_on_connection",
+            r#"SELECT DISTINCT block.id
            FROM academic_timetable_blocks block
            LEFT JOIN academic_timetable_block_groups block_group
              ON block_group.block_id = block.id AND block_group.is_active
@@ -93,14 +130,14 @@ pub async fn list_student_blocks(
                  )
              )
            ORDER BY block.id"#,
-    )
-    .bind(timetable_version_id)
-    .bind(academic_term_id)
-    .bind(student_id)
-    .bind(on_date)
-    .fetch_all(pool)
-    .await?;
-    timetable_block_queries::get_blocks(pool, &ids).await
+        )
+        .bind(timetable_version_id)
+        .bind(academic_term_id)
+        .bind(student_id)
+        .bind(on_date)
+        .fetch_all()
+        .await?;
+    timetable_block_queries::get_blocks_on_connection(connection, &ids).await
 }
 
 pub async fn list_instructor_blocks(
@@ -109,7 +146,27 @@ pub async fn list_instructor_blocks(
     academic_term_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
-    let ids: Vec<Uuid> = sqlx::query_scalar(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.list_instructor_blocks",
+    )
+    .await?;
+    list_instructor_blocks_on_connection(
+        &mut connection,
+        timetable_version_id,
+        academic_term_id,
+        instructor_id,
+    )
+    .await
+}
+
+pub async fn list_instructor_blocks_on_connection(
+    connection: &mut sqlx::PgConnection,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<Vec<TimetableBlock>, AppError> {
+    let ids: Vec<Uuid> = DbSession::new(connection).scalar("academic_timetable.services.timetable_block_service.list_instructor_blocks_on_connection",
         r#"SELECT DISTINCT block.id
            FROM academic_timetable_blocks block
            LEFT JOIN academic_timetable_block_groups block_group
@@ -127,9 +184,9 @@ pub async fn list_instructor_blocks(
     .bind(timetable_version_id)
     .bind(academic_term_id)
     .bind(instructor_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
-    timetable_block_queries::get_blocks(pool, &ids).await
+    timetable_block_queries::get_blocks_on_connection(connection, &ids).await
 }
 
 pub async fn get_workspace(
@@ -138,14 +195,40 @@ pub async fn get_workspace(
     access: &TimetableAccessFilter,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
-    timetable_block_queries::get_workspace(pool, query, access, staff_directory).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.get_workspace",
+    )
+    .await?;
+    get_workspace_on_connection(&mut connection, query, access, staff_directory).await
+}
+
+pub async fn get_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: TimetableBlockWorkspaceQuery,
+    access: &TimetableAccessFilter,
+    staff_directory: &dyn crate::ports::StaffDirectoryPort,
+) -> Result<TimetableBlockWorkspace, AppError> {
+    timetable_block_queries::get_workspace(connection, query, access, staff_directory).await
 }
 
 pub async fn preview_placement(
     pool: &PgPool,
     request: TimetableBlockPlacementPreviewRequest,
 ) -> Result<TimetableBlockPlacementPreview, AppError> {
-    super::timetable_block_conflicts::preview_placement(pool, request).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.preview_placement",
+    )
+    .await?;
+    preview_placement_on_connection(&mut connection, request).await
+}
+
+pub async fn preview_placement_on_connection(
+    connection: &mut sqlx::PgConnection,
+    request: TimetableBlockPlacementPreviewRequest,
+) -> Result<TimetableBlockPlacementPreview, AppError> {
+    super::timetable_block_conflicts::preview_placement(connection, request).await
 }
 
 pub async fn create_ordinary_block(
@@ -160,7 +243,11 @@ pub async fn create_ordinary_block(
             "ต้องเลือกครูอย่างน้อยหนึ่งคนสำหรับคาบนี้".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.create_ordinary_block",
+    )
+    .await?;
     let version = lock_draft_version(
         &mut transaction,
         request.timetable_version_id,
@@ -238,41 +325,45 @@ pub async fn create_ordinary_block(
     )
     .await?;
     let block_group_id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_groups (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.create_ordinary_block",
+            r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
                academic_term_id, academic_year_id, room_id, created_by, updated_by, homeroom_ids
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)"#,
-    )
-    .bind(block_group_id)
-    .bind(block_id)
-    .bind(request.learning_group_id)
-    .bind(offering.id)
-    .bind(version.academic_term_id)
-    .bind(version.academic_year_id)
-    .bind(request.room_id)
-    .bind(actor_id)
-    .bind(&group.homeroom_ids)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_write_error)?;
+        )
+        .bind(block_group_id)
+        .bind(block_id)
+        .bind(request.learning_group_id)
+        .bind(offering.id)
+        .bind(version.academic_term_id)
+        .bind(version.academic_year_id)
+        .bind(request.room_id)
+        .bind(actor_id)
+        .bind(&group.homeroom_ids)
+        .execute()
+        .await
+        .map_err(map_write_error)?;
     for (index, teacher_id) in instructor_ids.iter().enumerate() {
         let assignment = assignments
             .iter()
             .find(|assignment| assignment.teacher_id == *teacher_id)
             .ok_or_else(|| AppError::ValidationError("ครูไม่อยู่ในข้อมูลเปิดสอนของกลุ่ม".into()))?;
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_group_instructors (
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_timetable.services.timetable_block_service.create_ordinary_block",
+                r#"INSERT INTO academic_timetable_block_group_instructors (
                    id, block_group_id, instructor_id, role, display_order
                ) VALUES (gen_random_uuid(), $1, $2, $3, $4)"#,
-        )
-        .bind(block_group_id)
-        .bind(teacher_id)
-        .bind(&assignment.role)
-        .bind((index + 1) as i32)
-        .execute(&mut *transaction)
-        .await
-        .map_err(map_write_error)?;
+            )
+            .bind(block_group_id)
+            .bind(teacher_id)
+            .bind(&assignment.role)
+            .bind((index + 1) as i32)
+            .execute()
+            .await
+            .map_err(map_write_error)?;
     }
     transaction.commit().await?;
     get_block(pool, block_id).await
@@ -291,7 +382,11 @@ pub async fn create_synchronized_block(
             "ต้องระบุห้องประจำชั้นที่เข้าร่วมช่วงกิจกรรมหลัก".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.create_synchronized_block",
+    )
+    .await?;
     let version = lock_draft_version(
         &mut transaction,
         request.timetable_version_id,
@@ -348,37 +443,41 @@ pub async fn create_synchronized_block(
     )
     .await?;
     for homeroom_id in homeroom_ids {
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_homerooms (
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_timetable.services.timetable_block_service.create_synchronized_block",
+                r#"INSERT INTO academic_timetable_block_homerooms (
                    id, block_id, homeroom_id, academic_term_id, academic_year_id,
                    target_kind, room_id, created_by, updated_by
                ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'reservation', $5, $6, $6)"#,
-        )
-        .bind(block_id)
-        .bind(homeroom_id)
-        .bind(version.academic_term_id)
-        .bind(version.academic_year_id)
-        .bind(request.room_id)
-        .bind(actor_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(map_write_error)?;
+            )
+            .bind(block_id)
+            .bind(homeroom_id)
+            .bind(version.academic_term_id)
+            .bind(version.academic_year_id)
+            .bind(request.room_id)
+            .bind(actor_id)
+            .execute()
+            .await
+            .map_err(map_write_error)?;
     }
     for teacher_id in teacher_ids {
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_teachers (
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_timetable.services.timetable_block_service.create_synchronized_block",
+                r#"INSERT INTO academic_timetable_block_teachers (
                    id, block_id, teacher_id, academic_term_id, academic_year_id,
                    created_by, updated_by
                ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5)"#,
-        )
-        .bind(block_id)
-        .bind(teacher_id)
-        .bind(version.academic_term_id)
-        .bind(version.academic_year_id)
-        .bind(actor_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(map_write_error)?;
+            )
+            .bind(block_id)
+            .bind(teacher_id)
+            .bind(version.academic_term_id)
+            .bind(version.academic_year_id)
+            .bind(actor_id)
+            .execute()
+            .await
+            .map_err(map_write_error)?;
     }
     timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, block_id, actor_id).await?;
     transaction.commit().await?;
@@ -401,7 +500,11 @@ pub async fn create_structural_blocks(
     })?;
     let mut homeroom_ids = canonical_ids(&request.homeroom_ids);
     let mut teacher_ids = canonical_ids(&request.teacher_ids);
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.create_structural_blocks",
+    )
+    .await?;
     let version = lock_draft_version(
         &mut transaction,
         request.timetable_version_id,
@@ -410,23 +513,27 @@ pub async fn create_structural_blocks(
     )
     .await?;
     if request.all_homerooms {
-        homeroom_ids = sqlx::query_scalar(
-            r#"SELECT id FROM homerooms
+        homeroom_ids = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_timetable.services.timetable_block_service.create_structural_blocks",
+                r#"SELECT id FROM homerooms
                WHERE academic_year_id = $1 AND is_active
                ORDER BY id"#,
-        )
-        .bind(version.academic_year_id)
-        .fetch_all(&mut *transaction)
-        .await?;
+            )
+            .bind(version.academic_year_id)
+            .fetch_all()
+            .await?;
     }
     if request.all_teachers {
-        teacher_ids = sqlx::query_scalar(
-            r#"SELECT id FROM users
+        teacher_ids = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_timetable.services.timetable_block_service.create_structural_blocks",
+                r#"SELECT id FROM users
                WHERE user_type = 'staff' AND status = 'active'
                ORDER BY id"#,
-        )
-        .fetch_all(&mut *transaction)
-        .await?;
+            )
+            .fetch_all()
+            .await?;
     }
     if homeroom_ids.is_empty() && teacher_ids.is_empty() {
         return Err(AppError::ValidationError(
@@ -464,42 +571,51 @@ pub async fn create_structural_blocks(
         )
         .await?;
         for homeroom_id in &homeroom_ids {
-            sqlx::query(
-                r#"INSERT INTO academic_timetable_block_homerooms (
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.timetable_block_service.create_structural_blocks",
+                    r#"INSERT INTO academic_timetable_block_homerooms (
                        id, block_id, homeroom_id, academic_term_id, academic_year_id,
                        target_kind, room_id, created_by, updated_by
                    ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'structural', $5, $6, $6)"#,
-            )
-            .bind(block_id)
-            .bind(homeroom_id)
-            .bind(version.academic_term_id)
-            .bind(version.academic_year_id)
-            .bind(request.room_id)
-            .bind(actor_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(map_write_error)?;
+                )
+                .bind(block_id)
+                .bind(homeroom_id)
+                .bind(version.academic_term_id)
+                .bind(version.academic_year_id)
+                .bind(request.room_id)
+                .bind(actor_id)
+                .execute()
+                .await
+                .map_err(map_write_error)?;
         }
         for teacher_id in &teacher_ids {
-            sqlx::query(
-                r#"INSERT INTO academic_timetable_block_teachers (
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.timetable_block_service.create_structural_blocks",
+                    r#"INSERT INTO academic_timetable_block_teachers (
                        id, block_id, teacher_id, academic_term_id, academic_year_id,
                        created_by, updated_by
                    ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5)"#,
-            )
-            .bind(block_id)
-            .bind(teacher_id)
-            .bind(version.academic_term_id)
-            .bind(version.academic_year_id)
-            .bind(actor_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(map_write_error)?;
+                )
+                .bind(block_id)
+                .bind(teacher_id)
+                .bind(version.academic_term_id)
+                .bind(version.academic_year_id)
+                .bind(actor_id)
+                .execute()
+                .await
+                .map_err(map_write_error)?;
         }
         block_ids.push(block_id);
     }
     transaction.commit().await?;
-    timetable_block_queries::get_blocks(pool, &block_ids).await
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.create_structural_blocks.completion",
+    )
+    .await?;
+    timetable_block_queries::get_blocks_on_connection(&mut completion, &block_ids).await
 }
 
 pub async fn remove_target(
@@ -508,10 +624,16 @@ pub async fn remove_target(
     block_id: Uuid,
     request: RemoveTimetableBlockTargetRequest,
 ) -> Result<TimetableBlock, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.remove_target",
+    )
+    .await?;
     ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
-    let (block_kind, scheduling_mode): (String, Option<String>) = sqlx::query_as(
-        r#"SELECT block.block_kind, block.scheduling_mode
+    let (block_kind, scheduling_mode): (String, Option<String>) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_timetable.services.timetable_block_service.remove_target",
+            r#"SELECT block.block_kind, block.scheduling_mode
            FROM academic_timetable_blocks block
            JOIN academic_timetable_versions version ON version.id = block.timetable_version_id
            WHERE block.id = $1
@@ -519,55 +641,61 @@ pub async fn remove_target(
              AND block.row_version = $3
              AND version.status = 'draft'
            FOR UPDATE OF block, version"#,
-    )
-    .bind(block_id)
-    .bind(request.timetable_version_id)
-    .bind(request.block_row_version)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(stale_block)?;
+        )
+        .bind(block_id)
+        .bind(request.timetable_version_id)
+        .bind(request.block_row_version)
+        .fetch_optional()
+        .await?
+        .ok_or_else(stale_block)?;
 
     let mut increment_parent_revision = true;
     match request.target_kind {
         TimetableTargetKind::Group if scheduling_mode.as_deref() == Some("synchronized") => {
-            let learning_group_id: Uuid = sqlx::query_scalar(
-                r#"UPDATE academic_timetable_block_groups
+            let learning_group_id: Uuid = DbSession::new(&mut *transaction)
+                .scalar(
+                    "academic_timetable.services.timetable_block_service.remove_target",
+                    r#"UPDATE academic_timetable_block_groups
                    SET is_active = false, row_version = row_version + 1,
                        updated_by = $4, updated_at = now()
                    WHERE id = $1 AND block_id = $2 AND row_version = $3 AND is_active
                    RETURNING learning_group_id"#,
-            )
-            .bind(request.target_id)
-            .bind(block_id)
-            .bind(request.target_row_version)
-            .bind(actor_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(stale_block)?;
-            sqlx::query(
-                r#"UPDATE academic_timetable_block_group_sync
+                )
+                .bind(request.target_id)
+                .bind(block_id)
+                .bind(request.target_row_version)
+                .bind(actor_id)
+                .fetch_optional()
+                .await?
+                .ok_or_else(stale_block)?;
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.timetable_block_service.remove_target",
+                    r#"UPDATE academic_timetable_block_group_sync
                    SET status = 'EXCLUDED', linked_block_group_id = NULL,
                        conflict_code = NULL, conflict_message = NULL,
                        row_version = row_version + 1, updated_by = $3, updated_at = now()
                    WHERE block_id = $1 AND learning_group_id = $2"#,
-            )
-            .bind(block_id)
-            .bind(learning_group_id)
-            .bind(actor_id)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(block_id)
+                .bind(learning_group_id)
+                .bind(actor_id)
+                .execute()
+                .await?;
         }
         TimetableTargetKind::Group => {
-            let changed = sqlx::query(
-                r#"UPDATE academic_timetable_blocks
+            let changed = DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.timetable_block_service.remove_target",
+                    r#"UPDATE academic_timetable_blocks
                    SET is_active = false, row_version = row_version + 1,
                        updated_by = $2, updated_at = now()
                    WHERE id = $1 AND is_active"#,
-            )
-            .bind(block_id)
-            .bind(actor_id)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(block_id)
+                .bind(actor_id)
+                .execute()
+                .await?;
             if changed.rows_affected() != 1 {
                 return Err(stale_block());
             }
@@ -585,8 +713,10 @@ pub async fn remove_target(
             .await?;
         }
         TimetableTargetKind::Teacher => {
-            let confirmed: bool = sqlx::query_scalar(
-                r#"SELECT EXISTS (
+            let confirmed: bool = DbSession::new(&mut *transaction)
+                .scalar(
+                    "academic_timetable.services.timetable_block_service.remove_target",
+                    r#"SELECT EXISTS (
                        SELECT 1
                        FROM academic_timetable_block_teachers target
                        JOIN academic_timetable_block_groups block_group
@@ -598,11 +728,11 @@ pub async fn remove_target(
                          AND target.block_id = $2
                          AND target.is_active
                    )"#,
-            )
-            .bind(request.target_id)
-            .bind(block_id)
-            .fetch_one(&mut *transaction)
-            .await?;
+                )
+                .bind(request.target_id)
+                .bind(block_id)
+                .fetch_one()
+                .await?;
             if confirmed {
                 return Err(AppError::ValidationError(
                     "ครูประจำกลุ่มต้องย้ายหรือยกเลิกการมอบหมายก่อนนำออกจากคาบ".to_string(),
@@ -620,20 +750,26 @@ pub async fn remove_target(
         }
     }
     if block_kind == "STRUCTURAL" {
-        let target_count: i64 = sqlx::query_scalar(
-            r#"SELECT
+        let target_count: i64 = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_timetable.services.timetable_block_service.remove_target",
+                r#"SELECT
                    (SELECT count(*) FROM academic_timetable_block_homerooms
                     WHERE block_id = $1 AND is_active)
                  + (SELECT count(*) FROM academic_timetable_block_teachers
                     WHERE block_id = $1 AND is_active)"#,
-        )
-        .bind(block_id)
-        .fetch_one(&mut *transaction)
-        .await?;
+            )
+            .bind(block_id)
+            .fetch_one()
+            .await?;
         if target_count == 0 {
-            sqlx::query("UPDATE academic_timetable_blocks SET is_active = false WHERE id = $1")
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.timetable_block_service.remove_target",
+                    "UPDATE academic_timetable_blocks SET is_active = false WHERE id = $1",
+                )
                 .bind(block_id)
-                .execute(&mut *transaction)
+                .execute()
                 .await?;
         }
     }
@@ -658,7 +794,11 @@ pub async fn update_block(
             "คำสั่งแก้ไขตารางสอนมีค่าที่ขัดแย้งกัน".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.update_block",
+    )
+    .await?;
     let block = lock_block(
         &mut transaction,
         block_id,
@@ -677,9 +817,13 @@ pub async fn update_block(
         .transpose()?
         .unwrap_or_else(|| block.day_of_week.clone());
 
-    sqlx::query("UPDATE academic_timetable_blocks SET is_active = false WHERE id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.update_block",
+            "UPDATE academic_timetable_blocks SET is_active = false WHERE id = $1",
+        )
         .bind(block_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
 
     if let Some(instructor_ids) = request.instructor_ids.as_ref() {
@@ -696,13 +840,15 @@ pub async fn update_block(
                 "คาบเรียนต้องมีครูอย่างน้อยหนึ่งคน".to_string(),
             ));
         }
-        let block_group_id: Uuid = sqlx::query_scalar(
-            r#"SELECT id FROM academic_timetable_block_groups
+        let block_group_id: Uuid = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_timetable.services.timetable_block_service.update_block",
+                r#"SELECT id FROM academic_timetable_block_groups
                WHERE block_id = $1 AND is_active"#,
-        )
-        .bind(block_id)
-        .fetch_one(&mut *transaction)
-        .await?;
+            )
+            .bind(block_id)
+            .fetch_one()
+            .await?;
         replace_group_instructors(
             &mut transaction,
             block_group_id,
@@ -739,68 +885,76 @@ pub async fn update_block(
         };
         match block.block_kind.as_str() {
             "STRUCTURAL" => {
-                sqlx::query(
-                    r#"UPDATE academic_timetable_block_homerooms
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_service.update_block",
+                        r#"UPDATE academic_timetable_block_homerooms
                        SET room_id = $2, row_version = row_version + 1,
                            updated_by = $3, updated_at = now()
                        WHERE block_id = $1 AND is_active"#,
-                )
-                .bind(block_id)
-                .bind(room_id)
-                .bind(actor_id)
-                .execute(&mut *transaction)
-                .await?;
+                    )
+                    .bind(block_id)
+                    .bind(room_id)
+                    .bind(actor_id)
+                    .execute()
+                    .await?;
             }
             _ if block.scheduling_mode.as_deref() == Some("synchronized") => {
-                sqlx::query(
-                    r#"UPDATE academic_timetable_block_homerooms
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_service.update_block",
+                        r#"UPDATE academic_timetable_block_homerooms
                        SET room_id = $2, row_version = row_version + 1,
                            updated_by = $3, updated_at = now()
                        WHERE block_id = $1 AND is_active"#,
-                )
-                .bind(block_id)
-                .bind(room_id)
-                .bind(actor_id)
-                .execute(&mut *transaction)
-                .await?;
+                    )
+                    .bind(block_id)
+                    .bind(room_id)
+                    .bind(actor_id)
+                    .execute()
+                    .await?;
             }
             _ => {
-                sqlx::query(
-                    r#"UPDATE academic_timetable_block_groups
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_service.update_block",
+                        r#"UPDATE academic_timetable_block_groups
                        SET room_id = $2, row_version = row_version + 1,
                            updated_by = $3, updated_at = now()
                        WHERE block_id = $1 AND is_active"#,
-                )
-                .bind(block_id)
-                .bind(room_id)
-                .bind(actor_id)
-                .execute(&mut *transaction)
-                .await?;
+                    )
+                    .bind(block_id)
+                    .bind(room_id)
+                    .bind(actor_id)
+                    .execute()
+                    .await?;
             }
         }
     }
 
-    let changed = sqlx::query(
-        r#"UPDATE academic_timetable_blocks
+    let changed = DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.update_block",
+            r#"UPDATE academic_timetable_blocks
            SET day_of_week = $2, bell_schedule_period_id = $3,
                title = CASE WHEN $4 THEN NULL ELSE COALESCE($5, title) END,
                note = CASE WHEN $6 THEN NULL ELSE COALESCE($7, note) END,
                is_active = true, row_version = row_version + 1,
                updated_by = $8, updated_at = now()
            WHERE id = $1 AND row_version = $9"#,
-    )
-    .bind(block_id)
-    .bind(target_day)
-    .bind(target_period_id)
-    .bind(request.clear_title)
-    .bind(request.title.as_deref().map(str::trim))
-    .bind(request.clear_note)
-    .bind(request.note.as_deref().map(str::trim))
-    .bind(actor_id)
-    .bind(request.row_version)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_write_error)?;
+        )
+        .bind(block_id)
+        .bind(target_day)
+        .bind(target_period_id)
+        .bind(request.clear_title)
+        .bind(request.title.as_deref().map(str::trim))
+        .bind(request.clear_note)
+        .bind(request.note.as_deref().map(str::trim))
+        .bind(actor_id)
+        .bind(request.row_version)
+        .execute()
+        .await
+        .map_err(map_write_error)?;
     if changed.rows_affected() != 1 {
         return Err(stale_block());
     }
@@ -822,19 +976,25 @@ pub async fn swap_blocks(
             "ต้องเลือกคนละรายการเพื่อสลับคาบ".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.swap_blocks",
+    )
+    .await?;
     ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
     let mut ids = [request.block_a_id, request.block_b_id];
     ids.sort_unstable();
-    let locked = sqlx::query(
-        r#"SELECT id FROM academic_timetable_blocks
+    let locked = DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.swap_blocks",
+            r#"SELECT id FROM academic_timetable_blocks
            WHERE id = ANY($1) AND timetable_version_id=$2 AND is_active
            ORDER BY id FOR UPDATE"#,
-    )
-    .bind(&ids[..])
-    .bind(request.timetable_version_id)
-    .fetch_all(&mut *transaction)
-    .await?;
+        )
+        .bind(&ids[..])
+        .bind(request.timetable_version_id)
+        .fetch_all()
+        .await?;
     if locked.len() != 2 {
         return Err(stale_block());
     }
@@ -857,9 +1017,13 @@ pub async fn swap_blocks(
     {
         return Err(stale_block());
     }
-    sqlx::query("UPDATE academic_timetable_blocks SET is_active = false WHERE id = ANY($1)")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.swap_blocks",
+            "UPDATE academic_timetable_blocks SET is_active = false WHERE id = ANY($1)",
+        )
         .bind(&ids[..])
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     update_block_slot(
         &mut transaction,
@@ -892,7 +1056,11 @@ pub async fn retry_sync(
     block_id: Uuid,
     request: RetryTimetableBlockSyncRequest,
 ) -> Result<TimetableBlock, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.retry_sync",
+    )
+    .await?;
     let block = lock_block(
         &mut transaction,
         block_id,
@@ -923,7 +1091,11 @@ pub async fn restore_group(
     block_id: Uuid,
     request: RestoreTimetableBlockGroupRequest,
 ) -> Result<TimetableBlock, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.restore_group",
+    )
+    .await?;
     let block = lock_block(
         &mut transaction,
         block_id,
@@ -955,7 +1127,11 @@ pub async fn deactivate_block(
     timetable_version_id: Uuid,
     row_version: i64,
 ) -> Result<TimetableBlock, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.deactivate_block",
+    )
+    .await?;
     let _ = lock_block(
         &mut transaction,
         block_id,
@@ -963,19 +1139,21 @@ pub async fn deactivate_block(
         row_version,
     )
     .await?;
-    let changed = sqlx::query(
-        r#"UPDATE academic_timetable_blocks
+    let changed = DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.deactivate_block",
+            r#"UPDATE academic_timetable_blocks
            SET is_active = false, row_version = row_version + 1,
                updated_by = $4, updated_at = now()
            WHERE id = $1 AND timetable_version_id = $2
              AND row_version = $3 AND is_active"#,
-    )
-    .bind(block_id)
-    .bind(timetable_version_id)
-    .bind(row_version)
-    .bind(actor_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(timetable_version_id)
+        .bind(row_version)
+        .bind(actor_id)
+        .execute()
+        .await?;
     if changed.rows_affected() != 1 {
         return Err(stale_block());
     }
@@ -989,33 +1167,46 @@ pub async fn deactivate_series(
     series_id: Uuid,
     timetable_version_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.timetable_block_service.deactivate_series",
+    )
+    .await?;
     ensure_draft_version_id(&mut transaction, timetable_version_id).await?;
-    let block_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM academic_timetable_blocks
+    let block_ids: Vec<Uuid> = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.deactivate_series",
+            r#"SELECT id FROM academic_timetable_blocks
            WHERE timetable_version_id = $1 AND series_id = $2 AND is_active
            ORDER BY id FOR UPDATE"#,
-    )
-    .bind(timetable_version_id)
-    .bind(series_id)
-    .fetch_all(&mut *transaction)
-    .await?;
+        )
+        .bind(timetable_version_id)
+        .bind(series_id)
+        .fetch_all()
+        .await?;
     if block_ids.is_empty() {
         return Err(AppError::NotFound("ไม่พบชุดคาบพิเศษ".to_string()));
     }
-    sqlx::query(
-        r#"UPDATE academic_timetable_blocks
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.deactivate_series",
+            r#"UPDATE academic_timetable_blocks
            SET is_active = false, row_version = row_version + 1,
                updated_by = $3, updated_at = now()
            WHERE timetable_version_id = $1 AND series_id = $2 AND is_active"#,
-    )
-    .bind(timetable_version_id)
-    .bind(series_id)
-    .bind(actor_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(timetable_version_id)
+        .bind(series_id)
+        .bind(actor_id)
+        .execute()
+        .await?;
     transaction.commit().await?;
-    timetable_block_queries::get_blocks(pool, &block_ids).await
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_block_service.deactivate_series.completion",
+    )
+    .await?;
+    timetable_block_queries::get_blocks_on_connection(&mut completion, &block_ids).await
 }
 
 async fn lock_block(
@@ -1037,18 +1228,20 @@ async fn load_locked_block(
     block_id: Uuid,
     version_id: Uuid,
 ) -> Result<LockedBlock, AppError> {
-    sqlx::query_as(
-        r#"SELECT timetable_version_id, academic_term_id, academic_year_id, bell_schedule_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.timetable_block_service.load_locked_block",
+            r#"SELECT timetable_version_id, academic_term_id, academic_year_id, bell_schedule_id,
                   bell_schedule_period_id, day_of_week, block_kind,
                   scheduling_mode, row_version
            FROM academic_timetable_blocks
            WHERE id = $1 AND timetable_version_id=$2 AND is_active FOR UPDATE"#,
-    )
-    .bind(block_id)
-    .bind(version_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(stale_block)
+        )
+        .bind(block_id)
+        .bind(version_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(stale_block)
 }
 
 async fn ensure_draft_version_id(
@@ -1056,15 +1249,17 @@ async fn ensure_draft_version_id(
     version_id: Uuid,
 ) -> Result<(), AppError> {
     require_version_term_write(transaction, version_id).await?;
-    let editable: bool = sqlx::query_scalar(
-        r#"SELECT version.status = 'draft'
+    let editable: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.ensure_draft_version_id",
+            r#"SELECT version.status = 'draft'
            FROM academic_timetable_versions version
            WHERE version.id = $1 FOR UPDATE OF version"#,
-    )
-    .bind(version_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".to_string()))?;
+        )
+        .bind(version_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".to_string()))?;
     if editable {
         Ok(())
     } else {
@@ -1080,8 +1275,8 @@ async fn replace_group_instructors(
     timetable_version_id: Uuid,
     instructor_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let (delivery_id,term_id,group_id): (Uuid,Uuid,Uuid)=sqlx::query_as("SELECT version.delivery_version_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_versions version ON version.id=block.timetable_version_id WHERE placed.id=$1 AND version.id=$2")
-        .bind(block_group_id).bind(timetable_version_id).fetch_one(&mut **transaction).await?;
+    let (delivery_id,term_id,group_id): (Uuid,Uuid,Uuid)=DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_block_service.replace_group_instructors", "SELECT version.delivery_version_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_versions version ON version.id=block.timetable_version_id WHERE placed.id=$1 AND version.id=$2")
+        .bind(block_group_id).bind(timetable_version_id).fetch_one().await?;
     let source = school_academic_delivery::services::versions::published_source(
         transaction,
         delivery_id,
@@ -1096,26 +1291,32 @@ async fn replace_group_instructors(
         .find(|group| group.id == group_id)
         .ok_or_else(|| AppError::ValidationError("กลุ่มนี้ไม่มีในข้อมูลเปิดสอนใหม่ กรุณาถอดคาบ".into()))?;
     let assignments = source_assignments(group, instructor_ids)?;
-    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.replace_group_instructors",
+            "DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1",
+        )
         .bind(block_group_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     for (index, teacher_id) in instructor_ids.iter().enumerate() {
         let assignment = assignments
             .iter()
             .find(|assignment| assignment.teacher_id == *teacher_id)
             .ok_or_else(|| AppError::ValidationError("ครูไม่อยู่ในข้อมูลเปิดสอนของกลุ่ม".into()))?;
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_group_instructors (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_timetable.services.timetable_block_service.replace_group_instructors",
+                r#"INSERT INTO academic_timetable_block_group_instructors (
                    id, block_group_id, instructor_id, role, display_order
                ) VALUES (gen_random_uuid(), $1, $2, $3, $4)"#,
-        )
-        .bind(block_group_id)
-        .bind(teacher_id)
-        .bind(&assignment.role)
-        .bind((index + 1) as i32)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(block_group_id)
+            .bind(teacher_id)
+            .bind(&assignment.role)
+            .bind((index + 1) as i32)
+            .execute()
+            .await?;
     }
     Ok(())
 }
@@ -1128,20 +1329,22 @@ async fn update_block_slot(
     row_version: i64,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    let changed = sqlx::query(
-        r#"UPDATE academic_timetable_blocks
+    let changed = DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.update_block_slot",
+            r#"UPDATE academic_timetable_blocks
            SET day_of_week = $2, bell_schedule_period_id = $3, is_active = true,
                row_version = row_version + 1, updated_by = $5, updated_at = now()
            WHERE id = $1 AND row_version = $4"#,
-    )
-    .bind(block_id)
-    .bind(day_of_week)
-    .bind(period_id)
-    .bind(row_version)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(map_write_error)?;
+        )
+        .bind(block_id)
+        .bind(day_of_week)
+        .bind(period_id)
+        .bind(row_version)
+        .bind(actor_id)
+        .execute()
+        .await
+        .map_err(map_write_error)?;
     if changed.rows_affected() == 1 {
         Ok(())
     } else {
@@ -1154,15 +1357,17 @@ async fn increment_block_revision(
     block_id: Uuid,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"UPDATE academic_timetable_blocks
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.increment_block_revision",
+            r#"UPDATE academic_timetable_blocks
            SET row_version = row_version + 1, updated_by = $2, updated_at = now()
            WHERE id = $1"#,
-    )
-    .bind(block_id)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(actor_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -1173,18 +1378,20 @@ async fn lock_draft_version(
     period_id: Uuid,
 ) -> Result<VersionContext, AppError> {
     require_version_term_write(transaction, version_id).await?;
-    let version: VersionContext = sqlx::query_as(
-        r#"SELECT version.academic_term_id, version.academic_year_id,
+    let version: VersionContext = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.timetable_block_service.lock_draft_version",
+            r#"SELECT version.academic_term_id, version.academic_year_id,
                   version.bell_schedule_id, version.delivery_version_id, version.status
            FROM academic_timetable_versions version
            WHERE version.id = $1 AND version.academic_term_id = $2
            FOR UPDATE OF version"#,
-    )
-    .bind(version_id)
-    .bind(academic_term_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอนในภาคเรียนที่เลือก".to_string()))?;
+        )
+        .bind(version_id)
+        .bind(academic_term_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอนในภาคเรียนที่เลือก".to_string()))?;
     if version.status != "draft" {
         return Err(AppError::Conflict(
             "แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่าง".to_string(),
@@ -1199,16 +1406,18 @@ async fn ensure_period(
     bell_schedule_id: Uuid,
     period_id: Uuid,
 ) -> Result<(), AppError> {
-    let valid: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let valid: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.ensure_period",
+            r#"SELECT EXISTS (
                SELECT 1 FROM bell_schedule_periods
                WHERE id = $1 AND bell_schedule_id = $2 AND is_active
            )"#,
-    )
-    .bind(period_id)
-    .bind(bell_schedule_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(period_id)
+        .bind(bell_schedule_id)
+        .fetch_one()
+        .await?;
     if valid {
         Ok(())
     } else {
@@ -1244,14 +1453,16 @@ async fn ensure_homerooms(
     academic_year_id: Uuid,
     homeroom_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let count: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM homerooms
+    let count: i64 = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.ensure_homerooms",
+            r#"SELECT count(*) FROM homerooms
            WHERE id = ANY($1) AND academic_year_id = $2 AND is_active"#,
-    )
-    .bind(homeroom_ids)
-    .bind(academic_year_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(homeroom_ids)
+        .bind(academic_year_id)
+        .fetch_one()
+        .await?;
     if count == homeroom_ids.len() as i64 {
         Ok(())
     } else {
@@ -1265,13 +1476,15 @@ async fn ensure_teachers(
     transaction: &mut Transaction<'_, Postgres>,
     teacher_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let count: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM users
+    let count: i64 = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.ensure_teachers",
+            r#"SELECT count(*) FROM users
            WHERE id = ANY($1) AND user_type = 'staff' AND status = 'active'"#,
-    )
-    .bind(teacher_ids)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(teacher_ids)
+        .fetch_one()
+        .await?;
     if count == teacher_ids.len() as i64 {
         Ok(())
     } else {
@@ -1289,8 +1502,10 @@ async fn replace_block_teacher_targets(
     teacher_ids: &[Uuid],
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    let confirmed_removal_exists: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let confirmed_removal_exists: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_service.replace_block_teacher_targets",
+            r#"SELECT EXISTS (
                SELECT 1
                FROM academic_timetable_block_teachers target
                JOIN academic_timetable_block_groups block_group
@@ -1302,34 +1517,38 @@ async fn replace_block_teacher_targets(
                  AND target.is_active
                  AND NOT (target.teacher_id = ANY($2))
            )"#,
-    )
-    .bind(block_id)
-    .bind(teacher_ids)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(teacher_ids)
+        .fetch_one()
+        .await?;
     if confirmed_removal_exists {
         return Err(AppError::ValidationError(
             "ครูประจำกลุ่มต้องย้ายหรือยกเลิกการมอบหมายก่อนนำออกจากคาบ".to_string(),
         ));
     }
 
-    sqlx::query(
-        r#"UPDATE academic_timetable_block_teachers
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.replace_block_teacher_targets",
+            r#"UPDATE academic_timetable_block_teachers
            SET is_active = false, row_version = row_version + 1,
                updated_by = $3, updated_at = now()
            WHERE block_id = $1
              AND is_active
              AND NOT (teacher_id = ANY($2))"#,
-    )
-    .bind(block_id)
-    .bind(teacher_ids)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(teacher_ids)
+        .bind(actor_id)
+        .execute()
+        .await?;
 
     for teacher_id in teacher_ids {
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_teachers (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_timetable.services.timetable_block_service.replace_block_teacher_targets",
+                r#"INSERT INTO academic_timetable_block_teachers (
                    id, block_id, teacher_id, academic_term_id, academic_year_id,
                    created_by, updated_by
                ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5)
@@ -1339,15 +1558,15 @@ async fn replace_block_teacher_targets(
                    updated_by = EXCLUDED.updated_by,
                    updated_at = now()
                WHERE NOT academic_timetable_block_teachers.is_active"#,
-        )
-        .bind(block_id)
-        .bind(teacher_id)
-        .bind(academic_term_id)
-        .bind(academic_year_id)
-        .bind(actor_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(map_write_error)?;
+            )
+            .bind(block_id)
+            .bind(teacher_id)
+            .bind(academic_term_id)
+            .bind(academic_year_id)
+            .bind(actor_id)
+            .execute()
+            .await
+            .map_err(map_write_error)?;
     }
     Ok(())
 }
@@ -1369,8 +1588,10 @@ async fn insert_block(
     series_id: Option<Uuid>,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_blocks (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.insert_block",
+            r#"INSERT INTO academic_timetable_blocks (
                id, timetable_version_id, academic_term_id, academic_year_id,
                bell_schedule_id, bell_schedule_period_id, day_of_week,
                block_kind, scheduling_mode, learning_offering_id, structural_kind,
@@ -1379,25 +1600,25 @@ async fn insert_block(
                $1, $2, $3, $4, $5, $6, $7,
                $8, $9, $10, $11, $12, $13, $14, $15, $15
            )"#,
-    )
-    .bind(block_id)
-    .bind(timetable_version_id)
-    .bind(version.academic_term_id)
-    .bind(version.academic_year_id)
-    .bind(version.bell_schedule_id)
-    .bind(bell_schedule_period_id)
-    .bind(day_of_week)
-    .bind(block_kind)
-    .bind(scheduling_mode)
-    .bind(learning_offering_id)
-    .bind(structural_kind)
-    .bind(title)
-    .bind(note)
-    .bind(series_id)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(map_write_error)?;
+        )
+        .bind(block_id)
+        .bind(timetable_version_id)
+        .bind(version.academic_term_id)
+        .bind(version.academic_year_id)
+        .bind(version.bell_schedule_id)
+        .bind(bell_schedule_period_id)
+        .bind(day_of_week)
+        .bind(block_kind)
+        .bind(scheduling_mode)
+        .bind(learning_offering_id)
+        .bind(structural_kind)
+        .bind(title)
+        .bind(note)
+        .bind(series_id)
+        .bind(actor_id)
+        .execute()
+        .await
+        .map_err(map_write_error)?;
     Ok(())
 }
 
@@ -1414,12 +1635,16 @@ async fn deactivate_child(
          updated_by = $4, updated_at = now() \
          WHERE id = $1 AND block_id = $2 AND row_version = $3 AND is_active"
     );
-    let changed = sqlx::query(sqlx::AssertSqlSafe(query))
+    let changed = DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_service.deactivate_child",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(target_id)
         .bind(block_id)
         .bind(row_version)
         .bind(actor_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     if changed.rows_affected() == 1 {
         Ok(())

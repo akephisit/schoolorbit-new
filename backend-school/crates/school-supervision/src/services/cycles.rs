@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
@@ -48,8 +49,14 @@ pub async fn list_cycles(
     pool: &PgPool,
     query: SupervisionCycleQuery,
 ) -> Result<Vec<SupervisionCycle>, AppError> {
-    let rows = sqlx::query_as::<_, SupervisionCycleRow>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "supervision.cycles.list_cycles")
+            .await?;
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionCycleRow>(
+            "supervision.services.cycles.list_cycles",
+            r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
                template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
                status, created_by, created_at, updated_at
@@ -58,25 +65,31 @@ pub async fn list_cycles(
           AND ($2::uuid IS NULL OR academic_term_id = $2 OR academic_term_id IS NULL)
         ORDER BY academic_term_id NULLS FIRST, created_at DESC
         "#,
-    )
-    .bind(query.academic_year_id)
-    .bind(query.academic_term_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to list supervision cycles: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(query.academic_year_id)
+        .bind(query.academic_term_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to list supervision cycles: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงรอบนิเทศได้".to_string())
+        })?;
 
     let cycle_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let targets_by_cycle = load_cycle_targets_by_cycle(pool, &cycle_ids).await?;
+
+    let targets_by_cycle = load_cycle_targets_by_cycle(&mut connection, &cycle_ids).await?;
     rows.into_iter()
         .map(|row| cycle_from_row(row, &targets_by_cycle))
         .collect()
 }
 
 pub async fn get_cycle(pool: &PgPool, id: Uuid) -> Result<SupervisionCycle, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(&pool, "supervision.cycles.get_cycle")
+            .await?;
     get_cycle_with_connection(&mut connection, id).await
 }
 
@@ -84,23 +97,28 @@ async fn get_cycle_with_connection(
     connection: &mut PgConnection,
     id: Uuid,
 ) -> Result<SupervisionCycle, AppError> {
-    let row = sqlx::query_as::<_, SupervisionCycleRow>(
-        r#"
+    let row = DbSession::new(&mut *connection)
+        .query_as::<SupervisionCycleRow>(
+            "supervision.services.cycles.get_cycle_with_connection",
+            r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
                template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
                status, created_by, created_at, updated_at
         FROM supervision_cycles
         WHERE id = $1
         "#,
-    )
-    .bind(id)
-    .fetch_optional(&mut *connection)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get supervision cycle: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงรอบนิเทศได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get supervision cycle: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงรอบนิเทศได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".to_string()))?;
 
     let targets = load_cycle_targets(connection, id).await?;
     cycle_from_row_with_targets(row, targets)
@@ -119,18 +137,23 @@ pub async fn create_cycle(
     )?;
     validate_cycle_targets(&input.targets)?;
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(
-            "Failed to begin create supervision cycle transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มสร้างรอบนิเทศได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "supervision.cycles.create_cycle")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to begin create supervision cycle transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มสร้างรอบนิเทศได้".to_string())
+            })?;
 
     require_context_writes(&mut tx, &[(input.academic_year_id, input.academic_term_id)]).await?;
     let status = input.status.unwrap_or(SupervisionCycleStatus::Draft);
-    let cycle_id: Uuid = sqlx::query_scalar(
-        r#"
+    let cycle_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "supervision.services.cycles.create_cycle",
+            r#"
         INSERT INTO supervision_cycles (
             academic_year_id, academic_term_id, title, description, template_id,
             booking_opens_at, booking_closes_at, starts_at, ends_at, status, created_by
@@ -138,31 +161,34 @@ pub async fn create_cycle(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
         "#,
-    )
-    .bind(input.academic_year_id)
-    .bind(input.academic_term_id)
-    .bind(&input.title)
-    .bind(&input.description)
-    .bind(input.template_id)
-    .bind(input.booking_opens_at)
-    .bind(input.booking_closes_at)
-    .bind(input.starts_at)
-    .bind(input.ends_at)
-    .bind(status.as_str())
-    .bind(created_by)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to create supervision cycle: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้างรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(input.academic_year_id)
+        .bind(input.academic_term_id)
+        .bind(&input.title)
+        .bind(&input.description)
+        .bind(input.template_id)
+        .bind(input.booking_opens_at)
+        .bind(input.booking_closes_at)
+        .bind(input.starts_at)
+        .bind(input.ends_at)
+        .bind(status.as_str())
+        .bind(created_by)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to create supervision cycle: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างรอบนิเทศได้".to_string())
+        })?;
 
     insert_cycle_targets(&mut tx, cycle_id, &input.targets).await?;
 
     tx.commit().await.map_err(|error| {
         tracing::error!(
             "Failed to commit create supervision cycle transaction: {}",
-            error
+            school_database::error_class(&error)
         );
         AppError::InternalServerError("ไม่สามารถบันทึกรอบนิเทศได้".to_string())
     })?;
@@ -175,7 +201,9 @@ pub async fn update_cycle(
     id: Uuid,
     input: UpdateSupervisionCycleRequest,
 ) -> Result<SupervisionCycle, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "supervision.cycles.update_cycle")
+            .await?;
     let before = get_cycle_with_connection(&mut tx, id).await?;
     let target = (
         input.academic_year_id.unwrap_or(before.academic_year_id),
@@ -204,17 +232,19 @@ pub async fn update_cycle(
         validate_cycle_targets(targets)?;
     }
     if target != locked {
-        let incompatible: bool = sqlx::query_scalar(
+        let incompatible: bool = DbSession::new(&mut *tx).scalar("supervision.services.cycles.update_cycle",
             "SELECT EXISTS (SELECT 1 FROM supervision_observations WHERE cycle_id=$1 AND (academic_year_id<>$2 OR ($3::uuid IS NOT NULL AND academic_term_id<>$3)))",
-        ).bind(id).bind(academic_year_id).bind(academic_term_id).fetch_one(&mut *tx).await?;
+        ).bind(id).bind(academic_year_id).bind(academic_term_id).fetch_one().await?;
         if incompatible {
             return Err(AppError::Conflict(
                 "รอบนิเทศมีรายการนิเทศที่ไม่ตรงกับปีหรือภาคเรียนปลายทาง".into(),
             ));
         }
     }
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.cycles.update_cycle",
+            r#"
         UPDATE supervision_cycles
         SET academic_year_id = $2, academic_term_id = $3,
             title = $4, description = $5, template_id = $6,
@@ -222,32 +252,42 @@ pub async fn update_cycle(
             starts_at = $9, ends_at = $10, status = $11
         WHERE id = $1
         "#,
-    )
-    .bind(id)
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .bind(&title)
-    .bind(&description)
-    .bind(template_id)
-    .bind(booking_opens_at)
-    .bind(booking_closes_at)
-    .bind(starts_at)
-    .bind(ends_at)
-    .bind(status.as_str())
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update supervision cycle: {}", error);
-        AppError::InternalServerError("ไม่สามารถแก้ไขรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(id)
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(&title)
+        .bind(&description)
+        .bind(template_id)
+        .bind(booking_opens_at)
+        .bind(booking_closes_at)
+        .bind(starts_at)
+        .bind(ends_at)
+        .bind(status.as_str())
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update supervision cycle: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถแก้ไขรอบนิเทศได้".to_string())
+        })?;
 
     if let Some(targets) = input.targets {
-        sqlx::query("DELETE FROM supervision_cycle_targets WHERE cycle_id = $1")
+        DbSession::new(&mut *tx)
+            .query(
+                "supervision.services.cycles.update_cycle",
+                "DELETE FROM supervision_cycle_targets WHERE cycle_id = $1",
+            )
             .bind(id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(|error| {
-                tracing::error!("Failed to clear supervision cycle targets: {}", error);
+                tracing::error!(
+                    "Failed to clear supervision cycle targets: {}",
+                    school_database::error_class(&error)
+                );
                 AppError::InternalServerError("ไม่สามารถแก้ไขเป้าหมายรอบนิเทศได้".to_string())
             })?;
         insert_cycle_targets(&mut tx, id, &targets).await?;
@@ -256,7 +296,7 @@ pub async fn update_cycle(
     tx.commit().await.map_err(|error| {
         tracing::error!(
             "Failed to commit update supervision cycle transaction: {}",
-            error
+            school_database::error_class(&error)
         );
         AppError::InternalServerError("ไม่สามารถบันทึกรอบนิเทศได้".to_string())
     })?;
@@ -336,8 +376,10 @@ async fn insert_cycle_targets(
         .collect();
     let priorities: Vec<i32> = targets.iter().map(|target| target.priority).collect();
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "supervision.services.cycles.insert_cycle_targets",
+            r#"
         INSERT INTO supervision_cycle_targets (
             cycle_id, target_type, target_id, required_observations, priority
         )
@@ -345,18 +387,21 @@ async fn insert_cycle_targets(
         FROM UNNEST($2::text[], $3::uuid[], $4::int4[], $5::int4[])
              AS rows(target_type, target_id, required_observations, priority)
         "#,
-    )
-    .bind(cycle_id)
-    .bind(&target_types)
-    .bind(&target_ids)
-    .bind(&required_observations)
-    .bind(&priorities)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to insert supervision cycle targets: {}", error);
-        AppError::InternalServerError("ไม่สามารถบันทึกเป้าหมายรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_id)
+        .bind(&target_types)
+        .bind(&target_ids)
+        .bind(&required_observations)
+        .bind(&priorities)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert supervision cycle targets: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกเป้าหมายรอบนิเทศได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -365,49 +410,60 @@ async fn load_cycle_targets(
     connection: &mut PgConnection,
     cycle_id: Uuid,
 ) -> Result<Vec<SupervisionCycleTarget>, AppError> {
-    let rows = sqlx::query_as::<_, SupervisionCycleTargetRow>(
-        r#"
+    let rows = DbSession::new(connection)
+        .query_as::<SupervisionCycleTargetRow>(
+            "supervision.services.cycles.load_cycle_targets",
+            r#"
         SELECT id, cycle_id, target_type, target_id, required_observations,
                priority, created_at, updated_at
         FROM supervision_cycle_targets
         WHERE cycle_id = $1
         ORDER BY priority, created_at
         "#,
-    )
-    .bind(cycle_id)
-    .fetch_all(connection)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle targets: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงเป้าหมายรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision cycle targets: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงเป้าหมายรอบนิเทศได้".to_string())
+        })?;
 
     rows.into_iter().map(cycle_target_from_row).collect()
 }
 
 async fn load_cycle_targets_by_cycle(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     cycle_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionCycleTarget>>, AppError> {
     if cycle_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows = sqlx::query_as::<_, SupervisionCycleTargetRow>(
-        r#"
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionCycleTargetRow>(
+            "supervision.services.cycles.load_cycle_targets_by_cycle",
+            r#"
         SELECT id, cycle_id, target_type, target_id, required_observations,
                priority, created_at, updated_at
         FROM supervision_cycle_targets
         WHERE cycle_id = ANY($1)
         ORDER BY priority, created_at
         "#,
-    )
-    .bind(cycle_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle targets: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงเป้าหมายรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision cycle targets: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงเป้าหมายรอบนิเทศได้".to_string())
+        })?;
 
     let mut targets_by_cycle: HashMap<Uuid, Vec<SupervisionCycleTarget>> = HashMap::new();
     for row in rows {

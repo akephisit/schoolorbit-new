@@ -27,7 +27,7 @@ struct WorkspaceStaffDirectory {
 impl StaffDirectoryPort for WorkspaceStaffDirectory {
     async fn subject_groups_for_users(
         &self,
-        _pool: &sqlx::PgPool,
+        _connection: &mut sqlx::PgConnection,
         user_ids: &[Uuid],
     ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
         assert!(user_ids.contains(&self.teacher_id));

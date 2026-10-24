@@ -3,6 +3,7 @@ use crate::{
     process::{invalid, stale},
     process_models::{SignatureInput, SignatureMethod},
 };
+use school_database::DbSession;
 use school_errors::AppError;
 
 pub fn validate_content_bound_signature(
@@ -103,5 +104,5 @@ pub async fn private_image_snapshot_in_transaction(
     file: uuid::Uuid,
     purpose: school_file_platform::platform_types::FilePurpose,
 ) -> Result<(uuid::Uuid, uuid::Uuid, String), AppError> {
-    sqlx::query_as("SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$3 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND f.owner_user_id=$2 AND f.created_by=$2 AND v.scan_status='clean' AND v.storage_status='stored' AND v.detected_mime_type IN ('image/png','image/jpeg','image/webp') AND (f.retention_class='standard' OR (f.retention_class='temporary' AND f.expires_at>now())) FOR UPDATE OF f").bind(file).bind(actor).bind(purpose.code()).fetch_optional(&mut **tx).await?.ok_or_else(||invalid("กรุณาเลือกไฟล์ลายมือชื่อส่วนตัวที่พร้อมใช้งาน"))
+    DbSession::new(&mut **tx).query_as("workflow.src.signatures.private_image_snapshot_in_transaction", "SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$3 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND f.owner_user_id=$2 AND f.created_by=$2 AND v.scan_status='clean' AND v.storage_status='stored' AND v.detected_mime_type IN ('image/png','image/jpeg','image/webp') AND (f.retention_class='standard' OR (f.retention_class='temporary' AND f.expires_at>now())) FOR UPDATE OF f").bind(file).bind(actor).bind(purpose.code()).fetch_optional().await?.ok_or_else(||invalid("กรุณาเลือกไฟล์ลายมือชื่อส่วนตัวที่พร้อมใช้งาน"))
 }

@@ -467,6 +467,7 @@ test('proposal product and temporary source uploads stay separate and survive fa
 	await expect(dialog.getByRole('status')).toHaveText('');
 	await dialog.getByLabel('รูปแหล่งที่มา', { exact: true }).setInputFiles(png);
 	await expect(dialog.getByRole('status')).toHaveText('');
+	expect(api.uploads).toEqual([]);
 	await dialog.getByRole('button', { name: 'ส่งข้อเสนอ', exact: true }).click();
 	await expect(dialog.getByRole('alert')).toContainText('ส่งข้อเสนอไม่สำเร็จ');
 	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('สมุด');
@@ -556,7 +557,9 @@ test('reader can create personal bundles with quantities and latest prices witho
 		entries: [{ itemId, quantity: 3 }]
 	});
 });
-test('cancelled proposal deletes both unattached upload stages', async ({ page }) => {
+test('cancelled proposal keeps both prepared files local and sends no deletion', async ({
+	page
+}) => {
 	const api = await catalog(page, [read, propose]);
 	await page.goto('/staff/supply-catalog/proposals');
 	await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
@@ -567,7 +570,8 @@ test('cancelled proposal deletes both unattached upload stages', async ({ page }
 	await expect(dialog.getByRole('status')).toHaveText('');
 	await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
-	expect(api.deleted).toEqual([`/api/files/${id(450)}`, `/api/files/${id(451)}`]);
+	expect(api.uploads).toEqual([]);
+	expect(api.deleted).toEqual([]);
 	expect(api.writes).toHaveLength(0);
 });
 
@@ -809,7 +813,11 @@ test('approval confirmation cancels without writes or stage cleanup and preserve
 	await expect(confirmation).toContainText('45.00');
 	await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('ชื่อที่ตรวจแล้ว');
-	await expect(dialog.getByRole('img', { name: 'ชื่อที่ตรวจแล้ว', exact: true })).toBeVisible();
+	await dialog.getByRole('button', { name: 'ดูตัวอย่างก่อนบันทึก', exact: true }).click();
+	await expect(
+		dialog.getByRole('img', { name: `ตัวอย่าง ${png.name}`, exact: true })
+	).toHaveAttribute('src', /^blob:/);
+	expect(api.uploads).toEqual([]);
 	await expect(confirmation).toHaveCount(0);
 	expect(api.writes).toEqual([]);
 	expect(api.deleted).toEqual([]);
@@ -931,7 +939,9 @@ test('category saves supersede retained category and item refresh snapshots', as
 });
 
 for (const form of ['proposal', 'version'] as const) {
-	test(`${form} image upload and removal keep the action position stable`, async ({ page }) => {
+	test(`${form} local image preparation and save-time upload keep actions usable`, async ({
+		page
+	}) => {
 		await page.setViewportSize({ width: 375, height: 900 });
 		const api = await catalog(page, [read, manage, propose]);
 		await page.goto(
@@ -954,20 +964,6 @@ for (const form of ['proposal', 'version'] as const) {
 				if (!form) throw new Error('Form action missing');
 				return button.getBoundingClientRect().top - form.getBoundingClientRect().top;
 			});
-		let entered = '';
-		let release = () => {};
-		let held = new Promise<void>((resolve) => (release = resolve));
-		await page.route(
-			(url) => url.pathname === '/api/files' || url.pathname.startsWith('/api/files/'),
-			async (route) => {
-				const method = route.request().method();
-				if (method === 'POST' || method === 'DELETE') {
-					entered = method;
-					await held;
-				}
-				await route.fallback();
-			}
-		);
 		await dialog.evaluate((node) =>
 			Promise.all(node.getAnimations().map((animation) => animation.finished))
 		);
@@ -975,63 +971,136 @@ for (const form of ['proposal', 'version'] as const) {
 		await dialog
 			.getByLabel(form === 'proposal' ? 'รูปแหล่งที่มา' : 'รูปสินค้า', { exact: true })
 			.setInputFiles(png);
-		await expect.poll(() => entered).toBe('POST');
-		await expect(dialog.getByRole('status')).toContainText('กำลังอัปโหลด');
-		await expect(save).toBeDisabled();
-		expect(await actionOffset()).toBeCloseTo(idleOffset, 1);
-		release();
 		await expect(dialog.getByRole('status')).toHaveText('');
+		expect(api.uploads).toEqual([]);
+		expect(api.deleted).toEqual([]);
+		await expect(save).toBeEnabled();
+		await dialog.getByRole('button', { name: 'ดูตัวอย่างก่อนบันทึก', exact: true }).click();
 		await expect(
-			dialog.getByRole('img', {
-				name: form === 'proposal' ? 'รูปแหล่งที่มา' : 'กระดาษ A4',
-				exact: true
-			})
-		).toBeVisible();
-		const previewOffset = await actionOffset();
-		entered = '';
-		held = new Promise<void>((resolve) => (release = resolve));
+			dialog.getByRole('img', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toHaveAttribute('src', /^blob:/);
 		await dialog
 			.getByRole('button', {
 				name: form === 'proposal' ? 'นำรูปแหล่งที่มาออก' : 'นำรูปสินค้าออก',
 				exact: true
 			})
 			.click();
-		await expect.poll(() => entered).toBe('DELETE');
-		await expect(dialog.getByRole('status')).toContainText('กำลังนำรูป');
-		await expect(save).toBeDisabled();
-		expect(await actionOffset()).toBeCloseTo(previewOffset, 1);
-		release();
-		await expect(dialog.getByRole('status')).toHaveText('');
+		await expect(
+			dialog.getByRole('img', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toHaveCount(0);
+		expect(await actionOffset()).toBeCloseTo(idleOffset, 1);
+		expect(api.uploads).toEqual([]);
+		expect(api.deleted).toEqual([]);
 		expect(api.writes).toEqual([]);
-		expect(api.deleted).toHaveLength(1);
+		if (form === 'proposal') {
+			await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('รูปก่อนส่ง');
+			await dialog.getByLabel('หน่วยนับ *', { exact: true }).fill('ชิ้น');
+			await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('12.00');
+			await dialog.getByLabel('ร้านค้า *', { exact: true }).fill('ร้านทดสอบ');
+		}
+		await dialog
+			.getByLabel(form === 'proposal' ? 'รูปแหล่งที่มา' : 'รูปสินค้า', { exact: true })
+			.setInputFiles(png);
+		await expect(
+			dialog.getByRole('button', { name: 'ดูตัวอย่างก่อนบันทึก', exact: true })
+		).toBeVisible();
+		const preparedOffset = await actionOffset();
+		let entered = false;
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route('**/api/files', async (route) => {
+			entered = true;
+			await held;
+			await route.fallback();
+		});
+		await save.click();
+		await expect.poll(() => entered).toBe(true);
+		await expect(save).toBeDisabled();
+		expect(await actionOffset()).toBeCloseTo(preparedOffset, 1);
+		release();
+		await expect.poll(() => api.uploads.length).toBe(1);
+		await expect.poll(() => api.writes.length).toBe(1);
+		expect(api.deleted).toEqual([]);
 	});
 }
 
-test('same-owner proposal navigation retains the open upload draft and never deletes its stages', async ({
+test('same-owner catalog query navigation preserves a prepared editor without upload or deletion', async ({
 	page
 }) => {
-	const api = await catalog(page, [read, propose]);
-	await page.goto('/staff/supply-catalog/proposals');
-	await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
+	const api = await catalog(page, [read, manage]);
+	await page.goto('/staff/supply-catalog?page=1');
+	await page.getByRole('button', { name: 'เพิ่มพัสดุ', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ข้อเสนอที่ยังไม่บันทึก');
+	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ร่างพัสดุที่ยังไม่บันทึก');
 	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
 	await expect(dialog.getByRole('status')).toHaveText('');
-	await navigateSameContext(page, '/staff/supply-catalog/proposals?page=1');
+	await navigateSameContext(page, '/staff/supply-catalog?page=2');
 	await expect
-		.poll(
-			() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/proposals?')).length
-		)
+		.poll(() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/items?')).length)
 		.toBe(2);
 	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
-		'ข้อเสนอที่ยังไม่บันทึก'
+		'ร่างพัสดุที่ยังไม่บันทึก'
 	);
 	await expect(
-		dialog.getByRole('img', { name: 'ข้อเสนอที่ยังไม่บันทึก', exact: true })
+		dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
 	).toBeVisible();
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
+	expect(api.uploads).toEqual([]);
 	expect(api.writes).toEqual([]);
 	expect(api.deleted).toEqual([]);
 });
+
+for (const navigation of ['back', 'query'] as const)
+	test(`dirty proposal ${navigation} warns before destroying the prepared file`, async ({
+		page
+	}) => {
+		const api = await catalog(page, [read, propose]);
+		await page.goto('/staff/supply-catalog/proposals?page=1');
+		await navigateSameContext(page, '/staff/supply-catalog/proposals?page=2');
+		await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ร่างข้อเสนอที่ต้องเก็บไว้');
+		await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
+		await expect(
+			dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toBeVisible();
+		const destination =
+			navigation === 'back'
+				? '/staff/supply-catalog/proposals?page=1'
+				: '/staff/supply-catalog/proposals?page=3&review=false';
+		async function leave() {
+			if (navigation === 'back') await page.evaluate(() => history.back());
+			else
+				await page.evaluate((href) => {
+					const link = document.createElement('a');
+					link.href = href;
+					document.body.append(link);
+					link.click();
+					link.remove();
+				}, destination);
+		}
+		await leave();
+		const warning = page.getByRole('alertdialog');
+		await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+		await warning.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
+		await expect(page).toHaveURL(/proposals\?page=2$/);
+		await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
+			'ร่างข้อเสนอที่ต้องเก็บไว้'
+		);
+		await expect(
+			dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toBeVisible();
+		expect(api.uploads).toEqual([]);
+		await leave();
+		await warning.getByRole('button', { name: 'ออกโดยไม่บันทึก', exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(destination.replace(/[?]/g, '\\?')));
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		expect(api.uploads).toEqual([]);
+		expect(api.deleted).toEqual([]);
+		expect(api.writes).toEqual([]);
+	});
 
 test.describe('touch catalog controls', () => {
 	test.use({ viewport: { width: 375, height: 900 }, hasTouch: true, isMobile: true });

@@ -1,4 +1,5 @@
 use chrono::Duration;
+use school_database::DbSession;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -100,6 +101,18 @@ pub async fn list_homerooms(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<Vec<Homeroom>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_homerooms",
+    )
+    .await?;
+    list_homerooms_on_connection(&mut connection, academic_year_id).await
+}
+
+pub async fn list_homerooms_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<Vec<Homeroom>, AppError> {
     let sql = format!(
         "SELECT {HOMEROOM_COLUMNS}, COALESCE(occupancy.student_count, 0) AS student_count FROM homerooms \
          LEFT JOIN (SELECT homeroom_id,count(*) AS student_count FROM homeroom_placements \
@@ -113,17 +126,37 @@ pub async fn list_homerooms(
              CASE WHEN room_number ~ '^[0-9]+$' THEN ltrim(room_number,'0') END, \
              room_number NULLS LAST,code,id LIMIT 500"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_homerooms_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(academic_year_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
 pub async fn get_homeroom(pool: &PgPool, id: Uuid) -> Result<Homeroom, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.get_homeroom",
+    )
+    .await?;
+    get_homeroom_on_connection(&mut connection, id).await
+}
+
+pub async fn get_homeroom_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<Homeroom, AppError> {
     let sql = format!("SELECT {HOMEROOM_COLUMNS} FROM homerooms WHERE id = $1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.get_homeroom_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))
 }
@@ -133,7 +166,11 @@ pub async fn create_homeroom(
     request: CreateHomeroomRequest,
 ) -> Result<Homeroom, AppError> {
     validate_homeroom_fields(request.capacity)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_homeroom",
+    )
+    .await?;
     let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         request.academic_year_id,
@@ -148,25 +185,27 @@ pub async fn create_homeroom(
         request.custom_name.as_deref(),
     )?;
     let id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.create_homeroom",
+            r#"
         INSERT INTO homerooms (
             id, code, name, academic_year_id, grade_level_id, room_number,
             is_active, study_program_id, capacity
         ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8)
         "#,
-    )
-    .bind(id)
-    .bind(identity.code)
-    .bind(identity.name)
-    .bind(request.academic_year_id)
-    .bind(request.grade_level_id)
-    .bind(request.room_number.trim())
-    .bind(request.study_program_id)
-    .bind(request.capacity)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_homeroom_write_error)?;
+        )
+        .bind(id)
+        .bind(identity.code)
+        .bind(identity.name)
+        .bind(request.academic_year_id)
+        .bind(request.grade_level_id)
+        .bind(request.room_number.trim())
+        .bind(request.study_program_id)
+        .bind(request.capacity)
+        .execute()
+        .await
+        .map_err(map_homeroom_write_error)?;
     transaction.commit().await?;
     get_homeroom(pool, id).await
 }
@@ -178,14 +217,21 @@ pub async fn update_homeroom(
 ) -> Result<Homeroom, AppError> {
     parse_row_version(request.row_version)?;
     validate_homeroom_fields(request.capacity)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.update_homeroom",
+    )
+    .await?;
     require_owned_year_write(&mut transaction, StudentYearWriteTarget::Homeroom(id)).await?;
-    let academic_year_id: Uuid =
-        sqlx::query_scalar("SELECT academic_year_id FROM homerooms WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
+    let academic_year_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.update_homeroom",
+            "SELECT academic_year_id FROM homerooms WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
     let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         academic_year_id,
@@ -199,25 +245,27 @@ pub async fn update_homeroom(
         &request.room_number,
         request.custom_name.as_deref(),
     )?;
-    let result = sqlx::query(
-        r#"
+    let result = DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.update_homeroom",
+            r#"
         UPDATE homerooms SET code = $1, name = $2, grade_level_id = $3,
             room_number = $4, study_program_id = $5,
             capacity = $6, row_version = row_version + 1, updated_at = now()
         WHERE id = $7 AND row_version = $8
         "#,
-    )
-    .bind(identity.code)
-    .bind(identity.name)
-    .bind(request.grade_level_id)
-    .bind(request.room_number.trim())
-    .bind(request.study_program_id)
-    .bind(request.capacity)
-    .bind(id)
-    .bind(request.row_version)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_homeroom_write_error)?;
+        )
+        .bind(identity.code)
+        .bind(identity.name)
+        .bind(request.grade_level_id)
+        .bind(request.room_number.trim())
+        .bind(request.study_program_id)
+        .bind(request.capacity)
+        .bind(id)
+        .bind(request.row_version)
+        .execute()
+        .await
+        .map_err(map_homeroom_write_error)?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict("ห้องเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
@@ -229,34 +277,62 @@ pub async fn list_advisors(
     pool: &PgPool,
     homeroom_id: Uuid,
 ) -> Result<Vec<HomeroomAdvisor>, AppError> {
-    get_homeroom(pool, homeroom_id).await?;
-    Ok(sqlx::query_as(
-        "SELECT id, user_id, role FROM homeroom_advisors WHERE homeroom_id = $1 \
-         ORDER BY role, user_id",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_advisors",
     )
-    .bind(homeroom_id)
-    .fetch_all(pool)
-    .await?)
+    .await?;
+    list_advisors_on_connection(&mut connection, homeroom_id).await
+}
+
+pub async fn list_advisors_on_connection(
+    connection: &mut sqlx::PgConnection,
+    homeroom_id: Uuid,
+) -> Result<Vec<HomeroomAdvisor>, AppError> {
+    get_homeroom_on_connection(connection, homeroom_id).await?;
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_advisors_on_connection",
+            "SELECT id, user_id, role FROM homeroom_advisors WHERE homeroom_id = $1 \
+         ORDER BY role, user_id",
+        )
+        .bind(homeroom_id)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn list_advisors_for_year(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<Vec<HomeroomAdvisorAssignment>, AppError> {
-    require_academic_year(pool, academic_year_id).await?;
-    let advisors = sqlx::query_as(
-        r#"SELECT advisor.id, advisor.homeroom_id, advisor.user_id, advisor.role
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_advisors_for_year",
+    )
+    .await?;
+    list_advisors_for_year_on_connection(&mut connection, academic_year_id).await
+}
+
+pub async fn list_advisors_for_year_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<Vec<HomeroomAdvisorAssignment>, AppError> {
+    require_academic_year(connection, academic_year_id).await?;
+    let advisors = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_advisors_for_year_on_connection",
+            r#"SELECT advisor.id, advisor.homeroom_id, advisor.user_id, advisor.role
            FROM homeroom_advisors advisor
            JOIN homerooms homeroom ON homeroom.id = advisor.homeroom_id
            WHERE homeroom.academic_year_id = $1
            ORDER BY homeroom.grade_level_id, homeroom.code, homeroom.id,
                     advisor.role, advisor.user_id, advisor.id
            LIMIT $2"#,
-    )
-    .bind(academic_year_id)
-    .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
+        .fetch_all()
+        .await?;
     if advisors.len() > MAX_YEAR_RELATIONSHIP_ROWS {
         return Err(AppError::ValidationError(
             "จำนวนรายการครูที่ปรึกษาในปีการศึกษามากเกิน 2,000 รายการ".to_string(),
@@ -287,48 +363,73 @@ pub async fn replace_advisors(
             "รายชื่อหรือบทบาทครูที่ปรึกษาไม่ถูกต้อง".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.replace_advisors",
+    )
+    .await?;
     require_owned_year_write(
         &mut transaction,
         StudentYearWriteTarget::Homeroom(homeroom_id),
     )
     .await?;
-    let actual: i64 =
-        sqlx::query_scalar("SELECT row_version FROM homerooms WHERE id = $1 FOR UPDATE")
-            .bind(homeroom_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
+    let actual: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.replace_advisors",
+            "SELECT row_version FROM homerooms WHERE id = $1 FOR UPDATE",
+        )
+        .bind(homeroom_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
     if actual != request.row_version {
         return Err(AppError::Conflict("ห้องเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
-    sqlx::query("DELETE FROM homeroom_advisors WHERE homeroom_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.replace_advisors",
+            "DELETE FROM homeroom_advisors WHERE homeroom_id = $1",
+        )
         .bind(homeroom_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     for advisor in request.advisors {
-        sqlx::query(
+        DbSession::new(&mut *transaction).query("academic_core.services.student_years.replace_advisors",
             "INSERT INTO homeroom_advisors (id, homeroom_id, user_id, role) VALUES ($1, $2, $3, $4)",
         )
         .bind(Uuid::now_v7())
         .bind(homeroom_id)
         .bind(advisor.user_id)
         .bind(advisor.role)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     }
-    sqlx::query(
-        "UPDATE homerooms SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
-    )
-    .bind(homeroom_id)
-    .execute(&mut *transaction)
-    .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.replace_advisors",
+            "UPDATE homerooms SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
+        )
+        .bind(homeroom_id)
+        .execute()
+        .await?;
     transaction.commit().await?;
     list_advisors(pool, homeroom_id).await
 }
 
 pub async fn list_student_years(
     pool: &PgPool,
+    filter: StudentAcademicYearFilter,
+) -> Result<Vec<StudentAcademicYear>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_student_years",
+    )
+    .await?;
+    list_student_years_on_connection(&mut connection, filter).await
+}
+
+pub async fn list_student_years_on_connection(
+    connection: &mut sqlx::PgConnection,
     filter: StudentAcademicYearFilter,
 ) -> Result<Vec<StudentAcademicYear>, AppError> {
     let sql = format!(
@@ -365,14 +466,18 @@ pub async fn list_student_years(
         LIMIT 1000
         "#
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_student_years_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(filter.academic_year_id)
         .bind(filter.student_id)
         .bind(filter.grade_level_id)
         .bind(filter.study_program_id)
         .bind(filter.status)
         .bind(filter.homeroom_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
@@ -380,7 +485,19 @@ pub async fn list_student_year_candidates(
     pool: &PgPool,
     query: StudentYearCandidateQuery,
 ) -> Result<Vec<StudentYearCandidate>, AppError> {
-    require_academic_year(pool, query.academic_year_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_student_year_candidates",
+    )
+    .await?;
+    list_student_year_candidates_on_connection(&mut connection, query).await
+}
+
+pub async fn list_student_year_candidates_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: StudentYearCandidateQuery,
+) -> Result<Vec<StudentYearCandidate>, AppError> {
+    require_academic_year(connection, query.academic_year_id).await?;
     let limit = query.limit.unwrap_or(20).clamp(1, 100) as i64;
     let search = query
         .search
@@ -388,8 +505,10 @@ pub async fn list_student_year_candidates(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| format!("%{value}%"));
-    Ok(sqlx::query_as(
-        r#"
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_student_year_candidates_on_connection",
+            r#"
         SELECT student.id, student_info.student_id AS student_code,
                concat_ws(' ', nullif(btrim(student.title), ''),
                          student.first_name, student.last_name) AS name
@@ -410,22 +529,38 @@ pub async fn list_student_year_candidates(
                  student.last_name, student.id
         LIMIT $3
         "#,
-    )
-    .bind(query.academic_year_id)
-    .bind(search)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(query.academic_year_id)
+        .bind(search)
+        .bind(limit)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn get_student_year(pool: &PgPool, id: Uuid) -> Result<StudentAcademicYear, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.get_student_year",
+    )
+    .await?;
+    get_student_year_on_connection(&mut connection, id).await
+}
+
+pub async fn get_student_year_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<StudentAcademicYear, AppError> {
     let sql = format!(
         "SELECT {STUDENT_YEAR_COLUMNS} FROM student_academic_years student_year \
          {STUDENT_YEAR_JOINS} WHERE student_year.id = $1"
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.get_student_year_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()))
 }
@@ -435,7 +570,11 @@ pub async fn create_student_year(
     actor_user_id: Uuid,
     request: CreateStudentAcademicYearRequest,
 ) -> Result<StudentAcademicYear, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_student_year",
+    )
+    .await?;
     validate_student_year_context(
         &mut transaction,
         request.academic_year_id,
@@ -443,31 +582,35 @@ pub async fn create_student_year(
         request.study_program_id,
     )
     .await?;
-    let student_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND user_type = 'student')",
-    )
-    .bind(request.student_id)
-    .fetch_one(&mut *transaction)
-    .await?;
+    let student_exists: bool = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.create_student_year",
+            "SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND user_type = 'student')",
+        )
+        .bind(request.student_id)
+        .fetch_one()
+        .await?;
     if !student_exists {
         return Err(AppError::ValidationError("ไม่พบนักเรียน".to_string()));
     }
     let id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.create_student_year",
+            r#"
         INSERT INTO student_academic_years (
             id, student_id, academic_year_id, grade_level_id, study_program_id, status
         ) VALUES ($1, $2, $3, $4, $5, 'planned')
         "#,
-    )
-    .bind(id)
-    .bind(request.student_id)
-    .bind(request.academic_year_id)
-    .bind(request.grade_level_id)
-    .bind(request.study_program_id)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_student_year_write_error)?;
+        )
+        .bind(id)
+        .bind(request.student_id)
+        .bind(request.academic_year_id)
+        .bind(request.grade_level_id)
+        .bind(request.study_program_id)
+        .execute()
+        .await
+        .map_err(map_student_year_write_error)?;
     append_audit(
         &mut transaction,
         "student_academic_year.created",
@@ -492,26 +635,30 @@ pub async fn withdraw_for_account_deactivation(
     student_id: Uuid,
 ) -> Result<(), AppError> {
     lifecycle_guard::lock_transition(transaction).await?;
-    let years: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT DISTINCT student_year.academic_year_id FROM student_academic_years student_year
+    let years: Vec<Uuid> = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.student_years.withdraw_for_account_deactivation",
+            "SELECT DISTINCT student_year.academic_year_id FROM student_academic_years student_year
          JOIN academic_years year ON year.id=student_year.academic_year_id
          WHERE student_year.student_id=$1 AND year.status NOT IN ('closed','archived')
          ORDER BY student_year.academic_year_id",
-    )
-    .bind(student_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(student_id)
+        .fetch_all()
+        .await?;
     for year in &years {
         lifecycle_guard::require_year_write_exclusive(transaction, *year).await?;
     }
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM users WHERE id=$1 AND user_type='student' FOR UPDATE",
-    )
-    .bind(student_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
-    let mut placement_ids: Vec<Uuid> = sqlx::query_scalar(
+    DbSession::new(&mut **transaction)
+        .scalar::<Uuid>(
+            "academic_core.services.student_years.withdraw_for_account_deactivation",
+            "SELECT id FROM users WHERE id=$1 AND user_type='student' FOR UPDATE",
+        )
+        .bind(student_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
+    let mut placement_ids: Vec<Uuid> = DbSession::new(&mut **transaction).scalar("academic_core.services.student_years.withdraw_for_account_deactivation",
         "UPDATE homeroom_placements placement
          SET status='ended',end_date=COALESCE(placement.end_date,GREATEST(placement.start_date,CURRENT_DATE)),
              row_version=placement.row_version+1,updated_at=now()
@@ -519,11 +666,11 @@ pub async fn withdraw_for_account_deactivation(
          WHERE placement.student_academic_year_id=student_year.id AND student_year.student_id=$1
            AND student_year.academic_year_id=ANY($2) AND placement.status IN ('planned','current')
          RETURNING placement.id",
-    ).bind(student_id).bind(&years).fetch_all(&mut **transaction).await?;
-    let mut student_year_ids: Vec<Uuid> = sqlx::query_scalar(
+    ).bind(student_id).bind(&years).fetch_all().await?;
+    let mut student_year_ids: Vec<Uuid> = DbSession::new(&mut **transaction).scalar("academic_core.services.student_years.withdraw_for_account_deactivation",
         "UPDATE student_academic_years SET status='withdrawn',row_version=row_version+1,updated_at=now()
          WHERE student_id=$1 AND academic_year_id=ANY($2) AND status IN ('planned','active') RETURNING id",
-    ).bind(student_id).bind(&years).fetch_all(&mut **transaction).await?;
+    ).bind(student_id).bind(&years).fetch_all().await?;
     rosters
         .reconcile(transaction, actor_user_id, &student_year_ids)
         .await?;
@@ -546,13 +693,21 @@ pub async fn update_student_year(
     request: UpdateStudentAcademicYearRequest,
 ) -> Result<StudentAcademicYear, AppError> {
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.update_student_year",
+    )
+    .await?;
     require_owned_year_write(&mut transaction, StudentYearWriteTarget::StudentYear(id)).await?;
-    let (academic_year_id, status): (Uuid, StudentAcademicYearStatus) = sqlx::query_as(
+    let (academic_year_id, status): (Uuid, StudentAcademicYearStatus) = DbSession::new(
+        &mut *transaction,
+    )
+    .query_as(
+        "academic_core.services.student_years.update_student_year",
         "SELECT academic_year_id, status FROM student_academic_years WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()))?;
     if status != StudentAcademicYearStatus::Planned {
@@ -567,17 +722,19 @@ pub async fn update_student_year(
         request.study_program_id,
     )
     .await?;
-    let result = sqlx::query(
-        "UPDATE student_academic_years SET grade_level_id = $1, study_program_id = $2, \
+    let result = DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.update_student_year",
+            "UPDATE student_academic_years SET grade_level_id = $1, study_program_id = $2, \
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $3 AND row_version = $4 AND status = 'planned'",
-    )
-    .bind(request.grade_level_id)
-    .bind(request.study_program_id)
-    .bind(id)
-    .bind(request.row_version)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.grade_level_id)
+        .bind(request.study_program_id)
+        .bind(id)
+        .bind(request.row_version)
+        .execute()
+        .await?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "ข้อมูลนักเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
@@ -611,21 +768,27 @@ pub async fn create_placement(
             "ประเภทการเข้าเรียนห้ามว่าง".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_placement",
+    )
+    .await?;
     require_owned_year_write(
         &mut transaction,
         StudentYearWriteTarget::StudentYear(student_year_id),
     )
     .await?;
     let (academic_year_id, grade_level_id, study_program_id, actual): (Uuid, Uuid, Uuid, i64) =
-        sqlx::query_as(
-            "SELECT academic_year_id, grade_level_id, study_program_id, row_version \
+        DbSession::new(&mut *transaction)
+            .query_as(
+                "academic_core.services.student_years.create_placement",
+                "SELECT academic_year_id, grade_level_id, study_program_id, row_version \
          FROM student_academic_years WHERE id = $1 FOR UPDATE",
-        )
-        .bind(student_year_id)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()))?;
+            )
+            .bind(student_year_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()))?;
     if actual != request.row_version {
         return Err(AppError::Conflict(
             "ข้อมูลนักเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
@@ -641,28 +804,30 @@ pub async fn create_placement(
     .await?;
     validate_placement_date(&mut transaction, academic_year_id, request.start_date).await?;
     let id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.create_placement",
+            r#"
         INSERT INTO homeroom_placements (
             id, student_academic_year_id, academic_year_id, homeroom_id,
             start_date, status, enrollment_type, class_number
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
-    )
-    .bind(id)
-    .bind(student_year_id)
-    .bind(academic_year_id)
-    .bind(request.homeroom_id)
-    .bind(request.start_date)
-    .bind(request.status)
-    .bind(request.enrollment_type.trim())
-    .bind(request.class_number)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_placement_write_error)?;
-    sqlx::query("UPDATE student_academic_years SET row_version = row_version + 1, updated_at = now() WHERE id = $1")
+        )
+        .bind(id)
         .bind(student_year_id)
-        .execute(&mut *transaction)
+        .bind(academic_year_id)
+        .bind(request.homeroom_id)
+        .bind(request.start_date)
+        .bind(request.status)
+        .bind(request.enrollment_type.trim())
+        .bind(request.class_number)
+        .execute()
+        .await
+        .map_err(map_placement_write_error)?;
+    DbSession::new(&mut *transaction).query("academic_core.services.student_years.create_placement", "UPDATE student_academic_years SET row_version = row_version + 1, updated_at = now() WHERE id = $1")
+        .bind(student_year_id)
+        .execute()
         .await?;
     append_audit(
         &mut transaction,
@@ -679,7 +844,12 @@ pub async fn create_placement(
         .reconcile(&mut transaction, actor_user_id, &[student_year_id])
         .await?;
     transaction.commit().await?;
-    get_placement(pool, id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.placement_result",
+    )
+    .await?;
+    get_placement(&mut connection, id).await
 }
 
 pub async fn transfer_placement(
@@ -696,15 +866,27 @@ pub async fn transfer_placement(
         ));
     }
     let reason = normalize_transfer_reason(&request.reason)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.transfer_placement",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
-    let digest: String = sqlx::query_scalar("SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex')")
+    let digest: String = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.transfer_placement",
+            "SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex')",
+        )
         .bind(request.idempotency_key.to_string())
-        .fetch_one(&mut *transaction)
+        .fetch_one()
         .await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.transfer_placement",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        )
         .bind(&digest)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     if let Some(replayed) = replay_transfer(&mut transaction, &digest).await? {
         transaction.commit().await?;
@@ -726,13 +908,15 @@ pub async fn transfer_placement(
             "วันย้ายห้องต้องอยู่หลังวันเริ่มรายการเดิม".to_string(),
         ));
     }
-    let (grade_level_id, study_program_id): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT grade_level_id, study_program_id FROM student_academic_years \
+    let (grade_level_id, study_program_id): (Uuid, Uuid) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.student_years.transfer_placement",
+            "SELECT grade_level_id, study_program_id FROM student_academic_years \
          WHERE id = $1 FOR UPDATE",
-    )
-    .bind(old.student_academic_year_id)
-    .fetch_one(&mut *transaction)
-    .await?;
+        )
+        .bind(old.student_academic_year_id)
+        .fetch_one()
+        .await?;
     validate_target_homeroom(
         &mut transaction,
         request.target_homeroom_id,
@@ -747,32 +931,36 @@ pub async fn transfer_placement(
         request.transfer_date,
     )
     .await?;
-    sqlx::query(
-        "UPDATE homeroom_placements SET end_date = $1, status = 'ended', \
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.transfer_placement",
+            "UPDATE homeroom_placements SET end_date = $1, status = 'ended', \
          row_version = row_version + 1, updated_at = now() WHERE id = $2",
-    )
-    .bind(request.transfer_date - Duration::days(1))
-    .bind(old.id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.transfer_date - Duration::days(1))
+        .bind(old.id)
+        .execute()
+        .await?;
     let new_id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.student_years.transfer_placement",
+            r#"
         INSERT INTO homeroom_placements (
             id, student_academic_year_id, academic_year_id, homeroom_id,
             start_date, status, enrollment_type, class_number
         ) VALUES ($1, $2, $3, $4, $5, 'current', $6, $7)
         "#,
-    )
-    .bind(new_id)
-    .bind(old.student_academic_year_id)
-    .bind(old.academic_year_id)
-    .bind(request.target_homeroom_id)
-    .bind(request.transfer_date)
-    .bind(request.enrollment_type.trim())
-    .bind(request.class_number)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(new_id)
+        .bind(old.student_academic_year_id)
+        .bind(old.academic_year_id)
+        .bind(request.target_homeroom_id)
+        .bind(request.transfer_date)
+        .bind(request.enrollment_type.trim())
+        .bind(request.class_number)
+        .execute()
+        .await?;
     append_audit(
         &mut transaction,
         "homeroom_placement.transferred",
@@ -796,9 +984,14 @@ pub async fn transfer_placement(
         )
         .await?;
     transaction.commit().await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.transfer_result",
+    )
+    .await?;
     Ok(HomeroomPlacementTransfer {
-        ended_placement: get_placement(pool, old.id).await?,
-        new_placement: get_placement(pool, new_id).await?,
+        ended_placement: get_placement(&mut connection, old.id).await?,
+        new_placement: get_placement(&mut connection, new_id).await?,
         replayed: false,
     })
 }
@@ -807,11 +1000,26 @@ pub async fn list_placements(
     pool: &PgPool,
     student_year_id: Uuid,
 ) -> Result<Vec<HomeroomPlacement>, AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id = $1)")
-            .bind(student_year_id)
-            .fetch_one(pool)
-            .await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_placements",
+    )
+    .await?;
+    list_placements_on_connection(&mut connection, student_year_id).await
+}
+
+pub async fn list_placements_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_year_id: Uuid,
+) -> Result<Vec<HomeroomPlacement>, AppError> {
+    let exists: bool = DbSession::new(connection)
+        .scalar(
+            "academic_core.services.student_years.list_placements_on_connection",
+            "SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id = $1)",
+        )
+        .bind(student_year_id)
+        .fetch_one()
+        .await?;
     if !exists {
         return Err(AppError::NotFound("ไม่พบข้อมูลนักเรียนประจำปี".to_string()));
     }
@@ -821,9 +1029,13 @@ pub async fn list_placements(
          WHERE student_academic_year_id = $1 \
          ORDER BY start_date, created_at, id"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_placements_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(student_year_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
@@ -831,16 +1043,32 @@ pub async fn list_placements_for_year(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<Vec<HomeroomPlacement>, AppError> {
-    require_academic_year(pool, academic_year_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.list_placements_for_year",
+    )
+    .await?;
+    list_placements_for_year_on_connection(&mut connection, academic_year_id).await
+}
+
+pub async fn list_placements_for_year_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<Vec<HomeroomPlacement>, AppError> {
+    require_academic_year(connection, academic_year_id).await?;
     let sql = format!(
         "SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements \
          WHERE academic_year_id = $1 \
          ORDER BY student_academic_year_id, start_date, created_at, id LIMIT $2"
     );
-    let placements = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let placements = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.list_placements_for_year_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(academic_year_id)
         .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     if placements.len() > MAX_YEAR_RELATIONSHIP_ROWS {
         return Err(AppError::ValidationError(
@@ -850,12 +1078,18 @@ pub async fn list_placements_for_year(
     Ok(placements)
 }
 
-async fn require_academic_year(pool: &PgPool, academic_year_id: Uuid) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_years WHERE id = $1)")
-            .bind(academic_year_id)
-            .fetch_one(pool)
-            .await?;
+async fn require_academic_year(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<(), AppError> {
+    let exists: bool = DbSession::new(connection)
+        .scalar(
+            "academic_core.services.student_years.require_academic_year",
+            "SELECT EXISTS(SELECT 1 FROM academic_years WHERE id = $1)",
+        )
+        .bind(academic_year_id)
+        .fetch_one()
+        .await?;
     if exists {
         Ok(())
     } else {
@@ -863,11 +1097,18 @@ async fn require_academic_year(pool: &PgPool, academic_year_id: Uuid) -> Result<
     }
 }
 
-async fn get_placement(pool: &PgPool, id: Uuid) -> Result<HomeroomPlacement, AppError> {
+async fn get_placement(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<HomeroomPlacement, AppError> {
     let sql = format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.student_years.get_placement",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการจัดห้อง".to_string()))
 }
@@ -878,9 +1119,13 @@ async fn get_placement_for_update(
 ) -> Result<HomeroomPlacement, AppError> {
     let sql =
         format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1 FOR UPDATE");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.student_years.get_placement_for_update",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการจัดห้อง".to_string()))
 }
@@ -889,8 +1134,10 @@ async fn replay_transfer(
     transaction: &mut Transaction<'_, Postgres>,
     digest: &str,
 ) -> Result<Option<HomeroomPlacementTransfer>, AppError> {
-    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        r#"
+    let row: Option<(Uuid, Uuid)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.student_years.replay_transfer",
+            r#"
         SELECT entity_id, (payload->>'newPlacementId')::uuid
         FROM academic_audit_events
         WHERE event_code = 'homeroom_placement.transferred'
@@ -898,21 +1145,29 @@ async fn replay_transfer(
         ORDER BY created_at DESC
         LIMIT 1
         "#,
-    )
-    .bind(digest)
-    .fetch_optional(&mut **transaction)
-    .await?;
+        )
+        .bind(digest)
+        .fetch_optional()
+        .await?;
     let Some((old_id, new_id)) = row else {
         return Ok(None);
     };
     let sql = format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1");
-    let ended_placement = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
+    let ended_placement = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.student_years.replay_transfer",
+            sqlx::AssertSqlSafe(sql.as_str()),
+        )
         .bind(old_id)
-        .fetch_one(&mut **transaction)
+        .fetch_one()
         .await?;
-    let new_placement = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let new_placement = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.student_years.replay_transfer",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(new_id)
-        .fetch_one(&mut **transaction)
+        .fetch_one()
         .await?;
     Ok(Some(HomeroomPlacementTransfer {
         ended_placement,
@@ -953,9 +1208,13 @@ async fn require_owned_year_write(
             "SELECT academic_year_id FROM homeroom_placements WHERE id=$1",
         ),
     };
-    let year = sqlx::query_scalar(query)
+    let year = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.student_years.require_owned_year_write",
+            query,
+        )
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลห้องหรือนักเรียนประจำปี".into()))?;
     lifecycle_guard::require_year_write_exclusive(tx, year).await?;
@@ -975,13 +1234,16 @@ async fn validate_homeroom_context(
             "จัดห้องได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
         ));
     }
-    let grade: (String, i32) =
-        sqlx::query_as("SELECT level_type, year FROM grade_levels WHERE id = $1")
-            .bind(grade_level_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()))?;
-    let valid_program: Option<i32> = sqlx::query_scalar(
+    let grade: (String, i32) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.student_years.validate_homeroom_context",
+            "SELECT level_type, year FROM grade_levels WHERE id = $1",
+        )
+        .bind(grade_level_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()))?;
+    let valid_program: Option<i32> = DbSession::new(&mut **transaction).scalar("academic_core.services.student_years.validate_homeroom_context",
         r#"SELECT 1 FROM published_study_programs program
            JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
@@ -989,7 +1251,7 @@ async fn validate_homeroom_context(
              AND curriculum.status = 'published' AND (curriculum.is_active IS TRUE AND version.is_active)
              AND (EXISTS (SELECT 1 FROM published_curriculum_course_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2)
                   OR EXISTS (SELECT 1 FROM published_curriculum_activity_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2))"#,
-    ).bind(study_program_id).bind(grade_level_id).fetch_optional(&mut **transaction).await?;
+    ).bind(study_program_id).bind(grade_level_id).fetch_optional().await?;
     valid_program.map(|_| grade).ok_or_else(|| {
         AppError::ValidationError("เลือกแผนในฉบับที่เผยแพร่แล้วและมีโครงสร้างสำหรับระดับชั้นนี้".to_string())
     })
@@ -1018,21 +1280,23 @@ async fn validate_target_homeroom(
     grade_level_id: Uuid,
     study_program_id: Uuid,
 ) -> Result<(), AppError> {
-    let matches: bool = sqlx::query_scalar(
-        r#"
+    let matches: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.student_years.validate_target_homeroom",
+            r#"
         SELECT EXISTS (
             SELECT 1 FROM homerooms
             WHERE id = $1 AND academic_year_id = $2 AND grade_level_id = $3
               AND study_program_id = $4 AND is_active IS TRUE
         )
         "#,
-    )
-    .bind(homeroom_id)
-    .bind(academic_year_id)
-    .bind(grade_level_id)
-    .bind(study_program_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(homeroom_id)
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(study_program_id)
+        .fetch_one()
+        .await?;
     if matches {
         Ok(())
     } else {
@@ -1047,12 +1311,12 @@ async fn validate_placement_date(
     academic_year_id: Uuid,
     date: chrono::NaiveDate,
 ) -> Result<(), AppError> {
-    let valid: bool = sqlx::query_scalar(
+    let valid: bool = DbSession::new(&mut **transaction).scalar("academic_core.services.student_years.validate_placement_date",
         "SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1 AND $2 BETWEEN start_date AND end_date)",
     )
     .bind(academic_year_id)
     .bind(date)
-    .fetch_one(&mut **transaction)
+    .fetch_one()
     .await?;
     if valid {
         Ok(())

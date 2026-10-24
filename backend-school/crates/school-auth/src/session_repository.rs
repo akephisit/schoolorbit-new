@@ -159,16 +159,24 @@ pub async fn create_login_session(
     identifier_hash: ThrottleBucketHash,
     verified_user: &SessionLoginUser,
 ) -> Result<LoginSessionCreation, AppError> {
-    let mut transaction = pool.begin().await.map_err(session_store_error)?;
-    // Serialize final credential validation with password changes and account updates.
-    // User locks precede session/token locks; bcrypt has already completed outside this tx.
-    let locked: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT username,password_hash,status,user_type FROM users WHERE id=$1 FOR UPDATE",
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "auth.session_repository.create_login_session",
     )
-    .bind(verified_user.id)
-    .fetch_optional(&mut *transaction)
     .await
     .map_err(session_store_error)?;
+    // Serialize final credential validation with password changes and account updates.
+    // User locks precede session/token locks; bcrypt has already completed outside this tx.
+    let locked: Option<(String, String, String, String)> =
+        school_database::DbSession::new(&mut *transaction)
+            .query_as(
+                "auth.src.session_repository.create_login_session",
+                "SELECT username,password_hash,status,user_type FROM users WHERE id=$1 FOR UPDATE",
+            )
+            .bind(verified_user.id)
+            .fetch_optional()
+            .await
+            .map_err(session_store_error)?;
     let valid = locked.is_some_and(|(username, password_hash, status, user_type)| {
         session.user_id == verified_user.id
             && username == verified_user.username
@@ -188,34 +196,36 @@ pub async fn create_login_session(
     lock_token_hash(&mut transaction, session.current_token_hash).await?;
     ensure_token_hash_available(&mut transaction, session.current_token_hash).await?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut *transaction)
+        .query(
+            "auth.src.session_repository.create_login_session",
+            r#"
         INSERT INTO auth_sessions (
             id, user_id, current_token_hash, remember_me, device_label,
             created_at, last_seen_at, idle_expires_at, absolute_expires_at, rotated_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
-    )
-    .bind(session.id)
-    .bind(session.user_id)
-    .bind(session.current_token_hash.as_bytes().as_slice())
-    .bind(session.remember_me)
-    .bind(&session.device_label)
-    .bind(session.times.created_at)
-    .bind(session.times.last_seen_at)
-    .bind(session.times.idle_expires_at)
-    .bind(session.times.absolute_expires_at)
-    .bind(session.times.rotated_at)
-    .execute(&mut *transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(session.id)
+        .bind(session.user_id)
+        .bind(session.current_token_hash.as_bytes().as_slice())
+        .bind(session.remember_me)
+        .bind(&session.device_label)
+        .bind(session.times.created_at)
+        .bind(session.times.last_seen_at)
+        .bind(session.times.idle_expires_at)
+        .bind(session.times.absolute_expires_at)
+        .bind(session.times.rotated_at)
+        .execute()
+        .await
+        .map_err(session_store_error)?;
 
-    sqlx::query(
+    school_database::DbSession::new(&mut *transaction).query("auth.src.session_repository.create_login_session",
         "DELETE FROM auth_login_throttles WHERE bucket_kind = 'identifier' AND bucket_hash = $1",
     )
     .bind(identifier_hash.as_bytes().as_slice())
-    .execute(&mut *transaction)
+    .execute()
     .await
     .map_err(session_store_error)?;
 
@@ -258,7 +268,12 @@ where
         return Ok(Some(maintained(initial, initial_kind, None)));
     }
 
-    let mut transaction = pool.begin().await.map_err(session_store_error)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "auth.session_repository.authenticate_and_maintain",
+    )
+    .await
+    .map_err(session_store_error)?;
     let Some(mut locked) =
         load_authentication_row_for_update(&mut transaction, presented_hash).await?
     else {
@@ -326,8 +341,10 @@ where
         locked.idle_expires_at
     };
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut *transaction)
+        .query(
+            "auth.src.session_repository.authenticate_and_maintain",
+            r#"
         UPDATE auth_sessions
         SET current_token_hash = $1,
             previous_token_hash = $2,
@@ -337,17 +354,17 @@ where
             idle_expires_at = $6
         WHERE id = $7
         "#,
-    )
-    .bind(current_token_hash)
-    .bind(previous_token_hash)
-    .bind(previous_token_valid_until)
-    .bind(rotated_at)
-    .bind(last_seen_at)
-    .bind(idle_expires_at)
-    .bind(locked.id)
-    .execute(&mut *transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(current_token_hash)
+        .bind(previous_token_hash)
+        .bind(previous_token_valid_until)
+        .bind(rotated_at)
+        .bind(last_seen_at)
+        .bind(idle_expires_at)
+        .bind(locked.id)
+        .execute()
+        .await
+        .map_err(session_store_error)?;
 
     locked.current_token_hash.clear();
     locked.previous_token_hash = None;
@@ -378,8 +395,23 @@ pub async fn load_session_validity(
     user_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Option<SessionValidity>, AppError> {
-    sqlx::query_as(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.load_session_validity")
+            .await
+            .map_err(session_store_error)?;
+    load_session_validity_on_connection(&mut connection, session_id, user_id, now).await
+}
+
+pub async fn load_session_validity_on_connection(
+    connection: &mut sqlx::PgConnection,
+    session_id: Uuid,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Option<SessionValidity>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as(
+            "auth.src.session_repository.load_session_validity_on_connection",
+            r#"
             SELECT s.idle_expires_at, s.absolute_expires_at
             FROM auth_sessions s
             JOIN users u ON u.id = s.user_id
@@ -390,13 +422,13 @@ pub async fn load_session_validity(
               AND s.absolute_expires_at > $3
               AND u.status = 'active'
         "#,
-    )
-    .bind(session_id)
-    .bind(user_id)
-    .bind(now)
-    .fetch_optional(pool)
-    .await
-    .map_err(session_store_error)
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .bind(now)
+        .fetch_optional()
+        .await
+        .map_err(session_store_error)
 }
 
 pub async fn load_password_change_snapshot(
@@ -405,8 +437,25 @@ pub async fn load_password_change_snapshot(
     session_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<PasswordChangeSnapshot, AppError> {
-    sqlx::query_as::<_, (String,)>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "auth.load_password_change_snapshot",
+    )
+    .await
+    .map_err(session_store_error)?;
+    load_password_change_snapshot_on_connection(&mut connection, user_id, session_id, now).await
+}
+
+pub async fn load_password_change_snapshot_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    session_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<PasswordChangeSnapshot, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<(String,)>(
+            "auth.src.session_repository.load_password_change_snapshot_on_connection",
+            r#"
         SELECT u.password_hash
         FROM users u
         JOIN auth_sessions s ON s.user_id = u.id
@@ -417,15 +466,15 @@ pub async fn load_password_change_snapshot(
           AND s.idle_expires_at > $3
           AND s.absolute_expires_at > $3
         "#,
-    )
-    .bind(user_id)
-    .bind(session_id)
-    .bind(now)
-    .fetch_optional(pool)
-    .await
-    .map_err(session_store_error)?
-    .map(|(password_hash,)| PasswordChangeSnapshot { password_hash })
-    .ok_or_else(authentication_required)
+        )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(now)
+        .fetch_optional()
+        .await
+        .map_err(session_store_error)?
+        .map(|(password_hash,)| PasswordChangeSnapshot { password_hash })
+        .ok_or_else(authentication_required)
 }
 
 pub async fn lock_password_change<'a>(
@@ -434,8 +483,10 @@ pub async fn lock_password_change<'a>(
     session_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<LockedPasswordChange, AppError> {
-    sqlx::query_as::<_, (String, bool, DateTime<Utc>)>(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query_as::<(String, bool, DateTime<Utc>)>(
+            "auth.src.session_repository.lock_password_change",
+            r#"
         SELECT u.password_hash, s.remember_me, s.absolute_expires_at
         FROM users u
         JOIN auth_sessions s ON s.user_id = u.id
@@ -447,21 +498,21 @@ pub async fn lock_password_change<'a>(
           AND s.absolute_expires_at > $3
         FOR UPDATE OF u, s
         "#,
-    )
-    .bind(user_id)
-    .bind(session_id)
-    .bind(now)
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(session_store_error)?
-    .map(
-        |(password_hash, remember_me, absolute_expires_at)| LockedPasswordChange {
-            password_hash,
-            remember_me,
-            absolute_expires_at,
-        },
-    )
-    .ok_or_else(authentication_required)
+        )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(now)
+        .fetch_optional()
+        .await
+        .map_err(session_store_error)?
+        .map(
+            |(password_hash, remember_me, absolute_expires_at)| LockedPasswordChange {
+                password_hash,
+                remember_me,
+                absolute_expires_at,
+            },
+        )
+        .ok_or_else(authentication_required)
 }
 
 pub async fn apply_password_change<'a>(
@@ -475,21 +526,26 @@ pub async fn apply_password_change<'a>(
     lock_token_hash(transaction, new_token_hash).await?;
     ensure_token_hash_available(transaction, new_token_hash).await?;
 
-    let updated_user =
-        sqlx::query("UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3")
-            .bind(new_password_hash)
-            .bind(now)
-            .bind(user_id)
-            .execute(&mut **transaction)
-            .await
-            .map_err(session_store_error)?
-            .rows_affected();
+    let updated_user = school_database::DbSession::new(&mut **transaction)
+        .query(
+            "auth.src.session_repository.apply_password_change",
+            "UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3",
+        )
+        .bind(new_password_hash)
+        .bind(now)
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(session_store_error)?
+        .rows_affected();
     if updated_user != 1 {
         return Err(unavailable());
     }
 
-    let mut revoked_session_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"
+    let mut revoked_session_ids: Vec<Uuid> = school_database::DbSession::new(&mut **transaction)
+        .scalar(
+            "auth.src.session_repository.apply_password_change",
+            r#"
         UPDATE auth_sessions
         SET revoked_at = $1, revocation_reason = $2
         WHERE user_id = $3
@@ -499,17 +555,19 @@ pub async fn apply_password_change<'a>(
           AND absolute_expires_at > $1
         RETURNING id
         "#,
-    )
-    .bind(now)
-    .bind(SessionRevocationReason::PasswordChanged.as_str())
-    .bind(user_id)
-    .bind(session_id)
-    .fetch_all(&mut **transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(now)
+        .bind(SessionRevocationReason::PasswordChanged.as_str())
+        .bind(user_id)
+        .bind(session_id)
+        .fetch_all()
+        .await
+        .map_err(session_store_error)?;
 
-    let updated_session = sqlx::query(
-        r#"
+    let updated_session = school_database::DbSession::new(&mut **transaction)
+        .query(
+            "auth.src.session_repository.apply_password_change",
+            r#"
         UPDATE auth_sessions
         SET previous_token_hash = current_token_hash,
             previous_token_valid_until = $1 + interval '60 seconds',
@@ -526,15 +584,15 @@ pub async fn apply_password_change<'a>(
           AND idle_expires_at > $1
           AND absolute_expires_at > $1
         "#,
-    )
-    .bind(now)
-    .bind(new_token_hash.as_bytes().as_slice())
-    .bind(session_id)
-    .bind(user_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(session_store_error)?
-    .rows_affected();
+        )
+        .bind(now)
+        .bind(new_token_hash.as_bytes().as_slice())
+        .bind(session_id)
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(session_store_error)?
+        .rows_affected();
     if updated_session != 1 {
         return Err(authentication_required());
     }
@@ -548,8 +606,22 @@ pub async fn list_user_sessions(
     user_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Vec<SessionRow>, AppError> {
-    sqlx::query_as(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.list_user_sessions")
+            .await
+            .map_err(session_store_error)?;
+    list_user_sessions_on_connection(&mut connection, user_id, now).await
+}
+
+pub async fn list_user_sessions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Vec<SessionRow>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as(
+            "auth.src.session_repository.list_user_sessions_on_connection",
+            r#"
         SELECT s.id, s.user_id, s.device_label, s.remember_me, s.created_at,
                s.last_seen_at, s.idle_expires_at, s.absolute_expires_at, s.rotated_at,
                s.revoked_at, s.revocation_reason
@@ -562,12 +634,12 @@ pub async fn list_user_sessions(
           AND u.status = 'active'
         ORDER BY s.last_seen_at DESC, s.id
         "#,
-    )
-    .bind(user_id)
-    .bind(now)
-    .fetch_all(pool)
-    .await
-    .map_err(session_store_error)
+        )
+        .bind(user_id)
+        .bind(now)
+        .fetch_all()
+        .await
+        .map_err(session_store_error)
 }
 
 pub async fn revoke_sessions(
@@ -577,10 +649,26 @@ pub async fn revoke_sessions(
     reason: SessionRevocationReason,
     now: DateTime<Utc>,
 ) -> Result<Vec<Uuid>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.revoke_sessions")
+            .await
+            .map_err(session_store_error)?;
+    revoke_sessions_on_connection(&mut connection, user_id, target, reason, now).await
+}
+
+pub async fn revoke_sessions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    target: SessionRevocationTarget,
+    reason: SessionRevocationReason,
+    now: DateTime<Utc>,
+) -> Result<Vec<Uuid>, AppError> {
     let result = match target {
         SessionRevocationTarget::Session(session_id) => {
-            sqlx::query_scalar(
-                r#"
+            school_database::DbSession::new(&mut *connection)
+                .scalar(
+                    "auth.src.session_repository.revoke_sessions_on_connection",
+                    r#"
                 UPDATE auth_sessions
                 SET revoked_at = $1, revocation_reason = $2
                 WHERE id = $3
@@ -590,17 +678,19 @@ pub async fn revoke_sessions(
                   AND absolute_expires_at > $1
                 RETURNING id
                 "#,
-            )
-            .bind(now)
-            .bind(reason.as_str())
-            .bind(session_id)
-            .bind(user_id)
-            .fetch_all(pool)
-            .await
+                )
+                .bind(now)
+                .bind(reason.as_str())
+                .bind(session_id)
+                .bind(user_id)
+                .fetch_all()
+                .await
         }
         SessionRevocationTarget::User { except_session_id } => {
-            sqlx::query_scalar(
-                r#"
+            school_database::DbSession::new(&mut *connection)
+                .scalar(
+                    "auth.src.session_repository.revoke_sessions_on_connection",
+                    r#"
                 UPDATE auth_sessions
                 SET revoked_at = $1, revocation_reason = $2
                 WHERE user_id = $3
@@ -610,13 +700,13 @@ pub async fn revoke_sessions(
                   AND ($4::uuid IS NULL OR id <> $4)
                 RETURNING id
                 "#,
-            )
-            .bind(now)
-            .bind(reason.as_str())
-            .bind(user_id)
-            .bind(except_session_id)
-            .fetch_all(pool)
-            .await
+                )
+                .bind(now)
+                .bind(reason.as_str())
+                .bind(user_id)
+                .bind(except_session_id)
+                .fetch_all()
+                .await
         }
     };
 
@@ -627,9 +717,16 @@ pub async fn cleanup_auth_state(
     pool: &PgPool,
     now: DateTime<Utc>,
 ) -> Result<CleanupResult, AppError> {
-    let mut transaction = pool.begin().await.map_err(session_store_error)?;
-    let previous_tokens_cleared = sqlx::query(
-        r#"
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "auth.session_repository.cleanup_auth_state",
+    )
+    .await
+    .map_err(session_store_error)?;
+    let previous_tokens_cleared = school_database::DbSession::new(&mut *transaction)
+        .query(
+            "auth.src.session_repository.cleanup_auth_state",
+            r#"
         WITH candidates AS (
             SELECT id
             FROM auth_sessions
@@ -643,16 +740,18 @@ pub async fn cleanup_auth_state(
         FROM candidates c
         WHERE s.id = c.id
         "#,
-    )
-    .bind(now)
-    .bind(CLEANUP_BATCH_SIZE)
-    .execute(&mut *transaction)
-    .await
-    .map_err(session_store_error)?
-    .rows_affected();
+        )
+        .bind(now)
+        .bind(CLEANUP_BATCH_SIZE)
+        .execute()
+        .await
+        .map_err(session_store_error)?
+        .rows_affected();
 
-    let sessions_deleted = sqlx::query(
-        r#"
+    let sessions_deleted = school_database::DbSession::new(&mut *transaction)
+        .query(
+            "auth.src.session_repository.cleanup_auth_state",
+            r#"
         WITH candidates AS (
             SELECT id
             FROM auth_sessions
@@ -666,16 +765,18 @@ pub async fn cleanup_auth_state(
         USING candidates c
         WHERE s.id = c.id
         "#,
-    )
-    .bind(now - SESSION_RETENTION)
-    .bind(CLEANUP_BATCH_SIZE)
-    .execute(&mut *transaction)
-    .await
-    .map_err(session_store_error)?
-    .rows_affected();
+        )
+        .bind(now - SESSION_RETENTION)
+        .bind(CLEANUP_BATCH_SIZE)
+        .execute()
+        .await
+        .map_err(session_store_error)?
+        .rows_affected();
 
-    let throttles_deleted = sqlx::query(
-        r#"
+    let throttles_deleted = school_database::DbSession::new(&mut *transaction)
+        .query(
+            "auth.src.session_repository.cleanup_auth_state",
+            r#"
         WITH candidates AS (
             SELECT bucket_kind, bucket_hash
             FROM auth_login_throttles
@@ -688,13 +789,13 @@ pub async fn cleanup_auth_state(
         USING candidates c
         WHERE t.bucket_kind = c.bucket_kind AND t.bucket_hash = c.bucket_hash
         "#,
-    )
-    .bind(now - THROTTLE_RETENTION)
-    .bind(CLEANUP_BATCH_SIZE)
-    .execute(&mut *transaction)
-    .await
-    .map_err(session_store_error)?
-    .rows_affected();
+        )
+        .bind(now - THROTTLE_RETENTION)
+        .bind(CLEANUP_BATCH_SIZE)
+        .execute()
+        .await
+        .map_err(session_store_error)?
+        .rows_affected();
 
     transaction.commit().await.map_err(session_store_error)?;
     Ok(CleanupResult {
@@ -708,9 +809,24 @@ async fn load_authentication_row(
     pool: &PgPool,
     presented_hash: TokenHash,
 ) -> Result<Option<AuthenticationRow>, AppError> {
-    let rows = sqlx::query_as::<_, AuthenticationRow>(AUTHENTICATION_COLUMNS)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.load_authentication_row")
+            .await
+            .map_err(session_store_error)?;
+    load_authentication_row_on_connection(&mut connection, presented_hash).await
+}
+
+async fn load_authentication_row_on_connection(
+    connection: &mut sqlx::PgConnection,
+    presented_hash: TokenHash,
+) -> Result<Option<AuthenticationRow>, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<AuthenticationRow>(
+            "auth.src.session_repository.load_authentication_row_on_connection",
+            AUTHENTICATION_COLUMNS,
+        )
         .bind(presented_hash.as_bytes().as_slice())
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(session_store_error)?;
     exactly_one_or_none(rows)
@@ -721,9 +837,13 @@ async fn load_authentication_row_for_update(
     presented_hash: TokenHash,
 ) -> Result<Option<AuthenticationRow>, AppError> {
     let query = format!("{AUTHENTICATION_COLUMNS} FOR UPDATE OF s");
-    let rows = sqlx::query_as::<_, AuthenticationRow>(sqlx::AssertSqlSafe(query))
+    let rows = school_database::DbSession::new(&mut **transaction)
+        .query_as::<AuthenticationRow>(
+            "auth.src.session_repository.load_authentication_row_for_update",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(presented_hash.as_bytes().as_slice())
-        .fetch_all(&mut **transaction)
+        .fetch_all()
         .await
         .map_err(session_store_error)?;
     exactly_one_or_none(rows)
@@ -805,13 +925,27 @@ async fn clear_expired_previous_token(
     session_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "auth.clear_expired_previous_token",
+    )
+    .await
+    .map_err(session_store_error)?;
+    clear_expired_previous_token_on_connection(&mut connection, session_id, now).await
+}
+
+async fn clear_expired_previous_token_on_connection(
+    connection: &mut sqlx::PgConnection,
+    session_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<(), AppError> {
+    school_database::DbSession::new(&mut *connection).query("auth.src.session_repository.clear_expired_previous_token_on_connection",
         "UPDATE auth_sessions SET previous_token_hash = NULL, previous_token_valid_until = NULL \
          WHERE id = $1 AND previous_token_valid_until <= $2",
     )
     .bind(session_id)
     .bind(now)
-    .execute(pool)
+    .execute()
     .await
     .map_err(session_store_error)?;
     Ok(())
@@ -822,13 +956,13 @@ async fn clear_expired_previous_token_in_transaction(
     session_id: Uuid,
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("auth.src.session_repository.clear_expired_previous_token_in_transaction",
         "UPDATE auth_sessions SET previous_token_hash = NULL, previous_token_valid_until = NULL \
          WHERE id = $1 AND previous_token_valid_until <= $2",
     )
     .bind(session_id)
     .bind(now)
-    .execute(&mut **transaction)
+    .execute()
     .await
     .map_err(session_store_error)?;
     Ok(())
@@ -841,9 +975,13 @@ async fn lock_token_hash(
     let mut prefix = [0_u8; 8];
     prefix.copy_from_slice(&token_hash.as_bytes()[..8]);
     let lock_key = i64::from_be_bytes(prefix) ^ TOKEN_LOCK_DOMAIN;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "auth.src.session_repository.lock_token_hash",
+            "SELECT pg_advisory_xact_lock($1)",
+        )
         .bind(lock_key)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(session_store_error)?;
     Ok(())
@@ -853,14 +991,16 @@ async fn ensure_token_hash_available(
     transaction: &mut Transaction<'_, Postgres>,
     token_hash: TokenHash,
 ) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM auth_sessions \
+    let exists: bool = school_database::DbSession::new(&mut **transaction)
+        .scalar(
+            "auth.src.session_repository.ensure_token_hash_available",
+            "SELECT EXISTS (SELECT 1 FROM auth_sessions \
          WHERE current_token_hash = $1 OR previous_token_hash = $1)",
-    )
-    .bind(token_hash.as_bytes().as_slice())
-    .fetch_one(&mut **transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(token_hash.as_bytes().as_slice())
+        .fetch_one()
+        .await
+        .map_err(session_store_error)?;
     if exists {
         Err(unavailable())
     } else {

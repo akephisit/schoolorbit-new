@@ -1,10 +1,24 @@
 use super::staff_directory_query::{push_staff_access_filter, CURRENT_SUBJECT_GROUPS};
 use crate::{models::StaffListAccess, personnel::*};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool, Postgres, QueryBuilder};
 
 pub async fn get_personnel_overview(
     pool: &PgPool,
+    query: PersonnelOverviewQuery,
+    access: StaffListAccess,
+) -> Result<PersonnelOverview, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.personnel_overview_service.get_personnel_overview",
+    )
+    .await?;
+    get_personnel_overview_on_connection(&mut connection, query, access).await
+}
+
+pub async fn get_personnel_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: PersonnelOverviewQuery,
     access: StaffListAccess,
 ) -> Result<PersonnelOverview, AppError> {
@@ -26,8 +40,13 @@ pub async fn get_personnel_overview(
     'jobPositions',coalesce((SELECT items FROM arrays WHERE dimension='job_position'),'[]'::jsonb),
     'academicRanks',coalesce((SELECT items FROM arrays WHERE dimension='academic_rank'),'[]'::jsonb),
     'educationLevels',coalesce((SELECT items FROM arrays WHERE dimension='education_level'),'[]'::jsonb))"#);
-    let Json(mut overview): Json<PersonnelOverview> =
-        sql.build_query_scalar().fetch_one(pool).await?;
+    let Json(mut overview): Json<PersonnelOverview> = DbSession::new(connection)
+        .prepared_scalar(
+            "staff.services.personnel_overview_service.get_personnel_overview_on_connection",
+            sql.build_query_scalar(),
+        )
+        .fetch_one()
+        .await?;
     label_buckets(
         &mut overview.academic_ranks,
         StaffAcademicRank::ALL

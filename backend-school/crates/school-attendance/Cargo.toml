@@ -14,6 +14,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 school-academic-delivery = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }

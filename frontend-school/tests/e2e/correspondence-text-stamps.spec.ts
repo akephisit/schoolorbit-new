@@ -10,7 +10,7 @@ async function stampDialog(page: Page) {
 	await openAnnotationTools(page);
 	await page.getByRole('button', { name: 'แม่แบบข้อความ / ตรารับ', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByRole('button', { name: 'แม่แบบข้อความ', exact: true })).toContainText(
+	await expect(dialog.getByRole('combobox', { name: 'แม่แบบข้อความ', exact: true })).toContainText(
 		'ตรารับหนังสือ'
 	);
 	return dialog;
@@ -116,7 +116,7 @@ test('instruction and unknown position need explicit input before concrete text 
 	});
 	await page.goto(detailPath);
 	const dialog = await stampDialog(page);
-	await dialog.getByRole('button', { name: 'แม่แบบข้อความ', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'แม่แบบข้อความ', exact: true }).click();
 	await page.getByRole('option', { name: 'ข้อความสั่งการ', exact: true }).click();
 	await dialog.getByRole('button', { name: 'ตรวจข้อความ', exact: true }).click();
 	await expect(dialog.locator('#stamp-instruction')).toBeFocused();
@@ -161,9 +161,9 @@ test('number presets and editable template tokens preserve per-register drafts a
 }) => {
 	const api = await mockDirectedCorrespondence(page);
 	await page.goto('/staff/correspondence/settings');
-	await page.getByRole('button', { name: 'รูปแบบที่ใช้', exact: true }).click();
+	await page.getByRole('combobox', { name: 'รูปแบบที่ใช้', exact: true }).click();
 	await page.getByRole('option', { name: 'รับ เลขลำดับ / พ.ศ.', exact: true }).click();
-	await page.getByRole('button', { name: 'จำนวนหลักเลขลำดับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'จำนวนหลักเลขลำดับ', exact: true }).click();
 	await page.getByRole('option', { name: '3 หลัก', exact: true }).click();
 	await expect(page.getByLabel('ตัวอย่างเลขทะเบียน', { exact: true })).toHaveText('รับ 001/2569');
 	await page.getByRole('radio', { name: 'หนังสือส่ง', exact: true }).click();

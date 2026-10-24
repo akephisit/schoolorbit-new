@@ -6,9 +6,10 @@ use crate::{
 };
 use chrono::Utc;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub const COLUMNS: &str = "id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -19,17 +20,36 @@ struct ResultSnapshot {
     row_version: i64,
 }
 pub async fn module_generation(pool: &PgPool) -> Result<Uuid, AppError> {
-    Ok(
-        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
-            .fetch_one(pool)
-            .await?,
-    )
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.module_generation")
+            .await?;
+    module_generation_on_connection(&mut connection).await
+}
+pub(crate) async fn module_generation_on_connection(
+    connection: &mut PgConnection,
+) -> Result<Uuid, AppError> {
+    Ok(DbSession::new(&mut *connection)
+        .scalar(
+            "attendance.services.sessions.module_generation_on_connection",
+            "SELECT generation FROM attendance_module_state WHERE singleton",
+        )
+        .fetch_one()
+        .await?)
 }
 pub async fn with_token(
     pool: &PgPool,
     s: AttendanceSession,
 ) -> Result<AttendanceSession, AppError> {
-    let epoch = module_generation(pool).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.with_token")
+            .await?;
+    with_token_on_connection(&mut connection, s).await
+}
+pub(crate) async fn with_token_on_connection(
+    connection: &mut PgConnection,
+    s: AttendanceSession,
+) -> Result<AttendanceSession, AppError> {
+    let epoch = module_generation_on_connection(connection).await?;
     token_with_generation(s, epoch)
 }
 pub fn token_with_generation(
@@ -58,16 +78,41 @@ pub fn token_with_generation(
     Ok(s)
 }
 pub async fn get_optional(pool: &PgPool, id: Uuid) -> Result<Option<AttendanceSession>, AppError> {
+    get_optional_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.read")
+            .await?,
+        id,
+    )
+    .await
+}
+pub(crate) async fn get_optional_on_connection(
+    connection: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<AttendanceSession>, AppError> {
     let sql = format!("SELECT {COLUMNS} FROM attendance_sessions WHERE id=$1");
-    let row = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut *connection)
+        .query_as(
+            "attendance.services.sessions.get_optional_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?;
     match row {
-        Some(s) => Ok(Some(with_token(pool, s).await?)),
+        Some(s) => {
+            let generation = DbSession::new(&mut *connection)
+                .scalar(
+                    "attendance.services.sessions.get_optional_on_connection",
+                    "SELECT generation FROM attendance_module_state WHERE singleton",
+                )
+                .fetch_one()
+                .await?;
+            Ok(Some(token_with_generation(s, generation)?))
+        }
         None => Ok(None),
     }
 }
+
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<AttendanceSession, AppError> {
     get_optional(pool, id)
         .await?
@@ -78,15 +123,29 @@ pub async fn list(
     actor: &ActorContext,
     q: &AttendanceQuery,
 ) -> Result<Vec<AttendanceSession>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.list")
+            .await?;
+    list_on_connection(&mut connection, actor, q).await
+}
+pub(crate) async fn list_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    q: &AttendanceQuery,
+) -> Result<Vec<AttendanceSession>, AppError> {
     let sql = format!(
         "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR $4=ANY(teacher_ids)) ORDER BY start_time,title,id"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(&mut *connection)
+        .query_as(
+            "attendance.services.sessions.list",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(q.academic_term_id)
         .bind(q.date)
         .bind(policy::read_school(actor))
         .bind(actor.user_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 pub async fn ensure(
@@ -98,7 +157,8 @@ pub async fn ensure(
     if seed.students.len() > 2000 {
         return Err(invalid("รอบเช็คชื่อเกิน 2000 คน กรุณาแบ่งกลุ่ม"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.sessions.transaction").await?;
     lock_term(&mut tx, seed.session.academic_term_id, true, false).await?;
     insert_seed(&mut tx, &seed).await?;
     tx.commit().await?;
@@ -106,15 +166,23 @@ pub async fn ensure(
     let sql = format!(
         "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind=$3 AND source_key=$4"
     );
-    let found: AttendanceSession = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.ensure")
+            .await?;
+    let found: AttendanceSession = DbSession::new(&mut *connection)
+        .query_as(
+            "attendance.services.sessions.ensure",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(s.academic_term_id)
         .bind(s.date)
         .bind(s.kind)
         .bind(&s.source_key)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
     policy::require_session(actor, &found, true)?;
-    with_token(pool, found).await
+    let generation = module_generation_on_connection(&mut connection).await?;
+    token_with_generation(found, generation)
 }
 pub async fn insert_seed(
     tx: &mut Transaction<'_, Postgres>,
@@ -124,10 +192,10 @@ pub async fn insert_seed(
     if seed.students.len() > 2000 {
         return Err(invalid("รายชื่อเกินขนาดที่รองรับ"));
     }
-    sqlx::query("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,roster) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(academic_term_id,date,kind,source_key) DO NOTHING")
+    DbSession::new(&mut **tx).query("attendance.services.sessions.insert_seed", "INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,roster) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(academic_term_id,date,kind,source_key) DO NOTHING")
         .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).bind(&s.title).bind(&s.teacher_ids)
         .bind(s.homeroom_id).bind(s.learning_group_id).bind(s.offering_id).bind(s.special_round_id).bind(s.start_time).bind(s.end_time)
-        .bind(s.count_override).bind(Json(&seed.students)).execute(&mut **tx).await?;
+        .bind(s.count_override).bind(Json(&seed.students)).execute().await?;
     Ok(())
 }
 pub async fn detail(
@@ -135,19 +203,47 @@ pub async fn detail(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<AttendanceDetail, AppError> {
-    let s = get(pool, id).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.detail")
+            .await?;
+    let s = get_optional_on_connection(&mut connection, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
     policy::require_session(actor, &s, false)?;
-    detail_unchecked(pool, s).await
+    let context =
+        settings::AttendanceReadContext::load(&mut connection, s.academic_term_id).await?;
+    detail_with_context(&mut connection, s, &context).await
 }
 pub async fn detail_unchecked(
     pool: &PgPool,
     s: AttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
-    let settings = settings::get(pool, s.academic_term_id).await?;
-    let counted = s.count_override.unwrap_or(
-        settings::is_counted(pool, s.academic_term_id, s.date, &settings.configuration).await?,
-    ) && !s.cancelled;
-    let students=sqlx::query_as(r#"WITH participants AS (
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.read")
+            .await?;
+    let context =
+        settings::AttendanceReadContext::load(&mut connection, s.academic_term_id).await?;
+    detail_with_context(&mut connection, s, &context).await
+}
+pub(crate) async fn detail_with_context(
+    connection: &mut PgConnection,
+    s: AttendanceSession,
+    context: &settings::AttendanceReadContext,
+) -> Result<AttendanceDetail, AppError> {
+    let settings = &context.settings;
+    let counted = match s.count_override {
+        Some(value) => value,
+        None => {
+            settings::is_counted_on_connection(
+                connection,
+                s.academic_term_id,
+                s.date,
+                &settings.configuration,
+            )
+            .await?
+        }
+    } && !s.cancelled;
+    let students=DbSession::new(&mut *connection).query_as("attendance.services.sessions.detail_with_context", r#"WITH participants AS (
         SELECT * FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)
     ), arrivals AS (
         SELECT a.student_id,min(a.observed_at) observed_at,
@@ -164,8 +260,10 @@ pub async fn detail_unchecked(
         LEFT JOIN attendance_scan_events e ON e.session_id=$1 AND e.student_id=p."studentId"
         LEFT JOIN arrivals a ON a.student_id=p."studentId"
         ORDER BY p."classNumber" NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,u.id"#)
-        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(pool).await?;
-    let term_writable:bool=sqlx::query_scalar("SELECT t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(s.academic_term_id).fetch_one(pool).await?;
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all().await?;
+    let term_writable = context
+        .term_writable
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".into()))?;
     Ok(AttendanceDetail {
         writable: term_writable
             && !settings.archived
@@ -185,9 +283,13 @@ async fn lock_session(
     version: i64,
 ) -> Result<AttendanceSession, AppError> {
     let sql = format!("SELECT {COLUMNS} FROM attendance_sessions WHERE id=$1 FOR UPDATE");
-    let s: AttendanceSession = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let s: AttendanceSession = DbSession::new(&mut **tx)
+        .query_as(
+            "attendance.services.sessions.lock_session",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
     if s.row_version != version {
@@ -212,8 +314,11 @@ pub async fn save_with_seed(
     p: SaveAttendanceResults,
     seed: Option<AttendanceSeed>,
 ) -> Result<AttendanceDetail, AppError> {
-    let epoch = module_generation(pool).await?;
-    let existing = get_optional(pool, id).await?;
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.preflight")
+            .await?;
+    let epoch = module_generation_on_connection(&mut preflight).await?;
+    let existing = get_optional_on_connection(&mut preflight, id).await?;
     let initial = match existing {
         Some(s) => s,
         None => {
@@ -227,9 +332,10 @@ pub async fn save_with_seed(
                 .ok_or_else(|| invalid("ไม่มีรายชื่ออ้างอิง"))?
                 .students
                 .clone();
-            with_token(pool, s).await?
+            with_token_on_connection(&mut preflight, s).await?
         }
     };
+    drop(preflight);
     policy::require_session(actor, &initial, true)?;
     if initial.id != id
         || initial.academic_term_id != p.session.academic_term_id
@@ -260,7 +366,8 @@ pub async fn save_with_seed(
     if p.reason.len() > 1000 {
         return Err(invalid("เหตุผลยาวเกินกำหนด"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.sessions.transaction").await?;
     lock_term(&mut tx, initial.academic_term_id, true, false).await?;
     if module_generation_in_tx(&mut tx).await? != epoch {
         return Err(AppError::Conflict("ข้อมูลโมดูลเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
@@ -273,12 +380,14 @@ pub async fn save_with_seed(
             .as_ref()
             .ok_or_else(|| invalid("ไม่มีรายชื่อสำหรับบันทึกครั้งแรก"))?;
         insert_seed(&mut tx, seed).await?;
-        let actual: i64 = sqlx::query_scalar(
-            "SELECT row_version FROM attendance_sessions WHERE id=$1 FOR UPDATE",
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let actual: i64 = DbSession::new(&mut *tx)
+            .scalar(
+                "attendance.services.sessions.save_with_seed",
+                "SELECT row_version FROM attendance_sessions WHERE id=$1 FOR UPDATE",
+            )
+            .bind(id)
+            .fetch_one()
+            .await?;
         if actual != 1 {
             return Err(AppError::Conflict("มีการบันทึกเพิ่มแล้ว กรุณาเปิดใหม่".into()));
         }
@@ -297,7 +406,7 @@ pub async fn save_with_seed(
     if s.cancelled {
         return Err(AppError::Conflict("รอบนี้งดเช็คชื่อ".into()));
     }
-    let before:Vec<ResultSnapshot>=sqlx::query_as("SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all(&mut *tx).await?;
+    let before:Vec<ResultSnapshot>=DbSession::new(&mut *tx).query_as("attendance.services.sessions.save_with_seed", "SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all().await?;
     let old: std::collections::HashMap<_, _> =
         before.iter().map(|r| (r.student_id, r.result)).collect();
     let changed: Vec<_> = p
@@ -332,13 +441,13 @@ pub async fn save_with_seed(
             })
         })
         .collect::<Result<_, AppError>>()?;
-    sqlx::query(r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,updated_by)
+    DbSession::new(&mut *tx).query("attendance.services.sessions.save_with_seed", r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,updated_by)
         SELECT $1,"studentId","studentAcademicYearId",$4,"classNumber",result,'teacher',$3
         FROM jsonb_to_recordset($2) AS i("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer,result text)
         ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='teacher',
-        updated_by=$3,processed_at=NULL,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute(&mut *tx).await?;
+        updated_by=$3,processed_at=NULL,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute().await?;
     if !changed.is_empty() {
-        let after:Vec<ResultSnapshot>=sqlx::query_as("SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all(&mut *tx).await?;
+        let after:Vec<ResultSnapshot>=DbSession::new(&mut *tx).query_as("attendance.services.sessions.save_with_seed", "SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all().await?;
         let notices: Vec<_> = after
             .iter()
             .filter(|r| changed.iter().any(|i| i.student_id == r.student_id))
@@ -355,19 +464,21 @@ pub async fn save_with_seed(
         if notifications::should_notify(&mut tx, &s).await? {
             notifications::queue_batch(&mut tx, s.academic_term_id, &notices).await?;
         }
-        sqlx::query("UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1").bind(id).bind(actor.user_id).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,$3,$4,$5)").bind(actor.user_id).bind(id).bind(Json(&before)).bind(Json(&after)).bind(&p.reason).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("attendance.services.sessions.save_with_seed", "UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1").bind(id).bind(actor.user_id).execute().await?;
+        DbSession::new(&mut *tx).query("attendance.services.sessions.save_with_seed", "INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,$3,$4,$5)").bind(actor.user_id).bind(id).bind(Json(&before)).bind(Json(&after)).bind(&p.reason).execute().await?;
         super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;
     }
     tx.commit().await?;
     detail(pool, actor, id).await
 }
 pub async fn module_generation_in_tx(tx: &mut Transaction<'_, Postgres>) -> Result<Uuid, AppError> {
-    Ok(
-        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
-            .fetch_one(&mut **tx)
-            .await?,
-    )
+    Ok(DbSession::new(&mut **tx)
+        .scalar(
+            "attendance.services.sessions.module_generation_in_tx",
+            "SELECT generation FROM attendance_module_state WHERE singleton",
+        )
+        .fetch_one()
+        .await?)
 }
 pub async fn cancel(
     pool: &PgPool,
@@ -384,8 +495,11 @@ pub async fn cancel_with_seed(
     p: AttendanceCancellation,
     seed: Option<AttendanceSeed>,
 ) -> Result<AttendanceDetail, AppError> {
-    let epoch = module_generation(pool).await?;
-    let s = match get_optional(pool, id).await? {
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.sessions.preflight")
+            .await?;
+    let epoch = module_generation_on_connection(&mut preflight).await?;
+    let s = match get_optional_on_connection(&mut preflight, id).await? {
         Some(s) => s,
         None => {
             let seed = seed
@@ -393,9 +507,10 @@ pub async fn cancel_with_seed(
                 .ok_or_else(|| AppError::NotFound("ไม่พบรอบ".into()))?;
             let mut s = seed.session.clone();
             s.roster = seed.students.clone();
-            with_token(pool, s).await?
+            with_token_on_connection(&mut preflight, s).await?
         }
     };
+    drop(preflight);
     policy::require_session(actor, &s, true)?;
     if s.roster_token != p.roster_token
         || s.academic_term_id != p.session.academic_term_id
@@ -408,7 +523,8 @@ pub async fn cancel_with_seed(
     if p.reason.trim().is_empty() || p.reason.len() > 1000 {
         return Err(invalid("ระบุเหตุผลงดหรือคืนรอบเช็คชื่อ"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.sessions.transaction").await?;
     lock_term(&mut tx, s.academic_term_id, true, false).await?;
     if module_generation_in_tx(&mut tx).await? != epoch {
         return Err(AppError::Conflict("ข้อมูลโมดูลเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
@@ -433,11 +549,11 @@ pub async fn cancel_with_seed(
         return Err(AppError::Conflict("รายชื่อเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
     }
     policy::require_session(actor, &s, true)?;
-    sqlx::query("UPDATE attendance_sessions SET cancelled=$2,cancellation_reason=$3,row_version=row_version+1 WHERE id=$1").bind(id).bind(p.cancelled).bind(&p.reason).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("attendance.services.sessions.cancel_with_seed", "UPDATE attendance_sessions SET cancelled=$2,cancellation_reason=$3,row_version=row_version+1 WHERE id=$1").bind(id).bind(p.cancelled).bind(&p.reason).execute().await?;
     audit(&mut tx, actor.user_id, id, "update", &p.reason).await?;
     super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;
-    sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=$1 AND academic_term_id=$2 AND date=$3")
-        .bind(epoch).bind(s.academic_term_id).bind(s.date).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("attendance.services.sessions.cancel_with_seed", "DELETE FROM attendance_finalized_dates WHERE generation=$1 AND academic_term_id=$2 AND date=$3")
+        .bind(epoch).bind(s.academic_term_id).bind(s.date).execute().await?;
     tx.commit().await?;
     detail(pool, actor, id).await
 }

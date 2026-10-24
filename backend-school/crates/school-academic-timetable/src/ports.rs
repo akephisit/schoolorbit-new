@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// Current subject-group affiliations needed by the timetable workspace.
@@ -17,7 +17,7 @@ pub trait StaffDirectoryPort: Send + Sync {
     /// Read only the already-authorized, bounded users selected by the workspace.
     async fn subject_groups_for_users(
         &self,
-        pool: &PgPool,
+        connection: &mut PgConnection,
         user_ids: &[Uuid],
     ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError>;
 }

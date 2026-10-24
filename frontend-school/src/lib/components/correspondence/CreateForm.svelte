@@ -38,6 +38,7 @@
 	} from '#lib/correspondence/validation.js';
 	import RoutePicker from './RoutePicker.svelte';
 	import UnsavedGuard from './UnsavedGuard.svelte';
+	import LocalDocumentPreview from '#lib/components/files/LocalDocumentPreview.svelte';
 	let register = $state('incoming'),
 		title = $state(''),
 		sender = $state(''),
@@ -618,6 +619,7 @@
 								}}
 							/>{/key}
 					</div>
+					{#if original}<LocalDocumentPreview file={original} />{/if}
 					<div class="space-y-2">
 						<Label for="create-attachments">ไฟล์แนบ</Label>{#key attachmentGeneration}<Input
 								id="create-attachments"
@@ -633,6 +635,7 @@
 								}}
 							/>{/key}
 					</div>
+					{#each attachments as file (file)}<LocalDocumentPreview {file} />{/each}
 				</Card.Content></Card.Root
 			>
 			<Card.Root

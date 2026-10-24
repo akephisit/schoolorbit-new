@@ -1,7 +1,8 @@
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, NaiveTime, Utc};
-use sqlx::{FromRow, PgConnection, PgPool};
+use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use crate::models::timetable_block::{
@@ -126,7 +127,7 @@ struct WorkspaceGroupRow {
 }
 
 pub(crate) async fn get_workspace(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     query: TimetableBlockWorkspaceQuery,
     access: &TimetableAccessFilter,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
@@ -136,8 +137,8 @@ pub(crate) async fn get_workspace(
     const MAX_ROOMS: i64 = 2_000;
     const MAX_STAFF: i64 = 2_000;
 
-    let mut version = super::timetable_version_service::get_version(
-        pool,
+    let mut version = super::timetable_version_service::get_version_on_connection(
+        connection,
         query.timetable_version_id,
         Utc::now().date_naive(),
     )
@@ -153,8 +154,10 @@ pub(crate) async fn get_workspace(
     owner_ids.extend(access.organization_tree_unit_ids.iter().copied());
     owner_ids.sort_unstable();
     owner_ids.dedup();
-    let block_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT block.id
+    let block_ids: Vec<Uuid> = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT block.id
            FROM academic_timetable_blocks block
            LEFT JOIN learning_offerings offering ON offering.id = block.learning_offering_id
            WHERE block.timetable_version_id = $1 AND block.is_active
@@ -181,32 +184,34 @@ pub(crate) async fn get_workspace(
                  )
              )
            ORDER BY block.id"#,
-    )
-    .bind(query.timetable_version_id)
-    .bind(access.includes_school_owned)
-    .bind(&owner_ids)
-    .bind(access.assigned_actor_id)
-    .fetch_all(pool)
-    .await?;
-    let blocks = get_blocks(pool, &block_ids).await?;
+        )
+        .bind(query.timetable_version_id)
+        .bind(access.includes_school_owned)
+        .bind(&owner_ids)
+        .bind(access.assigned_actor_id)
+        .fetch_all()
+        .await?;
+    let blocks = get_blocks_on_connection(connection, &block_ids).await?;
     let referenced_period_ids = blocks
         .iter()
         .map(|block| block.bell_schedule_period_id)
         .collect::<Vec<_>>();
-    let bell_periods = sqlx::query_as(
-        r#"SELECT id, bell_schedule_id, name, start_time, end_time,
+    let bell_periods = DbSession::new(connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT id, bell_schedule_id, name, start_time, end_time,
                   order_index, applicable_days, is_active
            FROM bell_schedule_periods
            WHERE bell_schedule_id = $1 AND (is_active OR id = ANY($2))
            ORDER BY order_index, id"#,
-    )
-    .bind(version.bell_schedule_id)
-    .bind(&referenced_period_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(version.bell_schedule_id)
+        .bind(&referenced_period_ids)
+        .fetch_all()
+        .await?;
 
-    let source = school_academic_delivery::services::versions::get_version(
-        pool,
+    let source = school_academic_delivery::services::versions::get_version_on_connection(
+        connection,
         version.delivery_version_id,
     )
     .await?;
@@ -232,8 +237,11 @@ pub(crate) async fn get_workspace(
         .flat_map(|offering| offering.groups.iter().map(|group| group.id))
         .collect::<Vec<_>>();
     let roster_statuses =
-        school_academic_delivery::services::versions::roster_statuses(pool, &source_group_ids)
-            .await?;
+        school_academic_delivery::services::versions::roster_statuses_on_connection(
+            connection,
+            &source_group_ids,
+        )
+        .await?;
     version.targets.retain(|target| {
         visible_offerings
             .iter()
@@ -373,9 +381,8 @@ pub(crate) async fn get_workspace(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let homerooms = sqlx::query_as::<
-        _,
-        (
+    let homerooms = DbSession::new(connection)
+        .query_as::<(
             Uuid,
             String,
             String,
@@ -384,9 +391,9 @@ pub(crate) async fn get_workspace(
             i32,
             Option<String>,
             bool,
-        ),
-    >(
-        r#"SELECT homeroom.id, homeroom.code, homeroom.name, homeroom.grade_level_id,
+        )>(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT homeroom.id, homeroom.code, homeroom.name, homeroom.grade_level_id,
                   grade.level_type::text, grade.year, homeroom.room_number, homeroom.is_active
            FROM homerooms homeroom
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
@@ -394,13 +401,13 @@ pub(crate) async fn get_workspace(
              AND (($2 AND homeroom.is_active) OR homeroom.id = ANY($3))
            ORDER BY grade.level_type, grade.year, homeroom.room_number, homeroom.code
            LIMIT $4"#,
-    )
-    .bind(query.academic_year_id)
-    .bind(access.includes_school_owned)
-    .bind(&relevant_homeroom_ids)
-    .bind(MAX_HOMEROOMS + 1)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(query.academic_year_id)
+        .bind(access.includes_school_owned)
+        .bind(&relevant_homeroom_ids)
+        .bind(MAX_HOMEROOMS + 1)
+        .fetch_all()
+        .await?;
     if homerooms.len() > MAX_HOMEROOMS as usize {
         return Err(AppError::ValidationError(
             "จำนวนห้องประจำชั้นในพื้นที่จัดตารางเกิน 500 ห้อง".to_string(),
@@ -437,16 +444,18 @@ pub(crate) async fn get_workspace(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let rooms = sqlx::query_as::<_, (Uuid, Option<String>, String, String)>(
-        r#"SELECT id, code, name_th, status::text FROM rooms
+    let rooms = DbSession::new(connection)
+        .query_as::<(Uuid, Option<String>, String, String)>(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT id, code, name_th, status::text FROM rooms
            WHERE ($1 AND status = 'ACTIVE') OR id = ANY($2)
            ORDER BY coalesce(code, ''), name_th, id LIMIT $3"#,
-    )
-    .bind(access.includes_school_owned)
-    .bind(&referenced_room_ids)
-    .bind(MAX_ROOMS + 1)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(access.includes_school_owned)
+        .bind(&referenced_room_ids)
+        .bind(MAX_ROOMS + 1)
+        .fetch_all()
+        .await?;
     if rooms.len() > MAX_ROOMS as usize {
         return Err(AppError::ValidationError(
             "จำนวนห้องเรียนในพื้นที่จัดตารางเกิน 2000 ห้อง".to_string(),
@@ -483,22 +492,24 @@ pub(crate) async fn get_workspace(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-    let staff = sqlx::query_as::<_, (Uuid, String, String)>(
-        r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
+    let staff = DbSession::new(connection)
+        .query_as::<(Uuid, String, String)>(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
            FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
            ORDER BY 2, id LIMIT $2"#,
-    )
-    .bind(&staff_ids)
-    .bind(MAX_STAFF + 1)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&staff_ids)
+        .bind(MAX_STAFF + 1)
+        .fetch_all()
+        .await?;
     if staff.len() > MAX_STAFF as usize {
         return Err(AppError::ValidationError(
             "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
         ));
     }
     let affiliations = staff_directory
-        .subject_groups_for_users(pool, &staff_ids)
+        .subject_groups_for_users(connection, &staff_ids)
         .await?;
     let mut subject_groups_by_staff = BTreeMap::<Uuid, Vec<TimetableSubjectGroup>>::new();
     for affiliation in affiliations {
@@ -547,8 +558,11 @@ pub(crate) async fn get_workspace(
         .into_iter()
         .collect::<Vec<_>>();
     let subject_groups =
-        school_academic_core::services::catalog::subject_groups_for_versions(pool, &version_ids)
-            .await?;
+        school_academic_core::services::catalog::subject_groups_for_versions_on_connection(
+            connection,
+            &version_ids,
+        )
+        .await?;
     let offering_subject_groups = map_offering_subject_groups(&offering_versions, subject_groups);
 
     let summary = TimetableBlockSummary {
@@ -573,15 +587,17 @@ pub(crate) async fn get_workspace(
             .sum(),
     };
     let source_issues = super::timetable_source::source_issues(&source.snapshot, &blocks);
-    let latest_delivery_version_id: Uuid = sqlx::query_scalar(
-        "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
-    )
-    .bind(query.timetable_version_id)
-    .fetch_one(pool)
-    .await?;
+    let latest_delivery_version_id: Uuid = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+        )
+        .bind(query.timetable_version_id)
+        .fetch_one()
+        .await?;
     let latest_delivery_version_id =
-        school_academic_delivery::services::versions::latest_published_for_term(
-            pool,
+        school_academic_delivery::services::versions::latest_published_for_term_on_connection(
+            connection,
             query.academic_term_id,
         )
         .await?
@@ -590,12 +606,14 @@ pub(crate) async fn get_workspace(
         && version.status == school_academic_core::models::TimetableVersionStatus::Draft
     {
         Some(
-            sqlx::query_scalar(
-                "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-            )
-            .bind(version.id)
-            .fetch_one(pool)
-            .await?,
+            DbSession::new(connection)
+                .scalar(
+                    "academic_timetable.services.timetable_block_queries.get_workspace",
+                    "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+                )
+                .bind(version.id)
+                .fetch_one()
+                .await?,
         )
     } else {
         None
@@ -618,19 +636,14 @@ pub(crate) async fn get_workspace(
     })
 }
 
-pub(crate) async fn get_block(pool: &PgPool, block_id: Uuid) -> Result<TimetableBlock, AppError> {
-    let mut blocks = get_blocks(pool, &[block_id]).await?;
+pub(crate) async fn get_block(
+    connection: &mut sqlx::PgConnection,
+    block_id: Uuid,
+) -> Result<TimetableBlock, AppError> {
+    let mut blocks = get_blocks_on_connection(connection, &[block_id]).await?;
     blocks
         .pop()
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการตารางสอน".to_string()))
-}
-
-pub(crate) async fn get_blocks(
-    pool: &PgPool,
-    block_ids: &[Uuid],
-) -> Result<Vec<TimetableBlock>, AppError> {
-    let mut connection = pool.acquire().await?;
-    get_blocks_on_connection(&mut connection, block_ids).await
 }
 
 pub(crate) async fn get_blocks_on_connection(
@@ -640,8 +653,10 @@ pub(crate) async fn get_blocks_on_connection(
     if block_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut rows: Vec<BlockRow> = sqlx::query_as(
-        r#"SELECT block.id, block.timetable_version_id, block.academic_term_id,
+    let mut rows: Vec<BlockRow> = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
+            r#"SELECT block.id, block.timetable_version_id, block.academic_term_id,
                   block.academic_year_id, block.bell_schedule_id,
                   block.bell_schedule_period_id, period.name AS period_name,
                   period.start_time, period.end_time, block.day_of_week,
@@ -655,16 +670,18 @@ pub(crate) async fn get_blocks_on_connection(
            LEFT JOIN learning_offerings offering ON offering.id = block.learning_offering_id
            WHERE block.id = ANY($1)
            ORDER BY block.day_of_week, period.order_index, block.id"#,
-    )
-    .bind(block_ids)
-    .fetch_all(&mut *connection)
-    .await?;
+        )
+        .bind(block_ids)
+        .fetch_all()
+        .await?;
     if rows.is_empty() {
         return Ok(Vec::new());
     }
     let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let group_rows: Vec<GroupRow> = sqlx::query_as(
-        r#"SELECT target.id, target.block_id, target.learning_group_id,
+    let group_rows: Vec<GroupRow> = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
+            r#"SELECT target.id, target.block_id, target.learning_group_id,
                   target.learning_offering_id, learning_group.code, learning_group.name,
                   target.homeroom_ids,
                   ARRAY(
@@ -680,16 +697,18 @@ pub(crate) async fn get_blocks_on_connection(
            LEFT JOIN rooms room ON room.id = target.room_id
            WHERE target.block_id = ANY($1) AND target.is_active
            ORDER BY target.block_id, learning_group.code, target.id"#,
-    )
-    .bind(&ids)
-    .fetch_all(&mut *connection)
-    .await?;
+        )
+        .bind(&ids)
+        .fetch_all()
+        .await?;
     let group_ids = group_rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let instructor_rows: Vec<InstructorRow> = if group_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
-            r#"SELECT instructor.block_group_id,
+        DbSession::new(&mut *connection)
+            .query_as(
+                "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
+                r#"SELECT instructor.block_group_id,
                       instructor.instructor_id AS teacher_id,
                       account.display_name AS display_name,
                       instructor.role, instructor.display_order
@@ -697,12 +716,12 @@ pub(crate) async fn get_blocks_on_connection(
                JOIN user_display_names account ON account.id = instructor.instructor_id
                WHERE instructor.block_group_id = ANY($1)
                ORDER BY instructor.block_group_id, instructor.display_order, instructor.id"#,
-        )
-        .bind(&group_ids)
-        .fetch_all(&mut *connection)
-        .await?
+            )
+            .bind(&group_ids)
+            .fetch_all()
+            .await?
     };
-    let homeroom_rows: Vec<HomeroomRow> = sqlx::query_as(
+    let homeroom_rows: Vec<HomeroomRow> = DbSession::new(&mut *connection).query_as("academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
         r#"SELECT target.id, target.block_id, target.homeroom_id,
                   homeroom.code, homeroom.name, target.room_id,
                   room.code AS room_code, room.name_th AS room_name, target.row_version, target.is_active
@@ -713,31 +732,35 @@ pub(crate) async fn get_blocks_on_connection(
            ORDER BY target.block_id, homeroom.code, target.id"#,
     )
     .bind(&ids)
-    .fetch_all(&mut *connection)
+    .fetch_all()
     .await?;
-    let teacher_rows: Vec<TeacherRow> = sqlx::query_as(
-        r#"SELECT target.id, target.block_id, target.teacher_id,
+    let teacher_rows: Vec<TeacherRow> = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
+            r#"SELECT target.id, target.block_id, target.teacher_id,
                   account.display_name AS display_name,
                   target.row_version, target.is_active
            FROM academic_timetable_block_teachers target
            JOIN user_display_names account ON account.id = target.teacher_id
            WHERE target.block_id = ANY($1) AND target.is_active
            ORDER BY target.block_id, display_name, target.id"#,
-    )
-    .bind(&ids)
-    .fetch_all(&mut *connection)
-    .await?;
-    let sync_rows: Vec<SyncRow> = sqlx::query_as(
-        r#"SELECT id, block_id, learning_group_id, learning_offering_id,
+        )
+        .bind(&ids)
+        .fetch_all()
+        .await?;
+    let sync_rows: Vec<SyncRow> = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
+            r#"SELECT id, block_id, learning_group_id, learning_offering_id,
                   status, linked_block_group_id, conflict_code, conflict_message,
                   attempted_group_row_version, row_version
            FROM academic_timetable_block_group_sync
            WHERE block_id = ANY($1)
            ORDER BY block_id, learning_group_id"#,
-    )
-    .bind(&ids)
-    .fetch_all(&mut *connection)
-    .await?;
+        )
+        .bind(&ids)
+        .fetch_all()
+        .await?;
 
     let mut instructors_by_group: BTreeMap<Uuid, Vec<TimetableBlockInstructor>> = BTreeMap::new();
     for row in instructor_rows {
@@ -834,9 +857,9 @@ pub(crate) async fn get_blocks_on_connection(
         .collect::<Vec<_>>();
     // The explicit timetable origin supplies labels for placements retained for review
     // after their resource has been removed from the newly pinned opening.
-    let sources: Vec<(Uuid, Uuid, Option<Uuid>)> = sqlx::query_as(
+    let sources: Vec<(Uuid, Uuid, Option<Uuid>)> = DbSession::new(&mut *connection).query_as("academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
         "SELECT version.id,version.delivery_version_id,origin.delivery_version_id FROM academic_timetable_versions version LEFT JOIN academic_timetable_versions origin ON origin.id=version.source_version_id WHERE version.id=ANY($1)",
-    ).bind(&version_ids).fetch_all(&mut *connection).await?;
+    ).bind(&version_ids).fetch_all().await?;
     let delivery_ids = sources
         .iter()
         .flat_map(|(_, id, origin)| [Some(*id), *origin])
@@ -844,9 +867,11 @@ pub(crate) async fn get_blocks_on_connection(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let snapshots =
-        school_academic_delivery::services::versions::snapshots(&mut *connection, &delivery_ids)
-            .await?;
+    let snapshots = school_academic_delivery::services::versions::snapshots_on_connection(
+        &mut *connection,
+        &delivery_ids,
+    )
+    .await?;
     let source_ids = sources
         .into_iter()
         .map(|(version, id, origin)| (version, (id, origin)))

@@ -1887,15 +1887,27 @@ fn draft_replacement_and_subject_group_updates_require_row_versions() {
     );
 
     let group = json!({
-        "code": "MA",
         "nameTh": "คณิตศาสตร์",
         "nameEn": "Mathematics",
         "displayOrder": 2,
         "isActive": true,
         "rowVersion": 3
     });
-    let request: UpdateSubjectGroupRequest = serde_json::from_value(group).unwrap();
+    let request: UpdateSubjectGroupRequest = serde_json::from_value(group.clone()).unwrap();
     assert_eq!(request.row_version, 3);
+
+    let mut immutable_code = group.clone();
+    immutable_code["code"] = json!("MA");
+    let error = serde_json::from_value::<UpdateSubjectGroupRequest>(immutable_code).unwrap_err();
+    assert!(error.to_string().contains("unknown field `code`"));
+
+    let mut missing_version = group;
+    missing_version
+        .as_object_mut()
+        .unwrap()
+        .remove("rowVersion");
+    let error = serde_json::from_value::<UpdateSubjectGroupRequest>(missing_version).unwrap_err();
+    assert!(error.to_string().contains("missing field `rowVersion`"));
 }
 
 #[test]
@@ -2779,7 +2791,6 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
 #[tokio::test]
 async fn subject_group_updates_use_optimistic_revisions() {
     let pool = prepare_current_core_fixture("academic_core_subject_group_revision").await;
-    apply_migrations_through(&pool, 116).await.unwrap();
     let group = catalog::create_subject_group(
         &pool,
         CreateSubjectGroupRequest {
@@ -6008,7 +6019,6 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
     use school_academic_core::models::*;
     use school_academic_core::services::homeroom_roster;
     let pool = prepare_current_core_fixture("homeroom_roster_management").await;
-    apply_migrations_through(&pool, 114).await.unwrap();
     let actor = fixture_actor(&pool).await;
     let room: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
@@ -6445,7 +6455,7 @@ impl school_academic_core::ports::PlacementRosterPort for TestPlacementRosters {
 
 #[tokio::test]
 async fn organization_learning_area_cutover_preserves_academic_owners_and_grants() {
-    let pool = prepare_current_core_fixture("organization_academic_preservation").await;
+    let pool = prepare_core_fixture_through("organization_academic_preservation", 115).await;
     async fn fingerprints(pool: &PgPool) -> Vec<String> {
         let mut result = Vec::new();
         for table in [

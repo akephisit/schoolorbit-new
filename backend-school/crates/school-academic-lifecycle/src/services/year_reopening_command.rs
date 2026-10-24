@@ -1,6 +1,7 @@
 use super::super::models::{YearReopeningOutcome, YearReopeningRequest};
 use school_academic_core::services::{lifecycle_guard, student_years, year_commands, years_terms};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool};
@@ -37,7 +38,11 @@ pub async fn reopen_year(
         ));
     }
     let checksum = super::checksum(&(actor.user_id, year, &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.year_reopening_command.reopen_year",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(outcome) = year_commands::replay_year_command(
         &mut tx,
@@ -51,9 +56,13 @@ pub async fn reopen_year(
         tx.commit().await?;
         return Ok(outcome);
     }
-    sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.year_reopening_command.reopen_year",
+            "SELECT id FROM academic_years WHERE id=$1 FOR UPDATE",
+        )
         .bind(year)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
     let workspace = super::reopening_workspace_in_transaction(&mut tx, actor, year).await?;
@@ -69,16 +78,16 @@ pub async fn reopen_year(
             "ยังมีข้อมูลที่ไม่อนุญาตให้เปิดปีการศึกษาเก่ากลับ".into(),
         ));
     }
-    sqlx::query("UPDATE academic_years SET status='closing',row_version=row_version+1,updated_at=now() WHERE id=$1")
-        .bind(year).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_reopening_command.reopen_year", "UPDATE academic_years SET status='closing',row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(year).execute().await?;
     let outcome = YearReopeningOutcome {
         request_id: input.request_id,
         context: super::year_transitions::read_context(&mut tx, year).await?,
         completed_at: chrono::Utc::now(),
     };
-    sqlx::query("INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,'reopen',$4,$5,$6)")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_reopening_command.reopen_year", "INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,'reopen',$4,$5,$6)")
         .bind(input.request_id).bind(year).bind(actor.user_id).bind(checksum)
-        .bind(Json(&workspace)).bind(Json(&outcome)).execute(&mut *tx).await?;
+        .bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
     years_terms::append_audit(
         &mut tx,
         "academic.year.reopen",

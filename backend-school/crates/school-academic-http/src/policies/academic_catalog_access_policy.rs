@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -47,14 +48,41 @@ pub async fn academic_catalog_list_access(
     .await
 }
 
+pub async fn academic_catalog_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: CatalogAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
+        actor,
+        catalog_permissions(action),
+    )
+    .await
+}
+
 pub async fn academic_catalog_access(
     pool: &PgPool,
     actor: &ActorContext,
     resource: CatalogResourceRef,
     action: CatalogAction,
 ) -> Result<AcademicResourceAccess, AppError> {
-    let owning_organization_unit_id = catalog_resource_owner(pool, resource).await?;
-    let filter = academic_catalog_list_access(pool, actor, action).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_http.policies.academic_catalog_access_policy.academic_catalog_access",
+    )
+    .await?;
+    academic_catalog_access_on_connection(&mut connection, actor, resource, action).await
+}
+
+pub async fn academic_catalog_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    resource: CatalogResourceRef,
+    action: CatalogAction,
+) -> Result<AcademicResourceAccess, AppError> {
+    let owning_organization_unit_id = catalog_resource_owner(connection, resource).await?;
+    let filter = academic_catalog_list_access_on_connection(connection, actor, action).await?;
     Ok(resource_access_policy::academic_resource_access_for(
         &filter,
         owning_organization_unit_id,
@@ -67,7 +95,21 @@ pub async fn require_academic_catalog_list_access(
     actor: &ActorContext,
     action: CatalogAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = academic_catalog_list_access(pool, actor, action).await?;
+    require_list_filter(academic_catalog_list_access(pool, actor, action).await?)
+}
+
+pub async fn require_academic_catalog_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: CatalogAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = academic_catalog_list_access_on_connection(connection, actor, action).await?;
+    require_list_filter(filter)
+}
+
+fn require_list_filter(
+    filter: AcademicResourceListFilter,
+) -> Result<AcademicResourceListFilter, AppError> {
     if !filter.includes_school_owned
         && filter.organization_unit_ids.is_empty()
         && filter.organization_tree_unit_ids.is_empty()
@@ -87,7 +129,22 @@ pub async fn require_academic_catalog_access(
     resource: CatalogResourceRef,
     action: CatalogAction,
 ) -> Result<(), AppError> {
-    if academic_catalog_access(pool, actor, resource, action).await? == AcademicResourceAccess::None
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_http.policies.academic_catalog_access_policy.require_academic_catalog_access",
+    )
+    .await?;
+    require_academic_catalog_access_on_connection(&mut connection, actor, resource, action).await
+}
+
+pub async fn require_academic_catalog_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    resource: CatalogResourceRef,
+    action: CatalogAction,
+) -> Result<(), AppError> {
+    if academic_catalog_access_on_connection(connection, actor, resource, action).await?
+        == AcademicResourceAccess::None
     {
         Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรนี้".to_string()))
     } else {
@@ -113,30 +170,35 @@ fn catalog_permissions(action: CatalogAction) -> AcademicResourcePermissions {
 }
 
 async fn catalog_resource_owner(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     resource: CatalogResourceRef,
 ) -> Result<Option<Uuid>, AppError> {
-    let owner = match resource {
-        CatalogResourceRef::Subject(subject_id) => {
-            sqlx::query_scalar("SELECT owning_organization_unit_id FROM subjects WHERE id = $1")
+    let owner =
+        match resource {
+            CatalogResourceRef::Subject(subject_id) => DbSession::new(connection)
+                .scalar(
+                    "academic_http.policies.academic_catalog_access_policy.catalog_resource_owner",
+                    "SELECT owning_organization_unit_id FROM subjects WHERE id = $1",
+                )
                 .bind(subject_id)
-                .fetch_optional(pool)
-                .await
-        }
-        CatalogResourceRef::Activity(activity_id) => {
-            sqlx::query_scalar("SELECT owning_organization_unit_id FROM activities WHERE id = $1")
+                .fetch_optional()
+                .await,
+            CatalogResourceRef::Activity(activity_id) => DbSession::new(connection)
+                .scalar(
+                    "academic_http.policies.academic_catalog_access_policy.catalog_resource_owner",
+                    "SELECT owning_organization_unit_id FROM activities WHERE id = $1",
+                )
                 .bind(activity_id)
-                .fetch_optional(pool)
-                .await
+                .fetch_optional()
+                .await,
         }
-    }
-    .map_err(|error| {
-        tracing::error!(
-            reason = "academic_catalog_owner_query_failed",
-            database_error = %error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบเจ้าของข้อมูลคลังวิชาได้".to_string())
-    })?;
+        .map_err(|error| {
+            tracing::error!(
+                reason = "academic_catalog_owner_query_failed",
+                error_class = school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบเจ้าของข้อมูลคลังวิชาได้".to_string())
+        })?;
 
     owner.ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลคลังวิชาหรือกิจกรรม".to_string()))
 }
@@ -217,5 +279,35 @@ mod learning_area_registry_tests {
             Deactivate
         )
         .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod database_free_policy_tests {
+    use super::*;
+    #[tokio::test]
+    async fn list_grants_and_denials_preserve_database_free_paths() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let granted = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ACADEMIC_CATALOG_READ_SCHOOL.into()],
+        };
+        assert!(
+            require_academic_catalog_list_access(&pool, &granted, CatalogAction::Read)
+                .await
+                .unwrap()
+                .includes_school_owned
+        );
+        let denied = ActorContext {
+            user_id: granted.user_id,
+            permissions: vec![],
+        };
+        assert!(matches!(
+            require_academic_catalog_list_access(&pool, &denied, CatalogAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

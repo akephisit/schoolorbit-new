@@ -204,6 +204,56 @@ fn classify_missing_status(status: Option<u16>) -> R2ClientError {
     }
 }
 
+/// Storage routing only: usable by offline attestation without credentials or CDN configuration.
+#[derive(Clone)]
+pub struct R2StorageRouting {
+    account_id: String,
+    public_bucket_name: String,
+    private_bucket_name: String,
+}
+impl R2StorageRouting {
+    pub fn from_env() -> Result<Self, StorageError> {
+        Self::from_values(
+            &required_env("R2_ACCOUNT_ID")?,
+            &required_env("R2_PUBLIC_BUCKET_NAME")?,
+            &required_env("R2_PRIVATE_BUCKET_NAME")?,
+        )
+    }
+    pub fn from_values(
+        account_id: &str,
+        public_bucket_name: &str,
+        private_bucket_name: &str,
+    ) -> Result<Self, StorageError> {
+        let public_bucket_name = normalized_bucket(public_bucket_name)?;
+        let private_bucket_name = normalized_bucket(private_bucket_name)?;
+        if public_bucket_name == private_bucket_name {
+            return Err(StorageError::ConfigurationInvalid);
+        }
+        let routing = Self {
+            account_id: required_value(account_id)?,
+            public_bucket_name,
+            private_bucket_name,
+        };
+        // Validate both actual namespace locators through the same owner as runtime I/O.
+        routing.namespace(StorageClass::Public)?;
+        routing.namespace(StorageClass::Private)?;
+        Ok(routing)
+    }
+    pub fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError> {
+        super::storage_namespace::StorageNamespace::from_provider_locator(
+            "r2",
+            &format!("https://{}.r2.cloudflarestorage.com", self.account_id),
+            match storage_class {
+                StorageClass::Public => &self.public_bucket_name,
+                StorageClass::Private => &self.private_bucket_name,
+            },
+        )
+    }
+}
+
 /// R2 configuration owned entirely by server environment variables.
 #[derive(Clone)]
 pub struct R2StorageConfig {
@@ -238,25 +288,33 @@ impl R2StorageConfig {
         private_bucket_name: &str,
         public_base_url: &str,
     ) -> Result<Self, StorageError> {
-        let public_bucket_name = normalized_bucket(public_bucket_name)?;
-        let private_bucket_name = normalized_bucket(private_bucket_name)?;
-        if public_bucket_name == private_bucket_name {
-            return Err(StorageError::ConfigurationInvalid);
-        }
-
+        let routing =
+            R2StorageRouting::from_values(account_id, public_bucket_name, private_bucket_name)?;
         Ok(Self {
-            account_id: required_value(account_id)?,
+            account_id: routing.account_id,
             access_key_id: required_value(access_key_id)?,
             secret_access_key: required_value(secret_access_key)?,
             region: required_value(region)?,
-            public_bucket_name,
-            private_bucket_name,
+            public_bucket_name: routing.public_bucket_name,
+            private_bucket_name: routing.private_bucket_name,
             public_base_url: validated_public_base_url(public_base_url)?,
         })
     }
 
     fn endpoint_url(&self) -> String {
         format!("https://{}.r2.cloudflarestorage.com", self.account_id)
+    }
+
+    pub fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError> {
+        R2StorageRouting {
+            account_id: self.account_id.clone(),
+            public_bucket_name: self.public_bucket_name.clone(),
+            private_bucket_name: self.private_bucket_name.clone(),
+        }
+        .namespace(storage_class)
     }
 
     fn bucket_name(&self, storage_class: StorageClass) -> &str {
@@ -367,6 +425,13 @@ impl R2StorageProvider {
 
 #[async_trait]
 impl StorageProvider for R2StorageProvider {
+    fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError> {
+        self.config.namespace(storage_class)
+    }
+
     async fn check_readiness(&self) -> Result<(), StorageError> {
         self.transport
             .head_bucket(self.config.bucket_name(StorageClass::Public))
@@ -681,6 +746,30 @@ mod tests {
             ),
             client,
         )
+    }
+
+    #[test]
+    fn offline_routing_uses_same_namespace_without_credentials_or_public_url() {
+        let runtime = config(
+            "public-fixture",
+            "private-fixture",
+            "https://cdn.example.test",
+        );
+        let routing =
+            R2StorageRouting::from_values(&runtime.account_id, "public-fixture", "private-fixture")
+                .unwrap();
+        assert!(
+            routing.namespace(StorageClass::Public).unwrap()
+                == runtime.namespace(StorageClass::Public).unwrap()
+        );
+        assert!(
+            routing.namespace(StorageClass::Private).unwrap()
+                == runtime.namespace(StorageClass::Private).unwrap()
+        );
+        assert!(
+            R2StorageRouting::from_values(&runtime.account_id, "same-bucket", "same-bucket")
+                .is_err()
+        );
     }
 
     #[tokio::test]

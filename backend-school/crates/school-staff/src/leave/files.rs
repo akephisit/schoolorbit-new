@@ -5,6 +5,7 @@ use super::{
     service,
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     access::FilePolicyAction,
@@ -42,14 +43,28 @@ pub async fn record_upload(
     id: Uuid,
     file: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO staff_leave_file_uploads(file_id,request_id,uploaded_by) VALUES($1,$2,$3)",
-    )
-    .bind(file)
-    .bind(id)
-    .bind(actor)
-    .execute(pool)
-    .await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.files.record_upload")
+            .await?;
+    record_upload_on_connection(&mut connection, actor, id, file).await
+}
+
+pub async fn record_upload_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: Uuid,
+    id: Uuid,
+    file: Uuid,
+) -> Result<(), AppError> {
+    DbSession::new(connection)
+        .query(
+            "staff.leave.files.record_upload_on_connection",
+            "INSERT INTO staff_leave_file_uploads(file_id,request_id,uploaded_by) VALUES($1,$2,$3)",
+        )
+        .bind(file)
+        .bind(id)
+        .bind(actor)
+        .execute()
+        .await?;
     Ok(())
 }
 pub async fn authorize_existing(
@@ -70,7 +85,12 @@ pub async fn authorize_existing(
         return actor.require_permission(codes::STAFF_LEAVE_UPDATE_ASSIGNED);
     }
     service::detail(pool, actor, id).await?;
-    let related:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM staff_leave_file_links WHERE request_id=$1 AND file_id=$2) OR EXISTS(SELECT 1 FROM staff_leave_file_uploads WHERE request_id=$1 AND file_id=$2 AND uploaded_by=$3)").bind(id).bind(file.id).bind(actor.user_id).fetch_one(pool).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.leave.files.authorize_existing.relationship",
+    )
+    .await?;
+    let related:bool=DbSession::new(&mut *connection).scalar("staff.leave.files.authorize_existing", "SELECT EXISTS(SELECT 1 FROM staff_leave_file_links WHERE request_id=$1 AND file_id=$2) OR EXISTS(SELECT 1 FROM staff_leave_file_uploads WHERE request_id=$1 AND file_id=$2 AND uploaded_by=$3)").bind(id).bind(file.id).bind(actor.user_id).fetch_one().await?;
     if !related {
         return Err(denied());
     }
@@ -81,13 +101,14 @@ pub async fn delete_guard<'a>(
     actor: &ActorContext,
     file: &PlatformFile,
     resource: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     authorize_create(pool, actor, file.purpose, resource).await?;
     if file.owner_user_id != Some(actor.user_id) || file.visibility != FileVisibility::Private {
         return Err(denied());
     }
-    let mut tx = pool.begin().await?;
-    let allowed:Option<bool>=sqlx::query_scalar("SELECT created_by=$2 AND retention_class='temporary' AND NOT EXISTS(SELECT 1 FROM staff_leave_file_links WHERE file_id=f.id) FROM files f WHERE id=$1 FOR UPDATE").bind(file.id).bind(actor.user_id).fetch_optional(&mut *tx).await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.files.delete_guard").await?;
+    let allowed:Option<bool>=DbSession::new(&mut *tx).scalar("staff.leave.files.delete_guard", "SELECT created_by=$2 AND retention_class='temporary' AND NOT EXISTS(SELECT 1 FROM staff_leave_file_links WHERE file_id=f.id) FROM files f WHERE id=$1 FOR UPDATE").bind(file.id).bind(actor.user_id).fetch_optional().await?;
     if allowed != Some(true) {
         return Err(denied());
     }
@@ -108,7 +129,7 @@ pub async fn validate_evidence(
     if ids.len() != files.len() {
         return Err(invalid("ไฟล์หลักฐานซ้ำ"));
     }
-    let rows:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=ANY($1) AND f.purpose_code='staff_leave_evidence' AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND ((f.created_by=$3 AND EXISTS(SELECT 1 FROM staff_leave_file_uploads u WHERE u.file_id=f.id AND u.request_id=$2 AND u.uploaded_by=$3) AND f.retention_class='temporary' AND f.expires_at>now()) OR EXISTS(SELECT 1 FROM staff_leave_file_links l WHERE l.request_id=$2 AND l.file_id=f.id)) ORDER BY f.id FOR UPDATE OF f").bind(&ids).bind(id).bind(actor).fetch_all(&mut **tx).await?;
+    let rows:Vec<(Uuid,Uuid,String)>=DbSession::new(&mut **tx).query_as("staff.leave.files.validate_evidence", "SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=ANY($1) AND f.purpose_code='staff_leave_evidence' AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND ((f.created_by=$3 AND EXISTS(SELECT 1 FROM staff_leave_file_uploads u WHERE u.file_id=f.id AND u.request_id=$2 AND u.uploaded_by=$3) AND f.retention_class='temporary' AND f.expires_at>now()) OR EXISTS(SELECT 1 FROM staff_leave_file_links l WHERE l.request_id=$2 AND l.file_id=f.id)) ORDER BY f.id FOR UPDATE OF f").bind(&ids).bind(id).bind(actor).fetch_all().await?;
     if rows.len() != ids.len() {
         return Err(invalid("หลักฐานไม่พร้อมใช้งานหรือไม่ได้อัปโหลดสำหรับคำขอนี้"));
     }
@@ -147,9 +168,9 @@ pub async fn retain_snapshots(
     files: &[LeaveFileSnapshot],
 ) -> Result<(), AppError> {
     for f in files {
-        sqlx::query("INSERT INTO staff_leave_file_links(request_id,revision,file_id,version_id,checksum) VALUES($1,$2,$3,$4,$5)").bind(id).bind(revision).bind(f.file_id).bind(f.version_id).bind(&f.checksum).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("staff.leave.files.retain_snapshots", "INSERT INTO staff_leave_file_links(request_id,revision,file_id,version_id,checksum) VALUES($1,$2,$3,$4,$5)").bind(id).bind(revision).bind(f.file_id).bind(f.version_id).bind(&f.checksum).execute().await?;
     }
     let ids: Vec<_> = files.iter().map(|f| f.file_id).collect();
-    sqlx::query("UPDATE files SET retention_class='standard',expires_at=NULL,updated_at=now() WHERE id=ANY($1)").bind(ids).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("staff.leave.files.retain_snapshots", "UPDATE files SET retention_class='standard',expires_at=NULL,updated_at=now() WHERE id=ANY($1)").bind(ids).execute().await?;
     Ok(())
 }

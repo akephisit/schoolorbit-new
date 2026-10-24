@@ -1,11 +1,10 @@
 use super::*;
-use crate::integration_tests::academic::{core, cutover_test_support::apply_migrations_through};
+use crate::integration_tests::academic::core;
 use school_permissions::registry::codes;
 
 #[tokio::test]
 async fn year_lifecycle_readiness_distinguishes_missing_annual_results_and_optional_terms() {
     let pool = core::services_tests::prepare_core_fixture("year_lifecycle_readiness").await;
-    apply_migrations_through(&pool, 70).await.unwrap();
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)

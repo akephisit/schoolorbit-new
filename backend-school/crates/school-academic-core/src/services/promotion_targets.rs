@@ -3,6 +3,7 @@ use super::super::models::{
     PromotionDestinationOutcome as Outcome, StudentAcademicYearStatus,
 };
 use super::promotion_students::PromotionStudentContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
@@ -67,16 +68,23 @@ async fn validate_destinations_with_owned_target(
             "ตรวจปลายทางได้ครั้งละ 1–500 คน โดยไม่ซ้ำนักเรียน".into(),
         ));
     }
-    let status: Option<AcademicYearStatus> =
-        sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR SHARE")
-            .bind(target_year)
-            .fetch_optional(&mut **tx)
-            .await?;
+    let status: Option<AcademicYearStatus> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.promotion_targets.validate_destinations_with_owned_target",
+            "SELECT status FROM academic_years WHERE id=$1 FOR SHARE",
+        )
+        .bind(target_year)
+        .fetch_optional()
+        .await?;
     if status != Some(AcademicYearStatus::Planning) {
         return Err(AppError::Conflict("ปีปลายทางต้องอยู่ระหว่างวางแผน".into()));
     }
-    sqlx::query("SELECT id FROM grade_level_progression_sets WHERE id=1 FOR SHARE")
-        .execute(&mut **tx)
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_core.services.promotion_targets.validate_destinations_with_owned_target",
+            "SELECT id FROM grade_level_progression_sets WHERE id=1 FOR SHARE",
+        )
+        .execute()
         .await?;
     let program_ids: Vec<Uuid> = items
         .iter()
@@ -105,24 +113,24 @@ async fn validate_destinations_with_owned_target(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let programs:Vec<ProgramReference>=sqlx::query_as(
+    let programs:Vec<ProgramReference>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target",
         "SELECT program.id,version.id AS curriculum_level_id,COALESCE(version.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
          (program.status='published' AND curriculum.status='published' AND (curriculum.is_active IS TRUE AND version.is_active)
 ) AS is_applicable
          FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id
          JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
          WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF curriculum"
-    ).bind(program_ids).fetch_all(&mut **tx).await?;
+    ).bind(program_ids).fetch_all().await?;
     let programs: BTreeMap<_, _> = programs.into_iter().map(|row| (row.id, row)).collect();
-    let grades: Vec<Uuid> = sqlx::query_scalar(
+    let grades: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_core.services.promotion_targets.validate_destinations_with_owned_target",
         "SELECT id FROM grade_levels WHERE id=ANY($1) AND is_active IS TRUE ORDER BY id FOR SHARE",
     )
     .bind(&grade_ids)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     let grades: BTreeSet<_> = grades.into_iter().collect();
-    let mappings:Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE from_grade_level_id=ANY($1) AND is_active ORDER BY id").bind(grade_ids).fetch_all(&mut **tx).await?;
-    let rooms:Vec<RoomReference>=sqlx::query_as("SELECT id,academic_year_id,grade_level_id,study_program_id,is_active IS TRUE AS is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(room_ids).fetch_all(&mut **tx).await?;
+    let mappings:Vec<GradeProgression>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target", "SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE from_grade_level_id=ANY($1) AND is_active ORDER BY id").bind(grade_ids).fetch_all().await?;
+    let rooms:Vec<RoomReference>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target", "SELECT id,academic_year_id,grade_level_id,study_program_id,is_active IS TRUE AS is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(room_ids).fetch_all().await?;
     let rooms: BTreeMap<_, _> = rooms.into_iter().map(|row| (row.id, row)).collect();
     let references = References {
         programs,

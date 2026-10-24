@@ -223,6 +223,8 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         "calendar day note"
     );
     apply_migrations_through(&f.pool, 108).await.unwrap();
+    // Current saves use the ledger-only contract after central dispatch takes ownership.
+    apply_migrations_through(&f.pool, 120).await.unwrap();
     let detail = sessions::detail(&f.pool, &f.actor, saved_session.id)
         .await
         .unwrap();
@@ -2241,6 +2243,23 @@ mod retention_tests {
     struct RetentionStorage(AtomicUsize);
     #[async_trait]
     impl StorageProvider for RetentionStorage {
+        fn namespace(
+            &self,
+            storage_class: school_file_platform::platform_types::StorageClass,
+        ) -> Result<
+            school_file_platform::storage_namespace::StorageNamespace,
+            school_file_platform::storage_provider::StorageError,
+        > {
+            school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    school_file_platform::platform_types::StorageClass::Public => "public",
+                    school_file_platform::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), StorageError> {
             panic!("retention must not probe readiness")
         }
@@ -3292,7 +3311,9 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
             .sum::<i64>()
     );
     let epoch = sessions::module_generation(&f.pool).await.unwrap();
-    let mut tx = f.pool.begin().await.unwrap();
+    let mut tx = school_tenancy::TenantPool::begin_observed(&f.pool, "test.attendance_digest")
+        .await
+        .unwrap();
     school_attendance::services::lock_term(&mut tx, TERM, false, true)
         .await
         .unwrap();
@@ -3413,7 +3434,9 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
     .await
     .unwrap()
     .is_empty());
-    let mut tx = pool.begin().await.unwrap();
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "test.attendance_digest")
+        .await
+        .unwrap();
     school_attendance::services::lock_term(&mut tx, TERM, false, true)
         .await
         .unwrap();
@@ -3987,10 +4010,37 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     crate::adapters::behavior::run(&f.pool).await.unwrap();
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (0, 2));
+    // Existing deployments may retain dispatch jobs with the old business key.
+    sqlx::query("UPDATE notification_dispatch_jobs job SET dedup_key=ledger.dedup_key FROM attendance_notifications ledger WHERE job.source_kind='attendance' AND job.source_id=ledger.id")
+        .execute(&f.pool).await.unwrap();
+    let old_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+        .fetch_all(&f.pool).await.unwrap();
+    assert_eq!(old_jobs.len(), 2);
+    let old_ids: Vec<Uuid> = old_jobs.iter().map(|(id, _)| *id).collect();
+    // Replaying an already-ledgered intent must not resend or rewrite old jobs.
+    let mut duplicate = f.pool.begin().await.unwrap();
+    notifications::queue_result(
+        &mut duplicate,
+        &saved.session,
+        STUDENT,
+        AttendanceResult::Present,
+        saved.session.row_version,
+        false,
+    )
+    .await
+    .unwrap();
+    duplicate.commit().await.unwrap();
+    let after_duplicate: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+        .fetch_all(&f.pool).await.unwrap();
+    assert_eq!(after_duplicate, old_jobs);
+
     let impact = school_attendance::services::reset::impact(&f.pool)
         .await
         .unwrap();
-    let tx = f.pool.begin().await.unwrap();
+    let tx =
+        school_tenancy::TenantPool::begin_observed(&f.pool, "test.attendance_owned_transaction")
+            .await
+            .unwrap();
     school_attendance::services::reset::reset_in_transaction(
         &f.pool,
         tx,
@@ -4019,6 +4069,22 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     crate::adapters::behavior::run(&f.pool).await.unwrap();
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (3, 0));
+    let retained_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as(
+        "SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE id=ANY($1) ORDER BY id",
+    )
+    .bind(&old_ids)
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(retained_jobs, old_jobs);
+    let identity: (Uuid, Uuid, Uuid, Uuid, Uuid, String, String) = sqlx::query_as("SELECT ledger.id,ledger.notification_id,job.id,job.notification_id,job.source_id,job.dedup_key,ledger.dedup_key FROM attendance_notifications ledger JOIN notification_dispatch_jobs job ON job.id=ledger.id WHERE ledger.recipient_id=$1 AND ledger.student_id=$1 AND ledger.dedup_key LIKE 'arrival:%'")
+        .bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!((identity.0, identity.1), (identity.2, identity.3));
+    assert_eq!(identity.4, identity.0);
+    assert_eq!(identity.5, format!("attendance-ledger:{}", identity.0));
+    assert_eq!(identity.6, format!("arrival:{TERM}:{date}:{STUDENT}"));
+    assert!(!old_ids.contains(&identity.0));
+
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.student_id=$1 AND e.cancelled_at IS NULL").bind(STUDENT).fetch_one(&f.pool).await.unwrap(),1);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_score_changes")
@@ -4235,7 +4301,7 @@ async fn attendance_report_snapshot_allows_reports_and_first_save_without_mixed_
     let mode: (String, String) = sqlx::query_as(
         "SELECT current_setting('transaction_isolation'),current_setting('transaction_read_only')",
     )
-    .fetch_one(&mut *snapshot)
+    .fetch_one(&mut **snapshot)
     .await
     .unwrap();
     assert_eq!(mode, ("repeatable read".into(), "on".into()));
@@ -4316,7 +4382,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4335,7 +4401,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4386,7 +4452,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4440,12 +4506,15 @@ async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_
     let impact = school_attendance::services::reset::impact(&f.pool)
         .await
         .unwrap();
-    let mut reset_tx = f.pool.begin().await.unwrap();
+    let mut reset_tx =
+        school_tenancy::TenantPool::begin_observed(&f.pool, "test.attendance_owned_transaction")
+            .await
+            .unwrap();
     school_attendance::services::lock_module_exclusive(&mut reset_tx)
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *reset_tx)
+        .fetch_one(&mut **reset_tx)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4638,12 +4707,15 @@ async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start
     let impact = school_attendance::services::reset::impact(&f.pool)
         .await
         .unwrap();
-    let mut reset_tx = f.pool.begin().await.unwrap();
+    let mut reset_tx =
+        school_tenancy::TenantPool::begin_observed(&f.pool, "test.attendance_owned_transaction")
+            .await
+            .unwrap();
     school_attendance::services::lock_module_exclusive(&mut reset_tx)
         .await
         .unwrap();
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *reset_tx)
+        .fetch_one(&mut **reset_tx)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -5150,4 +5222,248 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
             counts_before.4 + 1
         )
     );
+}
+
+#[tokio::test]
+async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
+    use school_file_platform::{
+        access::FilePolicyAction,
+        repository::{FileRepository, SqlFileRepository},
+    };
+    let f = fixture("attendance_evidence_one_connection").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let device = specials::save_device(
+        &f.pool,
+        TEACHER,
+        Uuid::new_v4(),
+        SaveAttendanceDevice {
+            name: "one connection".into(),
+            enabled: true,
+            operator_id: TEACHER,
+        },
+    )
+    .await
+    .unwrap();
+    let orphan_id = evidence_file(&f.pool, STUDENT).await;
+    let linked_id = evidence_file(&f.pool, STUDENT).await;
+    let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin) VALUES($1,$2,$3,'present','scan')")
+        .bind(session.id).bind(STUDENT).bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES(gen_random_uuid(),$1,$2,$3,$4,now())")
+        .bind(session.id).bind(STUDENT).bind(device.id).bind(linked_id).execute(&f.pool).await.unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let options = (*f.pool.connect_options())
+        .clone()
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(1))
+        .connect_with(options)
+        .await
+        .unwrap();
+    let repository = SqlFileRepository::new(pool.clone());
+    let orphan = repository
+        .load_delivery(orphan_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .file;
+    let linked = repository
+        .load_delivery(linked_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .file;
+    let mut guard = evidence_delete_guard(&pool, &f.actor, &orphan, Some(STUDENT))
+        .await
+        .unwrap();
+    repository
+        .request_delete_in_transaction(&mut guard, orphan_id)
+        .await
+        .unwrap();
+    guard.commit().await.unwrap();
+    assert_eq!(
+        repository
+            .load_delivery(orphan_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .file
+            .lifecycle_status,
+        school_file_platform::platform_types::FileLifecycleStatus::DeleteRequested
+    );
+    assert!(matches!(
+        evidence_delete_guard(&pool, &f.actor, &linked, Some(STUDENT)).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        evidence_delete_guard(&pool, &f.actor, &linked, Some(Uuid::new_v4())).await,
+        Err(AppError::Forbidden(_))
+    ));
+    require_evidence_file(
+        &pool,
+        &f.actor,
+        &linked,
+        FilePolicyAction::Read,
+        Some(STUDENT),
+    )
+    .await
+    .unwrap();
+    let own = ActorContext {
+        user_id: STUDENT,
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    require_evidence_file(&pool, &own, &linked, FilePolicyAction::Read, Some(STUDENT))
+        .await
+        .unwrap();
+    let room: Uuid = sqlx::query_scalar("SELECT homeroom_id FROM homeroom_placements WHERE student_academic_year_id=$1 AND status IN ('current','ended') AND start_date<=$2 AND (end_date IS NULL OR end_date>=$2) ORDER BY start_date DESC,id LIMIT 1")
+        .bind(f.students[0].student_academic_year_id).bind(date).fetch_one(&pool).await.unwrap();
+    let school = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    let preview = open(
+        &pool,
+        &school,
+        OpenAttendanceSession {
+            academic_term_id: TERM,
+            date,
+            kind: AttendanceKind::Arrival,
+            source_key: room.to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(preview
+        .students
+        .iter()
+        .any(|student| student.student_id == STUDENT));
+    assert_eq!(preview.session.row_version, 0);
+    assert!(!preview.session.roster_token.is_empty());
+    // The context query preserves absent-settings defaults and lifecycle state.
+    assert_eq!(settings::get(&pool, TERM).await.unwrap().row_version, 0);
+    assert!(preview.writable);
+}
+
+#[tokio::test]
+async fn attendance_options_assigned_enrollment_and_kiosk_finish_with_one_connection() {
+    let f = fixture("attendance_options_enrollment_kiosk_connection").await;
+    let today = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
+        .bind(TERM).bind(today + chrono::Duration::days(2)).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
+        .bind(TERM)
+        .bind(today - chrono::Duration::days(1))
+        .bind(today + chrono::Duration::days(1))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE homeroom_placements SET end_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) SELECT homeroom_id,$2,'primary' FROM homeroom_placements WHERE student_academic_year_id=$1 AND status='current' ON CONFLICT(homeroom_id,user_id) DO NOTHING")
+        .bind(f.students[0].student_academic_year_id).bind(TEACHER).execute(&f.pool).await.unwrap();
+    let device = specials::save_device(
+        &f.pool,
+        TEACHER,
+        Uuid::new_v4(),
+        SaveAttendanceDevice {
+            name: "single connection kiosk".into(),
+            enabled: true,
+            operator_id: TEACHER,
+        },
+    )
+    .await
+    .unwrap();
+    faces::enroll(
+        &f.pool,
+        TEACHER,
+        STUDENT,
+        EnrollAttendanceFace {
+            model: FACE_MODEL.into(),
+            descriptors: vec![
+                FaceDescriptor {
+                    values: vec![0.01; 128]
+                };
+                3
+            ],
+            consent_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let connect = (*f.pool.connect_options())
+        .clone()
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(1))
+        .connect_with(connect)
+        .await
+        .unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![
+            codes::ATTENDANCE_MANAGE_SCHOOL.into(),
+            codes::ATTENDANCE_ENROLL_ASSIGNED.into(),
+            codes::ATTENDANCE_VERIFY_ASSIGNED.into(),
+        ],
+    };
+    let opts = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        options(&pool, &actor, TERM),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(opts.students.iter().any(|s| s.id == STUDENT));
+    assert!(opts.devices.iter().any(|d| d.id == device.id));
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        require_enrollment(&pool, &actor, STUDENT),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let outsider = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ATTENDANCE_ENROLL_ASSIGNED.into()],
+    };
+    assert!(matches!(
+        require_enrollment(&pool, &outsider, STUDENT).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let kiosk = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        prepare_kiosk(
+            &pool,
+            &actor,
+            OpenAttendanceKiosk {
+                academic_term_id: TERM,
+                date: today,
+                device_id: device.id,
+            },
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(kiosk
+        .sessions
+        .iter()
+        .any(|s| s.kind == AttendanceKind::Arrival));
+    assert!(kiosk.students.iter().any(|s| s.id == STUDENT));
+    assert_eq!(kiosk.faces.len(), 1);
+    assert_eq!(kiosk.faces[0].student_id, STUDENT);
+    assert_eq!(kiosk.faces[0].descriptors[0].values, vec![0.01; 128]);
 }

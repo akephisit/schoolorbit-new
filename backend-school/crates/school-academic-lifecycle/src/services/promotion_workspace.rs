@@ -7,6 +7,7 @@ use super::{
 use school_academic_core::services::promotion_students;
 use school_academic_results as results;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
@@ -27,22 +28,30 @@ pub async fn list_runs(
             "ระบุปีและตำแหน่งรายการให้ถูกต้อง".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_workspace.list_runs",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_workspace.list_runs",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     year_transitions::read_context(&mut tx, query.source_year_id).await?;
     if let Some(year) = query.target_year_id {
         year_transitions::read_context(&mut tx, year).await?;
     }
     let cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)> = if let Some(id) = query.before_id {
-        Some(sqlx::query_as("SELECT created_at,id FROM academic_promotion_runs WHERE id=$1 AND source_year_id=$2 AND ($3::uuid IS NULL OR target_year_id=$3)")
-            .bind(id).bind(query.source_year_id).bind(query.target_year_id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบตำแหน่งรายการในปีที่เลือก".into()))?)
+        Some(DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_workspace.list_runs", "SELECT created_at,id FROM academic_promotion_runs WHERE id=$1 AND source_year_id=$2 AND ($3::uuid IS NULL OR target_year_id=$3)")
+            .bind(id).bind(query.source_year_id).bind(query.target_year_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบตำแหน่งรายการในปีที่เลือก".into()))?)
     } else {
         None
     };
-    let mut runs:Vec<PromotionRun>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE source_year_id=$1 AND ($2::uuid IS NULL OR target_year_id=$2) AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT 51")))
-        .bind(query.source_year_id).bind(query.target_year_id).bind(cursor.map(|row|row.0)).bind(cursor.map(|row|row.1)).fetch_all(&mut *tx).await?;
+    let mut runs:Vec<PromotionRun>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_workspace.list_runs", sqlx::AssertSqlSafe(format!("SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE source_year_id=$1 AND ($2::uuid IS NULL OR target_year_id=$2) AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT 51")))
+        .bind(query.source_year_id).bind(query.target_year_id).bind(cursor.map(|row|row.0)).bind(cursor.map(|row|row.1)).fetch_all().await?;
     let has_more = runs.len() > 50;
     runs.truncate(50);
     let next_cursor = has_more.then(|| runs.last().map(|run| run.id)).flatten();
@@ -59,29 +68,41 @@ pub async fn get_run_workspace(
     if run_id.is_nil() {
         return Err(AppError::ValidationError("ระบุรอบเลื่อนชั้น".into()));
     }
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_workspace.get_run_workspace",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_workspace.get_run_workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    )))
-    .bind(run_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
+    let run: PromotionRun = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_workspace.get_run_workspace",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
+            )),
+        )
+        .bind(run_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     let source_year = year_transitions::read_context(&mut tx, run.source_year_id).await?;
     let target_year = year_transitions::read_context(&mut tx, run.target_year_id).await?;
-    let items:Vec<PromotionRunItem>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
-        .bind(run_id).fetch_all(&mut *tx).await?;
+    let items:Vec<PromotionRunItem>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_workspace.get_run_workspace", sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
+        .bind(run_id).fetch_all().await?;
     if items.len() > 10000 {
         return Err(AppError::ValidationError(
             "รอบมีนักเรียนเกิน 10000 รายการ".into(),
         ));
     }
     let approval_checksum = super::promotion_approval::intent_checksum(&run, &items)?;
-    let receipts:Vec<PromotionExecutionReceipt>=sqlx::query_as("SELECT item_id,run_id,request_id,approval_id,target_student_year_id,target_placement_id,source_row_version,executed_by,executed_at FROM academic_promotion_execution_receipts WHERE run_id=$1 ORDER BY item_id")
-        .bind(run_id).fetch_all(&mut *tx).await?;
+    let receipts:Vec<PromotionExecutionReceipt>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_workspace.get_run_workspace", "SELECT item_id,run_id,request_id,approval_id,target_student_year_id,target_placement_id,source_row_version,executed_by,executed_at FROM academic_promotion_execution_receipts WHERE run_id=$1 ORDER BY item_id")
+        .bind(run_id).fetch_all().await?;
     let mut receipts: BTreeMap<_, _> = receipts.into_iter().map(|row| (row.item_id, row)).collect();
     let mut students = Vec::with_capacity(items.len());
     for batch in items.chunks(500) {

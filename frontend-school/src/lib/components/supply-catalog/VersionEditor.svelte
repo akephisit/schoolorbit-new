@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		appendVersion,
 		updateVersion,
 		type SupplyVersion,
 		type SupplyItemDetail
 	} from '#lib/api/supply-catalog.js';
-	import { uploadFile, deleteFile } from '#lib/api/files.js';
+	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import PendingFileGuard from '#lib/components/files/PendingFileGuard.svelte';
+	import LocalDocumentPreview from '#lib/components/files/LocalDocumentPreview.svelte';
 	import { normalizeCatalogImage } from '#lib/utils/catalog-image.js';
 	import {
 		validatePriceFields,
@@ -22,17 +24,18 @@
 	import { Alert, AlertTitle, AlertDescription } from '#lib/components/ui/alert/index.js';
 	import FieldError from './FieldError.svelte';
 	import CatalogImage from './CatalogImage.svelte';
-	import { toast } from 'svelte-sonner';
 	let {
 		item,
 		version = null,
 		append,
+		preservesDraftNavigation,
 		onsaved,
 		oncancel
 	}: {
 		item: SupplyItemDetail;
 		version?: SupplyVersion | null;
 		append: boolean;
+		preservesDraftNavigation?: (destination: URL) => boolean;
 		onsaved: (item: SupplyItemDetail) => void;
 		oncancel: () => void;
 	} = $props();
@@ -48,78 +51,65 @@
 	const fieldErrors: PriceFieldErrors = $derived(
 		submitted ? validatePriceFields({ price, shop }) : {}
 	);
-	const staged = new SvelteSet<string>();
+	let localImage = $state<PendingUpload | null>(null);
+	let preparation = 0;
 	let disposed = false;
-	async function cleanup() {
-		try {
-			for (const id of staged) {
-				await deleteFile(id);
-				staged.delete(id);
-			}
-			return true;
-		} catch (e) {
-			actionError = message(e, 'ล้างรูปชั่วคราวไม่สำเร็จ');
-			return false;
-		}
+	const ownerKey = $derived(`${item.id}:${append}:${version?.id ?? ''}`);
+	$effect(() => {
+		const owner = ownerKey;
+		untrack(() => {
+			if (localImage && localImage.scope.owner !== owner) cleanup();
+		});
+	});
+	function cleanup(): boolean {
+		preparation++;
+		localImage?.dispose();
+		localImage = null;
+		uploading = false;
+		return true;
 	}
 	export async function discard() {
-		if (busy) return false;
-		return cleanup();
+		return !busy && cleanup();
 	}
 	onDestroy(() => {
 		disposed = true;
-		if (staged.size)
-			void cleanup().then((ok) => {
-				if (!ok) toast.error('ล้างรูปชั่วคราวไม่สำเร็จ');
-			});
+		cleanup();
 	});
 	async function upload(file: File | undefined) {
 		if (!file || busy || disposed) return;
+		const revision = ++preparation,
+			owner = ownerKey;
 		uploading = true;
 		actionError = null;
 		try {
 			const normalized = await normalizeCatalogImage(file);
-			if (disposed) return;
-			const uploaded = await uploadFile(normalized, 'supply_catalog_image');
-			staged.add(uploaded.id);
-			if (disposed) {
-				await cleanup();
-				return;
-			}
-			const old = imageFileId;
-			if (old && staged.has(old)) {
-				await deleteFile(old);
-				staged.delete(old);
-			}
-			imageFileId = uploaded.id;
-		} catch (e) {
-			if (!disposed) actionError = message(e, 'อัปโหลดรูปไม่สำเร็จ');
+			if (disposed || revision !== preparation || owner !== ownerKey) return;
+			localImage?.dispose();
+			localImage = new PendingUpload(
+				normalized,
+				{ purpose: 'supply_catalog_image', owner },
+				uploadFile
+			);
+		} catch (cause) {
+			if (!disposed) actionError = message(cause, 'เตรียมรูปไม่สำเร็จ');
 		} finally {
-			if (!disposed) uploading = false;
+			if (!disposed && revision === preparation) uploading = false;
 		}
 	}
-	async function removeImage() {
-		if (busy || disposed) return;
-		removing = true;
-		actionError = null;
-		try {
-			if (imageFileId && staged.has(imageFileId)) {
-				await deleteFile(imageFileId);
-				staged.delete(imageFileId);
-			}
+	function removeImage() {
+		if (!busy && !disposed) {
+			localImage?.dispose();
+			localImage = null;
 			imageFileId = null;
-		} catch (e) {
-			actionError = message(e, 'นำรูปออกไม่สำเร็จ');
-		} finally {
-			if (!disposed) removing = false;
 		}
 	}
 	async function cancel() {
-		if (busy || disposed) return;
-		pending = true;
-		if ((await cleanup()) && !disposed) oncancel();
-		if (!disposed) pending = false;
+		if (!busy && !disposed) {
+			cleanup();
+			oncancel();
+		}
 	}
+
 	async function save() {
 		if (busy || disposed) return;
 		submitted = true;
@@ -127,11 +117,14 @@
 		if (Object.keys(validatePriceFields({ price, shop })).length) return;
 		pending = true;
 		try {
-			for (const id of staged)
-				if (id !== imageFileId) {
-					await deleteFile(id);
-					staged.delete(id);
-				}
+			const owner = ownerKey;
+			if (localImage) {
+				const image = localImage;
+				const id = await image.commit();
+				if (disposed || image !== localImage || owner !== ownerKey) return;
+				imageFileId = id;
+			}
+			if (disposed || owner !== ownerKey) return;
 			const payload = {
 				price,
 				shop: trimSupplyText(shop),
@@ -140,8 +133,9 @@
 			const saved = append
 				? await appendVersion(item.id, { ...payload, imageFileId })
 				: await updateVersion(item.id, (version ?? item.latestVersion).id, payload);
-			staged.clear();
-			if (!disposed) onsaved(saved);
+			if (disposed || owner !== ownerKey) return;
+			cleanup();
+			onsaved(saved);
 		} catch (e) {
 			if (!disposed) actionError = message(e, 'บันทึกราคาไม่สำเร็จ');
 		} finally {
@@ -150,6 +144,7 @@
 	}
 </script>
 
+<PendingFileGuard {preservesDraftNavigation} dirty={!!localImage} pending={busy && !!localImage} />
 <form
 	class="w-full max-w-xl space-y-5"
 	novalidate
@@ -196,9 +191,15 @@
 				<p id="version-image-help" class="text-sm text-muted-foreground">
 					รูปใหม่จะใช้ร่วมกันทุกเวอร์ชัน และแทนที่รูปเก่าเมื่อบันทึกสำเร็จ
 				</p>
-				{#if imageFileId}<CatalogImage
+				{#if localImage}<LocalDocumentPreview file={localImage.file} /><Button
+						type="button"
+						variant="outline"
+						size="sm"
+						disabled={busy}
+						onclick={removeImage}>นำรูปสินค้าออก</Button
+					>{:else if imageFileId}<CatalogImage
 						fileId={imageFileId}
-						resourceId={staged.has(imageFileId) ? undefined : item.id}
+						resourceId={item.id}
 						alt={item.name}
 						class="h-32 rounded-lg"
 					/><Button type="button" variant="outline" size="sm" disabled={busy} onclick={removeImage}
@@ -211,13 +212,17 @@
 						accept="image/*,.heic,.heif,.tif,.tiff"
 						disabled={busy}
 						aria-describedby="version-image-help"
-						onchange={(event) => upload(event.currentTarget.files?.[0])}
+						onchange={(event) => {
+							const file = event.currentTarget.files?.[0];
+							event.currentTarget.value = '';
+							void upload(file);
+						}}
 					/>
 				</div>
 			</section>{/if}
 	</fieldset>
 	{#if append}<p role="status" class="min-h-5 text-sm text-muted-foreground">
-			{removing ? 'กำลังนำรูปสินค้าออก' : uploading ? 'กำลังอัปโหลดรูปสินค้า' : ''}
+			{removing ? 'กำลังนำรูปสินค้าออก' : uploading ? 'กำลังเตรียมรูปสินค้า' : ''}
 		</p>{/if}
 	{#if actionError}<Alert variant="destructive"
 			><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{actionError}</AlertDescription

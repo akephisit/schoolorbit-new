@@ -7,6 +7,33 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+// Inspect the authoritative connection body when a work-entry facade delegates.
+// This keeps SQL predicates/query-count checks attached to executed code.
+fn extract_source_block(source: &str, marker: &str, hash_line_comments: bool) -> String {
+    let lexical = lexical_mask(source, hash_line_comments);
+    let start = lexical
+        .structural
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing source block: {marker}"));
+    let opening = start + lexical.structural[start..].find('{').unwrap();
+    let closing = balanced_delimiter_end(&lexical.structural, opening, b'{', b'}').unwrap();
+    source[start..=closing].to_string()
+}
+
+fn connection_work_body(source: &str, function: &str) -> String {
+    let connection = format!("fn {function}_on_connection(");
+    if source.contains(&connection) {
+        let facade = extract_source_block(source, &format!("fn {function}("), false);
+        assert!(
+            facade.contains(&format!("{function}_on_connection(")),
+            "facade must delegate to its checked connection body"
+        );
+        extract_source_block(source, &connection, false)
+    } else {
+        extract_source_block(source, &format!("fn {function}("), false)
+    }
+}
+
 #[test]
 fn attendance_reads_and_digest_must_not_restore_placeholder_backfill() {
     let runtime = read_source(manifest_dir().join("crates/school-attendance/src/runtime.rs"));
@@ -587,7 +614,8 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 36] = [
+    let approved_graph: [(&str, &[&str]); 37] = [
+        ("school-database", &[]),
         (
             "school-budget",
             &[
@@ -600,6 +628,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-notifications",
                 "school-permissions",
                 "school-workflow",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -615,6 +645,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-notifications",
                 "school-permissions",
                 "school-students",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -624,6 +656,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -632,6 +666,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -640,6 +676,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-authorization",
                 "school-errors",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -657,6 +695,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -670,6 +710,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -680,6 +722,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -690,6 +734,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -704,6 +750,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-http",
                 "school-permissions",
                 "school-tenancy",
+                "school-database",
             ],
         ),
         (
@@ -718,6 +765,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -736,6 +785,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-notifications",
                 "school-permissions",
                 "school-tenancy",
+                "school-database",
             ],
         ),
         (
@@ -745,6 +795,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-crypto",
                 "school-errors",
                 "school-tenancy",
+                "school-database",
             ],
         ),
         (
@@ -760,7 +811,12 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ),
         (
             "school-authorization",
-            &["school-errors", "school-permissions"],
+            &[
+                "school-errors",
+                "school-permissions",
+                "school-database",
+                "school-tenancy",
+            ],
         ),
         (
             "school-behavior",
@@ -773,6 +829,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-http",
                 "school-notifications",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -786,6 +844,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-notifications",
                 "school-permissions",
                 "school-tenancy",
+                "school-database",
             ],
         ),
         (
@@ -797,6 +856,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-fonts",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -817,7 +878,12 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ("school-errors", &[]),
         (
             "school-file-platform",
-            &["school-authorization", "school-errors"],
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-database",
+                "school-tenancy",
+            ],
         ),
         (
             "school-files-http",
@@ -839,6 +905,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-staff",
                 "school-students",
                 "school-workflow",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -851,10 +919,15 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         ("school-http", &["school-errors"]),
-        ("school-migrations", &["school-permissions"]),
+        (
+            "school-migrations",
+            &["school-permissions", "school-database"],
+        ),
         (
             "school-navigation",
             &[
@@ -864,6 +937,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -876,6 +951,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-http",
                 "school-permissions",
                 "school-tenancy",
+                "school-database",
             ],
         ),
         ("school-permissions", &[]),
@@ -889,6 +965,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -904,6 +982,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-permissions",
                 "school-notifications",
                 "school-workflow",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -920,6 +1000,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         (
@@ -933,6 +1015,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
         ("school-tenancy", &["school-migrations"]),
@@ -948,6 +1032,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-http",
                 "school-notifications",
                 "school-permissions",
+                "school-database",
+                "school-tenancy",
             ],
         ),
     ];
@@ -1540,11 +1626,19 @@ fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
     assert!(workspace.contains("join_context_and_homeroom_reads"));
     assert!(!workspace.contains("else if let Some(draft)"));
     assert!(source.contains("LEFT JOIN LATERAL"));
-    assert!(workspace.contains("versions::visible_version"));
-    assert!(workspace.contains("versions::roster_statuses"));
-    assert!(workspace.contains("source.snapshot.offerings"));
+    assert!(workspace.contains("finish_homeroom_delivery_workspace("));
+    let finish = extract_braced_block(
+        &source,
+        "async fn finish_homeroom_delivery_workspace",
+        false,
+    );
+    assert!(finish.contains("versions::visible_version_on_connection"));
+    assert!(finish.contains("versions::roster_statuses_on_connection"));
+    assert!(finish.contains("source.snapshot.offerings"));
     assert!(!workspace.contains("academic_timetable_blocks"));
     assert!(!workspace.contains("learning_group_teachers"));
+    assert!(!finish.contains("academic_timetable_blocks"));
+    assert!(!finish.contains("learning_group_teachers"));
     assert!(!source.contains("(SELECT count(*)::bigint"));
 }
 
@@ -1782,7 +1876,15 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(startup.contains("PoolManager::with_config(pool_manager_config)"));
     assert!(tenancy_api.contains("pub use pool_manager::{"));
     assert!(tenancy_api.contains("PoolManagerConfig"));
-    assert!(tenancy_api.contains("pub use tenant_pool::{TenantPool, TenantPoolRetention}"));
+    assert!(tenancy_api.contains("pub use tenant_pool::{"));
+    for exported in [
+        "TenantPool",
+        "TenantPoolRetention",
+        "ObservedConnection",
+        "ObservedTransaction",
+    ] {
+        assert!(tenancy_api.contains(exported));
+    }
     assert!(tenancy_api.contains("pub pool: TenantPool"));
     assert!(managed_pool.contains("pub struct TenantPool"));
     assert!(managed_pool.contains("lease: Option<Arc<Lease>>"));
@@ -2522,11 +2624,7 @@ fn student_timetable_uses_requested_date_for_roster_membership() {
         manifest_dir()
             .join("crates/school-academic-timetable/src/services/timetable_block_service.rs"),
     ));
-    let student_entries = service
-        .split("pub async fn list_student_blocks")
-        .nth(1)
-        .and_then(|source| source.split("pub async fn ").next())
-        .expect("timetable block service must define list_student_blocks");
+    let student_entries = connection_work_body(&service, "list_student_blocks");
 
     for required in [
         "on_date: chrono::NaiveDate",
@@ -5514,30 +5612,104 @@ fn migrated_utility_handlers_use_shared_request_context() {
     assert_eq!(violations, Vec::<String>::new());
 }
 
+fn permission_literal_calls(source: &str) -> Vec<String> {
+    use syn::parse::Parser;
+    use syn::visit::{self, Visit};
+    fn permission(name: &str) -> bool {
+        matches!(
+            name,
+            "has_permission"
+                | "has_any_permission"
+                | "has_all_permissions"
+                | "require_permission"
+                | "require_any_permission"
+                | "require_all_permissions"
+        )
+    }
+    struct Literals(bool);
+    impl<'ast> Visit<'ast> for Literals {
+        fn visit_lit_str(&mut self, _: &'ast syn::LitStr) {
+            self.0 = true;
+        }
+    }
+    struct Calls(Vec<String>);
+    impl<'ast> Visit<'ast> for Calls {
+        fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+            if permission(&call.method.to_string()) {
+                let mut literals = Literals(false);
+                for argument in &call.args {
+                    literals.visit_expr(argument);
+                }
+                if literals.0 {
+                    self.0.push(call.method.to_string());
+                }
+            }
+            visit::visit_expr_method_call(self, call);
+        }
+        fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+            if let syn::Expr::Path(path) = &*call.func {
+                if let Some(name) = path.path.segments.last() {
+                    if permission(&name.ident.to_string()) {
+                        let mut literals = Literals(false);
+                        for argument in &call.args {
+                            literals.visit_expr(argument);
+                        }
+                        if literals.0 {
+                            self.0.push(name.ident.to_string());
+                        }
+                    }
+                }
+            }
+            visit::visit_expr_call(self, call);
+        }
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            if let Ok(expressions) =
+                syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated
+                    .parse2(mac.tokens.clone())
+            {
+                for expression in &expressions {
+                    self.visit_expr(expression);
+                }
+            }
+        }
+    }
+    let syntax = syn::parse_file(source).expect("backend Rust source must parse");
+    let mut calls = Calls(Vec::new());
+    calls.visit_file(&syntax);
+    calls.0
+}
+
 #[test]
 fn permission_checks_use_registry_constants() {
-    let call_with_permission_literal = Regex::new(
-        r#"(?s)\b(?:has_permission|has_any_permission|has_all_permissions|require_permission|require_any_permission|require_all_permissions)\s*\([^;]*?"[a-z_]+(?:\.[a-z_]+){0,2}""#,
-    )
-    .expect("valid regex");
     let mut violations = Vec::new();
-
     for file in backend_rs_files() {
-        let source = strip_comments(&read_source(&file));
-        for matched in call_with_permission_literal.find_iter(&source) {
-            let call = matched.as_str();
-            if call.contains("codes::") {
-                continue;
-            }
+        for method in permission_literal_calls(&read_source(&file)) {
             violations.push(format!(
-                "{}: {}",
-                relative(&file),
-                call.split_whitespace().collect::<Vec<_>>().join(" ")
+                "{}: {method} contains a raw permission string",
+                relative(&file)
             ));
         }
     }
-
     assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn permission_literal_guard_limits_its_scope_to_actual_permission_arguments() {
+    let query_label = r#"async fn check(actor: Actor, pool: Pool, unit: &str) {
+        if actor.has_permission(unit) { TenantPool::observed_checkout_pool(pool, "budget.policy.read_scope").await; }
+    }"#;
+    assert!(permission_literal_calls(query_label).is_empty());
+    for bad in [
+        r#"fn check(actor: Actor) { actor.has_permission("unknown.permission"); }"#,
+        r#"fn check(actor: Actor) { actor.has_permission("budget.policy.read_scope"); }"#,
+        r#"fn check(actor: Actor) { actor.has_any_permission(&[codes::READ, "unknown.permission"]); }"#,
+        r#"fn check(actor: Actor) { assert!(actor.has_permission("unknown.permission")); }"#,
+    ] {
+        assert!(
+            !permission_literal_calls(bad).is_empty(),
+            "raw permission argument escaped: {bad}"
+        );
+    }
 }
 
 #[test]
@@ -6394,15 +6566,15 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
         manifest_dir()
             .join("crates/school-academic-timetable/src/services/timetable_realtime_service.rs"),
     );
-    let authorize = extract_braced_block(&service, "pub async fn authorize_socket", false);
+    let authorize = connection_work_body(&service, "authorize_socket");
     let active_user_lookup = authorize
-        .find("sqlx::query_as::<_, RealtimeUser>")
+        .find(".query_as::<RealtimeUser>")
         .expect("socket authorization must authenticate an active user");
     let permission_check = authorize
         .find("socket_permission(actor)")
         .expect("socket authorization must evaluate timetable permissions");
     let term_lookup = authorize
-        .find("sqlx::query_scalar::<_, bool>")
+        .find(".scalar::<bool>")
         .expect("socket authorization must verify the selected academic term");
     assert!(service.contains("FROM user_display_names WHERE id = $1 AND status = 'active'"));
     assert!(service.contains("FROM academic_terms WHERE id = $1"));
@@ -6435,11 +6607,7 @@ fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
         false,
     );
     let auth_services = read_source(workspace_crate_dir("school-auth").join("src/services.rs"));
-    let active_lookup = extract_braced_block(
-        &auth_services,
-        "pub async fn find_active_user_shell_by_id",
-        false,
-    );
+    let active_lookup = connection_work_body(&auth_services, "find_active_user_shell_by_id");
 
     assert!(handler.contains("session_service::load_current_user(&context, &session).await?"));
     let verify_active = load_current
@@ -6448,8 +6616,8 @@ fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
     let load_snapshot = load_current
         .find("load_active_shell_snapshot")
         .expect("auth me must hydrate the response after active-user validation");
-    assert!(active_lookup.contains("sqlx::query_as::<_, ActiveUserShell>"));
-    assert!(auth_services.contains("WHERE id = $1 AND status = 'active'"));
+    assert!(active_lookup.contains(".query_as::<ActiveUserShell>"));
+    assert!(active_lookup.contains("WHERE id = $1 AND status = 'active'"));
     assert!(snapshot.contains("get_primary_role_name"));
     assert!(snapshot.contains("get_cached_user_permissions"));
 
@@ -6562,8 +6730,23 @@ fn permission_cache_and_process_events_are_tenant_explicit() {
         .find("cache.snapshot_revision(tenant, user_id)")
         .expect("permission load must snapshot cache revision before fetching");
     let database_fetch = load
-        .find("fetch_user_permissions(user_id, pool).await")
+        .find("fetch_user_permissions(user_id, &mut connection).await")
         .expect("permission load must fetch permissions on a cache miss");
+    let checkout = load
+        .find("observed_checkout_pool(")
+        .expect("cache miss owns one observed checkout");
+    let hit = load
+        .find("cache.get(tenant, user_id)")
+        .expect("permission cache retains its fast path");
+    let hit_return = load
+        .find("return Ok(permissions)")
+        .expect("cache hit returns without DB work");
+    assert!(
+        hit < hit_return
+            && hit_return < checkout
+            && revision_snapshot < checkout
+            && checkout < database_fetch
+    );
     let guarded_fill = load
         .find("cache.fill_if_current(")
         .expect("permission load must conditionally fill only the captured revision");
@@ -7278,32 +7461,27 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
         }
 
         if file_name == "crates/school-attendance/src/runtime.rs" {
-            // Background work has no HTTP request context. Its exact exception must
-            // reacquire through the central directory/manager and retain a logical
-            // operation lease throughout the scheduled run.
+            // Background work reacquires through the central directory/manager;
+            // dormant schedule registrations retain no pool or credentials.
+            let registration = extract_braced_block(&source, "struct Registration", false);
+            for forbidden in ["PgPool", "TenantPool", "database_url", "SchoolDatabaseInfo"] {
+                assert!(!registration.contains(forbidden));
+            }
             let runtime = extract_braced_block(&source, "pub async fn start", false);
             let work = extract_braced_block(&runtime, "for (tenant, mut r) in work", false);
-            let directory = work
-                .find("state.admin_client.get_school_database_info(&tenant).await")
-                .expect("Attendance work must refresh the authoritative tenant directory");
-            let operation_lease = work
-                .find("let operation_pool = match state")
-                .expect("Attendance must own a lease for the complete logical run");
+            assert!(work.contains("get_school_database_info(&tenant)"));
+            assert!(work.contains("background_turns()"));
+            assert!(work.contains("TenantJobKind::AttendanceMaintenance"));
             let pool = work
                 .find(".get_pool(&school.database_url, &tenant)")
-                .expect("Attendance work must reacquire through the central pool manager");
-            let refreshed = work
-                .find("r.pool = operation_pool.as_ref().clone()")
-                .expect("Attendance must replace any dormant pool handle before work");
+                .unwrap();
             let run = work
-                .find("run(&tenant, &mut r, state.behavior).await")
-                .expect("Attendance must run while the operation lease is in scope");
-            assert!(directory < operation_lease && operation_lease < pool);
-            assert!(pool < refreshed && refreshed < run);
+                .find("run(&tenant, &mut r, &operation_pool, state.behavior)")
+                .unwrap();
+            assert!(pool < run);
             assert!(!work[..run].contains("drop(operation_pool)"));
+            assert!(!work.contains("spawn("));
         } else if file_name == "crates/school-notifications/src/runtime.rs" {
-            // Central dispatch has no request context. Its registry must stay
-            // dormant between turns and each admitted batch must own its lease.
             let runtime = extract_braced_block(&source, "pub async fn start", false);
             assert!(runtime.contains("BTreeMap<String, TenantSchedule>"));
             let schedule = extract_braced_block(&source, "struct TenantSchedule", false);
@@ -7312,31 +7490,39 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             }
             assert!(schedule.contains("pending: bool"));
             assert!(schedule.contains("next_probe: tokio::time::Instant"));
-            let work =
-                extract_braced_block(&runtime, "for (tenant, schedule) in &mut tenants", false);
-            let directory = work
-                .find("state.admin_client.get_school_database_info(tenant).await")
-                .expect("Notification work must refresh the authoritative tenant directory");
-            let admission = work
-                .find(".get_pool(&school.database_url, tenant)")
-                .expect("Notification work must use the central pool manager");
-            let operation_lease = work
-                .find("let pool = match admitted")
-                .expect("Notification work must retain its admitted logical lease");
-            let run = work
-                .find("match deliver_tenant_batch(")
-                .expect("Notification work must use its bounded central dispatcher");
-            let result = work[run..]
-                .find("Ok(progress)")
-                .expect("Notification work must await its batch outcome");
-            let delivery = &work[run..run + result];
-            assert!(directory < admission && admission < operation_lease && operation_lease < run);
-            assert!(delivery.contains("&pool,"));
-            assert!(delivery.contains(".await"));
-            assert!(!work.contains("drop(pool)"));
-            assert!(!work.contains("spawn("));
-            assert!(!work.contains("spawn_local("));
-            assert!(!work.contains("pool.clone()"));
+            assert!(runtime.contains(".buffer_unordered(limit)"));
+            assert!(runtime.contains("deliver_managed_tenant_batch"));
+            let managed =
+                extract_braced_block(&source, "async fn deliver_managed_with_transport", false);
+            assert!(managed.contains("background_turns()"));
+            assert!(managed.contains("TenantJobKind::NotificationDispatch"));
+            assert!(managed.contains("deliver_database_batch"));
+            let access = extract_braced_block(&source, "impl DeliveryDatabase", false);
+            assert!(access.contains("resolve_database_work(tenant)"));
+            assert!(access.contains("pool_for_resolved_work("));
+            assert!(!access.contains("get_school_database_info("));
+            let phase = extract_braced_block(&source, "async fn resolved_phase", false);
+            assert!(
+                phase.find("access.resolve(tenant).await?").unwrap()
+                    < phase.find("admitted(turn").unwrap()
+            );
+            assert!(phase.contains("access.pool(resolved.as_ref(), expected)"));
+            let batch = extract_braced_block(&source, "async fn deliver_database_batch", false);
+            assert!(batch.matches("resolved_phase(").count() >= 4);
+            assert!(batch.contains("dispatch::materialize"));
+            assert!(batch.contains("NotificationService::prepare_stored"));
+            assert!(
+                batch.contains(".deliver(&publisher, claimed.notification.recipient_id, prepared)")
+            );
+            assert!(batch.contains("dispatch::finish_delivery"));
+            assert!(!batch.contains("spawn("));
+            let publisher = read_source(
+                repo_root().join("backend-school/crates/school-notifications/src/publisher.rs"),
+            );
+            let prepared = extract_braced_block(&publisher, "struct PreparedNotification", false);
+            for forbidden in ["PgPool", "TenantPool", "Transaction", "Semaphore"] {
+                assert!(!prepared.contains(forbidden));
+            }
         } else if file_name != "src/system/handlers/migration.rs"
             && pool_manager_get_pool.is_match(&source)
         {
@@ -7491,7 +7677,7 @@ fn scheduler_pool_access_is_non_migrating(source: &str) -> bool {
 
 fn scheduler_pool_owners() -> [&'static str; 3] {
     [
-        "backend-school/src/main.rs",
+        "backend-school/crates/school-tenancy/src/admin_client.rs",
         "backend-school/crates/school-calendar/src/delivery/reminders.rs",
         "backend-school/crates/school-auth/src/retention.rs",
     ]
@@ -7499,6 +7685,21 @@ fn scheduler_pool_owners() -> [&'static str; 3] {
 
 #[test]
 fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
+    let main = read_source(repo_root().join("backend-school/src/main.rs"));
+    assert!(main.contains("services::cleaner::reconcile_all_tenants("));
+    let cleaner = read_source(repo_root().join("backend-school/src/services/cleaner.rs"));
+    let phase = extract_braced_block(&cleaner, "async fn database_phase", false);
+    assert!(
+        phase.find("access.resolve(tenant).await?").unwrap() < phase.find("turn.run(").unwrap()
+    );
+    let access = extract_braced_block(&cleaner, "impl FileDatabase", false);
+    assert!(access.contains("pool_for_resolved_work("));
+    let client = read_source(workspace_crate_dir("school-tenancy").join("src/admin_client.rs"));
+    let pool = extract_braced_block(&client, "pub async fn pool_for_resolved_work", false);
+    assert_eq!(pool.matches("validate_work(work, expected)").count(), 2);
+    assert!(
+        !pool.contains("resolve_database_work(") && !pool.contains("get_school_database_info(")
+    );
     for owner in scheduler_pool_owners() {
         let source = read_source(repo_root().join(owner));
         assert!(
@@ -7836,7 +8037,7 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     assert!(!handlers.contains("PgPool"));
     assert!(models.contains("pub struct CalendarPublicEvent"));
     assert!(services.contains("Result<Vec<CalendarPublicEvent>, AppError>"));
-    assert!(services.contains("sqlx::query"));
+    assert!(services.contains("school_database::DbSession::new"));
     assert!(services.contains("CalendarEvent"));
     assert!(services.contains("resolve_event_recipient_user_ids"));
     assert!(services.contains("process_due_reminders"));
@@ -9147,9 +9348,9 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
             .join("crates/school-academic-timetable/src/services/timetable_block_queries.rs"),
     ));
     let offering_n_plus_one =
-        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate\(pool,\s*row\)\.await").unwrap();
+        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,200}hydrate(?:_on_connection)?\(\s*[^,]+,\s*row\)\.await").unwrap();
     let timetable_n_plus_one =
-        Regex::new(r"(?s)for\s+(?:row|id)\s+in\s+(?:rows|block_ids)\s*\{.{0,240}get_block\(pool")
+        Regex::new(r"(?s)for\s+(?:row|id)\s+in\s+(?:rows|block_ids)\s*\{.{0,240}get_block(?:_on_connection)?\(")
             .unwrap();
 
     assert!(
@@ -9167,11 +9368,7 @@ fn academic_term_change_set_summaries_do_not_hydrate_detail_rows() {
     let change_sets = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery/src/services/change_sets.rs"),
     ));
-    let summaries = extract_braced_block(
-        &change_sets,
-        "pub async fn list_change_set_summaries",
-        false,
-    );
+    let summaries = connection_work_body(&change_sets, "list_change_set_summaries");
 
     assert!(!summaries.contains("hydrate_many"));
     assert!(!summaries.contains("academic_term_change_items"));
@@ -9184,14 +9381,17 @@ fn learning_group_collection_hydrators_are_set_based() {
         manifest_dir().join("crates/school-academic-delivery/src/services/groups.rs"),
     ));
     let list_n_plus_one =
-        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,240}hydrate\(pool,\s*row\)\.await").unwrap();
+        Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.{0,240}hydrate(?:_on_connection)?\(\s*[^,]+,\s*row\)\.await").unwrap();
 
     assert!(
         !list_n_plus_one.is_match(&groups),
         "learning-group collection reads must not call the single-row hydrator in a row loop"
     );
     assert!(
-        groups.matches("hydrate_many(pool, rows).await").count() >= 2,
+        groups
+            .matches("hydrate_many(connection, rows).await")
+            .count()
+            >= 2,
         "nested and term-scoped learning-group lists must share the bulk hydrator"
     );
     assert!(
@@ -9247,15 +9447,21 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
     assert!(timetable.contains("block.id = ANY($1)"));
     assert!(timetable.contains("target.block_id = ANY($1)"));
     assert!(
-        !Regex::new(r"(?s)for\s+id\s+in\s+block_ids.*?get_block\(pool")
+        !Regex::new(r"(?s)for\s+id\s+in\s+block_ids.*?get_block(?:_on_connection)?\(")
             .unwrap()
             .is_match(&get_blocks)
     );
     let clear_timetable = extract_braced_block(&templates, "pub async fn clear_timetable", false);
-    assert!(clear_timetable.contains("get_blocks(pool"));
-    assert!(!Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_block\(pool")
-        .unwrap()
-        .is_match(&clear_timetable));
+    assert!(clear_timetable.contains("get_blocks_on_connection(&mut completion, &ids)"));
+    assert!(
+        clear_timetable.find("transaction.commit()").unwrap()
+            < clear_timetable.find("get_blocks_on_connection(").unwrap()
+    );
+    assert!(
+        !Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_block(?:_on_connection)?\(")
+            .unwrap()
+            .is_match(&clear_timetable)
+    );
 }
 
 #[test]
@@ -9271,17 +9477,17 @@ fn supervision_collection_hydrators_are_set_based() {
         extract_braced_block(&observations, "pub async fn list_observations", false);
 
     assert!(
-        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?get_template\(pool")
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?get_template(?:_on_connection)?\(")
             .unwrap()
             .is_match(&template_list),
         "supervision template lists must not call the detail hydrator per parent row"
     );
     assert!(
-        template_list.contains("hydrate_templates(pool, rows).await"),
+        template_list.contains("hydrate_templates(&mut connection, rows).await"),
         "supervision template lists must share the set-based template hydrator"
     );
     assert!(
-        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?(?:observation_from_row|get_observation(?:_with_connection)?)\(")
+        !Regex::new(r"(?s)for\s+row\s+in\s+rows\s*\{.*?(?:observation_from_row|get_observation(?:_with_connection|_on_connection)?)\(")
             .unwrap()
             .is_match(&observation_list),
         "supervision observation lists must not call the detail hydrator per parent row"
@@ -9351,7 +9557,7 @@ fn admission_bulk_scores_are_atomic_and_round_scoped() {
         .next()
         .expect("bulk score service must have an end");
     for required in [
-        "pool.begin().await",
+        "school_tenancy::TenantPool::begin_observed",
         "JOIN admission_applications aa ON aa.id = t.a AND aa.admission_round_id = $5",
         "JOIN admission_exam_subjects aes ON aes.id = t.s AND aes.admission_round_id = $5",
         "rows_affected()",
@@ -9404,23 +9610,8 @@ fn admission_enrollment_and_room_sort_fail_closed_on_sql_errors() {
     let source = read_source(
         manifest_dir().join("crates/school-admission/src/services/application_service.rs"),
     );
-    for (start, end) in [
-        (
-            "pub async fn list_enrollment_pending",
-            "pub struct EnrollmentResult",
-        ),
-        (
-            "pub async fn sort_room_students",
-            "pub async fn auto_assign_student_ids",
-        ),
-    ] {
-        let segment = source
-            .split(start)
-            .nth(1)
-            .unwrap_or_else(|| panic!("missing {start}"))
-            .split(end)
-            .next()
-            .unwrap_or_else(|| panic!("missing end after {start}"));
+    for function in ["list_enrollment_pending", "sort_room_students"] {
+        let segment = connection_work_body(&source, function);
         assert!(!segment.contains(".unwrap_or_default()"));
         assert!(!segment.contains(".unwrap_or(0)"));
         assert!(segment.contains(".map_err("));
@@ -9488,4 +9679,54 @@ fn exam_schedule_handler_uses_staff_level_invigilator_services() {
     assert!(source.contains("exam_schedule_service::assign_invigilator_to_assignment"));
     assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
     assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
+}
+
+#[test]
+fn database_query_provider_is_connection_bound_and_below_tenancy_and_domains() {
+    let manifest = read_source(manifest_dir().join("crates/school-database/Cargo.toml"));
+    let dependencies = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .unwrap()
+        .split("[lints]")
+        .next()
+        .unwrap();
+    let dependency_names: Vec<_> = dependencies
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(name, _)| name.trim()))
+        .collect();
+    assert_eq!(dependency_names, ["sqlx", "tracing"]);
+    let source = read_source(manifest_dir().join("crates/school-database/src/lib.rs"));
+    let session = extract_braced_block(&source, "pub struct DbSession", false);
+    assert!(session.contains("&'c mut PgConnection"));
+    for forbidden in ["PgPool", "TenantPool", "PoolConnection", "Executor"] {
+        assert!(!session.contains(forbidden));
+    }
+    let methods = extract_braced_block(&source, "impl<'c> DbSession", false);
+    for forbidden in [".acquire(", ".begin(", "into_inner", "pool:", "executor:"] {
+        assert!(!methods.contains(forbidden));
+    }
+    assert!(methods.contains("impl SqlSafeStr"));
+    for wrapper in [
+        "pub struct DbQuery<",
+        "pub struct DbQueryAs<",
+        "pub struct DbScalar<",
+    ] {
+        assert!(extract_braced_block(&source, wrapper, false).contains("&'s mut PgConnection"));
+    }
+    let tenancy = read_source(manifest_dir().join("crates/school-tenancy/src/tenant_pool.rs"));
+    let guard = extract_braced_block(&tenancy, "pub struct ObservedConnection", false);
+    assert!(guard.contains("TenantPoolRetention"));
+    let borrow = extract_braced_block(
+        &tenancy,
+        "impl std::ops::Deref for ObservedConnection",
+        false,
+    );
+    assert!(borrow.contains("type Target = sqlx::PgConnection"));
+    let observed_methods = extract_braced_block(&tenancy, "impl ObservedConnection", false);
+    for forbidden in ["pub fn detach", "pub fn into_inner", "pub fn leak"] {
+        assert!(!observed_methods.contains(forbidden));
+    }
+    assert!(observed_methods.contains("pub async fn return_to_pool"));
+    assert!(observed_methods.contains("pub async fn close"));
 }

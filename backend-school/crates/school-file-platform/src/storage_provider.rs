@@ -40,6 +40,7 @@ pub struct ObjectMetadata {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageError {
     ConfigurationInvalid,
+    NamespaceUnverified,
     OperationFailed,
     AlreadyExists,
     ObjectTooLarge,
@@ -52,6 +53,7 @@ impl StorageError {
     pub const fn log_safe_code(self) -> &'static str {
         match self {
             Self::ConfigurationInvalid => "storage_configuration_invalid",
+            Self::NamespaceUnverified => "storage_namespace_unverified",
             Self::OperationFailed => "storage_operation_failed",
             Self::AlreadyExists => "storage_object_already_exists",
             Self::ObjectTooLarge => "storage_object_too_large",
@@ -66,6 +68,7 @@ impl fmt::Display for StorageError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::ConfigurationInvalid => "storage configuration is invalid",
+            Self::NamespaceUnverified => "storage namespace is unverified",
             Self::OperationFailed => "storage operation failed",
             Self::AlreadyExists => "storage object already exists",
             Self::ObjectTooLarge => "storage object exceeds the allowed read size",
@@ -84,6 +87,10 @@ impl std::error::Error for StorageError {}
 
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
+    fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError>;
     async fn check_readiness(&self) -> Result<(), StorageError>;
     async fn put(&self, object: &StoredObject, body: Bytes) -> Result<(), StorageError>;
     async fn get(&self, object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError>;
@@ -133,6 +140,21 @@ mod tests {
 
     #[async_trait]
     impl StorageProvider for FakeStorageProvider {
+        fn namespace(
+            &self,
+            storage_class: crate::platform_types::StorageClass,
+        ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
+        {
+            crate::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    crate::platform_types::StorageClass::Public => "public",
+                    crate::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), StorageError> {
             Ok(())
         }

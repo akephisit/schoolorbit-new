@@ -2,6 +2,7 @@
 //! owns facts and durable progress. All reads share the finalization transaction.
 use super::*;
 use chrono::{DateTime, Utc};
+use school_database::DbSession;
 use sqlx::{types::Json, PgConnection};
 
 pub async fn expected_rounds_on_connection(
@@ -9,20 +10,31 @@ pub async fn expected_rounds_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceSeed>, AppError> {
-    let settings = settings::get_on_connection(connection, term).await?;
+    let context = settings::AttendanceReadContext::load(connection, term).await?;
+    expected_rounds_with_context(connection, &context, date).await
+}
+async fn expected_rounds_with_context(
+    connection: &mut PgConnection,
+    context: &settings::AttendanceReadContext,
+    date: NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let settings = &context.settings;
+    let term = settings.academic_term_id;
     let students = core::students_on_connection(connection, term, date).await?;
     let rooms = core::rooms_for_date_on_connection(connection, term, date).await?;
-    let saved_arrivals: HashSet<Uuid> = sqlx::query_scalar(
-        r#"SELECT DISTINCT p."studentId" FROM attendance_sessions s
+    let saved_arrivals: HashSet<Uuid> = DbSession::new(&mut *connection)
+        .scalar(
+            "attendance.application.finalization.expected_rounds_with_context",
+            r#"SELECT DISTINCT p."studentId" FROM attendance_sessions s
         CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p("studentId" uuid)
         WHERE s.academic_term_id=$1 AND s.date=$2 AND s.kind='arrival'"#,
-    )
-    .bind(term)
-    .bind(date)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .collect();
+        )
+        .bind(term)
+        .bind(date)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect();
     let mut seeds = Vec::new();
     for room in rooms {
         let roster = students
@@ -110,8 +122,8 @@ pub async fn expected_rounds_on_connection(
             });
         }
     }
-    let rounds: Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)> = sqlx::query_as("SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id")
-        .bind(term).bind(date).fetch_all(&mut *connection).await?;
+    let rounds: Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)> = DbSession::new(&mut *connection).query_as("attendance.application.finalization.expected_rounds_with_context", "SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id")
+        .bind(term).bind(date).fetch_all().await?;
     for (round, Json(groups)) in rounds {
         for group in groups {
             let mut session = seed_session(
@@ -144,18 +156,24 @@ pub async fn expected_rounds_on_connection(
 
 pub async fn catch_up(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Result<usize, AppError> {
     let due = crate::services::finalization::due_dates_on_connection(
-        &mut *pool.acquire().await?,
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "attendance.finalization.read",
+        )
+        .await?,
         now,
         limit,
     )
     .await?;
     let count = due.len();
     for (term, date, generation) in due {
-        let mut tx = pool.begin().await?;
-        crate::services::lock_term(&mut tx, term, true, true).await?;
-        let seeds = expected_rounds_on_connection(&mut tx, term, date).await?;
-        crate::services::finalization::finalize_date_in_transaction(
-            &mut tx, term, date, generation, &seeds, now,
+        let mut tx =
+            school_tenancy::TenantPool::begin_observed(pool, "attendance.finalization.transaction")
+                .await?;
+        let guard = crate::services::finalization::guard_finalization(&mut tx, term).await?;
+        let seeds = expected_rounds_with_context(&mut tx, &guard.context, date).await?;
+        crate::services::finalization::finalize_guarded(
+            &mut tx, &guard, date, generation, &seeds, now,
         )
         .await?;
         tx.commit().await?;

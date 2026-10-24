@@ -7,6 +7,7 @@ use lopdf::{
     dictionary, Dictionary, Document, Object, ObjectId, Stream,
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     consumer_service::map_platform_error, file_inspector::inspect_file,
@@ -667,10 +668,16 @@ async fn read_snapshot(
     platform: &FilePlatform,
     snapshot: &CorrespondenceFileSnapshot,
 ) -> Result<Vec<u8>, AppError> {
-    let current:Option<(Uuid,String)>=sqlx::query_as("SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1").bind(snapshot.file_id).fetch_optional(pool).await?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.document_export.read_snapshot",
+    )
+    .await?;
+    let current:Option<(Uuid,String)>=DbSession::new(&mut *database_stage_0).query_as("workflow.src.document_export.read_snapshot", "SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1").bind(snapshot.file_id).fetch_optional().await?;
     if current != Some((snapshot.version_id, snapshot.checksum.clone())) {
         return Err(invalid("ฉบับไฟล์ไม่ตรงกับเอกสารที่ยืนยัน"));
     }
+    drop(database_stage_0);
     let bytes = platform
         .read_private_original(&SqlFileRepository::new(pool.clone()), snapshot.file_id)
         .await

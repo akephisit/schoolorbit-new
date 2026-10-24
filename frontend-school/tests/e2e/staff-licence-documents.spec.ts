@@ -30,30 +30,38 @@ async function mockFiles(page: Page, kind: 'pdf' | 'image' = 'pdf', failUpload =
 		publicContentUrl: null,
 		purpose: 'teaching_license'
 	};
-	await page.route('**/api/files**', async (route) => {
-		const request = route.request(),
-			url = new URL(request.url());
-		if (request.method() === 'POST' && url.pathname === '/api/files') {
-			if (failUpload)
-				return route.fulfill({ status: 503, json: { success: false, error: 'อัปโหลดไม่สำเร็จ' } });
-			expect(request.postDataBuffer()?.toString()).toContain('teaching_license');
-			expect(request.postDataBuffer()?.toString()).toContain(firstStaff);
-			return route.fulfill({ json: { success: true, data: file } });
-		}
-		expect(url.searchParams.get('resource_id')).toBe(firstStaff);
-		return route.fulfill({
-			json: {
-				success: true,
-				data: url.pathname.endsWith('/download')
-					? { url: `${url.origin}/synthetic-licence-file`, expiresAt: '2099-01-01T00:00:00Z' }
-					: file
+	const uploads: string[] = [];
+	await page.route(
+		(url) => url.pathname === '/api/files' || url.pathname.startsWith('/api/files/'),
+		async (route) => {
+			const request = route.request(),
+				url = new URL(request.url());
+			if (request.method() === 'POST' && url.pathname === '/api/files') {
+				uploads.push(request.postData() ?? '');
+				if (failUpload)
+					return route.fulfill({
+						status: 503,
+						json: { success: false, error: 'อัปโหลดไม่สำเร็จ' }
+					});
+				expect(request.postDataBuffer()?.toString()).toContain('teaching_license');
+				expect(request.postDataBuffer()?.toString()).toContain(firstStaff);
+				return route.fulfill({ json: { success: true, data: file } });
 			}
-		});
-	});
+			expect(url.searchParams.get('resource_id')).toBe(firstStaff);
+			return route.fulfill({
+				json: {
+					success: true,
+					data: url.pathname.endsWith('/download')
+						? { url: `${url.origin}/synthetic-licence-file`, expiresAt: '2099-01-01T00:00:00Z' }
+						: file
+				}
+			});
+		}
+	);
 	await page.route('**/synthetic-licence-file', (route) =>
 		route.fulfill({ body: bytes, contentType: mime })
 	);
-	return { bytes, mime };
+	return { bytes, mime, uploads };
 }
 test('title selectors preserve custom historical values and allow both languages and clearing', async ({
 	page
@@ -116,6 +124,7 @@ for (const width of [390, 1440])
 				.getByLabel('เปลี่ยนไฟล์ใบประกอบวิชาชีพ', { exact: true })
 				.setInputFiles({ name: 'licence.pdf', mimeType: fixture.mime, buffer: fixture.bytes });
 			await expect(page.getByText('licence.pdf', { exact: true })).toBeVisible();
+			expect(fixture.uploads).toHaveLength(0);
 			await row.screenshot({
 				path: info.outputPath(`education-${width}-${theme}.png`),
 				animations: 'disabled'
@@ -158,6 +167,7 @@ for (const width of [390, 1440])
 			expect((await saved).postDataJSON()).toEqual({
 				staff_info: { teaching_license_file: { expected_file_id: previousId, file_id: fileId } }
 			});
+			expect(fixture.uploads).toHaveLength(1);
 			expect(errors).toEqual([]);
 			await context.close();
 		});
@@ -174,10 +184,13 @@ test('one image preview, failed upload retains saved file and removal confirms',
 	await page
 		.getByLabel('เปลี่ยนไฟล์ใบประกอบวิชาชีพ', { exact: true })
 		.setInputFiles({ name: 'licence.png', mimeType: fixture.mime, buffer: fixture.bytes });
+	expect(fixture.uploads).toHaveLength(0);
+	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('อัปโหลดไม่สำเร็จ');
+	expect(fixture.uploads).toHaveLength(1);
 	await expect(
 		page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true })
-	).toBeDisabled();
+	).toBeEnabled();
 	await page.getByRole('button', { name: 'ดูใบประกอบวิชาชีพ', exact: true }).click();
 	await expect(
 		page.getByRole('dialog').getByRole('img', { name: 'ใบประกอบวิชาชีพที่แนบ', exact: true })
@@ -218,6 +231,61 @@ test('profile-only readers do not render or fetch private licence files', async 
 	expect(requests).toEqual([]);
 });
 
+test('profile crop stays local and a failed profile save retries the known file ID', async ({
+	page
+}) => {
+	await mockStaffDirectory(page, { permissions });
+	const fixture = await mockFiles(page, 'image');
+	let uploads = 0,
+		saves = 0;
+	await page.route('**/api/files', async (route) => {
+		uploads++;
+		expect(route.request().postData()).toContain('profile_image');
+		expect(route.request().postData()).toContain(firstStaff);
+		await route.fulfill({
+			json: {
+				success: true,
+				data: {
+					id: fileId,
+					byteSize: fixture.bytes.length,
+					currentVersion: 1,
+					detectedMimeType: 'image/jpeg',
+					displayFilename: 'profile_avatar.jpg',
+					lifecycleStatus: 'ready',
+					publicContentUrl: null,
+					purpose: 'profile_image'
+				}
+			}
+		});
+	});
+	await page.route(`**/api/staff/${firstStaff}`, async (route) => {
+		if (route.request().method() !== 'PUT') return route.fallback();
+		saves++;
+		expect(route.request().postDataJSON()).toEqual({ profile_image_file_id: fileId });
+		await route.fulfill(
+			saves === 1
+				? { status: 503, json: { success: false, error: 'บันทึกรูปไม่สำเร็จ' } }
+				: { json: { success: true, data: {} } }
+		);
+	});
+	await page.goto(staffPath(undefined, '/edit'));
+	await page
+		.locator('input[type="file"]')
+		.setInputFiles({ name: 'avatar.png', mimeType: fixture.mime, buffer: fixture.bytes });
+	const crop = page.getByRole('dialog');
+	await expect(crop.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true })).toBeEnabled();
+	expect(uploads).toBe(0);
+	expect(saves).toBe(0);
+	await crop.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).click();
+	const retry = page.getByRole('button', { name: 'ลองบันทึกรูปอีกครั้ง', exact: true });
+	await expect(retry).toBeVisible();
+	expect(uploads).toBe(1);
+	await retry.click();
+	await expect(retry).toHaveCount(0);
+	expect(saves).toBe(2);
+	expect(uploads).toBe(1);
+});
+
 test('stale licence save retains draft until reviewer chooses latest or draft', async ({
 	page
 }) => {
@@ -253,4 +321,5 @@ test('stale licence save retains draft until reviewer chooses latest or draft', 
 	await page.getByRole('button', { name: 'ใช้ร่างแทนเอกสารล่าสุด', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	await expect.poll(() => saves).toBe(2);
+	expect(fixture.uploads).toHaveLength(1);
 });

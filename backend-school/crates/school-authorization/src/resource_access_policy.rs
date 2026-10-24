@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::ActorContext;
@@ -125,12 +125,56 @@ pub async fn require_user_resource_access(
     target_user_id: Uuid,
     forbidden_message: &'static str,
 ) -> Result<ResourceAccessGrant, AppError> {
-    let target = user_resource_target(pool, target_user_id).await?;
-    require_resource_access(pool, actor, permissions, &target, forbidden_message).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.require_user_resource_access",
+    )
+    .await?;
+    require_user_resource_access_on_connection(
+        &mut connection,
+        actor,
+        permissions,
+        target_user_id,
+        forbidden_message,
+    )
+    .await
+}
+
+pub async fn require_user_resource_access_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    target_user_id: Uuid,
+    forbidden_message: &'static str,
+) -> Result<ResourceAccessGrant, AppError> {
+    let target = user_resource_target(&mut *connection, target_user_id).await?;
+    require_resource_access_on_connection(
+        &mut *connection,
+        actor,
+        permissions,
+        &target,
+        forbidden_message,
+    )
+    .await
 }
 
 pub async fn accessible_organization_unit_ids(
     pool: &PgPool,
+    access: UserResourceListAccess,
+) -> Result<Option<Vec<Uuid>>, AppError> {
+    if matches!(access, UserResourceListAccess::School) {
+        return Ok(None);
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.accessible_organization_unit_ids",
+    )
+    .await?;
+    accessible_organization_unit_ids_on_connection(&mut connection, access).await
+}
+
+pub async fn accessible_organization_unit_ids_on_connection(
+    connection: &mut PgConnection,
     access: UserResourceListAccess,
 ) -> Result<Option<Vec<Uuid>>, AppError> {
     match access {
@@ -138,12 +182,12 @@ pub async fn accessible_organization_unit_ids(
         UserResourceListAccess::Own(actor_user_id)
         | UserResourceListAccess::Assigned(actor_user_id)
         | UserResourceListAccess::OrganizationUnit(actor_user_id) => {
-            actor_active_organization_unit_ids(pool, actor_user_id)
+            actor_active_organization_unit_ids(&mut *connection, actor_user_id)
                 .await
                 .map(Some)
         }
         UserResourceListAccess::OrganizationTree(actor_user_id) => {
-            actor_organization_tree_unit_ids(pool, actor_user_id)
+            actor_organization_tree_unit_ids(&mut *connection, actor_user_id)
                 .await
                 .map(Some)
         }
@@ -160,11 +204,42 @@ pub async fn require_resource_access(
     if let Some(grant) = can_access_direct_resource(actor, permissions, target) {
         return Ok(grant);
     }
+    if target.organization_unit_ids.is_empty()
+        || (!has_optional_permission(actor, permissions.organization_unit)
+            && !has_optional_permission(actor, permissions.organization_tree))
+    {
+        return Err(AppError::Forbidden(forbidden_message.to_string()));
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.require_resource_access",
+    )
+    .await?;
+    require_resource_access_on_connection(
+        &mut connection,
+        actor,
+        permissions,
+        target,
+        forbidden_message,
+    )
+    .await
+}
+
+pub async fn require_resource_access_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    target: &ResourceAccessTarget,
+    forbidden_message: &'static str,
+) -> Result<ResourceAccessGrant, AppError> {
+    if let Some(grant) = can_access_direct_resource(actor, permissions, target) {
+        return Ok(grant);
+    }
 
     if !target.organization_unit_ids.is_empty()
         && has_optional_permission(actor, permissions.organization_unit)
         && actor_is_member_of_any_organization_unit(
-            pool,
+            &mut *connection,
             actor.user_id,
             &target.organization_unit_ids,
         )
@@ -177,8 +252,12 @@ pub async fn require_resource_access(
 
     if !target.organization_unit_ids.is_empty()
         && has_optional_permission(actor, permissions.organization_tree)
-        && actor_organization_tree_contains_any(pool, actor.user_id, &target.organization_unit_ids)
-            .await?
+        && actor_organization_tree_contains_any(
+            &mut *connection,
+            actor.user_id,
+            &target.organization_unit_ids,
+        )
+        .await?
     {
         return Ok(ResourceAccessGrant {
             scope: ResourceAccessScope::OrganizationTree,
@@ -189,11 +268,13 @@ pub async fn require_resource_access(
 }
 
 async fn actor_active_organization_unit_ids(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     actor_user_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.resource_access_policy.actor_active_organization_unit_ids",
+            r#"
         SELECT om.organization_unit_id
         FROM organization_members om
         JOIN organization_units active_unit
@@ -202,22 +283,27 @@ async fn actor_active_organization_unit_ids(
         WHERE om.user_id = $1
           AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
-    )
-    .bind(actor_user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load actor organization units: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของผู้ใช้ได้".to_string())
-    })
+        )
+        .bind(actor_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to load actor organization units"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของผู้ใช้ได้".to_string())
+        })
 }
 
 async fn actor_organization_tree_unit_ids(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     actor_user_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.resource_access_policy.actor_organization_tree_unit_ids",
+            r#"
         WITH RECURSIVE actor_roots AS (
             SELECT om.organization_unit_id
             FROM organization_members om
@@ -240,22 +326,27 @@ async fn actor_organization_tree_unit_ids(
         SELECT organization_unit_id
         FROM organization_tree
         "#,
-    )
-    .bind(actor_user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load actor organization tree units: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสายงานของผู้ใช้ได้".to_string())
-    })
+        )
+        .bind(actor_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to load actor organization tree units"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสายงานของผู้ใช้ได้".to_string())
+        })
 }
 
 async fn user_resource_target(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     target_user_id: Uuid,
 ) -> Result<ResourceAccessTarget, AppError> {
-    let organization_unit_ids = sqlx::query_scalar(
-        r#"
+    let organization_unit_ids = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.resource_access_policy.user_resource_target",
+            r#"
         SELECT om.organization_unit_id
         FROM organization_members om
         JOIN organization_units active_unit
@@ -264,29 +355,31 @@ async fn user_resource_target(
         WHERE om.user_id = $1
           AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
-    )
-    .bind(target_user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to load resource target organization units: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของข้อมูลได้".to_string())
-    })?;
+        )
+        .bind(target_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to load resource target organization units"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของข้อมูลได้".to_string())
+        })?;
 
     Ok(ResourceAccessTarget::owned_by(target_user_id)
         .with_organization_units(organization_unit_ids))
 }
 
 async fn actor_is_member_of_any_organization_unit(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     actor_user_id: Uuid,
     target_organization_unit_ids: &[Uuid],
 ) -> Result<bool, AppError> {
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.resource_access_policy.actor_is_member_of_any_organization_unit",
+            r#"
         SELECT EXISTS (
             SELECT 1
             FROM organization_members om
@@ -298,27 +391,29 @@ async fn actor_is_member_of_any_organization_unit(
               AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         )
         "#,
-    )
-    .bind(actor_user_id)
-    .bind(target_organization_unit_ids)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to check organization unit resource access: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
-    })
+        )
+        .bind(actor_user_id)
+        .bind(target_organization_unit_ids)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to check organization unit resource access"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
+        })
 }
 
 async fn actor_organization_tree_contains_any(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     actor_user_id: Uuid,
     target_organization_unit_ids: &[Uuid],
 ) -> Result<bool, AppError> {
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.resource_access_policy.actor_organization_tree_contains_any",
+            r#"
         WITH RECURSIVE actor_roots AS (
             SELECT om.organization_unit_id
             FROM organization_members om
@@ -344,18 +439,18 @@ async fn actor_organization_tree_contains_any(
             WHERE organization_unit_id = ANY($2)
         )
         "#,
-    )
-    .bind(actor_user_id)
-    .bind(target_organization_unit_ids)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to check organization tree resource access: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
-    })
+        )
+        .bind(actor_user_id)
+        .bind(target_organization_unit_ids)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to check organization tree resource access"
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
+        })
 }
 
 fn has_optional_permission(actor: &ActorContext, permission: Option<&str>) -> bool {

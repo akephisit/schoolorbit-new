@@ -1,6 +1,7 @@
 use super::super::models::{OpeningPolicy, UpdateOpeningPolicyInput};
 use school_academic_core::services::{lifecycle_guard, years_terms};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -13,7 +14,11 @@ pub async fn get_opening_policy(
     actor: &ActorContext,
 ) -> Result<OpeningPolicy, AppError> {
     actor.require_permission(codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.opening_policy.get_opening_policy",
+    )
+    .await?;
     let result = read_in_transaction(&mut tx).await?;
     tx.commit().await?;
     Ok(result)
@@ -22,12 +27,16 @@ pub async fn get_opening_policy(
 pub(crate) async fn read_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<OpeningPolicy, AppError> {
-    sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {COLUMNS} FROM academic_opening_policy WHERE id=1"
-    )))
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::InternalServerError("ไม่พบการตั้งค่าเงื่อนไขเปิดภาคเรียน".into()))
+    DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.opening_policy.read_in_transaction",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {COLUMNS} FROM academic_opening_policy WHERE id=1"
+            )),
+        )
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::InternalServerError("ไม่พบการตั้งค่าเงื่อนไขเปิดภาคเรียน".into()))
 }
 
 pub async fn update_opening_policy(
@@ -42,13 +51,17 @@ pub async fn update_opening_policy(
     if input.row_version <= 0 {
         return Err(AppError::ValidationError("รุ่นการตั้งค่าไม่ถูกต้อง".into()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.opening_policy.update_opening_policy",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     let before = read_in_transaction(&mut tx).await?;
-    let result: OpeningPolicy = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let result: OpeningPolicy = DbSession::new(&mut *tx).query_as("academic_lifecycle.services.opening_policy.update_opening_policy", sqlx::AssertSqlSafe(format!(
         "UPDATE academic_opening_policy SET require_homeroom_placements=$1,require_published_offerings=$2,require_published_timetable=$3,row_version=row_version+1,updated_by=$4,updated_at=now() WHERE id=1 AND row_version=$5 RETURNING {COLUMNS}"
     ))).bind(input.require_homeroom_placements).bind(input.require_published_offerings).bind(input.require_published_timetable)
-        .bind(actor.user_id).bind(input.row_version).fetch_optional(&mut *tx).await?
+        .bind(actor.user_id).bind(input.row_version).fetch_optional().await?
         .ok_or_else(|| AppError::Conflict("เงื่อนไขเปิดภาคเรียนเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".into()))?;
     years_terms::append_audit(
         &mut tx,

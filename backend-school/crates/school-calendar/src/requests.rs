@@ -178,12 +178,18 @@ pub async fn list_requests(
     });
     let order = if query.review { "ASC" } else { "DESC" };
     let sql=format!("{SELECT_REQUEST} WHERE ($1::boolean OR r.requested_by=$2) AND (NOT $1::boolean OR r.status<>'approved') AND ($3::text IS NULL OR r.status=$3) ORDER BY r.created_at {order},r.id {order} LIMIT 26 OFFSET $4");
-    let mut records = sqlx::query_as::<_, CalendarEventRequest>(sqlx::AssertSqlSafe(sql))
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_requests").await?;
+    let mut records = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarEventRequest>(
+            "calendar.src.requests.list_requests",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(query.review)
         .bind(actor.user_id)
         .bind(status)
         .bind(offset)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     let has_more = records.len() > 25;
     records.truncate(25);
@@ -205,29 +211,46 @@ pub async fn list_pending_calendar(
 ) -> Result<PendingCalendarPage, AppError> {
     require_request_access(actor, false)?;
     validate_pending_range(&query)?;
-    let mut records = sqlx::query_as::<_, PendingCalendarRequest>(
-        "SELECT id,title,start_date,end_date,all_day,start_time,end_time
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_pending_calendar")
+            .await?;
+    let mut records = school_database::DbSession::new(&mut *connection)
+        .query_as::<PendingCalendarRequest>(
+            "calendar.src.requests.list_pending_calendar",
+            "SELECT id,title,start_date,end_date,all_day,start_time,end_time
          FROM calendar_event_requests
          WHERE status='pending' AND start_date<=$1 AND end_date>=$2
            AND ($3::boolean OR requested_by=$4)
          ORDER BY created_at ASC,id ASC LIMIT 501",
-    )
-    .bind(query.to)
-    .bind(query.from)
-    .bind(actor.has_permission(codes::CALENDAR_MANAGE_SCHOOL))
-    .bind(actor.user_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(query.to)
+        .bind(query.from)
+        .bind(actor.has_permission(codes::CALENDAR_MANAGE_SCHOOL))
+        .bind(actor.user_id)
+        .fetch_all()
+        .await?;
     let has_more = records.len() > 500;
     records.truncate(500);
     Ok(PendingCalendarPage { records, has_more })
 }
 
 async fn get_request(pool: &PgPool, id: Uuid) -> Result<CalendarEventRequest, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.get_request").await?;
+    get_request_on_connection(&mut connection, id).await
+}
+async fn get_request_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<CalendarEventRequest, AppError> {
     let sql = format!("{SELECT_REQUEST} WHERE r.id=$1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    school_database::DbSession::new(&mut *connection)
+        .query_as(
+            "calendar.src.requests.get_request_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบคำร้อง".into()))
 }
@@ -248,14 +271,16 @@ pub async fn create_request(
 ) -> Result<CalendarEventRequest, AppError> {
     actor.require_all_permissions(&[codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_REQUEST_OWN])?;
     validate_request(&payload)?;
-    let id=sqlx::query_scalar::<_,Uuid>("INSERT INTO calendar_event_requests(requested_by,title,description,location,start_date,end_date,all_day,start_time,end_time)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.create_request").await?;
+    let id=school_database::DbSession::new(&mut *connection).scalar::<Uuid>("calendar.src.requests.create_request", "INSERT INTO calendar_event_requests(requested_by,title,description,location,start_date,end_date,all_day,start_time,end_time)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id")
         .bind(actor.user_id).bind(payload.title.trim()).bind(payload.description.trim())
         .bind(payload.location.as_deref().map(str::trim).filter(|value| !value.is_empty()))
         .bind(payload.start_date).bind(payload.end_date).bind(payload.all_day)
         .bind(if payload.all_day {None} else {payload.start_time})
-        .bind(if payload.all_day {None} else {payload.end_time}).fetch_one(pool).await?;
-    get_request(pool, id).await
+        .bind(if payload.all_day {None} else {payload.end_time}).fetch_one().await?;
+    get_request_on_connection(&mut connection, id).await
 }
 
 pub async fn approve_request(
@@ -265,16 +290,21 @@ pub async fn approve_request(
     payload: UpsertCalendarEventRequest,
 ) -> Result<CalendarRequestApproval, AppError> {
     require_request_access(actor, true)?;
-    let mut tx = pool.begin().await?;
-    let status: Option<CalendarRequestStatus> =
-        sqlx::query_scalar("SELECT status FROM calendar_event_requests WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.requests.approve_request")
             .await?;
+    let status: Option<CalendarRequestStatus> = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "calendar.src.requests.approve_request",
+            "SELECT status FROM calendar_event_requests WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     require_pending(status)?;
     let event_id = create_event_in_transaction(&mut tx, actor.user_id, &payload).await?;
-    sqlx::query("UPDATE calendar_event_requests SET status='approved',reviewed_by=$2,reviewed_at=now(),event_id=$3 WHERE id=$1")
-        .bind(id).bind(actor.user_id).bind(event_id).execute(&mut *tx).await?;
+    school_database::DbSession::new(&mut *tx).query("calendar.src.requests.approve_request", "UPDATE calendar_event_requests SET status='approved',reviewed_by=$2,reviewed_at=now(),event_id=$3 WHERE id=$1")
+        .bind(id).bind(actor.user_id).bind(event_id).execute().await?;
     tx.commit().await?;
     Ok(CalendarRequestApproval {
         request: get_request(pool, id).await?,
@@ -293,15 +323,20 @@ pub async fn reject_request(
     if reason.is_empty() || reason.chars().count() > 2000 {
         return Err(AppError::BadRequest("กรุณาระบุเหตุผลไม่เกิน 2000 ตัวอักษร".into()));
     }
-    let mut tx = pool.begin().await?;
-    let status =
-        sqlx::query_scalar("SELECT status FROM calendar_event_requests WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.requests.reject_request")
             .await?;
+    let status = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "calendar.src.requests.reject_request",
+            "SELECT status FROM calendar_event_requests WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     require_pending(status)?;
-    sqlx::query("UPDATE calendar_event_requests SET status='rejected',reviewed_by=$2,reviewed_at=now(),rejection_reason=$3 WHERE id=$1")
-        .bind(id).bind(actor.user_id).bind(reason).execute(&mut *tx).await?;
+    school_database::DbSession::new(&mut *tx).query("calendar.src.requests.reject_request", "UPDATE calendar_event_requests SET status='rejected',reviewed_by=$2,reviewed_at=now(),rejection_reason=$3 WHERE id=$1")
+        .bind(id).bind(actor.user_id).bind(reason).execute().await?;
     tx.commit().await?;
     get_request(pool, id).await
 }

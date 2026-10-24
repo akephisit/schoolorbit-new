@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use school_database::DbSession;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -139,9 +140,9 @@ async fn lock_exam_session_conflict_scope(
     room_id: Uuid,
 ) -> Result<(), AppError> {
     for lock_key in exam_session_conflict_lock_keys(exam_day_id, homeroom_id, room_id) {
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.sessions_and_conflicts.lock_exam_session_conflict_scope", "SELECT pg_advisory_xact_lock($1)")
             .bind(lock_key)
-            .execute(&mut **tx)
+            .execute()
             .await?;
     }
     Ok(())
@@ -151,20 +152,26 @@ pub async fn place_exam_session(
     request: PlaceExamSessionRequest,
     actor_user_id: Uuid,
 ) -> Result<ExamSessionView, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
+    )
+    .await?;
 
     // Parent IDs are immutable. Reject a foreign-round item before locking any
     // of its rows while holding the selected day's academic boundary.
-    let same_round: bool = sqlx::query_scalar(
-        "SELECT day.exam_round_id = item.exam_round_id \
+    let same_round: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
+            "SELECT day.exam_round_id = item.exam_round_id \
          FROM academic_exam_days day CROSS JOIN academic_exam_schedule_items item \
          WHERE day.id=$1 AND item.id=$2",
-    )
-    .bind(request.exam_day_id)
-    .bind(request.exam_schedule_item_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam day or item not found".into()))?;
+        )
+        .bind(request.exam_day_id)
+        .bind(request.exam_schedule_item_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam day or item not found".into()))?;
     if !same_round {
         return Err(AppError::BadRequest(
             "Exam day belongs to a different exam round".into(),
@@ -246,8 +253,10 @@ pub async fn place_exam_session(
     )
     .await?;
 
-    let session_id: Uuid = sqlx::query_scalar(
-        r#"
+    let session_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
+            r#"
         INSERT INTO academic_exam_sessions (
             exam_schedule_item_id,
             exam_round_id,
@@ -268,20 +277,25 @@ pub async fn place_exam_session(
             updated_at = now()
         RETURNING id
         "#,
-    )
-    .bind(item.id)
-    .bind(item.exam_round_id)
-    .bind(day.id)
-    .bind(request.starts_at)
-    .bind(ends_at)
-    .bind(actor_user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(item.id)
+        .bind(item.exam_round_id)
+        .bind(day.id)
+        .bind(request.starts_at)
+        .bind(ends_at)
+        .bind(actor_user_id)
+        .fetch_one()
+        .await?;
 
     mark_round_draft_after_mutation(&mut tx, item.exam_round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
-    fetch_exam_session_view(pool, session_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
+    )
+    .await?;
+    fetch_exam_session_view(&mut connection, session_id).await
 }
 
 pub(super) async fn revalidate_session_duration_change_in_tx(
@@ -289,7 +303,7 @@ pub(super) async fn revalidate_session_duration_change_in_tx(
     exam_schedule_item_id: Uuid,
     duration_minutes: i32,
 ) -> Result<(), AppError> {
-    let context: Option<DurationChangePlacementContext> = sqlx::query_as(
+    let context: Option<DurationChangePlacementContext> = DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.sessions_and_conflicts.revalidate_session_duration_change_in_tx",
         r#"SELECT session.id AS session_id,
                   session.exam_round_id,
                   session.exam_day_id,
@@ -314,7 +328,7 @@ pub(super) async fn revalidate_session_duration_change_in_tx(
            FOR UPDATE OF session, item, day, assignment"#,
     )
     .bind(exam_schedule_item_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?;
     let Some(context) = context else {
         return Ok(());
@@ -385,14 +399,14 @@ pub(super) async fn revalidate_session_duration_change_in_tx(
     )
     .await?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.sessions_and_conflicts.revalidate_session_duration_change_in_tx",
         r#"UPDATE academic_exam_sessions
            SET ends_at = $2, updated_at = now()
            WHERE id = $1"#,
     )
     .bind(context.session_id)
     .bind(ends_at)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
@@ -402,25 +416,35 @@ pub async fn delete_exam_session(
     session_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.sessions_and_conflicts.delete_exam_session",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Session(session_id)).await?;
 
-    let round_id: Uuid = sqlx::query_scalar(
-        r#"
+    let round_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.sessions_and_conflicts.delete_exam_session",
+            r#"
         SELECT exam_round_id
         FROM academic_exam_sessions
         WHERE id = $1
         FOR UPDATE
         "#,
-    )
-    .bind(session_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam session not found".to_string()))?;
-
-    sqlx::query("DELETE FROM academic_exam_sessions WHERE id = $1")
+        )
         .bind(session_id)
-        .execute(&mut *tx)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam session not found".to_string()))?;
+
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_assessment.exam_schedule.services.sessions_and_conflicts.delete_exam_session",
+            "DELETE FROM academic_exam_sessions WHERE id = $1",
+        )
+        .bind(session_id)
+        .execute()
         .await?;
 
     mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
@@ -432,7 +456,7 @@ async fn fetch_schedule_item_placement_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_schedule_item_id: Uuid,
 ) -> Result<ExamScheduleItemPlacementContext, AppError> {
-    sqlx::query_as::<_, ExamScheduleItemPlacementContext>(
+    DbSession::new(&mut **tx).query_as::<ExamScheduleItemPlacementContext>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_schedule_item_placement_context",
         r#"
         SELECT item.id,
                item.exam_round_id,
@@ -446,7 +470,7 @@ async fn fetch_schedule_item_placement_context(
         "#,
     )
     .bind(exam_schedule_item_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Exam schedule item not found".to_string()))
 }
@@ -454,7 +478,7 @@ async fn fetch_exam_day_placement_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
 ) -> Result<ExamDayPlacementContext, AppError> {
-    sqlx::query_as::<_, ExamDayPlacementContext>(
+    DbSession::new(&mut **tx).query_as::<ExamDayPlacementContext>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_exam_day_placement_context",
         r#"
         SELECT id,
                exam_round_id,
@@ -466,7 +490,7 @@ async fn fetch_exam_day_placement_context(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))
 }
@@ -474,7 +498,7 @@ async fn fetch_blocked_windows_for_day_for_placement(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
 ) -> Result<Vec<BlockedWindow>, AppError> {
-    sqlx::query_as::<_, BlockedWindow>(
+    DbSession::new(&mut **tx).query_as::<BlockedWindow>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_blocked_windows_for_day_for_placement",
         r#"
         SELECT id,
                label,
@@ -486,7 +510,7 @@ async fn fetch_blocked_windows_for_day_for_placement(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
@@ -495,7 +519,7 @@ async fn fetch_day_room_assignment_placement_context(
     exam_day_id: Uuid,
     homeroom_id: Uuid,
 ) -> Result<DayRoomAssignmentPlacementContext, AppError> {
-    sqlx::query_as::<_, DayRoomAssignmentPlacementContext>(
+    DbSession::new(&mut **tx).query_as::<DayRoomAssignmentPlacementContext>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_day_room_assignment_placement_context",
         r#"
         SELECT id,
                room_id
@@ -507,7 +531,7 @@ async fn fetch_day_room_assignment_placement_context(
     )
     .bind(exam_day_id)
     .bind(homeroom_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| {
         AppError::BadRequest(
@@ -519,7 +543,7 @@ async fn fetch_existing_session_id_for_item(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_schedule_item_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar(
+    DbSession::new(&mut **tx).scalar("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_existing_session_id_for_item",
         r#"
         SELECT id
         FROM academic_exam_sessions
@@ -527,7 +551,7 @@ async fn fetch_existing_session_id_for_item(
         "#,
     )
     .bind(exam_schedule_item_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await
     .map_err(AppError::from)
 }
@@ -535,7 +559,7 @@ async fn fetch_candidate_sessions_for_day(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
 ) -> Result<Vec<CandidateSession>, AppError> {
-    let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>(
+    let rows = DbSession::new(&mut **tx).query_as::<(Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_candidate_sessions_for_day",
         r#"
         SELECT session.id,
                item.homeroom_id,
@@ -550,7 +574,7 @@ async fn fetch_candidate_sessions_for_day(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     Ok(rows
@@ -570,7 +594,7 @@ async fn fetch_candidate_room_sessions_for_day(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
 ) -> Result<Vec<CandidateRoomSession>, AppError> {
-    let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>(
+    let rows = DbSession::new(&mut **tx).query_as::<(Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_candidate_room_sessions_for_day",
         r#"
         SELECT session.id,
                assignment.room_id,
@@ -588,7 +612,7 @@ async fn fetch_candidate_room_sessions_for_day(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     Ok(rows
@@ -605,10 +629,10 @@ async fn fetch_candidate_room_sessions_for_day(
         .collect())
 }
 async fn fetch_exam_session_view(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     session_id: Uuid,
 ) -> Result<ExamSessionView, AppError> {
-    let rows = sqlx::query_as::<_, ExamSessionRow>(
+    let rows = DbSession::new(connection).query_as::<ExamSessionRow>("academic_assessment.exam_schedule.services.sessions_and_conflicts.fetch_exam_session_view",
         r#"
         SELECT session.id,
                session.exam_schedule_item_id,
@@ -681,7 +705,7 @@ async fn fetch_exam_session_view(
         "#,
     )
     .bind(session_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     let assignment_ids: Vec<Uuid> = rows
@@ -689,7 +713,7 @@ async fn fetch_exam_session_view(
         .filter_map(|row| row.day_room_assignment_id)
         .collect();
     let invigilators_by_assignment =
-        fetch_invigilators_by_assignment_ids(pool, &assignment_ids).await?;
+        fetch_invigilators_by_assignment_ids(connection, &assignment_ids).await?;
 
     rows.into_iter()
         .map(|row| {
@@ -707,7 +731,7 @@ pub(super) async fn validate_day_allows_grade_level(
     exam_day_id: Uuid,
     grade_level_id: Uuid,
 ) -> Result<(), AppError> {
-    let scoped_grade_level_ids: Vec<Uuid> = sqlx::query_scalar(
+    let scoped_grade_level_ids: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_assessment.exam_schedule.services.sessions_and_conflicts.validate_day_allows_grade_level",
         r#"
         SELECT grade_level_id
         FROM academic_exam_day_grade_levels
@@ -716,7 +740,7 @@ pub(super) async fn validate_day_allows_grade_level(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     if !grade_level_allowed_by_day_scope(grade_level_id, &scoped_grade_level_ids) {

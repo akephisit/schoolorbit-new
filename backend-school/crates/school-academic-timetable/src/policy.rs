@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -79,30 +80,67 @@ pub async fn timetable_list_access(
     actor: &ActorContext,
     action: TimetableAction,
 ) -> Result<TimetableAccessFilter, AppError> {
-    let action = match action {
-        TimetableAction::Publish => {
-            actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
-            return Ok(TimetableAccessFilter {
-                includes_school_owned: true,
-                ..TimetableAccessFilter::default()
-            });
-        }
-        TimetableAction::Read => ScopedTimetableAction::Read,
-        TimetableAction::Manage => ScopedTimetableAction::Manage,
+    let Some(action) = scoped_action(actor, action)? else {
+        return Ok(TimetableAccessFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        });
     };
-
     let resolved = resource_access_policy::resolve_academic_resource_list_filter(
         pool,
         actor,
         timetable_permissions(action),
     )
     .await?;
-    Ok(TimetableAccessFilter {
+    Ok(timetable_filter(resolved))
+}
+
+pub async fn timetable_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: TimetableAction,
+) -> Result<TimetableAccessFilter, AppError> {
+    let Some(action) = scoped_action(actor, action)? else {
+        return Ok(TimetableAccessFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        });
+    };
+
+    let resolved = resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
+        actor,
+        timetable_permissions(action),
+    )
+    .await?;
+    Ok(timetable_filter(resolved))
+}
+
+fn scoped_action(
+    actor: &ActorContext,
+    action: TimetableAction,
+) -> Result<Option<ScopedTimetableAction>, AppError> {
+    let action = match action {
+        TimetableAction::Publish => {
+            actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
+            return Ok(None);
+        }
+        TimetableAction::Read => ScopedTimetableAction::Read,
+        TimetableAction::Manage => ScopedTimetableAction::Manage,
+    };
+
+    Ok(Some(action))
+}
+
+fn timetable_filter(
+    resolved: school_authorization::AcademicResourceListFilter,
+) -> TimetableAccessFilter {
+    TimetableAccessFilter {
         assigned_actor_id: resolved.assigned_actor_id,
         organization_unit_ids: resolved.organization_unit_ids,
         organization_tree_unit_ids: resolved.organization_tree_unit_ids,
         includes_school_owned: resolved.includes_school_owned,
-    })
+    }
 }
 
 pub async fn require_timetable_list_access(
@@ -110,7 +148,19 @@ pub async fn require_timetable_list_access(
     actor: &ActorContext,
     action: TimetableAction,
 ) -> Result<TimetableAccessFilter, AppError> {
-    let filter = timetable_list_access(pool, actor, action).await?;
+    require_list_filter(timetable_list_access(pool, actor, action).await?)
+}
+
+pub async fn require_timetable_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: TimetableAction,
+) -> Result<TimetableAccessFilter, AppError> {
+    let filter = timetable_list_access_on_connection(connection, actor, action).await?;
+    require_list_filter(filter)
+}
+
+fn require_list_filter(filter: TimetableAccessFilter) -> Result<TimetableAccessFilter, AppError> {
     if filter.includes_school_owned
         || filter.assigned_actor_id.is_some()
         || !filter.organization_unit_ids.is_empty()
@@ -130,16 +180,76 @@ pub async fn require_timetable_resources(
     action: TimetableAction,
     resources: &TimetableResourceSet,
 ) -> Result<(), AppError> {
-    let filter = require_timetable_list_access(pool, actor, action).await?;
+    let preflight = match scoped_action(actor, action)? {
+        None => Some(TimetableAccessFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        }),
+        Some(scoped) => resource_access_policy::academic_resource_list_filter_without_database(
+            actor,
+            timetable_permissions(scoped),
+        )
+        .map(timetable_filter),
+    }
+    .map(require_list_filter)
+    .transpose()?;
+    if let Some(filter) = &preflight {
+        if !needs_resource_lookup(filter, resources)? {
+            return Ok(());
+        }
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.policy.require_timetable_resources",
+    )
+    .await?;
+    let filter = match preflight {
+        Some(filter) => filter,
+        None => require_timetable_list_access_on_connection(&mut connection, actor, action).await?,
+    };
+    require_resources_with_filter(&mut connection, actor, resources, filter).await
+}
+
+pub async fn require_timetable_resources_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: TimetableAction,
+    resources: &TimetableResourceSet,
+) -> Result<(), AppError> {
+    let filter = require_timetable_list_access_on_connection(connection, actor, action).await?;
+    require_resources_with_filter(connection, actor, resources, filter).await
+}
+
+fn needs_resource_lookup(
+    filter: &TimetableAccessFilter,
+    resources: &TimetableResourceSet,
+) -> Result<bool, AppError> {
     if resources.requires_school_scope && !filter.includes_school_owned {
         return Err(AppError::Forbidden(
             "รายการตารางสอนนี้ต้องใช้สิทธิ์ระดับโรงเรียน".to_string(),
         ));
     }
     if filter.includes_school_owned {
-        return Ok(());
+        return Ok(false);
     }
 
+    Ok(!resources.timetable_version_ids.is_empty()
+        || !resources.learning_offering_ids.is_empty()
+        || !resources.learning_group_ids.is_empty()
+        || !resources.homeroom_ids.is_empty()
+        || !resources.teacher_ids.is_empty()
+        || !resources.room_ids.is_empty())
+}
+
+async fn require_resources_with_filter(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    resources: &TimetableResourceSet,
+    filter: TimetableAccessFilter,
+) -> Result<(), AppError> {
+    if !needs_resource_lookup(&filter, resources)? {
+        return Ok(());
+    }
     let version_ids = normalized_ids(&resources.timetable_version_ids);
     let offering_ids = normalized_ids(&resources.learning_offering_ids);
     let group_ids = normalized_ids(&resources.learning_group_ids);
@@ -152,11 +262,8 @@ pub async fn require_timetable_resources(
         + homeroom_ids.len()
         + teacher_ids.len()
         + room_ids.len();
-    if expected_count == 0 {
-        return Ok(());
-    }
 
-    let targets = sqlx::query_as::<_, TimetableResourceTargetRow>(
+    let targets = DbSession::new(connection).query_as::<TimetableResourceTargetRow>("academic_timetable.policy.require_timetable_resources_on_connection",
         r#"
         SELECT 'version'::text AS resource_kind,
                version.id AS resource_id,
@@ -232,7 +339,7 @@ pub async fn require_timetable_resources(
     .bind(&teacher_ids)
     .bind(&room_ids)
     .bind(actor.user_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     if targets.len() != expected_count {
@@ -310,6 +417,48 @@ mod tests {
                 .map(|permission| permission.to_string())
                 .collect(),
         }
+    }
+
+    #[tokio::test]
+    async fn list_and_empty_resource_grants_and_denials_do_not_require_a_database() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        for permission in [
+            codes::ACADEMIC_TIMETABLE_READ_SCHOOL,
+            codes::ACADEMIC_TIMETABLE_READ_ASSIGNED,
+        ] {
+            let granted = actor(&[permission]);
+            assert!(
+                require_timetable_list_access(&pool, &granted, TimetableAction::Read)
+                    .await
+                    .is_ok()
+            );
+            assert!(require_timetable_resources(
+                &pool,
+                &granted,
+                TimetableAction::Read,
+                &TimetableResourceSet::default()
+            )
+            .await
+            .is_ok());
+        }
+        let denied = actor(&[]);
+        assert!(matches!(
+            require_timetable_list_access(&pool, &denied, TimetableAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            require_timetable_resources(
+                &pool,
+                &denied,
+                TimetableAction::Read,
+                &TimetableResourceSet::default()
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 
     #[tokio::test]

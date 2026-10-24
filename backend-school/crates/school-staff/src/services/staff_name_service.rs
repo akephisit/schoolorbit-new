@@ -1,5 +1,6 @@
 use crate::models::{CreateStaffRequest, UpdateStaffRequest};
 use school_auth::person_names::{normalize_name_part, require_complete_name};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
@@ -33,8 +34,8 @@ pub(super) async fn normalize_updated_names(
     staff_id: Uuid,
     input: &mut UpdateStaffRequest,
 ) -> Result<(), AppError> {
-    let row=sqlx::query("SELECT title,first_name,last_name,title_en,first_name_en,last_name_en FROM users WHERE id=$1 AND user_type='staff'")
-        .bind(staff_id).fetch_one(&mut **tx).await?;
+    let row=DbSession::new(&mut **tx).query("staff.services.staff_name_service.normalize_updated_names", "SELECT title,first_name,last_name,title_en,first_name_en,last_name_en FROM users WHERE id=$1 AND user_type='staff'")
+        .bind(staff_id).fetch_one().await?;
     let before: Vec<Option<String>> = (0..6)
         .map(|index| row.try_get(index))
         .collect::<Result<_, _>>()?;

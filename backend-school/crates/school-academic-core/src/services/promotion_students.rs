@@ -1,4 +1,5 @@
 use super::super::models::{AcademicYearStatus, YearLifecycleContext};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -41,7 +42,7 @@ pub async fn read_promotion_students(
         ));
     }
     super::lifecycle_context::read_year_context(tx, target_year).await?;
-    let rows:Vec<PromotionStudentContext>=sqlx::query_as(
+    let rows:Vec<PromotionStudentContext>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_students.read_promotion_students",
         "SELECT source.id AS student_academic_year_id,source.student_id,info.student_id AS student_code,
          concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name) AS student_name,
          source.grade_level_id,source.study_program_id,source.status,source.row_version,
@@ -50,7 +51,7 @@ pub async fn read_promotion_students(
          LEFT JOIN student_info info ON info.user_id=source.student_id
          LEFT JOIN student_academic_years target ON target.student_id=source.student_id AND target.academic_year_id=$2
          WHERE source.academic_year_id=$1 AND source.id=ANY($3) ORDER BY source.id"
-    ).bind(source_year).bind(target_year).bind(students).fetch_all(&mut **tx).await?;
+    ).bind(source_year).bind(target_year).bind(students).fetch_all().await?;
     if rows.len() != students.len() {
         return Err(AppError::NotFound("ไม่พบนักเรียนครบตามปีต้นทางที่เลือก".into()));
     }
@@ -64,9 +65,9 @@ pub async fn validate_run_years(
     source_year: Uuid,
     target_year: Uuid,
 ) -> Result<(), AppError> {
-    let years: Vec<YearLifecycleContext> = sqlx::query_as(
+    let years: Vec<YearLifecycleContext> = DbSession::new(&mut **tx).query_as("academic_core.services.promotion_students.validate_run_years",
         "SELECT id AS academic_year_id,year,name,start_date,end_date,status,row_version FROM academic_years WHERE id=ANY($1) ORDER BY id FOR SHARE"
-    ).bind(vec![source_year,target_year]).fetch_all(&mut **tx).await?;
+    ).bind(vec![source_year,target_year]).fetch_all().await?;
     let source = years
         .iter()
         .find(|year| year.academic_year_id == source_year)

@@ -40,6 +40,22 @@ pub async fn can_read_staff_profile(
     .map(|_| ())
 }
 
+pub async fn can_read_staff_profile_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    target_user_id: Uuid,
+) -> Result<(), AppError> {
+    resource_access_policy::require_user_resource_access_on_connection(
+        connection,
+        actor,
+        STAFF_PROFILE_ACCESS,
+        target_user_id,
+        "ไม่มีสิทธิ์ดูข้อมูลบุคลากรนี้",
+    )
+    .await
+    .map(|_| ())
+}
+
 pub fn resolve_staff_profile_list_access(
     actor: &ActorContext,
 ) -> Result<resource_access_policy::UserResourceListAccess, AppError> {

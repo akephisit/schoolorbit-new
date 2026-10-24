@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -34,18 +35,20 @@ pub async fn published_for_term(
     academic_term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<PublishedOfferingEvidence, AppError> {
-    let references: Vec<PublishedOfferingReference> = sqlx::query_as(
-        "SELECT id,kind,starts_on,ends_on,row_version
+    let references: Vec<PublishedOfferingReference> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_delivery.services.opening.published_for_term",
+            "SELECT id,kind,starts_on,ends_on,row_version
          FROM learning_offerings
          WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
            AND starts_on<=$3 AND (ends_on IS NULL OR ends_on>=$3)
          ORDER BY id LIMIT 5001",
-    )
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .bind(on_date)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(on_date)
+        .fetch_all()
+        .await?;
     if references.len() > 5_000 {
         return Err(AppError::ValidationError(
             "รายการเปิดสอนเกิน 5,000 รายการ กรุณาติดต่อผู้ดูแลระบบ".into(),

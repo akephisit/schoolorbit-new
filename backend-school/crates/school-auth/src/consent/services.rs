@@ -80,19 +80,33 @@ pub async fn list_consent_types(
     pool: &PgPool,
     user_type: &str,
 ) -> Result<Vec<ConsentTypeResponse>, AppError> {
-    let consent_types = sqlx::query_as::<_, ConsentType>(
-        "SELECT * FROM consent_types
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.list_consent_types").await?;
+    list_consent_types_on_connection(&mut connection, user_type).await
+}
+
+pub async fn list_consent_types_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_type: &str,
+) -> Result<Vec<ConsentTypeResponse>, AppError> {
+    let consent_types = school_database::DbSession::new(&mut *connection)
+        .query_as::<ConsentType>(
+            "auth.consent.services.list_consent_types_on_connection",
+            "SELECT * FROM consent_types
          WHERE is_active = true
          AND $1 = ANY(applicable_user_types)
          ORDER BY priority DESC",
-    )
-    .bind(user_type)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+        )
+        .bind(user_type)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(consent_types
         .into_iter()
@@ -104,34 +118,49 @@ pub async fn get_user_consent_status(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<UserConsentStatus, AppError> {
-    let user_type = get_user_type(pool, user_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "auth.consent.get_user_consent_status",
+    )
+    .await?;
+    let user_type = get_user_type_on_connection(&mut connection, user_id).await?;
 
-    let required_types = sqlx::query_as::<_, ConsentType>(
-        "SELECT * FROM consent_types
+    let required_types = school_database::DbSession::new(&mut *connection)
+        .query_as::<ConsentType>(
+            "auth.consent.services.get_user_consent_status",
+            "SELECT * FROM consent_types
          WHERE is_required = true
          AND is_active = true
          AND $1 = ANY(applicable_user_types)",
-    )
-    .bind(&user_type)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+        )
+        .bind(&user_type)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
-    let consent_rows = sqlx::query_as::<_, ConsentRecordRow>(
-        "SELECT * FROM consent_records
+    let consent_rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<ConsentRecordRow>(
+            "auth.consent.services.get_user_consent_status",
+            "SELECT * FROM consent_records
          WHERE user_id = $1
          ORDER BY created_at DESC",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     let consent_responses: Vec<ConsentRecordResponse> = consent_rows
         .into_iter()
@@ -158,19 +187,27 @@ pub async fn create_consent(
     payload: CreateConsentRequest,
     context: ConsentRequestContext,
 ) -> Result<Uuid, AppError> {
-    let user_type = get_user_type(pool, user_id).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.consent.create_consent")
+            .await?;
+    let user_type = get_user_type_on_connection(&mut connection, user_id).await?;
 
-    let consent_type_data = sqlx::query_as::<_, ConsentType>(
-        "SELECT * FROM consent_types WHERE code = $1 AND is_active = true",
-    )
-    .bind(&payload.consent_type)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?
-    .ok_or(AppError::NotFound("ไม่พบประเภทความยินยอมนี้".to_string()))?;
+    let consent_type_data = school_database::DbSession::new(&mut *connection)
+        .query_as::<ConsentType>(
+            "auth.consent.services.create_consent",
+            "SELECT * FROM consent_types WHERE code = $1 AND is_active = true",
+        )
+        .bind(&payload.consent_type)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?
+        .ok_or(AppError::NotFound("ไม่พบประเภทความยินยอมนี้".to_string()))?;
 
     let expires_at = consent_type_data
         .default_duration_days
@@ -181,37 +218,42 @@ pub async fn create_consent(
         None
     };
 
-    sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO consent_records (
+    school_database::DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "auth.consent.services.create_consent",
+            "INSERT INTO consent_records (
             user_id, user_type, consent_type, purpose, data_categories,
             consent_status, granted_at, expires_at, consent_method,
             ip_address, user_agent, consent_text, consent_version,
             is_minor_consent, parent_guardian_name, parent_relationship
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING id",
-    )
-    .bind(user_id)
-    .bind(&user_type)
-    .bind(&payload.consent_type)
-    .bind(consent_type_data.description.unwrap_or_default())
-    .bind(default_consent_data_categories())
-    .bind(&payload.consent_status)
-    .bind(granted_at)
-    .bind(expires_at)
-    .bind("web_form")
-    .bind(context.ip_address)
-    .bind(context.user_agent)
-    .bind(&consent_type_data.consent_text_template)
-    .bind(&consent_type_data.consent_version)
-    .bind(payload.is_minor_consent.unwrap_or(false))
-    .bind(&payload.parent_guardian_name)
-    .bind(&payload.parent_relationship)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create consent: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกความยินยอมได้".to_string())
-    })
+        )
+        .bind(user_id)
+        .bind(&user_type)
+        .bind(&payload.consent_type)
+        .bind(consent_type_data.description.unwrap_or_default())
+        .bind(default_consent_data_categories())
+        .bind(&payload.consent_status)
+        .bind(granted_at)
+        .bind(expires_at)
+        .bind("web_form")
+        .bind(context.ip_address)
+        .bind(context.user_agent)
+        .bind(&consent_type_data.consent_text_template)
+        .bind(&consent_type_data.consent_version)
+        .bind(payload.is_minor_consent.unwrap_or(false))
+        .bind(&payload.parent_guardian_name)
+        .bind(&payload.parent_relationship)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to create consent"
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกความยินยอมได้".to_string())
+        })
 }
 
 pub async fn withdraw_consent(
@@ -219,29 +261,50 @@ pub async fn withdraw_consent(
     user_id: Uuid,
     consent_id: Uuid,
 ) -> Result<(), AppError> {
-    let consent_type: String = sqlx::query_scalar(
-        "SELECT consent_type FROM consent_records WHERE id = $1 AND user_id = $2",
-    )
-    .bind(consent_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?
-    .ok_or(AppError::NotFound("ไม่พบความยินยอมนี้".to_string()))?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.withdraw_consent").await?;
+    withdraw_consent_on_connection(&mut connection, user_id, consent_id).await
+}
 
-    let is_required: bool =
-        sqlx::query_scalar("SELECT is_required FROM consent_types WHERE code = $1")
-            .bind(&consent_type)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Database error: {}", e);
-                AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-            })?
-            .unwrap_or(false);
+pub async fn withdraw_consent_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    consent_id: Uuid,
+) -> Result<(), AppError> {
+    let consent_type: String = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "auth.consent.services.withdraw_consent_on_connection",
+            "SELECT consent_type FROM consent_records WHERE id = $1 AND user_id = $2",
+        )
+        .bind(consent_id)
+        .bind(user_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?
+        .ok_or(AppError::NotFound("ไม่พบความยินยอมนี้".to_string()))?;
+
+    let is_required: bool = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "auth.consent.services.withdraw_consent_on_connection",
+            "SELECT is_required FROM consent_types WHERE code = $1",
+        )
+        .bind(&consent_type)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?
+        .unwrap_or(false);
 
     if is_required {
         return Err(AppError::BadRequest(
@@ -249,43 +312,57 @@ pub async fn withdraw_consent(
         ));
     }
 
-    sqlx::query(
-        "UPDATE consent_records
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "auth.consent.services.withdraw_consent_on_connection",
+            "UPDATE consent_records
          SET consent_status = 'withdrawn', withdrawn_at = NOW(), updated_at = NOW()
          WHERE id = $1",
-    )
-    .bind(consent_id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to withdraw consent: {}", e);
-        AppError::InternalServerError("ไม่สามารถถอนความยินยอมได้".to_string())
-    })?;
+        )
+        .bind(consent_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to withdraw consent"
+            );
+            AppError::InternalServerError("ไม่สามารถถอนความยินยอมได้".to_string())
+        })?;
 
     Ok(())
 }
 
 pub async fn get_consent_summary(pool: &PgPool) -> Result<ConsentSummary, AppError> {
-    let total_users =
-        count_scalar(pool, "SELECT COUNT(*) FROM users WHERE status = 'active'").await?;
-    let total_consents = count_scalar(pool, "SELECT COUNT(*) FROM consent_records").await?;
-    let granted = count_scalar(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "auth.consent.get_consent_summary",
+    )
+    .await?;
+    let total_users = count_scalar_on_connection(
+        &mut connection,
+        "SELECT COUNT(*) FROM users WHERE status = 'active'",
+    )
+    .await?;
+    let total_consents =
+        count_scalar_on_connection(&mut connection, "SELECT COUNT(*) FROM consent_records").await?;
+    let granted = count_scalar_on_connection(
+        &mut connection,
         "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'granted'",
     )
     .await?;
-    let denied = count_scalar(
-        pool,
+    let denied = count_scalar_on_connection(
+        &mut connection,
         "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'denied'",
     )
     .await?;
-    let withdrawn = count_scalar(
-        pool,
+    let withdrawn = count_scalar_on_connection(
+        &mut connection,
         "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'withdrawn'",
     )
     .await?;
-    let pending = count_scalar(
-        pool,
+    let pending = count_scalar_on_connection(
+        &mut connection,
         "SELECT COUNT(*) FROM consent_records WHERE consent_status = 'pending'",
     )
     .await?;
@@ -303,23 +380,40 @@ pub async fn get_consent_summary(pool: &PgPool) -> Result<ConsentSummary, AppErr
     })
 }
 
-async fn get_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError> {
-    sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+async fn get_user_type_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<String, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "auth.consent.services.get_user_type_on_connection",
+            "SELECT user_type FROM users WHERE id = $1",
+        )
         .bind(user_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to get user type: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to get user type"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })
 }
 
-async fn count_scalar(pool: &PgPool, query: &'static str) -> Result<i64, AppError> {
-    sqlx::query_scalar(query)
-        .fetch_one(pool)
+async fn count_scalar_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: &'static str,
+) -> Result<i64, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .scalar("auth.consent.services.count_scalar_on_connection", query)
+        .fetch_one()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })
 }

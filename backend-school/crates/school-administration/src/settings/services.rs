@@ -22,11 +22,27 @@ fn settings_response_from_row(row: SchoolSettingsRow) -> SchoolSettingsResponse 
 }
 
 pub async fn get_settings_row(pool: &PgPool) -> Result<SchoolSettingsRow, AppError> {
-    sqlx::query_as::<_, SchoolSettingsRow>("SELECT logo_file_id FROM school_settings LIMIT 1")
-        .fetch_optional(pool)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.get_settings_row")
+            .await?;
+    get_settings_row_on_connection(&mut connection).await
+}
+
+pub async fn get_settings_row_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<SchoolSettingsRow, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<SchoolSettingsRow>(
+            "administration.settings.services.get_settings_row_on_connection",
+            "SELECT logo_file_id FROM school_settings LIMIT 1",
+        )
+        .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to fetch school settings: {}", error);
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to fetch school settings"
+            );
             AppError::InternalServerError("Database error".to_string())
         })
         .map(|row| row.unwrap_or_else(empty_settings_row))
@@ -75,55 +91,64 @@ pub async fn replace_logo(
     pool: &PgPool,
     new_file_id: Option<Uuid>,
 ) -> Result<Option<Uuid>, AppError> {
-    let mut transaction = pool.begin().await.map_err(database_error)?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(pool, "administration.services.transaction")
+            .await
+            .map_err(database_error)?;
 
     if let Some(file_id) = new_file_id {
-        let valid = sqlx::query_scalar::<_, bool>(
-            r#"
-SELECT EXISTS(
-    SELECT 1
+        let valid = school_database::DbSession::new(&mut *transaction)
+            .scalar::<bool>(
+                "administration.settings.services.replace_logo",
+                r#"
+SELECT true
     FROM files
     WHERE id = $1
       AND purpose_code = 'school_logo'
       AND visibility = 'public'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
-)
+    FOR UPDATE
 "#,
-        )
-        .bind(file_id)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(database_error)?;
+            )
+            .bind(file_id)
+            .fetch_optional()
+            .await
+            .map_err(database_error)
+            .map(|value| value.unwrap_or(false))?;
         if !valid {
             return Err(AppError::ValidationError(
                 "ไฟล์โลโก้ไม่พร้อมใช้งานหรือไม่ใช่โลโก้โรงเรียน".to_string(),
             ));
         }
-        sqlx::query(
+        school_database::DbSession::new(&mut *transaction).query("administration.settings.services.replace_logo",
             "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
         )
         .bind(file_id)
-        .execute(&mut *transaction)
+        .execute()
         .await
         .map_err(database_error)?;
     }
 
-    let old_file_id = sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT logo_file_id FROM school_settings LIMIT 1 FOR UPDATE",
-    )
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(database_error)?
-    .flatten();
+    let old_file_id = school_database::DbSession::new(&mut *transaction)
+        .scalar::<Option<Uuid>>(
+            "administration.settings.services.replace_logo",
+            "SELECT logo_file_id FROM school_settings LIMIT 1 FOR UPDATE",
+        )
+        .fetch_optional()
+        .await
+        .map_err(database_error)?
+        .flatten();
 
-    let updated = sqlx::query(
-        "UPDATE school_settings SET logo_path = NULL, logo_file_id = $1, updated_at = NOW()",
-    )
-    .bind(new_file_id)
-    .execute(&mut *transaction)
-    .await
-    .map_err(database_error)?;
+    let updated = school_database::DbSession::new(&mut *transaction)
+        .query(
+            "administration.settings.services.replace_logo",
+            "UPDATE school_settings SET logo_path = NULL, logo_file_id = $1, updated_at = NOW()",
+        )
+        .bind(new_file_id)
+        .execute()
+        .await
+        .map_err(database_error)?;
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบการตั้งค่าโรงเรียน".to_string()));
     }

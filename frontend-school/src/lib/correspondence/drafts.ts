@@ -23,9 +23,10 @@ export function validateSigningDraft(
 	method: string,
 	assetId: string,
 	confirmed: boolean,
-	documentRevision: number
+	documentRevision: number,
+	hasLocalImage = false
 ): string | null {
-	if (!input || !confirmed || (method === 'drawn' ? !hasInk(paths) : !assetId))
+	if (!input || !confirmed || (method === 'drawn' ? !hasInk(paths) : !assetId && !hasLocalImage))
 		return 'ระบุลายมือชื่อและยืนยันการลงนาม';
 	if (input.documentRevision !== documentRevision)
 		return 'เอกสารมีฉบับใหม่ กรุณาตรวจสอบแล้วเลือกใช้ข้อมูลล่าสุดก่อนลงนาม';

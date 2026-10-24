@@ -61,6 +61,16 @@
 		canApprove: boolean;
 		userId: string;
 	} = $props();
+	const initialIdentity = untrack(() => identity);
+	function preservesEditorNavigation(destination: URL): boolean {
+		// List filters/pagination replace the list, while this owner keeps mode,
+		// selected item and the keyed editor mounted for the same identity.
+		return (
+			identity === initialIdentity &&
+			destination.origin === page.url.origin &&
+			destination.pathname === page.url.pathname
+		);
+	}
 	const itemRequest = new LatestRequest(),
 		categoryRequest = new LatestRequest(),
 		detailRequest = new LatestRequest(),
@@ -676,6 +686,7 @@
 				</div>{/if}
 		{:else if mode === 'create' || mode === 'edit' || mode === 'propose'}{#key mode}<ItemEditor
 					bind:this={editor}
+					preservesDraftNavigation={preservesEditorNavigation}
 					{mode}
 					item={mode === 'edit' ? selected : null}
 					{categories}
@@ -684,6 +695,7 @@
 				/>{/key}
 		{:else if (mode === 'append' || mode === 'version') && selected}{#key mode}<VersionEditor
 					bind:this={actionOwner}
+					preservesDraftNavigation={preservesEditorNavigation}
 					item={selected}
 					version={mode === 'version' ? versionTarget : null}
 					append={mode === 'append'}

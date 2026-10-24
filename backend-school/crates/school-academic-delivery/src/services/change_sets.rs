@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{BTreeSet, HashMap};
 
 use chrono::{NaiveDate, Utc};
@@ -115,7 +116,19 @@ pub async fn list_change_set_summaries(
     pool: &PgPool,
     academic_term_id: Uuid,
 ) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
-    let rows = sqlx::query_as::<_, ChangeSetSummaryRow>(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.change_sets.list_change_set_summaries",
+    )
+    .await?;
+    list_change_set_summaries_on_connection(&mut connection, academic_term_id).await
+}
+
+pub async fn list_change_set_summaries_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
+    let rows = DbSession::new(connection).query_as::<ChangeSetSummaryRow>("academic_delivery.services.change_sets.list_change_set_summaries_on_connection",
         r#"SELECT id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
                   target_delivery_version_id, updated_at
            FROM academic_term_change_sets
@@ -123,7 +136,7 @@ pub async fn list_change_set_summaries(
            ORDER BY effective_from DESC, created_at DESC, id"#,
     )
     .bind(academic_term_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     rows.into_iter()
@@ -147,13 +160,29 @@ pub async fn list_change_set_summaries(
 }
 
 pub async fn get_change_set(pool: &PgPool, id: Uuid) -> Result<AcademicTermChangeSet, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.change_sets.get_change_set",
+    )
+    .await?;
+    get_change_set_on_connection(&mut connection, id).await
+}
+
+pub async fn get_change_set_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<AcademicTermChangeSet, AppError> {
     let query = format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1");
-    let row = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
+    let row = DbSession::new(connection)
+        .query_as::<ChangeSetRow>(
+            "academic_delivery.services.change_sets.get_change_set_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
-    let mut values = hydrate_many(pool, vec![row]).await?;
+    let mut values = hydrate_many(connection, vec![row]).await?;
     values
         .pop()
         .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดชุดการเปลี่ยนแปลงได้".to_string()))
@@ -163,7 +192,11 @@ pub async fn preview_change_set(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<AcademicTermChangeSetPreview, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.preview_change_set",
+    )
+    .await?;
     let preview = build_preview_in_transaction(&mut transaction, id, false, None).await?;
     transaction.rollback().await?;
     Ok(preview)
@@ -174,7 +207,11 @@ pub async fn preview_change_set_at(
     id: Uuid,
     date: Option<NaiveDate>,
 ) -> Result<AcademicTermChangeSetPreview, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.preview_change_set_at",
+    )
+    .await?;
     let result = build_preview_in_transaction(&mut tx, id, false, date).await?;
     tx.commit().await?;
     Ok(result)
@@ -216,37 +253,52 @@ pub async fn publish_change_set(
         request.idempotency_key,
     ))?;
 
-    if let Some((existing_id, existing_hash)) = sqlx::query_as::<_, (Uuid, String)>(
-        r#"SELECT id, publication_request_hash
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.change_sets.publish_change_set.preflight",
+    )
+    .await?;
+    if let Some((existing_id, existing_hash)) = DbSession::new(&mut preflight)
+        .query_as::<(Uuid, String)>(
+            "academic_delivery.services.change_sets.publish_change_set.preflight",
+            r#"SELECT id, publication_request_hash
            FROM academic_term_change_sets
            WHERE publication_idempotency_key = $1"#,
-    )
-    .bind(request.idempotency_key)
-    .fetch_optional(pool)
-    .await?
+        )
+        .bind(request.idempotency_key)
+        .fetch_optional()
+        .await?
     {
         if existing_id == id && existing_hash == publication_request_hash {
-            return get_change_set(pool, id).await;
+            return get_change_set_on_connection(&mut preflight, id).await;
         }
         return Err(AppError::Conflict(
             "idempotencyKey การเผยแพร่นี้ถูกใช้กับคำขออื่นแล้ว".to_string(),
         ));
     }
 
-    let (academic_term_id, current_status): (Uuid, AcademicTermChangeSetStatus) = sqlx::query_as(
-        "SELECT academic_term_id, status FROM academic_term_change_sets WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    let (academic_term_id, current_status): (Uuid, AcademicTermChangeSetStatus) =
+        DbSession::new(&mut preflight)
+            .query_as(
+                "academic_delivery.services.change_sets.publish_change_set.preflight",
+                "SELECT academic_term_id, status FROM academic_term_change_sets WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     if current_status != AcademicTermChangeSetStatus::Draft {
         return Err(AppError::Conflict(
             "ชุดการเปลี่ยนแปลงนี้เผยแพร่หรือยกเลิกแล้ว".to_string(),
         ));
     }
 
-    let mut transaction = pool.begin().await?;
+    drop(preflight);
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.publish_change_set",
+    )
+    .await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let preview =
         build_preview_in_transaction(&mut transaction, id, true, Some(request.effective_from))
@@ -291,42 +343,52 @@ pub async fn publish_change_set(
     }
 
     // Candidate preview is read-only. Only this locked transaction changes the draft reference.
-    sqlx::query(
-        "UPDATE academic_term_change_sets SET reference_date=$2 WHERE id=$1 AND status='draft'",
-    )
-    .bind(id)
-    .bind(request.effective_from)
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query("UPDATE academic_delivery_versions SET reference_date=$2,snapshot=academic_delivery_revision_snapshot($3,$2) WHERE id=$1 AND status='draft'")
-        .bind(preview.target_delivery_version_id).bind(request.effective_from).bind(id).execute(&mut *transaction).await?;
-    let change_set = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(format!(
-        "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1"
-    )))
-    .bind(id)
-    .fetch_one(&mut *transaction)
-    .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.publish_change_set",
+            "UPDATE academic_term_change_sets SET reference_date=$2 WHERE id=$1 AND status='draft'",
+        )
+        .bind(id)
+        .bind(request.effective_from)
+        .execute()
+        .await?;
+    DbSession::new(&mut *transaction).query("academic_delivery.services.change_sets.publish_change_set", "UPDATE academic_delivery_versions SET reference_date=$2,snapshot=academic_delivery_revision_snapshot($3,$2) WHERE id=$1 AND status='draft'")
+        .bind(preview.target_delivery_version_id).bind(request.effective_from).bind(id).execute().await?;
+    let change_set = DbSession::new(&mut *transaction)
+        .query_as::<ChangeSetRow>(
+            "academic_delivery.services.change_sets.publish_change_set",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1"
+            )),
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     let target_version_id = required_version_id(
         change_set.target_delivery_version_id,
         "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
-    let item_rows: Vec<ChangeItemRow> = sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    let item_rows: Vec<ChangeItemRow> = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.publish_change_set",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 ORDER BY id"#,
-    )
-    .bind(id)
-    .fetch_all(&mut *transaction)
-    .await?;
-    let target_graph: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
-        sqlx::query_scalar(
-            "SELECT snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE",
         )
-        .bind(target_version_id)
-        .fetch_one(&mut *transaction)
+        .bind(id)
+        .fetch_all()
         .await?;
+    let target_graph: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+        DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_delivery.services.change_sets.publish_change_set",
+                "SELECT snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE",
+            )
+            .bind(target_version_id)
+            .fetch_one()
+            .await?;
     let add_offering_ids = target_graph
         .offerings
         .iter()
@@ -339,41 +401,45 @@ pub async fn publish_change_set(
         .collect::<Vec<_>>();
 
     if !add_offering_ids.is_empty() {
-        let added_group_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM learning_groups WHERE learning_offering_id = ANY($1) ORDER BY id",
-        )
-        .bind(&add_offering_ids)
-        .fetch_all(&mut *transaction)
-        .await?;
+        let added_group_ids: Vec<Uuid> = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_delivery.services.change_sets.publish_change_set",
+                "SELECT id FROM learning_groups WHERE learning_offering_id = ANY($1) ORDER BY id",
+            )
+            .bind(&add_offering_ids)
+            .fetch_all()
+            .await?;
         if !added_group_ids.is_empty() {
-            sqlx::query(
+            DbSession::new(&mut *transaction).query("academic_delivery.services.change_sets.publish_change_set",
                 r#"UPDATE learning_groups SET status='published',row_version=row_version+1,updated_at=now()
                    WHERE id=ANY($1) AND status='draft'"#,
             )
             .bind(&added_group_ids)
-            .execute(&mut *transaction)
+            .execute()
             .await?;
         }
-        sqlx::query(
-            r#"UPDATE learning_offerings
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_delivery.services.change_sets.publish_change_set",
+                r#"UPDATE learning_offerings
                SET status = 'published', starts_on=$3, published_at = now(),
                    publish_idempotency_key = uuid_generate_v5(
                        $2, 'change-set-offering:' || id::text
                    ),
                    row_version = row_version + 1, updated_at = now()
                WHERE id = ANY($1) AND status = 'draft'"#,
-        )
-        .bind(&add_offering_ids)
-        .bind(request.idempotency_key)
-        .bind(request.effective_from)
-        .execute(&mut *transaction)
-        .await?;
-        let all_published: bool = sqlx::query_scalar(
+            )
+            .bind(&add_offering_ids)
+            .bind(request.idempotency_key)
+            .bind(request.effective_from)
+            .execute()
+            .await?;
+        let all_published: bool = DbSession::new(&mut *transaction).scalar("academic_delivery.services.change_sets.publish_change_set",
             "SELECT count(*)=$2 FROM learning_offerings WHERE id=ANY($1) AND status='published'",
         )
         .bind(&add_offering_ids)
         .bind(add_offering_ids.len() as i64)
-        .fetch_one(&mut *transaction)
+        .fetch_one()
         .await?;
         if !all_published {
             return Err(AppError::Conflict(
@@ -387,20 +453,22 @@ pub async fn publish_change_set(
             .effective_from
             .checked_sub_signed(chrono::Duration::days(1))
             .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่ถูกต้อง".to_string()))?;
-        let stopped = sqlx::query(
-            r#"UPDATE learning_offerings
+        let stopped = DbSession::new(&mut *transaction)
+            .query(
+                "academic_delivery.services.change_sets.publish_change_set",
+                r#"UPDATE learning_offerings
                SET ends_on = $1, stop_reason = $2, stopped_at = now(),
                    stopped_by = $3, stop_change_set_id = $4,
                    row_version = row_version + 1, updated_at = now()
                WHERE id = ANY($5) AND status = 'published' AND ends_on IS NULL"#,
-        )
-        .bind(ends_on)
-        .bind(&change_set.reason)
-        .bind(actor_user_id)
-        .bind(change_set.id)
-        .bind(&stop_offering_ids)
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(ends_on)
+            .bind(&change_set.reason)
+            .bind(actor_user_id)
+            .bind(change_set.id)
+            .bind(&stop_offering_ids)
+            .execute()
+            .await?;
         if stopped.rows_affected() != stop_offering_ids.len() as u64 {
             return Err(AppError::Conflict(
                 "รายการเปิดสอนที่จะหยุดเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -417,21 +485,23 @@ pub async fn publish_change_set(
         .collect::<Vec<_>>();
     super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
 
-    let published_version = sqlx::query(
-        r#"UPDATE academic_delivery_versions
+    let published_version = DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.publish_change_set",
+            r#"UPDATE academic_delivery_versions
            SET status = 'published', effective_from=$6, published_by = $1, published_at = now(),
                publication_idempotency_key=$4,publication_request_hash=$5,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $2 AND status = 'draft' AND row_version = $3"#,
-    )
-    .bind(actor_user_id)
-    .bind(target_version_id)
-    .bind(request.target_delivery_version_row_version)
-    .bind(request.idempotency_key)
-    .bind(&publication_request_hash)
-    .bind(request.effective_from)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(actor_user_id)
+        .bind(target_version_id)
+        .bind(request.target_delivery_version_row_version)
+        .bind(request.idempotency_key)
+        .bind(&publication_request_hash)
+        .bind(request.effective_from)
+        .execute()
+        .await?;
     if published_version.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "รุ่นเปิดสอนแบบร่างเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -441,23 +511,25 @@ pub async fn publish_change_set(
         .iter()
         .map(|code| finding_code_text(*code).to_string())
         .collect::<Vec<_>>();
-    let published_change_set = sqlx::query(
-        r#"UPDATE academic_term_change_sets
+    let published_change_set = DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.publish_change_set",
+            r#"UPDATE academic_term_change_sets
            SET status = 'published', effective_from=$7, published_by = $1, published_at = now(),
                publication_idempotency_key = $2, publication_request_hash = $3,
                acknowledged_warning_codes = $4,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $5 AND status = 'draft' AND row_version = $6"#,
-    )
-    .bind(actor_user_id)
-    .bind(request.idempotency_key)
-    .bind(&publication_request_hash)
-    .bind(&warning_code_values)
-    .bind(change_set.id)
-    .bind(request.row_version)
-    .bind(request.effective_from)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(actor_user_id)
+        .bind(request.idempotency_key)
+        .bind(&publication_request_hash)
+        .bind(&warning_code_values)
+        .bind(change_set.id)
+        .bind(request.row_version)
+        .bind(request.effective_from)
+        .execute()
+        .await?;
     if published_change_set.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "ชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -466,8 +538,10 @@ pub async fn publish_change_set(
     let item_count = i32::try_from(item_rows.len())
         .map_err(|_| AppError::ValidationError("จำนวนรายการเปลี่ยนแปลงมากเกินไป".to_string()))?;
 
-    sqlx::query(
-        r#"INSERT INTO academic_audit_events (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.publish_change_set",
+            r#"INSERT INTO academic_audit_events (
                event_code, entity_type, entity_id, academic_year_id,
                academic_term_id, actor_user_id, payload
            ) VALUES (
@@ -481,18 +555,18 @@ pub async fn publish_change_set(
                    'teacherEpisodeChanges', $9::jsonb
                )
            )"#,
-    )
-    .bind(change_set.id)
-    .bind(change_set.academic_year_id)
-    .bind(change_set.academic_term_id)
-    .bind(actor_user_id)
-    .bind(target_version_id)
-    .bind(change_set.effective_from)
-    .bind(item_count)
-    .bind(&publication_request_hash)
-    .bind(sqlx::types::Json(&teacher_episode_changes))
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(change_set.id)
+        .bind(change_set.academic_year_id)
+        .bind(change_set.academic_term_id)
+        .bind(actor_user_id)
+        .bind(target_version_id)
+        .bind(change_set.effective_from)
+        .bind(item_count)
+        .bind(&publication_request_hash)
+        .bind(sqlx::types::Json(&teacher_episode_changes))
+        .execute()
+        .await?;
     transaction.commit().await?;
     get_change_set(pool, id).await
 }
@@ -517,9 +591,13 @@ async fn apply_teacher_episode_changes(
     if teacher_items.is_empty() {
         return Ok(Vec::new());
     }
-    sqlx::query("SELECT set_config('schoolorbit.academic_change_set_id', $1, true)")
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.change_sets.apply_teacher_episode_changes",
+            "SELECT set_config('schoolorbit.academic_change_set_id', $1, true)",
+        )
         .bind(change_set.id.to_string())
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     teacher_items.sort_by_key(|item| {
         (
@@ -558,23 +636,27 @@ async fn apply_teacher_episode_changes(
             NaiveDate,
             Option<NaiveDate>,
             i64,
-        ) = sqlx::query_as(
-            r#"SELECT learning_group_id, teacher_id, role, starts_on, ends_on, row_version
+        ) = DbSession::new(&mut **transaction)
+            .query_as(
+                "academic_delivery.services.change_sets.apply_teacher_episode_changes",
+                r#"SELECT learning_group_id, teacher_id, role, starts_on, ends_on, row_version
                    FROM learning_group_teachers
                    WHERE id = $1
                    FOR UPDATE"#,
-        )
-        .bind(episode_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::Conflict("ช่วงการสอนเดิมไม่พบแล้ว".to_string()))?;
+            )
+            .bind(episode_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::Conflict("ช่วงการสอนเดิมไม่พบแล้ว".to_string()))?;
         if Some(before.0) != item.learning_group_id || Some(before.1) != item.teacher_id {
             return Err(AppError::Conflict(
                 "บริบทช่วงการสอนเดิมเปลี่ยนแปลงแล้ว".to_string(),
             ));
         }
-        let updated = sqlx::query(
-            r#"UPDATE learning_group_teachers
+        let updated = DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.change_sets.apply_teacher_episode_changes",
+                r#"UPDATE learning_group_teachers
                SET ends_on = $1, ended_by_change_set_id = $2,
                    row_version = row_version + 1,
                    updated_by = $3, updated_at = now()
@@ -582,14 +664,14 @@ async fn apply_teacher_episode_changes(
                  AND starts_on < $5
                  AND (ends_on IS NULL OR ends_on >= $5)
                  AND ended_by_change_set_id IS NULL"#,
-        )
-        .bind(ends_on)
-        .bind(change_set.id)
-        .bind(actor_user_id)
-        .bind(episode_id)
-        .bind(change_set.effective_from)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(ends_on)
+            .bind(change_set.id)
+            .bind(actor_user_id)
+            .bind(episode_id)
+            .bind(change_set.effective_from)
+            .execute()
+            .await?;
         if updated.rows_affected() != 1 {
             return Err(AppError::Conflict(
                 "ช่วงการสอนเดิมเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -628,24 +710,26 @@ async fn apply_teacher_episode_changes(
         let teacher_id = required_change_item_field(item.teacher_id, "รายการเพิ่มช่วงการสอนไม่มีครู")?;
         let role = required_change_item_field(item.teacher_role, "รายการเพิ่มช่วงการสอนไม่มีบทบาท")?;
         let episode_id = Uuid::new_v5(&item.id, b"delivery-teacher-episode");
-        sqlx::query(
-            r#"INSERT INTO learning_group_teachers (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.change_sets.apply_teacher_episode_changes",
+                r#"INSERT INTO learning_group_teachers (
                    id, learning_group_id, academic_term_id, academic_year_id,
                    teacher_id, role, starts_on, started_by_change_set_id,
                    created_by, updated_by
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)"#,
-        )
-        .bind(episode_id)
-        .bind(learning_group_id)
-        .bind(change_set.academic_term_id)
-        .bind(change_set.academic_year_id)
-        .bind(teacher_id)
-        .bind(role)
-        .bind(change_set.effective_from)
-        .bind(change_set.id)
-        .bind(actor_user_id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(episode_id)
+            .bind(learning_group_id)
+            .bind(change_set.academic_term_id)
+            .bind(change_set.academic_year_id)
+            .bind(teacher_id)
+            .bind(role)
+            .bind(change_set.effective_from)
+            .bind(change_set.id)
+            .bind(actor_user_id)
+            .execute()
+            .await?;
         changes.push(TeacherEpisodeAuditChange {
             action: item.action_kind,
             item_id: item.id,
@@ -684,18 +768,18 @@ async fn opening_resource_evidence(
         .iter()
         .map(|offering| offering.id)
         .collect::<BTreeSet<_>>();
-    let item_offerings: Vec<Uuid>=sqlx::query_scalar("SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND learning_offering_id IS NOT NULL")
-        .bind(revision).fetch_all(&mut **tx).await?;
+    let item_offerings: Vec<Uuid>=DbSession::new(&mut **tx).scalar("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND learning_offering_id IS NOT NULL")
+        .bind(revision).fetch_all().await?;
     offering_ids.extend(item_offerings);
     let offering_ids = offering_ids.into_iter().collect::<Vec<_>>();
-    let offerings=sqlx::query_as("SELECT id,row_version,status FROM learning_offerings WHERE id=ANY($1) ORDER BY id FOR SHARE")
-        .bind(&offering_ids).fetch_all(&mut **tx).await?;
-    let groups=sqlx::query_as("SELECT id,row_version,status FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR SHARE")
-        .bind(&offering_ids).fetch_all(&mut **tx).await?;
-    let teachers=sqlx::query_as("SELECT teacher.id,teacher.row_version,teacher.role,teacher.starts_on,teacher.ends_on FROM learning_group_teachers teacher JOIN learning_groups source_group ON source_group.id=teacher.learning_group_id WHERE source_group.learning_offering_id=ANY($1) ORDER BY teacher.id FOR SHARE OF teacher")
-        .bind(&offering_ids).fetch_all(&mut **tx).await?;
-    let items=sqlx::query_as("SELECT id,row_version FROM academic_term_change_items WHERE change_set_id=$1 ORDER BY id FOR SHARE")
-        .bind(revision).fetch_all(&mut **tx).await?;
+    let offerings=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT id,row_version,status FROM learning_offerings WHERE id=ANY($1) ORDER BY id FOR SHARE")
+        .bind(&offering_ids).fetch_all().await?;
+    let groups=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT id,row_version,status FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR SHARE")
+        .bind(&offering_ids).fetch_all().await?;
+    let teachers=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT teacher.id,teacher.row_version,teacher.role,teacher.starts_on,teacher.ends_on FROM learning_group_teachers teacher JOIN learning_groups source_group ON source_group.id=teacher.learning_group_id WHERE source_group.learning_offering_id=ANY($1) ORDER BY teacher.id FOR SHARE OF teacher")
+        .bind(&offering_ids).fetch_all().await?;
+    let items=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT id,row_version FROM academic_term_change_items WHERE change_set_id=$1 ORDER BY id FOR SHARE")
+        .bind(revision).fetch_all().await?;
     let staff_ids = snapshot
         .offerings
         .iter()
@@ -705,8 +789,8 @@ async fn opening_resource_evidence(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let staff=sqlx::query_as("SELECT id,status::text FROM users WHERE id=ANY($1) AND user_type='staff' ORDER BY id FOR SHARE")
-        .bind(&staff_ids).fetch_all(&mut **tx).await?;
+    let staff=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.opening_resource_evidence", "SELECT id,status::text FROM users WHERE id=ANY($1) AND user_type='staff' ORDER BY id FOR SHARE")
+        .bind(&staff_ids).fetch_all().await?;
     Ok(OpeningResourceEvidence {
         offerings,
         groups,
@@ -729,9 +813,13 @@ async fn build_preview_in_transaction(
     };
     let query =
         format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id=$1 {lock}");
-    let revision = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
+    let revision = DbSession::new(&mut **transaction)
+        .query_as::<ChangeSetRow>(
+            "academic_delivery.services.change_sets.build_preview_in_transaction",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นเปิดสอนแบบร่าง".into()))?;
     if revision.status != AcademicTermChangeSetStatus::Draft {
@@ -748,9 +836,13 @@ async fn build_preview_in_transaction(
         NaiveDate,
         String,
         Uuid,
-    ) = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    ) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.build_preview_in_transaction",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(target_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::Conflict("รุ่นเปิดสอนแบบร่างไม่พร้อมใช้งาน".into()))?;
     if status != "draft"
@@ -765,26 +857,36 @@ async fn build_preview_in_transaction(
     let evaluation_date = candidate_date.unwrap_or(effective_from);
     let snapshot: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
         if candidate_date.is_some() {
-            sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1,$2)")
+            DbSession::new(&mut **transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.build_preview_in_transaction",
+                    "SELECT academic_delivery_revision_snapshot($1,$2)",
+                )
                 .bind(id)
                 .bind(evaluation_date)
-                .fetch_one(&mut **transaction)
+                .fetch_one()
                 .await?
         } else {
             reference_snapshot.clone()
         };
     let effective_from = evaluation_date;
     let term = super::load_term_context(transaction, term_id).await?;
-    let year_status: AcademicYearStatus =
-        sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1")
-            .bind(term.academic_year_id)
-            .fetch_one(&mut **transaction)
-            .await?;
-    let term_status: AcademicTermStatus =
-        sqlx::query_scalar("SELECT status FROM academic_terms WHERE id=$1")
-            .bind(term_id)
-            .fetch_one(&mut **transaction)
-            .await?;
+    let year_status: AcademicYearStatus = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.build_preview_in_transaction",
+            "SELECT status FROM academic_years WHERE id=$1",
+        )
+        .bind(term.academic_year_id)
+        .fetch_one()
+        .await?;
+    let term_status: AcademicTermStatus = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.build_preview_in_transaction",
+            "SELECT status FROM academic_terms WHERE id=$1",
+        )
+        .bind(term_id)
+        .fetch_one()
+        .await?;
     let mut findings = Vec::new();
     if !(AcademicWriteState {
         year_status,
@@ -820,8 +922,8 @@ async fn build_preview_in_transaction(
             Some(id),
         ));
     }
-    let latest: Option<(Uuid,NaiveDate)> = sqlx::query_as("SELECT id,effective_from FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
-        .bind(term_id).fetch_optional(&mut **transaction).await?;
+    let latest: Option<(Uuid,NaiveDate)> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.change_sets.build_preview_in_transaction", "SELECT id,effective_from FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(term_id).fetch_optional().await?;
     if latest.is_some_and(|(latest_id, date)| {
         revision.base_delivery_version_id != Some(latest_id) || effective_from <= date
     }) {
@@ -837,9 +939,13 @@ async fn build_preview_in_transaction(
         ));
     }
     let fresh: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
-        sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1)")
+        DbSession::new(&mut **transaction)
+            .scalar(
+                "academic_delivery.services.change_sets.build_preview_in_transaction",
+                "SELECT academic_delivery_revision_snapshot($1)",
+            )
             .bind(id)
-            .fetch_one(&mut **transaction)
+            .fetch_one()
             .await?;
     if stable_hash(&reference_snapshot.0)? != stable_hash(&fresh.0)? {
         findings.push(change_finding(
@@ -855,9 +961,13 @@ async fn build_preview_in_transaction(
     }
     let unchanged = if let Some(base_id) = revision.base_delivery_version_id {
         let base: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
-            sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+            DbSession::new(&mut **transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.build_preview_in_transaction",
+                    "SELECT snapshot FROM academic_delivery_versions WHERE id=$1",
+                )
                 .bind(base_id)
-                .fetch_one(&mut **transaction)
+                .fetch_one()
                 .await?;
         stable_hash(&base.0)? == stable_hash(&snapshot.0)?
     } else {
@@ -916,13 +1026,13 @@ async fn build_preview_in_transaction(
         ));
     }
     // Pending commands must still refer to the same dated episode on the selected day.
-    let invalid_episodes: Vec<(Uuid,Uuid,Uuid)> = sqlx::query_as(
+    let invalid_episodes: Vec<(Uuid,Uuid,Uuid)> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.change_sets.build_preview_in_transaction",
         "SELECT item.learning_offering_id,item.learning_group_id,item.learning_group_teacher_id
          FROM academic_term_change_items item LEFT JOIN learning_group_teachers episode ON episode.id=item.learning_group_teacher_id
          WHERE item.change_set_id=$1 AND item.action_kind IN('adjust_group_teacher_role','stop_group_teacher')
            AND (episode.id IS NULL OR episode.learning_group_id<>item.learning_group_id OR episode.teacher_id<>item.teacher_id
                 OR episode.academic_term_id<>$3 OR episode.starts_on>=$2 OR (episode.ends_on IS NOT NULL AND episode.ends_on<$2)) ORDER BY item.id")
-        .bind(id).bind(effective_from).bind(term_id).fetch_all(&mut **transaction).await?;
+        .bind(id).bind(effective_from).bind(term_id).fetch_all().await?;
     for (offering, group, episode) in invalid_episodes {
         findings.push(change_finding(
             AcademicChangeFindingCode::MissingEffectiveTeacher,
@@ -963,8 +1073,8 @@ async fn build_preview_in_transaction(
             Some(target_id),
         ));
     }
-    let stop_ids: Vec<Uuid> = sqlx::query_scalar("SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND action_kind='stop_offering' ORDER BY learning_offering_id")
-        .bind(id).fetch_all(&mut **transaction).await?;
+    let stop_ids: Vec<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.build_preview_in_transaction", "SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND action_kind='stop_offering' ORDER BY learning_offering_id")
+        .bind(id).fetch_all().await?;
     let impacts = load_stop_impact_counts(
         transaction,
         revision.base_delivery_version_id.unwrap_or(Uuid::nil()),
@@ -992,16 +1102,22 @@ async fn build_preview_in_transaction(
     }
     let base_graph: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
         if let Some(base) = revision.base_delivery_version_id {
-            sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+            DbSession::new(&mut **transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.build_preview_in_transaction",
+                    "SELECT snapshot FROM academic_delivery_versions WHERE id=$1",
+                )
                 .bind(base)
-                .fetch_one(&mut **transaction)
+                .fetch_one()
                 .await?
         } else {
             sqlx::types::Json(crate::models::versions::DeliverySnapshot { offerings: vec![] })
         };
-    let labels =
-        super::version_changes::load_labels(&mut **transaction, &[&base_graph.0, &snapshot.0])
-            .await?;
+    let labels = super::version_changes::load_labels_on_connection(
+        &mut **transaction,
+        &[&base_graph.0, &snapshot.0],
+    )
+    .await?;
     let changes = super::version_changes::compare(&base_graph.0, &snapshot.0, &labels);
     let preview_hash = stable_hash(&(
         candidate_date.is_some(),
@@ -1039,7 +1155,7 @@ async fn load_stop_impact_counts(
     if stop_offering_ids.is_empty() {
         return Ok(AcademicChangeImpactCounts::default());
     }
-    let row = sqlx::query(
+    let row = DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.load_stop_impact_counts",
         r#"SELECT
              (SELECT count(*) FROM learning_groups
                 WHERE learning_offering_id = ANY($1)) AS groups,
@@ -1142,7 +1258,7 @@ async fn load_stop_impact_counts(
     )
     .bind(stop_offering_ids)
     .bind(base_version_id)
-    .fetch_one(&mut **transaction)
+    .fetch_one()
     .await?;
     Ok(AcademicChangeImpactCounts {
         groups: row.get("groups"),
@@ -1210,7 +1326,11 @@ pub async fn create_change_set(
     actor_user_id: Uuid,
     request: CreateAcademicTermChangeSetRequest,
 ) -> Result<AcademicTermChangeSet, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.create_change_set",
+    )
+    .await?;
     let id = create_change_set_in_transaction(&mut tx, actor_user_id, request).await?;
     tx.commit().await?;
     get_change_set(pool, id).await
@@ -1228,16 +1348,16 @@ pub async fn create_change_set_in_transaction(
     })?;
     let term = require_writable_term(transaction, request.academic_term_id, true).await?;
 
-    if let Some((existing_id,existing_hash)) = sqlx::query_as::<_, (Uuid,String)>(
+    if let Some((existing_id,existing_hash)) = DbSession::new(&mut **transaction).query_as::<(Uuid,String)>("academic_delivery.services.change_sets.create_change_set_in_transaction",
         "SELECT id,creation_request_hash FROM academic_term_change_sets WHERE academic_term_id=$1 AND idempotency_key=$2"
-    ).bind(term.id).bind(request.idempotency_key.to_string()).fetch_optional(&mut **transaction).await? {
+    ).bind(term.id).bind(request.idempotency_key.to_string()).fetch_optional().await? {
         if existing_hash!=request_hash { return Err(AppError::Conflict("idempotencyKey นี้ถูกใช้กับคำขออื่นแล้ว".into())); }
         return Ok(existing_id);
     }
-    let base_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1 FOR SHARE")
-        .bind(term.id).fetch_optional(&mut **transaction).await?;
-    let latest_date: Option<NaiveDate>=sqlx::query_scalar("SELECT max(effective_from) FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
-        .bind(term.id).fetch_one(&mut **transaction).await?;
+    let base_id: Option<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1 FOR SHARE")
+        .bind(term.id).fetch_optional().await?;
+    let latest_date: Option<NaiveDate>=DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT max(effective_from) FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
+        .bind(term.id).fetch_one().await?;
     let reference_date = term
         .start_date
         .max(bangkok_today())
@@ -1249,21 +1369,21 @@ pub async fn create_change_set_in_transaction(
         .min(term.academic_year_end_date);
     let revision_id = Uuid::now_v7();
     let target_id = Uuid::now_v7();
-    sqlx::query(r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
+    DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
         VALUES($1,$2,$3,$4,$5,'{"offerings":[]}'::jsonb,$6)"#)
         .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(reference_date).bind(actor_user_id)
-        .execute(&mut **transaction).await?;
-    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
+        .execute().await?;
+    DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", "INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(reference_date).bind(&reason)
         .bind(request.idempotency_key.to_string()).bind(&request_hash).bind(actor_user_id).bind(base_id).bind(target_id)
-        .execute(&mut **transaction).await?;
+        .execute().await?;
     versions::refresh_revision_snapshot(transaction, revision_id).await?;
-    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload)
+    DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload)
         VALUES('academic_delivery_version.created','academic_delivery_version',$1,$2,$3,$4,$5)")
         .bind(target_id).bind(term.academic_year_id).bind(term.id).bind(actor_user_id)
         .bind(sqlx::types::Json(serde_json::json!({"changeSetId":revision_id,"sourceVersionId":base_id,"referenceDate":reference_date,"requestHash":request_hash})))
-        .execute(&mut **transaction).await?;
+        .execute().await?;
     Ok(revision_id)
 }
 
@@ -1275,13 +1395,20 @@ pub async fn update_change_set(
 ) -> Result<AcademicTermChangeSet, AppError> {
     validate_row_version(request.row_version)?;
     let reason = normalized_reason(&request.reason)?;
-    let mut transaction = pool.begin().await?;
-    let academic_term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.update_change_set",
+    )
+    .await?;
+    let academic_term_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.update_change_set",
+            "SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     let term = require_writable_term(&mut transaction, academic_term_id, true).await?;
     validate_effective_date(&term, request.reference_date)?;
     let row = require_draft_change_set_for_update(&mut transaction, id).await?;
@@ -1295,26 +1422,33 @@ pub async fn update_change_set(
         "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
     if request.reference_date != row.effective_from {
-        sqlx::query("UPDATE academic_delivery_versions SET reference_date=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 AND status='draft'")
-            .bind(request.reference_date).bind(target_version_id).execute(&mut *transaction).await?;
+        DbSession::new(&mut *transaction).query("academic_delivery.services.change_sets.update_change_set", "UPDATE academic_delivery_versions SET reference_date=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 AND status='draft'")
+            .bind(request.reference_date).bind(target_version_id).execute().await?;
     }
 
-    sqlx::query(
-        r#"UPDATE academic_term_change_sets
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.update_change_set",
+            r#"UPDATE academic_term_change_sets
            SET reference_date = $1, reason = $2,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $3"#,
-    )
-    .bind(request.reference_date)
-    .bind(&reason)
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.reference_date)
+        .bind(&reason)
+        .bind(id)
+        .execute()
+        .await?;
     versions::refresh_revision_snapshot(&mut transaction, id).await?;
     transaction.commit().await?;
 
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.change_sets.update_change_set.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "academic_term_change_set.updated",
         "academic_term_change_set",
         id,
@@ -1327,7 +1461,7 @@ pub async fn update_change_set(
         }),
     )
     .await?;
-    get_change_set(pool, id).await
+    get_change_set_on_connection(&mut completion, id).await
 }
 
 pub async fn delete_version(
@@ -1336,7 +1470,11 @@ pub async fn delete_version(
     id: Uuid,
     request: crate::models::versions::DeleteDeliveryVersionRequest,
 ) -> Result<crate::models::versions::DeletedDeliveryVersion, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.delete_version",
+    )
+    .await?;
     let result = delete_version_in_transaction(&mut tx, actor, id, &request, true).await?;
     tx.commit().await?;
     Ok(result)
@@ -1353,14 +1491,17 @@ pub async fn delete_version_in_transaction(
     use crate::models::versions::DeletedDeliveryVersion;
     validate_row_version(request.row_version)?;
     validate_row_version(request.change_set_row_version)?;
-    let term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_delivery_versions WHERE id=$1")
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound("รุ่นเปิดสอนถูกลบแล้ว".into()))?;
+    let term_id: Uuid = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.change_sets.delete_version_in_transaction",
+            "SELECT academic_term_id FROM academic_delivery_versions WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("รุ่นเปิดสอนถูกลบแล้ว".into()))?;
     require_writable_term(tx, term_id, true).await?;
-    let (status,revision,source,snapshot):(String,i64,Option<Uuid>,sqlx::types::Json<crate::models::versions::DeliverySnapshot>)=sqlx::query_as("SELECT status,row_version,source_version_id,snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_one(&mut **tx).await?;
+    let (status,revision,source,snapshot):(String,i64,Option<Uuid>,sqlx::types::Json<crate::models::versions::DeliverySnapshot>)=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.delete_version_in_transaction", "SELECT status,row_version,source_version_id,snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_one().await?;
     if !matches!(status.as_str(), "draft" | "cancelled") {
         return Err(AppError::Conflict(
             "ลบได้เฉพาะรุ่นเปิดสอนแบบร่างหรือที่ยกเลิกแล้ว".into(),
@@ -1371,28 +1512,30 @@ pub async fn delete_version_in_transaction(
             "รุ่นเปิดสอนเปลี่ยนไป กรุณาโหลดใหม่ก่อนลบ".into(),
         ));
     }
-    let row:ChangeSetRow=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE target_delivery_version_id=$1 FOR UPDATE"))).bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::Conflict("ไม่พบร่างคำสั่งที่ตรงกับรุ่นเปิดสอน".into()))?;
+    let row:ChangeSetRow=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.delete_version_in_transaction", sqlx::AssertSqlSafe(format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE target_delivery_version_id=$1 FOR UPDATE"))).bind(id).fetch_optional().await?.ok_or_else(||AppError::Conflict("ไม่พบร่างคำสั่งที่ตรงกับรุ่นเปิดสอน".into()))?;
     if (row.status == AcademicTermChangeSetStatus::Draft) != (status == "draft")
         || row.status == AcademicTermChangeSetStatus::Published
         || row.row_version != request.change_set_row_version
     {
         return Err(AppError::Conflict("ร่างคำสั่งเปลี่ยนไป กรุณาโหลดใหม่ก่อนลบ".into()));
     }
-    let (dependent,history):(bool,bool)=sqlx::query_as("SELECT
+    let (dependent,history):(bool,bool)=DbSession::new(&mut **tx).query_as("academic_delivery.services.change_sets.delete_version_in_transaction", "SELECT
         EXISTS(SELECT 1 FROM academic_timetable_versions WHERE delivery_version_id=$1) OR EXISTS(SELECT 1 FROM academic_delivery_versions WHERE source_version_id=$1) OR EXISTS(SELECT 1 FROM academic_term_change_sets WHERE base_delivery_version_id=$1),
         EXISTS(SELECT 1 FROM academic_teacher_handoff_runs WHERE change_set_id=$2) OR EXISTS(SELECT 1 FROM learning_group_teachers WHERE started_by_change_set_id=$2 OR ended_by_change_set_id=$2) OR EXISTS(SELECT 1 FROM learning_offerings WHERE stop_change_set_id=$2) OR EXISTS(SELECT 1 FROM academic_term_preparation_runs run,jsonb_array_elements(run.outcome) outcome WHERE outcome->'targetIds' @> jsonb_build_array($1::text) OR outcome->'targetIds' @> jsonb_build_array($2::text))")
-        .bind(id).bind(row.id).fetch_one(&mut **tx).await?;
+        .bind(id).bind(row.id).fetch_one().await?;
     if dependent || history {
         return Err(AppError::Conflict(
             "ลบรุ่นเปิดสอนไม่ได้: มีรุ่นอื่นหรือประวัติการทำงานอ้างอิง".into(),
         ));
     }
-    let item_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1",
-    )
-    .bind(row.id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let item_count: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.change_sets.delete_version_in_transaction",
+            "SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1",
+        )
+        .bind(row.id)
+        .fetch_one()
+        .await?;
     let offering_count = snapshot.offerings.len() as i64;
     let group_count = snapshot
         .offerings
@@ -1410,55 +1553,65 @@ pub async fn delete_version_in_transaction(
             "จำนวนรายการในร่างเปลี่ยนไป กรุณายืนยันการลบอีกครั้ง".into(),
         ));
     }
-    let exclusive:Vec<Uuid>=sqlx::query_scalar("SELECT offering.id FROM learning_offerings offering JOIN academic_term_change_items item ON item.learning_offering_id=offering.id WHERE item.change_set_id=$1 AND item.action_kind='add_offering' AND offering.status IN('draft','cancelled') ORDER BY offering.id FOR UPDATE OF offering").bind(row.id).fetch_all(&mut **tx).await?;
+    let exclusive:Vec<Uuid>=DbSession::new(&mut **tx).scalar("academic_delivery.services.change_sets.delete_version_in_transaction", "SELECT offering.id FROM learning_offerings offering JOIN academic_term_change_items item ON item.learning_offering_id=offering.id WHERE item.change_set_id=$1 AND item.action_kind='add_offering' AND offering.status IN('draft','cancelled') ORDER BY offering.id FOR UPDATE OF offering").bind(row.id).fetch_all().await?;
     for offering in &exclusive {
         require_unpublished_only_delete(tx, *offering).await?;
-        let shared:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_term_change_items WHERE learning_offering_id=$1 AND change_set_id<>$2) OR EXISTS(SELECT 1 FROM academic_delivery_versions version,jsonb_array_elements(version.snapshot->'offerings') o WHERE version.id<>$3 AND (o->>'id')::uuid=$1) OR EXISTS(SELECT 1 FROM learning_group_students member JOIN learning_groups g ON g.id=member.learning_group_id WHERE g.learning_offering_id=$1)").bind(offering).bind(row.id).bind(id).fetch_one(&mut **tx).await?;
+        let shared:bool=DbSession::new(&mut **tx).scalar("academic_delivery.services.change_sets.delete_version_in_transaction", "SELECT EXISTS(SELECT 1 FROM academic_term_change_items WHERE learning_offering_id=$1 AND change_set_id<>$2) OR EXISTS(SELECT 1 FROM academic_delivery_versions version,jsonb_array_elements(version.snapshot->'offerings') o WHERE version.id<>$3 AND (o->>'id')::uuid=$1) OR EXISTS(SELECT 1 FROM learning_group_students member JOIN learning_groups g ON g.id=member.learning_group_id WHERE g.learning_offering_id=$1)").bind(offering).bind(row.id).bind(id).fetch_one().await?;
         if shared {
             return Err(AppError::Conflict(
                 "ลบรุ่นเปิดสอนไม่ได้: รายวิชาหรือกลุ่มที่ร่างสร้างมีข้อมูลอื่นใช้อยู่".into(),
             ));
         }
     }
-    let deleted_groups: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM learning_groups WHERE learning_offering_id=ANY($1)",
-    )
-    .bind(&exclusive)
-    .fetch_one(&mut **tx)
-    .await?;
+    let deleted_groups: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.change_sets.delete_version_in_transaction",
+            "SELECT count(*) FROM learning_groups WHERE learning_offering_id=ANY($1)",
+        )
+        .bind(&exclusive)
+        .fetch_one()
+        .await?;
     if apply {
-        sqlx::query("DELETE FROM academic_term_change_items WHERE change_set_id=$1")
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_delivery.services.change_sets.delete_version_in_transaction",
+                "DELETE FROM academic_term_change_items WHERE change_set_id=$1",
+            )
             .bind(row.id)
-            .execute(&mut **tx)
+            .execute()
             .await
             .map_err(deletion_error)?;
-        sqlx::query(
+        DbSession::new(&mut **tx).query("academic_delivery.services.change_sets.delete_version_in_transaction",
             "DELETE FROM academic_term_change_sets WHERE id=$1 AND status IN('draft','cancelled')",
         )
         .bind(row.id)
-        .execute(&mut **tx)
+        .execute()
         .await
         .map_err(deletion_error)?;
-        sqlx::query(
+        DbSession::new(&mut **tx).query("academic_delivery.services.change_sets.delete_version_in_transaction",
             "DELETE FROM academic_delivery_versions WHERE id=$1 AND status IN('draft','cancelled')",
         )
         .bind(id)
-        .execute(&mut **tx)
+        .execute()
         .await
         .map_err(deletion_error)?;
-        sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id=ANY($1)")
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_delivery.services.change_sets.delete_version_in_transaction",
+                "DELETE FROM learning_groups WHERE learning_offering_id=ANY($1)",
+            )
             .bind(&exclusive)
-            .execute(&mut **tx)
+            .execute()
             .await
             .map_err(deletion_error)?;
-        sqlx::query(
+        DbSession::new(&mut **tx).query("academic_delivery.services.change_sets.delete_version_in_transaction",
             "DELETE FROM learning_offerings WHERE id=ANY($1) AND status IN('draft','cancelled')",
         )
         .bind(&exclusive)
-        .execute(&mut **tx)
+        .execute()
         .await
         .map_err(deletion_error)?;
-        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_delivery_version.deleted','academic_delivery_version',$1,$2,$3,$4,$5)").bind(id).bind(row.academic_year_id).bind(term_id).bind(actor).bind(sqlx::types::Json(serde_json::json!({"changeSetId":row.id,"sourceVersionId":source,"deletedItemCount":item_count,"deletedOfferingCount":exclusive.len(),"deletedGroupCount":deleted_groups,"previousStatus":status}))).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("academic_delivery.services.change_sets.delete_version_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_delivery_version.deleted','academic_delivery_version',$1,$2,$3,$4,$5)").bind(id).bind(row.academic_year_id).bind(term_id).bind(actor).bind(sqlx::types::Json(serde_json::json!({"changeSetId":row.id,"sourceVersionId":source,"deletedItemCount":item_count,"deletedOfferingCount":exclusive.len(),"deletedGroupCount":deleted_groups,"previousStatus":status}))).execute().await?;
     }
     Ok(DeletedDeliveryVersion {
         id,
@@ -1486,13 +1639,20 @@ pub async fn upsert_change_item(
 ) -> Result<AcademicTermChangeSet, AppError> {
     let expected_change_set_row_version = request.change_set_row_version();
     validate_row_version(expected_change_set_row_version)?;
-    let mut transaction = pool.begin().await?;
-    let academic_term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1")
-            .bind(change_set_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.upsert_change_item",
+    )
+    .await?;
+    let academic_term_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.upsert_change_item",
+            "SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1",
+        )
+        .bind(change_set_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     let term = require_writable_term(&mut transaction, academic_term_id, true).await?;
     let row = require_draft_change_set_for_update(&mut transaction, change_set_id).await?;
     if row.row_version != expected_change_set_row_version {
@@ -1512,11 +1672,14 @@ pub async fn upsert_change_item(
             let offering_id = Uuid::now_v7();
             offerings::insert_course(&mut transaction, offering_id, &term, offering).await?;
             set_added_offering_start(&mut transaction, offering_id, row.effective_from).await?;
-            let weekly_period_target: i32 =
-                sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
-                    .bind(subject_version_id)
-                    .fetch_one(&mut *transaction)
-                    .await?;
+            let weekly_period_target: i32 = DbSession::new(&mut *transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.upsert_change_item",
+                    "SELECT periods_per_week FROM subject_versions WHERE id = $1",
+                )
+                .bind(subject_version_id)
+                .fetch_one()
+                .await?;
             create_default_draft_groups(&mut transaction, offering_id, &term).await?;
             let item_id = insert_change_item(
                 &mut transaction,
@@ -1644,16 +1807,18 @@ pub async fn upsert_change_item(
                         "รายการปรับจำนวนคาบถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
                     ));
                 }
-                sqlx::query(
-                    r#"UPDATE academic_term_change_items
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_delivery.services.change_sets.upsert_change_item",
+                        r#"UPDATE academic_term_change_items
                        SET weekly_period_target = $1, row_version = row_version + 1,
                            updated_at = now()
                        WHERE id = $2"#,
-                )
-                .bind(weekly_period_target)
-                .bind(existing.id)
-                .execute(&mut *transaction)
-                .await?;
+                    )
+                    .bind(weekly_period_target)
+                    .bind(existing.id)
+                    .execute()
+                    .await?;
                 (existing.id, "adjust_weekly_period_target", false)
             } else {
                 if item_row_version.is_some() {
@@ -1683,8 +1848,10 @@ pub async fn upsert_change_item(
         } => {
             require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
             require_active_staff(&mut transaction, teacher_id).await?;
-            let overlapping_episode_id: Option<Uuid> = sqlx::query_scalar(
-                r#"SELECT id
+            let overlapping_episode_id: Option<Uuid> = DbSession::new(&mut *transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.upsert_change_item",
+                    r#"SELECT id
                    FROM learning_group_teachers
                    WHERE learning_group_id = $1
                      AND teacher_id = $2
@@ -1693,25 +1860,27 @@ pub async fn upsert_change_item(
                    ORDER BY starts_on DESC, id
                    LIMIT 1
                    FOR UPDATE"#,
-            )
-            .bind(learning_group_id)
-            .bind(teacher_id)
-            .bind(row.effective_from)
-            .fetch_optional(&mut *transaction)
-            .await?;
+                )
+                .bind(learning_group_id)
+                .bind(teacher_id)
+                .bind(row.effective_from)
+                .fetch_optional()
+                .await?;
             if let Some(episode_id) = overlapping_episode_id {
-                let has_matching_stop: bool = sqlx::query_scalar(
-                    r#"SELECT EXISTS (
+                let has_matching_stop: bool = DbSession::new(&mut *transaction)
+                    .scalar(
+                        "academic_delivery.services.change_sets.upsert_change_item",
+                        r#"SELECT EXISTS (
                            SELECT 1 FROM academic_term_change_items
                            WHERE change_set_id = $1
                              AND action_kind = 'stop_group_teacher'
                              AND learning_group_teacher_id = $2
                        )"#,
-                )
-                .bind(change_set_id)
-                .bind(episode_id)
-                .fetch_one(&mut *transaction)
-                .await?;
+                    )
+                    .bind(change_set_id)
+                    .bind(episode_id)
+                    .fetch_one()
+                    .await?;
                 if !has_matching_stop {
                     return Err(AppError::Conflict(
                         "ครูคนนี้มีช่วงการสอนที่ครอบคลุมวันที่เริ่มใช้แล้ว".to_string(),
@@ -1734,16 +1903,18 @@ pub async fn upsert_change_item(
                 if existing.teacher_role == Some(teacher_role) {
                     (existing.id, "add_group_teacher", true)
                 } else {
-                    sqlx::query(
-                        r#"UPDATE academic_term_change_items
+                    DbSession::new(&mut *transaction)
+                        .query(
+                            "academic_delivery.services.change_sets.upsert_change_item",
+                            r#"UPDATE academic_term_change_items
                            SET teacher_role = $1, row_version = row_version + 1,
                                updated_at = now()
                            WHERE id = $2"#,
-                    )
-                    .bind(teacher_role)
-                    .bind(existing.id)
-                    .execute(&mut *transaction)
-                    .await?;
+                        )
+                        .bind(teacher_role)
+                        .bind(existing.id)
+                        .execute()
+                        .await?;
                     (existing.id, "add_group_teacher", false)
                 }
             } else {
@@ -1810,16 +1981,18 @@ pub async fn upsert_change_item(
                 if existing.teacher_role == Some(teacher_role) {
                     (existing.id, "adjust_group_teacher_role", true)
                 } else {
-                    sqlx::query(
-                        r#"UPDATE academic_term_change_items
+                    DbSession::new(&mut *transaction)
+                        .query(
+                            "academic_delivery.services.change_sets.upsert_change_item",
+                            r#"UPDATE academic_term_change_items
                            SET teacher_role = $1, row_version = row_version + 1,
                                updated_at = now()
                            WHERE id = $2"#,
-                    )
-                    .bind(teacher_role)
-                    .bind(existing.id)
-                    .execute(&mut *transaction)
-                    .await?;
+                        )
+                        .bind(teacher_role)
+                        .bind(existing.id)
+                        .execute()
+                        .await?;
                     (existing.id, "adjust_group_teacher_role", false)
                 }
             } else {
@@ -1911,8 +2084,13 @@ pub async fn upsert_change_item(
     }
     increment_change_set_revision(&mut transaction, change_set_id).await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.change_sets.upsert_change_item.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "academic_term_change_item.upserted",
         "academic_term_change_item",
         item_id,
@@ -1926,7 +2104,7 @@ pub async fn upsert_change_item(
         }),
     )
     .await?;
-    get_change_set(pool, change_set_id).await
+    get_change_set_on_connection(&mut completion, change_set_id).await
 }
 
 pub async fn delete_change_item(
@@ -1938,13 +2116,20 @@ pub async fn delete_change_item(
 ) -> Result<AcademicTermChangeSet, AppError> {
     validate_row_version(request.change_set_row_version)?;
     validate_row_version(request.item_row_version)?;
-    let mut transaction = pool.begin().await?;
-    let academic_term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1")
-            .bind(change_set_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.change_sets.delete_change_item",
+    )
+    .await?;
+    let academic_term_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.delete_change_item",
+            "SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1",
+        )
+        .bind(change_set_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let row = require_draft_change_set_for_update(&mut transaction, change_set_id).await?;
     if row.row_version != request.change_set_row_version {
@@ -1964,50 +2149,77 @@ pub async fn delete_change_item(
                 item.learning_offering_id,
                 "รายการเพิ่มการเปิดสอนไม่มีรายการเปิดสอน",
             )?;
-            let is_draft: bool = sqlx::query_scalar(
-                "SELECT status='draft' FROM learning_offerings WHERE id=$1 FOR UPDATE",
-            )
-            .bind(offering_id)
-            .fetch_one(&mut *transaction)
-            .await?;
+            let is_draft: bool = DbSession::new(&mut *transaction)
+                .scalar(
+                    "academic_delivery.services.change_sets.delete_change_item",
+                    "SELECT status='draft' FROM learning_offerings WHERE id=$1 FOR UPDATE",
+                )
+                .bind(offering_id)
+                .fetch_one()
+                .await?;
             if is_draft {
                 require_unpublished_only_delete(&mut transaction, offering_id).await?;
             }
-            sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_delivery.services.change_sets.delete_change_item",
+                    "DELETE FROM academic_term_change_items WHERE id = $1",
+                )
                 .bind(item.id)
-                .execute(&mut *transaction)
+                .execute()
                 .await?;
             if is_draft {
-                sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id = $1")
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_delivery.services.change_sets.delete_change_item",
+                        "DELETE FROM learning_groups WHERE learning_offering_id = $1",
+                    )
                     .bind(offering_id)
-                    .execute(&mut *transaction)
+                    .execute()
                     .await?;
-                sqlx::query("DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'")
+                DbSession::new(&mut *transaction)
+                    .query(
+                        "academic_delivery.services.change_sets.delete_change_item",
+                        "DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'",
+                    )
                     .bind(offering_id)
-                    .execute(&mut *transaction)
+                    .execute()
                     .await?;
             }
         }
         AcademicTermChangeActionKind::StopOffering
         | AcademicTermChangeActionKind::AdjustWeeklyPeriodTarget => {
-            sqlx::query("DELETE FROM academic_term_change_items WHERE id=$1")
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_delivery.services.change_sets.delete_change_item",
+                    "DELETE FROM academic_term_change_items WHERE id=$1",
+                )
                 .bind(item.id)
-                .execute(&mut *transaction)
+                .execute()
                 .await?;
         }
         AcademicTermChangeActionKind::AddGroupTeacher
         | AcademicTermChangeActionKind::AdjustGroupTeacherRole
         | AcademicTermChangeActionKind::StopGroupTeacher => {
-            sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_delivery.services.change_sets.delete_change_item",
+                    "DELETE FROM academic_term_change_items WHERE id = $1",
+                )
                 .bind(item.id)
-                .execute(&mut *transaction)
+                .execute()
                 .await?;
         }
     }
     increment_change_set_revision(&mut transaction, change_set_id).await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.change_sets.delete_change_item.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "academic_term_change_item.deleted",
         "academic_term_change_item",
         item_id,
@@ -2024,7 +2236,7 @@ pub async fn delete_change_item(
         }),
     )
     .await?;
-    get_change_set(pool, change_set_id).await
+    get_change_set_on_connection(&mut completion, change_set_id).await
 }
 
 async fn set_added_offering_start(
@@ -2032,10 +2244,14 @@ async fn set_added_offering_start(
     offering_id: Uuid,
     effective_from: NaiveDate,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE learning_offerings SET starts_on = $1, updated_at = now() WHERE id = $2")
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.change_sets.set_added_offering_start",
+            "UPDATE learning_offerings SET starts_on = $1, updated_at = now() WHERE id = $2",
+        )
         .bind(effective_from)
         .bind(offering_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     Ok(())
 }
@@ -2046,17 +2262,19 @@ async fn require_snapshot_offering(
     offering_id: Uuid,
 ) -> Result<LearningOfferingKind, AppError> {
     let version_id = required_version_id(version_id, "ไม่พบรุ่นเปิดสอนแบบร่าง")?;
-    sqlx::query_scalar(
-        "SELECT offering->>'kind'
+    DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.require_snapshot_offering",
+            "SELECT offering->>'kind'
         FROM academic_delivery_versions version,
         jsonb_array_elements(version.snapshot->'offerings') offering
         WHERE version.id=$1 AND version.status='draft' AND (offering->>'id')::uuid=$2",
-    )
-    .bind(version_id)
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::Conflict("รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่าง".into()))
+        )
+        .bind(version_id)
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Conflict("รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่าง".into()))
 }
 
 async fn create_default_draft_groups(
@@ -2064,13 +2282,18 @@ async fn create_default_draft_groups(
     offering_id: Uuid,
     term: &TermContext,
 ) -> Result<Vec<Uuid>, AppError> {
-    let offering_name: String =
-        sqlx::query_scalar("SELECT name_snapshot FROM learning_offerings WHERE id = $1")
-            .bind(offering_id)
-            .fetch_one(&mut **transaction)
-            .await?;
-    let homerooms: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT homeroom.id, homeroom.name
+    let offering_name: String = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.create_default_draft_groups",
+            "SELECT name_snapshot FROM learning_offerings WHERE id = $1",
+        )
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
+    let homerooms: Vec<(Uuid, String)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.create_default_draft_groups",
+            r#"SELECT DISTINCT homeroom.id, homeroom.name
            FROM learning_offering_targets target
            JOIN homerooms homeroom
              ON homeroom.academic_year_id = target.academic_year_id
@@ -2083,42 +2306,46 @@ async fn create_default_draft_groups(
             )
            WHERE target.learning_offering_id = $1
            ORDER BY homeroom.name, homeroom.id"#,
-    )
-    .bind(offering_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(offering_id)
+        .fetch_all()
+        .await?;
     let mut group_ids = Vec::with_capacity(homerooms.len());
     for (index, (homeroom_id, homeroom_name)) in homerooms.into_iter().enumerate() {
         let group_id = Uuid::now_v7();
         let suffix = i32::try_from(index + 1)
             .map_err(|_| AppError::ValidationError("จำนวนกลุ่มเรียนมากเกินไป".to_string()))?;
-        sqlx::query(
-            r#"INSERT INTO learning_groups (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.change_sets.create_default_draft_groups",
+                r#"INSERT INTO learning_groups (
                    id, learning_offering_id, academic_term_id, academic_year_id,
                    code, name, status, roster_status
                ) VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'draft')"#,
-        )
-        .bind(group_id)
-        .bind(offering_id)
-        .bind(term.id)
-        .bind(term.academic_year_id)
-        .bind(format!("MID-{suffix:03}"))
-        .bind(format!("{} · {}", offering_name, homeroom_name))
-        .execute(&mut **transaction)
-        .await?;
-        sqlx::query(
-            r#"INSERT INTO learning_group_homerooms (
+            )
+            .bind(group_id)
+            .bind(offering_id)
+            .bind(term.id)
+            .bind(term.academic_year_id)
+            .bind(format!("MID-{suffix:03}"))
+            .bind(format!("{} · {}", offering_name, homeroom_name))
+            .execute()
+            .await?;
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.change_sets.create_default_draft_groups",
+                r#"INSERT INTO learning_group_homerooms (
                    id, learning_group_id, academic_term_id, academic_year_id,
                    homeroom_id, coverage_source
                ) VALUES ($1, $2, $3, $4, $5, 'operational_change')"#,
-        )
-        .bind(Uuid::now_v7())
-        .bind(group_id)
-        .bind(term.id)
-        .bind(term.academic_year_id)
-        .bind(homeroom_id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(Uuid::now_v7())
+            .bind(group_id)
+            .bind(term.id)
+            .bind(term.academic_year_id)
+            .bind(homeroom_id)
+            .execute()
+            .await?;
         group_ids.push(group_id);
     }
     Ok(group_ids)
@@ -2134,22 +2361,24 @@ async fn insert_change_item(
     actor_user_id: Uuid,
 ) -> Result<Uuid, AppError> {
     let item_id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO academic_term_change_items (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.change_sets.insert_change_item",
+            r#"INSERT INTO academic_term_change_items (
                id, change_set_id, academic_term_id, academic_year_id, action_kind,
                learning_offering_id, weekly_period_target, created_by
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-    )
-    .bind(item_id)
-    .bind(change_set_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(action_kind)
-    .bind(learning_offering_id)
-    .bind(weekly_period_target)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(item_id)
+        .bind(change_set_id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(action_kind)
+        .bind(learning_offering_id)
+        .bind(weekly_period_target)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
     Ok(item_id)
 }
 
@@ -2166,25 +2395,27 @@ async fn insert_teacher_change_item(
     actor_user_id: Uuid,
 ) -> Result<Uuid, AppError> {
     let item_id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO academic_term_change_items (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.change_sets.insert_teacher_change_item",
+            r#"INSERT INTO academic_term_change_items (
                id, change_set_id, academic_term_id, academic_year_id, action_kind,
                learning_group_id, learning_group_teacher_id, teacher_id,
                teacher_role, created_by
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
-    )
-    .bind(item_id)
-    .bind(change_set_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(action_kind)
-    .bind(learning_group_id)
-    .bind(learning_group_teacher_id)
-    .bind(teacher_id)
-    .bind(teacher_role)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(item_id)
+        .bind(change_set_id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(action_kind)
+        .bind(learning_group_id)
+        .bind(learning_group_teacher_id)
+        .bind(teacher_id)
+        .bind(teacher_role)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
     Ok(item_id)
 }
 
@@ -2193,15 +2424,17 @@ async fn require_teacher_change_group(
     term: &TermContext,
     learning_group_id: Uuid,
 ) -> Result<(), AppError> {
-    let context: Option<(Uuid, Uuid, String)> = sqlx::query_as(
-        r#"SELECT academic_term_id, academic_year_id, status
+    let context: Option<(Uuid, Uuid, String)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.require_teacher_change_group",
+            r#"SELECT academic_term_id, academic_year_id, status
            FROM learning_groups
            WHERE id = $1
            FOR UPDATE"#,
-    )
-    .bind(learning_group_id)
-    .fetch_optional(&mut **transaction)
-    .await?;
+        )
+        .bind(learning_group_id)
+        .fetch_optional()
+        .await?;
     let Some((academic_term_id, academic_year_id, status)) = context else {
         return Err(AppError::NotFound("ไม่พบกลุ่มเรียนที่ต้องการเปลี่ยนครู".to_string()));
     };
@@ -2222,15 +2455,17 @@ async fn require_active_staff(
     transaction: &mut Transaction<'_, Postgres>,
     teacher_id: Uuid,
 ) -> Result<(), AppError> {
-    let eligible: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let eligible: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.require_active_staff",
+            r#"SELECT EXISTS (
                SELECT 1 FROM users
                WHERE id = $1 AND user_type = 'staff' AND status = 'active'
            )"#,
-    )
-    .bind(teacher_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(teacher_id)
+        .fetch_one()
+        .await?;
     if eligible {
         Ok(())
     } else {
@@ -2248,8 +2483,10 @@ async fn require_effective_teacher_episode(
     teacher_id: Uuid,
     effective_from: NaiveDate,
 ) -> Result<(), AppError> {
-    let episode: Option<(NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
-        r#"SELECT starts_on, ends_on
+    let episode: Option<(NaiveDate, Option<NaiveDate>)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.require_effective_teacher_episode",
+            r#"SELECT starts_on, ends_on
            FROM learning_group_teachers
            WHERE id = $1
              AND learning_group_id = $2
@@ -2257,14 +2494,14 @@ async fn require_effective_teacher_episode(
              AND academic_term_id = $4
              AND academic_year_id = $5
            FOR UPDATE"#,
-    )
-    .bind(learning_group_teacher_id)
-    .bind(learning_group_id)
-    .bind(teacher_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .fetch_optional(&mut **transaction)
-    .await?;
+        )
+        .bind(learning_group_teacher_id)
+        .bind(learning_group_id)
+        .bind(teacher_id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .fetch_optional()
+        .await?;
     let Some((starts_on, ends_on)) = episode else {
         return Err(AppError::NotFound(
             "ไม่พบช่วงการสอนของครูในกลุ่มเรียนนี้".to_string(),
@@ -2284,8 +2521,10 @@ async fn find_teacher_add_item(
     learning_group_id: Uuid,
     teacher_id: Uuid,
 ) -> Result<Option<ChangeItemRow>, AppError> {
-    sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.find_teacher_add_item",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
@@ -2294,13 +2533,13 @@ async fn find_teacher_add_item(
              AND learning_group_id = $2
              AND teacher_id = $3
            FOR UPDATE"#,
-    )
-    .bind(change_set_id)
-    .bind(learning_group_id)
-    .bind(teacher_id)
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(change_set_id)
+        .bind(learning_group_id)
+        .bind(teacher_id)
+        .fetch_optional()
+        .await
+        .map_err(AppError::from)
 }
 
 async fn find_teacher_episode_item(
@@ -2309,8 +2548,10 @@ async fn find_teacher_episode_item(
     action_kind: AcademicTermChangeActionKind,
     learning_group_teacher_id: Uuid,
 ) -> Result<Option<ChangeItemRow>, AppError> {
-    sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.find_teacher_episode_item",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
@@ -2318,13 +2559,13 @@ async fn find_teacher_episode_item(
              AND action_kind = $2
              AND learning_group_teacher_id = $3
            FOR UPDATE"#,
-    )
-    .bind(change_set_id)
-    .bind(action_kind)
-    .bind(learning_group_teacher_id)
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(change_set_id)
+        .bind(action_kind)
+        .bind(learning_group_teacher_id)
+        .fetch_optional()
+        .await
+        .map_err(AppError::from)
 }
 
 async fn ensure_no_teacher_episode_action(
@@ -2334,19 +2575,21 @@ async fn ensure_no_teacher_episode_action(
     learning_group_teacher_id: Uuid,
     message: &str,
 ) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let exists: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.ensure_no_teacher_episode_action",
+            r#"SELECT EXISTS (
                SELECT 1 FROM academic_term_change_items
                WHERE change_set_id = $1
                  AND action_kind = $2
                  AND learning_group_teacher_id = $3
            )"#,
-    )
-    .bind(change_set_id)
-    .bind(action_kind)
-    .bind(learning_group_teacher_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(change_set_id)
+        .bind(action_kind)
+        .bind(learning_group_teacher_id)
+        .fetch_one()
+        .await?;
     if exists {
         Err(AppError::Conflict(message.to_string()))
     } else {
@@ -2383,16 +2626,18 @@ async fn require_stoppable_offering(
         LearningOfferingStatus,
         NaiveDate,
         Option<NaiveDate>,
-    ) = sqlx::query_as(
-        r#"SELECT academic_term_id, academic_year_id, status, starts_on, ends_on
+    ) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.require_stoppable_offering",
+            r#"SELECT academic_term_id, academic_year_id, status, starts_on, ends_on
            FROM learning_offerings
            WHERE id = $1
            FOR UPDATE"#,
-    )
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนที่ต้องการหยุด".to_string()))?;
+        )
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนที่ต้องการหยุด".to_string()))?;
     if offering_term_id != term.id || offering_year_id != term.academic_year_id {
         return Err(AppError::ValidationError(
             "รายการเปิดสอนไม่อยู่ในภาคเรียนของชุดการเปลี่ยนแปลง".to_string(),
@@ -2417,19 +2662,21 @@ async fn find_change_item(
     action_kind: AcademicTermChangeActionKind,
     offering_id: Uuid,
 ) -> Result<Option<ChangeItemRow>, AppError> {
-    Ok(sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    Ok(DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.find_change_item",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 AND action_kind = $2 AND learning_offering_id = $3
            FOR UPDATE"#,
-    )
-    .bind(change_set_id)
-    .bind(action_kind)
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?)
+        )
+        .bind(change_set_id)
+        .bind(action_kind)
+        .bind(offering_id)
+        .fetch_optional()
+        .await?)
 }
 
 async fn lock_change_item(
@@ -2437,19 +2684,21 @@ async fn lock_change_item(
     change_set_id: Uuid,
     item_id: Uuid,
 ) -> Result<ChangeItemRow, AppError> {
-    sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.change_sets.lock_change_item",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = $1 AND id = $2
            FOR UPDATE"#,
-    )
-    .bind(change_set_id)
-    .bind(item_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปลี่ยนแปลง".to_string()))
+        )
+        .bind(change_set_id)
+        .bind(item_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปลี่ยนแปลง".to_string()))
 }
 
 async fn ensure_no_action(
@@ -2459,17 +2708,19 @@ async fn ensure_no_action(
     offering_id: Uuid,
     message: &str,
 ) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let exists: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.ensure_no_action",
+            r#"SELECT EXISTS (
                SELECT 1 FROM academic_term_change_items
                WHERE change_set_id = $1 AND action_kind = $2 AND learning_offering_id = $3
            )"#,
-    )
-    .bind(change_set_id)
-    .bind(action_kind)
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(change_set_id)
+        .bind(action_kind)
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
     if exists {
         Err(AppError::Conflict(message.to_string()))
     } else {
@@ -2481,13 +2732,15 @@ async fn increment_change_set_revision(
     transaction: &mut Transaction<'_, Postgres>,
     change_set_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE academic_term_change_sets \
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.change_sets.increment_change_set_revision",
+            "UPDATE academic_term_change_sets \
          SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
-    )
-    .bind(change_set_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(change_set_id)
+        .execute()
+        .await?;
     versions::refresh_revision_snapshot(transaction, change_set_id).await?;
     Ok(())
 }
@@ -2496,8 +2749,11 @@ async fn require_unpublished_only_delete(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<(), AppError> {
-    let (status, downstream_count): (LearningOfferingStatus, i64) = sqlx::query_as(
-        r#"SELECT offering.status,
+    let (status, downstream_count): (LearningOfferingStatus, i64) =
+        DbSession::new(&mut **transaction)
+            .query_as(
+                "academic_delivery.services.change_sets.require_unpublished_only_delete",
+                r#"SELECT offering.status,
                   (SELECT count(*) FROM academic_timetable_blocks block
                     WHERE block.learning_offering_id = offering.id)
                 + (SELECT count(*) FROM course_assessment_plans plan
@@ -2571,11 +2827,11 @@ async fn require_unpublished_only_delete(
            FROM learning_offerings offering
            WHERE offering.id = $1
            FOR UPDATE"#,
-    )
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))?;
+            )
+            .bind(offering_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))?;
     if !matches!(
         status,
         LearningOfferingStatus::Draft | LearningOfferingStatus::Cancelled
@@ -2611,9 +2867,13 @@ async fn require_draft_change_set_for_update(
         "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets \
          WHERE id = $1 FOR UPDATE"
     );
-    let row = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
+    let row = DbSession::new(&mut **transaction)
+        .query_as::<ChangeSetRow>(
+            "academic_delivery.services.change_sets.require_draft_change_set_for_update",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     if row.status != AcademicTermChangeSetStatus::Draft {
@@ -2658,24 +2918,26 @@ fn required_version_id(value: Option<Uuid>, message: &str) -> Result<Uuid, AppEr
 }
 
 async fn hydrate_many(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     rows: Vec<ChangeSetRow>,
 ) -> Result<Vec<AcademicTermChangeSet>, AppError> {
     if rows.is_empty() {
         return Ok(Vec::new());
     }
     let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let item_rows: Vec<ChangeItemRow> = sqlx::query_as(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
+    let item_rows: Vec<ChangeItemRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.change_sets.hydrate_many",
+            r#"SELECT id, change_set_id, action_kind, learning_offering_id,
                   weekly_period_target, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role, row_version, created_by, created_at, updated_at
            FROM academic_term_change_items
            WHERE change_set_id = ANY($1)
            ORDER BY change_set_id, created_at, id"#,
-    )
-    .bind(&ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&ids)
+        .fetch_all()
+        .await?;
     let group_ids = item_rows
         .iter()
         .filter_map(|row| row.learning_group_id)
@@ -2683,16 +2945,18 @@ async fn hydrate_many(
     let group_labels = if group_ids.is_empty() {
         HashMap::new()
     } else {
-        sqlx::query_as::<_, (Uuid, String)>(
-            r#"SELECT id, concat_ws(' · ', nullif(code, ''), name)
+        DbSession::new(connection)
+            .query_as::<(Uuid, String)>(
+                "academic_delivery.services.change_sets.hydrate_many",
+                r#"SELECT id, concat_ws(' · ', nullif(code, ''), name)
                FROM learning_groups
                WHERE id = ANY($1)"#,
-        )
-        .bind(&group_ids)
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>()
+            )
+            .bind(&group_ids)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect::<HashMap<_, _>>()
     };
     let teacher_ids = item_rows
         .iter()
@@ -2701,19 +2965,21 @@ async fn hydrate_many(
     let teacher_labels = if teacher_ids.is_empty() {
         HashMap::new()
     } else {
-        sqlx::query_as::<_, (Uuid, String)>(
-            r#"SELECT id,
+        DbSession::new(connection)
+            .query_as::<(Uuid, String)>(
+                "academic_delivery.services.change_sets.hydrate_many",
+                r#"SELECT id,
                       concat_ws(' ',
                           nullif(concat(coalesce(title, ''), first_name), ''),
                           nullif(last_name, ''))
                FROM users
                WHERE id = ANY($1)"#,
-        )
-        .bind(&teacher_ids)
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>()
+            )
+            .bind(&teacher_ids)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect::<HashMap<_, _>>()
     };
     let mut items_by_change_set = HashMap::<Uuid, Vec<AcademicTermChangeItem>>::new();
     for row in item_rows {
@@ -2831,14 +3097,17 @@ async fn hydrate_many(
                     learning_group_teacher_id,
                     "รายการหยุดครูไม่มีช่วงการสอน",
                 )?;
-                let episode_role: LearningTeacherRole =
-                    sqlx::query_scalar("SELECT role FROM learning_group_teachers WHERE id = $1")
-                        .bind(episode_id)
-                        .fetch_optional(pool)
-                        .await?
-                        .ok_or_else(|| {
-                            AppError::InternalServerError("ไม่พบบทบาทเดิมของรายการหยุดครู".to_string())
-                        })?;
+                let episode_role: LearningTeacherRole = DbSession::new(connection)
+                    .scalar(
+                        "academic_delivery.services.change_sets.hydrate_many",
+                        "SELECT role FROM learning_group_teachers WHERE id = $1",
+                    )
+                    .bind(episode_id)
+                    .fetch_optional()
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::InternalServerError("ไม่พบบทบาทเดิมของรายการหยุดครู".to_string())
+                    })?;
                 AcademicTermChangeItem::StopGroupTeacher {
                     id: row.id,
                     learning_group_id: group_id,
@@ -2876,16 +3145,23 @@ async fn hydrate_many(
     let graphs: Vec<(
         Uuid,
         sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
-    )> = sqlx::query_as("SELECT id,snapshot FROM academic_delivery_versions WHERE id=ANY($1)")
+    )> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.change_sets.hydrate_many",
+            "SELECT id,snapshot FROM academic_delivery_versions WHERE id=ANY($1)",
+        )
         .bind(&graph_ids)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     let graphs = graphs
         .into_iter()
         .map(|(id, g)| (id, g.0))
         .collect::<HashMap<_, _>>();
-    let labels =
-        super::version_changes::load_labels(pool, &graphs.values().collect::<Vec<_>>()).await?;
+    let labels = super::version_changes::load_labels_on_connection(
+        connection,
+        &graphs.values().collect::<Vec<_>>(),
+    )
+    .await?;
     rows.into_iter()
         .map(|row| {
             Ok(AcademicTermChangeSet {

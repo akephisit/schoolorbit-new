@@ -32,7 +32,7 @@
 		disabled = false,
 		staffId,
 		canManageLicense = false,
-		onUploadPendingChange
+		licenseFile = $bindable(null)
 	}: {
 		value: StaffPersonnelDraft;
 		selectedPosition?: StaffJobPositionSummary | null;
@@ -42,7 +42,7 @@
 		disabled?: boolean;
 		staffId?: string;
 		canManageLicense?: boolean;
-		onUploadPendingChange?: (pending: boolean) => void;
+		licenseFile?: File | null;
 	} = $props();
 	const careerErrors = $derived({ ...careerFieldErrors(value.career), ...errors });
 	const facts = [
@@ -190,8 +190,11 @@
 				bind:value={value.teaching_license_file_id}
 				{staffId}
 				{disabled}
-				onPendingChange={onUploadPendingChange}
+				bind:file={licenseFile}
 			/>{/key}
+		{#if errors.teaching_license_file}<p role="alert" class="text-sm text-destructive">
+				{errors.teaching_license_file}
+			</p>{/if}
 	{:else if !staffId}<p class="text-xs text-muted-foreground">
 			แนบใบประกอบวิชาชีพได้หลังสร้างบุคลากรแล้ว ในหน้างานและการศึกษา
 		</p>{/if}

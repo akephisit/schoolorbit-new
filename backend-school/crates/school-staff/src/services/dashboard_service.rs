@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool};
 #[cfg(feature = "api-docs")]
@@ -31,22 +32,39 @@ fn dashboard_response_from_counts(row: DashboardCountRow) -> StaffDashboardOverv
 }
 
 pub async fn ensure_active_staff_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    let is_active_staff: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.dashboard_service.ensure_active_staff_user",
+    )
+    .await?;
+    ensure_active_staff_user_on_connection(&mut connection, user_id).await
+}
+
+pub async fn ensure_active_staff_user_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let is_active_staff: bool = DbSession::new(connection)
+        .scalar(
+            "staff.services.dashboard_service.ensure_active_staff_user_on_connection",
+            "SELECT EXISTS(
             SELECT 1
             FROM users
             WHERE id = $1
               AND user_type = 'staff'
               AND status = 'active'
         )",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to verify active staff dashboard user: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ใช้งานได้".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to verify active staff dashboard user: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ใช้งานได้".to_string())
+        })?;
 
     if is_active_staff {
         Ok(())
@@ -61,7 +79,19 @@ pub async fn get_staff_dashboard(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<StaffDashboardOverview, AppError> {
-    let row = sqlx::query_as::<_, DashboardCountRow>(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.dashboard_service.get_staff_dashboard",
+    )
+    .await?;
+    get_staff_dashboard_on_connection(&mut connection, academic_year_id).await
+}
+
+pub async fn get_staff_dashboard_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<StaffDashboardOverview, AppError> {
+    let row = DbSession::new(connection).query_as::<DashboardCountRow>("staff.services.dashboard_service.get_staff_dashboard_on_connection",
         r#"
         SELECT
             (SELECT COUNT(*) FROM users WHERE user_type = 'staff' AND status = 'active') AS total_staff,
@@ -72,10 +102,10 @@ pub async fn get_staff_dashboard(
         "#,
     )
     .bind(academic_year_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load staff dashboard counts: {}", error);
+        tracing::error!("Failed to load staff dashboard counts: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถโหลดภาพรวมโรงเรียนได้".to_string())
     })?;
 

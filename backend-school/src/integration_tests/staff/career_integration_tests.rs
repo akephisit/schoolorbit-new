@@ -32,6 +32,23 @@ struct UnexpectedStorageProvider;
 
 #[async_trait]
 impl StorageProvider for UnexpectedStorageProvider {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(&self) -> Result<(), StorageError> {
         panic!("career HTTP operation must not check provider readiness")
     }

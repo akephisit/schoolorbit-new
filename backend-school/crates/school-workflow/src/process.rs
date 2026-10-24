@@ -2,6 +2,7 @@
 use crate::process_models::*;
 use chrono::{Duration, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use serde::Serialize;
@@ -36,11 +37,11 @@ pub(crate) async fn receipt<T: Serialize>(
     payload: &T,
 ) -> Result<Option<Uuid>, AppError> {
     let hash = payload_hash(&(operation, resource, payload))?;
-    let inserted:Option<Uuid>=sqlx::query_scalar("INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(request).bind(operation).bind(&hash).bind(resource).fetch_optional(&mut **tx).await?;
+    let inserted:Option<Uuid>=DbSession::new(&mut **tx).scalar("workflow.src.process.receipt", "INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(request).bind(operation).bind(&hash).bind(resource).fetch_optional().await?;
     if inserted.is_some() {
         return Ok(None);
     }
-    let (old_op,old_hash,old_id):(String,String,Uuid)=sqlx::query_as("SELECT operation,payload_hash,resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_one(&mut **tx).await?;
+    let (old_op,old_hash,old_id):(String,String,Uuid)=DbSession::new(&mut **tx).query_as("workflow.src.process.receipt", "SELECT operation,payload_hash,resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_one().await?;
     if old_op != operation || old_hash != hash {
         return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
     }
@@ -56,11 +57,11 @@ pub(crate) async fn creation_receipt<T: Serialize>(
     payload: &T,
 ) -> Result<Option<Uuid>, AppError> {
     let hash = payload_hash(&(operation, payload))?;
-    let inserted:Option<Uuid>=sqlx::query_scalar("INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(request).bind(operation).bind(&hash).bind(id).fetch_optional(&mut **tx).await?;
+    let inserted:Option<Uuid>=DbSession::new(&mut **tx).scalar("workflow.src.process.creation_receipt", "INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(request).bind(operation).bind(&hash).bind(id).fetch_optional().await?;
     if inserted.is_some() {
         return Ok(None);
     }
-    let old:(String,String,Uuid)=sqlx::query_as("SELECT operation,payload_hash,resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_one(&mut **tx).await?;
+    let old:(String,String,Uuid)=DbSession::new(&mut **tx).query_as("workflow.src.process.creation_receipt", "SELECT operation,payload_hash,resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_one().await?;
     if old.0 != operation || old.1 != hash {
         return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
     }
@@ -119,10 +120,13 @@ pub fn validate_steps(steps: &[ProcessTemplateStep]) -> Result<(), AppError> {
     Ok(())
 }
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<ProcessTemplate>, AppError> {
-    Ok(sqlx::query_scalar::<_, Json<ProcessTemplate>>(
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "workflow.process.list_templates")
+            .await?;
+    Ok(DbSession::new(&mut *database_stage_0).scalar::<Json<ProcessTemplate>>("workflow.src.process.list_templates",
         "SELECT definition FROM process_templates WHERE managed_source_module IS NULL ORDER BY code,id LIMIT 200",
     )
-    .fetch_all(pool)
+    .fetch_all()
     .await?
     .into_iter()
     .map(|r| r.0)
@@ -147,7 +151,8 @@ pub async fn save_template(
     {
         return Err(invalid("ชื่อหรือรหัสแม่แบบไม่ถูกต้อง"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "workflow.process.save_template").await?;
     let template_id = id.unwrap_or_else(Uuid::now_v7);
     let replay = if id.is_some() {
         receipt(
@@ -171,19 +176,22 @@ pub async fn save_template(
         .await?
     };
     if let Some(replay) = replay {
-        let result: Json<ProcessTemplate> =
-            sqlx::query_scalar("SELECT definition FROM process_templates WHERE id=$1")
-                .bind(replay)
-                .fetch_one(&mut *tx)
-                .await?;
+        let result: Json<ProcessTemplate> = DbSession::new(&mut *tx)
+            .scalar(
+                "workflow.src.process.save_template",
+                "SELECT definition FROM process_templates WHERE id=$1",
+            )
+            .bind(replay)
+            .fetch_one()
+            .await?;
         tx.commit().await?;
         return Ok(result.0);
     }
     let version = if id.is_some() {
         let old: i64 =
-            sqlx::query_scalar("SELECT version FROM process_templates WHERE id=$1 AND managed_source_module IS NULL FOR UPDATE")
+            DbSession::new(&mut *tx).scalar("workflow.src.process.save_template", "SELECT version FROM process_templates WHERE id=$1 AND managed_source_module IS NULL FOR UPDATE")
                 .bind(template_id)
-                .fetch_optional(&mut *tx)
+                .fetch_optional()
                 .await?
                 .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบ".into()))?;
         if request.expected_revision != Some(old) {
@@ -202,8 +210,8 @@ pub async fn save_template(
         active: request.active,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO process_templates(id,code,version,definition,created_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET code=excluded.code,version=excluded.version,definition=excluded.definition").bind(template_id).bind(&result.code).bind(version).bind(Json(&result)).bind(actor.user_id).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,$2,$3,$4)").bind(template_id).bind(version).bind(Json(&result)).bind(actor.user_id).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("workflow.src.process.save_template", "INSERT INTO process_templates(id,code,version,definition,created_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET code=excluded.code,version=excluded.version,definition=excluded.definition").bind(template_id).bind(&result.code).bind(version).bind(Json(&result)).bind(actor.user_id).execute().await?;
+    DbSession::new(&mut *tx).query("workflow.src.process.save_template", "INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,$2,$3,$4)").bind(template_id).bind(version).bind(Json(&result)).bind(actor.user_id).execute().await?;
     tx.commit().await?;
     Ok(result)
 }
@@ -284,7 +292,7 @@ async fn resolved_steps(
         selectors.extend(step.recipients.clone());
         ranges.push(start..selectors.len());
     }
-    let rows:Vec<(i64,Uuid,String)>=sqlx::query_as("WITH selectors AS (SELECT value,ordinality::bigint-1 AS idx FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY), matches AS (SELECT s.idx,u.id,u.display_name FROM selectors s JOIN user_display_names u ON u.status='active' AND u.user_type='staff' AND ((s.value->>'kind'='user' AND u.id=(s.value->>'userId')::uuid) OR (s.value->>'kind' IN ('organization_unit','organization_position') AND EXISTS (SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s.value->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND (s.value->>'kind'='organization_unit' OR m.position_code=s.value->>'positionCode'))))) SELECT DISTINCT idx,id,display_name FROM matches ORDER BY idx,id").bind(Json(&selectors)).fetch_all(&mut **tx).await?;
+    let rows:Vec<(i64,Uuid,String)>=DbSession::new(&mut **tx).query_as("workflow.src.process.resolved_steps", "WITH selectors AS (SELECT value,ordinality::bigint-1 AS idx FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY), matches AS (SELECT s.idx,u.id,u.display_name FROM selectors s JOIN user_display_names u ON u.status='active' AND u.user_type='staff' AND ((s.value->>'kind'='user' AND u.id=(s.value->>'userId')::uuid) OR (s.value->>'kind' IN ('organization_unit','organization_position') AND EXISTS (SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s.value->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND (s.value->>'kind'='organization_unit' OR m.position_code=s.value->>'positionCode'))))) SELECT DISTINCT idx,id,display_name FROM matches ORDER BY idx,id").bind(Json(&selectors)).fetch_all().await?;
     let mut resolved: BTreeMap<usize, Vec<(Uuid, String)>> = BTreeMap::new();
     for (index, id, name) in rows {
         resolved.entry(index as usize).or_default().push((id, name));
@@ -341,13 +349,16 @@ pub(crate) async fn start_core_in_transaction(
     {
         return Err(invalid("ข้อมูลแหล่งงานไม่ถูกต้อง"));
     }
-    let existing:Option<Json<ProcessInstance>>=sqlx::query_scalar("SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3 FOR UPDATE").bind(&input.source.module_code).bind(&input.source.resource_type).bind(input.source.resource_id).fetch_optional(&mut **tx).await?;
-    let template: Json<ProcessTemplate> =
-        sqlx::query_scalar("SELECT definition FROM process_templates WHERE id=$1 FOR SHARE")
-            .bind(input.template_id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(|| invalid("ไม่พบแม่แบบ"))?;
+    let existing:Option<Json<ProcessInstance>>=DbSession::new(&mut **tx).scalar("workflow.src.process.start_core_in_transaction", "SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3 FOR UPDATE").bind(&input.source.module_code).bind(&input.source.resource_type).bind(input.source.resource_id).fetch_optional().await?;
+    let template: Json<ProcessTemplate> = DbSession::new(&mut **tx)
+        .scalar(
+            "workflow.src.process.start_core_in_transaction",
+            "SELECT definition FROM process_templates WHERE id=$1 FOR SHARE",
+        )
+        .bind(input.template_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบแม่แบบ"))?;
     if !template.active {
         return Err(invalid("แม่แบบถูกปิดใช้งาน"));
     }
@@ -383,13 +394,13 @@ pub(crate) async fn start_core_in_transaction(
             directed: None,
         }
     };
-    sqlx::query("INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET template_id=excluded.template_id,template_version=excluded.template_version,revision=excluded.revision,definition=excluded.definition").bind(instance.id).bind(&instance.source.module_code).bind(&instance.source.resource_type).bind(instance.source.resource_id).bind(instance.template_id).bind(instance.template_version).bind(instance.revision).bind(Json(&instance)).bind(actor.user_id).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.start_core_in_transaction", "INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET template_id=excluded.template_id,template_version=excluded.template_version,revision=excluded.revision,definition=excluded.definition").bind(instance.id).bind(&instance.source.module_code).bind(&instance.source.resource_type).bind(instance.source.resource_id).bind(instance.template_id).bind(instance.template_version).bind(instance.revision).bind(Json(&instance)).bind(actor.user_id).execute().await?;
     let users: Vec<Uuid> = instance
         .steps
         .iter()
         .flat_map(|s| s.recipients.iter().map(|r| r.user_id))
         .collect();
-    sqlx::query("INSERT INTO process_participants(instance_id,user_id) SELECT $1,unnest($2::uuid[]) ON CONFLICT DO NOTHING").bind(instance.id).bind(users).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.start_core_in_transaction", "INSERT INTO process_participants(instance_id,user_id) SELECT $1,unnest($2::uuid[]) ON CONFLICT DO NOTHING").bind(instance.id).bind(users).execute().await?;
     activate_step(tx, &mut instance).await?;
     store(tx, &instance).await?;
     Ok(instance)
@@ -398,12 +409,16 @@ pub(crate) async fn store(
     tx: &mut Transaction<'_, Postgres>,
     instance: &ProcessInstance,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO process_instance_revisions(instance_id,revision,definition) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(instance.id).bind(instance.revision).bind(Json(instance)).execute(&mut **tx).await?;
-    sqlx::query("UPDATE process_instances SET definition=$2,revision=$3 WHERE id=$1")
+    DbSession::new(&mut **tx).query("workflow.src.process.store", "INSERT INTO process_instance_revisions(instance_id,revision,definition) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(instance.id).bind(instance.revision).bind(Json(instance)).execute().await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.src.process.store",
+            "UPDATE process_instances SET definition=$2,revision=$3 WHERE id=$1",
+        )
         .bind(instance.id)
         .bind(Json(instance))
         .bind(instance.revision)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }
@@ -481,20 +496,22 @@ pub async fn completion_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     source: &ProcessSource,
 ) -> Result<Option<ProcessStatus>, AppError> {
-    Ok(sqlx::query_scalar::<_,Json<ProcessInstance>>("SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3").bind(&source.module_code).bind(&source.resource_type).bind(source.resource_id).fetch_optional(&mut **tx).await?.map(|r|r.0.status))
+    Ok(DbSession::new(&mut **tx).scalar::<Json<ProcessInstance>>("workflow.src.process.completion_in_transaction", "SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3").bind(&source.module_code).bind(&source.resource_type).bind(source.resource_id).fetch_optional().await?.map(|r|r.0.status))
 }
 pub(crate) async fn load_locked(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<ProcessInstance, AppError> {
-    Ok(sqlx::query_scalar::<_, Json<ProcessInstance>>(
-        "SELECT definition FROM process_instances WHERE id=$1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกระบวนงาน".into()))?
-    .0)
+    Ok(DbSession::new(&mut **tx)
+        .scalar::<Json<ProcessInstance>>(
+            "workflow.src.process.load_locked",
+            "SELECT definition FROM process_instances WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกระบวนงาน".into()))?
+        .0)
 }
 async fn activate_step(
     tx: &mut Transaction<'_, Postgres>,
@@ -509,7 +526,7 @@ async fn activate_step(
     }
     let window = Uuid::now_v7();
     let item = Uuid::now_v7();
-    sqlx::query("INSERT INTO workflow_windows(id,module_code,workflow_code,title,managed_by_permission,status,created_by,due_at) VALUES($1,$2,'process_step',$3,$4,'open',$5,$6)").bind(window).bind(&instance.source.module_code).bind(&step.definition.title).bind(codes::PROCESS_MANAGE_SCHOOL).bind(instance.created_by).bind(step.due_at.or(instance.due_at)).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.activate_step", "INSERT INTO workflow_windows(id,module_code,workflow_code,title,managed_by_permission,status,created_by,due_at) VALUES($1,$2,'process_step',$3,$4,'open',$5,$6)").bind(window).bind(&instance.source.module_code).bind(&step.definition.title).bind(codes::PROCESS_MANAGE_SCHOOL).bind(instance.created_by).bind(step.due_at.or(instance.due_at)).execute().await?;
     crate::work::create_work_item_in_transaction(
         tx,
         item,
@@ -552,7 +569,7 @@ async fn activate_step(
         if let school_notifications::dispatch::NotificationSource::Process { source_id } =
             job.source
         {
-            sqlx::query("INSERT INTO process_notification_sources(id,instance_id,recipient_id,work_item_id) VALUES($1,$2,$3,$4)").bind(source_id).bind(instance.id).bind(job.recipient_id).bind(item).execute(&mut **tx).await?;
+            DbSession::new(&mut **tx).query("workflow.src.process.activate_step", "INSERT INTO process_notification_sources(id,instance_id,recipient_id,work_item_id) VALUES($1,$2,$3,$4)").bind(source_id).bind(instance.id).bind(job.recipient_id).bind(item).execute().await?;
         }
         school_notifications::dispatch::store_and_enqueue_in_transaction(tx, job).await?;
     }
@@ -679,7 +696,7 @@ pub(crate) async fn action_in_transaction(
         {
             return Err(invalid("ผู้รับใหม่มีอยู่ในขั้นตอนนี้แล้ว"));
         }
-        let name:String=sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1 AND status='active' AND user_type='staff' FOR SHARE").bind(target).fetch_optional(&mut **tx).await?.ok_or_else(||invalid("ผู้รับใหม่ไม่พร้อมใช้งาน"))?;
+        let name:String=DbSession::new(&mut **tx).scalar("workflow.src.process.action_in_transaction", "SELECT display_name FROM user_display_names WHERE id=$1 AND status='active' AND user_type='staff' FOR SHARE").bind(target).fetch_optional().await?.ok_or_else(||invalid("ผู้รับใหม่ไม่พร้อมใช้งาน"))?;
         // Keep the original recipient in immutable history; the replacement links back to it.
         step.recipients[pos].completed_at = Some(Utc::now());
         step.recipients.push(ProcessRecipientSnapshot {
@@ -690,11 +707,11 @@ pub(crate) async fn action_in_transaction(
             reassigned_from: Some(from),
         });
         if let Some(item) = step.work_item_id {
-            sqlx::query("UPDATE process_notification_sources SET cancelled_at=now() WHERE work_item_id=$1 AND recipient_id=$2 AND cancelled_at IS NULL").bind(item).bind(from).execute(&mut **tx).await?;
-            sqlx::query("UPDATE work_item_assignees SET status='dismissed' WHERE work_item_id=$1 AND user_id=$2").bind(item).bind(from).execute(&mut **tx).await?;
-            sqlx::query("INSERT INTO work_item_assignees(id,work_item_id,assignee_type,user_id) VALUES($1,$2,'user',$3) ON CONFLICT(work_item_id,user_id) WHERE assignee_type='user' DO UPDATE SET status='assigned',read_at=NULL,submitted_at=NULL").bind(Uuid::now_v7()).bind(item).bind(target).execute(&mut **tx).await?;
+            DbSession::new(&mut **tx).query("workflow.src.process.action_in_transaction", "UPDATE process_notification_sources SET cancelled_at=now() WHERE work_item_id=$1 AND recipient_id=$2 AND cancelled_at IS NULL").bind(item).bind(from).execute().await?;
+            DbSession::new(&mut **tx).query("workflow.src.process.action_in_transaction", "UPDATE work_item_assignees SET status='dismissed' WHERE work_item_id=$1 AND user_id=$2").bind(item).bind(from).execute().await?;
+            DbSession::new(&mut **tx).query("workflow.src.process.action_in_transaction", "INSERT INTO work_item_assignees(id,work_item_id,assignee_type,user_id) VALUES($1,$2,'user',$3) ON CONFLICT(work_item_id,user_id) WHERE assignee_type='user' DO UPDATE SET status='assigned',read_at=NULL,submitted_at=NULL").bind(Uuid::now_v7()).bind(item).bind(target).execute().await?;
         }
-        sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(target).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("workflow.src.process.action_in_transaction", "INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(target).execute().await?;
     } else if matches!(
         request.action,
         ProcessAction::Reject | ProcessAction::ReturnForRevision
@@ -804,25 +821,30 @@ pub async fn authorize_notification_on_connection(
 ) -> Result<bool, AppError> {
     // Central materialization calls this inside its transaction before locking its job.
     // Share the engine's instance guard so a transition cannot invalidate this decision mid-commit.
-    let instance: Option<Uuid> = sqlx::query_scalar(
-        "SELECT instance_id FROM process_notification_sources WHERE id=$1 AND recipient_id=$2",
-    )
-    .bind(id)
-    .bind(user)
-    .fetch_optional(&mut *connection)
-    .await?;
+    let instance: Option<Uuid> = DbSession::new(&mut *connection)
+        .scalar(
+            "workflow.src.process.authorize_notification_on_connection",
+            "SELECT instance_id FROM process_notification_sources WHERE id=$1 AND recipient_id=$2",
+        )
+        .bind(id)
+        .bind(user)
+        .fetch_optional()
+        .await?;
     let Some(instance) = instance else {
         return Ok(false);
     };
-    let present: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM process_instances WHERE id=$1 FOR SHARE")
-            .bind(instance)
-            .fetch_optional(&mut *connection)
-            .await?;
+    let present: Option<Uuid> = DbSession::new(&mut *connection)
+        .scalar(
+            "workflow.src.process.authorize_notification_on_connection",
+            "SELECT id FROM process_instances WHERE id=$1 FOR SHARE",
+        )
+        .bind(instance)
+        .fetch_optional()
+        .await?;
     if present.is_none() {
         return Ok(false);
     }
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM process_notification_sources s JOIN process_instances i ON i.id=s.instance_id WHERE s.id=$1 AND s.recipient_id=$2 AND s.cancelled_at IS NULL AND (s.work_item_id IS NULL OR EXISTS(SELECT 1 FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id WHERE w.id=s.work_item_id AND w.status='active' AND a.assignee_type='user' AND a.user_id=s.recipient_id AND a.status IN ('assigned','read'))))").bind(id).bind(user).fetch_one(connection).await?)
+    Ok(DbSession::new(connection).scalar("workflow.src.process.authorize_notification_on_connection", "SELECT EXISTS(SELECT 1 FROM process_notification_sources s JOIN process_instances i ON i.id=s.instance_id WHERE s.id=$1 AND s.recipient_id=$2 AND s.cancelled_at IS NULL AND (s.work_item_id IS NULL OR EXISTS(SELECT 1 FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id WHERE w.id=s.work_item_id AND w.status='active' AND a.assignee_type='user' AND a.user_id=s.recipient_id AND a.status IN ('assigned','read'))))").bind(id).bind(user).fetch_one().await?)
 }
 
 #[cfg(test)]
@@ -887,7 +909,7 @@ pub async fn start_in_transaction(
     .await?
     .is_some()
     {
-        let existing=sqlx::query_scalar::<_,Json<ProcessInstance>>("SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3 FOR UPDATE").bind(&input.source.module_code).bind(&input.source.resource_type).bind(input.source.resource_id).fetch_one(&mut **tx).await?.0;
+        let existing=DbSession::new(&mut **tx).scalar::<Json<ProcessInstance>>("workflow.src.process.start_in_transaction", "SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3 FOR UPDATE").bind(&input.source.module_code).bind(&input.source.resource_type).bind(input.source.resource_id).fetch_one().await?.0;
         source_port.validate_existing(tx, actor, &existing).await?;
         return Ok(existing);
     }
@@ -928,14 +950,14 @@ pub(crate) async fn notify_in_transaction(
     work_item: Option<Uuid>,
 ) -> Result<(), AppError> {
     let source_id = Uuid::now_v7();
-    sqlx::query(
+    DbSession::new(&mut **tx).query("workflow.src.process.notify_in_transaction",
         "INSERT INTO process_notification_sources(id,instance_id,recipient_id,work_item_id) VALUES($1,$2,$3,$4)",
     )
     .bind(source_id)
     .bind(instance.id)
     .bind(user)
     .bind(work_item)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     school_notifications::dispatch::store_and_enqueue_in_transaction(
         tx,
@@ -961,7 +983,7 @@ pub(crate) async fn notify_in_transaction(
 /// Read-only replay recognition avoids expensive source rendering and stale checks on a retry.
 /// Acceptance still claims/rechecks the same receipt atomically in its transaction.
 pub(crate) async fn replay_exists<T: Serialize>(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: Uuid,
     request: Uuid,
     operation: &str,
@@ -969,7 +991,7 @@ pub(crate) async fn replay_exists<T: Serialize>(
     payload: &T,
     creation: bool,
 ) -> Result<bool, AppError> {
-    let stored:Option<(String,String)>=sqlx::query_as("SELECT operation,payload_hash FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_optional(pool).await?;
+    let stored:Option<(String,String)>=DbSession::new(&mut *connection).query_as("workflow.src.process.replay_exists", "SELECT operation,payload_hash FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(request).fetch_optional().await?;
     let Some((old_operation, old_hash)) = stored else {
         return Ok(false);
     };
@@ -1010,7 +1032,7 @@ async fn append_event(
         action: request.clone(),
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO process_action_events(id,instance_id,actor_id,request_id,revision,event) VALUES($1,$2,$3,$4,$5,$6)").bind(event.id).bind(instance.id).bind(actor.user_id).bind(request.request_id).bind(instance.revision).bind(Json(&event)).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.append_event", "INSERT INTO process_action_events(id,instance_id,actor_id,request_id,revision,event) VALUES($1,$2,$3,$4,$5,$6)").bind(event.id).bind(instance.id).bind(actor.user_id).bind(request.request_id).bind(instance.revision).bind(Json(&event)).execute().await?;
     Ok(())
 }
 /// The source owner authorizes access before reading its process history in its transaction.
@@ -1018,7 +1040,7 @@ pub async fn history_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     source: &ProcessSource,
 ) -> Result<Vec<ProcessActionEvent>, AppError> {
-    Ok(sqlx::query_scalar::<_,Json<ProcessActionEvent>>("SELECT e.event FROM process_action_events e JOIN process_instances i ON i.id=e.instance_id WHERE i.source_module=$1 AND i.source_type=$2 AND i.source_id=$3 ORDER BY e.revision,e.id").bind(&source.module_code).bind(&source.resource_type).bind(source.resource_id).fetch_all(&mut **tx).await?.into_iter().map(|e|e.0).collect())
+    Ok(DbSession::new(&mut **tx).scalar::<Json<ProcessActionEvent>>("workflow.src.process.history_in_transaction", "SELECT e.event FROM process_action_events e JOIN process_instances i ON i.id=e.instance_id WHERE i.source_module=$1 AND i.source_type=$2 AND i.source_id=$3 ORDER BY e.revision,e.id").bind(&source.module_code).bind(&source.resource_type).bind(source.resource_id).fetch_all().await?.into_iter().map(|e|e.0).collect())
 }
 
 /// Source-owned immutable template creation. The caller authorizes its domain settings.
@@ -1040,8 +1062,8 @@ pub async fn create_source_template_in_transaction(
         active: true,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO process_templates(id,code,version,definition,created_by,managed_source_module) VALUES($1,$2,1,$3,$4,$5)").bind(id).bind(&template.code).bind(Json(&template)).bind(actor).bind(module_code).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,1,$2,$3)").bind(id).bind(Json(&template)).bind(actor).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.create_source_template_in_transaction", "INSERT INTO process_templates(id,code,version,definition,created_by,managed_source_module) VALUES($1,$2,1,$3,$4,$5)").bind(id).bind(&template.code).bind(Json(&template)).bind(actor).bind(module_code).execute().await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.create_source_template_in_transaction", "INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,1,$2,$3)").bind(id).bind(Json(&template)).bind(actor).execute().await?;
     Ok(())
 }
 /// Withdraw an active source under its owning domain policy and the existing owner identity.
@@ -1074,7 +1096,7 @@ pub async fn withdraw_source_in_transaction(
     for step in &instance.steps {
         crate::work::close_process_item_in_transaction(tx, step.work_item_id).await?;
     }
-    sqlx::query("UPDATE process_notification_sources SET cancelled_at=now() WHERE instance_id=$1 AND cancelled_at IS NULL").bind(id).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("workflow.src.process.withdraw_source_in_transaction", "UPDATE process_notification_sources SET cancelled_at=now() WHERE instance_id=$1 AND cancelled_at IS NULL").bind(id).execute().await?;
     instance.status = ProcessStatus::Closed;
     instance.revision += 1;
     let action = ProcessActionRequest {

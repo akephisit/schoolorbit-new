@@ -10,6 +10,7 @@
 		type CorrespondenceDetail,
 		type ProcessAction,
 		type SignatureAsset,
+		type CreateSignatureAssetRequest,
 		type SignatureInput,
 		type DocumentAnnotation,
 		type ProcessActionRequest,
@@ -17,6 +18,7 @@
 		type CorrespondenceOptions
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { hasInk, type InkPath } from '#lib/correspondence/geometry.js';
 	import { actionRequirements, validateSigningDraft } from '#lib/correspondence/drafts.js';
@@ -65,7 +67,7 @@
 		onrefresh: () => void;
 		onpendingchange?: (pending: boolean) => void;
 		ondirtychange?: (dirty: boolean) => void;
-		onpreviewchange?: (paths: InkPath[], fileId?: string) => void;
+		onpreviewchange?: (paths: InkPath[], fileId?: string, localImage?: Blob) => void;
 	} = $props();
 	let fieldErrors = $state<CorrespondenceFieldErrors>({});
 	function invalidField(id: string, message: string) {
@@ -85,7 +87,8 @@
 		assets = $state<SignatureAsset[]>([]),
 		assetsError = $state(''),
 		assetsLoading = $state(false),
-		imagePending = $state(false),
+		localImage = $state<PendingUpload | null>(null),
+		localImageUrl = $state(''),
 		evidence = $state<File[]>([]),
 		reassignUserId = $state(''),
 		reassignFromUserId = $state(''),
@@ -113,6 +116,8 @@
 	let optionsLoading = $state(false);
 	let routingInitialized = false;
 	const intent = new MutationIntent<ProcessActionRequest>();
+	let assetIntent = new MutationIntent<CreateSignatureAssetRequest>();
+	let assetUncertain = $state(false);
 	const uploadedEvidence = new SvelteMap<File, string>();
 	let uncertain = $state(false);
 	const definition = $derived(detail.instance?.steps[detail.instance.currentStep]?.definition);
@@ -155,6 +160,7 @@
 			signature,
 			method,
 			assetId,
+			localImage?.file,
 			paths,
 			detail.document.revision,
 			detail.document.contentHash
@@ -171,6 +177,7 @@
 			!!comment ||
 				paths.length > 0 ||
 				!!assetId ||
+				!!localImage ||
 				evidence.length > 0 ||
 				!!reassignUserId ||
 				routing.recipients.length > 0 ||
@@ -180,14 +187,46 @@
 	$effect(() => {
 		onpreviewchange?.(
 			method === 'drawn' ? paths : [],
-			method === 'image' ? assets.find((asset) => asset.id === assetId)?.fileId : undefined
+			method === 'image' ? assets.find((asset) => asset.id === assetId)?.fileId : undefined,
+			method === 'image' ? localImage?.file : undefined
 		);
 	});
+	$effect(() => {
+		const image = localImage;
+		if (!image) {
+			localImageUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(image.file);
+		localImageUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
+	$effect(() => {
+		const userId = $authStore.user?.id;
+		const recordId = detail.record.id;
+		const selectedAsset = assetId;
+		untrack(() => {
+			if (
+				localImage &&
+				(localImage.scope.resourceId !== userId ||
+					localImage.scope.owner !== recordId ||
+					selectedAsset)
+			) {
+				localImage.dispose();
+				localImage = null;
+				assetIntent = new MutationIntent<CreateSignatureAssetRequest>();
+				assetUncertain = false;
+			}
+		});
+	});
+	let preparedAsset: { image: PendingUpload; asset: SignatureAsset } | undefined;
 	let disposed = false;
 	const controller = new AbortController();
 	onDestroy(() => {
 		disposed = true;
+		localImage?.dispose();
 		controller.abort();
+		onpreviewchange?.([], undefined, undefined);
 		signature = undefined;
 	});
 	$effect.pre(() => {
@@ -222,29 +261,32 @@
 		}
 	}
 	async function selectMethod(value: string) {
+		if (assetUncertain) return;
 		method = value;
 		confirmed = false;
 		if (value === 'image' && !assets.length) await loadAssets();
 	}
-	async function uploadImage(file: File) {
-		if (!$authStore.user || imagePending) return;
-		imagePending = true;
+	function prepareImage(file: File) {
+		if (!$authStore.user || pending || assetUncertain) return;
 		assetsError = '';
-		try {
-			const uploaded = await uploadFile(file, 'correspondence_signature', $authStore.user.id);
-			if (disposed) return;
-			const asset = await createSignatureAsset(file.name, uploaded.id);
-			if (disposed) return;
-			assets = [asset, ...assets];
-			assetId = asset.id;
-			method = 'image';
-			confirmed = false;
-		} catch (cause) {
-			if (!disposed)
-				assetsError = cause instanceof Error ? cause.message : 'อัปโหลดลายมือชื่อไม่สำเร็จ';
-		} finally {
-			if (!disposed) imagePending = false;
+		if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size) {
+			assetsError = 'เลือกภาพ PNG, JPG หรือ WebP ที่มีข้อมูล';
+			return;
 		}
+		localImage?.dispose();
+		localImage = new PendingUpload(
+			file,
+			{
+				purpose: 'correspondence_signature',
+				resourceId: $authStore.user.id,
+				owner: detail.record.id
+			},
+			uploadFile
+		);
+		preparedAsset = undefined;
+		assetId = '';
+		method = 'image';
+		confirmed = false;
 	}
 	async function loadReassign(context = detail.record.register) {
 		optionsLoading = true;
@@ -326,11 +368,12 @@
 					method,
 					assetId,
 					confirmed,
-					detail.document.revision
+					detail.document.revision,
+					!!localImage
 				);
 				if (invalid) {
 					invalidField(
-						!signature || (method === 'drawn' ? !hasInk(paths) : !assetId)
+						!signature || (method === 'drawn' ? !hasInk(paths) : !assetId && !localImage)
 							? 'signature-input'
 							: !confirmed
 								? 'signature-confirm'
@@ -343,13 +386,37 @@
 		}
 		pending = true;
 		onpendingchange?.(true);
+		const creationIntent = assetIntent;
+		const operationRecord = detail.record.id,
+			operationUser = $authStore.user?.id;
+		const currentAction = () =>
+			!disposed &&
+			creationIntent === assetIntent &&
+			operationRecord === detail.record.id &&
+			operationUser === $authStore.user?.id;
 		try {
+			let signingAssetId = assetId;
+			if (signing && method === 'image' && localImage) {
+				const image = localImage;
+				const fileId = await image.commit();
+				if (!currentAction() || image !== localImage) return;
+				if (preparedAsset?.image !== image) {
+					const asset = await createSignatureAsset(
+						creationIntent.begin({ label: image.file.name, fileId })
+					);
+					creationIntent.accepted();
+					if (!currentAction() || image !== localImage) return;
+					assetUncertain = false;
+					preparedAsset = { image, asset };
+				}
+				signingAssetId = preparedAsset.asset.id;
+			}
 			const evidenceFileIds: string[] = [];
 			for (const file of requirements.acceptsEvidence ? evidence : []) {
 				let fileId = uploadedEvidence.get(file);
 				if (!fileId) {
 					const uploaded = await uploadFile(file, 'correspondence_document', detail.record.id);
-					if (disposed) return;
+					if (!currentAction()) return;
 					fileId = uploaded.id;
 					uploadedEvidence.set(file, fileId);
 				}
@@ -360,7 +427,7 @@
 					? {
 							...signature,
 							method: method as SignatureInput['method'],
-							assetId: method === 'image' ? assetId : undefined,
+							assetId: method === 'image' ? signingAssetId : undefined,
 							strokes:
 								method === 'drawn'
 									? paths.map((path) => ({ ...path, width: 0.006, color: '#111827' }))
@@ -390,14 +457,17 @@
 					: []
 			};
 			const result = await actOnCorrespondence(
-				detail.record.id,
+				operationRecord,
 				detail.instance?.directed || intent.unresolved
 					? intent.begin(body)
 					: { ...body, requestId: crypto.randomUUID() }
 			);
 			intent.accepted();
-			if (!disposed) oncomplete(result);
+			if (currentAction()) oncomplete(result);
 		} catch (cause) {
+			creationIntent.rejected(cause);
+			if (!currentAction()) return;
+			if (!disposed && creationIntent === assetIntent) assetUncertain = creationIntent.unresolved;
 			intent.rejected(cause);
 			uncertain = intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
@@ -446,7 +516,10 @@
 	{#if uncertain}<p class="text-sm text-warning">
 			ยังยืนยันผลการดำเนินการไม่ได้ กดยืนยันอีกครั้งเพื่อตรวจผลด้วยคำขอเดิม
 		</p>{/if}
-	<fieldset disabled={pending || uncertain} class="min-w-0 space-y-4">
+	{#if assetUncertain}<p role="status" class="text-sm text-warning">
+			ยังไม่ได้รับผลการสร้างลายมือชื่อ กรุณายืนยันคำสั่งเดิมอีกครั้งก่อนเปลี่ยนภาพ
+		</p>{/if}
+	<fieldset disabled={pending || uncertain || assetUncertain} class="min-w-0 space-y-4">
 		{#if action === 'route'}
 			{#if options}<DirectedRoutingFields
 					{fieldErrors}
@@ -559,7 +632,7 @@
 				{#if method === 'drawn'}<SignaturePad
 						bind:paths
 						disabled={pending}
-						onimage={uploadImage}
+						onimage={prepareImage}
 					/>{:else}
 					{#if assetsError}<PageState
 							variant="error"
@@ -575,7 +648,12 @@
 						options={assets.map((asset) => ({ value: asset.id, label: asset.label }))}
 						disabled={pending || assetsLoading}
 					/>
-					{#if assets.find((asset) => asset.id === assetId)}{@const asset = assets.find(
+					{#if localImageUrl}<img
+							src={localImageUrl}
+							alt="ภาพลายมือชื่อที่เลือก"
+							class="h-24 w-full rounded-md border bg-white object-contain p-3"
+						/>
+					{:else if assets.find((asset) => asset.id === assetId)}{@const asset = assets.find(
 							(asset) => asset.id === assetId
 						)!}
 						<div class="rounded-md border bg-white p-3">
@@ -591,10 +669,11 @@
 							id="action-signature-image"
 							type="file"
 							accept="image/png,image/jpeg,image/webp"
-							disabled={pending || imagePending}
+							disabled={pending}
 							onchange={(event) => {
 								const file = event.currentTarget.files?.[0];
-								if (file) void uploadImage(file);
+								if (file) prepareImage(file);
+								event.currentTarget.value = '';
 							}}
 						/>
 					</div>
@@ -651,7 +730,7 @@
 							? 'signature-confirm-error'
 							: undefined}
 						bind:checked={confirmed}
-						disabled={pending || imagePending}
+						disabled={pending}
 					/><Label for="signature-confirm" class="leading-relaxed"
 						>ยืนยันใช้ลายมือชื่อนี้กับเอกสารฉบับ {signature.documentRevision} และการ{actionLabel}ครั้งนี้</Label
 					>
@@ -664,11 +743,12 @@
 		{/if}
 	</fieldset>
 	<div class="flex flex-wrap justify-end gap-2">
-		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
+		<Button type="button" variant="outline" onclick={oncancel} disabled={pending || assetUncertain}
+			>ยกเลิก</Button
 		><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={imagePending || (signing && !documentReady && !uncertain)}
+			disabled={signing && !documentReady && !uncertain}
 			variant={action === 'reject' ? 'destructive' : 'default'}>ยืนยัน{actionLabel}</LoadingButton
 		>
 	</div>

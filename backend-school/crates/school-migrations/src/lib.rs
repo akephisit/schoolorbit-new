@@ -13,14 +13,16 @@ mod permission_sync {
         }
         let mut transaction = pool.begin().await?;
         // Keep retired rows and their grants for reconciliation, without authorization.
-        let deactivated = sqlx::query(
-            "UPDATE permissions SET is_active = false, updated_at = NOW()
+        let deactivated = school_database::DbSession::new(&mut *transaction)
+            .query(
+                "migrations.src.lib.sync_permissions",
+                "UPDATE permissions SET is_active = false, updated_at = NOW()
              WHERE is_active = true AND NOT (code = ANY($1::text[]))",
-        )
-        .bind(&registry_codes)
-        .execute(&mut *transaction)
-        .await?
-        .rows_affected();
+            )
+            .bind(&registry_codes)
+            .execute()
+            .await?
+            .rows_affected();
 
         let mut query = QueryBuilder::<Postgres>::new(
             "INSERT INTO permissions (code, name, module, action, scope, description, is_active) ",
@@ -40,7 +42,10 @@ mod permission_sync {
               scope = EXCLUDED.scope, description = EXCLUDED.description,
               is_active = true, updated_at = NOW()",
         );
-        query.build().execute(&mut *transaction).await?;
+        school_database::DbSession::new(&mut *transaction)
+            .prepared_query("migrations.src.lib.sync_permissions", query.build())
+            .execute()
+            .await?;
         transaction.commit().await?;
         if deactivated > 0 {
             tracing::info!(
@@ -78,6 +83,29 @@ fn all_migrations_without_db_lock() -> Migrator {
 
 static TENANT_MIGRATION_GATE: Mutex<()> = Mutex::const_new(());
 
+// Classify before erasing the native error: driver details can contain SQL and values.
+fn safe_migration_failure(error: sqlx::migrate::MigrateError) -> String {
+    use sqlx::migrate::MigrateError;
+    let (category, version) = match &error {
+        MigrateError::Execute(error) => (school_database::error_class(error), None),
+        MigrateError::ExecuteMigration(error, version) => {
+            (school_database::error_class(error), Some(*version))
+        }
+        MigrateError::Source(_) => ("source", None),
+        MigrateError::VersionMissing(version) => ("version_missing", Some(*version)),
+        MigrateError::VersionMismatch(version) => ("version_mismatch", Some(*version)),
+        MigrateError::VersionNotPresent(version) => ("version_not_present", Some(*version)),
+        MigrateError::VersionTooOld(version, _) => ("version_too_old", Some(*version)),
+        MigrateError::VersionTooNew(version, _) => ("version_too_new", Some(*version)),
+        MigrateError::Dirty(version) => ("dirty", Some(*version)),
+        _ => ("migration_configuration", None),
+    };
+    match version {
+        Some(version) => format!("Migration failed: {category} (version {version})"),
+        None => format!("Migration failed: {category}"),
+    }
+}
+
 pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
     let started = std::time::Instant::now();
     let owner: String = sqlx::query_scalar("SELECT current_user::text")
@@ -98,11 +126,14 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
     all_migrations_without_db_lock()
         .run(pool)
         .await
-        .map_err(|error| format!("Migration failed: {}", error))?;
+        .map_err(safe_migration_failure)?;
 
-    sync_permissions(pool)
-        .await
-        .map_err(|error| format!("Permission sync failed after migrations: {}", error))?;
+    sync_permissions(pool).await.map_err(|error| {
+        format!(
+            "Permission sync failed after migrations: {}",
+            school_database::error_class(&error)
+        )
+    })?;
 
     if let Some(runtime) = runtime {
         grant_runtime_privileges(pool, &runtime).await?;

@@ -96,8 +96,18 @@ pub async fn list_for_manager(
 }
 
 pub async fn list_authorized(pool: &PgPool) -> Result<SchoolFontListResponse, AppError> {
-    let rows = sqlx::query_as::<_, SchoolFontRow>(
-        "SELECT font.id, font.display_name, font.font_family,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "fonts.list_authorized").await?;
+    list_authorized_on_connection(&mut connection).await
+}
+
+pub async fn list_authorized_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<SchoolFontListResponse, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<SchoolFontRow>(
+            "fonts.src.services.list_authorized_on_connection",
+            "SELECT font.id, font.display_name, font.font_family,
                 font.font_weight, font.font_style, font.created_at,
                 COUNT(reference.font_id) AS reference_count
          FROM school_fonts AS font
@@ -105,9 +115,9 @@ pub async fn list_authorized(pool: &PgPool) -> Result<SchoolFontListResponse, Ap
            ON reference.font_id = font.id
          GROUP BY font.id
          ORDER BY font.normalized_family, font.font_weight, font.font_style, font.id",
-    )
-    .fetch_all(pool)
-    .await?;
+        )
+        .fetch_all()
+        .await?;
     Ok(SchoolFontListResponse {
         items: rows
             .into_iter()
@@ -168,7 +178,9 @@ pub async fn attach_authorized(
         ));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "fonts.services.attach_authorized")
+            .await?;
     if let SchoolFontStagingRelation::CertificateTemplate(template_id) = relation {
         lock_active_certificate_campaign(&mut tx, template_id).await?;
     }
@@ -184,24 +196,26 @@ pub async fn attach_authorized(
         let weight = file.font_weight.ok_or_else(invalid_font_state)?;
         let style = file.font_style.ok_or_else(invalid_font_state)?;
         let display_name = validated_display_name(&file.display_filename)?;
-        let (id, created_at): (Uuid, DateTime<Utc>) = sqlx::query_as(
-            "INSERT INTO school_fonts (
+        let (id, created_at): (Uuid, DateTime<Utc>) = school_database::DbSession::new(&mut *tx)
+            .query_as(
+                "fonts.src.services.attach_authorized",
+                "INSERT INTO school_fonts (
                 file_id, display_name, font_family, normalized_family,
                 font_weight, font_style, rights_confirmed_by,
                 rights_confirmed_at, created_by
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), $7)
              RETURNING id, created_at",
-        )
-        .bind(file.file_id)
-        .bind(&display_name)
-        .bind(family)
-        .bind(normalize_family(family))
-        .bind(i16::try_from(weight).map_err(|_| invalid_font_state())?)
-        .bind(style.as_str())
-        .bind(actor_user_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_font_insert_error)?;
+            )
+            .bind(file.file_id)
+            .bind(&display_name)
+            .bind(family)
+            .bind(normalize_family(family))
+            .bind(i16::try_from(weight).map_err(|_| invalid_font_state())?)
+            .bind(style.as_str())
+            .bind(actor_user_id)
+            .fetch_one()
+            .await
+            .map_err(map_font_insert_error)?;
         font_ids.push(id);
         items.push(SchoolFontSummary {
             id,
@@ -214,31 +228,35 @@ pub async fn attach_authorized(
         });
     }
 
-    let promoted = sqlx::query(
-        "UPDATE files
+    let promoted = school_database::DbSession::new(&mut *tx)
+        .query(
+            "fonts.src.services.attach_authorized",
+            "UPDATE files
          SET retention_class = 'standard', expires_at = NULL, updated_at = clock_timestamp()
          WHERE id = ANY($1::uuid[]) AND retention_class = 'temporary'",
-    )
-    .bind(&file_ids)
-    .execute(&mut *tx)
-    .await?;
+        )
+        .bind(&file_ids)
+        .execute()
+        .await?;
     if promoted.rows_affected() != file_ids.len() as u64 {
         return Err(AppError::ValidationError(
             "school_font_unavailable".to_string(),
         ));
     }
     delete_staging_rows(&mut tx, relation, &file_ids).await?;
-    sqlx::query(
-        "INSERT INTO audit_logs (user_id, action, entity_type, metadata)
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "fonts.src.services.attach_authorized",
+            "INSERT INTO audit_logs (user_id, action, entity_type, metadata)
          VALUES ($1, 'attach_batch', 'school_font_library', $2)",
-    )
-    .bind(actor_user_id)
-    .bind(serde_json::json!({
-        "fileCount": file_ids.len(),
-        "fontIds": font_ids,
-    }))
-    .execute(&mut *tx)
-    .await?;
+        )
+        .bind(actor_user_id)
+        .bind(serde_json::json!({
+            "fileCount": file_ids.len(),
+            "fontIds": font_ids,
+        }))
+        .execute()
+        .await?;
     tx.commit().await?;
     Ok(SchoolFontListResponse { items })
 }
@@ -247,17 +265,19 @@ async fn lock_active_certificate_campaign(
     tx: &mut Transaction<'_, Postgres>,
     template_id: Uuid,
 ) -> Result<(), AppError> {
-    let status = sqlx::query_scalar::<_, String>(
-        "SELECT campaign.status
+    let status = school_database::DbSession::new(&mut **tx)
+        .scalar::<String>(
+            "fonts.src.services.lock_active_certificate_campaign",
+            "SELECT campaign.status
          FROM certificate_templates AS template
          JOIN certificate_campaigns AS campaign ON campaign.id = template.campaign_id
          WHERE template.id = $1
          FOR UPDATE OF campaign",
-    )
-    .bind(template_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
     if status == "purging" {
         return Err(AppError::Conflict(
             "certificate_campaign_purging".to_string(),
@@ -272,38 +292,49 @@ pub async fn delete(
     font_id: Uuid,
 ) -> Result<SchoolFontDeleteOutcome, AppError> {
     require_font_manager(actor)?;
-    let mut tx = pool.begin().await?;
-    let file_id =
-        sqlx::query_scalar::<_, Uuid>("SELECT file_id FROM school_fonts WHERE id = $1 FOR UPDATE")
-            .bind(font_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound("school_font_not_found".to_string()))?;
-    let reference_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "fonts.services.delete").await?;
+    let file_id = school_database::DbSession::new(&mut *tx)
+        .scalar::<Uuid>(
+            "fonts.src.services.delete",
+            "SELECT file_id FROM school_fonts WHERE id = $1 FOR UPDATE",
+        )
+        .bind(font_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("school_font_not_found".to_string()))?;
+    let reference_count: i64 = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "fonts.src.services.delete",
+            "SELECT COUNT(*)
          FROM certificate_template_font_references
          WHERE font_id = $1",
-    )
-    .bind(font_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(font_id)
+        .fetch_one()
+        .await?;
     if reference_count != 0 {
         return Ok(SchoolFontDeleteOutcome::Conflict(
             SchoolFontDeleteConflict { reference_count },
         ));
     }
-    sqlx::query("DELETE FROM school_fonts WHERE id = $1")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "fonts.src.services.delete",
+            "DELETE FROM school_fonts WHERE id = $1",
+        )
         .bind(font_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    sqlx::query(
-        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "fonts.src.services.delete",
+            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, 'delete', 'school_font', $2, '{\"referenceCount\":0}'::jsonb)",
-    )
-    .bind(actor.user_id)
-    .bind(font_id)
-    .execute(&mut *tx)
-    .await?;
+        )
+        .bind(actor.user_id)
+        .bind(font_id)
+        .execute()
+        .await?;
     tx.commit().await?;
     Ok(SchoolFontDeleteOutcome::Deleted { file_id })
 }
@@ -315,16 +346,18 @@ pub async fn lock_authorized(
     if font_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let rows = sqlx::query_as::<_, (Uuid, Uuid, String, i16, String)>(
-        "SELECT id, file_id, font_family, font_weight, font_style
+    let rows = school_database::DbSession::new(&mut **tx)
+        .query_as::<(Uuid, Uuid, String, i16, String)>(
+            "fonts.src.services.lock_authorized",
+            "SELECT id, file_id, font_family, font_weight, font_style
          FROM school_fonts
          WHERE id = ANY($1::uuid[])
          ORDER BY id
          FOR KEY SHARE",
-    )
-    .bind(font_ids)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(font_ids)
+        .fetch_all()
+        .await?;
     if rows.len() != font_ids.iter().copied().collect::<BTreeSet<_>>().len() {
         return Err(AppError::NotFound("school_font_not_found".to_string()));
     }
@@ -361,10 +394,22 @@ async fn load_uploads(
     relation: SchoolFontStagingRelation,
     file_ids: &[Uuid],
 ) -> Result<Vec<UploadedFileRow>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "fonts.load_uploads").await?;
+    load_uploads_on_connection(&mut connection, relation, file_ids).await
+}
+
+async fn load_uploads_on_connection(
+    connection: &mut sqlx::PgConnection,
+    relation: SchoolFontStagingRelation,
+    file_ids: &[Uuid],
+) -> Result<Vec<UploadedFileRow>, AppError> {
     let rows = match relation {
         SchoolFontStagingRelation::Central => {
-            sqlx::query_as::<_, UploadedFileRow>(
-                "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
+            school_database::DbSession::new(&mut *connection)
+                .query_as::<UploadedFileRow>(
+                    "fonts.src.services.load_uploads_on_connection",
+                    "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
                     file.lifecycle_status, file.retention_class, file.inspection_metadata,
                     version.storage_status, version.scan_status
              FROM school_font_file_uploads AS upload
@@ -375,14 +420,16 @@ async fn load_uploads(
                AND upload.purpose_code = 'school_font'
                AND file.purpose_code = 'school_font'
              ORDER BY file.id",
-            )
-            .bind(file_ids)
-            .fetch_all(pool)
-            .await?
+                )
+                .bind(file_ids)
+                .fetch_all()
+                .await?
         }
         SchoolFontStagingRelation::CertificateTemplate(template_id) => {
-            sqlx::query_as::<_, UploadedFileRow>(
-                "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
+            school_database::DbSession::new(&mut *connection)
+                .query_as::<UploadedFileRow>(
+                    "fonts.src.services.load_uploads_on_connection",
+                    "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
                         file.lifecycle_status, file.retention_class, file.inspection_metadata,
                         version.storage_status, version.scan_status
                  FROM certificate_school_font_file_uploads AS upload
@@ -394,11 +441,11 @@ async fn load_uploads(
                    AND upload.purpose_code = 'school_font'
                    AND file.purpose_code = 'school_font'
                  ORDER BY file.id",
-            )
-            .bind(template_id)
-            .bind(file_ids)
-            .fetch_all(pool)
-            .await?
+                )
+                .bind(template_id)
+                .bind(file_ids)
+                .fetch_all()
+                .await?
         }
     };
     order_uploads(file_ids, rows)
@@ -411,8 +458,10 @@ async fn lock_uploads(
 ) -> Result<Vec<UploadedFileRow>, AppError> {
     let rows = match relation {
         SchoolFontStagingRelation::Central => {
-            sqlx::query_as::<_, UploadedFileRow>(
-                "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
+            school_database::DbSession::new(&mut **tx)
+                .query_as::<UploadedFileRow>(
+                    "fonts.src.services.lock_uploads",
+                    "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
                     file.lifecycle_status, file.retention_class, file.inspection_metadata,
                     version.storage_status, version.scan_status
              FROM school_font_file_uploads AS upload
@@ -424,14 +473,16 @@ async fn lock_uploads(
                AND file.purpose_code = 'school_font'
              ORDER BY file.id
              FOR UPDATE OF upload, file, version",
-            )
-            .bind(file_ids)
-            .fetch_all(&mut **tx)
-            .await?
+                )
+                .bind(file_ids)
+                .fetch_all()
+                .await?
         }
         SchoolFontStagingRelation::CertificateTemplate(template_id) => {
-            sqlx::query_as::<_, UploadedFileRow>(
-                "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
+            school_database::DbSession::new(&mut **tx)
+                .query_as::<UploadedFileRow>(
+                    "fonts.src.services.lock_uploads",
+                    "SELECT file.id AS file_id, file.display_filename, file.purpose_code,
                         file.lifecycle_status, file.retention_class, file.inspection_metadata,
                         version.storage_status, version.scan_status
                  FROM certificate_school_font_file_uploads AS upload
@@ -444,11 +495,11 @@ async fn lock_uploads(
                    AND file.purpose_code = 'school_font'
                  ORDER BY file.id
                  FOR UPDATE OF upload, file, version",
-            )
-            .bind(template_id)
-            .bind(file_ids)
-            .fetch_all(&mut **tx)
-            .await?
+                )
+                .bind(template_id)
+                .bind(file_ids)
+                .fetch_all()
+                .await?
         }
     };
     order_uploads(file_ids, rows)
@@ -478,22 +529,35 @@ fn order_uploads(
 }
 
 async fn load_existing_variants(pool: &PgPool) -> Result<BTreeSet<FontVariantKey>, AppError> {
-    let rows = sqlx::query_as::<_, (String, i16, String)>(
-        "SELECT normalized_family, font_weight, font_style FROM school_fonts",
-    )
-    .fetch_all(pool)
-    .await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "fonts.load_existing_variants")
+            .await?;
+    load_existing_variants_on_connection(&mut connection).await
+}
+
+async fn load_existing_variants_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<BTreeSet<FontVariantKey>, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<(String, i16, String)>(
+            "fonts.src.services.load_existing_variants_on_connection",
+            "SELECT normalized_family, font_weight, font_style FROM school_fonts",
+        )
+        .fetch_all()
+        .await?;
     persisted_variant_set(rows)
 }
 
 async fn load_existing_variants_tx(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<BTreeSet<FontVariantKey>, AppError> {
-    let rows = sqlx::query_as::<_, (String, i16, String)>(
-        "SELECT normalized_family, font_weight, font_style FROM school_fonts",
-    )
-    .fetch_all(&mut **tx)
-    .await?;
+    let rows = school_database::DbSession::new(&mut **tx)
+        .query_as::<(String, i16, String)>(
+            "fonts.src.services.load_existing_variants_tx",
+            "SELECT normalized_family, font_weight, font_style FROM school_fonts",
+        )
+        .fetch_all()
+        .await?;
     persisted_variant_set(rows)
 }
 
@@ -634,20 +698,26 @@ async fn delete_staging_rows(
 ) -> Result<(), AppError> {
     let deleted = match relation {
         SchoolFontStagingRelation::Central => {
-            sqlx::query("DELETE FROM school_font_file_uploads WHERE file_id = ANY($1::uuid[])")
+            school_database::DbSession::new(&mut **tx)
+                .query(
+                    "fonts.src.services.delete_staging_rows",
+                    "DELETE FROM school_font_file_uploads WHERE file_id = ANY($1::uuid[])",
+                )
                 .bind(file_ids)
-                .execute(&mut **tx)
+                .execute()
                 .await?
         }
         SchoolFontStagingRelation::CertificateTemplate(template_id) => {
-            sqlx::query(
-                "DELETE FROM certificate_school_font_file_uploads
+            school_database::DbSession::new(&mut **tx)
+                .query(
+                    "fonts.src.services.delete_staging_rows",
+                    "DELETE FROM certificate_school_font_file_uploads
              WHERE template_id = $1 AND file_id = ANY($2::uuid[])",
-            )
-            .bind(template_id)
-            .bind(file_ids)
-            .execute(&mut **tx)
-            .await?
+                )
+                .bind(template_id)
+                .bind(file_ids)
+                .execute()
+                .await?
         }
     };
     if deleted.rows_affected() != file_ids.len() as u64 {

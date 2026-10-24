@@ -1,7 +1,10 @@
 use chrono::{Datelike, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions, PgPool,
+};
 use std::{env, error::Error, time::Duration};
 use uuid::Uuid;
 
@@ -48,6 +51,14 @@ struct SeedSummary {
     homeroom_id: Uuid,
 }
 
+fn database_failure(error: sqlx::Error) -> Box<dyn Error + Send + Sync> {
+    format!(
+        "Database operation failed: {}",
+        school_database::error_class(&error)
+    )
+    .into()
+}
+
 #[tokio::main]
 async fn main() -> SeedResult<()> {
     load_env_files()?;
@@ -70,8 +81,14 @@ async fn main() -> SeedResult<()> {
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(30))
-        .connect(&database_url)
-        .await?;
+        .connect_with(
+            database_url
+                .parse::<PgConnectOptions>()
+                .map_err(database_failure)?
+                .disable_statement_logging(),
+        )
+        .await
+        .map_err(database_failure)?;
 
     if config.run_migrations {
         println!("Running tenant migrations...");
@@ -233,7 +250,10 @@ async fn fetch_database_url(config: &SeedConfig) -> SeedResult<String> {
 }
 
 async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSummary> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "school.seed_sandbox.seed_database")
+            .await
+            .map_err(database_failure)?;
 
     let admin_user_id = upsert_admin_user(&mut tx, config).await?;
     let parent_user_id = upsert_parent_user(&mut tx, config).await?;
@@ -267,7 +287,7 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
     )
     .await?;
 
-    tx.commit().await?;
+    tx.commit().await.map_err(database_failure)?;
 
     Ok(SeedSummary {
         admin_user_id,
@@ -287,8 +307,10 @@ async fn upsert_admin_user(
     config: &SeedConfig,
 ) -> SeedResult<Uuid> {
     let password_hash = bcrypt::hash(&config.seed_password, bcrypt::DEFAULT_COST)?;
-    let user_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let user_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_admin_user",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             title, first_name, last_name, user_type, status, metadata
@@ -306,17 +328,20 @@ async fn upsert_admin_user(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(&config.admin_username)
-    .bind(password_hash)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(&config.admin_username)
+        .bind(password_hash)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
     let admin_role_id = ensure_admin_role(tx).await?;
     ensure_user_role(tx, user_id, admin_role_id).await?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_admin_user",
+            r#"
         INSERT INTO staff_info (user_id, employment_type, metadata)
         VALUES ($1, 'permanent', jsonb_build_object('seed', 'sandbox'))
         ON CONFLICT (user_id) DO UPDATE SET
@@ -324,16 +349,17 @@ async fn upsert_admin_user(
             metadata = COALESCE(staff_info.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()
         "#,
-    )
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(user_id)
 }
 
 async fn ensure_admin_role(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> SeedResult<Uuid> {
-    let role_id = sqlx::query_scalar::<_, Uuid>(
+    let role_id = school_database::DbSession::new(&mut **tx).scalar::<Uuid>("school.bin.seed_sandbox.ensure_admin_role",
         r#"
         INSERT INTO roles (code, name, name_en, description, user_type, level, is_active)
         VALUES ('ADMIN', 'ผู้ดูแลระบบ', 'System Admin', 'Seeded sandbox admin role', 'staff', 999, true)
@@ -347,11 +373,13 @@ async fn ensure_admin_role(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Se
         RETURNING id
         "#,
     )
-    .fetch_one(&mut **tx)
-    .await?;
+    .fetch_one()
+    .await.map_err(database_failure)?;
 
-    let permission_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let permission_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.ensure_admin_role",
+            r#"
         INSERT INTO permissions (code, name, module, action, scope, description)
         VALUES ('*', 'ทั้งหมด (Wildcard)', 'system', '*', 'all', 'สิทธิ์เข้าถึงทุกอย่างในระบบ')
         ON CONFLICT (code) DO UPDATE SET
@@ -363,17 +391,18 @@ async fn ensure_admin_role(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Se
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.ensure_admin_role",
         "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     )
     .bind(role_id)
     .bind(permission_id)
-    .execute(&mut **tx)
-    .await?;
+    .execute()
+    .await.map_err(database_failure)?;
 
     Ok(role_id)
 }
@@ -383,13 +412,20 @@ async fn ensure_user_role(
     user_id: Uuid,
     role_id: Uuid,
 ) -> SeedResult<()> {
-    sqlx::query("UPDATE user_roles SET is_primary = false WHERE user_id = $1 AND ended_at IS NULL")
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_user_role",
+            "UPDATE user_roles SET is_primary = false WHERE user_id = $1 AND ended_at IS NULL",
+        )
         .bind(user_id)
-        .execute(&mut **tx)
-        .await?;
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_user_role",
+            r#"
         INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
         SELECT $1, $2, true, CURRENT_DATE
         WHERE NOT EXISTS (
@@ -397,19 +433,20 @@ async fn ensure_user_role(
             WHERE user_id = $1 AND role_id = $2 AND ended_at IS NULL
         )
         "#,
-    )
-    .bind(user_id)
-    .bind(role_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .bind(role_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.ensure_user_role",
         "UPDATE user_roles SET is_primary = true WHERE user_id = $1 AND role_id = $2 AND ended_at IS NULL",
     )
     .bind(user_id)
     .bind(role_id)
-    .execute(&mut **tx)
-    .await?;
+    .execute()
+    .await.map_err(database_failure)?;
 
     Ok(())
 }
@@ -419,8 +456,10 @@ async fn upsert_parent_user(
     config: &SeedConfig,
 ) -> SeedResult<Uuid> {
     let password_hash = bcrypt::hash(&config.parent_password, bcrypt::DEFAULT_COST)?;
-    let user_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let user_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_parent_user",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             title, first_name, last_name, phone, user_type, status, metadata
@@ -441,13 +480,16 @@ async fn upsert_parent_user(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(password_hash)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(password_hash)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_parent_user",
+            r#"
         INSERT INTO parent_info (user_id, relationship, occupation, metadata)
         VALUES ($1, 'guardian', 'Sandbox fixture', jsonb_build_object('seed', 'sandbox'))
         ON CONFLICT (user_id) DO UPDATE SET
@@ -456,10 +498,11 @@ async fn upsert_parent_user(
             metadata = COALESCE(parent_info.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()
         "#,
-    )
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(user_id)
 }
@@ -469,8 +512,10 @@ async fn upsert_student_user(
     config: &SeedConfig,
 ) -> SeedResult<Uuid> {
     let password_hash = bcrypt::hash(&config.student_password, bcrypt::DEFAULT_COST)?;
-    let user_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let user_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_student_user",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             title, first_name, last_name, user_type, status, date_of_birth, gender, metadata
@@ -492,10 +537,11 @@ async fn upsert_student_user(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(password_hash)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(password_hash)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
     Ok(user_id)
 }
@@ -505,8 +551,10 @@ async fn ensure_student_parent_link(
     student_user_id: Uuid,
     parent_user_id: Uuid,
 ) -> SeedResult<()> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_student_parent_link",
+            r#"
         INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
         VALUES ($1, $2, 'guardian', true)
         ON CONFLICT (student_user_id, parent_user_id) DO UPDATE SET
@@ -514,11 +562,12 @@ async fn ensure_student_parent_link(
             is_primary = true,
             updated_at = NOW()
         "#,
-    )
-    .bind(student_user_id)
-    .bind(parent_user_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(student_user_id)
+        .bind(parent_user_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(())
 }
@@ -531,17 +580,22 @@ async fn upsert_academic_year(
     let start_date = NaiveDate::from_ymd_opt(start_year, 5, 16).ok_or("invalid start date")?;
     let end_date = NaiveDate::from_ymd_opt(start_year + 1, 3, 31).ok_or("invalid end date")?;
 
-    sqlx::query(
-        "UPDATE academic_years
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_academic_year",
+            "UPDATE academic_years
          SET status = 'closed', row_version = row_version + 1, updated_at = NOW()
          WHERE status = 'active' AND year <> $1",
-    )
-    .bind(academic_year)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    let academic_year_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let academic_year_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_academic_year",
+            r#"
         INSERT INTO academic_years (year, name, start_date, end_date, school_days, status, metadata)
         VALUES ($1, $2, $3, $4, 'MON,TUE,WED,THU,FRI', 'active',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
@@ -556,13 +610,14 @@ async fn upsert_academic_year(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(academic_year)
-    .bind(format!("ปีการศึกษา {}", academic_year))
-    .bind(start_date)
-    .bind(end_date)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year)
+        .bind(format!("ปีการศึกษา {}", academic_year))
+        .bind(start_date)
+        .bind(end_date)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
     Ok(academic_year_id)
 }
@@ -578,8 +633,10 @@ async fn upsert_terms(
     let term_2_start = NaiveDate::from_ymd_opt(start_year, 10, 20).ok_or("invalid term date")?;
     let term_2_end = NaiveDate::from_ymd_opt(start_year + 1, 3, 31).ok_or("invalid term date")?;
 
-    let bell_schedule_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let bell_schedule_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_terms",
+            r#"
         INSERT INTO bell_schedules (
             id, academic_year_id, code, name, is_default, status
         )
@@ -592,28 +649,34 @@ async fn upsert_terms(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(Uuid::new_v5(
-        &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
-        format!("sandbox-bell-schedule:{academic_year_id}").as_bytes(),
-    ))
-    .bind(academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(Uuid::new_v5(
+            &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
+            format!("sandbox-bell-schedule:{academic_year_id}").as_bytes(),
+        ))
+        .bind(academic_year_id)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        "UPDATE academic_terms
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_terms",
+            "UPDATE academic_terms
          SET status = 'closed',
              closed_on = COALESCE(closed_on, planned_end_date, CURRENT_DATE),
              row_version = row_version + 1, updated_at = NOW()
          WHERE status = 'active' AND academic_year_id <> $1",
-    )
-    .bind(academic_year_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    let active_term_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let active_term_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_terms",
+            r#"
         INSERT INTO academic_terms (
             academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
@@ -636,16 +699,19 @@ async fn upsert_terms(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(academic_year_id)
-    .bind(term_1_start)
-    .bind(term_1_end)
-    .bind(bell_schedule_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(term_1_start)
+        .bind(term_1_end)
+        .bind(bell_schedule_id)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_terms",
+            r#"
         INSERT INTO academic_terms (
             academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
@@ -667,20 +733,23 @@ async fn upsert_terms(
             metadata = COALESCE(academic_terms.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()
         "#,
-    )
-    .bind(academic_year_id)
-    .bind(term_2_start)
-    .bind(term_2_end)
-    .bind(bell_schedule_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(term_2_start)
+        .bind(term_2_end)
+        .bind(bell_schedule_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(active_term_id)
 }
 
 async fn upsert_grade_level(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> SeedResult<Uuid> {
-    let grade_level_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let grade_level_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_grade_level",
+            r#"
         INSERT INTO grade_levels (level_type, year, is_active)
         VALUES ('secondary', 1, true)
         ON CONFLICT (level_type, year) DO UPDATE SET
@@ -688,9 +757,10 @@ async fn upsert_grade_level(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> S
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
     Ok(grade_level_id)
 }
@@ -700,13 +770,13 @@ async fn ensure_year_grade_level(
     academic_year_id: Uuid,
     grade_level_id: Uuid,
 ) -> SeedResult<()> {
-    sqlx::query(
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.ensure_year_grade_level",
         "INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     )
     .bind(academic_year_id)
     .bind(grade_level_id)
-    .execute(&mut **tx)
-    .await?;
+    .execute()
+    .await.map_err(database_failure)?;
 
     Ok(())
 }
@@ -730,28 +800,33 @@ async fn upsert_curriculum_program(
         &namespace,
         format!("sandbox-study-program:{level_id}:GENERAL").as_bytes(),
     );
-    sqlx::query("INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,'Minimal sandbox fixture for smoke and E2E tests') ON CONFLICT(id) DO NOTHING")
-        .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year).execute(&mut **tx).await?;
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.upsert_curriculum_program", "INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,'Minimal sandbox fixture for smoke and E2E tests') ON CONFLICT(id) DO NOTHING")
+        .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year).execute().await.map_err(database_failure)?;
     // Repeated seeds reuse the immutable published graph and leave any staff amendment alone.
-    let has_publication: bool = sqlx::query_scalar(
+    let has_publication: bool = school_database::DbSession::new(&mut **tx).scalar("school.bin.seed_sandbox.upsert_curriculum_program",
         "SELECT current_publication_id IS NOT NULL FROM curriculum_editions WHERE id=$1 FOR UPDATE",
     )
     .bind(edition_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    .fetch_one()
+    .await.map_err(database_failure)?;
     if has_publication {
         return Ok((level_id, program_id));
     }
-    sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) SELECT $1,$2,'SBX-GEN','Sandbox General',$3,true WHERE NOT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1)")
-        .bind(level_id).bind(edition_id).bind(json!([grade_level_id])).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox','draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
-        .bind(program_id).bind(level_id).execute(&mut **tx).await?;
-    sqlx::query("UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(program_id).execute(&mut **tx).await?;
-    sqlx::query("SELECT capture_curriculum_publication($1,$2,'Initial minimal sandbox fixture')")
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.upsert_curriculum_program", "INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) SELECT $1,$2,'SBX-GEN','Sandbox General',$3,true WHERE NOT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1)")
+        .bind(level_id).bind(edition_id).bind(json!([grade_level_id])).execute().await.map_err(database_failure)?;
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.upsert_curriculum_program", "INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox','draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
+        .bind(program_id).bind(level_id).execute().await.map_err(database_failure)?;
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.upsert_curriculum_program", "UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(program_id).execute().await.map_err(database_failure)?;
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.upsert_curriculum_program",
+            "SELECT capture_curriculum_publication($1,$2,'Initial minimal sandbox fixture')",
+        )
         .bind(edition_id)
         .bind(actor_id)
-        .execute(&mut **tx)
-        .await?;
+        .execute()
+        .await
+        .map_err(database_failure)?;
     Ok((level_id, program_id))
 }
 
@@ -763,8 +838,10 @@ async fn upsert_homeroom(
     academic_year: i32,
 ) -> SeedResult<Uuid> {
     let short_year = academic_year % 100;
-    let homeroom_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let homeroom_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.upsert_homeroom",
+            r#"
         INSERT INTO homerooms (
             code, name, academic_year_id, grade_level_id, room_number,
             study_program_id, capacity, is_active, metadata
@@ -782,13 +859,14 @@ async fn upsert_homeroom(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(format!("{}-M1-1", short_year))
-    .bind(academic_year_id)
-    .bind(grade_level_id)
-    .bind(study_program_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(format!("{}-M1-1", short_year))
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(study_program_id)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
     Ok(homeroom_id)
 }
@@ -798,22 +876,30 @@ async fn ensure_homeroom_advisor(
     homeroom_id: Uuid,
     user_id: Uuid,
 ) -> SeedResult<()> {
-    sqlx::query("DELETE FROM homeroom_advisors WHERE homeroom_id = $1 AND role = 'primary'")
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_homeroom_advisor",
+            "DELETE FROM homeroom_advisors WHERE homeroom_id = $1 AND role = 'primary'",
+        )
         .bind(homeroom_id)
-        .execute(&mut **tx)
-        .await?;
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_homeroom_advisor",
+            r#"
         INSERT INTO homeroom_advisors (homeroom_id, user_id, role)
         VALUES ($1, $2, 'primary')
         ON CONFLICT (homeroom_id, user_id) DO UPDATE SET role = 'primary'
         "#,
-    )
-    .bind(homeroom_id)
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(homeroom_id)
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(())
 }
@@ -822,8 +908,10 @@ async fn ensure_student_info(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     student_user_id: Uuid,
 ) -> SeedResult<()> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_student_info",
+            r#"
         INSERT INTO student_info (user_id, student_id, student_number, enrollment_date, metadata)
         VALUES ($1, 'SBX0001', 1, CURRENT_DATE,
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
@@ -834,10 +922,11 @@ async fn ensure_student_info(
             metadata = COALESCE(student_info.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()
         "#,
-    )
-    .bind(student_user_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(student_user_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(())
 }
@@ -850,8 +939,10 @@ async fn ensure_student_year_placement(
     study_program_id: Uuid,
     homeroom_id: Uuid,
 ) -> SeedResult<()> {
-    let student_academic_year_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let student_academic_year_id = school_database::DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "school.bin.seed_sandbox.ensure_student_year_placement",
+            r#"
         INSERT INTO student_academic_years (
             id, student_id, academic_year_id, grade_level_id, study_program_id,
             status, migration_provenance
@@ -866,33 +957,39 @@ async fn ensure_student_year_placement(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(Uuid::new_v5(
-        &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
-        format!("sandbox-student-year:{student_user_id}:{academic_year_id}").as_bytes(),
-    ))
-    .bind(student_user_id)
-    .bind(academic_year_id)
-    .bind(grade_level_id)
-    .bind(study_program_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(Uuid::new_v5(
+            &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
+            format!("sandbox-student-year:{student_user_id}:{academic_year_id}").as_bytes(),
+        ))
+        .bind(student_user_id)
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(study_program_id)
+        .fetch_one()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        "UPDATE homeroom_placements
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_student_year_placement",
+            "UPDATE homeroom_placements
          SET status = 'ended', end_date = GREATEST(start_date, CURRENT_DATE),
              row_version = row_version + 1, updated_at = NOW()
          WHERE student_academic_year_id = $1
            AND homeroom_id <> $2
            AND status = 'current'",
-    )
-    .bind(student_academic_year_id)
-    .bind(homeroom_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(student_academic_year_id)
+        .bind(homeroom_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.ensure_student_year_placement",
+            r#"
         INSERT INTO homeroom_placements (
             id, student_academic_year_id, academic_year_id, homeroom_id,
             start_date, status, enrollment_type, class_number, metadata,
@@ -911,16 +1008,17 @@ async fn ensure_student_year_placement(
             row_version = homeroom_placements.row_version + 1,
             updated_at = NOW()
         "#,
-    )
-    .bind(Uuid::new_v5(
-        &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
-        format!("sandbox-placement:{student_user_id}:{academic_year_id}").as_bytes(),
-    ))
-    .bind(student_academic_year_id)
-    .bind(academic_year_id)
-    .bind(homeroom_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(Uuid::new_v5(
+            &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
+            format!("sandbox-placement:{student_user_id}:{academic_year_id}").as_bytes(),
+        ))
+        .bind(student_academic_year_id)
+        .bind(academic_year_id)
+        .bind(homeroom_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
 
     Ok(())
 }

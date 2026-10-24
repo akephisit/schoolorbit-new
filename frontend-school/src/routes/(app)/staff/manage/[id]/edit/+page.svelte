@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import { uploadFile } from '#lib/api/files.js';
 	import {
 		organizationAssignmentDraft,
 		organizationAssignmentInput,
@@ -94,7 +96,8 @@
 	// Loading states
 	let loadingProfile = $state(true);
 	let saving = $state(false);
-	let uploadingLicense = $state(false);
+	let licenseFile = $state<File | null>(null);
+	let licenseUpload: PendingUpload | undefined;
 	let latestLicense = $state<{ fileId: string | null } | null>(null);
 
 	let loadingOrganizationUnits = $state(false);
@@ -143,7 +146,8 @@
 		$state<NonNullable<StaffProfileResponse['staff_info']>['job_position']>(null);
 	let originalForm: typeof formData | null = $state(null);
 	const dirty = $derived(
-		originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm)
+		!!licenseFile ||
+			(originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm))
 	);
 
 	beforeNavigate(({ to, cancel, willUnload, shallow }) => {
@@ -154,6 +158,9 @@
 	});
 	function discardChanges() {
 		if (!originalForm || saving) return;
+		licenseUpload?.dispose();
+		licenseUpload = undefined;
+		licenseFile = null;
 		formData = structuredClone($state.snapshot(originalForm));
 		errors = {};
 	}
@@ -168,6 +175,9 @@
 			read = source;
 		untrack(() => {
 			if (activeId !== id) {
+				licenseUpload?.dispose();
+				licenseUpload = undefined;
+				licenseFile = null;
 				activeId = id;
 				latestEducation = null;
 				careerConflict = false;
@@ -190,6 +200,7 @@
 	});
 	onDestroy(() => {
 		disposed = true;
+		licenseUpload?.dispose();
 		mutationEpoch++;
 		staffRequest.abort();
 		organizationRequest.abort();
@@ -380,16 +391,7 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (
-			!canMutateStaff ||
-			saving ||
-			uploadingLicense ||
-			careerConflict ||
-			!staff ||
-			!originalForm ||
-			!dirty
-		)
-			return;
+		if (!canMutateStaff || saving || careerConflict || !staff || !originalForm || !dirty) return;
 		if (!validateStep1()) {
 			await goto(
 				sectionHref(
@@ -423,6 +425,28 @@
 		errors = {};
 
 		try {
+			if (licenseFile) {
+				if (!canManageLicense) throw new Error('ไม่มีสิทธิ์จัดการเอกสารใบประกอบวิชาชีพ');
+				if (licenseUpload?.file !== licenseFile || licenseUpload.scope.resourceId !== owner) {
+					licenseUpload?.dispose();
+					licenseUpload = new PendingUpload(
+						licenseFile,
+						{ purpose: 'teaching_license', resourceId: owner, owner },
+						uploadFile
+					);
+				}
+				let id: string;
+				try {
+					id = await licenseUpload.commit();
+				} catch (cause) {
+					if (current())
+						errors.teaching_license_file =
+							cause instanceof Error ? cause.message : 'อัปโหลดไม่สำเร็จ';
+					throw cause;
+				}
+				if (!current()) return;
+				formData.personnel.teaching_license_file_id = id;
+			}
 			const payload: UpdateStaffRequest = {};
 			const personalFields = [
 				...STAFF_NAME_FIELDS,
@@ -463,6 +487,9 @@
 			if (!current()) return;
 
 			if (result.success) {
+				licenseFile = null;
+				licenseUpload?.dispose();
+				licenseUpload = undefined;
 				toast.success('บันทึกข้อมูลสำเร็จ');
 				originalForm = structuredClone($state.snapshot(formData));
 				await invalidate(`school:staff-profile:${owner}`);
@@ -564,7 +591,12 @@
 	function resolveLicenseConflict(useLatest: boolean) {
 		if (!latestLicense || !originalForm || saving) return;
 		originalForm.personnel.teaching_license_file_id = latestLicense.fileId;
-		if (useLatest) formData.personnel.teaching_license_file_id = latestLicense.fileId;
+		if (useLatest) {
+			formData.personnel.teaching_license_file_id = latestLicense.fileId;
+			licenseFile = null;
+			licenseUpload?.dispose();
+			licenseUpload = undefined;
+		}
 		latestLicense = null;
 		careerConflict = latestEducation !== null;
 	}
@@ -608,6 +640,7 @@
 			if (current())
 				toast.error(e instanceof Error ? e.message : 'ไม่สามารถอัปเดตรูปภาพได้', { id: toastId });
 			else toast.dismiss(toastId);
+			throw e;
 		}
 	}
 </script>
@@ -909,7 +942,7 @@
 							<StaffPersonnelFields
 								{staffId}
 								{canManageLicense}
-								onUploadPendingChange={(pending) => (uploadingLicense = pending)}
+								bind:licenseFile
 								bind:value={formData.personnel}
 								originalCareer={originalForm?.personnel.career}
 								bind:correctionReasons
@@ -1098,11 +1131,11 @@
 							type="button"
 							variant="outline"
 							onclick={discardChanges}
-							disabled={saving || uploadingLicense || !dirty}>ยกเลิกการแก้ไข</Button
+							disabled={saving || !dirty}>ยกเลิกการแก้ไข</Button
 						>
 						<Button
 							type="submit"
-							disabled={saving || uploadingLicense || careerConflict || !canMutateStaff || !dirty}
+							disabled={saving || careerConflict || !canMutateStaff || !dirty}
 							class="gap-2"
 							>{#if saving}<LoaderCircle class="size-4 animate-spin" />กำลังบันทึก...{:else}<Save
 									class="size-4"

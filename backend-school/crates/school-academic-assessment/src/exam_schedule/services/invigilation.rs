@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::NaiveTime;
@@ -75,9 +76,9 @@ pub(super) async fn lock_exam_invigilator_staff_conflict_scope(
     }
 
     for lock_key in exam_invigilator_staff_lock_keys(exam_day_id, staff_ids) {
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.lock_exam_invigilator_staff_conflict_scope", "SELECT pg_advisory_xact_lock($1)")
             .bind(lock_key)
-            .execute(&mut **tx)
+            .execute()
             .await?;
     }
     Ok(())
@@ -86,12 +87,24 @@ pub async fn get_invigilator_workspace(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
-    fetch_round(pool, round_id).await?;
-    let assignments = fetch_invigilator_assignment_summaries(pool, round_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.get_invigilator_workspace",
+    )
+    .await?;
+    get_invigilator_workspace_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_invigilator_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<ExamInvigilatorWorkspace, AppError> {
+    fetch_round(connection, round_id).await?;
+    let assignments = fetch_invigilator_assignment_summaries(connection, round_id).await?;
     let assignment_ids: Vec<Uuid> = assignments.iter().map(|item| item.assignment_id).collect();
     let mut invigilators_by_assignment =
-        fetch_invigilator_views_by_assignment_ids(pool, &assignment_ids).await?;
-    let staff_workloads = fetch_invigilator_staff_workloads(pool, round_id).await?;
+        fetch_invigilator_views_by_assignment_ids(connection, &assignment_ids).await?;
+    let staff_workloads = fetch_invigilator_staff_workloads(connection, round_id).await?;
 
     Ok(ExamInvigilatorWorkspace {
         round_id,
@@ -119,11 +132,25 @@ pub async fn list_invigilator_staff_options(
     search: Option<String>,
     limit: Option<i64>,
 ) -> Result<Vec<ExamInvigilatorStaffOption>, AppError> {
-    fetch_round(pool, round_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.list_invigilator_staff_options",
+    )
+    .await?;
+    list_invigilator_staff_options_on_connection(&mut connection, round_id, search, limit).await
+}
+
+pub async fn list_invigilator_staff_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+    search: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<ExamInvigilatorStaffOption>, AppError> {
+    fetch_round(connection, round_id).await?;
     let search_pattern = invigilator_staff_option_search_pattern(search);
     let limit = invigilator_staff_option_limit(limit);
 
-    sqlx::query_as::<_, ExamInvigilatorStaffOption>(
+    DbSession::new(connection).query_as::<ExamInvigilatorStaffOption>("academic_assessment.exam_schedule.services.invigilation.list_invigilator_staff_options_on_connection",
         r#"
         SELECT user_account.id AS staff_id,
                COALESCE(
@@ -148,7 +175,7 @@ pub async fn list_invigilator_staff_options(
     )
     .bind(search_pattern)
     .bind(limit)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
@@ -160,14 +187,18 @@ pub async fn update_assignment_invigilators(
 ) -> Result<DayRoomAssignmentView, AppError> {
     let invigilator_staff_ids =
         validate_unique_invigilator_staff_ids(request.invigilator_staff_ids)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.update_assignment_invigilators",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
-    let exam_day_id: Uuid = sqlx::query_scalar(
+    let exam_day_id: Uuid = DbSession::new(&mut *tx).scalar("academic_assessment.exam_schedule.services.invigilation.update_assignment_invigilators",
         "SELECT exam_day_id FROM academic_exam_day_room_assignments WHERE id = $1",
     )
     .bind(assignment_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
 
     lock_exam_invigilator_staff_conflict_scope(&mut tx, exam_day_id, &invigilator_staff_ids)
@@ -190,7 +221,12 @@ pub async fn update_assignment_invigilators(
     mark_round_draft_after_mutation(&mut tx, context.exam_round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
-    fetch_day_room_assignment_view(pool, assignment_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.update_assignment_invigilators",
+    )
+    .await?;
+    fetch_day_room_assignment_view(&mut connection, assignment_id).await
 }
 pub async fn assign_invigilator_to_assignment(
     pool: &PgPool,
@@ -198,7 +234,11 @@ pub async fn assign_invigilator_to_assignment(
     staff_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.assign_invigilator_to_assignment",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
@@ -237,7 +277,7 @@ pub async fn remove_invigilator_from_assignment(
     staff_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "academic_assessment.exam_schedule.services.invigilation.remove_invigilator_from_assignment").await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
@@ -264,21 +304,21 @@ pub(super) async fn replace_assignment_invigilators_in_tx(
 ) -> Result<(), AppError> {
     validate_active_staff_users(tx, invigilator_staff_ids).await?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.replace_assignment_invigilators_in_tx",
         r#"
         DELETE FROM academic_exam_day_invigilators
         WHERE day_room_assignment_id = $1
         "#,
     )
     .bind(assignment_id)
-    .execute(&mut **tx)
+    .execute()
     .await?;
 
     if invigilator_staff_ids.is_empty() {
         return Ok(());
     }
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.replace_assignment_invigilators_in_tx",
         r#"
         INSERT INTO academic_exam_day_invigilators (
             exam_day_id,
@@ -292,7 +332,7 @@ pub(super) async fn replace_assignment_invigilators_in_tx(
     .bind(exam_day_id)
     .bind(assignment_id)
     .bind(invigilator_staff_ids)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(map_day_room_assignment_write_error)?;
 
@@ -304,7 +344,7 @@ async fn delete_staff_invigilator_from_other_day_assignments_in_tx(
     target_assignment_id: Uuid,
     staff_id: Uuid,
 ) -> Result<u64, AppError> {
-    let result = sqlx::query(
+    let result = DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.delete_staff_invigilator_from_other_day_assignments_in_tx",
         r#"
         DELETE FROM academic_exam_day_invigilators invigilator
         USING academic_exam_day_room_assignments assignment
@@ -318,7 +358,7 @@ async fn delete_staff_invigilator_from_other_day_assignments_in_tx(
     .bind(exam_day_id)
     .bind(staff_id)
     .bind(target_assignment_id)
-    .execute(&mut **tx)
+    .execute()
     .await?;
 
     Ok(result.rows_affected())
@@ -329,7 +369,7 @@ async fn insert_staff_invigilator_if_missing_in_tx(
     assignment_id: Uuid,
     staff_id: Uuid,
 ) -> Result<u64, AppError> {
-    let result = sqlx::query(
+    let result = DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.insert_staff_invigilator_if_missing_in_tx",
         r#"
         INSERT INTO academic_exam_day_invigilators (
             exam_day_id,
@@ -343,7 +383,7 @@ async fn insert_staff_invigilator_if_missing_in_tx(
     .bind(exam_day_id)
     .bind(assignment_id)
     .bind(staff_id)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(map_day_room_assignment_write_error)?;
 
@@ -354,7 +394,7 @@ async fn delete_staff_invigilator_from_assignment_in_tx(
     assignment_id: Uuid,
     staff_id: Uuid,
 ) -> Result<u64, AppError> {
-    let result = sqlx::query(
+    let result = DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.invigilation.delete_staff_invigilator_from_assignment_in_tx",
         r#"
         DELETE FROM academic_exam_day_invigilators
         WHERE day_room_assignment_id = $1
@@ -363,7 +403,7 @@ async fn delete_staff_invigilator_from_assignment_in_tx(
     )
     .bind(assignment_id)
     .bind(staff_id)
-    .execute(&mut **tx)
+    .execute()
     .await?;
 
     Ok(result.rows_affected())
@@ -387,8 +427,10 @@ async fn validate_active_staff_users(
         return Ok(());
     }
 
-    let invalid_count: i64 = sqlx::query_scalar(
-        r#"
+    let invalid_count: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.invigilation.validate_active_staff_users",
+            r#"
         SELECT COUNT(*)::BIGINT
         FROM unnest($1::uuid[]) AS requested(staff_id)
         LEFT JOIN user_display_names user_account
@@ -397,10 +439,10 @@ async fn validate_active_staff_users(
          AND user_account.status = 'active'
         WHERE user_account.id IS NULL
         "#,
-    )
-    .bind(staff_ids)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(staff_ids)
+        .fetch_one()
+        .await?;
 
     if invalid_count > 0 {
         return Err(AppError::BadRequest(
@@ -418,7 +460,7 @@ async fn fetch_assignment_session_windows(
         return Ok(Vec::new());
     }
 
-    let rows = sqlx::query_as::<_, InvigilatorSessionWindowRow>(
+    let rows = DbSession::new(&mut **tx).query_as::<InvigilatorSessionWindowRow>("academic_assessment.exam_schedule.services.invigilation.fetch_assignment_session_windows",
         r#"
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
@@ -441,7 +483,7 @@ async fn fetch_assignment_session_windows(
     )
     .bind(assignment_id)
     .bind(staff_ids)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     Ok(rows
@@ -464,7 +506,7 @@ async fn fetch_existing_invigilator_session_windows(
         return Ok(Vec::new());
     }
 
-    let rows = sqlx::query_as::<_, InvigilatorSessionWindowRow>(
+    let rows = DbSession::new(&mut **tx).query_as::<InvigilatorSessionWindowRow>("academic_assessment.exam_schedule.services.invigilation.fetch_existing_invigilator_session_windows",
         r#"
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
@@ -489,7 +531,7 @@ async fn fetch_existing_invigilator_session_windows(
     )
     .bind(round_id)
     .bind(staff_ids)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     Ok(rows
@@ -550,7 +592,7 @@ pub(super) async fn fetch_invigilator_staff_ids_for_assignment(
     tx: &mut Transaction<'_, Postgres>,
     assignment_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
+    DbSession::new(&mut **tx).scalar("academic_assessment.exam_schedule.services.invigilation.fetch_invigilator_staff_ids_for_assignment",
         r#"
         SELECT staff_id
         FROM academic_exam_day_invigilators
@@ -559,7 +601,7 @@ pub(super) async fn fetch_invigilator_staff_ids_for_assignment(
         "#,
     )
     .bind(assignment_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
@@ -594,10 +636,10 @@ pub(super) async fn validate_invigilator_candidate_session_conflicts(
     Ok(())
 }
 async fn fetch_invigilator_assignment_summaries(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<InvigilatorAssignmentSummaryRow>, AppError> {
-    sqlx::query_as::<_, InvigilatorAssignmentSummaryRow>(
+    DbSession::new(connection).query_as::<InvigilatorAssignmentSummaryRow>("academic_assessment.exam_schedule.services.invigilation.fetch_invigilator_assignment_summaries",
         r#"
         SELECT assignment.id AS assignment_id,
                day.id AS exam_day_id,
@@ -624,15 +666,15 @@ async fn fetch_invigilator_assignment_summaries(
         "#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
 async fn fetch_invigilator_staff_workloads(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamInvigilatorStaffWorkload>, AppError> {
-    let rows = sqlx::query_as::<_, InvigilatorSessionWindowRow>(
+    let rows = DbSession::new(connection).query_as::<InvigilatorSessionWindowRow>("academic_assessment.exam_schedule.services.invigilation.fetch_invigilator_staff_workloads",
         r#"
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
@@ -657,7 +699,7 @@ async fn fetch_invigilator_staff_workloads(
         "#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(build_invigilator_staff_workloads(rows))
@@ -722,7 +764,7 @@ pub(super) fn build_invigilator_staff_workloads(
         .collect()
 }
 pub(super) async fn fetch_invigilator_views_by_assignment_ids(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     assignment_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<InvigilatorView>>, AppError> {
     let assignment_ids = unique_uuids(assignment_ids.to_vec());
@@ -730,7 +772,7 @@ pub(super) async fn fetch_invigilator_views_by_assignment_ids(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query_as::<_, InvigilatorViewRow>(
+    let rows = DbSession::new(connection).query_as::<InvigilatorViewRow>("academic_assessment.exam_schedule.services.invigilation.fetch_invigilator_views_by_assignment_ids",
         r#"
         SELECT invigilator.day_room_assignment_id,
                invigilator.staff_id,
@@ -746,7 +788,7 @@ pub(super) async fn fetch_invigilator_views_by_assignment_ids(
         "#,
     )
     .bind(&assignment_ids)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     let mut grouped = HashMap::new();
@@ -762,7 +804,7 @@ async fn fetch_invigilator_assignment_mutation_context_for_update(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     assignment_id: Uuid,
 ) -> Result<InvigilatorAssignmentMutationContext, AppError> {
-    sqlx::query_as::<_, InvigilatorAssignmentMutationContext>(
+    DbSession::new(&mut **tx).query_as::<InvigilatorAssignmentMutationContext>("academic_assessment.exam_schedule.services.invigilation.fetch_invigilator_assignment_mutation_context_for_update",
         r#"
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
@@ -776,7 +818,7 @@ async fn fetch_invigilator_assignment_mutation_context_for_update(
         "#,
     )
     .bind(assignment_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
 }
@@ -794,7 +836,7 @@ pub(super) fn invigilator_staff_option_search_pattern(search: Option<String>) ->
     }
 }
 pub(super) async fn fetch_invigilators_by_assignment_ids(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     assignment_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<ExamInvigilatorView>>, AppError> {
     let assignment_ids = unique_uuids(assignment_ids.to_vec());
@@ -802,7 +844,7 @@ pub(super) async fn fetch_invigilators_by_assignment_ids(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query_as::<_, ExamInvigilatorView>(
+    let rows = DbSession::new(connection).query_as::<ExamInvigilatorView>("academic_assessment.exam_schedule.services.invigilation.fetch_invigilators_by_assignment_ids",
         r#"
         SELECT invigilator.id,
                invigilator.exam_day_id,
@@ -824,7 +866,7 @@ pub(super) async fn fetch_invigilators_by_assignment_ids(
         "#,
     )
     .bind(&assignment_ids)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     let mut grouped = HashMap::new();

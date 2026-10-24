@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 fn validate_item(input: &ItemInput) -> Result<BigDecimal, AppError> {
     if input.name.trim().is_empty() || input.name.chars().count() > 200 {
         return Err(AppError::ValidationError(
@@ -30,13 +31,13 @@ pub async fn create_item(
     )
     .await?;
     validate_allocation(&mut tx, &scope, &maximum, None).await?;
-    let count:i64=sqlx::query_scalar("SELECT count(*) FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(group).bind(phase).fetch_one(&mut *tx).await?;
+    let count:i64=DbSession::new(&mut *tx).scalar("academic_assessment.gradebook.services.items.create_item", "SELECT count(*) FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(group).bind(phase).fetch_one().await?;
     if count >= 1000 {
         return Err(AppError::ValidationError(
             "A phase supports at most 1000 retained items".into(),
         ));
     }
-    let item=sqlx::query_as("INSERT INTO learning_group_score_items (learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score,display_order,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING id,name,max_score::text AS max_score,display_order,lifecycle,row_version").bind(group).bind(scope.offering_id).bind(scope.plan_id).bind(phase).bind(context.academic_term_id).bind(context.academic_year_id).bind(input.name.trim()).bind(maximum).bind(input.display_order).bind(actor.user_id).fetch_one(&mut *tx).await?;
+    let item=DbSession::new(&mut *tx).query_as("academic_assessment.gradebook.services.items.create_item", "INSERT INTO learning_group_score_items (learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score,display_order,created_by,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING id,name,max_score::text AS max_score,display_order,lifecycle,row_version").bind(group).bind(scope.offering_id).bind(scope.plan_id).bind(phase).bind(context.academic_term_id).bind(context.academic_year_id).bind(input.name.trim()).bind(maximum).bind(input.display_order).bind(actor.user_id).fetch_one().await?;
     invalidate(&mut tx, &scope).await?;
     tx.commit().await?;
     Ok(item)
@@ -64,7 +65,7 @@ pub async fn update_item(
     let prior = load_item(&mut tx, &scope, item_id).await?;
     check_version(input.row_version, Some(prior.row_version))?;
     validate_allocation(&mut tx, &scope, &maximum, Some(&prior)).await?;
-    let exceeds:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_group_student_scores WHERE score_item_id=$1 AND score>$2)").bind(item_id).bind(&maximum).fetch_one(&mut *tx).await?;
+    let exceeds:bool=DbSession::new(&mut *tx).scalar("academic_assessment.gradebook.services.items.update_item", "SELECT EXISTS(SELECT 1 FROM learning_group_student_scores WHERE score_item_id=$1 AND score>$2)").bind(item_id).bind(&maximum).fetch_one().await?;
     if exceeds {
         return Err(AppError::ValidationError(
             "Item maximum is below a retained student score; reduce or clear that score first"
@@ -72,7 +73,7 @@ pub async fn update_item(
         ));
     }
     let changed = decimal(&prior.max_score)? != maximum;
-    let item=sqlx::query_as("UPDATE learning_group_score_items SET name=$2,max_score=$3,display_order=$4,row_version=row_version+1,updated_by=$5,updated_at=now() WHERE id=$1 RETURNING id,name,max_score::text AS max_score,display_order,lifecycle,row_version").bind(item_id).bind(input.name.trim()).bind(maximum).bind(input.display_order).bind(actor.user_id).fetch_one(&mut *tx).await?;
+    let item=DbSession::new(&mut *tx).query_as("academic_assessment.gradebook.services.items.update_item", "UPDATE learning_group_score_items SET name=$2,max_score=$3,display_order=$4,row_version=row_version+1,updated_by=$5,updated_at=now() WHERE id=$1 RETURNING id,name,max_score::text AS max_score,display_order,lifecycle,row_version").bind(item_id).bind(input.name.trim()).bind(maximum).bind(input.display_order).bind(actor.user_id).fetch_one().await?;
     if changed {
         invalidate(&mut tx, &scope).await?;
     }
@@ -100,23 +101,29 @@ pub async fn remove_item(
     .await?;
     let prior = load_item(&mut tx, &scope, item_id).await?;
     check_version(Some(row_version), Some(prior.row_version))?;
-    let has_scores: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM learning_group_student_scores WHERE score_item_id=$1)",
-    )
-    .bind(item_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let has_scores: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.gradebook.services.items.remove_item",
+            "SELECT EXISTS(SELECT 1 FROM learning_group_student_scores WHERE score_item_id=$1)",
+        )
+        .bind(item_id)
+        .fetch_one()
+        .await?;
     let outcome = if has_scores {
-        let revision=sqlx::query_scalar("UPDATE learning_group_score_items SET lifecycle='cancelled',cancelled_at=now(),cancelled_by=$2,updated_by=$2,updated_at=now(),row_version=row_version+1 WHERE id=$1 RETURNING row_version").bind(item_id).bind(actor.user_id).fetch_one(&mut *tx).await?;
+        let revision=DbSession::new(&mut *tx).scalar("academic_assessment.gradebook.services.items.remove_item", "UPDATE learning_group_score_items SET lifecycle='cancelled',cancelled_at=now(),cancelled_by=$2,updated_by=$2,updated_at=now(),row_version=row_version+1 WHERE id=$1 RETURNING row_version").bind(item_id).bind(actor.user_id).fetch_one().await?;
         ScoreItemRemovalOutcome {
             disposition: ScoreItemRemovalDisposition::Cancelled,
             item_id,
             row_version: revision,
         }
     } else {
-        sqlx::query("DELETE FROM learning_group_score_items WHERE id=$1")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_assessment.gradebook.services.items.remove_item",
+                "DELETE FROM learning_group_score_items WHERE id=$1",
+            )
             .bind(item_id)
-            .execute(&mut *tx)
+            .execute()
             .await?;
         ScoreItemRemovalOutcome {
             disposition: ScoreItemRemovalDisposition::Deleted,
@@ -133,7 +140,7 @@ async fn load_item(
     scope: &Scope,
     item_id: Uuid,
 ) -> Result<ScoreItem, AppError> {
-    sqlx::query_as("SELECT id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE id=$1 AND learning_group_id=$2 AND assessment_phase_id=$3 AND lifecycle='active' FOR UPDATE").bind(item_id).bind(scope.group_id).bind(scope.phase_id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("Active score item not found in this group phase".into()))
+    DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.items.load_item", "SELECT id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE id=$1 AND learning_group_id=$2 AND assessment_phase_id=$3 AND lifecycle='active' FOR UPDATE").bind(item_id).bind(scope.group_id).bind(scope.phase_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("Active score item not found in this group phase".into()))
 }
 
 async fn validate_allocation(
@@ -148,12 +155,12 @@ async fn validate_allocation(
         return Ok(());
     }
     // begin_scope holds the shared offering/group write locks before reading this sum.
-    let allocated: BigDecimal = sqlx::query_scalar(
+    let allocated: BigDecimal = DbSession::new(&mut **tx).scalar("academic_assessment.gradebook.services.items.validate_allocation",
         "SELECT COALESCE(sum(max_score),0) FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2 AND lifecycle='active'",
     )
     .bind(scope.group_id)
     .bind(scope.phase_id)
-    .fetch_one(&mut **tx)
+    .fetch_one()
     .await?;
     let phase_maximum = decimal(&scope.phase_max_score)?;
     if prior.is_none() && allocated >= phase_maximum {

@@ -1,5 +1,6 @@
 //! Date-effective enrollment projection for attendance consumers.
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{FromRow, PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -46,11 +47,33 @@ pub async fn students_in_room(
     date: NaiveDate,
     homeroom: Uuid,
 ) -> Result<Vec<AttendanceCoreRosterStudent>, AppError> {
-    let rows: Vec<AttendanceCoreRosterStudent> = sqlx::query_as(ROOM_ROSTER_SQL)
+    students_in_room_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "academic_core.services.attendance_roster.students_in_room",
+        )
+        .await?,
+        term,
+        date,
+        homeroom,
+    )
+    .await
+}
+pub async fn students_in_room_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+    homeroom: Uuid,
+) -> Result<Vec<AttendanceCoreRosterStudent>, AppError> {
+    let rows: Vec<AttendanceCoreRosterStudent> = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_core.services.attendance_roster.students_in_room_on_connection",
+            ROOM_ROSTER_SQL,
+        )
         .bind(term)
         .bind(date)
         .bind(homeroom)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     if rows.len() > 10000 {
         return Err(AppError::ValidationError(
@@ -65,8 +88,24 @@ pub async fn room(
     term: Uuid,
     homeroom: Uuid,
 ) -> Result<Option<AttendanceCoreRoom>, AppError> {
-    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.id=$2 AND h.is_active")
-        .bind(term).bind(homeroom).fetch_optional(pool).await?)
+    room_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "academic_core.services.attendance_roster.room",
+        )
+        .await?,
+        term,
+        homeroom,
+    )
+    .await
+}
+pub async fn room_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    homeroom: Uuid,
+) -> Result<Option<AttendanceCoreRoom>, AppError> {
+    Ok(DbSession::new(&mut *connection).query_as("academic_core.services.attendance_roster.room_on_connection", "SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.id=$2 AND h.is_active")
+        .bind(term).bind(homeroom).fetch_optional().await?)
 }
 #[derive(Debug, Clone, FromRow)]
 pub struct AttendancePlacementSpan {
@@ -117,8 +156,13 @@ async fn placement_spans_scoped(
         query.push(" AND y.student_id=").push_bind(student);
     }
     query.push(" ORDER BY y.student_id,p.start_date DESC,p.id LIMIT 100001");
-    let rows: Vec<AttendancePlacementSpan> =
-        query.build_query_as().fetch_all(&mut *connection).await?;
+    let rows: Vec<AttendancePlacementSpan> = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "academic_core.services.attendance_roster.placement_spans_scoped",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError(
             "ประวัติห้องเรียนเกินขนาดที่รองรับ".into(),
@@ -136,17 +180,30 @@ pub async fn students(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreStudent>, AppError> {
-    students_on_connection(&mut *pool.acquire().await?, term, date).await
+    students_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "academic_core.services.attendance_roster.students",
+        )
+        .await?,
+        term,
+        date,
+    )
+    .await
 }
 pub async fn students_on_connection(
     connection: &mut PgConnection,
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreStudent>, AppError> {
-    let rows = sqlx::query_as(ALL_STUDENTS_SQL)
+    let rows = DbSession::new(&mut *connection)
+        .query_as(
+            "academic_core.services.attendance_roster.students_on_connection",
+            ALL_STUDENTS_SQL,
+        )
         .bind(term)
         .bind(date)
-        .fetch_all(&mut *connection)
+        .fetch_all()
         .await?;
     let rows: Vec<AttendanceCoreStudent> = rows;
     if rows.len() > 10000 {
@@ -157,13 +214,21 @@ pub async fn students_on_connection(
     Ok(rows)
 }
 pub async fn rooms(pool: &PgPool, term: Uuid) -> Result<Vec<AttendanceCoreRoom>, AppError> {
-    rooms_on_connection(&mut *pool.acquire().await?, term).await
+    rooms_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "academic_core.services.attendance_roster.rooms",
+        )
+        .await?,
+        term,
+    )
+    .await
 }
 pub async fn rooms_on_connection(
     connection: &mut PgConnection,
     term: Uuid,
 ) -> Result<Vec<AttendanceCoreRoom>, AppError> {
-    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.is_active ORDER BY h.name,h.id").bind(term).fetch_all(&mut *connection).await?)
+    Ok(DbSession::new(&mut *connection).query_as("academic_core.services.attendance_roster.rooms_on_connection", "SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.is_active ORDER BY h.name,h.id").bind(term).fetch_all().await?)
 }
 /// Historical attendance retains rooms with participants on the requested date,
 /// even when the current UI has subsequently deactivated that room.
@@ -172,8 +237,8 @@ pub async fn rooms_for_date_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreRoom>, AppError> {
-    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.homeroom_id=h.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) ORDER BY h.name,h.id")
-        .bind(term).bind(date).fetch_all(&mut *connection).await?)
+    Ok(DbSession::new(&mut *connection).query_as("academic_core.services.attendance_roster.rooms_for_date_on_connection", "SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.homeroom_id=h.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) ORDER BY h.name,h.id")
+        .bind(term).bind(date).fetch_all().await?)
 }
 pub async fn advisor_for_student(
     pool: &PgPool,
@@ -181,5 +246,19 @@ pub async fn advisor_for_student(
     student: Uuid,
     date: NaiveDate,
 ) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND p.status IN ('current','ended') AND p.start_date<=$3 AND (p.end_date IS NULL OR p.end_date>=$3))").bind(teacher).bind(student).bind(date).fetch_one(pool).await?)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.attendance_roster.advisor_for_student",
+    )
+    .await?;
+    advisor_for_student_on_connection(&mut connection, teacher, student, date).await
+}
+
+pub async fn advisor_for_student_on_connection(
+    connection: &mut sqlx::PgConnection,
+    teacher: Uuid,
+    student: Uuid,
+    date: NaiveDate,
+) -> Result<bool, AppError> {
+    Ok(DbSession::new(connection).scalar("academic_core.services.attendance_roster.advisor_for_student_on_connection", "SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND p.status IN ('current','ended') AND p.start_date<=$3 AND (p.end_date IS NULL OR p.end_date>=$3))").bind(teacher).bind(student).bind(date).fetch_one().await?)
 }

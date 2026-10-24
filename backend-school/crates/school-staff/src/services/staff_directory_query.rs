@@ -1,4 +1,5 @@
 use crate::models::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -83,7 +84,7 @@ pub(super) fn push_personnel_filters(query: &mut QueryBuilder<Postgres>, filter:
     }
 }
 pub(super) async fn read_subject_groups(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     user: Uuid,
 ) -> Result<Vec<StaffSubjectGroupSummary>, AppError> {
     let mut query = QueryBuilder::<Postgres>::new("SELECT id,name FROM (");
@@ -92,7 +93,13 @@ pub(super) async fn read_subject_groups(
         .push(") groups WHERE user_id=")
         .push_bind(user)
         .push(" ORDER BY name,id");
-    Ok(query.build_query_as().fetch_all(pool).await?)
+    Ok(DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.staff_directory_query.read_subject_groups",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?)
 }
 
 pub(super) fn push_staff_access_filter(
@@ -198,6 +205,22 @@ pub async fn subject_groups_for_users(
     if user_ids.is_empty() {
         return Ok(Vec::new());
     }
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_directory_query.subject_groups_for_users",
+    )
+    .await?;
+    subject_groups_for_users_on_connection(&mut connection, user_ids).await
+}
+
+pub async fn subject_groups_for_users_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_ids: &[Uuid],
+) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut query = QueryBuilder::<Postgres>::new(
         "SELECT groups.user_id,groups.id AS subject_group_id,groups.name,sg.display_order FROM (",
     );
@@ -206,5 +229,171 @@ pub async fn subject_groups_for_users(
         .push(") groups JOIN subject_groups sg ON sg.id=groups.id WHERE groups.user_id=ANY(")
         .push_bind(user_ids)
         .push(") ORDER BY sg.display_order NULLS LAST,groups.name,groups.id");
-    Ok(query.build_query_as().fetch_all(pool).await?)
+    Ok(DbSession::new(connection)
+        .prepared_query_as(
+            "staff.services.staff_directory_query.subject_groups_for_users_on_connection",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?)
+}
+
+#[cfg(test)]
+mod pool_facade_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_empty_staff_affiliations_need_no_database() {
+        let pool = closed_pool().await;
+        assert!(subject_groups_for_users(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_leave_permissions_precede_checkout() {
+        let pool = closed_pool().await;
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            crate::leave::service::routing_options(&pool, &actor).await,
+            Err(school_errors::AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            crate::leave::service::policies(&pool, &actor, Uuid::new_v4()).await,
+            Err(school_errors::AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            crate::leave::service::list_types(&pool, &actor, Default::default()).await,
+            Err(school_errors::AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            crate::leave::service::list(&pool, &actor, Default::default()).await,
+            Err(school_errors::AppError::Forbidden(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_invalid_leave_page_and_range_precede_checkout() {
+        use crate::leave::models::{LeaveListQuery, LeaveUsageQuery};
+        let pool = closed_pool().await;
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![
+                school_permissions::registry::codes::STAFF_LEAVE_READ_OWN.into(),
+                school_permissions::registry::codes::STAFF_LEAVE_DOWNLOAD_OWN.into(),
+            ],
+        };
+        assert!(matches!(
+            crate::leave::service::list(
+                &pool,
+                &actor,
+                LeaveListQuery {
+                    limit: Some(0),
+                    ..Default::default()
+                }
+            )
+            .await,
+            Err(school_errors::AppError::ValidationError(_))
+        ));
+        let from = chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
+        assert!(matches!(
+            crate::leave::service::usage(
+                &pool,
+                &actor,
+                LeaveUsageQuery {
+                    from,
+                    to: from - chrono::Duration::days(1),
+                    kind: None
+                }
+            )
+            .await,
+            Err(school_errors::AppError::ValidationError(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_invalid_career_page_precedes_checkout() {
+        let pool = closed_pool().await;
+        let query = crate::career::StaffCareerHistoryQuery {
+            cursor: None,
+            page_size: Some(0),
+        };
+        assert!(matches!(
+            super::super::staff_career_service::list_staff_career_history(
+                &pool,
+                Uuid::new_v4(),
+                query
+            )
+            .await,
+            Err(school_errors::AppError::BadRequest(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_license_resource_denial_precedes_checkout() {
+        let pool = closed_pool().await;
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            super::super::staff_license_service::authorize_upload(&pool, &actor, None).await,
+            Err(school_errors::AppError::Forbidden(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_exhausted_staff_paths_need_no_available_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "staff_facade_exhausted",
+            1,
+        )
+        .await;
+        let held = pool.acquire().await.unwrap();
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        tokio::time::timeout(std::time::Duration::from_millis(250), async {
+            assert!(subject_groups_for_users(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty());
+            assert!(matches!(
+                crate::leave::service::routing_options(&pool, &actor).await,
+                Err(AppError::Forbidden(_))
+            ));
+            assert!(matches!(
+                crate::leave::service::policies(&pool, &actor, Uuid::new_v4()).await,
+                Err(AppError::Forbidden(_))
+            ));
+            assert!(matches!(
+                super::super::staff_license_service::authorize_upload(&pool, &actor, None).await,
+                Err(AppError::Forbidden(_))
+            ));
+            let query = crate::career::StaffCareerHistoryQuery {
+                cursor: None,
+                page_size: Some(0),
+            };
+            assert!(matches!(
+                super::super::staff_career_service::list_staff_career_history(
+                    &pool,
+                    Uuid::new_v4(),
+                    query
+                )
+                .await,
+                Err(AppError::BadRequest(_))
+            ));
+        })
+        .await
+        .expect("pure facade paths must finish while the only connection is held");
+        drop(held);
+        pool.close().await;
+    }
 }

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, Local, NaiveDate, NaiveTime, Weekday};
@@ -150,12 +151,28 @@ pub async fn get_daily_teaching_overview(
     pool: &PgPool,
     query: DailyTeachingQuery,
 ) -> Result<DailyTeachingOverview, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.daily_teaching.get_daily_teaching_overview",
+    )
+    .await?;
+    get_daily_teaching_overview_on_connection(&mut connection, query).await
+}
+
+pub async fn get_daily_teaching_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: DailyTeachingQuery,
+) -> Result<DailyTeachingOverview, AppError> {
     let date = query.date.unwrap_or_else(|| Local::now().date_naive());
     let day = day_code_from_date(date).to_string();
-    let version =
-        timetable_version_service::resolve_for_date(pool, query.academic_term_id, date).await?;
-    let source = school_academic_delivery::services::versions::get_version(
-        pool,
+    let version = timetable_version_service::resolve_for_date_on_connection(
+        connection,
+        query.academic_term_id,
+        date,
+    )
+    .await?;
+    let source = school_academic_delivery::services::versions::get_version_on_connection(
+        connection,
         version.delivery_version_id,
     )
     .await?;
@@ -168,18 +185,22 @@ pub async fn get_daily_teaching_overview(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let periods: Vec<DailyTeachingPeriod> = sqlx::query_as(
-        r#"SELECT id, name, start_time, end_time, order_index
+    let periods: Vec<DailyTeachingPeriod> = DbSession::new(connection)
+        .query_as(
+            "academic_timetable.services.daily_teaching.get_daily_teaching_overview_on_connection",
+            r#"SELECT id, name, start_time, end_time, order_index
            FROM bell_schedule_periods
            WHERE bell_schedule_id = $1 AND is_active
            ORDER BY order_index, start_time, id"#,
-    )
-    .bind(version.bell_schedule_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(version.bell_schedule_id)
+        .fetch_all()
+        .await?;
     let include_empty_teachers = query.include_empty_teachers.unwrap_or(false);
-    let teachers: Vec<TeacherSeed> = sqlx::query_as(
-        r#"SELECT DISTINCT user_account.id,
+    let teachers: Vec<TeacherSeed> = DbSession::new(connection)
+        .query_as(
+            "academic_timetable.services.daily_teaching.get_daily_teaching_overview_on_connection",
+            r#"SELECT DISTINCT user_account.id,
                   user_account.display_name AS display_name
            FROM user_display_names user_account
            WHERE user_account.user_type = 'staff'
@@ -200,14 +221,14 @@ pub async fn get_daily_teaching_overview(
              )
              OR ($3 AND user_account.status='active' AND user_account.id=ANY($4)))
            ORDER BY display_name, user_account.id"#,
-    )
-    .bind(query.academic_term_id)
-    .bind(version.id)
-    .bind(include_empty_teachers)
-    .bind(&eligible_ids)
-    .fetch_all(pool)
-    .await?;
-    let mut entries: Vec<EntrySeed> = sqlx::query_as(
+        )
+        .bind(query.academic_term_id)
+        .bind(version.id)
+        .bind(include_empty_teachers)
+        .bind(&eligible_ids)
+        .fetch_all()
+        .await?;
+    let mut entries: Vec<EntrySeed> = DbSession::new(connection).query_as("academic_timetable.services.daily_teaching.get_daily_teaching_overview_on_connection",
         r#"WITH allocations AS (
                SELECT instructor.instructor_id AS teacher_id,
                       block_group.id AS allocation_id,
@@ -307,7 +328,7 @@ pub async fn get_daily_teaching_overview(
     .bind(query.academic_term_id)
     .bind(&day)
     .bind(version.id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     for entry in &mut entries {

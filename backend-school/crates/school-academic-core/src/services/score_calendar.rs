@@ -1,22 +1,23 @@
 //! Academic calendar boundaries consumed by score-cycle scheduling.
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::PgConnection;
 
 pub async fn reset_boundaries(
     connection: &mut PgConnection,
 ) -> Result<(Vec<NaiveDate>, Vec<NaiveDate>), AppError> {
-    let terms: Vec<NaiveDate> = sqlx::query_scalar(
+    let terms: Vec<NaiveDate> = DbSession::new(&mut *connection).scalar("academic_core.services.score_calendar.reset_boundaries",
         "SELECT DISTINCT COALESCE(t.closed_on,t.planned_end_date,y.end_date) \
          FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id \
          WHERE t.status IN('active','closing','closed') AND y.status IN('active','closing','closed','archived') ORDER BY 1 LIMIT 1001",
     )
-    .fetch_all(&mut *connection)
+    .fetch_all()
     .await?;
-    let years: Vec<NaiveDate> = sqlx::query_scalar(
+    let years: Vec<NaiveDate> = DbSession::new(connection).scalar("academic_core.services.score_calendar.reset_boundaries",
         "SELECT DISTINCT end_date FROM academic_years WHERE status IN('active','closing','closed','archived') ORDER BY end_date LIMIT 1001",
     )
-    .fetch_all(connection)
+    .fetch_all()
     .await?;
     validate_boundary_count(terms.len(), years.len())?;
     Ok((terms, years))

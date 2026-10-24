@@ -353,6 +353,23 @@ struct PublicTestStorageProvider {
 
 #[async_trait]
 impl StorageProvider for PublicTestStorageProvider {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(&self) -> Result<(), StorageError> {
         panic!("public school HTTP operation must not check provider readiness")
     }
@@ -1196,11 +1213,11 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         assert_eq!(response.status(), expected, "{path}");
     }
     // Appearance's additional actors must not change the original statistics fixture.
-    assert_appearance_http_boundaries(&state, &a, &b).await;
+    assert_appearance_http_boundaries(&state, &a).await;
     server.abort();
 }
 
-async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool, b: &PgPool) {
+async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool) {
     use school_administration::settings::services::appearance;
     use school_auth::session_crypto::{session_csrf_token, RawSessionToken};
     use school_permissions::registry::codes;
@@ -1445,6 +1462,20 @@ async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool, b: &PgP
         .unwrap();
     assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
     assert_eq!(mismatch.headers()["cache-control"], "no-store");
-    assert_eq!(appearance::get(a).await.unwrap().revision, 1);
-    assert_eq!(appearance::get(b).await.unwrap().revision, 0);
+    // Direct service assertions need their own managed lease after HTTP request
+    // contexts have ended; retaining a raw fixture pool does not retain that lease.
+    for (database_url, school_key, revision) in [
+        ("test-pool://public-a", "school-a", 1),
+        ("test-pool://public-b", "school-b", 0),
+    ] {
+        let managed_pool = state
+            .pool_manager
+            .get_pool(database_url, school_key)
+            .await
+            .unwrap();
+        assert_eq!(
+            appearance::get(&managed_pool).await.unwrap().revision,
+            revision
+        );
+    }
 }

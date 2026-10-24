@@ -29,8 +29,15 @@ pub async fn get_own_profile(
 ) -> Result<StudentProfile, AppError> {
     ensure_student_user(pool, user_id).await?;
 
-    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.services.get_own_profile",
+    )
+    .await?;
+    let mut student_row = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as::<StudentDbRow>(
+            "students.src.services.get_own_profile",
+            r#"
         SELECT
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
@@ -63,18 +70,22 @@ pub async fn get_own_profile(
         LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student' AND u.status = 'active'
         "#,
-    )
-    .bind(user_id)
-    .bind(academic_year_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get own student profile: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลนักเรียนได้".to_string())
-    })?
-    .ok_or(AppError::NotFound("Student not found".to_string()))?;
+        )
+        .bind(user_id)
+        .bind(academic_year_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to get own student profile: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลนักเรียนได้".to_string())
+        })?
+        .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
     apply_student_pii_visibility(&mut student_row, include_pii);
+    drop(database_stage_0);
     let parents = list_student_parents(pool, user_id).await?;
 
     Ok(StudentProfile {
@@ -90,8 +101,15 @@ pub async fn update_own_profile(
 ) -> Result<(), AppError> {
     ensure_student_user(pool, user_id).await?;
 
-    sqlx::query(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.services.update_own_profile",
+    )
+    .await?;
+    school_database::DbSession::new(&mut *database_stage_0)
+        .query(
+            "students.src.services.update_own_profile",
+            r#"
         UPDATE users
         SET
             phone = COALESCE($2, phone),
@@ -100,17 +118,20 @@ pub async fn update_own_profile(
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
         "#,
-    )
-    .bind(user_id)
-    .bind(&payload.phone)
-    .bind(&payload.address)
-    .bind(&payload.nickname)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to update own student profile: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .bind(&payload.phone)
+        .bind(&payload.address)
+        .bind(&payload.nickname)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to update own student profile: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -152,8 +173,13 @@ pub async fn list_students(
         StudentListAccess::Assigned(id) => (false, false, true, Some(id)),
         StudentListAccess::OwnAndAssigned(id) => (false, true, true, Some(id)),
     };
-    let items = sqlx::query_as::<_, StudentListItem>(
-        r#"
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.services.list_students")
+            .await?;
+    let items = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as::<StudentListItem>(
+            "students.src.services.list_students",
+            r#"
         SELECT u.id, u.username, u.title, u.first_name, u.last_name,
                s.student_id, s.enrollment_date,
                COALESCE(s.registration_status, 'unrecorded') AS registration_status,
@@ -178,22 +204,25 @@ pub async fn list_students(
         ORDER BY u.first_name, u.last_name, u.id
         LIMIT $8 OFFSET $9
     "#,
-    )
-    .bind(filter.registration_status)
-    .bind(filter.account_status)
-    .bind(search.map(|value| format!("%{value}%")))
-    .bind(school)
-    .bind(own)
-    .bind(assigned)
-    .bind(actor)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to list student register: {}", error);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
-    })?;
+        )
+        .bind(filter.registration_status)
+        .bind(filter.account_status)
+        .bind(search.map(|value| format!("%{value}%")))
+        .bind(school)
+        .bind(own)
+        .bind(assigned)
+        .bind(actor)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to list student register: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
+        })?;
     Ok(StudentListResponse {
         items,
         page,
@@ -236,10 +265,16 @@ pub async fn create_student(
     })?;
     let username = student_username_or_default(payload.username.clone(), &payload.student_id);
 
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to start create student transaction: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "students.services.create_student")
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to start create student transaction: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
+            })?;
 
     let user_id = insert_student_user(
         &mut tx,
@@ -264,7 +299,10 @@ pub async fn create_student(
     .await?;
 
     tx.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit create student transaction: {}", e);
+        tracing::error!(
+            "Failed to commit create student transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -283,8 +321,13 @@ pub async fn get_student(
     academic_year_id: Option<Uuid>,
     include_pii: bool,
 ) -> Result<StudentRegisterProfile, AppError> {
-    let mut student_row = sqlx::query_as::<_, StudentRegisterInfo>(
-        r#"
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.services.get_student")
+            .await?;
+    let mut student_row = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as::<StudentRegisterInfo>(
+            "students.src.services.get_student",
+            r#"
         SELECT
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
@@ -319,16 +362,19 @@ pub async fn get_student(
         LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
         WHERE u.id = $1 AND u.user_type = 'student'
         "#,
-    )
-    .bind(student_id)
-    .bind(academic_year_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get student register profile: {}", error);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
+        )
+        .bind(student_id)
+        .bind(academic_year_id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get student register profile: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
 
     if include_pii {
         decrypt_student_field(&mut student_row.national_id);
@@ -339,6 +385,7 @@ pub async fn get_student(
         student_row.allergies = None;
         student_row.medical_conditions = None;
     }
+    drop(database_stage_0);
     let parents = list_student_parents(pool, student_id).await?;
     Ok(StudentRegisterProfile {
         info: student_row,
@@ -365,9 +412,13 @@ pub async fn update_student(
         .map(|value| crate::validation::parse_date(value.as_deref()))
         .transpose()?
         .flatten();
-    let mut tx = pool.begin().await?;
-    let user_update = sqlx::query(
-        r#"
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "students.services.update_student")
+            .await?;
+    let user_update = school_database::DbSession::new(&mut *tx)
+        .query(
+            "students.src.services.update_student",
+            r#"
         UPDATE users SET
             email = CASE WHEN $2 THEN $3 ELSE email END,
             first_name = COALESCE($4, first_name), last_name = COALESCE($5, last_name),
@@ -379,34 +430,36 @@ pub async fn update_student(
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
     "#,
-    )
-    .bind(student_id)
-    .bind(payload.email.is_some())
-    .bind(payload.email.flatten())
-    .bind(payload.first_name)
-    .bind(payload.last_name)
-    .bind(payload.title.is_some())
-    .bind(payload.title.flatten())
-    .bind(payload.phone.is_some())
-    .bind(payload.phone.flatten())
-    .bind(payload.address.is_some())
-    .bind(payload.address.flatten())
-    .bind(payload.date_of_birth.is_some())
-    .bind(date_of_birth)
-    .bind(payload.gender.is_some())
-    .bind(payload.gender.flatten())
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        // SQL errors can contain contact values. Return only a classified error.
-        map_duplicate_student_error(error, "ไม่สามารถอัพเดตข้อมูลได้")
-    })?;
+        )
+        .bind(student_id)
+        .bind(payload.email.is_some())
+        .bind(payload.email.flatten())
+        .bind(payload.first_name)
+        .bind(payload.last_name)
+        .bind(payload.title.is_some())
+        .bind(payload.title.flatten())
+        .bind(payload.phone.is_some())
+        .bind(payload.phone.flatten())
+        .bind(payload.address.is_some())
+        .bind(payload.address.flatten())
+        .bind(payload.date_of_birth.is_some())
+        .bind(date_of_birth)
+        .bind(payload.gender.is_some())
+        .bind(payload.gender.flatten())
+        .execute()
+        .await
+        .map_err(|error| {
+            // SQL errors can contain contact values. Return only a classified error.
+            map_duplicate_student_error(error, "ไม่สามารถอัพเดตข้อมูลได้")
+        })?;
     if user_update.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบนักเรียน".into()));
     }
     if payload.registration_status.is_some() || payload.enrollment_date.is_some() {
-        let result = sqlx::query(
-            r#"
+        let result = school_database::DbSession::new(&mut *tx)
+            .query(
+                "students.src.services.update_student",
+                r#"
             UPDATE student_info SET
                 registration_status_updated_at = CASE
                     WHEN $2::text IS NOT NULL AND registration_status IS DISTINCT FROM $2
@@ -419,14 +472,14 @@ pub async fn update_student(
                 updated_at = NOW()
             WHERE user_id = $1
         "#,
-        )
-        .bind(student_id)
-        .bind(payload.registration_status)
-        .bind(actor_user_id)
-        .bind(payload.enrollment_date.is_some())
-        .bind(enrollment_date)
-        .execute(&mut *tx)
-        .await?;
+            )
+            .bind(student_id)
+            .bind(payload.registration_status)
+            .bind(actor_user_id)
+            .bind(payload.enrollment_date.is_some())
+            .bind(enrollment_date)
+            .execute()
+            .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::Conflict(
                 "ไม่พบทะเบียนประจำตัวนักเรียน กรุณาตรวจสอบข้อมูลก่อน".into(),
@@ -443,10 +496,16 @@ pub async fn delete_student(
     actor_user_id: Uuid,
     placement_rosters: &dyn school_academic_core::ports::PlacementRosterPort,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to begin delete student transaction: {}", e);
-        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "students.services.delete_student")
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to begin delete student transaction: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+            })?;
 
     school_academic_core::services::student_years::withdraw_for_account_deactivation(
         &mut tx,
@@ -456,28 +515,36 @@ pub async fn delete_student(
     )
     .await?;
 
-    let user_update = sqlx::query(
-        r#"
+    let user_update = school_database::DbSession::new(&mut *tx)
+        .query(
+            "students.src.services.delete_student",
+            r#"
         UPDATE users
         SET status = 'inactive',
             username = username || '_del_' || CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT),
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
         "#,
-    )
-    .bind(student_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to delete student: {}", e);
-        AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
-    })?;
+        )
+        .bind(student_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to delete student: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
+        })?;
     if user_update.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
     }
 
     tx.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit delete student transaction: {}", e);
+        tracing::error!(
+            "Failed to commit delete student transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
@@ -490,24 +557,37 @@ pub async fn add_parent_to_student(
     mut payload: CreateParentRequest,
 ) -> Result<Uuid, AppError> {
     crate::validation::normalize_parent(&mut payload)?;
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to begin add parent transaction: {}", e);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "students.services.add_parent_to_student",
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            "Failed to begin add parent transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่มต้น transaction".to_string())
     })?;
 
-    let student_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
+    let student_exists: bool = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "students.src.services.add_parent_to_student",
+            "SELECT EXISTS(
             SELECT 1 FROM users
             WHERE id = $1 AND user_type = 'student'
         )",
-    )
-    .bind(student_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to validate student before adding parent: {}", e);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลนักเรียนได้".to_string())
-    })?;
+        )
+        .bind(student_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to validate student before adding parent: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลนักเรียนได้".to_string())
+        })?;
     if !student_exists {
         return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
     }
@@ -516,7 +596,10 @@ pub async fn add_parent_to_student(
     link_parent_to_student(&mut tx, student_id, parent_id, &payload.relationship).await?;
 
     tx.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit add parent transaction: {}", e);
+        tracing::error!(
+            "Failed to commit add parent transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -528,17 +611,35 @@ pub async fn remove_parent_from_student(
     student_id: Uuid,
     parent_id: Uuid,
 ) -> Result<(), AppError> {
-    let result = sqlx::query(
-        "DELETE FROM student_parents WHERE student_user_id = $1 AND parent_user_id = $2",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.remove_parent_from_student",
     )
-    .bind(student_id)
-    .bind(parent_id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to remove parent link: {}", e);
-        AppError::InternalServerError("ไม่สามารถลบผู้ปกครองได้".to_string())
-    })?;
+    .await?;
+    remove_parent_from_student_on_connection(&mut connection, student_id, parent_id).await
+}
+
+pub async fn remove_parent_from_student_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_id: Uuid,
+    parent_id: Uuid,
+) -> Result<(), AppError> {
+    let result = school_database::DbSession::new(&mut *connection)
+        .query(
+            "students.src.services.remove_parent_from_student_on_connection",
+            "DELETE FROM student_parents WHERE student_user_id = $1 AND parent_user_id = $2",
+        )
+        .bind(student_id)
+        .bind(parent_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to remove parent link: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถลบผู้ปกครองได้".to_string())
+        })?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบข้อมูลความสัมพันธ์ผู้ปกครอง".to_string()));
@@ -548,12 +649,29 @@ pub async fn remove_parent_from_student(
 }
 
 async fn ensure_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.ensure_student_user")
+            .await?;
+    ensure_student_user_on_connection(&mut connection, user_id).await
+}
+
+async fn ensure_student_user_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let user_type: Option<String> = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "students.src.services.ensure_student_user_on_connection",
+            "SELECT user_type FROM users WHERE id = $1",
+        )
         .bind(user_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to load current user type: {}", e);
+            tracing::error!(
+                "Failed to load current user type: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
         })?;
 
@@ -565,8 +683,20 @@ async fn ensure_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppErro
 }
 
 async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<ParentDto>, AppError> {
-    sqlx::query_as::<_, ParentDto>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.list_student_parents")
+            .await?;
+    list_student_parents_on_connection(&mut connection, student_id).await
+}
+
+async fn list_student_parents_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_id: Uuid,
+) -> Result<Vec<ParentDto>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<ParentDto>(
+            "students.src.services.list_student_parents_on_connection",
+            r#"
         SELECT
             p.id, p.username, p.first_name, p.last_name, p.phone,
             sp.relationship, sp.is_primary
@@ -575,14 +705,17 @@ async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<Par
         WHERE sp.student_user_id = $1
         ORDER BY sp.is_primary DESC, p.first_name ASC
         "#,
-    )
-    .bind(student_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list student parents: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
-    })
+        )
+        .bind(student_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to list student parents: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
+        })
 }
 
 fn apply_student_pii_visibility(row: &mut StudentDbRow, include_pii: bool) {
@@ -630,8 +763,10 @@ async fn insert_student_user(
     national_id_hash: Option<String>,
     date_of_birth: Option<NaiveDate>,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .scalar(
+            "students.src.services.insert_student_user",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             first_name, last_name, title,
@@ -639,22 +774,22 @@ async fn insert_student_user(
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'student', 'active', $9, $10, $11, $12)
         RETURNING id
         "#,
-    )
-    .bind(username)
-    .bind(&encrypted_national_id)
-    .bind(&national_id_hash)
-    .bind(&payload.email)
-    .bind(password_hash)
-    .bind(&payload.first_name)
-    .bind(&payload.last_name)
-    .bind(&payload.title)
-    .bind(date_of_birth)
-    .bind(&payload.gender)
-    .bind(&payload.phone)
-    .bind(&payload.address)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างผู้ใช้งานได้"))
+        )
+        .bind(username)
+        .bind(&encrypted_national_id)
+        .bind(&national_id_hash)
+        .bind(&payload.email)
+        .bind(password_hash)
+        .bind(&payload.first_name)
+        .bind(&payload.last_name)
+        .bind(&payload.title)
+        .bind(date_of_birth)
+        .bind(&payload.gender)
+        .bind(&payload.phone)
+        .bind(&payload.address)
+        .fetch_one()
+        .await
+        .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างผู้ใช้งานได้"))
 }
 
 async fn insert_student_info(
@@ -663,28 +798,30 @@ async fn insert_student_info(
     actor_user_id: Uuid,
     payload: &CreateStudentRequest,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "students.src.services.insert_student_info",
+            r#"
         INSERT INTO student_info (
             user_id, student_id, registration_status,
             registration_status_updated_at, registration_status_updated_by, enrollment_date
         ) VALUES ($1, $2, $3, NOW(), $4, $5)
         "#,
-    )
-    .bind(user_id)
-    .bind(payload.student_id.as_str())
-    .bind(
-        payload
-            .registration_status
-            .unwrap_or(StudentRegistrationStatus::Pending),
-    )
-    .bind(actor_user_id)
-    .bind(crate::validation::parse_date(
-        payload.enrollment_date.as_deref(),
-    )?)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างข้อมูลนักเรียนได้"))?;
+        )
+        .bind(user_id)
+        .bind(payload.student_id.as_str())
+        .bind(
+            payload
+                .registration_status
+                .unwrap_or(StudentRegistrationStatus::Pending),
+        )
+        .bind(actor_user_id)
+        .bind(crate::validation::parse_date(
+            payload.enrollment_date.as_deref(),
+        )?)
+        .execute()
+        .await
+        .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างข้อมูลนักเรียนได้"))?;
 
     Ok(())
 }
@@ -719,16 +856,21 @@ async fn get_or_create_parent_user(
     tx: &mut Transaction<'_, Postgres>,
     payload: &CreateParentRequest,
 ) -> Result<Uuid, AppError> {
-    let existing_parent = sqlx::query_as::<_, (Uuid, String, String)>(
-        "SELECT id,user_type,status FROM users WHERE username = $1 FOR UPDATE",
-    )
-    .bind(&payload.phone)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to check for existing parent: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
-    })?;
+    let existing_parent = school_database::DbSession::new(&mut **tx)
+        .query_as::<(Uuid, String, String)>(
+            "students.src.services.get_or_create_parent_user",
+            "SELECT id,user_type,status FROM users WHERE username = $1 FOR UPDATE",
+        )
+        .bind(&payload.phone)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to check for existing parent: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
+        })?;
 
     match existing_parent {
         Some((parent_id, user_type, status)) => {
@@ -737,11 +879,14 @@ async fn get_or_create_parent_user(
                     "บัญชีนี้ไม่ใช่ผู้ปกครองที่เปิดใช้งาน กรุณาตรวจสอบบัญชีก่อนเชื่อมโยง".into(),
                 ));
             }
-            let has_history: bool =
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=$1)")
-                    .bind(parent_id)
-                    .fetch_one(&mut **tx)
-                    .await?;
+            let has_history: bool = school_database::DbSession::new(&mut **tx)
+                .scalar(
+                    "students.src.services.get_or_create_parent_user",
+                    "SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=$1)",
+                )
+                .bind(parent_id)
+                .fetch_one()
+                .await?;
             if !has_history {
                 assign_parent_role(tx, parent_id).await?;
             }
@@ -778,8 +923,10 @@ async fn create_parent_user(
         AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
     })?;
 
-    let parent_id: Uuid = sqlx::query_scalar(
-        r#"
+    let parent_id: Uuid = school_database::DbSession::new(&mut **tx)
+        .scalar(
+            "students.src.services.create_parent_user",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             title, first_name, last_name, phone,
@@ -787,19 +934,19 @@ async fn create_parent_user(
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'parent', 'active')
         RETURNING id
         "#,
-    )
-    .bind(&payload.phone)
-    .bind(encrypted_national_id)
-    .bind(national_id_hash)
-    .bind(&payload.email)
-    .bind(password_hash)
-    .bind(&payload.title)
-    .bind(&payload.first_name)
-    .bind(&payload.last_name)
-    .bind(&payload.phone)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|error| map_duplicate_student_error(error, "ไม่สามารถสร้างบัญชีผู้ปกครองได้"))?;
+        )
+        .bind(&payload.phone)
+        .bind(encrypted_national_id)
+        .bind(national_id_hash)
+        .bind(&payload.email)
+        .bind(password_hash)
+        .bind(&payload.title)
+        .bind(&payload.first_name)
+        .bind(&payload.last_name)
+        .bind(&payload.phone)
+        .fetch_one()
+        .await
+        .map_err(|error| map_duplicate_student_error(error, "ไม่สามารถสร้างบัญชีผู้ปกครองได้"))?;
 
     assign_parent_role(tx, parent_id).await?;
 
@@ -814,13 +961,13 @@ async fn assign_required_role(
     assign_error_message: &str,
 ) -> Result<(), AppError> {
     let role_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT r.id FROM roles r JOIN users u ON u.user_type=r.user_type WHERE r.code=$1 AND r.is_active=true AND u.id=$2 FOR SHARE OF r")
+        school_database::DbSession::new(&mut **tx).scalar("students.src.services.assign_required_role", "SELECT r.id FROM roles r JOIN users u ON u.user_type=r.user_type WHERE r.code=$1 AND r.is_active=true AND u.id=$2 FOR SHARE OF r")
             .bind(role_code)
             .bind(user_id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional()
             .await
             .map_err(|e| {
-                tracing::error!("Failed to load {role_code} role: {}", e);
+                tracing::error!("Failed to load {role_code} role: {}", school_database::error_class(&e));
                 AppError::InternalServerError(load_error_message.to_string())
             })?;
 
@@ -828,20 +975,25 @@ async fn assign_required_role(
         AppError::Conflict("บทบาทมาตรฐานยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบก่อนสร้างบัญชี".into())
     })?;
     {
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut **tx)
+            .query(
+                "students.src.services.assign_required_role",
+                r#"
             INSERT INTO user_roles (user_id, role_id, is_primary)
             VALUES ($1, $2, true)
             "#,
-        )
-        .bind(user_id)
-        .bind(role_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to assign {role_code} role: {}", e);
-            AppError::InternalServerError(assign_error_message.to_string())
-        })?;
+            )
+            .bind(user_id)
+            .bind(role_id)
+            .execute()
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to assign {role_code} role: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError(assign_error_message.to_string())
+            })?;
     }
 
     Ok(())
@@ -867,23 +1019,28 @@ async fn link_parent_to_student(
     parent_id: Uuid,
     relationship: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "students.src.services.link_parent_to_student",
+            r#"
         INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
         VALUES ($1, $2, $3, false)
         ON CONFLICT (student_user_id, parent_user_id)
         DO UPDATE SET relationship = EXCLUDED.relationship
         "#,
-    )
-    .bind(student_id)
-    .bind(parent_id)
-    .bind(relationship)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to link parent: {}", e);
-        AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
-    })?;
+        )
+        .bind(student_id)
+        .bind(parent_id)
+        .bind(relationship)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to link parent: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -895,23 +1052,28 @@ async fn link_parent_to_student_if_absent(
     relationship: &str,
     is_primary: bool,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "students.src.services.link_parent_to_student_if_absent",
+            r#"
         INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (student_user_id, parent_user_id) DO NOTHING
         "#,
-    )
-    .bind(student_id)
-    .bind(parent_id)
-    .bind(relationship)
-    .bind(is_primary)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to link parent: {}", e);
-        AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
-    })?;
+        )
+        .bind(student_id)
+        .bind(parent_id)
+        .bind(relationship)
+        .bind(is_primary)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to link parent: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
+        })?;
 
     Ok(())
 }

@@ -5,6 +5,7 @@ use crate::{
     repository, settings,
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use school_workflow::{
@@ -122,13 +123,15 @@ pub(crate) async fn load(
     id: Option<Uuid>,
 ) -> Result<Option<ProcessInstance>, AppError> {
     if let Some(id) = id {
-        Ok(sqlx::query_scalar::<_, Json<ProcessInstance>>(
-            "SELECT definition FROM process_instances WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .map(|x| x.0))
+        Ok(DbSession::new(&mut **tx)
+            .scalar::<Json<ProcessInstance>>(
+                "budget.src.process.load",
+                "SELECT definition FROM process_instances WHERE id=$1",
+            )
+            .bind(id)
+            .fetch_optional()
+            .await?
+            .map(|x| x.0))
     } else {
         Ok(None)
     }
@@ -143,12 +146,14 @@ pub(crate) async fn start(
     path: String,
 ) -> Result<ProcessInstance, AppError> {
     let id = template.ok_or_else(|| invalid("กรุณาตั้งค่าเส้นทางอนุมัติงบประมาณก่อนส่ง"))?;
-    let managed: Option<(Option<String>, Json<ProcessTemplate>)> = sqlx::query_as(
-        "SELECT managed_source_module,definition FROM process_templates WHERE id=$1 FOR SHARE",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await?;
+    let managed: Option<(Option<String>, Json<ProcessTemplate>)> = DbSession::new(&mut **tx)
+        .query_as(
+            "budget.src.process.start",
+            "SELECT managed_source_module,definition FROM process_templates WHERE id=$1 FOR SHARE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     let (module, t) = managed.ok_or_else(|| invalid("ไม่พบเส้นทางอนุมัติ"))?;
     if module.as_deref() != Some("budget") {
         return Err(invalid("เส้นทางไม่ได้เป็นของระบบงบประมาณ"));
@@ -184,9 +189,9 @@ pub(crate) async fn start(
         .into_iter()
         .collect::<Vec<_>>();
     let units:Vec<Uuid>=match s.resource_type {
-     "budget_project_plan"=>sqlx::query_scalar("SELECT p.organization_unit_id FROM budget_project_attempts a JOIN budget_projects p ON p.id=a.project_id WHERE a.id=$1").bind(s.resource_id).fetch_all(&mut **tx).await?,
-     "budget_request"=>sqlx::query_scalar("SELECT p.organization_unit_id FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE r.id=$1").bind(s.resource_id).fetch_all(&mut **tx).await?,
-     "budget_adjustment"=>sqlx::query_scalar("SELECT DISTINCT p.organization_unit_id FROM budget_adjustments a JOIN budget_projects p ON p.id=a.from_project_id OR p.id=a.to_project_id WHERE a.id=$1").bind(s.resource_id).fetch_all(&mut **tx).await?,
+     "budget_project_plan"=>DbSession::new(&mut **tx).scalar("budget.src.process.start", "SELECT p.organization_unit_id FROM budget_project_attempts a JOIN budget_projects p ON p.id=a.project_id WHERE a.id=$1").bind(s.resource_id).fetch_all().await?,
+     "budget_request"=>DbSession::new(&mut **tx).scalar("budget.src.process.start", "SELECT p.organization_unit_id FROM budget_requests r JOIN budget_projects p ON p.id=r.project_id WHERE r.id=$1").bind(s.resource_id).fetch_all().await?,
+     "budget_adjustment"=>DbSession::new(&mut **tx).scalar("budget.src.process.start", "SELECT DISTINCT p.organization_unit_id FROM budget_adjustments a JOIN budget_projects p ON p.id=a.from_project_id OR p.id=a.to_project_id WHERE a.id=$1").bind(s.resource_id).fetch_all().await?,
      _=>return Err(repository::denied()),
     };
     let target = school_authorization::resource_access_policy::ResourceAccessTarget {

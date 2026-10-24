@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -9,7 +10,16 @@ pub async fn get_workspace(
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
 ) -> Result<EvaluationWorkspace, AppError> {
-    let subject = subject_for_group(pool, group, ctx).await?;
+    let subject = {
+        let mut context_tx = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_assessment.learner_evaluation.services.subject_for_group",
+        )
+        .await?;
+        let subject = subject_for_group(&mut context_tx, group, ctx).await?;
+        context_tx.commit().await?;
+        subject
+    };
     let access = policy::list_access(pool, actor).await?;
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, false).await?;
     let group_scope = scope
@@ -38,12 +48,15 @@ pub(super) async fn load_workspace(
     ctx: &EvaluationContext,
 ) -> Result<EvaluationWorkspace, AppError> {
     let criteria = configuration::criteria(tx, scope, ctx).await?;
-    let students: Vec<EvaluationStudent> =
-        sqlx::query_as(crate::student_roster::STUDENT_ROSTER_SQL)
-            .bind(group.group_id)
-            .fetch_all(&mut **tx)
-            .await?;
-    let responses:Vec<EvaluationResponse>=sqlx::query_as("SELECT subject_term_criterion_id,student_academic_year_id,quality_level,row_version FROM learning_group_student_evaluations WHERE learning_group_id=$1 AND domain=$2 ORDER BY subject_term_criterion_id,student_academic_year_id LIMIT 200001").bind(group.group_id).bind(scope.domain.as_str()).fetch_all(&mut **tx).await?;
+    let students: Vec<EvaluationStudent> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_assessment.learner_evaluation.services.entry.load_workspace",
+            crate::student_roster::STUDENT_ROSTER_SQL,
+        )
+        .bind(group.group_id)
+        .fetch_all()
+        .await?;
+    let responses:Vec<EvaluationResponse>=DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.entry.load_workspace", "SELECT subject_term_criterion_id,student_academic_year_id,quality_level,row_version FROM learning_group_student_evaluations WHERE learning_group_id=$1 AND domain=$2 ORDER BY subject_term_criterion_id,student_academic_year_id LIMIT 200001").bind(group.group_id).bind(scope.domain.as_str()).fetch_all().await?;
     if students.len() > 2000 || responses.len() > 200000 {
         return Err(AppError::ValidationError(
             "Learner evaluation workspace exceeds supported size".into(),
@@ -56,7 +69,7 @@ pub(super) async fn load_workspace(
         &students,
         &responses,
     )?;
-    let mut confirmation:Option<EvaluationConfirmation>=sqlx::query_as("SELECT id,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated,confirmed_by FROM learning_group_evaluation_confirmations WHERE learning_group_id=$1 AND domain=$2").bind(group.group_id).bind(scope.domain.as_str()).fetch_optional(&mut **tx).await?;
+    let mut confirmation:Option<EvaluationConfirmation>=DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.entry.load_workspace", "SELECT id,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated,confirmed_by FROM learning_group_evaluation_confirmations WHERE learning_group_id=$1 AND domain=$2").bind(group.group_id).bind(scope.domain.as_str()).fetch_optional().await?;
     // Roster/teacher mutations belong to Delivery. Detect their retained revisions here,
     // persist explicit staleness once, and never reset the confirmation's row version.
     if let Some(c) = confirmation.as_mut() {
@@ -176,7 +189,16 @@ pub async fn save_responses(
     cells: Vec<ResponseInput>,
 ) -> Result<EvaluationWorkspace, AppError> {
     let cells = normalize(cells)?;
-    let subject = subject_for_group(pool, group, ctx).await?;
+    let subject = {
+        let mut context_tx = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_assessment.learner_evaluation.services.subject_for_group",
+        )
+        .await?;
+        let subject = subject_for_group(&mut context_tx, group, ctx).await?;
+        context_tx.commit().await?;
+        subject
+    };
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     let group_scope = scope
         .groups
@@ -231,10 +253,10 @@ pub async fn save_responses(
         }
     }
     if !ids.is_empty() {
-        sqlx::query("INSERT INTO learning_group_student_evaluations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,student_academic_year_id,quality_level,row_version,updated_by) SELECT $1,$2,$3,$4,$5,$6,c.criterion,c.student,c.level,$10,$11 FROM unnest($7::uuid[],$8::uuid[],$9::smallint[]) c(criterion,student,level) ON CONFLICT (learning_group_id,student_academic_year_id,subject_term_criterion_id) DO UPDATE SET quality_level=EXCLUDED.quality_level,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()").bind(group).bind(group_scope.offering_id).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(domain.as_str()).bind(ids).bind(students).bind(values).bind(revision).bind(actor.user_id).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.entry.save_responses", "INSERT INTO learning_group_student_evaluations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,student_academic_year_id,quality_level,row_version,updated_by) SELECT $1,$2,$3,$4,$5,$6,c.criterion,c.student,c.level,$10,$11 FROM unnest($7::uuid[],$8::uuid[],$9::smallint[]) c(criterion,student,level) ON CONFLICT (learning_group_id,student_academic_year_id,subject_term_criterion_id) DO UPDATE SET quality_level=EXCLUDED.quality_level,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()").bind(group).bind(group_scope.offering_id).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(domain.as_str()).bind(ids).bind(students).bind(values).bind(revision).bind(actor.user_id).execute().await?;
     }
     if !clear_ids.is_empty() {
-        sqlx::query("DELETE FROM learning_group_student_evaluations r USING unnest($1::uuid[],$2::uuid[]) c(criterion,student) WHERE r.learning_group_id=$3 AND r.subject_term_criterion_id=c.criterion AND r.student_academic_year_id=c.student").bind(clear_ids).bind(clear_students).bind(group).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.entry.save_responses", "DELETE FROM learning_group_student_evaluations r USING unnest($1::uuid[],$2::uuid[]) c(criterion,student) WHERE r.learning_group_id=$3 AND r.subject_term_criterion_id=c.criterion AND r.student_academic_year_id=c.student").bind(clear_ids).bind(clear_students).bind(group).execute().await?;
     }
     invalidate(&mut tx, &scope, ctx, Some(group)).await?;
     let ws = load_workspace(&mut tx, actor, &scope, group_scope, ctx).await?;

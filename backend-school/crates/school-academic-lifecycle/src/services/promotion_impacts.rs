@@ -4,6 +4,7 @@ use super::super::models::{
 };
 use school_academic_results::services::corrections_after_annuals;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -29,17 +30,27 @@ pub async fn get_promotion_impacts(
             "ระบุรอบเลื่อนชั้นและตำแหน่งรายการให้ถูกต้อง".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    let (source, target): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT source_year_id,target_year_id FROM academic_promotion_runs WHERE id=$1",
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_impacts.get_promotion_impacts",
     )
-    .bind(run)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_impacts.get_promotion_impacts",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
+        .await?;
+    let (source, target): (Uuid, Uuid) = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impacts.get_promotion_impacts",
+            "SELECT source_year_id,target_year_id FROM academic_promotion_runs WHERE id=$1",
+        )
+        .bind(run)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     let impacts = impacts_in_transaction(&mut tx, run, source).await?;
     let source_checksum = super::checksum(&(run, source, target, &impacts))?;
     let total_count = impacts.len();
@@ -78,13 +89,13 @@ pub(crate) async fn impacts_in_transaction(
     run: Uuid,
     source_year: Uuid,
 ) -> Result<Vec<PromotionCorrectionImpact>, AppError> {
-    let sources: Vec<ExecutedSource> = sqlx::query_as(
+    let sources: Vec<ExecutedSource> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_impacts.impacts_in_transaction",
         "SELECT item.id AS item_id,item.student_academic_year_id,item.annual_revision_id
          FROM academic_promotion_execution_receipts receipt
          JOIN academic_promotion_run_items item ON item.id=receipt.item_id AND item.run_id=receipt.run_id
          WHERE receipt.run_id=$1 AND receipt.source_year_id=$2
          ORDER BY item.id LIMIT 10001",
-    ).bind(run).bind(source_year).fetch_all(&mut **tx).await?;
+    ).bind(run).bind(source_year).fetch_all().await?;
     if sources.len() > 10_000 {
         return Err(AppError::ValidationError(
             "รอบมีนักเรียนเกิน 10,000 รายการ".into(),
@@ -132,17 +143,19 @@ pub(crate) async fn impacts_in_transaction(
         .into_iter()
         .collect();
     if !correction_ids.is_empty() {
-        let resolutions: Vec<PromotionImpactResolution> = sqlx::query_as(
-            "SELECT id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,
+        let resolutions: Vec<PromotionImpactResolution> = DbSession::new(&mut **tx)
+            .query_as(
+                "academic_lifecycle.services.promotion_impacts.impacts_in_transaction",
+                "SELECT id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,
                     replacement_decision,reason,source_checksum,outcome,resolved_by,resolved_at
              FROM academic_promotion_impact_resolutions
              WHERE run_id=$1 AND correction_id=ANY($2)
              ORDER BY item_id,correction_id",
-        )
-        .bind(run)
-        .bind(&correction_ids)
-        .fetch_all(&mut **tx)
-        .await?;
+            )
+            .bind(run)
+            .bind(&correction_ids)
+            .fetch_all()
+            .await?;
         let mut by_identity: BTreeMap<_, _> = resolutions
             .into_iter()
             .map(|row| ((row.item_id, row.correction_id), row))

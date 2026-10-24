@@ -2,6 +2,7 @@ use super::{models::*, policy::*};
 use crate::career::StaffPersonnelType;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use school_workflow::{process, process_models::*};
@@ -18,8 +19,8 @@ pub(super) struct Record {
     pub(super) evidence_file_ids: Vec<Uuid>,
 }
 pub(super) async fn load(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<Record, AppError> {
-    sqlx::query_as("SELECT document,policy_id,instance_id,cancellation_id,content_hash,evidence_file_ids FROM staff_leave_requests WHERE id=$1 FOR UPDATE")
-        .bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอ".into()))
+    DbSession::new(&mut **tx).query_as("staff.leave.repository.load", "SELECT document,policy_id,instance_id,cancellation_id,content_hash,evidence_file_ids FROM staff_leave_requests WHERE id=$1 FOR UPDATE")
+        .bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอ".into()))
 }
 pub(super) async fn claim<T: Serialize>(
     tx: &mut Transaction<'_, Postgres>,
@@ -30,11 +31,11 @@ pub(super) async fn claim<T: Serialize>(
     payload: &T,
 ) -> Result<Option<Uuid>, AppError> {
     let hash = process::payload_hash(&(op, payload))?;
-    let inserted:Option<Uuid>=sqlx::query_scalar("INSERT INTO staff_leave_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(key).bind(op).bind(&hash).bind(id).fetch_optional(&mut **tx).await?;
+    let inserted:Option<Uuid>=DbSession::new(&mut **tx).scalar("staff.leave.repository.claim", "INSERT INTO staff_leave_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(key).bind(op).bind(&hash).bind(id).fetch_optional().await?;
     if inserted.is_some() {
         return Ok(None);
     }
-    let old:(String,String,Uuid)=sqlx::query_as("SELECT operation,payload_hash,resource_id FROM staff_leave_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_one(&mut **tx).await?;
+    let old:(String,String,Uuid)=DbSession::new(&mut **tx).query_as("staff.leave.repository.claim", "SELECT operation,payload_hash,resource_id FROM staff_leave_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_one().await?;
     if old.0 != op || old.1 != hash {
         return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
     }
@@ -44,14 +45,14 @@ pub(super) async fn staff_name(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
 ) -> Result<String, AppError> {
-    sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1 AND user_type='staff' AND status='active'").bind(actor).fetch_optional(&mut **tx).await?.ok_or_else(denied)
+    DbSession::new(&mut **tx).scalar("staff.leave.repository.staff_name", "SELECT display_name FROM user_display_names WHERE id=$1 AND user_type='staff' AND status='active'").bind(actor).fetch_optional().await?.ok_or_else(denied)
 }
 pub(super) async fn category(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     date: NaiveDate,
 ) -> Result<Option<StaffPersonnelType>, AppError> {
-    let row:Option<Option<String>>=sqlx::query_scalar("SELECT personnel_type FROM staff_career_history WHERE user_id=$1 AND kind='personnel_type' AND (effective_date<=$2 OR effective_date IS NULL) ORDER BY effective_date DESC NULLS LAST,created_at DESC,id DESC LIMIT 1").bind(actor).bind(date).fetch_optional(&mut **tx).await?;
+    let row:Option<Option<String>>=DbSession::new(&mut **tx).scalar("staff.leave.repository.category", "SELECT personnel_type FROM staff_career_history WHERE user_id=$1 AND kind='personnel_type' AND (effective_date<=$2 OR effective_date IS NULL) ORDER BY effective_date DESC NULLS LAST,created_at DESC,id DESC LIMIT 1").bind(actor).bind(date).fetch_optional().await?;
     row.flatten()
         .map(|v| v.parse().map_err(|_| invalid("ประเภทบุคลากรไม่ถูกต้อง")))
         .transpose()
@@ -75,7 +76,7 @@ async fn policy_for_category(
     kind: StaffPersonnelType,
     date: NaiveDate,
 ) -> Result<Option<LeavePolicyVersion>, AppError> {
-    Ok(sqlx::query_scalar::<_,Json<LeavePolicyVersion>>("SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional(&mut **tx).await?.map(|p|p.0))
+    Ok(DbSession::new(&mut **tx).scalar::<Json<LeavePolicyVersion>>("staff.leave.repository.policy_for_category", "SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional().await?.map(|p|p.0))
 }
 /// Withdrawal authority follows today's configured route for the original category;
 /// the approved request's amount, policy and fiscal allocation remain untouched.
@@ -83,9 +84,13 @@ pub(super) async fn cancellation_route(
     tx: &mut Transaction<'_, Postgres>,
     request: &Record,
 ) -> Result<LeavePolicyVersion, AppError> {
-    sqlx::query("SELECT id FROM staff_leave_types WHERE id=$1 FOR SHARE")
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.leave.repository.cancellation_route",
+            "SELECT id FROM staff_leave_types WHERE id=$1 FOR SHARE",
+        )
         .bind(request.document.type_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
     let category = request
         .document
@@ -120,13 +125,15 @@ pub(super) async fn pinned_policy(
     let Some(id) = id else {
         return Ok(None);
     };
-    Ok(sqlx::query_scalar::<_, Json<LeavePolicyVersion>>(
-        "SELECT document FROM staff_leave_policies WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .map(|p| p.0))
+    Ok(DbSession::new(&mut **tx)
+        .scalar::<Json<LeavePolicyVersion>>(
+            "staff.leave.repository.pinned_policy",
+            "SELECT document FROM staff_leave_policies WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .map(|p| p.0))
 }
 pub(super) async fn instance(
     tx: &mut Transaction<'_, Postgres>,
@@ -135,20 +142,22 @@ pub(super) async fn instance(
     let Some(id) = id else {
         return Ok(None);
     };
-    Ok(sqlx::query_scalar::<_, Json<ProcessInstance>>(
-        "SELECT definition FROM process_instances WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .map(|p| p.0))
+    Ok(DbSession::new(&mut **tx)
+        .scalar::<Json<ProcessInstance>>(
+            "staff.leave.repository.instance",
+            "SELECT definition FROM process_instances WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .map(|p| p.0))
 }
 pub(super) async fn require_read(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
     r: &Record,
 ) -> Result<(), AppError> {
-    let assigned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$1 AND i.source_module='staff_leave' AND (i.source_id=$2 OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=$2 AND h.entry->>'action'='cancellation_requested' AND i.source_id=(h.entry->>'id')::uuid)))").bind(actor.user_id).bind(r.document.id).fetch_one(&mut **tx).await?;
+    let assigned:bool=DbSession::new(&mut **tx).scalar("staff.leave.repository.require_read", "SELECT EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$1 AND i.source_module='staff_leave' AND (i.source_id=$2 OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=$2 AND h.entry->>'action'='cancellation_requested' AND i.source_id=(h.entry->>'id')::uuid)))").bind(actor.user_id).bind(r.document.id).fetch_one().await?;
     if !can_read(actor, r.document.owner_id, assigned) {
         return Err(denied());
     }
@@ -169,8 +178,8 @@ pub(super) fn owner_edit(actor: &ActorContext, r: &Record) -> Result<(), AppErro
 }
 pub(super) async fn store(tx: &mut Transaction<'_, Postgres>, r: &Record) -> Result<(), AppError> {
     let status = serde_json::to_value(r.document.status).map_err(|_| invalid("สถานะไม่ถูกต้อง"))?;
-    sqlx::query("UPDATE staff_leave_requests SET document=$2,status=$3,revision=$4,policy_id=$5,instance_id=$6,cancellation_id=$7,amount=$8,content_hash=$9,evidence_file_ids=$10 WHERE id=$1").bind(r.document.id).bind(&r.document).bind(status.as_str()).bind(r.document.revision).bind(r.policy_id).bind(r.instance_id).bind(r.cancellation_id).bind(r.document.amount).bind(&r.content_hash).bind(&r.evidence_file_ids).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO staff_leave_revisions(request_id,revision,document,content_hash) VALUES($1,$2,$3,$4)").bind(r.document.id).bind(r.document.revision).bind(&r.document).bind(&r.content_hash).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("staff.leave.repository.store", "UPDATE staff_leave_requests SET document=$2,status=$3,revision=$4,policy_id=$5,instance_id=$6,cancellation_id=$7,amount=$8,content_hash=$9,evidence_file_ids=$10 WHERE id=$1").bind(r.document.id).bind(&r.document).bind(status.as_str()).bind(r.document.revision).bind(r.policy_id).bind(r.instance_id).bind(r.cancellation_id).bind(r.document.amount).bind(&r.content_hash).bind(&r.evidence_file_ids).execute().await?;
+    DbSession::new(&mut **tx).query("staff.leave.repository.store", "INSERT INTO staff_leave_revisions(request_id,revision,document,content_hash) VALUES($1,$2,$3,$4)").bind(r.document.id).bind(r.document.revision).bind(&r.document).bind(&r.content_hash).execute().await?;
     Ok(())
 }
 pub(super) async fn history(
@@ -193,15 +202,17 @@ pub(super) async fn history(
         content_hash: r.content_hash.clone(),
         created_at: Utc::now(),
     };
-    sqlx::query(
-        "INSERT INTO staff_leave_history(id,request_id,actor_id,entry) VALUES($1,$2,$3,$4)",
-    )
-    .bind(e.id)
-    .bind(r.document.id)
-    .bind(actor.user_id)
-    .bind(Json(e))
-    .execute(&mut **tx)
-    .await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.leave.repository.history",
+            "INSERT INTO staff_leave_history(id,request_id,actor_id,entry) VALUES($1,$2,$3,$4)",
+        )
+        .bind(e.id)
+        .bind(r.document.id)
+        .bind(actor.user_id)
+        .bind(Json(e))
+        .execute()
+        .await?;
     Ok(())
 }
 pub(super) fn period_from(r: &Record) -> LeavePeriodInput {

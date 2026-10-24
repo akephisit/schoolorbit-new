@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::{DateTime, Datelike, NaiveDate, Utc, Weekday};
@@ -123,13 +124,25 @@ pub async fn list_observations(
     access: SupervisionObservationListAccess,
     filter: SupervisionObservationFilter,
 ) -> Result<Vec<SupervisionObservation>, AppError> {
-    let rows = list_observation_rows(pool, access, filter).await?;
-    let mut connection = pool.acquire().await?;
+    if !access.school && access.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.observations.list_observations",
+    )
+    .await?;
+    let rows = list_observation_rows(&mut connection, access, filter).await?;
+
     hydrate_observations(&mut connection, rows).await
 }
 
 pub async fn get_observation(pool: &PgPool, id: Uuid) -> Result<SupervisionObservation, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        &pool,
+        "supervision.observations.get_observation",
+    )
+    .await?;
     get_observation_with_connection(&mut connection, id).await
 }
 
@@ -148,13 +161,20 @@ pub async fn evaluator_availability(
     pool: &PgPool,
     observation_id: Uuid,
 ) -> Result<Vec<SupervisionEvaluatorAvailability>, AppError> {
-    let observation = get_observation(pool, observation_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.observations.evaluator_availability",
+    )
+    .await?;
+    let observation =
+        super::observations::get_observation_with_connection(&mut connection, observation_id)
+            .await?;
     let conflict_statuses = evaluator_conflict_status_codes()
         .iter()
         .map(|status| (*status).to_string())
         .collect::<Vec<_>>();
 
-    let rows = sqlx::query_as::<_, EvaluatorAvailabilityRow>(
+    let rows = DbSession::new(&mut *connection).query_as::<EvaluatorAvailabilityRow>("supervision.services.observations.evaluator_availability",
         r#"
         SELECT u.id, u.title, u.display_name,
                conflict.observation_id AS conflict_observation_id,
@@ -192,10 +212,10 @@ pub async fn evaluator_availability(
     .bind(observation.observed_at)
     .bind(&conflict_statuses)
     .bind(observation.observed_user_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load supervision evaluator availability: {}", error);
+        tracing::error!("Failed to load supervision evaluator availability: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
     })?;
 
@@ -209,16 +229,25 @@ pub async fn observation_timetable_options(
     pool: &PgPool,
     observation_id: Uuid,
 ) -> Result<Vec<SupervisionTimetableOption>, AppError> {
-    let observation = get_observation(pool, observation_id).await?;
-    let version = timetable_version_service::resolve_for_date(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "supervision.observations.observation_timetable_options",
+    )
+    .await?;
+    let observation =
+        super::observations::get_observation_with_connection(&mut connection, observation_id)
+            .await?;
+    let version = timetable_version_service::resolve_for_date_on_connection(
+        &mut connection,
         observation.academic_term_id,
         bangkok_observation_date(observation.observed_at),
     )
     .await?;
 
-    sqlx::query_as(
-        r#"SELECT block_group.id AS block_group_id,
+    DbSession::new(&mut *connection)
+        .query_as(
+            "supervision.services.observations.observation_timetable_options",
+            r#"SELECT block_group.id AS block_group_id,
                   block.id AS block_id,
                   block.day_of_week,
                   block.bell_schedule_period_id,
@@ -253,13 +282,13 @@ pub async fn observation_timetable_options(
              AND block.is_active
              AND instructor.instructor_id = $3
            ORDER BY block.day_of_week, period.order_index, block_group.id"#,
-    )
-    .bind(version.id)
-    .bind(observation.academic_term_id)
-    .bind(observation.observed_user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(version.id)
+        .bind(observation.academic_term_id)
+        .bind(observation.observed_user_id)
+        .fetch_all()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn request_observation(
@@ -267,7 +296,11 @@ pub async fn request_observation(
     actor_user_id: Uuid,
     input: RequestSupervisionObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.observations.request_observation",
+    )
+    .await?;
     let before = load_cycle_for_request(&mut *tx, input.cycle_id).await?;
     ensure_cycle_target_allows_teacher(&mut tx, input.cycle_id, actor_user_id).await?;
     let context = require_cycle_write(
@@ -295,8 +328,10 @@ pub async fn request_observation(
     )
     .await?;
 
-    let observation_id: Uuid = sqlx::query_scalar(
-        r#"
+    let observation_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "supervision.services.observations.request_observation",
+            r#"
         INSERT INTO supervision_observations (
             cycle_id, academic_year_id, academic_term_id, learning_group_id, homeroom_id,
             observed_user_id, requested_by, template_id, timetable_block_group_id,
@@ -306,29 +341,32 @@ pub async fn request_observation(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING id
         "#,
-    )
-    .bind(cycle.id)
-    .bind(cycle.academic_year_id)
-    .bind(input.academic_term_id)
-    .bind(lesson.learning_group_id)
-    .bind(lesson.homeroom_id)
-    .bind(actor_user_id)
-    .bind(actor_user_id)
-    .bind(cycle.template_id)
-    .bind(lesson.timetable_block_group_id)
-    .bind(&lesson.manual_subject_name)
-    .bind(&lesson.manual_classroom_label)
-    .bind(&lesson.manual_room_label)
-    .bind(lesson.observed_at)
-    .bind(&lesson.manual_period_label)
-    .bind(&lesson.manual_reason)
-    .bind(Json(lesson.snapshot))
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to request supervision observation: {}", error);
-        AppError::InternalServerError("ไม่สามารถส่งคำขอนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle.id)
+        .bind(cycle.academic_year_id)
+        .bind(input.academic_term_id)
+        .bind(lesson.learning_group_id)
+        .bind(lesson.homeroom_id)
+        .bind(actor_user_id)
+        .bind(actor_user_id)
+        .bind(cycle.template_id)
+        .bind(lesson.timetable_block_group_id)
+        .bind(&lesson.manual_subject_name)
+        .bind(&lesson.manual_classroom_label)
+        .bind(&lesson.manual_room_label)
+        .bind(lesson.observed_at)
+        .bind(&lesson.manual_period_label)
+        .bind(&lesson.manual_reason)
+        .bind(Json(lesson.snapshot))
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to request supervision observation: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถส่งคำขอนิเทศได้".to_string())
+        })?;
 
     insert_observation_action(
         &mut tx,
@@ -351,7 +389,11 @@ pub async fn update_requested_observation(
     observation_id: Uuid,
     input: UpdateRequestedObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.observations.update_requested_observation",
+    )
+    .await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if current.observed_user_id != actor_user_id {
         return Err(AppError::Forbidden("แก้ไขคำขอนิเทศของผู้อื่นไม่ได้".to_string()));
@@ -376,8 +418,10 @@ pub async fn update_requested_observation(
     )
     .await?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.observations.update_requested_observation",
+            r#"
         UPDATE supervision_observations
         SET timetable_block_group_id = $2,
             learning_group_id = $3,
@@ -391,24 +435,27 @@ pub async fn update_requested_observation(
             lesson_snapshot = $11
         WHERE id = $1
         "#,
-    )
-    .bind(observation_id)
-    .bind(lesson.timetable_block_group_id)
-    .bind(lesson.learning_group_id)
-    .bind(lesson.homeroom_id)
-    .bind(&lesson.manual_subject_name)
-    .bind(&lesson.manual_classroom_label)
-    .bind(&lesson.manual_room_label)
-    .bind(lesson.observed_at)
-    .bind(&lesson.manual_period_label)
-    .bind(&lesson.manual_reason)
-    .bind(Json(lesson.snapshot))
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update supervision request: {}", error);
-        AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(lesson.timetable_block_group_id)
+        .bind(lesson.learning_group_id)
+        .bind(lesson.homeroom_id)
+        .bind(&lesson.manual_subject_name)
+        .bind(&lesson.manual_classroom_label)
+        .bind(&lesson.manual_room_label)
+        .bind(lesson.observed_at)
+        .bind(&lesson.manual_period_label)
+        .bind(&lesson.manual_reason)
+        .bind(Json(lesson.snapshot))
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update supervision request: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
+        })?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
@@ -437,7 +484,11 @@ pub async fn update_observation(
     observation_id: Uuid,
     input: UpdateSupervisionObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.observations.update_observation",
+    )
+    .await?;
     require_observation_write(&mut tx, observation_id).await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if !manager_can_edit_observation(current.status) {
@@ -497,8 +548,10 @@ pub async fn update_observation(
     )
     .await?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.observations.update_observation",
+            r#"
         UPDATE supervision_observations
         SET template_id = $2,
             timetable_block_group_id = $3,
@@ -513,25 +566,28 @@ pub async fn update_observation(
             lesson_snapshot = $12
         WHERE id = $1
         "#,
-    )
-    .bind(observation_id)
-    .bind(template_id)
-    .bind(lesson.timetable_block_group_id)
-    .bind(lesson.learning_group_id)
-    .bind(lesson.homeroom_id)
-    .bind(&lesson.manual_subject_name)
-    .bind(&lesson.manual_classroom_label)
-    .bind(&lesson.manual_room_label)
-    .bind(lesson.observed_at)
-    .bind(&lesson.manual_period_label)
-    .bind(&lesson.manual_reason)
-    .bind(Json(lesson.snapshot))
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update supervision observation: {}", error);
-        AppError::InternalServerError("ไม่สามารถแก้ไขรายการนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(template_id)
+        .bind(lesson.timetable_block_group_id)
+        .bind(lesson.learning_group_id)
+        .bind(lesson.homeroom_id)
+        .bind(&lesson.manual_subject_name)
+        .bind(&lesson.manual_classroom_label)
+        .bind(&lesson.manual_room_label)
+        .bind(lesson.observed_at)
+        .bind(&lesson.manual_period_label)
+        .bind(&lesson.manual_reason)
+        .bind(Json(lesson.snapshot))
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update supervision observation: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถแก้ไขรายการนิเทศได้".to_string())
+        })?;
 
     insert_observation_action(
         &mut tx,
@@ -578,7 +634,11 @@ pub async fn approve_observation_request(
         ));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.observations.approve_observation_request",
+    )
+    .await?;
     require_observation_write(&mut tx, observation_id).await?;
     let observation = get_observation_with_connection(&mut tx, observation_id).await?;
     if observation.status != SupervisionObservationStatus::Requested
@@ -611,28 +671,40 @@ pub async fn approve_observation_request(
     )
     .await?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.observations.approve_observation_request",
+            r#"
         UPDATE supervision_observations
         SET status = 'planned', approved_by = $2, approved_at = now()
         WHERE id = $1
         "#,
-    )
-    .bind(observation_id)
-    .bind(actor_user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to approve supervision request: {}", error);
-        AppError::InternalServerError("ไม่สามารถอนุมัติคำขอนิเทศได้".to_string())
-    })?;
-
-    sqlx::query("DELETE FROM supervision_evaluators WHERE observation_id = $1")
+        )
         .bind(observation_id)
-        .execute(&mut *tx)
+        .bind(actor_user_id)
+        .execute()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to reset supervision evaluators: {}", error);
+            tracing::error!(
+                "Failed to approve supervision request: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถอนุมัติคำขอนิเทศได้".to_string())
+        })?;
+
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.observations.approve_observation_request",
+            "DELETE FROM supervision_evaluators WHERE observation_id = $1",
+        )
+        .bind(observation_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to reset supervision evaluators: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
         })?;
 
@@ -672,7 +744,7 @@ pub async fn return_observation_request(
 }
 
 async fn list_observation_rows(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     access: SupervisionObservationListAccess,
     filter: SupervisionObservationFilter,
 ) -> Result<Vec<SupervisionObservationRow>, AppError> {
@@ -743,30 +815,42 @@ async fn list_observation_rows(
 
     builder.push(" ORDER BY o.created_at DESC");
 
-    builder
-        .build_query_as::<SupervisionObservationRow>()
-        .fetch_all(pool)
+    DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "supervision.services.observations.list_observation_rows",
+            builder.build_query_as::<SupervisionObservationRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to list supervision observations: {}", error);
+            tracing::error!(
+                "Failed to list supervision observations: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงรายการนิเทศได้".to_string())
         })
 }
 
-async fn load_observation_row<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_observation_row(
+    connection: &mut PgConnection,
     id: Uuid,
 ) -> Result<SupervisionObservationRow, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(observation_select_sql());
     builder.push(" AND o.id = ");
     builder.push_bind(id);
 
-    builder
-        .build_query_as::<SupervisionObservationRow>()
-        .fetch_optional(pool)
+    DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "supervision.services.observations.load_observation_row",
+            builder.build_query_as::<SupervisionObservationRow>(),
+        )
+        .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to load supervision observation: {}", error);
+            tracing::error!(
+                "Failed to load supervision observation: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงรายการนิเทศได้".to_string())
         })?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการนิเทศ".to_string()))
@@ -856,12 +940,14 @@ fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesso
     })
 }
 
-async fn load_observation_evaluators<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_observation_evaluators(
+    connection: &mut PgConnection,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionEvaluator>>, AppError> {
-    let rows = sqlx::query_as::<_, SupervisionEvaluatorRow>(
-        r#"
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionEvaluatorRow>(
+            "supervision.services.observations.load_observation_evaluators",
+            r#"
         SELECT e.id, e.observation_id, e.evaluator_user_id,
                NULLIF(u.display_name, '')
                    AS evaluator_display_name,
@@ -872,14 +958,17 @@ async fn load_observation_evaluators<'e>(
         WHERE e.observation_id = ANY($1)
         ORDER BY e.observation_id, e.is_required DESC, e.created_at
         "#,
-    )
-    .bind(observation_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision evaluators: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงผู้ประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision evaluators: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงผู้ประเมินนิเทศได้".to_string())
+        })?;
 
     let mut evaluators_by_observation = HashMap::new();
     for row in rows {
@@ -892,12 +981,14 @@ async fn load_observation_evaluators<'e>(
     Ok(evaluators_by_observation)
 }
 
-async fn load_observation_actions<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_observation_actions(
+    connection: &mut PgConnection,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionAction>>, AppError> {
-    let rows = sqlx::query_as::<_, SupervisionActionRow>(
-        r#"
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionActionRow>(
+            "supervision.services.observations.load_observation_actions",
+            r#"
         SELECT a.id, a.observation_id, a.actor_user_id,
                NULLIF(u.display_name, '')
                    AS actor_display_name,
@@ -907,14 +998,17 @@ async fn load_observation_actions<'e>(
         WHERE a.observation_id = ANY($1)
         ORDER BY a.observation_id, a.created_at DESC
         "#,
-    )
-    .bind(observation_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision actions: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงประวัติรายการนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision actions: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงประวัติรายการนิเทศได้".to_string())
+        })?;
 
     let mut actions_by_observation = HashMap::new();
     for row in rows {
@@ -927,12 +1021,14 @@ async fn load_observation_actions<'e>(
     Ok(actions_by_observation)
 }
 
-async fn load_observation_average_ratings<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_observation_average_ratings(
+    connection: &mut PgConnection,
     observation_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, f64>, AppError> {
-    let rows = sqlx::query_as::<_, (Uuid, f64)>(
-        r#"
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<(Uuid, f64)>(
+            "supervision.services.observations.load_observation_average_ratings",
+            r#"
         SELECT observation_id, AVG(evaluator_average)::double precision AS average_rating
         FROM (
             SELECT e.observation_id, e.id,
@@ -948,14 +1044,17 @@ async fn load_observation_average_ratings<'e>(
         ) evaluator_averages
         GROUP BY observation_id
         "#,
-    )
-    .bind(observation_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision observation averages: {}", error);
-        AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision observation averages: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถคำนวณคะแนนเฉลี่ยนิเทศได้".to_string())
+        })?;
 
     Ok(rows.into_iter().collect())
 }
@@ -974,26 +1073,31 @@ fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppEr
     })
 }
 
-async fn load_cycle_for_request<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_cycle_for_request(
+    connection: &mut PgConnection,
     cycle_id: Uuid,
 ) -> Result<CycleForRequestRow, AppError> {
-    sqlx::query_as::<_, CycleForRequestRow>(
-        r#"
+    DbSession::new(&mut *connection)
+        .query_as::<CycleForRequestRow>(
+            "supervision.services.observations.load_cycle_for_request",
+            r#"
         SELECT id, academic_year_id, academic_term_id, template_id, status,
                booking_opens_at, booking_closes_at, starts_at, ends_at
         FROM supervision_cycles
         WHERE id = $1
         "#,
-    )
-    .bind(cycle_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle for request: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรอบนิเทศได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".to_string()))
+        )
+        .bind(cycle_id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision cycle for request: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรอบนิเทศได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".to_string()))
 }
 
 async fn ensure_cycle_target_allows_teacher(
@@ -1001,21 +1105,26 @@ async fn ensure_cycle_target_allows_teacher(
     cycle_id: Uuid,
     staff_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let rows = sqlx::query_as::<_, SupervisionCycleTargetRow>(
-        r#"
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionCycleTargetRow>(
+            "supervision.services.observations.ensure_cycle_target_allows_teacher",
+            r#"
         SELECT id, cycle_id, target_type, target_id, required_observations,
                priority, created_at, updated_at
         FROM supervision_cycle_targets
         WHERE cycle_id = $1
         "#,
-    )
-    .bind(cycle_id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision target rules: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบเป้าหมายรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision target rules: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบเป้าหมายรอบนิเทศได้".to_string())
+        })?;
 
     if rows.is_empty() {
         return Err(AppError::ValidationError(
@@ -1047,27 +1156,31 @@ async fn load_supervision_target_match(
     connection: &mut PgConnection,
     staff_user_id: Uuid,
 ) -> Result<SupervisionTargetMatch, AppError> {
-    let organization_unit_ids = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let organization_unit_ids = DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "supervision.services.observations.load_supervision_target_match",
+            r#"
         SELECT DISTINCT organization_unit_id
         FROM organization_members
         WHERE user_id = $1
           AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
         "#,
-    )
-    .bind(staff_user_id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to load supervision target organization units: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของครูได้".to_string())
-    })?;
+        )
+        .bind(staff_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision target organization units: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของครูได้".to_string())
+        })?;
 
-    let subject_group_ids = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let subject_group_ids = DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "supervision.services.observations.load_supervision_target_match",
+            r#"
         SELECT DISTINCT ou.subject_group_id
         FROM organization_members om
         JOIN organization_units ou ON ou.id = om.organization_unit_id
@@ -1075,17 +1188,17 @@ async fn load_supervision_target_match(
           AND ou.subject_group_id IS NOT NULL
           AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
-    )
-    .bind(staff_user_id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to load supervision target subject groups: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระของครูได้".to_string())
-    })?;
+        )
+        .bind(staff_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision target subject groups: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระของครูได้".to_string())
+        })?;
 
     Ok(SupervisionTargetMatch {
         staff_user_id,
@@ -1121,8 +1234,8 @@ fn validate_cycle_accepts_requests(cycle: &CycleForRequestRow) -> Result<(), App
     Ok(())
 }
 
-async fn validate_observation_context<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn validate_observation_context(
+    connection: &mut PgConnection,
     cycle: &CycleForRequestRow,
     academic_term_id: Uuid,
 ) -> Result<(), AppError> {
@@ -1135,16 +1248,18 @@ async fn validate_observation_context<'e>(
         ));
     }
 
-    let term_belongs_to_year: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
+    let term_belongs_to_year: bool = DbSession::new(&mut *connection)
+        .scalar(
+            "supervision.services.observations.validate_observation_context",
+            "SELECT EXISTS (
             SELECT 1 FROM academic_terms
             WHERE id = $1 AND academic_year_id = $2
         )",
-    )
-    .bind(academic_term_id)
-    .bind(cycle.academic_year_id)
-    .fetch_one(pool)
-    .await?;
+        )
+        .bind(academic_term_id)
+        .bind(cycle.academic_year_id)
+        .fetch_one()
+        .await?;
 
     if !term_belongs_to_year {
         return Err(AppError::ValidationError(
@@ -1181,12 +1296,13 @@ async fn resolve_lesson_input(
         (Some(block_group_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
             let observed_date = bangkok_observation_date(observed_at);
-            let timetable_version_id = timetable_version_service::resolve_version_id_for_date(
-                &mut *connection,
-                academic_term_id,
-                observed_date,
-            )
-            .await?;
+            let timetable_version_id =
+                timetable_version_service::resolve_version_id_for_date_on_connection(
+                    &mut *connection,
+                    academic_term_id,
+                    observed_date,
+                )
+                .await?;
             let entry = load_timetable_block_group_context_for_teacher(
                 &mut *connection,
                 block_group_id,
@@ -1295,16 +1411,18 @@ struct TimetableBlockGroupLessonContext {
     homeroom_id: Option<Uuid>,
 }
 
-async fn load_timetable_block_group_context_for_teacher<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_timetable_block_group_context_for_teacher(
+    connection: &mut PgConnection,
     block_group_id: Uuid,
     timetable_version_id: Uuid,
     teacher_user_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<TimetableBlockGroupLessonContext, AppError> {
-    let context = sqlx::query_as::<_, TimetableBlockGroupLessonContext>(
-        r#"
+    let context = DbSession::new(&mut *connection)
+        .query_as::<TimetableBlockGroupLessonContext>(
+            "supervision.services.observations.load_timetable_block_group_context_for_teacher",
+            r#"
         SELECT block.day_of_week, block_group.learning_group_id,
                NULL::uuid AS homeroom_id
         FROM academic_timetable_block_groups block_group
@@ -1321,30 +1439,33 @@ async fn load_timetable_block_group_context_for_teacher<'e>(
                 AND instructor.instructor_id = $3
           )
         "#,
-    )
-    .bind(block_group_id)
-    .bind(timetable_version_id)
-    .bind(teacher_user_id)
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to validate supervision timetable entry: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
-    })?;
+        )
+        .bind(block_group_id)
+        .bind(timetable_version_id)
+        .bind(teacher_user_id)
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to validate supervision timetable entry: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
+        })?;
 
     context.ok_or_else(|| {
         AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเองในภาคเรียนที่เลือก".to_string())
     })
 }
 
-async fn load_timetable_block_group_lesson_snapshot<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_timetable_block_group_lesson_snapshot(
+    connection: &mut PgConnection,
     block_group_id: Uuid,
     observed_at: DateTime<Utc>,
 ) -> Result<LessonSnapshot, AppError> {
-    let row = sqlx::query(
+    let row = DbSession::new(&mut *connection).query("supervision.services.observations.load_timetable_block_group_lesson_snapshot",
         r#"
         SELECT CASE WHEN subject_version.id IS NULL THEN NULL ELSE concat(
                    coalesce(subject_version.name_th, subject_version.name_en, offering.name_snapshot),
@@ -1370,10 +1491,10 @@ async fn load_timetable_block_group_lesson_snapshot<'e>(
         "#,
     )
     .bind(block_group_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load supervision lesson snapshot: {}", error);
+        tracing::error!("Failed to load supervision lesson snapshot: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลคาบสอนได้".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบคาบสอน".to_string()))?;
@@ -1405,7 +1526,11 @@ pub(super) async fn set_observation_status(
     comment: Option<String>,
     policy: ObservationTransitionPolicy,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.observations.set_observation_status",
+    )
+    .await?;
     if matches!(
         policy,
         ObservationTransitionPolicy::RequestedTeacher
@@ -1440,22 +1565,27 @@ pub(super) async fn set_observation_status(
         ));
     }
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.observations.set_observation_status",
+            r#"
         UPDATE supervision_observations
         SET status = $2,
             cancelled_at = CASE WHEN $2 = 'cancelled' THEN now() ELSE cancelled_at END
         WHERE id = $1
         "#,
-    )
-    .bind(observation_id)
-    .bind(to_status.as_str())
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to set supervision observation status: {}", error);
-        AppError::InternalServerError("ไม่สามารถอัปเดตสถานะนิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(to_status.as_str())
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to set supervision observation status: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถอัปเดตสถานะนิเทศได้".to_string())
+        })?;
 
     insert_observation_action(
         &mut tx,
@@ -1481,26 +1611,31 @@ pub(super) async fn insert_observation_action(
     to_status: Option<SupervisionObservationStatus>,
     comment: Option<String>,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "supervision.services.observations.insert_observation_action",
+            r#"
         INSERT INTO supervision_actions (
             observation_id, actor_user_id, action_kind, from_status, to_status, comment
         )
         VALUES ($1, $2, $3, $4, $5, $6)
         "#,
-    )
-    .bind(observation_id)
-    .bind(actor_user_id)
-    .bind(action_kind)
-    .bind(from_status.map(SupervisionObservationStatus::as_str))
-    .bind(to_status.map(SupervisionObservationStatus::as_str))
-    .bind(comment)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to insert supervision action: {}", error);
-        AppError::InternalServerError("ไม่สามารถบันทึกประวัตินิเทศได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(actor_user_id)
+        .bind(action_kind)
+        .bind(from_status.map(SupervisionObservationStatus::as_str))
+        .bind(to_status.map(SupervisionObservationStatus::as_str))
+        .bind(comment)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert supervision action: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกประวัตินิเทศได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -1579,8 +1714,13 @@ pub async fn load_timetable_block_group_context_for_teacher_for_test(
     academic_year_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<(), AppError> {
-    load_timetable_block_group_context_for_teacher(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "supervision.observations.test_group_context",
+    )
+    .await?;
+    load_timetable_block_group_context_for_teacher(
+        &mut connection,
         block_group_id,
         timetable_version_id,
         teacher_user_id,
@@ -1589,4 +1729,29 @@ pub async fn load_timetable_block_group_context_for_teacher_for_test(
     )
     .await
     .map(|_| ())
+}
+
+#[cfg(test)]
+mod connection_policy_tests {
+    use super::*;
+    #[tokio::test]
+    async fn empty_observation_scope_does_not_acquire_a_connection() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let rows = list_observations(
+            &pool,
+            SupervisionObservationListAccess::default(),
+            SupervisionObservationFilter {
+                academic_year_id: Uuid::new_v4(),
+                academic_term_id: None,
+                cycle_id: None,
+                status: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(rows.is_empty());
+    }
 }

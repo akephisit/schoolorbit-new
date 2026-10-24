@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -37,7 +38,7 @@ async fn coverage_in_transaction(
     // Regular/custom terms include the year cohort so unconfigured students do
     // not disappear. Summer/remedial terms cover their actual participants.
     // Retained results/revisions preserve coverage after withdrawal.
-    let mut expected: Vec<Uuid> = sqlx::query_scalar(
+    let mut expected: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_results.services.closure_coverage.coverage_in_transaction",
         "SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status IN ('active','completed')
          AND EXISTS(SELECT 1 FROM academic_terms WHERE id=$2 AND academic_year_id=$1 AND term_type NOT IN ('summer','remedial'))
          UNION SELECT student_academic_year_id FROM learning_group_students WHERE academic_year_id=$1 AND academic_term_id=$2 AND membership_status='active'
@@ -45,7 +46,7 @@ async fn coverage_in_transaction(
          UNION SELECT student_academic_year_id FROM academic_activity_results WHERE academic_year_id=$1 AND academic_term_id=$2
          UNION SELECT student_academic_year_id FROM academic_term_aggregate_revisions WHERE academic_year_id=$1 AND academic_term_id=$2
          ORDER BY 1 LIMIT 10001",
-    ).bind(context.academic_year_id).bind(context.academic_term_id).fetch_all(&mut **tx).await?;
+    ).bind(context.academic_year_id).bind(context.academic_term_id).fetch_all().await?;
     if expected.len() > 10000 {
         return Err(AppError::ValidationError(
             "ผลสรุปภาคเรียนเกินขอบเขต 10000 คน".into(),
@@ -55,12 +56,12 @@ async fn coverage_in_transaction(
         let selected: std::collections::BTreeSet<Uuid> = selected.iter().copied().collect();
         expected.retain(|id| selected.contains(id));
     }
-    let revisions: Vec<LatestRevision> = sqlx::query_as(
+    let revisions: Vec<LatestRevision> = DbSession::new(&mut **tx).query_as("academic_results.services.closure_coverage.coverage_in_transaction",
         "SELECT DISTINCT ON (student_academic_year_id) student_academic_year_id,id,revision,policy_id,source_checksum,hold_reason
          FROM academic_term_aggregate_revisions WHERE academic_year_id=$1 AND academic_term_id=$2
            AND student_academic_year_id=ANY($3)
          ORDER BY student_academic_year_id,revision DESC",
-    ).bind(context.academic_year_id).bind(context.academic_term_id).bind(&expected).fetch_all(&mut **tx).await?;
+    ).bind(context.academic_year_id).bind(context.academic_term_id).bind(&expected).fetch_all().await?;
     let mut policies: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
     let mut latest = BTreeMap::new();
     for revision in revisions {

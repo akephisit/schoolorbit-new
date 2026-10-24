@@ -1,10 +1,23 @@
 use crate::personnel::{CreateStaffInfoRequest, StaffInfoResponse, UpdateStaffInfoRequest};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub async fn read_staff_info(
     pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<StaffInfoResponse>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.staff_info_service.read_staff_info",
+    )
+    .await?;
+    read_staff_info_on_connection(&mut connection, user_id).await
+}
+
+pub async fn read_staff_info_on_connection(
+    connection: &mut sqlx::PgConnection,
     user_id: Uuid,
 ) -> Result<Option<StaffInfoResponse>, AppError> {
     let type_entry = super::staff_career_service::career_json_sql("career_type", None, "true");
@@ -26,11 +39,14 @@ pub async fn read_staff_info(
         LEFT JOIN staff_career_history career_rank ON career_rank.id=info.current_academic_rank_history_id
         WHERE info.user_id = $1"#
     );
-    let row: Option<Json<StaffInfoResponse>> =
-        sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<Json<StaffInfoResponse>> = DbSession::new(connection)
+        .scalar(
+            "staff.services.staff_info_service.read_staff_info_on_connection",
+            sqlx::AssertSqlSafe(sql.as_str()),
+        )
+        .bind(user_id)
+        .fetch_optional()
+        .await?;
     Ok(row.map(|Json(info)| info))
 }
 
@@ -58,12 +74,14 @@ pub(crate) async fn validate_position(
     existing: Option<Uuid>,
 ) -> Result<(), AppError> {
     if let Some(id) = selected {
-        let row: Option<(bool, bool)> = sqlx::query_as(
-            "SELECT is_active,is_selectable FROM staff_job_positions WHERE id=$1 FOR SHARE",
-        )
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?;
+        let row: Option<(bool, bool)> = DbSession::new(&mut **tx)
+            .query_as(
+                "staff.services.staff_info_service.validate_position",
+                "SELECT is_active,is_selectable FROM staff_job_positions WHERE id=$1 FOR SHARE",
+            )
+            .bind(id)
+            .fetch_optional()
+            .await?;
         if !row.is_some_and(|(active, selectable)| (active && selectable) || existing == Some(id)) {
             return Err(AppError::BadRequest(
                 "ตำแหน่งที่เลือกไม่พร้อมใช้งาน กรุณาเลือกใหม่".into(),
@@ -85,8 +103,8 @@ pub async fn create_staff_info(
         .map(normalize_license)
         .transpose()?
         .flatten();
-    sqlx::query("INSERT INTO staff_info(user_id,teaching_license_number,teaching_license_expiry) VALUES($1,$2,$3)")
-        .bind(user_id).bind(license).bind(input.teaching_license_expiry).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("staff.services.staff_info_service.create_staff_info", "INSERT INTO staff_info(user_id,teaching_license_number,teaching_license_expiry) VALUES($1,$2,$3)")
+        .bind(user_id).bind(license).bind(input.teaching_license_expiry).execute().await?;
     if !input.educations.is_empty() {
         super::staff_education_service::replace_educations(tx, user_id, 0, &input.educations, true)
             .await?;
@@ -107,9 +125,13 @@ pub async fn patch_staff_info(
     if patch.is_empty() {
         return Ok(());
     }
-    sqlx::query("INSERT INTO staff_info (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING")
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.services.staff_info_service.patch_staff_info",
+            "INSERT INTO staff_info (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
+        )
         .bind(user_id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     let license = patch
         .teaching_license_number
@@ -118,11 +140,11 @@ pub async fn patch_staff_info(
         .map(normalize_license)
         .transpose()?
         .flatten();
-    sqlx::query("UPDATE staff_info SET teaching_license_number=CASE WHEN $2 THEN $3 ELSE teaching_license_number END,teaching_license_expiry=CASE WHEN $4 THEN $5 ELSE teaching_license_expiry END,updated_at=now() WHERE user_id=$1")
+    DbSession::new(&mut **tx).query("staff.services.staff_info_service.patch_staff_info", "UPDATE staff_info SET teaching_license_number=CASE WHEN $2 THEN $3 ELSE teaching_license_number END,teaching_license_expiry=CASE WHEN $4 THEN $5 ELSE teaching_license_expiry END,updated_at=now() WHERE user_id=$1")
         .bind(user_id).bind(patch.teaching_license_number.is_some())
         .bind(license)
         .bind(patch.teaching_license_expiry.is_some()).bind(patch.teaching_license_expiry.flatten())
-        .execute(&mut **tx).await?;
+        .execute().await?;
     if let Some(file) = &patch.teaching_license_file {
         super::staff_license_service::replace_file(tx, user_id, actor_id, file).await?;
     }

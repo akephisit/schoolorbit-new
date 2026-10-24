@@ -221,3 +221,7 @@ mod tests {
         assert!(amount(&r, &policy(LeaveUnit::Day)).is_err());
     }
 }
+
+pub(super) fn require_configuration_manage(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)
+}

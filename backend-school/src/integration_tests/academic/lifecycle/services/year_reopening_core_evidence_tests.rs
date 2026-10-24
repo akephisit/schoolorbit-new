@@ -1,10 +1,9 @@
 use super::*;
-use crate::integration_tests::academic::{core, cutover_test_support::apply_migrations_through};
+use crate::integration_tests::academic::core;
 
 #[tokio::test]
 async fn year_reopening_core_evidence_keeps_successor_activation_history() {
     let pool = core::services_tests::prepare_core_fixture("year_reopening_core_history").await;
-    apply_migrations_through(&pool, 76).await.unwrap();
     let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
         .fetch_one(&pool)
         .await

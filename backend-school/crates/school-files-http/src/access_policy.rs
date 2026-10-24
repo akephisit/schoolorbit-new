@@ -1,5 +1,6 @@
 use school_authorization::ActorContext;
 use school_certificates::access_policy::{self as certificate_access_policy, CertificateAction};
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     platform_types::{FilePurpose, FileVisibility},
@@ -151,7 +152,14 @@ pub async fn authorize_create(
         }
         FilePurpose::ProfileImage => {
             let owner_user_id = resource_id.unwrap_or(actor.user_id);
-            let target_kind = profile_target_kind(pool, owner_user_id).await?;
+            let target_kind = {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "files_http.policy.profile_target_kind",
+                )
+                .await?;
+                profile_target_kind(&mut read_stage, owner_user_id).await
+            }?;
             require_simple_access(
                 actor,
                 purpose,
@@ -164,7 +172,14 @@ pub async fn authorize_create(
         FilePurpose::AdmissionApplicationDocument => {
             let application_id = required_resource(resource_id)?;
             require_simple_access(actor, purpose, FilePolicyAction::Create, None, None)?;
-            require_application_exists(pool, application_id).await?;
+            {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "files_http.policy.require_application_exists",
+                )
+                .await?;
+                require_application_exists(&mut read_stage, application_id).await
+            }?;
             Ok(actor.user_id)
         }
         FilePurpose::QuestionBankImage => {
@@ -175,7 +190,14 @@ pub async fn authorize_create(
         }
         FilePurpose::AchievementImage => {
             let owner_user_id = resource_id.unwrap_or(actor.user_id);
-            require_user_exists(pool, owner_user_id).await?;
+            {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "files_http.policy.require_user_exists",
+                )
+                .await?;
+                require_user_exists(&mut read_stage, owner_user_id).await
+            }?;
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)?;
             Ok(owner_user_id)
         }
@@ -277,7 +299,14 @@ pub async fn authorize_existing(
             if resource_id.is_some_and(|resource_id| resource_id != owner_user_id) {
                 return Err(unrelated_resource());
             }
-            let target_kind = profile_target_kind(pool, owner_user_id).await?;
+            let target_kind = {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "files_http.policy.profile_target_kind",
+                )
+                .await?;
+                profile_target_kind(&mut read_stage, owner_user_id).await
+            }?;
             if simple_file_access(
                 actor,
                 file.purpose,
@@ -306,7 +335,14 @@ pub async fn authorize_existing(
         FilePurpose::AdmissionApplicationDocument => {
             require_simple_access(actor, file.purpose, action, None, None)?;
             if let Some(application_id) = resource_id {
-                let related = application_references_file(pool, application_id, file.id).await?;
+                let related = {
+                    let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                        pool,
+                        "files_http.policy.application_references_file",
+                    )
+                    .await?;
+                    application_references_file(&mut read_stage, application_id, file.id).await
+                }?;
                 if !related_resource_access(related, true) {
                     return Err(unrelated_resource());
                 }
@@ -356,13 +392,20 @@ pub async fn authorize_existing(
         }
         FilePurpose::AchievementImage => {
             if let Some(achievement_id) = resource_id {
-                let relationship = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
-                    "SELECT user_id, image_file_id FROM staff_achievements WHERE id = $1",
+                let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "files-http.achievement_relationship",
                 )
-                .bind(achievement_id)
-                .fetch_optional(pool)
-                .await?
-                .ok_or_else(unrelated_resource)?;
+                .await?;
+                let relationship = DbSession::new(&mut *connection)
+                    .query_as::<(Uuid, Option<Uuid>)>(
+                        "files-http.src.access_policy.authorize_existing",
+                        "SELECT user_id, image_file_id FROM staff_achievements WHERE id = $1",
+                    )
+                    .bind(achievement_id)
+                    .fetch_optional()
+                    .await?
+                    .ok_or_else(unrelated_resource)?;
                 if relationship.1 != Some(file.id) {
                     return Err(unrelated_resource());
                 }
@@ -385,7 +428,14 @@ pub async fn authorize_existing(
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)
         }
         FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
-            authorize_certificate_template_file(pool, actor, file, action, resource_id).await
+            certificate_template_file_preflight(file, resource_id)?;
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "files_http.policy.authorize_certificate_template_file",
+            )
+            .await?;
+            authorize_certificate_template_file(&mut read_stage, actor, file, action, resource_id)
+                .await
         }
         FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => {
             school_administration::supply_catalog::file_relationships::require_file_access(
@@ -398,7 +448,13 @@ pub async fn authorize_existing(
             .await
         }
         FilePurpose::SchoolFont => {
-            authorize_school_font_file(pool, actor, file, action, resource_id).await
+            school_font_file_preflight(actor, file, action, resource_id)?;
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "files_http.policy.authorize_school_font_file",
+            )
+            .await?;
+            authorize_school_font_file(&mut read_stage, actor, file, action, resource_id).await
         }
         FilePurpose::Transcript
         | FilePurpose::Certificate
@@ -412,12 +468,12 @@ pub async fn authorize_existing(
 /// Holds the owning template and campaign locks from the final unreferenced check
 /// through the File Platform lifecycle transition. Template attachment takes the
 /// same locks before accepting a ready upload, so a delete cannot race an attach.
-pub async fn authorize_certificate_template_delete_guard<'a>(
-    pool: &'a PgPool,
+pub async fn authorize_certificate_template_delete_guard(
+    pool: &PgPool,
     actor: &ActorContext,
     file: &PlatformFile,
     resource_id: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     if !matches!(
         file.purpose,
         FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage
@@ -428,8 +484,15 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
         return Err(forbidden());
     }
     let requested_template_id = required_resource(resource_id)?;
-    let authorization = sqlx::query_as::<_, (Uuid, Uuid, Uuid, bool, Option<Uuid>)>(
-        "SELECT upload.template_id,
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "files-http.access_policy.authorize_certificate_template_delete_guard",
+    )
+    .await?;
+    let authorization = DbSession::new(&mut *database_stage_0)
+        .query_as::<(Uuid, Uuid, Uuid, bool, Option<Uuid>)>(
+            "files-http.src.access_policy.authorize_certificate_template_delete_guard",
+            "SELECT upload.template_id,
                 template.campaign_id,
                 upload.uploaded_by,
                 (
@@ -447,12 +510,12 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
          WHERE upload.file_id = $1
            AND upload.purpose_code = $2
            AND campaign.status <> 'purging'",
-    )
-    .bind(file.id)
-    .bind(file.purpose.code())
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(file.id)
+        .bind(file.purpose.code())
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if authorization.0 != requested_template_id {
         return Err(unrelated_resource());
     }
@@ -464,6 +527,7 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
     if authorization.2 != actor.user_id {
         return Err(forbidden());
     }
+    drop(database_stage_0);
     certificate_access_policy::require_owner_action(
         pool,
         actor,
@@ -472,17 +536,23 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
     )
     .await?;
 
-    let mut tx = pool.begin().await?;
-    let (locked_owner_id, locked_status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
-        "SELECT owner_organization_unit_id, status
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "files-http.access_policy.authorize_certificate_template_delete_guard",
+    )
+    .await?;
+    let (locked_owner_id, locked_status) = DbSession::new(&mut *tx)
+        .query_as::<(Option<Uuid>, String)>(
+            "files-http.src.access_policy.authorize_certificate_template_delete_guard",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(authorization.1)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(authorization.1)
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if locked_status == "purging" {
         return Err(AppError::Conflict(
             "certificate_campaign_purging".to_string(),
@@ -494,8 +564,10 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
         ));
     }
 
-    let locked = sqlx::query_as::<_, (Uuid, Uuid, Uuid, bool)>(
-        "SELECT upload.template_id,
+    let locked = DbSession::new(&mut *tx)
+        .query_as::<(Uuid, Uuid, Uuid, bool)>(
+            "files-http.src.access_policy.authorize_certificate_template_delete_guard",
+            "SELECT upload.template_id,
                 template.campaign_id,
                 upload.uploaded_by,
                 (
@@ -511,12 +583,12 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
          WHERE upload.file_id = $1
            AND upload.purpose_code = $2
          FOR UPDATE OF template, upload",
-    )
-    .bind(file.id)
-    .bind(file.purpose.code())
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(file.id)
+        .bind(file.purpose.code())
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if locked.0 != requested_template_id || locked.1 != authorization.1 || locked.2 != actor.user_id
     {
         return Err(unrelated_resource());
@@ -532,12 +604,12 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
 /// Keeps a temporary school-font staging relation locked until the caller has
 /// committed the File Platform lifecycle transition. Attach flows lock the same
 /// staging row before promotion, so cleanup cannot race into `school_fonts`.
-pub async fn authorize_school_font_delete_guard<'a>(
-    pool: &'a PgPool,
+pub async fn authorize_school_font_delete_guard(
+    pool: &PgPool,
     actor: &ActorContext,
     file: &PlatformFile,
     resource_id: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     if file.purpose != FilePurpose::SchoolFont {
         return Err(explicit_domain_policy_required());
     }
@@ -547,17 +619,23 @@ pub async fn authorize_school_font_delete_guard<'a>(
 
     let Some(requested_template_id) = resource_id else {
         require_simple_access(actor, file.purpose, FilePolicyAction::Delete, None, None)?;
-        let mut tx = pool.begin().await?;
-        let staged = sqlx::query_scalar::<_, Uuid>(
-            "SELECT uploaded_by
+        let mut tx = school_tenancy::TenantPool::begin_observed(
+            &pool,
+            "files-http.access_policy.authorize_school_font_delete_guard",
+        )
+        .await?;
+        let staged = DbSession::new(&mut *tx)
+            .scalar::<Uuid>(
+                "files-http.src.access_policy.authorize_school_font_delete_guard",
+                "SELECT uploaded_by
              FROM school_font_file_uploads
              WHERE file_id = $1
                AND purpose_code = 'school_font'
              FOR UPDATE",
-        )
-        .bind(file.id)
-        .fetch_optional(&mut *tx)
-        .await?;
+            )
+            .bind(file.id)
+            .fetch_optional()
+            .await?;
         if staged.is_none() {
             return Err(unrelated_resource());
         }
@@ -565,8 +643,15 @@ pub async fn authorize_school_font_delete_guard<'a>(
         return Ok(tx);
     };
 
-    let authorization = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
-        "SELECT upload.template_id,
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "files-http.access_policy.authorize_school_font_delete_guard",
+    )
+    .await?;
+    let authorization = DbSession::new(&mut *database_stage_0)
+        .query_as::<(Uuid, Uuid, Option<Uuid>)>(
+            "files-http.src.access_policy.authorize_school_font_delete_guard",
+            "SELECT upload.template_id,
                 template.campaign_id,
                 campaign.owner_organization_unit_id
          FROM certificate_school_font_file_uploads AS upload
@@ -575,33 +660,40 @@ pub async fn authorize_school_font_delete_guard<'a>(
          WHERE upload.file_id = $1
            AND upload.purpose_code = 'school_font'
            AND campaign.status <> 'purging'",
-    )
-    .bind(file.id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(file.id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if authorization.0 != requested_template_id {
         return Err(unrelated_resource());
     }
-    certificate_access_policy::require_owner_action(
-        pool,
+    certificate_access_policy::require_owner_action_on_connection(
+        &mut database_stage_0,
         actor,
         authorization.2,
         CertificateAction::Update,
     )
     .await?;
 
-    let mut tx = pool.begin().await?;
-    let (locked_owner_id, locked_status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
-        "SELECT owner_organization_unit_id, status
+    drop(database_stage_0);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "files-http.access_policy.authorize_school_font_delete_guard",
+    )
+    .await?;
+    let (locked_owner_id, locked_status) = DbSession::new(&mut *tx)
+        .query_as::<(Option<Uuid>, String)>(
+            "files-http.src.access_policy.authorize_school_font_delete_guard",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(authorization.1)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(authorization.1)
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if locked_status == "purging" {
         return Err(AppError::Conflict(
             "certificate_campaign_purging".to_string(),
@@ -613,18 +705,20 @@ pub async fn authorize_school_font_delete_guard<'a>(
         ));
     }
 
-    let locked = sqlx::query_as::<_, (Uuid, Uuid)>(
-        "SELECT upload.template_id, template.campaign_id
+    let locked = DbSession::new(&mut *tx)
+        .query_as::<(Uuid, Uuid)>(
+            "files-http.src.access_policy.authorize_school_font_delete_guard",
+            "SELECT upload.template_id, template.campaign_id
          FROM certificate_school_font_file_uploads AS upload
          JOIN certificate_templates AS template ON template.id = upload.template_id
          WHERE upload.file_id = $1
            AND upload.purpose_code = 'school_font'
          FOR UPDATE OF template, upload",
-    )
-    .bind(file.id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(file.id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if locked.0 != requested_template_id || locked.1 != authorization.1 {
         return Err(unrelated_resource());
     }
@@ -636,12 +730,14 @@ async fn require_school_font_is_temporary(
     transaction: &mut Transaction<'_, Postgres>,
     file_id: Uuid,
 ) -> Result<(), AppError> {
-    let durable = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM school_fonts WHERE file_id = $1)",
-    )
-    .bind(file_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+    let durable = DbSession::new(&mut **transaction)
+        .scalar::<bool>(
+            "files-http.src.access_policy.require_school_font_is_temporary",
+            "SELECT EXISTS(SELECT 1 FROM school_fonts WHERE file_id = $1)",
+        )
+        .bind(file_id)
+        .fetch_one()
+        .await?;
     if durable {
         Err(unrelated_resource())
     } else {
@@ -649,8 +745,7 @@ async fn require_school_font_is_temporary(
     }
 }
 
-async fn authorize_school_font_file(
-    pool: &PgPool,
+fn school_font_file_preflight(
     actor: &ActorContext,
     file: &PlatformFile,
     action: FilePolicyAction,
@@ -663,9 +758,24 @@ async fn authorize_school_font_file(
         return Err(explicit_domain_policy_required());
     }
 
+    if resource_id.is_none() {
+        require_simple_access(actor, file.purpose, action, None, None)?;
+    }
+    Ok(())
+}
+async fn authorize_school_font_file(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    file: &PlatformFile,
+    action: FilePolicyAction,
+    resource_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    school_font_file_preflight(actor, file, action, resource_id)?;
     if let Some(template_id) = resource_id {
-        let related = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(
+        let related = DbSession::new(&mut *connection)
+            .scalar::<bool>(
+                "files-http.src.access_policy.authorize_school_font_file",
+                "SELECT EXISTS(
                 SELECT 1
                 FROM certificate_school_font_file_uploads AS upload
                 JOIN certificate_templates AS template ON template.id = upload.template_id
@@ -675,16 +785,16 @@ async fn authorize_school_font_file(
                   AND upload.template_id = $2
                   AND campaign.status <> 'purging'
             )",
-        )
-        .bind(file.id)
-        .bind(template_id)
-        .fetch_one(pool)
-        .await?;
+            )
+            .bind(file.id)
+            .bind(template_id)
+            .fetch_one()
+            .await?;
         if !related {
             return Err(unrelated_resource());
         }
-        certificate_access_policy::require_template_action(
-            pool,
+        certificate_access_policy::require_template_action_on_connection(
+            connection,
             actor,
             template_id,
             CertificateAction::Update,
@@ -693,18 +803,19 @@ async fn authorize_school_font_file(
         return Ok(());
     }
 
-    require_simple_access(actor, file.purpose, action, None, None)?;
-    let staged = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(
+    let staged = DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "files-http.src.access_policy.authorize_school_font_file",
+            "SELECT EXISTS(
             SELECT 1
             FROM school_font_file_uploads AS upload
             WHERE upload.file_id = $1
               AND upload.purpose_code = 'school_font'
         )",
-    )
-    .bind(file.id)
-    .fetch_one(pool)
-    .await?;
+        )
+        .bind(file.id)
+        .fetch_one()
+        .await?;
     if staged {
         Ok(())
     } else {
@@ -712,19 +823,29 @@ async fn authorize_school_font_file(
     }
 }
 
+fn certificate_template_file_preflight(
+    file: &PlatformFile,
+    resource_id: Option<Uuid>,
+) -> Result<Uuid, AppError> {
+    if file.visibility != FileVisibility::Private {
+        return Err(forbidden());
+    }
+    let requested_template_id = required_resource(resource_id)?;
+
+    Ok(requested_template_id)
+}
 async fn authorize_certificate_template_file(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     file: &PlatformFile,
     action: FilePolicyAction,
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    if file.visibility != FileVisibility::Private {
-        return Err(forbidden());
-    }
-    let requested_template_id = required_resource(resource_id)?;
-    let relationship = sqlx::query_as::<_, (Uuid, Uuid, bool)>(
-        "SELECT upload.template_id,
+    let requested_template_id = certificate_template_file_preflight(file, resource_id)?;
+    let relationship = DbSession::new(&mut *connection)
+        .query_as::<(Uuid, Uuid, bool)>(
+            "files-http.src.access_policy.authorize_certificate_template_file",
+            "SELECT upload.template_id,
                 upload.uploaded_by,
                 (
                     COALESCE(template.background_file_id = upload.file_id, false)
@@ -740,12 +861,12 @@ async fn authorize_certificate_template_file(
          WHERE upload.file_id = $1
            AND upload.purpose_code = $2
            AND campaign.status <> 'purging'",
-    )
-    .bind(file.id)
-    .bind(file.purpose.code())
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(unrelated_resource)?;
+        )
+        .bind(file.id)
+        .bind(file.purpose.code())
+        .fetch_optional()
+        .await?
+        .ok_or_else(unrelated_resource)?;
     if relationship.0 != requested_template_id {
         return Err(unrelated_resource());
     }
@@ -753,8 +874,8 @@ async fn authorize_certificate_template_file(
     match action {
         FilePolicyAction::Read => {
             if relationship.2 {
-                certificate_access_policy::require_template_action(
-                    pool,
+                certificate_access_policy::require_template_action_on_connection(
+                    connection,
                     actor,
                     relationship.0,
                     CertificateAction::Read,
@@ -765,8 +886,8 @@ async fn authorize_certificate_template_file(
             if relationship.1 != actor.user_id {
                 return Err(forbidden());
             }
-            certificate_access_policy::require_template_action(
-                pool,
+            certificate_access_policy::require_template_action_on_connection(
+                connection,
                 actor,
                 relationship.0,
                 CertificateAction::Update,
@@ -783,8 +904,8 @@ async fn authorize_certificate_template_file(
             if relationship.1 != actor.user_id {
                 return Err(forbidden());
             }
-            certificate_access_policy::require_template_action(
-                pool,
+            certificate_access_policy::require_template_action_on_connection(
+                connection,
                 actor,
                 relationship.0,
                 CertificateAction::Update,
@@ -805,9 +926,12 @@ pub async fn authorize_portal_application(
     if !portal_application_access(authenticated_application_id, requested_application_id) {
         return Err(forbidden());
     }
-    require_application_exists(pool, requested_application_id).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "files_http.portal_application")
+            .await?;
+    require_application_exists(&mut connection, requested_application_id).await?;
     if let Some(file_id) = file_id {
-        if !application_references_file(pool, requested_application_id, file_id).await? {
+        if !application_references_file(&mut connection, requested_application_id, file_id).await? {
             return Err(unrelated_resource());
         }
     }
@@ -828,12 +952,16 @@ fn require_simple_access(
 }
 
 async fn profile_target_kind(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     target_user_id: Uuid,
 ) -> Result<ProfileTargetKind, AppError> {
-    let user_type = sqlx::query_scalar::<_, String>("SELECT user_type FROM users WHERE id = $1")
+    let user_type = DbSession::new(&mut *connection)
+        .scalar::<String>(
+            "files-http.src.access_policy.profile_target_kind",
+            "SELECT user_type FROM users WHERE id = $1",
+        )
         .bind(target_user_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
     Ok(match user_type.as_str() {
@@ -843,13 +971,18 @@ async fn profile_target_kind(
     })
 }
 
-async fn require_application_exists(pool: &PgPool, application_id: Uuid) -> Result<(), AppError> {
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)",
-    )
-    .bind(application_id)
-    .fetch_one(pool)
-    .await?;
+async fn require_application_exists(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+) -> Result<(), AppError> {
+    let exists = DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "files-http.src.access_policy.require_application_exists",
+            "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)",
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await?;
     if exists {
         Ok(())
     } else {
@@ -857,10 +990,17 @@ async fn require_application_exists(pool: &PgPool, application_id: Uuid) -> Resu
     }
 }
 
-async fn require_user_exists(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+async fn require_user_exists(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let exists = DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "files-http.src.access_policy.require_user_exists",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)",
+        )
         .bind(user_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
     if exists {
         Ok(())
@@ -870,12 +1010,14 @@ async fn require_user_exists(pool: &PgPool, user_id: Uuid) -> Result<(), AppErro
 }
 
 async fn application_references_file(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     application_id: Uuid,
     file_id: Uuid,
 ) -> Result<bool, AppError> {
-    sqlx::query_scalar(
-        r#"
+    DbSession::new(&mut *connection)
+        .scalar(
+            "files-http.src.access_policy.application_references_file",
+            r#"
 SELECT EXISTS(
     SELECT 1
     FROM admission_application_documents
@@ -884,12 +1026,12 @@ SELECT EXISTS(
       AND deleted_at IS NULL
 )
 "#,
-    )
-    .bind(application_id)
-    .bind(file_id)
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
+        )
+        .bind(application_id)
+        .bind(file_id)
+        .fetch_one()
+        .await
+        .map_err(Into::into)
 }
 
 fn required_resource(resource_id: Option<Uuid>) -> Result<Uuid, AppError> {
@@ -1538,5 +1680,113 @@ mod staff_leave_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod connection_stage_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn portal_relationship_reads_reuse_the_callers_only_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "file_portal_connection",
+            1,
+        )
+        .await;
+        sqlx::query("CREATE TABLE admission_applications (id uuid PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE admission_application_documents (application_id uuid NOT NULL,file_id uuid NOT NULL,deleted_at timestamptz)").execute(&pool).await.unwrap();
+        let application = Uuid::new_v4();
+        let file = Uuid::new_v4();
+        sqlx::query("INSERT INTO admission_applications VALUES ($1)")
+            .bind(application)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO admission_application_documents(application_id,file_id) VALUES ($1,$2)",
+        )
+        .bind(application)
+        .bind(file)
+        .execute(&pool)
+        .await
+        .unwrap();
+        authorize_portal_application(&pool, application, application, Some(file))
+            .await
+            .unwrap();
+        assert!(matches!(
+            authorize_portal_application(&pool, application, application, Some(Uuid::new_v4()))
+                .await,
+            Err(AppError::NotFound(_))
+        ));
+        let mut connection = pool.acquire().await.unwrap();
+        require_application_exists(&mut connection, application)
+            .await
+            .unwrap();
+        assert!(
+            application_references_file(&mut connection, application, file)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !application_references_file(&mut connection, application, Uuid::new_v4())
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_font_certificate_and_portal_requests_deny_without_connecting() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        let mut file = PlatformFile {
+            id: Uuid::new_v4(),
+            owner_user_id: Some(actor.user_id),
+            purpose: FilePurpose::SchoolFont,
+            visibility: FileVisibility::Private,
+            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
+            current_version: None,
+            display_filename: "synthetic.ttf".into(),
+            detected_mime_type: "font/ttf".into(),
+            byte_size: 1,
+        };
+        assert!(matches!(
+            authorize_existing(&pool, &actor, &file, FilePolicyAction::Read, None).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            authorize_existing(&pool, &actor, &file, FilePolicyAction::Delete, None).await,
+            Err(AppError::Forbidden(_))
+        ));
+        file.purpose = FilePurpose::CertificateTemplateImage;
+        assert!(matches!(
+            authorize_existing(&pool, &actor, &file, FilePolicyAction::Read, None).await,
+            Err(AppError::BadRequest(_))
+        ));
+        file.visibility = FileVisibility::Public;
+        assert!(matches!(
+            authorize_existing(
+                &pool,
+                &actor,
+                &file,
+                FilePolicyAction::Read,
+                Some(Uuid::new_v4())
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            authorize_portal_application(&pool, actor.user_id, Uuid::new_v4(), None).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

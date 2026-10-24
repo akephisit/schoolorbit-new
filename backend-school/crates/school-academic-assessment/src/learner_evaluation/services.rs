@@ -2,6 +2,7 @@ use super::models::*;
 use crate::policy::learner_evaluation as policy;
 use school_academic_core::services::lifecycle_guard::{self, AcademicWriteState};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -30,9 +31,13 @@ pub async fn list_subjects(
     ctx: &EvaluationContext,
 ) -> Result<Vec<EvaluationSubject>, AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.list_subjects",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
-    let rows:Vec<EvaluationSubject>=sqlx::query_as(r#"WITH groups AS (
+    let rows:Vec<EvaluationSubject>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.list_subjects", r#"WITH groups AS (
         SELECT d.subject_id,g.id AS learning_group_id,o.id AS learning_offering_id,o.code_snapshot AS code,o.name_snapshot AS name,g.name AS group_name,o.owning_organization_unit_id,
         EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
         EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$3) AS coordinator
@@ -40,7 +45,7 @@ pub async fn list_subjects(
         WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed')
         SELECT subject_id,learning_group_id,learning_offering_id,code,name,group_name,assigned FROM groups
         WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND (assigned OR coordinator))
-        ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all(&mut *tx).await?;
+        ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all().await?;
     if rows.len() > 1000 {
         return Err(AppError::ValidationError(
             "Subject list exceeds 1000 groups".into(),
@@ -64,13 +69,15 @@ pub(super) async fn validate_context(
     tx: &mut Transaction<'_, Postgres>,
     ctx: &EvaluationContext,
 ) -> Result<(), AppError> {
-    let valid: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
-    )
-    .bind(ctx.academic_term_id)
-    .bind(ctx.academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let valid: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_assessment.learner_evaluation.services.validate_context",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
+        )
+        .bind(ctx.academic_term_id)
+        .bind(ctx.academic_year_id)
+        .fetch_one()
+        .await?;
     if !valid {
         return Err(AppError::ValidationError(
             "Academic term does not belong to selected year".into(),
@@ -106,34 +113,38 @@ pub(super) async fn begin_subject<'a>(
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
     write: bool,
-) -> Result<(Transaction<'a, Postgres>, SubjectScope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, SubjectScope), AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.begin_subject",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let academic_state =
         lifecycle_guard::lock_context(&mut tx, ctx.academic_year_id, ctx.academic_term_id).await?;
     if write {
         academic_state.require_writable()?;
     }
-    let offerings:Vec<Uuid>=sqlx::query_scalar("SELECT o.id FROM learning_offerings o JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE d.subject_id=$1 AND o.academic_term_id=$2 AND o.academic_year_id=$3 ORDER BY o.id FOR UPDATE OF o").bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut *tx).await?;
+    let offerings:Vec<Uuid>=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT o.id FROM learning_offerings o JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE d.subject_id=$1 AND o.academic_term_id=$2 AND o.academic_year_id=$3 ORDER BY o.id FOR UPDATE OF o").bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all().await?;
     if offerings.is_empty() {
         return Err(AppError::NotFound(
             "Course subject not found in this context".into(),
         ));
     }
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.begin_subject",
         "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR UPDATE",
     )
     .bind(&offerings)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     // Persisted subject coordination is independent of active group assignments.
-    let coordinator:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM course_assessment_plans WHERE learning_offering_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 AND assessment_coordinator_id=$4)").bind(&offerings).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).fetch_one(&mut *tx).await?;
-    let groups:Vec<GroupScope>=sqlx::query_as(r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
+    let coordinator:bool=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT EXISTS(SELECT 1 FROM course_assessment_plans WHERE learning_offering_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 AND assessment_coordinator_id=$4)").bind(&offerings).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).fetch_one().await?;
+    let groups:Vec<GroupScope>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.begin_subject", r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
         EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$2 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
         (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
-        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).fetch_all(&mut *tx).await?;
+        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).fetch_all().await?;
     if !groups
         .iter()
         .any(|g| policy::can_read_group(&access, g.owner, g.assigned, coordinator))
@@ -144,9 +155,9 @@ pub(super) async fn begin_subject<'a>(
         configuration::initialize(&mut tx, subject, domain, ctx, &offerings).await?;
         ensure_controls(&mut tx, ctx).await?;
     }
-    sqlx::query("SELECT subject_id FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 FOR UPDATE").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).execute(&mut *tx).await?;
-    let entry_enabled:bool=sqlx::query_scalar("SELECT entry_enabled FROM academic_learner_evaluation_controls WHERE academic_term_id=$1 AND domain=$2 FOR SHARE").bind(ctx.academic_term_id).bind(domain.as_str()).fetch_optional(&mut *tx).await?.unwrap_or(false);
-    let locked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subject_term_evaluation_locks WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3)").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.begin_subject", "SELECT subject_id FROM subject_term_evaluation_configurations WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 FOR UPDATE").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).execute().await?;
+    let entry_enabled:bool=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT entry_enabled FROM academic_learner_evaluation_controls WHERE academic_term_id=$1 AND domain=$2 FOR SHARE").bind(ctx.academic_term_id).bind(domain.as_str()).fetch_optional().await?.unwrap_or(false);
+    let locked:bool=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT EXISTS(SELECT 1 FROM subject_term_evaluation_locks WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3)").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).fetch_one().await?;
     Ok((
         tx,
         SubjectScope {
@@ -161,14 +172,12 @@ pub(super) async fn begin_subject<'a>(
     ))
 }
 pub(super) async fn subject_for_group(
-    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     group: Uuid,
     ctx: &EvaluationContext,
 ) -> Result<Uuid, AppError> {
-    let mut tx = pool.begin().await?;
-    validate_context(&mut tx, ctx).await?;
-    let subject=sqlx::query_scalar("SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3").bind(group).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("Course group not found in context".into()))?;
-    tx.commit().await?;
+    validate_context(tx, ctx).await?;
+    let subject=DbSession::new(&mut **tx).scalar("academic_assessment.learner_evaluation.services.subject_for_group", "SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3").bind(group).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("Course group not found in context".into()))?;
     Ok(subject)
 }
 pub(super) fn require_edit(
@@ -203,7 +212,7 @@ pub(super) async fn invalidate(
     ctx: &EvaluationContext,
     group: Option<Uuid>,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE learning_group_evaluation_confirmations SET row_version=row_version+1,source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true'::jsonb) WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 AND ($4::uuid IS NULL OR learning_group_id=$4)").bind(scope.subject_id).bind(ctx.academic_term_id).bind(scope.domain.as_str()).bind(group).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("academic_assessment.learner_evaluation.services.invalidate", "UPDATE learning_group_evaluation_confirmations SET row_version=row_version+1,source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true'::jsonb) WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 AND ($4::uuid IS NULL OR learning_group_id=$4)").bind(scope.subject_id).bind(ctx.academic_term_id).bind(scope.domain.as_str()).bind(group).execute().await?;
     Ok(())
 }
 pub(super) async fn next_revision(
@@ -211,13 +220,13 @@ pub(super) async fn next_revision(
     scope: &SubjectScope,
     ctx: &EvaluationContext,
 ) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar("UPDATE subject_term_evaluation_configurations SET row_version=row_version+1,updated_at=now() WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 RETURNING row_version").bind(scope.subject_id).bind(ctx.academic_term_id).bind(scope.domain.as_str()).fetch_one(&mut **tx).await?)
+    Ok(DbSession::new(&mut **tx).scalar("academic_assessment.learner_evaluation.services.next_revision", "UPDATE subject_term_evaluation_configurations SET row_version=row_version+1,updated_at=now() WHERE subject_id=$1 AND academic_term_id=$2 AND domain=$3 RETURNING row_version").bind(scope.subject_id).bind(ctx.academic_term_id).bind(scope.domain.as_str()).fetch_one().await?)
 }
 pub(super) async fn ensure_controls(
     tx: &mut Transaction<'_, Postgres>,
     ctx: &EvaluationContext,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO academic_learner_evaluation_controls (academic_term_id,academic_year_id,domain) SELECT $1,$2,domain FROM (VALUES ('desirable_characteristic'),('reading_thinking_writing')) d(domain) ON CONFLICT (academic_term_id,domain) DO NOTHING").bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("academic_assessment.learner_evaluation.services.ensure_controls", "INSERT INTO academic_learner_evaluation_controls (academic_term_id,academic_year_id,domain) SELECT $1,$2,domain FROM (VALUES ('desirable_characteristic'),('reading_thinking_writing')) d(domain) ON CONFLICT (academic_term_id,domain) DO NOTHING").bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute().await?;
     Ok(())
 }
 

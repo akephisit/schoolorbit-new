@@ -1,9 +1,10 @@
 use crate::{models::*, money::invalid};
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{types::Json, Postgres, Transaction};
 use uuid::Uuid;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,8 +55,12 @@ pub(crate) fn revision(actual: i64, expected: i64) -> Result<(), AppError> {
         Err(stale())
     }
 }
-pub(crate) async fn project(pool: &PgPool, id: Uuid) -> Result<ProjectRecord, AppError> {
-    sqlx::query_as("SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(id).fetch_optional(pool).await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))
+
+pub(crate) async fn project_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<ProjectRecord, AppError> {
+    DbSession::new(&mut *connection).query_as("budget.src.repository.project_on_connection", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบโครงการ".into()))
 }
 /// The aggregate row also serializes absent allocations and plan-amendment insertions.
 pub(crate) async fn lock_projects(
@@ -65,7 +70,7 @@ pub(crate) async fn lock_projects(
     let mut ids = ids.to_vec();
     ids.sort();
     ids.dedup();
-    let rows=sqlx::query_as::<_,ProjectRecord>("SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1) ORDER BY id FOR UPDATE").bind(&ids).fetch_all(&mut **tx).await?;
+    let rows=DbSession::new(&mut **tx).query_as::<ProjectRecord>("budget.src.repository.lock_projects", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1) ORDER BY id FOR UPDATE").bind(&ids).fetch_all().await?;
     if rows.len() != ids.len() {
         return Err(AppError::NotFound("ไม่พบโครงการ".into()));
     }
@@ -84,15 +89,17 @@ pub(crate) async fn store_project(
     tx: &mut Transaction<'_, Postgres>,
     r: &ProjectRecord,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE budget_projects SET revision=$2,status=$3,attempt_id=$4,accepted_version=$5,accepted_snapshot_id=$6,document=$7,instance_id=$8,fiscal_year_id=$9,organization_unit_id=$10 WHERE id=$1").bind(r.id).bind(r.revision).bind(&r.status).bind(r.attempt_id).bind(r.accepted_version).bind(r.accepted_snapshot_id).bind(&r.document).bind(r.instance_id).bind(r.document.project.fiscal_year_id).bind(r.document.project.organization_unit_id).execute(&mut **tx).await?;
-    sqlx::query(
-        "INSERT INTO budget_project_revisions(project_id,revision,document) VALUES($1,$2,$3)",
-    )
-    .bind(r.id)
-    .bind(r.revision)
-    .bind(&r.document)
-    .execute(&mut **tx)
-    .await?;
+    DbSession::new(&mut **tx).query("budget.src.repository.store_project", "UPDATE budget_projects SET revision=$2,status=$3,attempt_id=$4,accepted_version=$5,accepted_snapshot_id=$6,document=$7,instance_id=$8,fiscal_year_id=$9,organization_unit_id=$10 WHERE id=$1").bind(r.id).bind(r.revision).bind(&r.status).bind(r.attempt_id).bind(r.accepted_version).bind(r.accepted_snapshot_id).bind(&r.document).bind(r.instance_id).bind(r.document.project.fiscal_year_id).bind(r.document.project.organization_unit_id).execute().await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "budget.src.repository.store_project",
+            "INSERT INTO budget_project_revisions(project_id,revision,document) VALUES($1,$2,$3)",
+        )
+        .bind(r.id)
+        .bind(r.revision)
+        .bind(&r.document)
+        .execute()
+        .await?;
     Ok(())
 }
 pub(crate) async fn claim<T: Serialize>(
@@ -104,11 +111,11 @@ pub(crate) async fn claim<T: Serialize>(
     payload: &T,
 ) -> Result<Option<Uuid>, AppError> {
     let hash = school_workflow::process::payload_hash(&(operation, payload))?;
-    let inserted:Option<Uuid>=sqlx::query_scalar("INSERT INTO budget_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(key).bind(operation).bind(&hash).bind(id).fetch_optional(&mut **tx).await?;
+    let inserted:Option<Uuid>=DbSession::new(&mut **tx).scalar("budget.src.repository.claim", "INSERT INTO budget_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(key).bind(operation).bind(&hash).bind(id).fetch_optional().await?;
     if inserted.is_some() {
         return Ok(None);
     }
-    let old:(String,String,Uuid)=sqlx::query_as("SELECT operation,payload_hash,resource_id FROM budget_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_one(&mut **tx).await?;
+    let old:(String,String,Uuid)=DbSession::new(&mut **tx).query_as("budget.src.repository.claim", "SELECT operation,payload_hash,resource_id FROM budget_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_one().await?;
     if old.0 != operation || old.1 != hash {
         return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
     }
@@ -124,7 +131,7 @@ pub(crate) async fn history(
     comment: Option<String>,
 ) -> Result<(), AppError> {
     if kind == BudgetResourceKind::Adjustment {
-        let written=sqlx::query("INSERT INTO budget_adjustment_revisions(adjustment_id,revision,status,document) SELECT id,revision,status,document FROM budget_adjustments WHERE id=$1 AND revision=$2").bind(id).bind(rev).execute(&mut **tx).await?;
+        let written=DbSession::new(&mut **tx).query("budget.src.repository.history", "INSERT INTO budget_adjustment_revisions(adjustment_id,revision,status,document) SELECT id,revision,status,document FROM budget_adjustments WHERE id=$1 AND revision=$2").bind(id).bind(rev).execute().await?;
         if written.rows_affected() != 1 {
             return Err(stale());
         }
@@ -139,7 +146,7 @@ pub(crate) async fn history(
         comment,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO budget_history(id,resource_kind,resource_id,revision,actor_id,document) VALUES($1,$2,$3,$4,$5,$6)").bind(entry.id).bind(kind.as_str()).bind(id).bind(rev).bind(actor.user_id).bind(Json(entry)).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("budget.src.repository.history", "INSERT INTO budget_history(id,resource_kind,resource_id,revision,actor_id,document) VALUES($1,$2,$3,$4,$5,$6)").bind(entry.id).bind(kind.as_str()).bind(id).bind(rev).bind(actor.user_id).bind(Json(entry)).execute().await?;
     Ok(())
 }
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -170,13 +177,13 @@ pub(crate) async fn account(
     tx: &mut Transaction<'_, Postgres>,
     r: &BudgetAllocationRef,
 ) -> Result<Account, AppError> {
-    sqlx::query_as("SELECT project_id,activity_id,fund_id,expense_category_id,planned,adjusted,reserved,paid FROM budget_allocations WHERE project_id=$1 AND activity_id=$2 AND fund_id=$3 AND expense_category_id=$4 FOR UPDATE").bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).fetch_optional(&mut **tx).await?.ok_or_else(||invalid("ไม่พบหมวดงบประมาณที่อนุมัติแล้ว"))
+    DbSession::new(&mut **tx).query_as("budget.src.repository.account", "SELECT project_id,activity_id,fund_id,expense_category_id,planned,adjusted,reserved,paid FROM budget_allocations WHERE project_id=$1 AND activity_id=$2 AND fund_id=$3 AND expense_category_id=$4 FOR UPDATE").bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).fetch_optional().await?.ok_or_else(||invalid("ไม่พบหมวดงบประมาณที่อนุมัติแล้ว"))
 }
 pub(crate) async fn accounts(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Vec<Account>, AppError> {
-    Ok(sqlx::query_as("SELECT project_id,activity_id,fund_id,expense_category_id,planned,adjusted,reserved,paid FROM budget_allocations WHERE project_id=$1 ORDER BY activity_id,fund_id,expense_category_id").bind(id).fetch_all(&mut **tx).await?)
+    Ok(DbSession::new(&mut **tx).query_as("budget.src.repository.accounts", "SELECT project_id,activity_id,fund_id,expense_category_id,planned,adjusted,reserved,paid FROM budget_allocations WHERE project_id=$1 ORDER BY activity_id,fund_id,expense_category_id").bind(id).fetch_all().await?)
 }
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Delta {
@@ -196,13 +203,13 @@ pub(crate) async fn post(
     if d.planned == 0 && d.adjusted == 0 && d.reserved == 0 && d.paid == 0 {
         return Ok(());
     }
-    let changed=sqlx::query("UPDATE budget_allocations SET planned=planned+$5,adjusted=adjusted+$6,reserved=reserved+$7,paid=paid+$8 WHERE project_id=$1 AND activity_id=$2 AND fund_id=$3 AND expense_category_id=$4 AND planned+$5 BETWEEN 0 AND 999999999999 AND adjusted+$6 BETWEEN -999999999999 AND 999999999999 AND reserved+$7 BETWEEN 0 AND 999999999999 AND paid+$8 BETWEEN 0 AND 999999999999 AND planned+$5+adjusted+$6 BETWEEN 0 AND 999999999999 AND planned+$5+adjusted+$6>=reserved+$7+paid+$8").bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).bind(d.planned).bind(d.adjusted).bind(d.reserved).bind(d.paid).execute(&mut **tx).await?;
+    let changed=DbSession::new(&mut **tx).query("budget.src.repository.post", "UPDATE budget_allocations SET planned=planned+$5,adjusted=adjusted+$6,reserved=reserved+$7,paid=paid+$8 WHERE project_id=$1 AND activity_id=$2 AND fund_id=$3 AND expense_category_id=$4 AND planned+$5 BETWEEN 0 AND 999999999999 AND adjusted+$6 BETWEEN -999999999999 AND 999999999999 AND reserved+$7 BETWEEN 0 AND 999999999999 AND paid+$8 BETWEEN 0 AND 999999999999 AND planned+$5+adjusted+$6 BETWEEN 0 AND 999999999999 AND planned+$5+adjusted+$6>=reserved+$7+paid+$8").bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).bind(d.planned).bind(d.adjusted).bind(d.reserved).bind(d.paid).execute().await?;
     if changed.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "งบประมาณคงเหลือไม่พอหรือรายการผูกพันเปลี่ยนแล้ว".into(),
         ));
     }
-    sqlx::query("INSERT INTO budget_ledger(id,project_id,activity_id,fund_id,expense_category_id,planned_delta,adjusted_delta,reserved_delta,paid_delta,source_kind,source_id,actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)").bind(Uuid::now_v7()).bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).bind(d.planned).bind(d.adjusted).bind(d.reserved).bind(d.paid).bind(kind).bind(source).bind(actor).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("budget.src.repository.post", "INSERT INTO budget_ledger(id,project_id,activity_id,fund_id,expense_category_id,planned_delta,adjusted_delta,reserved_delta,paid_delta,source_kind,source_id,actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)").bind(Uuid::now_v7()).bind(r.project_id).bind(r.activity_id).bind(r.fund_id).bind(r.expense_category_id).bind(d.planned).bind(d.adjusted).bind(d.reserved).bind(d.paid).bind(kind).bind(source).bind(actor).execute().await?;
     Ok(())
 }
 pub(crate) async fn accepted(
@@ -212,13 +219,15 @@ pub(crate) async fn accepted(
     let id = r
         .accepted_snapshot_id
         .ok_or_else(|| invalid("โครงการยังไม่มีแผนที่อนุมัติ"))?;
-    Ok(sqlx::query_scalar::<_, Json<BudgetPlanSnapshot>>(
-        "SELECT document FROM budget_plan_snapshots WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_one(&mut **tx)
-    .await?
-    .0)
+    Ok(DbSession::new(&mut **tx)
+        .scalar::<Json<BudgetPlanSnapshot>>(
+            "budget.src.repository.accepted",
+            "SELECT document FROM budget_plan_snapshots WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?
+        .0)
 }
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub(crate) struct RequestRecord {
@@ -232,28 +241,34 @@ pub(crate) struct RequestRecord {
     pub instance_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
-pub(crate) async fn request(pool: &PgPool, id: Uuid) -> Result<RequestRecord, AppError> {
-    sqlx::query_as("SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1").bind(id).fetch_optional(pool).await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))
+
+pub(crate) async fn request_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<RequestRecord, AppError> {
+    DbSession::new(&mut *connection).query_as("budget.src.repository.request_on_connection", "SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))
 }
 pub(crate) async fn lock_request(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<RequestRecord, AppError> {
-    sqlx::query_as("SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))
+    DbSession::new(&mut **tx).query_as("budget.src.repository.lock_request", "SELECT id,project_id,activity_id,owner_id,revision,status,document,instance_id,created_at FROM budget_requests WHERE id=$1 FOR UPDATE").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบคำขอใช้งบประมาณ".into()))
 }
 pub(crate) async fn store_request(
     tx: &mut Transaction<'_, Postgres>,
     r: &RequestRecord,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE budget_requests SET revision=$2,status=$3,document=$4,instance_id=$5,activity_id=$6 WHERE id=$1").bind(r.id).bind(r.revision).bind(&r.status).bind(&r.document).bind(r.instance_id).bind(r.activity_id).execute(&mut **tx).await?;
-    sqlx::query(
-        "INSERT INTO budget_request_revisions(request_id,revision,document) VALUES($1,$2,$3)",
-    )
-    .bind(r.id)
-    .bind(r.revision)
-    .bind(&r.document)
-    .execute(&mut **tx)
-    .await?;
+    DbSession::new(&mut **tx).query("budget.src.repository.store_request", "UPDATE budget_requests SET revision=$2,status=$3,document=$4,instance_id=$5,activity_id=$6 WHERE id=$1").bind(r.id).bind(r.revision).bind(&r.status).bind(&r.document).bind(r.instance_id).bind(r.activity_id).execute().await?;
+    DbSession::new(&mut **tx)
+        .query(
+            "budget.src.repository.store_request",
+            "INSERT INTO budget_request_revisions(request_id,revision,document) VALUES($1,$2,$3)",
+        )
+        .bind(r.id)
+        .bind(r.revision)
+        .bind(&r.document)
+        .execute()
+        .await?;
     Ok(())
 }
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -273,7 +288,7 @@ pub(crate) async fn request_lines(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Vec<RequestLine>, AppError> {
-    Ok(sqlx::query_as("SELECT plan_line_id,fund_id,expense_category_id,amount,reserved,paid,description,unit,fund_name,expense_category_name FROM budget_request_lines WHERE request_id=$1 ORDER BY plan_line_id").bind(id).fetch_all(&mut **tx).await?)
+    Ok(DbSession::new(&mut **tx).query_as("budget.src.repository.request_lines", "SELECT plan_line_id,fund_id,expense_category_id,amount,reserved,paid,description,unit,fund_name,expense_category_name FROM budget_request_lines WHERE request_id=$1 ORDER BY plan_line_id").bind(id).fetch_all().await?)
 }
 #[cfg(test)]
 mod tests {

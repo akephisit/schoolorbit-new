@@ -1,5 +1,6 @@
 //! Read-only coverage from dated providers, aggregated before crossing the database boundary.
 use super::*;
+use school_database::DbSession;
 use std::collections::BTreeMap;
 
 type CoverageKey = (Uuid, String, String, Vec<Uuid>);
@@ -30,11 +31,19 @@ pub async fn expected(
     term: Uuid,
     range: Option<(NaiveDate, NaiveDate)>,
 ) -> Result<Vec<AttendanceExpectedSummary>, AppError> {
-    Ok(project(connection, term, range, None).await?.0)
+    let context = settings::AttendanceReadContext::load(connection, term).await?;
+    expected_with_context(connection, &context, range).await
+}
+pub(crate) async fn expected_with_context(
+    connection: &mut sqlx::PgConnection,
+    context: &settings::AttendanceReadContext,
+    range: Option<(NaiveDate, NaiveDate)>,
+) -> Result<Vec<AttendanceExpectedSummary>, AppError> {
+    Ok(project(connection, context, range, None).await?.0)
 }
 pub(super) async fn history(
     connection: &mut sqlx::PgConnection,
-    term: Uuid,
+    context: &settings::AttendanceReadContext,
     start: NaiveDate,
     end: NaiveDate,
     student: Uuid,
@@ -42,7 +51,7 @@ pub(super) async fn history(
 ) -> Result<Vec<AttendanceHistoryItem>, AppError> {
     Ok(project(
         connection,
-        term,
+        context,
         Some((start, end)),
         Some((student, teacher)),
     )
@@ -76,13 +85,14 @@ fn history_row(
 }
 async fn project(
     connection: &mut sqlx::PgConnection,
-    term: Uuid,
+    context: &settings::AttendanceReadContext,
     range: Option<(NaiveDate, NaiveDate)>,
     history_scope: Option<(Uuid, Option<Uuid>)>,
 ) -> Result<(Vec<AttendanceExpectedSummary>, Vec<AttendanceHistoryItem>), AppError> {
+    let term = context.settings.academic_term_id;
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
-    let (term_start,term_end,coverage_start):(NaiveDate,NaiveDate,NaiveDate)=sqlx::query_as("SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),m.coverage_start FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m WHERE t.id=$1 AND m.singleton")
-        .bind(term).fetch_optional(&mut *connection).await?.ok_or_else(||AppError::NotFound("ไม่พบภาคเรียน".into()))?;
+    let (term_start,term_end,coverage_start):(NaiveDate,NaiveDate,NaiveDate)=DbSession::new(&mut *connection).query_as("attendance.application.projection.project", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),m.coverage_start FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m WHERE t.id=$1 AND m.singleton")
+        .bind(term).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบภาคเรียน".into()))?;
     let start = term_start
         .max(coverage_start)
         .max(range.map(|r| r.0).unwrap_or(term_start));
@@ -95,36 +105,34 @@ async fn project(
     if (end - start).num_days() > 369 {
         return Err(invalid("ช่วงภาคเรียนเกินขนาดที่รองรับ"));
     }
-    let configuration = settings::get_on_connection(connection, term)
-        .await?
-        .configuration;
+    let configuration = &context.settings.configuration;
     let days = settings::days_on_connection(connection, term, start, end).await?;
     let overrides: HashMap<_, _> = days.into_iter().map(|d| (d.date, d.counted)).collect();
     // Existing occurrences suppress virtual recreation even if their frozen roster
     // excludes a pupil who joined later. This set must not be student-filtered.
-    let existing: HashSet<Uuid> = sqlx::query_scalar(
+    let existing: HashSet<Uuid> = DbSession::new(&mut *connection).scalar("attendance.application.projection.project",
         "SELECT id FROM attendance_sessions WHERE academic_term_id=$1 AND date BETWEEN $2 AND $3",
     )
     .bind(term)
     .bind(start)
     .bind(end)
-    .fetch_all(&mut *connection)
+    .fetch_all()
     .await?
     .into_iter()
     .collect();
     // A saved arrival roster owns that pupil's school day, including a cancelled round.
     // A later placement change must not add another virtual school day in the new room.
     let saved_arrivals: HashSet<(NaiveDate, Uuid)> = if let Some((student, _)) = history_scope {
-        sqlx::query_as("SELECT DISTINCT s.date,$4::uuid FROM attendance_sessions s WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival' AND s.roster @> jsonb_build_array(jsonb_build_object('studentId',$4::uuid))")
-            .bind(term).bind(start).bind(end).bind(student).fetch_all(&mut *connection).await?.into_iter().collect()
+        DbSession::new(&mut *connection).query_as("attendance.application.projection.project", "SELECT DISTINCT s.date,$4::uuid FROM attendance_sessions s WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival' AND s.roster @> jsonb_build_array(jsonb_build_object('studentId',$4::uuid))")
+            .bind(term).bind(start).bind(end).bind(student).fetch_all().await?.into_iter().collect()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut *connection).query_as("attendance.application.projection.project",
         "SELECT DISTINCT s.date,p.\"studentId\" FROM attendance_sessions s CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p(\"studentId\" uuid) WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival'",
     )
     .bind(term)
     .bind(start)
     .bind(end)
-    .fetch_all(&mut *connection)
+    .fetch_all()
     .await?
     .into_iter()
     .collect()
@@ -284,8 +292,8 @@ async fn project(
         };
         date = next;
     }
-    let rounds:Vec<(Uuid,Uuid,NaiveDate,sqlx::types::Json<Vec<SpecialRoundParticipants>>,String)>=sqlx::query_as("SELECT r.id,t.id,r.date,r.participants,t.definition->>'title' FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date BETWEEN $2 AND $3 ORDER BY r.date,r.id LIMIT 10001")
-        .bind(term).bind(start).bind(end).fetch_all(&mut *connection).await?;
+    let rounds:Vec<(Uuid,Uuid,NaiveDate,sqlx::types::Json<Vec<SpecialRoundParticipants>>,String)>=DbSession::new(&mut *connection).query_as("attendance.application.projection.project", "SELECT r.id,t.id,r.date,r.participants,t.definition->>'title' FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date BETWEEN $2 AND $3 ORDER BY r.date,r.id LIMIT 10001")
+        .bind(term).bind(start).bind(end).fetch_all().await?;
     if rounds.len() > 10000 {
         return Err(invalid("รอบพิเศษเกินขนาดที่รองรับ"));
     }

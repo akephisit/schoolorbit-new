@@ -1,5 +1,6 @@
 use crate::models::applications::{AssignRoomsGlobalRequest, AssignRoomsRequest};
 use crate::models::rounds::{SelectionSettingsPatch, UpdateSelectionSettingsRequest};
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
@@ -65,14 +66,26 @@ pub async fn all_subject_ids_for_track(
     pool: &PgPool,
     track_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.all_subject_ids_for_track",
+    )
+    .await?;
+    all_subject_ids_for_track_on_connection(&mut connection, track_id).await
+}
+
+pub async fn all_subject_ids_for_track_on_connection(
+    connection: &mut sqlx::PgConnection,
+    track_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    DbSession::new(&mut *connection).scalar("admission.services.selection_service.all_subject_ids_for_track_on_connection",
         "SELECT id FROM admission_exam_subjects WHERE admission_round_id = (SELECT admission_round_id FROM admission_tracks WHERE id = $1)",
     )
     .bind(track_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load admission selection subjects: {}", error);
+        tracing::error!("Failed to load admission selection subjects: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถโหลดวิชาที่ใช้คัดเลือกได้".to_string())
     })
 }
@@ -81,12 +94,31 @@ pub async fn all_subject_ids_for_round(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar("SELECT id FROM admission_exam_subjects WHERE admission_round_id = $1")
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.all_subject_ids_for_round",
+    )
+    .await?;
+    all_subject_ids_for_round_on_connection(&mut connection, round_id).await
+}
+
+pub async fn all_subject_ids_for_round_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar(
+            "admission.services.selection_service.all_subject_ids_for_round_on_connection",
+            "SELECT id FROM admission_exam_subjects WHERE admission_round_id = $1",
+        )
         .bind(round_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to load admission round subjects: {}", error);
+            tracing::error!(
+                "Failed to load admission round subjects: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถโหลดวิชาที่ใช้คัดเลือกได้".to_string())
         })
 }
@@ -215,7 +247,17 @@ pub async fn get_round_ranking(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<RoundRankingResult>, AppError> {
-    let rows = sqlx::query_as::<_, RoundRankRow>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_round_ranking")
+            .await?;
+    get_round_ranking_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_round_ranking_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<RoundRankingResult>, AppError> {
+    let rows = DbSession::new(&mut *connection).query_as::<RoundRankRow>("admission.services.selection_service.get_round_ranking_on_connection",
         r#"SELECT track.id AS track_id, track.name AS track_name,
                   aa.id AS application_id, aa.application_number,
                   CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
@@ -234,10 +276,10 @@ pub async fn get_round_ranking(
                     aa.created_at ASC, aa.id ASC"#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load admission round ranking: {}", error);
+        tracing::error!("Failed to load admission round ranking: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถโหลดผลเรียงคะแนนได้".to_string())
     })?;
 
@@ -286,13 +328,21 @@ pub async fn get_track_ranking(
     selection_subject_ids_param: Option<String>,
     room_assignment_method: Option<String>,
 ) -> Result<TrackRankingResult, AppError> {
-    let (track_name, tiebreak): (String, String) =
-        sqlx::query_as("SELECT name, tiebreak_method FROM admission_tracks WHERE id = $1")
-            .bind(track_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-            .ok_or_else(|| AppError::NotFound("ไม่พบสายการเรียน".to_string()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.get_track_ranking",
+    )
+    .await?;
+    let (track_name, tiebreak): (String, String) = DbSession::new(&mut *database_stage_0)
+        .query_as(
+            "admission.services.selection_service.get_track_ranking",
+            "SELECT name, tiebreak_method FROM admission_tracks WHERE id = $1",
+        )
+        .bind(track_id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+        .ok_or_else(|| AppError::NotFound("ไม่พบสายการเรียน".to_string()))?;
 
     let tiebreak_order = if tiebreak == "gpa" {
         "aa.previous_gpa DESC NULLS LAST"
@@ -300,6 +350,7 @@ pub async fn get_track_ranking(
         "aa.created_at ASC"
     };
 
+    drop(database_stage_0);
     let selection_ids: Vec<Uuid> = match &selection_subject_ids_param {
         Some(s) if !s.is_empty() => parse_subject_ids(s),
         _ => all_subject_ids_for_track(pool, track_id).await?,
@@ -312,8 +363,15 @@ pub async fn get_track_ranking(
         capacity: i32,
     }
 
-    let rooms = sqlx::query_as::<_, RoomRow>(
-        r#"
+    let mut database_stage_1 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.get_track_ranking",
+    )
+    .await?;
+    let rooms = DbSession::new(&mut *database_stage_1)
+        .query_as::<RoomRow>(
+            "admission.services.selection_service.get_track_ranking",
+            r#"
         SELECT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.capacity
         FROM admission_tracks t
         JOIN admission_rounds round ON round.id = t.admission_round_id
@@ -324,14 +382,17 @@ pub async fn get_track_ranking(
         WHERE t.id = $1
         ORDER BY homeroom.name ASC
         "#,
-    )
-    .bind(track_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load selection rooms: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดห้องสำหรับจัดผลคัดเลือกได้".to_string())
-    })?;
+        )
+        .bind(track_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load selection rooms: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดห้องสำหรับจัดผลคัดเลือกได้".to_string())
+        })?;
 
     let query = format!(
         r#"
@@ -359,13 +420,20 @@ pub async fn get_track_ranking(
         tiebreak_order
     );
 
-    let rows = sqlx::query_as::<_, RankRowDetailed>(sqlx::AssertSqlSafe(query))
+    let rows = DbSession::new(&mut *database_stage_1)
+        .query_as::<RankRowDetailed>(
+            "admission.services.selection_service.get_track_ranking",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(&selection_ids)
         .bind(track_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to load track ranking: {}", error);
+            tracing::error!(
+                "Failed to load track ranking: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถโหลดผลเรียงคะแนนได้".to_string())
         })?;
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
@@ -513,12 +581,17 @@ pub async fn assign_rooms(
 ) -> Result<usize, AppError> {
     let track_id = payload.track_id;
 
-    let tiebreak: String = sqlx::query_scalar(
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.assign_rooms",
+    )
+    .await?;
+    let tiebreak: String = DbSession::new(&mut *database_stage_0).scalar("admission.services.selection_service.assign_rooms",
         "SELECT tiebreak_method FROM admission_tracks WHERE id = $1 AND admission_round_id = $2",
     )
     .bind(track_id)
     .bind(round_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or_else(|| AppError::NotFound("ไม่พบสายการเรียน".to_string()))?;
@@ -529,6 +602,7 @@ pub async fn assign_rooms(
         "aa.created_at ASC"
     };
 
+    drop(database_stage_0);
     let selection_ids: Vec<Uuid> = match &payload.selection_subject_ids {
         Some(ids) if !ids.is_empty() => ids.clone(),
         _ => all_subject_ids_for_round(pool, round_id).await?,
@@ -540,8 +614,15 @@ pub async fn assign_rooms(
         capacity: i32,
     }
 
-    let rooms = sqlx::query_as::<_, RoomRow>(
-        r#"
+    let mut database_stage_1 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.assign_rooms",
+    )
+    .await?;
+    let rooms = DbSession::new(&mut *database_stage_1)
+        .query_as::<RoomRow>(
+            "admission.services.selection_service.assign_rooms",
+            r#"
         SELECT homeroom.id AS room_id, homeroom.capacity
         FROM admission_tracks t
         JOIN admission_rounds round ON round.id = t.admission_round_id
@@ -552,11 +633,11 @@ pub async fn assign_rooms(
         WHERE t.id = $1
         ORDER BY homeroom.name ASC
         "#,
-    )
-    .bind(track_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
+        )
+        .bind(track_id)
+        .fetch_all()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
 
     if rooms.is_empty() {
         return Err(AppError::BadRequest(
@@ -580,10 +661,14 @@ pub async fn assign_rooms(
         tiebreak_order
     );
 
-    let rows = sqlx::query_as::<_, RankRow>(sqlx::AssertSqlSafe(query))
+    let rows = DbSession::new(&mut *database_stage_1)
+        .query_as::<RankRow>(
+            "admission.services.selection_service.assign_rooms",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(&selection_ids)
         .bind(track_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(|_| AppError::InternalServerError("Failed to compute ranking".to_string()))?;
 
@@ -609,16 +694,19 @@ pub async fn assign_rooms(
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    drop(database_stage_1);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.selection_service.assign_rooms",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    sqlx::query(
+    DbSession::new(&mut *tx).query("admission.services.selection_service.assign_rooms",
         "DELETE FROM admission_room_assignments WHERE application_id IN (SELECT id FROM admission_applications WHERE COALESCE(room_assignment_track_id, admission_track_id) = $1)"
     )
     .bind(track_id)
-    .execute(&mut *tx)
+    .execute()
     .await
     .ok();
 
@@ -640,8 +728,10 @@ pub async fn assign_rooms(
     let assigned_bys: Vec<Uuid> = vec![user_id; assigned_count];
 
     if !app_ids.is_empty() {
-        sqlx::query(
-            r#"
+        DbSession::new(&mut *tx)
+            .query(
+                "admission.services.selection_service.assign_rooms",
+                r#"
             INSERT INTO admission_room_assignments (
                 application_id, homeroom_id, academic_year_id,
                 rank_in_track, rank_in_room,
@@ -672,25 +762,28 @@ pub async fn assign_rooms(
                 assigned_at   = EXCLUDED.assigned_at
             WHERE admission_room_assignments.student_id IS NULL
             "#,
-        )
-        .bind(&app_ids)
-        .bind(&room_ids)
-        .bind(&ranks_in_track)
-        .bind(&ranks_in_room)
-        .bind(&scores)
-        .bind(&assigned_bys)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to bulk assign rooms: {}", e);
-            AppError::InternalServerError("Failed to assign rooms".to_string())
-        })?;
+            )
+            .bind(&app_ids)
+            .bind(&room_ids)
+            .bind(&ranks_in_track)
+            .bind(&ranks_in_room)
+            .bind(&scores)
+            .bind(&assigned_bys)
+            .execute()
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to bulk assign rooms: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("Failed to assign rooms".to_string())
+            })?;
 
-        sqlx::query(
+        DbSession::new(&mut *tx).query("admission.services.selection_service.assign_rooms",
             "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn', 'enrolled')"
         )
         .bind(&app_ids)
-        .execute(&mut *tx)
+        .execute()
         .await
         .ok();
     }
@@ -703,8 +796,22 @@ pub async fn assign_rooms(
 }
 
 pub async fn reset_all_room_assignments(pool: &PgPool, round_id: Uuid) -> Result<i64, AppError> {
-    let deleted = sqlx::query_scalar::<_, i64>(
-        r#"
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(pool, "admission.reset_all_room_assignments")
+            .await?;
+    let deleted = reset_all_room_assignments_on_connection(&mut transaction, round_id).await?;
+    transaction.commit().await?;
+    Ok(deleted)
+}
+
+pub async fn reset_all_room_assignments_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<i64, AppError> {
+    let deleted = DbSession::new(&mut *connection)
+        .scalar::<i64>(
+            "admission.services.selection_service.reset_all_room_assignments_on_connection",
+            r#"
         WITH deleted AS (
             DELETE FROM admission_room_assignments
             WHERE application_id IN (
@@ -714,19 +821,18 @@ pub async fn reset_all_room_assignments(pool: &PgPool, round_id: Uuid) -> Result
         )
         SELECT COUNT(*) FROM deleted
         "#,
-    )
-    .bind(round_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+        )
+        .bind(round_id)
+        .fetch_one()
+        .await?;
 
-    sqlx::query(
+    DbSession::new(&mut *connection).query("admission.services.selection_service.reset_all_room_assignments_on_connection",
         "UPDATE admission_applications SET room_assignment_track_id = NULL, updated_at = NOW() WHERE admission_round_id = $1"
     )
     .bind(round_id)
-    .execute(pool).await.ok();
+    .execute().await?;
 
-    sqlx::query(
+    DbSession::new(&mut *connection).query("admission.services.selection_service.reset_all_room_assignments_on_connection",
         r#"
         UPDATE admission_applications aa
         SET status = CASE
@@ -742,7 +848,7 @@ pub async fn reset_all_room_assignments(pool: &PgPool, round_id: Uuid) -> Result
         "#
     )
     .bind(round_id)
-    .execute(pool).await.ok();
+    .execute().await?;
 
     Ok(deleted)
 }
@@ -761,8 +867,15 @@ pub async fn assign_rooms_global(
         track_id: Uuid,
     }
 
-    let rooms_raw = sqlx::query_as::<_, RoomRow>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.assign_rooms_global",
+    )
+    .await?;
+    let rooms_raw = DbSession::new(&mut *database_stage_0)
+        .query_as::<RoomRow>(
+            "admission.services.selection_service.assign_rooms_global",
+            r#"
         SELECT homeroom.id AS room_id, homeroom.name AS room_name,
                homeroom.capacity, t.id AS track_id
         FROM admission_tracks t
@@ -774,11 +887,11 @@ pub async fn assign_rooms_global(
         WHERE t.admission_round_id = $1
         ORDER BY homeroom.name ASC
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))?;
 
     let mut seen: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     let mut rooms: Vec<RoomRow> = Vec::new();
@@ -803,8 +916,10 @@ pub async fn assign_rooms_global(
         }
     }
 
-    let rows = sqlx::query_as::<_, RankRow>(
-        r#"
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<RankRow>(
+            "admission.services.selection_service.assign_rooms_global",
+            r#"
         SELECT
             aa.id AS application_id,
             COALESCE(SUM(esc.score), 0) AS total_score
@@ -815,11 +930,11 @@ pub async fn assign_rooms_global(
         GROUP BY aa.id, aa.created_at
         ORDER BY total_score DESC, aa.created_at ASC
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch students".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch students".to_string()))?;
 
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
     let capacity_usize = total_capacity as usize;
@@ -836,16 +951,19 @@ pub async fn assign_rooms_global(
     let room_caps: Vec<i32> = rooms.iter().map(|r| r.capacity).collect();
     let room_slots = compute_room_assignments(accepted.len(), &room_caps, method);
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    drop(database_stage_0);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.selection_service.assign_rooms_global",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    sqlx::query(
+    DbSession::new(&mut *tx).query("admission.services.selection_service.assign_rooms_global",
         "DELETE FROM admission_room_assignments WHERE application_id IN (SELECT id FROM admission_applications WHERE admission_round_id = $1)"
     )
     .bind(round_id)
-    .execute(&mut *tx)
+    .execute()
     .await
     .ok();
 
@@ -869,8 +987,10 @@ pub async fn assign_rooms_global(
     let assigned_bys: Vec<Uuid> = vec![user_id; assigned_count];
 
     if !app_ids.is_empty() {
-        sqlx::query(
-            r#"
+        DbSession::new(&mut *tx)
+            .query(
+                "admission.services.selection_service.assign_rooms_global",
+                r#"
             INSERT INTO admission_room_assignments (
                 application_id, homeroom_id, academic_year_id,
                 rank_in_track, rank_in_room,
@@ -901,25 +1021,28 @@ pub async fn assign_rooms_global(
                 assigned_at   = EXCLUDED.assigned_at
             WHERE admission_room_assignments.student_id IS NULL
             "#,
-        )
-        .bind(&app_ids)
-        .bind(&room_ids)
-        .bind(&ranks_in_track)
-        .bind(&ranks_in_room)
-        .bind(&scores)
-        .bind(&assigned_bys)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to bulk assign rooms (global): {}", e);
-            AppError::InternalServerError("Failed to assign rooms".to_string())
-        })?;
+            )
+            .bind(&app_ids)
+            .bind(&room_ids)
+            .bind(&ranks_in_track)
+            .bind(&ranks_in_room)
+            .bind(&scores)
+            .bind(&assigned_bys)
+            .execute()
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to bulk assign rooms (global): {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("Failed to assign rooms".to_string())
+            })?;
 
-        sqlx::query(
+        DbSession::new(&mut *tx).query("admission.services.selection_service.assign_rooms_global",
             "UPDATE admission_applications SET status = 'accepted', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status NOT IN ('rejected', 'withdrawn', 'enrolled')"
         )
         .bind(&app_ids)
-        .execute(&mut *tx)
+        .execute()
         .await
         .ok();
     }
@@ -929,8 +1052,15 @@ pub async fn assign_rooms_global(
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
     if !app_ids.is_empty() {
-        sqlx::query(
-            r#"
+        let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "admission.selection_service.assign_rooms_global_finish",
+        )
+        .await?;
+        DbSession::new(&mut *database_stage_0)
+            .query(
+                "admission.services.selection_service.assign_rooms_global",
+                r#"
             UPDATE admission_applications aa
             SET room_assignment_track_id = data.track_id,
                 updated_at = NOW()
@@ -938,12 +1068,12 @@ pub async fn assign_rooms_global(
             WHERE aa.id = data.app_id
               AND data.track_id IS DISTINCT FROM aa.admission_track_id
             "#,
-        )
-        .bind(&app_ids)
-        .bind(&track_ids)
-        .execute(pool)
-        .await
-        .ok();
+            )
+            .bind(&app_ids)
+            .bind(&track_ids)
+            .execute()
+            .await
+            .ok();
     }
 
     Ok(assigned_count)
@@ -953,7 +1083,17 @@ pub async fn get_global_ranking(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<GlobalRankingResult, AppError> {
-    let rows = sqlx::query_as::<_, RankRowDetailed>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_global_ranking")
+            .await?;
+    get_global_ranking_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_global_ranking_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<GlobalRankingResult, AppError> {
+    let rows = DbSession::new(&mut *connection).query_as::<RankRowDetailed>("admission.services.selection_service.get_global_ranking_on_connection",
         r#"
         SELECT
             aa.id AS application_id,
@@ -979,7 +1119,7 @@ pub async fn get_global_ranking(
         "#
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|_| AppError::InternalServerError("Failed to fetch global ranking".to_string()))?;
     #[derive(sqlx::FromRow)]
@@ -988,8 +1128,10 @@ pub async fn get_global_ranking(
         capacity: i32,
     }
 
-    let cap_rows = sqlx::query_as::<_, CapRow>(
-        r#"
+    let cap_rows = DbSession::new(&mut *connection)
+        .query_as::<CapRow>(
+            "admission.services.selection_service.get_global_ranking_on_connection",
+            r#"
         SELECT DISTINCT homeroom.id AS room_id, homeroom.capacity
         FROM admission_room_assignments ara
         JOIN homerooms homeroom ON homeroom.id = ara.homeroom_id
@@ -997,14 +1139,17 @@ pub async fn get_global_ranking(
             SELECT id FROM admission_applications WHERE admission_round_id = $1
         )
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load global selection capacities: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดความจุห้องสำหรับจัดผลคัดเลือกได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load global selection capacities: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดความจุห้องสำหรับจัดผลคัดเลือกได้".to_string())
+        })?;
 
     let cap_map: std::collections::HashMap<String, i32> = cap_rows
         .into_iter()
@@ -1090,8 +1235,20 @@ pub struct RoomBasic {
 }
 
 pub async fn get_round_rooms(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomBasic>, AppError> {
-    sqlx::query_as::<_, RoomBasic>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_round_rooms")
+            .await?;
+    get_round_rooms_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_round_rooms_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<RoomBasic>, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<RoomBasic>(
+            "admission.services.selection_service.get_round_rooms_on_connection",
+            r#"
         SELECT DISTINCT homeroom.id AS room_id, homeroom.name AS room_name, homeroom.capacity
         FROM admission_tracks t
         JOIN admission_rounds round ON round.id = t.admission_round_id
@@ -1102,11 +1259,11 @@ pub async fn get_round_rooms(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomBa
         WHERE t.admission_round_id = $1
         ORDER BY homeroom.name ASC
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to fetch rooms".to_string()))
 }
 
 pub async fn update_selection_settings(
@@ -1119,12 +1276,17 @@ pub async fn update_selection_settings(
         return Ok(());
     }
 
-    sqlx::query(
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.selection_service.update_selection_settings",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0).query("admission.services.selection_service.update_selection_settings",
         "UPDATE admission_rounds SET selection_settings = COALESCE(selection_settings, '{}'::jsonb) || $1, updated_at = NOW() WHERE id = $2"
     )
     .bind(Json(settings))
     .bind(round_id)
-    .execute(pool)
+    .execute()
     .await
     .map_err(|_| AppError::InternalServerError("Failed to update settings".to_string()))?;
 
@@ -1248,5 +1410,16 @@ mod tests {
                 "showScores": false
             })
         );
+    }
+    #[tokio::test]
+    async fn admission_database_error_policy_reset_checkout_failure_is_not_zero_deletions() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        assert!(matches!(
+            reset_all_room_assignments(&pool, Uuid::new_v4()).await,
+            Err(AppError::DbError(_))
+        ));
     }
 }

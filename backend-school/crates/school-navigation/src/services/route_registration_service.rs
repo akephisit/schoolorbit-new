@@ -19,10 +19,15 @@ pub async fn sync_routes(
     );
 
     let active_codes = desired_route_codes(&data.routes)?;
-    let mut transaction = pool.begin().await.map_err(|error| {
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "navigation.route_registration_service.sync_routes",
+    )
+    .await
+    .map_err(|error| {
         tracing::error!(
-            "Failed to begin route synchronization transaction: {}",
-            error
+            error_class = school_database::error_class(&error),
+            "Failed to begin route synchronization transaction"
         );
         AppError::InternalServerError("Failed to synchronize menu routes".to_string())
     })?;
@@ -36,8 +41,10 @@ pub async fn sync_routes(
         let workspace_code = route_workspace_code(route.workspace.as_deref(), &route.group);
         ensure_route_navigation_defaults(&mut transaction, &route.group, workspace_code).await?;
 
-        let result = sqlx::query(
-            r#"
+        let result = school_database::DbSession::new(&mut *transaction)
+            .query(
+                "navigation.services.route_registration_service.sync_routes",
+                r#"
             INSERT INTO menu_items (
                 id, code, name, name_en, path, icon, 
                 required_permission, user_type, group_id, display_order, is_active, managed_by,
@@ -65,26 +72,25 @@ pub async fn sync_routes(
                 display_order = COALESCE(menu_items.display_order, EXCLUDED.display_order),
                 is_active = menu_items.is_active
             "#,
-        )
-        .bind(&code)
-        .bind(&route.title)
-        .bind(&route.path)
-        .bind(&route.icon)
-        .bind(&route.permission)
-        .bind(user_type)
-        .bind(&route.group)
-        .bind(route.order)
-        .bind(workspace_code)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                route_code = %code,
-                "Failed to synchronize menu route: {}",
-                error
-            );
-            AppError::InternalServerError("Failed to synchronize menu routes".to_string())
-        })?;
+            )
+            .bind(&code)
+            .bind(&route.title)
+            .bind(&route.path)
+            .bind(&route.icon)
+            .bind(&route.permission)
+            .bind(user_type)
+            .bind(&route.group)
+            .bind(route.order)
+            .bind(workspace_code)
+            .execute()
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    route_code = %code,
+                    error_class = school_database::error_class(&error), "Failed to synchronize menu route"
+                );
+                AppError::InternalServerError("Failed to synchronize menu routes".to_string())
+            })?;
 
         if result.rows_affected() > 0 {
             registered_count += 1;
@@ -96,8 +102,8 @@ pub async fn sync_routes(
 
     transaction.commit().await.map_err(|error| {
         tracing::error!(
-            "Failed to commit route synchronization transaction: {}",
-            error
+            error_class = school_database::error_class(&error),
+            "Failed to commit route synchronization transaction"
         );
         AppError::InternalServerError("Failed to synchronize menu routes".to_string())
     })?;
@@ -154,46 +160,54 @@ async fn ensure_route_navigation_defaults(
     group_code: &str,
     workspace_code: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO menu_workspaces (code, name, name_en, icon, display_order)
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "navigation.services.route_registration_service.ensure_route_navigation_defaults",
+            "INSERT INTO menu_workspaces (code, name, name_en, icon, display_order)
          VALUES ($1, $1, $1, 'panel-left', 900)
          ON CONFLICT (code) DO NOTHING",
-    )
-    .bind(workspace_code)
-    .execute(&mut **transaction)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            workspace_code,
-            "Failed to ensure route workspace: {}",
-            error
-        );
-        AppError::InternalServerError("Failed to synchronize menu routes".to_string())
-    })?;
+        )
+        .bind(workspace_code)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                workspace_code,
+                error_class = school_database::error_class(&error),
+                "Failed to ensure route workspace"
+            );
+            AppError::InternalServerError("Failed to synchronize menu routes".to_string())
+        })?;
 
     let defaults = recommended_section(group_code);
-    sqlx::query(
-        "INSERT INTO menu_groups
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "navigation.services.route_registration_service.ensure_route_navigation_defaults",
+            "INSERT INTO menu_groups
             (code, name, name_en, icon, display_order, workspace_code)
          VALUES ($1, $3, $4, $5, $6, $2)
          ON CONFLICT (code) DO NOTHING",
-    )
-    .bind(group_code)
-    .bind(workspace_code)
-    .bind(defaults.map(|section| section.name).unwrap_or(group_code))
-    .bind(
-        defaults
-            .map(|section| section.name_en)
-            .unwrap_or(group_code),
-    )
-    .bind(defaults.map(|section| section.icon).unwrap_or("folder"))
-    .bind(defaults.map(|section| section.display_order).unwrap_or(900))
-    .execute(&mut **transaction)
-    .await
-    .map_err(|error| {
-        tracing::error!(group_code, "Failed to ensure route menu group: {}", error);
-        AppError::InternalServerError("Failed to synchronize menu routes".to_string())
-    })?;
+        )
+        .bind(group_code)
+        .bind(workspace_code)
+        .bind(defaults.map(|section| section.name).unwrap_or(group_code))
+        .bind(
+            defaults
+                .map(|section| section.name_en)
+                .unwrap_or(group_code),
+        )
+        .bind(defaults.map(|section| section.icon).unwrap_or("folder"))
+        .bind(defaults.map(|section| section.display_order).unwrap_or(900))
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                group_code,
+                error_class = school_database::error_class(&error),
+                "Failed to ensure route menu group"
+            );
+            AppError::InternalServerError("Failed to synchronize menu routes".to_string())
+        })?;
 
     Ok(())
 }
@@ -202,22 +216,24 @@ async fn cleanup_orphaned_menu_items(
     transaction: &mut Transaction<'_, Postgres>,
     active_codes: &[String],
 ) -> Result<u64, AppError> {
-    sqlx::query(
-        "DELETE FROM menu_items
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "navigation.services.route_registration_service.cleanup_orphaned_menu_items",
+            "DELETE FROM menu_items
          WHERE managed_by = 'frontend'
            AND NOT (code = ANY($1::varchar[]))",
-    )
-    .bind(active_codes)
-    .execute(&mut **transaction)
-    .await
-    .map(|result| result.rows_affected())
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to clean up stale frontend-owned menu items: {}",
-            error
-        );
-        AppError::InternalServerError("Failed to synchronize menu routes".to_string())
-    })
+        )
+        .bind(active_codes)
+        .execute()
+        .await
+        .map(|result| result.rows_affected())
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to clean up stale frontend-owned menu items"
+            );
+            AppError::InternalServerError("Failed to synchronize menu routes".to_string())
+        })
 }
 
 fn route_code(path: &str) -> String {

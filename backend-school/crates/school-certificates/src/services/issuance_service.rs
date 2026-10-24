@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_fonts::models::SchoolFontStyle;
 use std::collections::{BTreeMap, BTreeSet};
@@ -258,7 +259,12 @@ pub async fn issue_request(
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let school_name = normalize_school_name(&school_name)?;
     let campaign_id = fetch_request_campaign_id(pool, request_id).await?;
-    let mut tx = pool.begin().await.map_err(issuance_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.issuance_service.issue_request",
+    )
+    .await
+    .map_err(issuance_db_error)?;
 
     let mut campaign = lock_campaign(&mut tx, campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
@@ -307,8 +313,12 @@ pub async fn issue_request(
     // A missing student ID or staff username has no row to lock. This short table lock
     // serializes issuance with identity creation and update so converted external rows are
     // checked against the authoritative state at one transaction point.
-    sqlx::query("LOCK TABLE users, student_info IN SHARE MODE")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.issuance_service.issue_request",
+            "LOCK TABLE users, student_info IN SHARE MODE",
+        )
+        .execute()
         .await
         .map_err(issuance_db_error)?;
     let accounts = load_accounts(&mut tx, &candidates).await?;
@@ -369,25 +379,27 @@ pub async fn issue_request(
     let (first_sequence, last_sequence) =
         allocate_certificate_range(&mut tx, &mut campaign, candidates.len()).await?;
     let issue_date = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
-    let issue_run_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO certificate_issue_runs (
+    let issue_run_id = DbSession::new(&mut *tx)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.issue_request",
+            "INSERT INTO certificate_issue_runs (
              request_id, idempotency_key, issued_by, outcome, issued_count,
              first_certificate_sequence, last_certificate_sequence
          )
          VALUES ($1, $2, $3, 'issued', $4, $5, $6)
          RETURNING id",
-    )
-    .bind(request_id)
-    .bind(request.idempotency_key)
-    .bind(actor.user_id)
-    .bind(i32::try_from(candidates.len()).map_err(|_| {
-        AppError::InternalServerError("certificate_issue_count_overflow".to_string())
-    })?)
-    .bind(first_sequence)
-    .bind(last_sequence)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(request_id)
+        .bind(request.idempotency_key)
+        .bind(actor.user_id)
+        .bind(i32::try_from(candidates.len()).map_err(|_| {
+            AppError::InternalServerError("certificate_issue_count_overflow".to_string())
+        })?)
+        .bind(first_sequence)
+        .bind(last_sequence)
+        .fetch_one()
+        .await
+        .map_err(issuance_db_error)?;
 
     let template_map = templates
         .iter()
@@ -431,8 +443,10 @@ pub async fn issue_request(
         let proof = generate_certificate_proof()?;
         let certificate_id = Uuid::now_v7();
 
-        sqlx::query(
-            "INSERT INTO certificates (
+        DbSession::new(&mut *tx)
+            .query(
+                "certificates.services.issuance_service.issue_request",
+                "INSERT INTO certificates (
                  id, campaign_id, template_id, candidate_id, issue_run_id,
                  academic_year_id, academic_year_value, activity_sequence,
                  certificate_sequence, check_digit, certificate_number, recipient_type,
@@ -446,48 +460,50 @@ pub async fn issue_request(
                  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
                  $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
              )",
-        )
-        .bind(certificate_id)
-        .bind(campaign.id)
-        .bind(template.id)
-        .bind(candidate.id)
-        .bind(issue_run_id)
-        .bind(campaign.academic_year_id)
-        .bind(campaign.academic_year_value)
-        .bind(activity_sequence)
-        .bind(sequence)
-        .bind(i16::from(check_digit))
-        .bind(number.as_str())
-        .bind(recipient_type.as_str())
-        .bind(candidate.matched_user_id)
-        .bind(title)
-        .bind(first_name)
-        .bind(last_name)
-        .bind(&template.name)
-        .bind(&candidate.activity_item)
-        .bind(&candidate.award_or_role)
-        .bind(sqlx::types::Json(candidate.custom_values.0.clone()))
-        .bind(&school_name)
-        .bind(&owner_snapshot)
-        .bind(issue_date)
-        .bind(proof.encrypted())
-        .bind(proof.hash())
-        .bind(candidate.replacement_for_certificate_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(issuance_db_error)?;
-
-        if let Some(replacement_for_id) = candidate.replacement_for_certificate_id {
-            let linked = sqlx::query(
-                "UPDATE certificates
-                 SET replaced_by_certificate_id = $2, updated_at = clock_timestamp()
-                 WHERE id = $1 AND status = 'revoked' AND replaced_by_certificate_id IS NULL",
             )
-            .bind(replacement_for_id)
             .bind(certificate_id)
-            .execute(&mut *tx)
+            .bind(campaign.id)
+            .bind(template.id)
+            .bind(candidate.id)
+            .bind(issue_run_id)
+            .bind(campaign.academic_year_id)
+            .bind(campaign.academic_year_value)
+            .bind(activity_sequence)
+            .bind(sequence)
+            .bind(i16::from(check_digit))
+            .bind(number.as_str())
+            .bind(recipient_type.as_str())
+            .bind(candidate.matched_user_id)
+            .bind(title)
+            .bind(first_name)
+            .bind(last_name)
+            .bind(&template.name)
+            .bind(&candidate.activity_item)
+            .bind(&candidate.award_or_role)
+            .bind(sqlx::types::Json(candidate.custom_values.0.clone()))
+            .bind(&school_name)
+            .bind(&owner_snapshot)
+            .bind(issue_date)
+            .bind(proof.encrypted())
+            .bind(proof.hash())
+            .bind(candidate.replacement_for_certificate_id)
+            .execute()
             .await
             .map_err(issuance_db_error)?;
+
+        if let Some(replacement_for_id) = candidate.replacement_for_certificate_id {
+            let linked = DbSession::new(&mut *tx)
+                .query(
+                    "certificates.services.issuance_service.issue_request",
+                    "UPDATE certificates
+                 SET replaced_by_certificate_id = $2, updated_at = clock_timestamp()
+                 WHERE id = $1 AND status = 'revoked' AND replaced_by_certificate_id IS NULL",
+                )
+                .bind(replacement_for_id)
+                .bind(certificate_id)
+                .execute()
+                .await
+                .map_err(issuance_db_error)?;
             if linked.rows_affected() != 1 {
                 return Err(AppError::Conflict(
                     "ใบเดิมไม่พร้อมเชื่อมกับเกียรติบัตรทดแทน".to_string(),
@@ -495,31 +511,35 @@ pub async fn issue_request(
             }
         }
 
-        sqlx::query(
-            "UPDATE certificate_candidates
+        DbSession::new(&mut *tx)
+            .query(
+                "certificates.services.issuance_service.issue_request",
+                "UPDATE certificate_candidates
              SET issued_certificate_id = $2, lookup_student_id = NULL,
                  lookup_staff_username = NULL, updated_by = $3,
                  updated_at = clock_timestamp()
              WHERE id = $1 AND issued_certificate_id IS NULL",
-        )
-        .bind(candidate.id)
-        .bind(certificate_id)
-        .bind(actor.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(issuance_db_error)?;
+            )
+            .bind(candidate.id)
+            .bind(certificate_id)
+            .bind(actor.user_id)
+            .execute()
+            .await
+            .map_err(issuance_db_error)?;
     }
 
-    sqlx::query(
-        "UPDATE certificate_issue_requests
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.issuance_service.issue_request",
+            "UPDATE certificate_issue_requests
          SET status = 'issued', issued_at = clock_timestamp(), issue_codes = ARRAY[]::text[],
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(request_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(request_id)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
     record_issue_request_audit(
         &mut tx,
         actor.user_id,
@@ -551,7 +571,12 @@ pub async fn replay_issue_request(
 ) -> Result<Option<IssueCertificateOutcome>, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let campaign_id = fetch_request_campaign_id(pool, request_id).await?;
-    let mut tx = pool.begin().await.map_err(issuance_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.issuance_service.replay_issue_request",
+    )
+    .await
+    .map_err(issuance_db_error)?;
     let campaign = lock_campaign(&mut tx, campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
     lock_issue_command(&mut tx, request_id).await?;
@@ -569,23 +594,30 @@ pub async fn revoke_certificate(
     actor.require_permission(codes::CERTIFICATE_REVOKE_SCHOOL)?;
     let reason = normalize_revocation_reason(&request.reason)?;
     let campaign_id = fetch_certificate_campaign_id(pool, certificate_id).await?;
-    let mut tx = pool.begin().await.map_err(issuance_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.issuance_service.revoke_certificate",
+    )
+    .await
+    .map_err(issuance_db_error)?;
     let campaign = lock_campaign(&mut tx, campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
-    let certificate = sqlx::query_as::<_, CertificateRevokeRow>(
-        "SELECT id, campaign_id, template_id, recipient_type, user_id,
+    let certificate = DbSession::new(&mut *tx)
+        .query_as::<CertificateRevokeRow>(
+            "certificates.services.issuance_service.revoke_certificate",
+            "SELECT id, campaign_id, template_id, recipient_type, user_id,
                 title_snapshot, first_name_snapshot, last_name_snapshot,
                 activity_item_snapshot, award_or_role_snapshot,
                 custom_values_snapshot, status
          FROM certificates
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(certificate_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+        )
+        .bind(certificate_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     if certificate.campaign_id != campaign.id {
         return Err(AppError::InternalServerError(
             "certificate_campaign_reference_invalid".to_string(),
@@ -595,18 +627,20 @@ pub async fn revoke_certificate(
         return Err(AppError::Conflict("เกียรติบัตรนี้ถูกเพิกถอนไปแล้ว".to_string()));
     }
 
-    sqlx::query(
-        "UPDATE certificates
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.issuance_service.revoke_certificate",
+            "UPDATE certificates
          SET status = 'revoked', revoked_by = $2, revoked_at = clock_timestamp(),
              revocation_reason = $3, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(certificate.id)
-    .bind(actor.user_id)
-    .bind(reason)
-    .execute(&mut *tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(certificate.id)
+        .bind(actor.user_id)
+        .bind(reason)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
 
     let replacement_candidate = if request.create_replacement_candidate {
         Some(create_replacement_candidate(&mut tx, actor.user_id, &certificate).await?)
@@ -637,16 +671,24 @@ pub async fn list_campaign_certificates(
     campaign_id: Uuid,
     query: IssuedCertificateListQuery,
 ) -> Result<Vec<IssuedCertificateSummary>, AppError> {
-    let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.issuance_service.list_campaign_certificates",
+    )
+    .await?;
+    let owner_organization_unit_id = DbSession::new(&mut *database_stage_0)
+        .scalar::<Option<Uuid>>(
+            "certificates.services.issuance_service.list_campaign_certificates",
+            "SELECT owner_organization_unit_id
          FROM certificate_campaigns
          WHERE id = $1 AND status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+    drop(database_stage_0);
     require_owner_action(
         pool,
         actor,
@@ -668,8 +710,15 @@ pub async fn list_campaign_certificates(
             "คำค้นหายาวเกิน 100 ตัวอักษร".to_string(),
         ));
     }
-    let rows = sqlx::query_as::<_, CertificateOutcomeRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let mut database_stage_1 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.issuance_service.list_campaign_certificates",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_1)
+        .query_as::<CertificateOutcomeRow>(
+            "certificates.services.issuance_service.list_campaign_certificates",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -700,14 +749,15 @@ pub async fn list_campaign_certificates(
                 OR certificate.last_name_snapshot ILIKE '%' || $4 || '%'
            )
          ORDER BY certificate.certificate_sequence DESC, certificate.id DESC",
-    )
-    .bind(campaign_id)
-    .bind(status)
-    .bind(query.template_id)
-    .bind(search)
-    .fetch_all(pool)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(status)
+        .bind(query.template_id)
+        .bind(search)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?;
+    drop(database_stage_1);
     let can_download = can_owner_action(
         pool,
         actor,
@@ -733,8 +783,22 @@ pub async fn list_own_certificates(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<IssuedCertificateSummary>, AppError> {
-    let rows = sqlx::query_as::<_, CertificateOutcomeRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.list_own_certificates",
+    )
+    .await?;
+    list_own_certificates_on_connection(&mut connection, user_id).await
+}
+
+pub async fn list_own_certificates_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<IssuedCertificateSummary>, AppError> {
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<CertificateOutcomeRow>(
+            "certificates.services.issuance_service.list_own_certificates_on_connection",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -757,11 +821,11 @@ pub async fn list_own_certificates(
          WHERE certificate.user_id = $1
            AND campaign.status <> 'purging'
          ORDER BY certificate.issue_date DESC, certificate.created_at DESC, certificate.id DESC",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(user_id)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?;
 
     rows.into_iter()
         .map(|row| own_certificate_summary(user_id, row))
@@ -852,40 +916,48 @@ async fn create_replacement_candidate(
     let recipient_type = RecipientType::parse(&certificate.recipient_type).ok_or_else(|| {
         AppError::InternalServerError("certificate_recipient_type_invalid".to_string())
     })?;
-    let template = sqlx::query_as::<_, ReplacementTemplateRow>(
-        "SELECT template.allowed_recipient_types, template.is_active,
+    let template = DbSession::new(&mut **tx)
+        .query_as::<ReplacementTemplateRow>(
+            "certificates.services.issuance_service.create_replacement_candidate",
+            "SELECT template.allowed_recipient_types, template.is_active,
                 template.background_file_id IS NOT NULL
                     AND background.lifecycle_status = 'ready' AS background_is_ready
          FROM certificate_templates template
          LEFT JOIN files background ON background.id = template.background_file_id
          WHERE template.id = $1 AND template.campaign_id = $2
          FOR SHARE OF template",
-    )
-    .bind(certificate.template_id)
-    .bind(certificate.campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| {
-        AppError::InternalServerError("certificate_replacement_template_missing".to_string())
-    })?;
+        )
+        .bind(certificate.template_id)
+        .bind(certificate.campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| {
+            AppError::InternalServerError("certificate_replacement_template_missing".to_string())
+        })?;
 
-    sqlx::query("LOCK TABLE users, student_info IN SHARE MODE")
-        .execute(&mut **tx)
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.create_replacement_candidate",
+            "LOCK TABLE users, student_info IN SHARE MODE",
+        )
+        .execute()
         .await
         .map_err(issuance_db_error)?;
     let account = if let Some(user_id) = certificate.user_id {
-        sqlx::query_as::<_, AccountRow>(
-            "SELECT users.id, users.username, student.student_id, users.user_type,
+        DbSession::new(&mut **tx)
+            .query_as::<AccountRow>(
+                "certificates.services.issuance_service.create_replacement_candidate",
+                "SELECT users.id, users.username, student.student_id, users.user_type,
                     users.status, person_name.title, person_name.first_name, person_name.last_name
              FROM users JOIN user_display_names person_name ON person_name.id=users.id
              LEFT JOIN student_info student ON student.user_id = users.id
              WHERE users.id = $1",
-        )
-        .bind(user_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(issuance_db_error)?
+            )
+            .bind(user_id)
+            .fetch_optional()
+            .await
+            .map_err(issuance_db_error)?
     } else {
         None
     };
@@ -960,21 +1032,25 @@ async fn create_replacement_candidate(
         .into_iter()
         .map(|code| code.as_str().to_string())
         .collect::<Vec<_>>();
-    let batch_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO certificate_import_batches (
+    let batch_id = DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.create_replacement_candidate",
+            "INSERT INTO certificate_import_batches (
              campaign_id, source, row_count, ready_count, review_count,
              invalid_count, created_by
          )
          VALUES ($1, 'replacement', 1, 0, 1, 0, $2)
          RETURNING id",
-    )
-    .bind(certificate.campaign_id)
-    .bind(actor_user_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
-    let candidate_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO certificate_candidates (
+        )
+        .bind(certificate.campaign_id)
+        .bind(actor_user_id)
+        .fetch_one()
+        .await
+        .map_err(issuance_db_error)?;
+    let candidate_id = DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.create_replacement_candidate",
+            "INSERT INTO certificate_candidates (
              campaign_id, batch_id, template_id, recipient_type, matched_user_id,
              lookup_student_id, lookup_staff_username, imported_title,
              imported_first_name, imported_last_name, account_title,
@@ -988,32 +1064,32 @@ async fn create_replacement_candidate(
              $14, $15, $16, $17, 'needs_review', $18, $19, $20, $20
          )
          RETURNING id",
-    )
-    .bind(certificate.campaign_id)
-    .bind(batch_id)
-    .bind(certificate.template_id)
-    .bind(recipient_type.as_str())
-    .bind(certificate.user_id)
-    .bind(lookup_student_id)
-    .bind(lookup_staff_username)
-    .bind(&certificate.title_snapshot)
-    .bind(&certificate.first_name_snapshot)
-    .bind(&certificate.last_name_snapshot)
-    .bind(account_title)
-    .bind(account_first_name)
-    .bind(account_last_name)
-    .bind(&certificate.activity_item_snapshot)
-    .bind(&certificate.award_or_role_snapshot)
-    .bind(sqlx::types::Json(
-        certificate.custom_values_snapshot.0.clone(),
-    ))
-    .bind(match_status)
-    .bind(&validation_codes)
-    .bind(certificate.id)
-    .bind(actor_user_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(certificate.campaign_id)
+        .bind(batch_id)
+        .bind(certificate.template_id)
+        .bind(recipient_type.as_str())
+        .bind(certificate.user_id)
+        .bind(lookup_student_id)
+        .bind(lookup_staff_username)
+        .bind(&certificate.title_snapshot)
+        .bind(&certificate.first_name_snapshot)
+        .bind(&certificate.last_name_snapshot)
+        .bind(account_title)
+        .bind(account_first_name)
+        .bind(account_last_name)
+        .bind(&certificate.activity_item_snapshot)
+        .bind(&certificate.award_or_role_snapshot)
+        .bind(sqlx::types::Json(
+            certificate.custom_values_snapshot.0.clone(),
+        ))
+        .bind(match_status)
+        .bind(&validation_codes)
+        .bind(certificate.id)
+        .bind(actor_user_id)
+        .fetch_one()
+        .await
+        .map_err(issuance_db_error)?;
     Ok(CertificateReplacementCandidate {
         id: candidate_id,
         campaign_id: certificate.campaign_id,
@@ -1034,34 +1110,62 @@ fn normalize_school_name(value: &str) -> Result<String, AppError> {
 }
 
 async fn fetch_request_campaign_id(pool: &PgPool, request_id: Uuid) -> Result<Uuid, AppError> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT request.campaign_id
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.fetch_request_campaign_id",
+    )
+    .await?;
+    fetch_request_campaign_id_on_connection(&mut connection, request_id).await
+}
+
+async fn fetch_request_campaign_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    request_id: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.fetch_request_campaign_id_on_connection",
+            "SELECT request.campaign_id
          FROM certificate_issue_requests request
          JOIN certificate_campaigns campaign ON campaign.id = request.campaign_id
          WHERE request.id = $1 AND campaign.status <> 'purging'",
-    )
-    .bind(request_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบคำขอออกเกียรติบัตร".to_string()))
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบคำขอออกเกียรติบัตร".to_string()))
 }
 
 async fn fetch_certificate_campaign_id(
     pool: &PgPool,
     certificate_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT certificate.campaign_id
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.fetch_certificate_campaign_id",
+    )
+    .await?;
+    fetch_certificate_campaign_id_on_connection(&mut connection, certificate_id).await
+}
+
+async fn fetch_certificate_campaign_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    certificate_id: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.fetch_certificate_campaign_id_on_connection",
+            "SELECT certificate.campaign_id
          FROM certificates certificate
          JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
          WHERE certificate.id = $1 AND campaign.status <> 'purging'",
-    )
-    .bind(certificate_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+        )
+        .bind(certificate_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
 }
 
 fn require_campaign_not_purging(status: &str) -> Result<(), AppError> {
@@ -1078,9 +1182,13 @@ async fn lock_issue_command(
     tx: &mut Transaction<'_, Postgres>,
     request_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 847321))")
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.lock_issue_command",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 847321))",
+        )
         .bind(request_id)
-        .execute(&mut **tx)
+        .execute()
         .await
         .map_err(issuance_db_error)?;
     Ok(())
@@ -1090,18 +1198,20 @@ async fn fetch_issue_run(
     tx: &mut Transaction<'_, Postgres>,
     request_id: Uuid,
 ) -> Result<Option<IssueRunRow>, AppError> {
-    sqlx::query_as::<_, IssueRunRow>(
-        "SELECT run.id, run.request_id, request.campaign_id, run.idempotency_key,
+    DbSession::new(&mut **tx)
+        .query_as::<IssueRunRow>(
+            "certificates.services.issuance_service.fetch_issue_run",
+            "SELECT run.id, run.request_id, request.campaign_id, run.idempotency_key,
                 run.outcome, run.first_certificate_sequence, run.last_certificate_sequence,
                 run.issue_codes
          FROM certificate_issue_runs run
          JOIN certificate_issue_requests request ON request.id = run.request_id
          WHERE run.request_id = $1",
-    )
-    .bind(request_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)
 }
 
 async fn load_matching_run_outcome(
@@ -1125,25 +1235,29 @@ async fn lock_request(
     tx: &mut Transaction<'_, Postgres>,
     request_id: Uuid,
 ) -> Result<IssueRequestRow, AppError> {
-    sqlx::query_as::<_, IssueRequestRow>(
-        "SELECT id, campaign_id, status
+    DbSession::new(&mut **tx)
+        .query_as::<IssueRequestRow>(
+            "certificates.services.issuance_service.lock_request",
+            "SELECT id, campaign_id, status
          FROM certificate_issue_requests
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(request_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบคำขอออกเกียรติบัตร".to_string()))
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบคำขอออกเกียรติบัตร".to_string()))
 }
 
 async fn lock_campaign(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<CampaignRow, AppError> {
-    sqlx::query_as::<_, CampaignRow>(
-        "SELECT campaign.id, campaign.academic_year_id,
+    DbSession::new(&mut **tx)
+        .query_as::<CampaignRow>(
+            "certificates.services.issuance_service.lock_campaign",
+            "SELECT campaign.id, campaign.academic_year_id,
                 academic_year.year AS academic_year_value,
                 campaign.owner_organization_unit_id,
                 campaign.status, campaign.activity_sequence,
@@ -1152,37 +1266,41 @@ async fn lock_campaign(
          JOIN academic_years academic_year ON academic_year.id = campaign.academic_year_id
          WHERE campaign.id = $1
          FOR UPDATE OF campaign",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
 }
 
 async fn lock_request_items(
     tx: &mut Transaction<'_, Postgres>,
     request_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT candidate_id
+    DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.lock_request_items",
+            "SELECT candidate_id
          FROM certificate_issue_request_items
          WHERE request_id = $1
          ORDER BY candidate_id
          FOR KEY SHARE",
-    )
-    .bind(request_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
+        )
+        .bind(request_id)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)
 }
 
 async fn lock_candidates(
     tx: &mut Transaction<'_, Postgres>,
     candidate_ids: &[Uuid],
 ) -> Result<Vec<CandidateRow>, AppError> {
-    sqlx::query_as::<_, CandidateRow>(
-        "SELECT id, campaign_id, template_id, recipient_type, matched_user_id,
+    DbSession::new(&mut **tx)
+        .query_as::<CandidateRow>(
+            "certificates.services.issuance_service.lock_candidates",
+            "SELECT id, campaign_id, template_id, recipient_type, matched_user_id,
                 lookup_student_id, lookup_staff_username, imported_title,
                 imported_first_name, imported_last_name, account_title,
                 account_first_name, account_last_name, selected_name_source,
@@ -1193,11 +1311,11 @@ async fn lock_candidates(
          WHERE id = ANY($1::uuid[])
          ORDER BY id
          FOR UPDATE",
-    )
-    .bind(candidate_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
+        )
+        .bind(candidate_ids)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)
 }
 
 async fn lock_templates(
@@ -1207,35 +1325,39 @@ async fn lock_templates(
     if template_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut rows = sqlx::query_as::<_, TemplateRow>(
-        "SELECT id, campaign_id, name, background_file_id,
+    let mut rows = DbSession::new(&mut **tx)
+        .query_as::<TemplateRow>(
+            "certificates.services.issuance_service.lock_templates",
+            "SELECT id, campaign_id, name, background_file_id,
                 NULL::text AS background_lifecycle_status, crop_box_width,
                 crop_box_height, page_rotation, allowed_recipient_types, layout, is_active
          FROM certificate_templates
          WHERE id = ANY($1::uuid[])
          ORDER BY id
          FOR SHARE",
-    )
-    .bind(template_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(template_ids)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?;
     let background_ids = rows
         .iter()
         .filter_map(|template| template.background_file_id)
         .collect::<Vec<_>>();
     if !background_ids.is_empty() {
-        let statuses = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, lifecycle_status
+        let statuses = DbSession::new(&mut **tx)
+            .query_as::<(Uuid, String)>(
+                "certificates.services.issuance_service.lock_templates",
+                "SELECT id, lifecycle_status
              FROM files
              WHERE id = ANY($1::uuid[])
              ORDER BY id
              FOR SHARE",
-        )
-        .bind(&background_ids)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(issuance_db_error)?;
+            )
+            .bind(&background_ids)
+            .fetch_all()
+            .await
+            .map_err(issuance_db_error)?;
         let by_id = statuses.into_iter().collect::<BTreeMap<_, _>>();
         for template in &mut rows {
             template.background_lifecycle_status = template
@@ -1253,13 +1375,15 @@ async fn lock_owner(
     let Some(owner_id) = owner_id else {
         return Ok(None);
     };
-    sqlx::query_as::<_, (bool, String)>(
-        "SELECT is_active, name FROM organization_units WHERE id = $1 FOR SHARE",
-    )
-    .bind(owner_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
+    DbSession::new(&mut **tx)
+        .query_as::<(bool, String)>(
+            "certificates.services.issuance_service.lock_owner",
+            "SELECT is_active, name FROM organization_units WHERE id = $1 FOR SHARE",
+        )
+        .bind(owner_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)
 }
 
 async fn load_accounts(
@@ -1287,8 +1411,10 @@ async fn load_accounts(
     if account_ids.is_empty() && student_ids.is_empty() && staff_usernames.is_empty() {
         return Ok(BTreeMap::new());
     }
-    Ok(sqlx::query_as::<_, AccountRow>(
-        "SELECT users.id, users.username, student.student_id, users.user_type,
+    Ok(DbSession::new(&mut **tx)
+        .query_as::<AccountRow>(
+            "certificates.services.issuance_service.load_accounts",
+            "SELECT users.id, users.username, student.student_id, users.user_type,
                 users.status, person_name.title, person_name.first_name, person_name.last_name
          FROM users JOIN user_display_names person_name ON person_name.id=users.id
          LEFT JOIN student_info student ON student.user_id = users.id
@@ -1296,16 +1422,16 @@ async fn load_accounts(
             OR (users.user_type = 'student' AND student.student_id = ANY($2::text[]))
             OR (users.user_type = 'staff' AND users.username = ANY($3::text[]))
          ORDER BY users.id",
-    )
-    .bind(&account_ids)
-    .bind(&student_ids)
-    .bind(&staff_usernames)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .into_iter()
-    .map(|account| (account.id, account))
-    .collect())
+        )
+        .bind(&account_ids)
+        .bind(&student_ids)
+        .bind(&staff_usernames)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?
+        .into_iter()
+        .map(|account| (account.id, account))
+        .collect())
 }
 
 async fn lock_assets(
@@ -1319,18 +1445,20 @@ async fn lock_assets(
     if template_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = sqlx::query_as::<_, AssetRow>(
-        "SELECT asset.id, asset.template_id, asset.kind, file.lifecycle_status
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<AssetRow>(
+            "certificates.services.issuance_service.lock_assets",
+            "SELECT asset.id, asset.template_id, asset.kind, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = ANY($1::uuid[])
          ORDER BY asset.template_id, asset.id
          FOR SHARE OF asset, file",
-    )
-    .bind(&template_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(&template_ids)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?;
     let mut grouped = BTreeMap::<Uuid, Vec<AssetRow>>::new();
     for row in rows {
         grouped.entry(row.template_id).or_default().push(row);
@@ -1358,8 +1486,10 @@ async fn lock_school_fonts(
     if font_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    sqlx::query_as::<_, SchoolFontRow>(
-        "SELECT font.id, font.font_family, font.font_weight, font.font_style,
+    DbSession::new(&mut **tx)
+        .query_as::<SchoolFontRow>(
+            "certificates.services.issuance_service.lock_school_fonts",
+            "SELECT font.id, font.font_family, font.font_weight, font.font_style,
                 file.purpose_code, file.visibility, file.lifecycle_status,
                 file.retention_class, version.storage_status, version.scan_status
          FROM school_fonts AS font
@@ -1369,20 +1499,22 @@ async fn lock_school_fonts(
          WHERE font.id = ANY($1::uuid[])
          ORDER BY font.id
          FOR SHARE OF font, file, version",
-    )
-    .bind(&font_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
-    .map(|rows| rows.into_iter().map(|font| (font.id, font)).collect())
+        )
+        .bind(&font_ids)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)
+        .map(|rows| rows.into_iter().map(|font| (font.id, font)).collect())
 }
 
 async fn load_custom_headers(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Vec<String>, AppError> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT custom_key
+    DbSession::new(&mut **tx)
+        .scalar::<String>(
+            "certificates.services.issuance_service.load_custom_headers",
+            "SELECT DISTINCT custom_key
          FROM (
              SELECT jsonb_object_keys(custom_values) AS custom_key
              FROM certificate_candidates
@@ -1393,11 +1525,11 @@ async fn load_custom_headers(
              WHERE campaign_id = $1
          ) custom_keys
          ORDER BY custom_key",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)
 }
 
 fn revalidate(
@@ -1651,37 +1783,41 @@ async fn persist_returned_outcome(
         if validation_codes.is_empty() {
             continue;
         }
-        sqlx::query(
-            "UPDATE certificate_candidates
+        DbSession::new(&mut **tx)
+            .query(
+                "certificates.services.issuance_service.persist_returned_outcome",
+                "UPDATE certificate_candidates
              SET validation_status = 'needs_review', validation_codes = $2,
                  updated_by = $3, updated_at = clock_timestamp()
              WHERE id = $1",
-        )
-        .bind(candidate.id)
-        .bind(&validation_codes)
-        .bind(actor_user_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(issuance_db_error)?;
+            )
+            .bind(candidate.id)
+            .bind(&validation_codes)
+            .bind(actor_user_id)
+            .execute()
+            .await
+            .map_err(issuance_db_error)?;
     }
     let issue_code_values = issue_codes
         .iter()
         .map(|code| code.as_str())
         .collect::<Vec<_>>();
-    let run_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO certificate_issue_runs (
+    let run_id = DbSession::new(&mut **tx)
+        .scalar::<Uuid>(
+            "certificates.services.issuance_service.persist_returned_outcome",
+            "INSERT INTO certificate_issue_runs (
              request_id, idempotency_key, issued_by, outcome, issue_codes
          )
          VALUES ($1, $2, $3, 'returned', $4)
          RETURNING id",
-    )
-    .bind(request.id)
-    .bind(idempotency_key)
-    .bind(actor_user_id)
-    .bind(&issue_code_values)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(request.id)
+        .bind(idempotency_key)
+        .bind(actor_user_id)
+        .bind(&issue_code_values)
+        .fetch_one()
+        .await
+        .map_err(issuance_db_error)?;
     let mut problem_insert = QueryBuilder::<Postgres>::new(
         "INSERT INTO certificate_issue_run_problems (issue_run_id, candidate_id, issue_codes) ",
     );
@@ -1694,23 +1830,28 @@ async fn persist_returned_outcome(
             .push_bind(candidate_id)
             .push_bind(codes);
     });
-    problem_insert
-        .build()
-        .execute(&mut **tx)
+    DbSession::new(&mut **tx)
+        .prepared_query(
+            "certificates.services.issuance_service.persist_returned_outcome",
+            problem_insert.build(),
+        )
+        .execute()
         .await
         .map_err(issuance_db_error)?;
-    sqlx::query(
-        "UPDATE certificate_issue_requests
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.persist_returned_outcome",
+            "UPDATE certificate_issue_requests
          SET status = 'returned', returned_at = clock_timestamp(),
              return_note = 'ข้อมูลเปลี่ยนแปลงระหว่างการตรวจ กรุณาตรวจสอบรายการที่ระบุ',
              issue_codes = $2, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(request.id)
-    .bind(&issue_code_values)
-    .execute(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(request.id)
+        .bind(&issue_code_values)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
     record_issue_request_audit(
         tx,
         actor_user_id,
@@ -1802,38 +1943,44 @@ async fn allocate_activity_sequence(
         }
         return Err(AppError::Conflict("ลำดับกิจกรรมเกินขอบเขตที่รองรับ".to_string()));
     }
-    sqlx::query(
-        "INSERT INTO certificate_academic_year_counters (academic_year_id)
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.allocate_activity_sequence",
+            "INSERT INTO certificate_academic_year_counters (academic_year_id)
          VALUES ($1)
          ON CONFLICT (academic_year_id) DO NOTHING",
-    )
-    .bind(campaign.academic_year_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
-    let sequence = sqlx::query_scalar::<_, i32>(
-        "UPDATE certificate_academic_year_counters
+        )
+        .bind(campaign.academic_year_id)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
+    let sequence = DbSession::new(&mut **tx)
+        .scalar::<i32>(
+            "certificates.services.issuance_service.allocate_activity_sequence",
+            "UPDATE certificate_academic_year_counters
          SET next_activity_sequence = next_activity_sequence + 1,
              updated_at = clock_timestamp()
          WHERE academic_year_id = $1 AND next_activity_sequence <= $2
          RETURNING next_activity_sequence - 1",
-    )
-    .bind(campaign.academic_year_id)
-    .bind(MAX_ACTIVITY_SEQUENCE)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::Conflict("ปีการศึกษานี้มีชุดออกเลขครบขอบเขตแล้ว".to_string()))?;
-    sqlx::query(
-        "UPDATE certificate_campaigns
+        )
+        .bind(campaign.academic_year_id)
+        .bind(MAX_ACTIVITY_SEQUENCE)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::Conflict("ปีการศึกษานี้มีชุดออกเลขครบขอบเขตแล้ว".to_string()))?;
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.allocate_activity_sequence",
+            "UPDATE certificate_campaigns
          SET activity_sequence = $2, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(campaign.id)
-    .bind(sequence)
-    .execute(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(campaign.id)
+        .bind(sequence)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
     campaign.activity_sequence = Some(sequence);
     Ok(sequence)
 }
@@ -1851,19 +1998,21 @@ async fn allocate_certificate_range(
         .filter(|last| *last <= MAX_CERTIFICATE_SEQUENCE)
         .ok_or_else(|| AppError::Conflict("กิจกรรมนี้มีเลขเกียรติบัตรครบขอบเขตแล้ว".to_string()))?;
     let next = last + 1;
-    let updated = sqlx::query(
-        "UPDATE certificate_campaigns
+    let updated = DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.issuance_service.allocate_certificate_range",
+            "UPDATE certificate_campaigns
          SET next_certificate_sequence = $2,
              status = CASE WHEN status = 'draft' THEN 'active' ELSE status END,
              updated_at = clock_timestamp()
          WHERE id = $1 AND next_certificate_sequence = $3",
-    )
-    .bind(campaign.id)
-    .bind(next)
-    .bind(first)
-    .execute(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(campaign.id)
+        .bind(next)
+        .bind(first)
+        .execute()
+        .await
+        .map_err(issuance_db_error)?;
     if updated.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "ลำดับเกียรติบัตรเปลี่ยนระหว่างดำเนินการ กรุณาลองใหม่".to_string(),
@@ -1905,16 +2054,18 @@ async fn load_run_outcome(
 ) -> Result<IssueCertificateOutcome, AppError> {
     let issue_codes = parse_issue_codes(&run.issue_codes)?;
     if run.outcome == "returned" {
-        let problem_rows = sqlx::query_as::<_, IssueRunProblemRow>(
-            "SELECT candidate_id, issue_codes
+        let problem_rows = DbSession::new(&mut **tx)
+            .query_as::<IssueRunProblemRow>(
+                "certificates.services.issuance_service.load_run_outcome",
+                "SELECT candidate_id, issue_codes
              FROM certificate_issue_run_problems
              WHERE issue_run_id = $1
              ORDER BY candidate_id",
-        )
-        .bind(run.id)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(issuance_db_error)?;
+            )
+            .bind(run.id)
+            .fetch_all()
+            .await
+            .map_err(issuance_db_error)?;
         let candidate_problems = problem_rows
             .into_iter()
             .map(|problem| {
@@ -1937,8 +2088,10 @@ async fn load_run_outcome(
             "certificate_issue_run_outcome_invalid".to_string(),
         ));
     }
-    let rows = sqlx::query_as::<_, CertificateOutcomeRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<CertificateOutcomeRow>(
+            "certificates.services.issuance_service.load_run_outcome",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -1961,11 +2114,11 @@ async fn load_run_outcome(
          WHERE certificate.issue_run_id = $1
            AND campaign.status <> 'purging'
          ORDER BY certificate.certificate_sequence",
-    )
-    .bind(run.id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?;
+        )
+        .bind(run.id)
+        .fetch_all()
+        .await
+        .map_err(issuance_db_error)?;
     let certificates = rows
         .into_iter()
         .map(|row| outcome_summary(actor, row))
@@ -2045,8 +2198,10 @@ async fn load_certificate_detail_tx(
     actor: &ActorContext,
     certificate_id: Uuid,
 ) -> Result<IssuedCertificateDetail, AppError> {
-    let row = sqlx::query_as::<_, CertificateDetailRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let row = DbSession::new(&mut **tx)
+        .query_as::<CertificateDetailRow>(
+            "certificates.services.issuance_service.load_certificate_detail_tx",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -2072,12 +2227,12 @@ async fn load_certificate_detail_tx(
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.id = $1
            AND campaign.status <> 'purging'",
-    )
-    .bind(certificate_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+        )
+        .bind(certificate_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     certificate_detail(actor, row)
 }
 
@@ -2085,18 +2240,32 @@ async fn fetch_certificate_access(
     pool: &PgPool,
     certificate_id: Uuid,
 ) -> Result<CertificateAccessRow, AppError> {
-    sqlx::query_as::<_, CertificateAccessRow>(
-        "SELECT campaign.owner_organization_unit_id
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.fetch_certificate_access",
+    )
+    .await?;
+    fetch_certificate_access_on_connection(&mut connection, certificate_id).await
+}
+
+async fn fetch_certificate_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    certificate_id: Uuid,
+) -> Result<CertificateAccessRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<CertificateAccessRow>(
+            "certificates.services.issuance_service.fetch_certificate_access_on_connection",
+            "SELECT campaign.owner_organization_unit_id
          FROM certificates certificate
          JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
          WHERE certificate.id = $1
            AND campaign.status <> 'purging'",
-    )
-    .bind(certificate_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+        )
+        .bind(certificate_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
 }
 
 async fn can_owner_action(
@@ -2116,8 +2285,22 @@ async fn load_certificate_detail_pool(
     pool: &PgPool,
     certificate_id: Uuid,
 ) -> Result<CertificateDetailRow, AppError> {
-    sqlx::query_as::<_, CertificateDetailRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.load_certificate_detail_pool",
+    )
+    .await?;
+    load_certificate_detail_pool_on_connection(&mut connection, certificate_id).await
+}
+
+async fn load_certificate_detail_pool_on_connection(
+    connection: &mut sqlx::PgConnection,
+    certificate_id: Uuid,
+) -> Result<CertificateDetailRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<CertificateDetailRow>(
+            "certificates.services.issuance_service.load_certificate_detail_pool_on_connection",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -2143,12 +2326,12 @@ async fn load_certificate_detail_pool(
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.id = $1
            AND campaign.status <> 'purging'",
-    )
-    .bind(certificate_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+        )
+        .bind(certificate_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
 }
 
 async fn load_own_certificate_detail_pool(
@@ -2156,8 +2339,23 @@ async fn load_own_certificate_detail_pool(
     user_id: Uuid,
     certificate_id: Uuid,
 ) -> Result<CertificateDetailRow, AppError> {
-    sqlx::query_as::<_, CertificateDetailRow>(
-        "SELECT certificate.id, certificate.campaign_id,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.load_own_certificate_detail_pool",
+    )
+    .await?;
+    load_own_certificate_detail_pool_on_connection(&mut connection, user_id, certificate_id).await
+}
+
+async fn load_own_certificate_detail_pool_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    certificate_id: Uuid,
+) -> Result<CertificateDetailRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<CertificateDetailRow>(
+            "certificates.services.issuance_service.load_own_certificate_detail_pool_on_connection",
+            "SELECT certificate.id, certificate.campaign_id,
                 campaign.name AS campaign_name, campaign.owner_organization_unit_id,
                 owner.name AS owner_organization_unit_name, certificate.template_id,
                 certificate.template_name_snapshot AS template_name,
@@ -2183,13 +2381,13 @@ async fn load_own_certificate_detail_pool(
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.id = $1 AND certificate.user_id = $2
            AND campaign.status <> 'purging'",
-    )
-    .bind(certificate_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(issuance_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+        )
+        .bind(certificate_id)
+        .bind(user_id)
+        .fetch_optional()
+        .await
+        .map_err(issuance_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
 }
 
 fn certificate_detail(

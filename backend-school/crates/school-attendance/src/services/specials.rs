@@ -1,5 +1,6 @@
 use super::{audit, lock_term};
 use crate::{models::*, rules::invalid};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
@@ -7,7 +8,16 @@ pub async fn audiences(
     pool: &PgPool,
     term: Uuid,
 ) -> Result<Vec<AttendanceAudienceGroup>, AppError> {
-    Ok(sqlx::query_as("SELECT id,academic_term_id,name,student_ids,row_version FROM attendance_audience_groups WHERE academic_term_id=$1 ORDER BY name,id").bind(term).fetch_all(pool).await?)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.specials.audiences")
+            .await?;
+    audiences_on_connection(&mut connection, term).await
+}
+pub async fn audiences_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+) -> Result<Vec<AttendanceAudienceGroup>, AppError> {
+    Ok(DbSession::new(&mut *connection).query_as("attendance.services.specials.audiences_on_connection", "SELECT id,academic_term_id,name,student_ids,row_version FROM attendance_audience_groups WHERE academic_term_id=$1 ORDER BY name,id").bind(term).fetch_all().await?)
 }
 pub async fn save_audience(
     pool: &PgPool,
@@ -28,27 +38,30 @@ pub async fn save_audience(
     {
         return Err(invalid("ชื่อกลุ่มหรือสมาชิกไม่ถูกต้อง"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.specials.transaction").await?;
     lock_term(&mut tx, term, true, true).await?;
-    let valid:i64=sqlx::query_scalar("SELECT count(*) FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id WHERE t.id=$1 AND y.student_id=ANY($2) AND y.status NOT IN ('withdrawn','graduated')").bind(term).bind(&p.student_ids).fetch_one(&mut *tx).await?;
+    let valid:i64=DbSession::new(&mut *tx).scalar("attendance.services.specials.save_audience", "SELECT count(*) FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id WHERE t.id=$1 AND y.student_id=ANY($2) AND y.status NOT IN ('withdrawn','graduated')").bind(term).bind(&p.student_ids).fetch_one().await?;
     if valid != p.student_ids.len() as i64 {
         return Err(invalid("สมาชิกไม่ได้อยู่ในปีการศึกษานี้"));
     }
-    let old:Option<i64>=sqlx::query_scalar("SELECT row_version FROM attendance_audience_groups WHERE id=$1 AND academic_term_id=$2 FOR UPDATE").bind(id).bind(term).fetch_optional(&mut *tx).await?;
+    let old:Option<i64>=DbSession::new(&mut *tx).scalar("attendance.services.specials.save_audience", "SELECT row_version FROM attendance_audience_groups WHERE id=$1 AND academic_term_id=$2 FOR UPDATE").bind(id).bind(term).fetch_optional().await?;
     if old.is_none()
-        && sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM attendance_audience_groups WHERE id=$1)",
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?
+        && DbSession::new(&mut *tx)
+            .scalar::<bool>(
+                "attendance.services.specials.save_audience",
+                "SELECT EXISTS(SELECT 1 FROM attendance_audience_groups WHERE id=$1)",
+            )
+            .bind(id)
+            .fetch_one()
+            .await?
     {
         return Err(AppError::Forbidden("กลุ่มไม่ได้อยู่ในภาคเรียนนี้".into()));
     }
     if old.unwrap_or(0) != p.row_version {
         return Err(AppError::Conflict("กลุ่มเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
-    let row=sqlx::query_as("INSERT INTO attendance_audience_groups(id,academic_term_id,name,student_ids) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,student_ids=excluded.student_ids,row_version=attendance_audience_groups.row_version+1 RETURNING id,academic_term_id,name,student_ids,row_version").bind(id).bind(term).bind(p.name.trim()).bind(&p.student_ids).fetch_one(&mut *tx).await?;
+    let row=DbSession::new(&mut *tx).query_as("attendance.services.specials.save_audience", "INSERT INTO attendance_audience_groups(id,academic_term_id,name,student_ids) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,student_ids=excluded.student_ids,row_version=attendance_audience_groups.row_version+1 RETURNING id,academic_term_id,name,student_ids,row_version").bind(id).bind(term).bind(p.name.trim()).bind(&p.student_ids).fetch_one().await?;
     audit(&mut tx, actor, id, "update", "attendance audience group").await?;
     tx.commit().await?;
     Ok(row)
@@ -57,7 +70,16 @@ pub async fn templates(
     pool: &PgPool,
     term: Uuid,
 ) -> Result<Vec<SpecialAttendanceTemplate>, AppError> {
-    let rows:Vec<(Uuid,Uuid,Json<SpecialAttendanceDefinition>,i64)>=sqlx::query_as("SELECT id,academic_term_id,definition,row_version FROM attendance_special_templates WHERE academic_term_id=$1 ORDER BY id").bind(term).fetch_all(pool).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.specials.templates")
+            .await?;
+    templates_on_connection(&mut connection, term).await
+}
+pub async fn templates_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+) -> Result<Vec<SpecialAttendanceTemplate>, AppError> {
+    let rows:Vec<(Uuid,Uuid,Json<SpecialAttendanceDefinition>,i64)>=DbSession::new(&mut *connection).query_as("attendance.services.specials.templates_on_connection", "SELECT id,academic_term_id,definition,row_version FROM attendance_special_templates WHERE academic_term_id=$1 ORDER BY id").bind(term).fetch_all().await?;
     Ok(rows
         .into_iter()
         .map(
@@ -127,10 +149,11 @@ pub async fn create_template(
     resolved: Vec<Vec<AttendanceSeed>>,
 ) -> Result<SpecialAttendanceTemplate, AppError> {
     validate_definition(&p)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.specials.transaction").await?;
     lock_term(&mut tx, term, true, true).await?;
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO attendance_special_templates(id,academic_term_id,definition,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(term).bind(Json(&p)).bind(actor).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("attendance.services.specials.create_template", "INSERT INTO attendance_special_templates(id,academic_term_id,definition,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(term).bind(Json(&p)).bind(actor).execute().await?;
     if resolved.len() != p.dates.len() {
         return Err(invalid("รอบพิเศษไม่ตรงกับวันที่กำหนด"));
     }
@@ -159,14 +182,14 @@ pub async fn create_template(
                 count_override: seed.session.count_override,
             })
             .collect();
-        sqlx::query("INSERT INTO attendance_special_rounds(id,template_id,date,participants) VALUES($1,$2,$3,$4)")
-            .bind(round).bind(id).bind(date).bind(Json(&participants)).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("attendance.services.specials.create_template", "INSERT INTO attendance_special_rounds(id,template_id,date,participants) VALUES($1,$2,$3,$4)")
+            .bind(round).bind(id).bind(date).bind(Json(&participants)).execute().await?;
     }
     audit(&mut tx, actor, id, "create", "special attendance rounds").await?;
     for date in &p.dates {
         super::score_changes::enqueue_day(&mut tx, term, *date).await?;
-        sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=(SELECT generation FROM attendance_module_state WHERE singleton) AND academic_term_id=$1 AND date=$2")
-            .bind(term).bind(date).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("attendance.services.specials.create_template", "DELETE FROM attendance_finalized_dates WHERE generation=(SELECT generation FROM attendance_module_state WHERE singleton) AND academic_term_id=$1 AND date=$2")
+            .bind(term).bind(date).execute().await?;
     }
     tx.commit().await?;
     Ok(SpecialAttendanceTemplate {
@@ -181,7 +204,17 @@ pub async fn seeds(
     term: Uuid,
     date: chrono::NaiveDate,
 ) -> Result<Vec<AttendanceSeed>, AppError> {
-    let rows:Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)>=sqlx::query_as("SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id").bind(term).bind(date).fetch_all(pool).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.specials.seeds")
+            .await?;
+    seeds_on_connection(&mut connection, term, date).await
+}
+pub async fn seeds_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+    date: chrono::NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let rows:Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)>=DbSession::new(&mut *connection).query_as("attendance.services.specials.seeds_on_connection", "SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id").bind(term).bind(date).fetch_all().await?;
     Ok(rows
         .into_iter()
         .flat_map(|(round, Json(groups))| {
@@ -219,7 +252,17 @@ pub async fn devices(
     actor: Uuid,
     all: bool,
 ) -> Result<Vec<AttendanceDevice>, AppError> {
-    Ok(sqlx::query_as("SELECT id,name,enabled,operator_id FROM attendance_devices WHERE $1 OR operator_id=$2 ORDER BY name,id").bind(all).bind(actor).fetch_all(pool).await?)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.specials.devices")
+            .await?;
+    devices_on_connection(&mut connection, actor, all).await
+}
+pub async fn devices_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: Uuid,
+    all: bool,
+) -> Result<Vec<AttendanceDevice>, AppError> {
+    Ok(DbSession::new(&mut *connection).query_as("attendance.services.specials.devices_on_connection", "SELECT id,name,enabled,operator_id FROM attendance_devices WHERE $1 OR operator_id=$2 ORDER BY name,id").bind(all).bind(actor).fetch_all().await?)
 }
 pub async fn save_device(
     pool: &PgPool,
@@ -230,18 +273,23 @@ pub async fn save_device(
     if p.name.trim().is_empty() || p.name.len() > 100 {
         return Err(invalid("ชื่อเครื่องไม่ถูกต้อง"));
     }
-    let staff: bool = sqlx::query_scalar(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.device_preflight")
+            .await?;
+    let staff: bool = DbSession::new(&mut *connection).scalar("attendance.services.specials.save_device",
         "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND user_type='staff' AND status='active')",
     )
     .bind(p.operator_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await?;
     if !staff {
         return Err(invalid("ผู้ใช้เครื่องต้องเป็นครูที่ใช้งานอยู่"));
     }
-    let mut tx = pool.begin().await?;
+    drop(connection);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.specials.transaction").await?;
     super::lock_module(&mut tx).await?;
-    let device=sqlx::query_as("INSERT INTO attendance_devices(id,name,enabled,paired_by,operator_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,operator_id=excluded.operator_id RETURNING id,name,enabled,operator_id").bind(id).bind(p.name.trim()).bind(p.enabled).bind(actor).bind(p.operator_id).fetch_one(&mut *tx).await?;
+    let device=DbSession::new(&mut *tx).query_as("attendance.services.specials.save_device", "INSERT INTO attendance_devices(id,name,enabled,paired_by,operator_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,operator_id=excluded.operator_id RETURNING id,name,enabled,operator_id").bind(id).bind(p.name.trim()).bind(p.enabled).bind(actor).bind(p.operator_id).fetch_one().await?;
     audit(&mut tx, actor, id, "update", "attendance device").await?;
     tx.commit().await?;
     Ok(device)

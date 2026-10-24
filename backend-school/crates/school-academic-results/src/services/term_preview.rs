@@ -5,6 +5,7 @@ use super::{aggregate_course_credits, decimal, decimal_wire, hash, validate_cont
 use crate::{models::*, policy::results as academic_result_access_policy};
 use bigdecimal::BigDecimal;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::BTreeMap;
@@ -56,9 +57,17 @@ pub async fn preview_student_term(
             "School-level result permission is required for whole-student totals".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.term_preview.preview_student_term",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.term_preview.preview_student_term",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let preview = preview_student_term_in_transaction(&mut tx, student_year_id, query).await?;
     tx.commit().await?;
@@ -104,7 +113,7 @@ pub async fn preview_student_terms_in_transaction(
     // Retained locked results remain expected even after roster removal or group closure.
     // UNION deduplicates multiple groups of the same offering; conflicting offerings for
     // the same subject are rejected by aggregation rather than arbitrarily selected.
-    let rows: Vec<StudentCourseRow> = sqlx::query_as(r#"
+    let rows: Vec<StudentCourseRow> = DbSession::new(&mut **tx).query_as("academic_results.services.term_preview.preview_student_terms_in_transaction", r#"
         WITH expected AS (
             SELECT membership.student_academic_year_id,detail.subject_id,detail.learning_offering_id
             FROM learning_group_students membership
@@ -135,7 +144,7 @@ pub async fn preview_student_terms_in_transaction(
         ORDER BY expected.student_academic_year_id,expected.subject_id,expected.learning_offering_id
         LIMIT 100001
     "#).bind(students).bind(context.academic_term_id).bind(context.academic_year_id)
-        .fetch_all(&mut **tx).await?;
+        .fetch_all().await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError(
             "Course result batch exceeds 100000 source rows; select fewer students".into(),

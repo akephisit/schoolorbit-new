@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -51,13 +52,40 @@ pub async fn learning_offering_list_access(
     .await
 }
 
+pub async fn learning_offering_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: OfferingAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
+        actor,
+        offering_permissions(action),
+    )
+    .await
+}
+
 pub async fn learning_offering_access(
     pool: &PgPool,
     actor: &ActorContext,
     offering_id: Uuid,
     action: OfferingAction,
 ) -> Result<AcademicResourceAccess, AppError> {
-    let target: Option<(Option<Uuid>, bool)> = sqlx::query_as(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_http.policies.learning_offering_access_policy.learning_offering_access",
+    )
+    .await?;
+    learning_offering_access_on_connection(&mut connection, actor, offering_id, action).await
+}
+
+pub async fn learning_offering_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    offering_id: Uuid,
+    action: OfferingAction,
+) -> Result<AcademicResourceAccess, AppError> {
+    let target: Option<(Option<Uuid>, bool)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.learning_offering_access_on_connection",
         r#"
         SELECT offering.owning_organization_unit_id,
                EXISTS (
@@ -74,12 +102,12 @@ pub async fn learning_offering_access(
     )
     .bind(offering_id)
     .bind(actor.user_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|error| {
         tracing::error!(
             reason = "learning_offering_access_target_query_failed",
-            database_error = %error
+            error_class = school_database::error_class(&error)
         );
         AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์การเปิดสอนได้".to_string())
     })?;
@@ -88,7 +116,7 @@ pub async fn learning_offering_access(
         return Err(AppError::NotFound("ไม่พบการเปิดสอน".to_string()));
     };
 
-    let filter = learning_offering_list_access(pool, actor, action).await?;
+    let filter = learning_offering_list_access_on_connection(connection, actor, action).await?;
     Ok(resource_access_policy::academic_resource_access_for(
         &filter,
         owning_organization_unit_id,
@@ -101,7 +129,21 @@ pub async fn require_learning_offering_list_access(
     actor: &ActorContext,
     action: OfferingAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = learning_offering_list_access(pool, actor, action).await?;
+    require_list_filter(learning_offering_list_access(pool, actor, action).await?)
+}
+
+pub async fn require_learning_offering_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: OfferingAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = learning_offering_list_access_on_connection(connection, actor, action).await?;
+    require_list_filter(filter)
+}
+
+fn require_list_filter(
+    filter: AcademicResourceListFilter,
+) -> Result<AcademicResourceListFilter, AppError> {
     if !filter.includes_school_owned
         && filter.organization_unit_ids.is_empty()
         && filter.organization_tree_unit_ids.is_empty()
@@ -119,7 +161,22 @@ pub async fn require_learning_offering_access(
     offering_id: Uuid,
     action: OfferingAction,
 ) -> Result<(), AppError> {
-    if learning_offering_access(pool, actor, offering_id, action).await?
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_http.policies.learning_offering_access_policy.require_learning_offering_access",
+    )
+    .await?;
+    require_learning_offering_access_on_connection(&mut connection, actor, offering_id, action)
+        .await
+}
+
+pub async fn require_learning_offering_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    offering_id: Uuid,
+    action: OfferingAction,
+) -> Result<(), AppError> {
+    if learning_offering_access_on_connection(connection, actor, offering_id, action).await?
         == AcademicResourceAccess::None
     {
         Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงรายการเปิดสอนนี้".to_string()))
@@ -134,15 +191,50 @@ pub async fn require_learning_offering_batch_access(
     offering_ids: &[Uuid],
     action: OfferingAction,
 ) -> Result<(), AppError> {
+    let preflight = resource_access_policy::academic_resource_list_filter_without_database(
+        actor,
+        offering_permissions(action),
+    )
+    .map(require_list_filter)
+    .transpose()?;
+    if offering_ids.is_empty() && preflight.is_some() {
+        return Ok(());
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_http.policies.learning_offering_access_policy.require_learning_offering_batch_access").await?;
+    let filter = match preflight {
+        Some(filter) => filter,
+        None => {
+            require_learning_offering_list_access_on_connection(&mut connection, actor, action)
+                .await?
+        }
+    };
+    require_batch_with_filter(&mut connection, actor, offering_ids, filter).await
+}
+
+pub async fn require_learning_offering_batch_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    offering_ids: &[Uuid],
+    action: OfferingAction,
+) -> Result<(), AppError> {
+    let filter =
+        require_learning_offering_list_access_on_connection(connection, actor, action).await?;
+    require_batch_with_filter(connection, actor, offering_ids, filter).await
+}
+
+async fn require_batch_with_filter(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    offering_ids: &[Uuid],
+    filter: AcademicResourceListFilter,
+) -> Result<(), AppError> {
     let mut unique_ids = offering_ids.to_vec();
     unique_ids.sort_unstable();
     unique_ids.dedup();
     if unique_ids.is_empty() {
-        require_learning_offering_list_access(pool, actor, action).await?;
         return Ok(());
     }
-    let filter = require_learning_offering_list_access(pool, actor, action).await?;
-    let targets: Vec<(Uuid, Option<Uuid>, bool)> = sqlx::query_as(
+    let targets: Vec<(Uuid, Option<Uuid>, bool)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.require_learning_offering_batch_access_on_connection",
         r#"SELECT offering.id, offering.owning_organization_unit_id,
                   EXISTS (
                       SELECT 1
@@ -158,7 +250,7 @@ pub async fn require_learning_offering_batch_access(
     )
     .bind(&unique_ids)
     .bind(actor.user_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
     if targets.len() != unique_ids.len() {
         return Err(AppError::NotFound(
@@ -182,13 +274,28 @@ pub async fn require_learning_group_access(
     learning_group_id: Uuid,
     action: OfferingAction,
 ) -> Result<Uuid, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_http.policies.learning_offering_access_policy.require_learning_group_access",
+    )
+    .await?;
+    require_learning_group_access_on_connection(&mut connection, actor, learning_group_id, action)
+        .await
+}
+
+pub async fn require_learning_group_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    learning_group_id: Uuid,
+    action: OfferingAction,
+) -> Result<Uuid, AppError> {
     let offering_id: Uuid =
-        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
+        DbSession::new(connection).scalar("academic_http.policies.learning_offering_access_policy.require_learning_group_access_on_connection", "SELECT learning_offering_id FROM learning_groups WHERE id = $1")
             .bind(learning_group_id)
-            .fetch_optional(pool)
+            .fetch_optional()
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
-    require_learning_offering_access(pool, actor, offering_id, action).await?;
+    require_learning_offering_access_on_connection(connection, actor, offering_id, action).await?;
     Ok(offering_id)
 }
 
@@ -217,5 +324,44 @@ fn offering_permissions(action: OfferingAction) -> AcademicResourcePermissions {
             organization_tree: OFFERING_MANAGE_TREE_PERMISSIONS,
             school: OFFERING_MANAGE_SCHOOL_PERMISSIONS,
         },
+    }
+}
+
+#[cfg(test)]
+mod database_free_policy_tests {
+    use super::*;
+    #[tokio::test]
+    async fn list_grants_and_denials_preserve_database_free_paths() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let granted = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::LEARNING_OFFERING_READ_SCHOOL.into()],
+        };
+        assert!(
+            require_learning_offering_list_access(&pool, &granted, OfferingAction::Read)
+                .await
+                .unwrap()
+                .includes_school_owned
+        );
+        let denied = ActorContext {
+            user_id: granted.user_id,
+            permissions: vec![],
+        };
+        assert!(matches!(
+            require_learning_offering_list_access(&pool, &denied, OfferingAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(
+            require_learning_offering_batch_access(&pool, &granted, &[], OfferingAction::Read)
+                .await
+                .is_ok()
+        );
+        assert!(matches!(
+            require_learning_offering_batch_access(&pool, &denied, &[], OfferingAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

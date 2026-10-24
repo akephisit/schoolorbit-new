@@ -562,12 +562,12 @@ where
     let new_password_hash = hash_password(new_password).await?;
     let replacement = generate()?;
     let replacement_hash = replacement.token_hash();
-    let mut transaction = session
-        .tenant
-        .pool
-        .begin()
-        .await
-        .map_err(|_| session_store_unavailable())?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &session.tenant.pool,
+        "auth.session_service.change_password",
+    )
+    .await
+    .map_err(|_| session_store_unavailable())?;
     let locked =
         lock_password_change(&mut transaction, session.user_id, session.session_id, now).await?;
     if !constant_time_bytes_equal(

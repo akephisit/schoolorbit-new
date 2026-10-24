@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDate, Utc};
+use school_database::DbSession;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
@@ -36,19 +37,21 @@ pub async fn published_for_term(
     on_date: NaiveDate,
     bell_schedule_id: Uuid,
 ) -> Result<PublishedTimetableEvidence, AppError> {
-    let references: Vec<PublishedTimetableReference> = sqlx::query_as(
-        "SELECT id,effective_from,bell_schedule_id,row_version,published_at
+    let references: Vec<PublishedTimetableReference> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_timetable.services.timetable_version_service.opening.published_for_term",
+            "SELECT id,effective_from,bell_schedule_id,row_version,published_at
          FROM academic_timetable_versions
          WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
            AND effective_from<=$3 AND bell_schedule_id=$4
          ORDER BY effective_from,id LIMIT 501",
-    )
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .bind(on_date)
-    .bind(bell_schedule_id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(on_date)
+        .bind(bell_schedule_id)
+        .fetch_all()
+        .await?;
     if references.len() > 500 {
         return Err(AppError::ValidationError(
             "รุ่นตารางสอนที่เผยแพร่เกิน 500 รุ่น กรุณาติดต่อผู้ดูแลระบบ".into(),

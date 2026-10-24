@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::HashMap;
 
@@ -74,53 +75,53 @@ pub async fn apply(
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
     dates: &HashMap<NaiveDate, NaiveDate>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
-    let rounds: Vec<SourceRound> = sqlx::query_as(
+    let rounds: Vec<SourceRound> = DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
         "SELECT id,name,description,exam_kind FROM academic_exam_rounds WHERE academic_term_id=$1 ORDER BY created_at,id",
     )
     .bind(context.source_term_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     let source_round_ids = rounds.iter().map(|row| row.id).collect::<Vec<_>>();
     let days: Vec<SourceDay> = if source_round_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
             "SELECT id,exam_round_id,exam_date,label,start_time,end_time FROM academic_exam_days WHERE exam_round_id=ANY($1) ORDER BY exam_round_id,exam_date,id",
         )
         .bind(&source_round_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
     let source_day_ids = days.iter().map(|row| row.id).collect::<Vec<_>>();
     let assignments: Vec<SourceRoomAssignment> = if source_day_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
             "SELECT exam_day_id,homeroom_id,room_id,capacity_override FROM academic_exam_day_room_assignments WHERE exam_day_id=ANY($1) ORDER BY exam_day_id,id",
         )
         .bind(&source_day_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
     let items: Vec<SourceItem> = if source_round_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
             "SELECT id,exam_round_id,assessment_phase_id,learning_offering_id,learning_group_id,homeroom_id,duration_minutes FROM academic_exam_schedule_items WHERE exam_round_id=ANY($1) ORDER BY exam_round_id,id",
         )
         .bind(&source_round_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
     let source_item_ids = items.iter().map(|row| row.id).collect::<Vec<_>>();
     let sessions: Vec<SourceSession> = if source_item_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
             "SELECT exam_schedule_item_id,exam_round_id,exam_day_id,starts_at,ends_at FROM academic_exam_sessions WHERE exam_schedule_item_id=ANY($1) ORDER BY exam_round_id,exam_day_id,starts_at,exam_schedule_item_id",
         )
         .bind(&source_item_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
 
@@ -128,21 +129,23 @@ pub async fn apply(
     let mut target_ids = Vec::new();
     for round in rounds {
         let id = Uuid::now_v7();
-        sqlx::query(
-            r#"INSERT INTO academic_exam_rounds(
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_assessment.exam_schedule.services.term_preparation.apply",
+                r#"INSERT INTO academic_exam_rounds(
                    id,academic_year_id,academic_term_id,name,description,exam_kind,status,
                    published_at,published_by,created_by,updated_by,row_version
                ) VALUES($1,$2,$3,$4,$5,$6,'draft',NULL,NULL,$7,$7,1)"#,
-        )
-        .bind(id)
-        .bind(context.target_year_id)
-        .bind(context.target_term_id)
-        .bind(round.name)
-        .bind(round.description)
-        .bind(round.exam_kind)
-        .bind(actor)
-        .execute(&mut **tx)
-        .await?;
+            )
+            .bind(id)
+            .bind(context.target_year_id)
+            .bind(context.target_term_id)
+            .bind(round.name)
+            .bind(round.description)
+            .bind(round.exam_kind)
+            .bind(actor)
+            .execute()
+            .await?;
         round_map.insert(round.id, id);
         target_ids.push(id);
     }
@@ -158,38 +161,42 @@ pub async fn apply(
         }
         let id = Uuid::now_v7();
         let target_round = round_map[&day.exam_round_id];
-        sqlx::query(
-            r#"INSERT INTO academic_exam_days(
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_assessment.exam_schedule.services.term_preparation.apply",
+                r#"INSERT INTO academic_exam_days(
                    id,exam_round_id,exam_date,label,start_time,end_time,
                    academic_term_id,academic_year_id
                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8)"#,
-        )
-        .bind(id)
-        .bind(target_round)
-        .bind(target_date)
-        .bind(day.label)
-        .bind(day.start_time)
-        .bind(day.end_time)
-        .bind(context.target_term_id)
-        .bind(context.target_year_id)
-        .execute(&mut **tx)
-        .await?;
-        sqlx::query(
-            r#"INSERT INTO academic_exam_day_grade_levels(exam_day_id,grade_level_id)
+            )
+            .bind(id)
+            .bind(target_round)
+            .bind(target_date)
+            .bind(day.label)
+            .bind(day.start_time)
+            .bind(day.end_time)
+            .bind(context.target_term_id)
+            .bind(context.target_year_id)
+            .execute()
+            .await?;
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_assessment.exam_schedule.services.term_preparation.apply",
+                r#"INSERT INTO academic_exam_day_grade_levels(exam_day_id,grade_level_id)
                SELECT $1,grade_level_id FROM academic_exam_day_grade_levels WHERE exam_day_id=$2"#,
-        )
-        .bind(id)
-        .bind(day.id)
-        .execute(&mut **tx)
-        .await?;
-        sqlx::query(
+            )
+            .bind(id)
+            .bind(day.id)
+            .execute()
+            .await?;
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.term_preparation.apply",
             r#"INSERT INTO academic_exam_day_blocked_windows(id,exam_day_id,label,start_time,end_time)
                SELECT gen_random_uuid(),$1,label,start_time,end_time
                FROM academic_exam_day_blocked_windows WHERE exam_day_id=$2"#,
         )
         .bind(id)
         .bind(day.id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
         day_map.insert(day.id, id);
     }
@@ -206,21 +213,23 @@ pub async fn apply(
             TermPreparationMappingKind::Room,
             assignment.room_id,
         )?;
-        sqlx::query(
-            r#"INSERT INTO academic_exam_day_room_assignments(
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_assessment.exam_schedule.services.term_preparation.apply",
+                r#"INSERT INTO academic_exam_day_room_assignments(
                    id,exam_day_id,academic_term_id,academic_year_id,homeroom_id,room_id,
                    capacity_override,created_by,updated_by
                ) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$7)"#,
-        )
-        .bind(target_day)
-        .bind(context.target_term_id)
-        .bind(context.target_year_id)
-        .bind(homeroom)
-        .bind(room)
-        .bind(assignment.capacity_override)
-        .bind(actor)
-        .execute(&mut **tx)
-        .await?;
+            )
+            .bind(target_day)
+            .bind(context.target_term_id)
+            .bind(context.target_year_id)
+            .bind(homeroom)
+            .bind(room)
+            .bind(assignment.capacity_override)
+            .bind(actor)
+            .execute()
+            .await?;
     }
 
     let mut item_map = HashMap::new();
@@ -240,12 +249,15 @@ pub async fn apply(
             TermPreparationMappingKind::Homeroom,
             item.homeroom_id,
         )?;
-        let (phase_code,): (String,) =
-            sqlx::query_as("SELECT phase_code FROM course_assessment_phases WHERE id=$1")
-                .bind(item.assessment_phase_id)
-                .fetch_one(&mut **tx)
-                .await?;
-        let (plan_id, phase_id, subject_id, grade_level_id): (Uuid,Uuid,Uuid,Uuid) = sqlx::query_as(
+        let (phase_code,): (String,) = DbSession::new(&mut **tx)
+            .query_as(
+                "academic_assessment.exam_schedule.services.term_preparation.apply",
+                "SELECT phase_code FROM course_assessment_phases WHERE id=$1",
+            )
+            .bind(item.assessment_phase_id)
+            .fetch_one()
+            .await?;
+        let (plan_id, phase_id, subject_id, grade_level_id): (Uuid,Uuid,Uuid,Uuid) = DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.term_preparation.apply",
             r#"SELECT plan.id,phase.id,detail.subject_id,homeroom.grade_level_id
                FROM course_assessment_plans plan
                JOIN course_assessment_phases phase ON phase.plan_id=plan.id AND phase.phase_code=$2
@@ -253,25 +265,25 @@ pub async fn apply(
                CROSS JOIN homerooms homeroom
                WHERE plan.learning_offering_id=$1 AND plan.academic_term_id=$3 AND homeroom.id=$4"#,
         ).bind(offering).bind(&phase_code).bind(context.target_term_id).bind(homeroom)
-        .fetch_optional(&mut **tx).await?.ok_or_else(|| AppError::Conflict("โครงสร้างคะแนนเป้าหมายของรายการสอบยังไม่พร้อม".into()))?;
+        .fetch_optional().await?.ok_or_else(|| AppError::Conflict("โครงสร้างคะแนนเป้าหมายของรายการสอบยังไม่พร้อม".into()))?;
         let id = Uuid::now_v7();
-        sqlx::query(r#"INSERT INTO academic_exam_schedule_items(
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.term_preparation.apply", r#"INSERT INTO academic_exam_schedule_items(
                           id,exam_round_id,academic_term_id,academic_year_id,assessment_phase_id,
                           course_assessment_plan_id,learning_offering_id,learning_group_id,homeroom_id,
                           subject_id,grade_level_id,duration_minutes,row_version
                       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1)"#)
             .bind(id).bind(round_map[&item.exam_round_id]).bind(context.target_term_id).bind(context.target_year_id)
             .bind(phase_id).bind(plan_id).bind(offering).bind(group).bind(homeroom).bind(subject_id).bind(grade_level_id)
-            .bind(item.duration_minutes).execute(&mut **tx).await?;
+            .bind(item.duration_minutes).execute().await?;
         item_map.insert(item.id, id);
     }
     for session in sessions {
-        sqlx::query(r#"INSERT INTO academic_exam_sessions(
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.term_preparation.apply", r#"INSERT INTO academic_exam_sessions(
                           id,exam_schedule_item_id,exam_round_id,exam_day_id,starts_at,ends_at,created_by,updated_by)
                       VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$6)"#)
             .bind(item_map[&session.exam_schedule_item_id]).bind(round_map[&session.exam_round_id])
             .bind(day_map[&session.exam_day_id]).bind(session.starts_at).bind(session.ends_at).bind(actor)
-            .execute(&mut **tx).await?;
+            .execute().await?;
     }
     Ok(TermPreparationModuleOutcome {
         module: TermPreparationModule::Exams,

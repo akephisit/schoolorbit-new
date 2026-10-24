@@ -6,6 +6,7 @@ use school_academic_core::services::{
     lifecycle_context, lifecycle_guard, year_commands, years_terms,
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -77,7 +78,11 @@ pub async fn transition_year(
         YearTransitionAction::Close => "close",
     };
     let checksum = services::checksum(&(actor.user_id, year, &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.year_transitions.transition_year",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(outcome) = year_commands::replay_year_command(
         &mut tx,
@@ -91,14 +96,22 @@ pub async fn transition_year(
         tx.commit().await?;
         return Ok(outcome);
     }
-    sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.year_transitions.transition_year",
+            "SELECT id FROM academic_years WHERE id=$1 FOR UPDATE",
+        )
         .bind(year)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
-    sqlx::query("SELECT id FROM academic_terms WHERE academic_year_id=$1 ORDER BY id FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.year_transitions.transition_year",
+            "SELECT id FROM academic_terms WHERE academic_year_id=$1 ORDER BY id FOR UPDATE",
+        )
         .bind(year)
-        .fetch_all(&mut *tx)
+        .fetch_all()
         .await?;
     let workspace = services::year_workspace_in_transaction(&mut tx, actor, year).await?;
     if workspace.context.row_version != input.expected_year_version
@@ -132,14 +145,14 @@ pub async fn transition_year(
             "การยืนยันคำเตือนใช้เฉพาะการปิดปีการศึกษา".into(),
         ));
     }
-    sqlx::query("UPDATE academic_years SET status=$2,row_version=row_version+1,updated_at=now() WHERE id=$1").bind(year).bind(target).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_transitions.transition_year", "UPDATE academic_years SET status=$2,row_version=row_version+1,updated_at=now() WHERE id=$1").bind(year).bind(target).execute().await?;
     let outcome = YearTransitionOutcome {
         request_id: input.request_id,
         action: input.action,
         context: read_context(&mut tx, year).await?,
         completed_at: chrono::Utc::now(),
     };
-    sqlx::query("INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(input.request_id).bind(year).bind(actor.user_id).bind(action).bind(checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_transitions.transition_year", "INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(input.request_id).bind(year).bind(actor.user_id).bind(action).bind(checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
     years_terms::append_audit(
         &mut tx,
         &format!("academic.year.{action}"),

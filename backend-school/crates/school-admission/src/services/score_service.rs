@@ -1,4 +1,5 @@
 use crate::models::applications::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -58,8 +59,20 @@ pub async fn get_score_room_roster(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<ScoreRoomGroup>, AppError> {
-    let rows = sqlx::query_as::<_, ScoreRoomSeatRow>(
-        r#"SELECT er.id AS exam_room_id,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_score_room_roster")
+            .await?;
+    get_score_room_roster_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_score_room_roster_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<ScoreRoomGroup>, AppError> {
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<ScoreRoomSeatRow>(
+            "admission.services.score_service.get_score_room_roster_on_connection",
+            r#"SELECT er.id AS exam_room_id,
                   COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
                   b.name_th AS building_name,
                   sa.seat_number, sa.exam_id,
@@ -72,14 +85,17 @@ pub async fn get_score_room_roster(
            LEFT JOIN buildings b ON b.id = r.building_id
            WHERE er.admission_round_id = $1 AND aa.admission_round_id = $1
            ORDER BY er.display_order ASC, er.created_at ASC, er.id ASC, sa.seat_number ASC"#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch score room roster: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงรายชื่อห้องสอบสำหรับกรอกคะแนนได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch score room roster: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงรายชื่อห้องสอบสำหรับกรอกคะแนนได้".to_string())
+        })?;
 
     let mut groups: Vec<ScoreRoomGroup> = Vec::new();
     for row in rows {
@@ -183,7 +199,7 @@ async fn upsert_application_scores(
     let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
     let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
 
-    let upsert = sqlx::query(
+    let upsert = DbSession::new(&mut **tx).query("admission.services.score_service.upsert_application_scores",
         r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
            SELECT t.application_id, t.exam_subject_id, t.score, $4, NOW(), NOW()
            FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(application_id, exam_subject_id, score)
@@ -197,10 +213,10 @@ async fn upsert_application_scores(
     .bind(&sub_ids)
     .bind(&score_vals)
     .bind(user_id)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("Failed to upsert scores: {}", e);
+        tracing::error!("Failed to upsert scores: {}", school_database::error_class(&e));
         AppError::InternalServerError("Failed to update score".to_string())
     })?;
     if upsert.rows_affected() != rows.len() as u64 {
@@ -213,7 +229,17 @@ async fn upsert_application_scores(
 }
 
 pub async fn get_all_scores(pool: &PgPool, round_id: Uuid) -> Result<Vec<ScoreRow>, AppError> {
-    sqlx::query_as::<_, ScoreRow>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_all_scores")
+            .await?;
+    get_all_scores_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_all_scores_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<ScoreRow>, AppError> {
+    DbSession::new(&mut *connection).query_as::<ScoreRow>("admission.services.score_service.get_all_scores_on_connection",
         r#"SELECT aa.id AS application_id, aa.application_number,
                   CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
                   at2.name AS track_name, aa.status,
@@ -228,15 +254,27 @@ pub async fn get_all_scores(pool: &PgPool, round_id: Uuid) -> Result<Vec<ScoreRo
              AND aa.status NOT IN ('rejected', 'withdrawn')
            ORDER BY at2.display_order ASC, aa.application_number ASC, aes.display_order ASC"#
     )
-    .bind(round_id).fetch_all(pool).await
+    .bind(round_id).fetch_all().await
     .map_err(|e| {
-        tracing::error!("Failed to fetch scores: {}", e);
+        tracing::error!("Failed to fetch scores: {}", school_database::error_class(&e));
         AppError::InternalServerError("Failed to fetch scores".to_string())
     })
 }
 
 pub async fn get_application_scores(pool: &PgPool, id: Uuid) -> Result<Vec<ExamScore>, AppError> {
-    sqlx::query_as::<_, ExamScore>(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.get_application_scores",
+    )
+    .await?;
+    get_application_scores_on_connection(&mut connection, id).await
+}
+
+pub async fn get_application_scores_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<Vec<ExamScore>, AppError> {
+    DbSession::new(&mut *connection).query_as::<ExamScore>("admission.services.score_service.get_application_scores_on_connection",
         r#"SELECT esc.id, esc.application_id, esc.exam_subject_id, esc.score,
                   esc.entered_by, esc.entered_at, esc.updated_at,
                   aes.name AS subject_name, aes.code AS subject_code,
@@ -248,9 +286,9 @@ pub async fn get_application_scores(pool: &PgPool, id: Uuid) -> Result<Vec<ExamS
            )
            ORDER BY aes.display_order ASC"#
     )
-    .bind(id).fetch_all(pool).await
+    .bind(id).fetch_all().await
     .map_err(|e| {
-        tracing::error!("Failed to fetch application scores: {}", e);
+        tracing::error!("Failed to fetch application scores: {}", school_database::error_class(&e));
         AppError::InternalServerError("Failed to fetch scores".to_string())
     })
 }
@@ -261,16 +299,20 @@ pub async fn update_application_scores(
     user_id: Uuid,
     scores: &[UpdateScoreEntry],
 ) -> Result<(), AppError> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.score_service.update_application_scores",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let score_rows = score_entries_to_bulk_rows(application_id, scores);
     upsert_application_scores(&mut tx, user_id, &score_rows).await?;
 
-    sqlx::query(
-        r#"UPDATE admission_applications aa
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.score_service.update_application_scores",
+            r#"UPDATE admission_applications aa
            SET status = 'scored', updated_at = NOW()
            WHERE aa.id = $1 AND aa.status = 'verified'
              AND EXISTS (
@@ -284,14 +326,17 @@ pub async fn update_application_scores(
                  WHERE aes.admission_round_id = aa.admission_round_id
                    AND esc.score IS NULL
              )"#,
-    )
-    .bind(application_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update scored application status: {}", error);
-        AppError::InternalServerError("Failed to update score".to_string())
-    })?;
+        )
+        .bind(application_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update scored application status: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("Failed to update score".to_string())
+        })?;
 
     tx.commit()
         .await
@@ -313,11 +358,19 @@ pub async fn bulk_update_scores(
     let app_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
     let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
     let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to start bulk score transaction: {}", error);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.score_service.bulk_update_scores",
+    )
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            "Failed to start bulk score transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("Failed to update scores".to_string())
     })?;
-    let upsert = sqlx::query(
+    let upsert = DbSession::new(&mut *tx).query("admission.services.score_service.bulk_update_scores",
         r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
            SELECT t.a, t.s, t.sc, $4, NOW(), NOW()
            FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(a, s, sc)
@@ -331,10 +384,10 @@ pub async fn bulk_update_scores(
     .bind(&score_vals)
     .bind(user_id)
     .bind(round_id)
-    .execute(&mut *tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!("Bulk score error: {}", error);
+        tracing::error!("Bulk score error: {}", school_database::error_class(&error));
         AppError::InternalServerError("Failed to update scores".to_string())
     })?;
     if upsert.rows_affected() != rows.len() as u64 {
@@ -346,8 +399,10 @@ pub async fn bulk_update_scores(
     let mut app_id_set = app_ids;
     app_id_set.sort_unstable();
     app_id_set.dedup();
-    sqlx::query(
-        r#"WITH subject_total AS (
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.score_service.bulk_update_scores",
+            r#"WITH subject_total AS (
                SELECT COUNT(*) AS total FROM admission_exam_subjects WHERE admission_round_id = $2
            ), scored_by_app AS (
                SELECT esc.application_id, COUNT(*) AS scored
@@ -363,18 +418,24 @@ pub async fn bulk_update_scores(
            WHERE aa.id = scored_by_app.application_id
              AND aa.id = ANY($1) AND aa.admission_round_id = $2 AND aa.status = 'verified'
              AND subject_total.total > 0 AND scored_by_app.scored >= subject_total.total"#,
-    )
-    .bind(&app_id_set)
-    .bind(round_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update scored application statuses: {}", error);
-        AppError::InternalServerError("Failed to update scores".to_string())
-    })?;
+        )
+        .bind(&app_id_set)
+        .bind(round_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update scored application statuses: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("Failed to update scores".to_string())
+        })?;
 
     tx.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit bulk score transaction: {}", error);
+        tracing::error!(
+            "Failed to commit bulk score transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("Failed to update scores".to_string())
     })?;
 

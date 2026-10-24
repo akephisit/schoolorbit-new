@@ -15,10 +15,14 @@ pub async fn require_active_guardian_on_connection(
     guardian: Uuid,
 ) -> Result<(), AppError> {
     let query = format!("SELECT relationship_id FROM ({ACTIVE_GUARDIAN_RELATIONSHIPS_SQL} WHERE p.student_user_id=$1 AND p.parent_user_id=$2 FOR SHARE OF p,parent,child) current_relationship");
-    let row = sqlx::query_scalar::<_, Uuid>(sqlx::AssertSqlSafe(query))
+    let row = school_database::DbSession::new(connection)
+        .scalar::<Uuid>(
+            "students.src.guardian_relationships.require_active_guardian_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(student)
         .bind(guardian)
-        .fetch_optional(connection)
+        .fetch_optional()
         .await?;
     if row.is_some() {
         Ok(())

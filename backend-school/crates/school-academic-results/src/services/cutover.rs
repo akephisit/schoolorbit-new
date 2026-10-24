@@ -1,4 +1,5 @@
 use school_academic_core::models::ReconciliationCheck;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::PgPool;
 
@@ -67,22 +68,38 @@ fn count_check(code: &str, expected: i64, actual: i64) -> ReconciliationCheck {
     }
 }
 
-async fn existing_relation_count(pool: &PgPool, relation_names: &[&str]) -> Result<i64, AppError> {
-    sqlx::query_scalar(
-        "SELECT count(*)
+async fn existing_relation_count(
+    connection: &mut sqlx::PgConnection,
+    relation_names: &[&str],
+) -> Result<i64, AppError> {
+    DbSession::new(connection)
+        .scalar(
+            "academic_results.services.cutover.existing_relation_count",
+            "SELECT count(*)
          FROM unnest($1::text[]) AS relation(name)
          WHERE to_regclass(format('%I.%I', current_schema(), relation.name)) IS NOT NULL",
-    )
-    .bind(relation_names)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(relation_names)
+        .fetch_one()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn read_gradebook_results_cutover_audit(
     pool: &PgPool,
 ) -> Result<GradebookResultsCutoverAudit, AppError> {
-    let required_table_count = existing_relation_count(pool, &REQUIRED_TABLES).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_results.services.cutover.read_gradebook_results_cutover_audit",
+    )
+    .await?;
+    read_gradebook_results_cutover_audit_on_connection(&mut connection).await
+}
+
+pub async fn read_gradebook_results_cutover_audit_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<GradebookResultsCutoverAudit, AppError> {
+    let required_table_count = existing_relation_count(connection, &REQUIRED_TABLES).await?;
     let mut checks = vec![count_check(
         "GRADEBOOK_RESULTS_REQUIRED_TABLES_PRESENT",
         REQUIRED_TABLES.len() as i64,
@@ -98,7 +115,7 @@ pub async fn read_gradebook_results_cutover_audit(
             seed_policy_versions,
             seed_policy_bands,
             permission_definitions,
-        ): (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        ): (i64, i64, i64, i64, i64, i64, i64) = DbSession::new(connection).query_as("academic_results.services.cutover.read_gradebook_results_cutover_audit_on_connection",
             "SELECT
                 (SELECT count(*) * 4 FROM academic_terms),
                 (SELECT count(*) FROM academic_gradebook_phase_controls),
@@ -118,7 +135,7 @@ pub async fn read_gradebook_results_cutover_audit(
                  WHERE code = ANY($1::text[]) AND is_active)",
         )
         .bind(&REQUIRED_PERMISSION_CODES)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
 
         checks.extend([

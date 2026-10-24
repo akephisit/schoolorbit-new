@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashSet;
 
 use sha2::{Digest, Sha256};
@@ -117,13 +118,25 @@ pub async fn get_workspace(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<ExamScheduleWorkspace, AppError> {
-    let round = fetch_round(pool, round_id).await?;
-    let days = fetch_exam_day_details_for_round(pool, round_id).await?;
-    let unscheduled_items = fetch_unscheduled_items(pool, round_id).await?;
-    let scheduled_sessions = fetch_scheduled_sessions(pool, round_id).await?;
-    let paper_receipt_items = fetch_paper_receipt_items(pool, round_id).await?;
-    let counts = fetch_workspace_counts(pool, round_id).await?;
-    let source_preview = preview_exam_sources(pool, round_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.workspace.get_workspace",
+    )
+    .await?;
+    get_workspace_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<ExamScheduleWorkspace, AppError> {
+    let round = fetch_round(connection, round_id).await?;
+    let days = fetch_exam_day_details_for_round(connection, round_id).await?;
+    let unscheduled_items = fetch_unscheduled_items(connection, round_id).await?;
+    let scheduled_sessions = fetch_scheduled_sessions(connection, round_id).await?;
+    let paper_receipt_items = fetch_paper_receipt_items(connection, round_id).await?;
+    let counts = fetch_workspace_counts(connection, round_id).await?;
+    let source_preview = preview_exam_sources_on_connection(connection, round_id).await?;
     let readiness = build_readiness_with_source_changes(counts, source_preview.changes.len());
 
     Ok(ExamScheduleWorkspace {
@@ -141,13 +154,25 @@ pub async fn preview_exam_sources(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<ExamSourcePreview, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.workspace.preview_exam_sources",
+    )
+    .await?;
+    preview_exam_sources_on_connection(&mut connection, round_id).await
+}
+
+pub async fn preview_exam_sources_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<ExamSourcePreview, AppError> {
     let (status, row_version): (String, i64) =
-        sqlx::query_as("SELECT status, row_version FROM academic_exam_rounds WHERE id = $1")
+        DbSession::new(connection).query_as("academic_assessment.exam_schedule.services.workspace.preview_exam_sources_on_connection", "SELECT status, row_version FROM academic_exam_rounds WHERE id = $1")
             .bind(round_id)
-            .fetch_optional(pool)
+            .fetch_optional()
             .await?
             .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
-    let rows = fetch_source_change_rows(pool, round_id).await?;
+    let rows = fetch_source_change_rows(connection, round_id).await?;
     build_source_preview(round_id, status, row_version, rows)
 }
 
@@ -157,18 +182,24 @@ pub async fn sync_exam_sources(
     actor_user_id: Uuid,
     request: SyncExamSourcesRequest,
 ) -> Result<SyncExamSourcesResult, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
-    let (status, row_version): (String, i64) = sqlx::query_as(
-        r#"SELECT status, row_version
+    let (status, row_version): (String, i64) = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
+            r#"SELECT status, row_version
            FROM academic_exam_rounds
            WHERE id = $1
            FOR UPDATE"#,
-    )
-    .bind(round_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
     ensure_exam_round_is_mutable(&status)?;
     if row_version != request.round_row_version {
         return Err(AppError::Conflict(
@@ -247,16 +278,18 @@ pub async fn sync_exam_sources(
                         Err(error) => return Err(error),
                     }
                 }
-                let updated = sqlx::query(
-                    r#"UPDATE academic_exam_schedule_items
+                let updated = DbSession::new(&mut *tx)
+                    .query(
+                        "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
+                        r#"UPDATE academic_exam_schedule_items
                        SET duration_minutes = $2, imported_at = now()
                        WHERE id = $1 AND exam_round_id = $3"#,
-                )
-                .bind(item_id)
-                .bind(duration)
-                .bind(round_id)
-                .execute(&mut *tx)
-                .await?;
+                    )
+                    .bind(item_id)
+                    .bind(duration)
+                    .bind(round_id)
+                    .execute()
+                    .await?;
                 if updated.rows_affected() != 1 {
                     results.push(source_sync_conflict(
                         change,
@@ -275,12 +308,12 @@ pub async fn sync_exam_sources(
                     ));
                     continue;
                 };
-                let deleted = sqlx::query(
+                let deleted = DbSession::new(&mut *tx).query("academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
                     "DELETE FROM academic_exam_schedule_items WHERE id = $1 AND exam_round_id = $2",
                 )
                 .bind(item_id)
                 .bind(round_id)
-                .execute(&mut *tx)
+                .execute()
                 .await?;
                 if deleted.rows_affected() != 1 {
                     results.push(source_sync_conflict(
@@ -299,18 +332,20 @@ pub async fn sync_exam_sources(
     let next_row_version = if applied_count == 0 {
         row_version
     } else {
-        sqlx::query_scalar(
-            r#"UPDATE academic_exam_rounds
+        DbSession::new(&mut *tx)
+            .scalar(
+                "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
+                r#"UPDATE academic_exam_rounds
                SET row_version = row_version + 1,
                    updated_by = $2,
                    updated_at = now()
                WHERE id = $1
                RETURNING row_version"#,
-        )
-        .bind(round_id)
-        .bind(actor_user_id)
-        .fetch_one(&mut *tx)
-        .await?
+            )
+            .bind(round_id)
+            .bind(actor_user_id)
+            .fetch_one()
+            .await?
     };
     tx.commit().await?;
 
@@ -445,12 +480,16 @@ fn source_preview_token(
 }
 
 async fn fetch_source_change_rows(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamSourceChangeRow>, AppError> {
-    sqlx::query_as(EXAM_SOURCE_PREVIEW_SQL)
+    DbSession::new(connection)
+        .query_as(
+            "academic_assessment.exam_schedule.services.workspace.fetch_source_change_rows",
+            EXAM_SOURCE_PREVIEW_SQL,
+        )
         .bind(round_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(AppError::from)
 }
@@ -459,9 +498,13 @@ async fn fetch_source_change_rows_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     round_id: Uuid,
 ) -> Result<Vec<ExamSourceChangeRow>, AppError> {
-    sqlx::query_as(EXAM_SOURCE_PREVIEW_SQL)
+    DbSession::new(&mut **tx)
+        .query_as(
+            "academic_assessment.exam_schedule.services.workspace.fetch_source_change_rows_in_tx",
+            EXAM_SOURCE_PREVIEW_SQL,
+        )
         .bind(round_id)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await
         .map_err(AppError::from)
 }
@@ -478,8 +521,10 @@ async fn insert_exam_source_in_tx(
     round_id: Uuid,
     source_id: Uuid,
 ) -> Result<i64, AppError> {
-    let result = sqlx::query(
-        r#"INSERT INTO academic_exam_schedule_items (
+    let result = DbSession::new(&mut **tx)
+        .query(
+            "academic_assessment.exam_schedule.services.workspace.insert_exam_source_in_tx",
+            r#"INSERT INTO academic_exam_schedule_items (
                exam_round_id, academic_term_id, academic_year_id,
                assessment_phase_id, course_assessment_plan_id,
                learning_offering_id, learning_group_id, homeroom_id,
@@ -498,11 +543,11 @@ async fn insert_exam_source_in_tx(
            WHERE round.id = $1 AND source.source_id = $2
            ON CONFLICT (exam_round_id, assessment_phase_id, learning_group_id, homeroom_id)
            DO NOTHING"#,
-    )
-    .bind(round_id)
-    .bind(source_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(round_id)
+        .bind(source_id)
+        .execute()
+        .await?;
     Ok(result.rows_affected() as i64)
 }
 
@@ -622,10 +667,14 @@ pub(super) async fn fetch_workspace_counts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64, i64) = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_assessment.exam_schedule.services.workspace.fetch_workspace_counts_in_tx",
+            WORKSPACE_COUNTS_SQL,
+        )
         .bind(round_id)
         .bind(true) // Publication also verifies the automatically synchronized seat snapshot.
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
 
     Ok(workspace_counts_from_row(row))
@@ -816,10 +865,10 @@ pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
         "#;
 
 pub(super) async fn fetch_unscheduled_items(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamScheduleItemView>, AppError> {
-    sqlx::query_as::<_, ExamScheduleItemView>(
+    DbSession::new(connection).query_as::<ExamScheduleItemView>("academic_assessment.exam_schedule.services.workspace.fetch_unscheduled_items",
         r#"
         SELECT item.id,
                item.exam_round_id,
@@ -902,16 +951,16 @@ pub(super) async fn fetch_unscheduled_items(
         "#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
 
 pub(super) async fn fetch_scheduled_sessions(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamSessionView>, AppError> {
-    let rows = sqlx::query_as::<_, ExamSessionRow>(
+    let rows = DbSession::new(connection).query_as::<ExamSessionRow>("academic_assessment.exam_schedule.services.workspace.fetch_scheduled_sessions",
         r#"
         SELECT session.id,
                session.exam_schedule_item_id,
@@ -997,7 +1046,7 @@ pub(super) async fn fetch_scheduled_sessions(
         "#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     let assignment_ids: Vec<Uuid> = rows
@@ -1005,7 +1054,7 @@ pub(super) async fn fetch_scheduled_sessions(
         .filter_map(|row| row.day_room_assignment_id)
         .collect();
     let invigilators_by_assignment =
-        fetch_invigilators_by_assignment_ids(pool, &assignment_ids).await?;
+        fetch_invigilators_by_assignment_ids(connection, &assignment_ids).await?;
 
     Ok(rows
         .into_iter()
@@ -1020,13 +1069,17 @@ pub(super) async fn fetch_scheduled_sessions(
 }
 
 pub(super) async fn fetch_workspace_counts(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64, i64) = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.exam_schedule.services.workspace.fetch_workspace_counts",
+            WORKSPACE_COUNTS_SQL,
+        )
         .bind(round_id)
         .bind(false) // Draft readiness requires valid class numbers, without a manual generation step.
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
 
     Ok(workspace_counts_from_row(row))
@@ -1035,11 +1088,13 @@ pub(super) async fn fetch_workspace_counts(
 // Receipt collection covers configured exams even before scheduling readiness/import.
 // It must never put outside-timetable exams into the scheduling tray or readiness counts.
 async fn fetch_paper_receipt_items(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamPaperReceiptItem>, AppError> {
-    Ok(sqlx::query_as::<_, ExamPaperReceiptItem>(
-        r#"
+    Ok(DbSession::new(connection)
+        .query_as::<ExamPaperReceiptItem>(
+            "academic_assessment.exam_schedule.services.workspace.fetch_paper_receipt_items",
+            r#"
         SELECT DISTINCT phase.id AS assessment_phase_id,
                learning_group.id AS learning_group_id,
                homeroom.id AS homeroom_id,
@@ -1084,8 +1139,8 @@ async fn fetch_paper_receipt_items(
                  grade_level_type, grade_level_year, subject_code, homeroom_name,
                  assessment_phase_id, learning_group_id, homeroom_id
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await?)
 }

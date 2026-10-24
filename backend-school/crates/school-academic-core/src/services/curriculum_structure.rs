@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::{HashMap, HashSet};
 
@@ -64,15 +65,27 @@ pub async fn get_workspace(
     pool: &PgPool,
     version_id: Uuid,
 ) -> Result<CurriculumStructureWorkspace, AppError> {
-    get_workspace_from_publication(pool, version_id, None).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_structure.get_workspace",
+    )
+    .await?;
+    get_workspace_on_connection(&mut connection, version_id).await
+}
+
+pub async fn get_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    version_id: Uuid,
+) -> Result<CurriculumStructureWorkspace, AppError> {
+    get_workspace_from_publication(connection, version_id, None).await
 }
 
 pub(super) async fn get_workspace_from_publication(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     version_id: Uuid,
     publication: Option<Uuid>,
 ) -> Result<CurriculumStructureWorkspace, AppError> {
-    let level = curriculum::level_from_publication(pool, version_id, publication).await?;
+    let level = curriculum::level_from_publication(connection, version_id, publication).await?;
     let curriculum_term_slots =
         super::curriculum_publications::source("curriculum_term_slots", publication)?;
     let curriculum_levels =
@@ -82,20 +95,28 @@ pub(super) async fn get_workspace_from_publication(
     let curriculum_activity_requirements =
         super::curriculum_publications::source("curriculum_activity_requirements", publication)?;
     let study_programs = super::curriculum_publications::source("study_programs", publication)?;
-    let term_slots = sqlx::query_as::<_, CurriculumTermSlot>(sqlx::AssertSqlSafe(format!(
-        r#"SELECT id, curriculum_level_id, sequence, term_type, type_occurrence,
+    let term_slots = DbSession::new(connection)
+        .query_as::<CurriculumTermSlot>(
+            "academic_core.services.curriculum_structure.get_workspace_from_publication",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT id, curriculum_level_id, sequence, term_type, type_occurrence,
                   name, row_version
            FROM {curriculum_term_slots}
            WHERE curriculum_level_id = $1
            ORDER BY sequence, id"#
-    )))
-    .bind(version_id)
-    .bind(publication)
-    .fetch_all(pool)
-    .await?;
-    let programs = curriculum::programs_from_publication(pool, version_id, publication).await?;
-    let grade_levels = sqlx::query_as::<_, GradeLevelRow>(sqlx::AssertSqlSafe(format!(
-        r#"SELECT grade.id, grade.level_type, grade.year
+            )),
+        )
+        .bind(version_id)
+        .bind(publication)
+        .fetch_all()
+        .await?;
+    let programs =
+        curriculum::programs_from_publication(connection, version_id, publication).await?;
+    let grade_levels = DbSession::new(connection)
+        .query_as::<GradeLevelRow>(
+            "academic_core.services.curriculum_structure.get_workspace_from_publication",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT grade.id, grade.level_type, grade.year
            FROM {curriculum_levels} version
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            JOIN grade_levels grade ON grade.id IN (
@@ -112,16 +133,20 @@ pub(super) async fn get_workspace_from_publication(
                     END,
                     grade.year,
                     grade.id"#
-    )))
-    .bind(version_id)
-    .bind(publication)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(grade_level_item)
-    .collect::<Vec<_>>();
-    let rows = sqlx::query_as::<_, RequirementRow>(sqlx::AssertSqlSafe(format!(
-        r#"SELECT requirement.id,
+            )),
+        )
+        .bind(version_id)
+        .bind(publication)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .map(grade_level_item)
+        .collect::<Vec<_>>();
+    let rows = DbSession::new(connection)
+        .query_as::<RequirementRow>(
+            "academic_core.services.curriculum_structure.get_workspace_from_publication",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT requirement.id,
                   requirement.study_program_id,
                   requirement.grade_level_id,
                   grade.level_type AS grade_level_type,
@@ -174,11 +199,12 @@ pub(super) async fn get_workspace_from_publication(
            WHERE program.curriculum_level_id = $1
            ORDER BY study_program_id, grade_level_year, term_slot_id,
                     display_order, resource_kind, catalog_version_id"#
-    )))
-    .bind(version_id)
-    .bind(publication)
-    .fetch_all(pool)
-    .await?;
+            )),
+        )
+        .bind(version_id)
+        .bind(publication)
+        .fetch_all()
+        .await?;
 
     let subject_ids = rows
         .iter()
@@ -187,18 +213,20 @@ pub(super) async fn get_workspace_from_publication(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let current_revisions = super::catalog::current_subject_revisions(pool, &subject_ids).await?;
+    let current_revisions =
+        super::catalog::current_subject_revisions_on_connection(connection, &subject_ids).await?;
 
     let version_ids = rows
         .iter()
         .filter(|row| row.resource_kind == RequirementResourceKind::Course)
         .map(|row| row.catalog_version_id)
         .collect::<Vec<_>>();
-    let groups = super::catalog::subject_groups_for_versions(pool, &version_ids)
-        .await?
-        .into_iter()
-        .map(|group| (group.subject_version_id, group))
-        .collect::<HashMap<_, _>>();
+    let groups =
+        super::catalog::subject_groups_for_versions_on_connection(connection, &version_ids)
+            .await?
+            .into_iter()
+            .map(|group| (group.subject_version_id, group))
+            .collect::<HashMap<_, _>>();
 
     let program_order = programs
         .iter()
@@ -264,15 +292,22 @@ pub async fn replace_program_structure(
     parse_row_version(request.row_version)?;
     validate_requirement_inputs(&request.requirements)?;
 
-    let mut transaction = pool.begin().await?;
-    let level_id: Uuid =
-        sqlx::query_scalar("SELECT curriculum_level_id FROM study_programs WHERE id=$1")
-            .bind(program_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_structure.replace_program_structure",
+    )
+    .await?;
+    let level_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.curriculum_structure.replace_program_structure",
+            "SELECT curriculum_level_id FROM study_programs WHERE id=$1",
+        )
+        .bind(program_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
     super::curriculum::require_draft_level(&mut transaction, level_id, request.draft_id).await?;
-    let program = sqlx::query_as::<_, ProgramLockRow>(
+    let program = DbSession::new(&mut *transaction).query_as::<ProgramLockRow>("academic_core.services.curriculum_structure.replace_program_structure",
         r#"SELECT program.curriculum_level_id,
                   program.row_version,
                   CASE WHEN curriculum.draft_id IS NOT NULL THEN 'draft' ELSE curriculum.status END AS version_status
@@ -283,7 +318,7 @@ pub async fn replace_program_structure(
            FOR UPDATE OF program"#,
     )
     .bind(program_id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".to_string()))?;
     if program.version_status != VersionStatus::Draft {
@@ -306,13 +341,21 @@ pub async fn replace_program_structure(
     )
     .await?;
 
-    sqlx::query("DELETE FROM curriculum_course_requirements WHERE study_program_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.curriculum_structure.replace_program_structure",
+            "DELETE FROM curriculum_course_requirements WHERE study_program_id = $1",
+        )
         .bind(program_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
-    sqlx::query("DELETE FROM curriculum_activity_requirements WHERE study_program_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.curriculum_structure.replace_program_structure",
+            "DELETE FROM curriculum_activity_requirements WHERE study_program_id = $1",
+        )
         .bind(program_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
 
     let course_requirements = request
@@ -337,7 +380,13 @@ pub async fn replace_program_structure(
                 .push_bind(requirement.requirement_kind)
                 .push_bind(requirement.display_order);
         });
-        builder.build().execute(&mut *transaction).await?;
+        DbSession::new(&mut *transaction)
+            .prepared_query(
+                "academic_core.services.curriculum_structure.replace_program_structure",
+                builder.build(),
+            )
+            .execute()
+            .await?;
     }
 
     let activity_requirements = request
@@ -362,14 +411,20 @@ pub async fn replace_program_structure(
                 .push_bind(requirement.requirement_kind)
                 .push_bind(requirement.display_order);
         });
-        builder.build().execute(&mut *transaction).await?;
+        DbSession::new(&mut *transaction)
+            .prepared_query(
+                "academic_core.services.curriculum_structure.replace_program_structure",
+                builder.build(),
+            )
+            .execute()
+            .await?;
     }
 
-    sqlx::query(
+    DbSession::new(&mut *transaction).query("academic_core.services.curriculum_structure.replace_program_structure",
         "UPDATE study_programs SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
     )
     .bind(program_id)
-    .execute(&mut *transaction)
+    .execute()
     .await?;
     transaction.commit().await?;
 
@@ -410,13 +465,17 @@ pub async fn replace_term_slots(
         }
     }
 
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_structure.replace_term_slots",
+    )
+    .await?;
     super::curriculum::require_draft_level(&mut transaction, version_id, request.draft_id).await?;
-    let (status, current_row_version): (VersionStatus, i64) = sqlx::query_as(
+    let (status, current_row_version): (VersionStatus, i64) = DbSession::new(&mut *transaction).query_as("academic_core.services.curriculum_structure.replace_term_slots",
         "SELECT CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",
     )
     .bind(version_id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันหลักสูตร".to_string()))?;
     if status != VersionStatus::Draft {
@@ -430,11 +489,11 @@ pub async fn replace_term_slots(
         ));
     }
 
-    let existing_ids = sqlx::query_scalar::<_, Uuid>(
+    let existing_ids = DbSession::new(&mut *transaction).scalar::<Uuid>("academic_core.services.curriculum_structure.replace_term_slots",
         "SELECT id FROM curriculum_term_slots WHERE curriculum_level_id = $1 ORDER BY id FOR UPDATE",
     )
     .bind(version_id)
-    .fetch_all(&mut *transaction)
+    .fetch_all()
     .await?
     .into_iter()
     .collect::<HashSet<_>>();
@@ -448,18 +507,20 @@ pub async fn replace_term_slots(
         .copied()
         .collect::<Vec<_>>();
     if !removed_ids.is_empty() {
-        let referenced: bool = sqlx::query_scalar(
-            r#"SELECT EXISTS (
+        let referenced: bool = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_core.services.curriculum_structure.replace_term_slots",
+                r#"SELECT EXISTS (
                    SELECT 1 FROM curriculum_course_requirements
                    WHERE term_slot_id = ANY($1)
                ) OR EXISTS (
                    SELECT 1 FROM curriculum_activity_requirements
                    WHERE term_slot_id = ANY($1)
                )"#,
-        )
-        .bind(&removed_ids)
-        .fetch_one(&mut *transaction)
-        .await?;
+            )
+            .bind(&removed_ids)
+            .fetch_one()
+            .await?;
         if referenced {
             return Err(AppError::Conflict(
                 "ย้ายหรือลบรายการในภาคเรียนนี้ก่อนลบภาคเรียนออกจากหลักสูตร".to_string(),
@@ -484,21 +545,23 @@ pub async fn replace_term_slots(
         .iter()
         .map(|slot| slot.0)
         .collect::<Vec<_>>();
-    sqlx::query(
-        r#"UPDATE curriculum_term_slots
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.curriculum_structure.replace_term_slots",
+            r#"UPDATE curriculum_term_slots
            SET sequence = sequence + 100000,
                type_occurrence = type_occurrence + 100000
            WHERE curriculum_level_id = $1"#,
-    )
-    .bind(version_id)
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query(
+        )
+        .bind(version_id)
+        .execute()
+        .await?;
+    DbSession::new(&mut *transaction).query("academic_core.services.curriculum_structure.replace_term_slots",
         "DELETE FROM curriculum_term_slots WHERE curriculum_level_id = $1 AND NOT (id = ANY($2))",
     )
     .bind(version_id)
     .bind(&retained_ids)
-    .execute(&mut *transaction)
+    .execute()
     .await?;
 
     if !normalized_slots.is_empty() {
@@ -524,14 +587,20 @@ pub async fn replace_term_slots(
              name = EXCLUDED.name, row_version = curriculum_term_slots.row_version + 1, \
              updated_at = now()",
         );
-        builder.build().execute(&mut *transaction).await?;
+        DbSession::new(&mut *transaction)
+            .prepared_query(
+                "academic_core.services.curriculum_structure.replace_term_slots",
+                builder.build(),
+            )
+            .execute()
+            .await?;
     }
 
-    sqlx::query(
+    DbSession::new(&mut *transaction).query("academic_core.services.curriculum_structure.replace_term_slots",
         "UPDATE curriculum_levels SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
     )
     .bind(version_id)
-    .execute(&mut *transaction)
+    .execute()
     .await?;
     transaction.commit().await?;
     get_workspace(pool, version_id).await
@@ -570,9 +639,9 @@ async fn validate_new_subject_requirements(
     program_id: Uuid,
     requirements: &[CurriculumStructureRequirementInput],
 ) -> Result<(), AppError> {
-    let existing = sqlx::query_as::<_, (Uuid,Uuid,Uuid)>(
+    let existing = DbSession::new(&mut **transaction).query_as::<(Uuid,Uuid,Uuid)>("academic_core.services.curriculum_structure.validate_new_subject_requirements",
         "SELECT subject_version_id,grade_level_id,term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$1",
-    ).bind(program_id).fetch_all(&mut **transaction).await?.into_iter().collect::<HashSet<_>>();
+    ).bind(program_id).fetch_all().await?.into_iter().collect::<HashSet<_>>();
     let courses = requirements
         .iter()
         .filter(|item| item.resource_kind == RequirementResourceKind::Course)
@@ -584,19 +653,22 @@ async fn validate_new_subject_requirements(
         .collect::<Vec<_>>();
     version_ids.sort_unstable();
     version_ids.dedup();
-    let subjects = sqlx::query_as::<_, (Uuid, Uuid)>(
-        "SELECT id,subject_id FROM subject_versions WHERE id=ANY($1)",
-    )
-    .bind(&version_ids)
-    .fetch_all(&mut **transaction)
-    .await?
-    .into_iter()
-    .collect::<HashMap<_, _>>();
+    let subjects = DbSession::new(&mut **transaction)
+        .query_as::<(Uuid, Uuid)>(
+            "academic_core.services.curriculum_structure.validate_new_subject_requirements",
+            "SELECT id,subject_id FROM subject_versions WHERE id=ANY($1)",
+        )
+        .bind(&version_ids)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     let subject_ids = subjects.values().copied().collect::<Vec<_>>();
     super::catalog::lock_subjects_for_revision_selection(transaction, &subject_ids).await?;
     // Read the current decision after acquiring the same stable locks used by publication.
     let current =
-        super::catalog::current_subject_version_ids(&mut **transaction, &subject_ids).await?;
+        super::catalog::current_subject_version_ids_on_connection(&mut **transaction, &subject_ids)
+            .await?;
     let mut buckets = HashMap::<(Uuid, Uuid, Uuid), (usize, bool)>::new();
     for requirement in courses {
         let subject_id = subjects
@@ -648,12 +720,12 @@ async fn validate_requirement_ownership(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let slot_count: i64 = sqlx::query_scalar(
+    let slot_count: i64 = DbSession::new(&mut **transaction).scalar("academic_core.services.curriculum_structure.validate_requirement_ownership",
         "SELECT count(*) FROM curriculum_term_slots WHERE curriculum_level_id = $1 AND id = ANY($2)",
     )
     .bind(version_id)
     .bind(&slot_ids)
-    .fetch_one(&mut **transaction)
+    .fetch_one()
     .await?;
     if slot_count != slot_ids.len() as i64 {
         return Err(AppError::ValidationError(
@@ -661,15 +733,17 @@ async fn validate_requirement_ownership(
         ));
     }
 
-    let supported_grade_ids: sqlx::types::Json<Vec<Uuid>> = sqlx::query_scalar(
-        r#"SELECT COALESCE(version.grade_level_ids, '[]'::jsonb)
+    let supported_grade_ids: sqlx::types::Json<Vec<Uuid>> = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.curriculum_structure.validate_requirement_ownership",
+            r#"SELECT COALESCE(version.grade_level_ids, '[]'::jsonb)
            FROM curriculum_levels version
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE version.id = $1"#,
-    )
-    .bind(version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(version_id)
+        .fetch_one()
+        .await?;
     let supported_grade_ids = supported_grade_ids.0.into_iter().collect::<HashSet<_>>();
     if requirements
         .iter()
@@ -742,9 +816,13 @@ async fn load_catalog_grades(
            FROM activity_versions
            WHERE id = ANY($1) AND status = 'published'"#
     };
-    let rows = sqlx::query_as::<_, CatalogGradeRow>(sql)
+    let rows = DbSession::new(&mut **transaction)
+        .query_as::<CatalogGradeRow>(
+            "academic_core.services.curriculum_structure.load_catalog_grades",
+            sql,
+        )
         .bind(ids)
-        .fetch_all(&mut **transaction)
+        .fetch_all()
         .await?;
     Ok(rows
         .into_iter()

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::{types::Json, PgPool};
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -10,7 +11,18 @@ use super::super::models::{
 };
 
 pub async fn list_public_options(pool: &PgPool) -> Result<AcademicContextOptions, AppError> {
-    let mut options = list_options(pool).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.context.list_public_options",
+    )
+    .await?;
+    list_public_options_on_connection(&mut connection).await
+}
+
+pub async fn list_public_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<AcademicContextOptions, AppError> {
+    let mut options = list_options_on_connection(connection).await?;
     options
         .years
         .retain(|year| year.status != AcademicYearStatus::Planning);
@@ -30,13 +42,26 @@ pub async fn list_public_options(pool: &PgPool) -> Result<AcademicContextOptions
 }
 
 pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.context.list_options",
+    )
+    .await?;
+    list_options_on_connection(&mut connection).await
+}
+
+pub async fn list_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<AcademicContextOptions, AppError> {
     let (years, terms, active_academic_year_id, active_academic_term_id): (
         Json<Vec<AcademicYearOption>>,
         Json<Vec<AcademicTermOption>>,
         Option<Uuid>,
         Option<Uuid>,
-    ) = sqlx::query_as(
-        r#"
+    ) = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.context.list_options_on_connection",
+            r#"
         SELECT
             COALESCE((
                 SELECT jsonb_agg(
@@ -74,13 +99,16 @@ pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppEr
             (SELECT year.id FROM academic_years year WHERE year.status IN ('active', 'closing')),
             (SELECT term.id FROM academic_terms term WHERE term.status IN ('active', 'closing'))
         "#,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(reason = "academic_context_options_query_failed", database_error = %error);
-        AppError::InternalServerError("ไม่สามารถโหลดตัวเลือกปีและภาคเรียนได้".to_string())
-    })?;
+        )
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                reason = "academic_context_options_query_failed",
+                error_class = school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดตัวเลือกปีและภาคเรียนได้".to_string())
+        })?;
 
     Ok(AcademicContextOptions {
         years: years.0,
@@ -94,13 +122,27 @@ pub async fn list_options_for_student(
     pool: &PgPool,
     student_id: Uuid,
 ) -> Result<AcademicContextOptions, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.context.list_options_for_student",
+    )
+    .await?;
+    list_options_for_student_on_connection(&mut connection, student_id).await
+}
+
+pub async fn list_options_for_student_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_id: Uuid,
+) -> Result<AcademicContextOptions, AppError> {
     let (years, terms, active_academic_year_id, active_academic_term_id): (
         Json<Vec<AcademicYearOption>>,
         Json<Vec<AcademicTermOption>>,
         Option<Uuid>,
         Option<Uuid>,
-    ) = sqlx::query_as(
-        r#"
+    ) = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.context.list_options_for_student_on_connection",
+            r#"
         SELECT
             COALESCE((
                 SELECT jsonb_agg(
@@ -170,14 +212,17 @@ pub async fn list_options_for_student(
                   )
             )
         "#,
-    )
-    .bind(student_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(reason = "student_academic_context_options_query_failed", database_error = %error);
-        AppError::InternalServerError("ไม่สามารถโหลดประวัติปีและภาคเรียนได้".to_string())
-    })?;
+        )
+        .bind(student_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                reason = "student_academic_context_options_query_failed",
+                error_class = school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดประวัติปีและภาคเรียนได้".to_string())
+        })?;
 
     Ok(AcademicContextOptions {
         years: years.0,
@@ -191,13 +236,27 @@ pub async fn list_options_for_parent(
     pool: &PgPool,
     parent_id: Uuid,
 ) -> Result<AcademicContextOptions, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.context.list_options_for_parent",
+    )
+    .await?;
+    list_options_for_parent_on_connection(&mut connection, parent_id).await
+}
+
+pub async fn list_options_for_parent_on_connection(
+    connection: &mut sqlx::PgConnection,
+    parent_id: Uuid,
+) -> Result<AcademicContextOptions, AppError> {
     let (years, terms, active_academic_year_id, active_academic_term_id): (
         Json<Vec<AcademicYearOption>>,
         Json<Vec<AcademicTermOption>>,
         Option<Uuid>,
         Option<Uuid>,
-    ) = sqlx::query_as(
-        r#"
+    ) = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.context.list_options_for_parent_on_connection",
+            r#"
         WITH linked_years AS (
             SELECT DISTINCT
                 year.id, year.year, year.name, year.start_date, year.end_date, year.status
@@ -253,16 +312,17 @@ pub async fn list_options_for_parent(
             (SELECT id FROM linked_years WHERE status IN ('active', 'closing')),
             (SELECT id FROM linked_terms WHERE status IN ('active', 'closing'))
         "#,
-    )
-    .bind(parent_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(reason = "parent_academic_context_options_query_failed", database_error = %error);
-        AppError::InternalServerError(
-            "ไม่สามารถโหลดประวัติปีและภาคเรียนของบุตรหลานได้".to_string(),
         )
-    })?;
+        .bind(parent_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                reason = "parent_academic_context_options_query_failed",
+                error_class = school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดประวัติปีและภาคเรียนของบุตรหลานได้".to_string())
+        })?;
 
     Ok(AcademicContextOptions {
         years: years.0,

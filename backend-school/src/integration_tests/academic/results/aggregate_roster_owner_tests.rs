@@ -11,6 +11,7 @@ use uuid::Uuid;
 async fn aggregate_roster_keeps_missing_students_and_requires_both_domains() {
     let (pool, actor, context, _) = fixture("aggregate_roster").await;
     apply_migrations_through(&pool, 68).await.unwrap();
+    apply_migrations_through(&pool, 95).await.unwrap();
     let office = ActorContext {
         user_id: actor.user_id,
         permissions: vec![

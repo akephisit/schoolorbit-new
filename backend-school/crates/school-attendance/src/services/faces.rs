@@ -6,6 +6,7 @@ use crate::{
 };
 use chrono::Utc;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::repository::SqlFileRepository;
 use school_permissions::registry::codes;
@@ -26,9 +27,10 @@ pub async fn enroll(
     let data = serde_json::to_string(&p.descriptors).map_err(|_| invalid("ข้อมูลใบหน้าไม่ถูกต้อง"))?;
     let encrypted = school_crypto::encrypt(&data)
         .map_err(|_| AppError::ServiceUnavailable("ไม่สามารถเข้ารหัสข้อมูลใบหน้า".into()))?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.faces.transaction").await?;
     super::lock_module(&mut tx).await?;
-    sqlx::query("INSERT INTO attendance_face_enrollments(student_id,model,encrypted_descriptors,consent_at,enrolled_by) VALUES($1,$2,$3,now(),$4) ON CONFLICT(student_id) DO UPDATE SET model=excluded.model,encrypted_descriptors=excluded.encrypted_descriptors,consent_at=now(),enrolled_by=excluded.enrolled_by,enrolled_at=now(),row_version=attendance_face_enrollments.row_version+1").bind(student).bind(&p.model).bind(encrypted).bind(actor).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("attendance.services.faces.enroll", "INSERT INTO attendance_face_enrollments(student_id,model,encrypted_descriptors,consent_at,enrolled_by) VALUES($1,$2,$3,now(),$4) ON CONFLICT(student_id) DO UPDATE SET model=excluded.model,encrypted_descriptors=excluded.encrypted_descriptors,consent_at=now(),enrolled_by=excluded.enrolled_by,enrolled_at=now(),row_version=attendance_face_enrollments.row_version+1").bind(student).bind(&p.model).bind(encrypted).bind(actor).execute().await?;
     audit(
         &mut tx,
         actor,
@@ -41,11 +43,16 @@ pub async fn enroll(
     Ok(())
 }
 pub async fn remove(pool: &PgPool, actor: Uuid, student: Uuid) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.faces.transaction").await?;
     super::lock_module(&mut tx).await?;
-    sqlx::query("DELETE FROM attendance_face_enrollments WHERE student_id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "attendance.services.faces.remove",
+            "DELETE FROM attendance_face_enrollments WHERE student_id=$1",
+        )
         .bind(student)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     audit(
         &mut tx,
@@ -58,9 +65,23 @@ pub async fn remove(pool: &PgPool, actor: Uuid, student: Uuid) -> Result<(), App
     tx.commit().await?;
     Ok(())
 }
+pub(crate) fn require_device_permission(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::ATTENDANCE_VERIFY_ASSIGNED)
+}
 pub async fn require_device(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Result<(), AppError> {
-    actor.require_permission(codes::ATTENDANCE_VERIFY_ASSIGNED)?;
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_devices WHERE id=$1 AND enabled AND operator_id=$2)").bind(id).bind(actor.user_id).fetch_one(pool).await?;
+    require_device_permission(actor)?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.faces.require_device")
+            .await?;
+    require_device_on_connection(&mut connection, actor, id).await
+}
+pub(crate) async fn require_device_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    id: Uuid,
+) -> Result<(), AppError> {
+    require_device_permission(actor)?;
+    let valid:bool=DbSession::new(&mut *connection).scalar("attendance.services.faces.require_device", "SELECT EXISTS(SELECT 1 FROM attendance_devices WHERE id=$1 AND enabled AND operator_id=$2)").bind(id).bind(actor.user_id).fetch_one().await?;
     if valid {
         Ok(())
     } else {
@@ -71,17 +92,45 @@ pub async fn enrollments(
     pool: &PgPool,
     authorized_students: &[Uuid],
 ) -> Result<Vec<AttendanceFaceEnrollment>, AppError> {
-    Ok(sqlx::query_as(
-        "SELECT f.student_id,f.enrolled_at FROM attendance_face_enrollments f
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.faces.enrollments")
+            .await?;
+    enrollments_on_connection(&mut connection, authorized_students).await
+}
+pub(crate) async fn enrollments_on_connection(
+    connection: &mut sqlx::PgConnection,
+    authorized_students: &[Uuid],
+) -> Result<Vec<AttendanceFaceEnrollment>, AppError> {
+    Ok(DbSession::new(&mut *connection)
+        .query_as(
+            "attendance.services.faces.enrollments",
+            "SELECT f.student_id,f.enrolled_at FROM attendance_face_enrollments f
          JOIN users u ON u.id=f.student_id AND u.status='active' AND u.user_type='student'
          WHERE f.student_id=ANY($1) ORDER BY f.enrolled_at DESC,f.student_id LIMIT 10000",
-    )
-    .bind(authorized_students)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(authorized_students)
+        .fetch_all()
+        .await?)
 }
 pub async fn gallery(pool: &PgPool, term: Uuid) -> Result<Vec<AttendanceFace>, AppError> {
-    let rows:Vec<(Uuid,String,String,i64)>=sqlx::query_as("SELECT f.student_id,f.model,f.encrypted_descriptors,f.row_version FROM attendance_face_enrollments f JOIN student_academic_years y ON y.student_id=f.student_id JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=f.student_id AND u.status='active' WHERE t.id=$1 AND y.status='active' AND f.model=$2 ORDER BY f.student_id LIMIT 10001").bind(term).bind(FACE_MODEL).fetch_all(pool).await?;
+    let rows = {
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.faces.gallery")
+                .await?;
+        gallery_rows_on_connection(&mut connection, term).await?
+    };
+    decode_gallery_rows(rows)
+}
+pub(crate) async fn gallery_rows_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+) -> Result<Vec<(Uuid, String, String, i64)>, AppError> {
+    let rows:Vec<(Uuid,String,String,i64)>=DbSession::new(&mut *connection).query_as("attendance.services.faces.gallery", "SELECT f.student_id,f.model,f.encrypted_descriptors,f.row_version FROM attendance_face_enrollments f JOIN student_academic_years y ON y.student_id=f.student_id JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=f.student_id AND u.status='active' WHERE t.id=$1 AND y.status='active' AND f.model=$2 ORDER BY f.student_id LIMIT 10001").bind(term).bind(FACE_MODEL).fetch_all().await?;
+    Ok(rows)
+}
+pub(crate) fn decode_gallery_rows(
+    rows: Vec<(Uuid, String, String, i64)>,
+) -> Result<Vec<AttendanceFace>, AppError> {
     if rows.len() > 10000 {
         return Err(invalid("โรงเรียนมีข้อมูลใบหน้าเกินขนาดที่รองรับ"));
     }
@@ -206,13 +255,17 @@ async fn scan_context(
     p: &AttendanceScan,
     seed: Option<AttendanceSeed>,
 ) -> Result<(AttendanceSession, Option<AttendanceScanOutcome>), AppError> {
-    require_device(pool, actor, p.device_id).await?;
-    let session = match sessions::get_optional(pool, p.session_id).await? {
+    require_device_permission(actor)?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.faces.scan_context")
+            .await?;
+    require_device_on_connection(&mut connection, actor, p.device_id).await?;
+    let session = match sessions::get_optional_on_connection(&mut connection, p.session_id).await? {
         Some(s) => s,
         None => {
             let mut seed = seed.ok_or_else(|| AppError::NotFound("ไม่มีรอบสำหรับสแกน".into()))?;
             seed.session.roster = seed.students;
-            sessions::with_token(pool, seed.session).await?
+            sessions::with_token_on_connection(&mut connection, seed.session).await?
         }
     };
     if session.id != p.session_id
@@ -231,8 +284,8 @@ async fn scan_context(
     }
     // Reconcile committed events before fresh-capture or enrollment validation.
     let accepted: Option<(Uuid, Uuid, Uuid, Uuid, chrono::DateTime<Utc>, AttendanceResult, String)> =
-        sqlx::query_as("SELECT e.session_id,e.student_id,e.device_id,e.evidence_file_id,e.captured_at,r.result,r.origin FROM attendance_scan_events e JOIN attendance_records r ON r.session_id=e.session_id AND r.student_id=e.student_id WHERE e.id=$1")
-        .bind(p.event_id).fetch_optional(pool).await?;
+        DbSession::new(&mut *connection).query_as("attendance.services.faces.scan_context", "SELECT e.session_id,e.student_id,e.device_id,e.evidence_file_id,e.captured_at,r.result,r.origin FROM attendance_scan_events e JOIN attendance_records r ON r.session_id=e.session_id AND r.student_id=e.student_id WHERE e.id=$1")
+        .bind(p.event_id).fetch_optional().await?;
     let outcome =
         if let Some((session_id, student_id, device_id, file_id, captured_at, result, origin)) =
             accepted
@@ -325,22 +378,23 @@ async fn accept_scan(
         .iter()
         .find(|f| f.student_id == p.student_id)
         .ok_or_else(|| invalid("ไม่พบใบหน้า"))?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.faces.transaction").await?;
     super::lock_module(&mut tx).await?;
     lock_term(&mut tx, s.academic_term_id, true, false).await?;
-    let device: Option<Uuid> = sqlx::query_scalar(
+    let device: Option<Uuid> = DbSession::new(&mut *tx).scalar("attendance.services.faces.accept_scan",
         "SELECT id FROM attendance_devices WHERE id=$1 AND enabled AND operator_id=$2 FOR SHARE",
     )
     .bind(p.device_id)
     .bind(actor.user_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional()
     .await?;
     if device.is_none() {
         return Err(AppError::Forbidden("เครื่องถูกปิดหรือเปลี่ยนผู้รับผิดชอบแล้ว".into()));
     }
     // Serialize acceptance with enrollment replacement/withdrawal, including cached galleries.
-    let enrollment_current: Option<String> = sqlx::query_scalar("SELECT encrypted_descriptors FROM attendance_face_enrollments WHERE student_id=$1 AND model=$2 AND row_version=$3 FOR SHARE")
-        .bind(p.student_id).bind(FACE_MODEL).bind(enrolled.row_version).fetch_optional(&mut *tx).await?;
+    let enrollment_current: Option<String> = DbSession::new(&mut *tx).scalar("attendance.services.faces.accept_scan", "SELECT encrypted_descriptors FROM attendance_face_enrollments WHERE student_id=$1 AND model=$2 AND row_version=$3 FOR SHARE")
+        .bind(p.student_id).bind(FACE_MODEL).bind(enrolled.row_version).fetch_optional().await?;
     let current_descriptors = enrollment_current
         .map(|encrypted| {
             let plain = school_crypto::decrypt(&encrypted)
@@ -373,9 +427,13 @@ async fn accept_scan(
         "SELECT {} FROM attendance_sessions WHERE id=$1 FOR UPDATE",
         sessions::COLUMNS
     );
-    let s: AttendanceSession = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let s: AttendanceSession = DbSession::new(&mut *tx)
+        .query_as(
+            "attendance.services.faces.accept_scan",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(s.id)
-        .fetch_one(&mut *tx)
+        .fetch_one()
         .await?;
     if s.cancelled {
         return Err(invalid("รอบนี้งดเช็คชื่อ"));
@@ -388,8 +446,8 @@ async fn accept_scan(
         .iter()
         .find(|r| r.student_id == p.student_id)
         .ok_or_else(|| invalid("นักเรียนไม่อยู่ในรอบนี้"))?;
-    let existing:Option<(Uuid,Uuid,Uuid,Uuid,Uuid,chrono::DateTime<Utc>)>=sqlx::query_as("SELECT id,session_id,student_id,device_id,evidence_file_id,captured_at FROM attendance_scan_events WHERE id=$1 OR (session_id=$2 AND student_id=$3)").bind(p.event_id).bind(s.id).bind(p.student_id).fetch_optional(&mut *tx).await?;
-    let current:Option<(AttendanceResult,String,i64)>=sqlx::query_as("SELECT result,origin,row_version FROM attendance_records WHERE session_id=$1 AND student_id=$2 FOR UPDATE").bind(s.id).bind(p.student_id).fetch_optional(&mut *tx).await?;
+    let existing:Option<(Uuid,Uuid,Uuid,Uuid,Uuid,chrono::DateTime<Utc>)>=DbSession::new(&mut *tx).query_as("attendance.services.faces.accept_scan", "SELECT id,session_id,student_id,device_id,evidence_file_id,captured_at FROM attendance_scan_events WHERE id=$1 OR (session_id=$2 AND student_id=$3)").bind(p.event_id).bind(s.id).bind(p.student_id).fetch_optional().await?;
+    let current:Option<(AttendanceResult,String,i64)>=DbSession::new(&mut *tx).query_as("attendance.services.faces.accept_scan", "SELECT result,origin,row_version FROM attendance_records WHERE session_id=$1 AND student_id=$2 FOR UPDATE").bind(s.id).bind(p.student_id).fetch_optional().await?;
     let (current, origin, revision) =
         current.unwrap_or((AttendanceResult::Unchecked, "none".into(), 0));
     if let Some((event, session, student, device, file, captured)) = existing {
@@ -409,7 +467,7 @@ async fn accept_scan(
             teacher_conflict: origin == "teacher",
         });
     }
-    let file_ok:Option<Uuid>=sqlx::query_scalar("SELECT id FROM files WHERE id=$1 AND purpose_code='attendance_evidence' AND visibility='private' AND lifecycle_status='ready' AND owner_user_id=$2 AND created_by=$3 AND created_at>now()-interval '10 minutes' FOR UPDATE").bind(p.evidence_file_id).bind(p.student_id).bind(actor.user_id).fetch_optional(&mut *tx).await?;
+    let file_ok:Option<Uuid>=DbSession::new(&mut *tx).scalar("attendance.services.faces.accept_scan", "SELECT id FROM files WHERE id=$1 AND purpose_code='attendance_evidence' AND visibility='private' AND lifecycle_status='ready' AND owner_user_id=$2 AND created_by=$3 AND created_at>now()-interval '10 minutes' FOR UPDATE").bind(p.evidence_file_id).bind(p.student_id).bind(actor.user_id).fetch_optional().await?;
     if file_ok.is_none() {
         return Err(invalid("ภาพหลักฐานไม่พร้อมหรือไม่ได้อัปโหลดสำหรับนักเรียนคนนี้"));
     }
@@ -430,20 +488,28 @@ async fn accept_scan(
     let conflict = origin == "teacher" && current != detected;
     let teacher_result = origin == "teacher";
     let result = if teacher_result { current } else { detected };
-    sqlx::query("UPDATE files SET expires_at=now()+($2::integer*interval '1 day') WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "attendance.services.faces.accept_scan",
+            "UPDATE files SET expires_at=now()+($2::integer*interval '1 day') WHERE id=$1",
+        )
         .bind(p.evidence_file_id)
         .bind(configuration.evidence_days as i32)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     if !teacher_result {
-        sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,observed_at,updated_by) VALUES($1,$2,$6,$7,$8,$3,'scan',$4,$5) ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='scan',observed_at=excluded.observed_at,updated_by=excluded.updated_by,row_version=attendance_records.row_version+1")
+        DbSession::new(&mut *tx).query("attendance.services.faces.accept_scan", "INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,observed_at,updated_by) VALUES($1,$2,$6,$7,$8,$3,'scan',$4,$5) ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='scan',observed_at=excluded.observed_at,updated_by=excluded.updated_by,row_version=attendance_records.row_version+1")
             .bind(s.id).bind(p.student_id).bind(result).bind(p.captured_at).bind(actor.user_id)
-            .bind(participant.student_academic_year_id).bind(s.special_round_id).bind(participant.class_number).execute(&mut *tx).await?;
+            .bind(participant.student_academic_year_id).bind(s.special_round_id).bind(participant.class_number).execute().await?;
     }
-    sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES($1,$2,$3,$4,$5,$6)").bind(p.event_id).bind(s.id).bind(p.student_id).bind(p.device_id).bind(p.evidence_file_id).bind(p.captured_at).execute(&mut *tx).await?;
-    sqlx::query("UPDATE attendance_sessions SET row_version=row_version+1 WHERE id=$1")
+    DbSession::new(&mut *tx).query("attendance.services.faces.accept_scan", "INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES($1,$2,$3,$4,$5,$6)").bind(p.event_id).bind(s.id).bind(p.student_id).bind(p.device_id).bind(p.evidence_file_id).bind(p.captured_at).execute().await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "attendance.services.faces.accept_scan",
+            "UPDATE attendance_sessions SET row_version=row_version+1 WHERE id=$1",
+        )
         .bind(s.id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     let mut notice_session = s.clone();
     notice_session.start_time = local;
@@ -478,9 +544,10 @@ async fn accept_scan(
 }
 pub const EVIDENCE_EXPIRY_BATCH: i64 = 100;
 pub async fn expire_evidence(pool: &PgPool) -> Result<i64, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.faces.transaction").await?;
     super::lock_module(&mut tx).await?;
-    let files:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM files WHERE purpose_code='attendance_evidence' AND expires_at<=now() AND lifecycle_status='ready' ORDER BY expires_at,id LIMIT $1 FOR UPDATE SKIP LOCKED").bind(EVIDENCE_EXPIRY_BATCH).fetch_all(&mut *tx).await?;
+    let files:Vec<Uuid>=DbSession::new(&mut *tx).scalar("attendance.services.faces.expire_evidence", "SELECT id FROM files WHERE purpose_code='attendance_evidence' AND expires_at<=now() AND lifecycle_status='ready' ORDER BY expires_at,id LIMIT $1 FOR UPDATE SKIP LOCKED").bind(EVIDENCE_EXPIRY_BATCH).fetch_all().await?;
     let repository = SqlFileRepository::new(pool.clone());
     for id in &files {
         repository

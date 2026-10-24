@@ -5,6 +5,7 @@ use crate::{
     rules::{digest, invalid, normalize_ids, pagination, validate_reason},
 };
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
@@ -27,11 +28,16 @@ pub async fn students(
     if q.search.as_ref().is_some_and(|s| s.chars().count() > 200) {
         return Err(invalid("คำค้นยาวเกินไป"));
     }
-    let rows: Vec<_> = roster(&mut *pool.acquire().await?, q.academic_term_id, q.date)
-        .await?
-        .into_iter()
-        .filter(|r| r.visible(access))
-        .collect();
+    let rows: Vec<_> = roster(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(&pool, "behavior.manual.students")
+            .await?,
+        q.academic_term_id,
+        q.date,
+    )
+    .await?
+    .into_iter()
+    .filter(|r| r.visible(access))
+    .collect();
     let token = roster_token(q.academic_term_id, q.date, &rows)?;
     let options = options_from_rows(&rows);
     let search = q.search.unwrap_or_default().to_lowercase();
@@ -91,7 +97,12 @@ pub async fn selector_options(
         access.school = true;
     }
     access.require_selector()?;
-    let rows: Vec<_> = roster(&mut *pool.acquire().await?, q.academic_term_id, q.date)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "behavior.manual.selector_options",
+    )
+    .await?;
+    let rows: Vec<_> = roster(&mut connection, q.academic_term_id, q.date)
         .await?
         .into_iter()
         .filter(|r| r.visible(access))
@@ -99,7 +110,7 @@ pub async fn selector_options(
     let mut options = options_from_rows(&rows);
     if manage {
         options.grade_levels = school_academic_core::services::dated_student_directory::configured_grades_on_connection(
-            &mut *pool.acquire().await?, q.academic_term_id,
+            &mut connection, q.academic_term_id,
         ).await?.into_iter().map(|grade| BehaviorSelectorOption { id: grade.id, label: grade.label }).collect();
     }
     Ok(options)
@@ -130,7 +141,9 @@ pub async fn create_batch(
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
     // A committed receipt remains meaningful even after its details or academic context close.
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(&pool, "behavior.manual.create_batch")
+            .await?;
     if let Some(mut previous) = receipt::<_, BehaviorBatchReceipt>(
         &mut connection,
         access.actor_id,
@@ -141,11 +154,14 @@ pub async fn create_batch(
     .await?
     {
         previous.replayed = true;
-        previous.details_available =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM behavior_batches WHERE id=$1)")
-                .bind(previous.id)
-                .fetch_one(&mut *connection)
-                .await?;
+        previous.details_available = DbSession::new(&mut *connection)
+            .scalar(
+                "behavior.services.manual.create_batch",
+                "SELECT EXISTS(SELECT 1 FROM behavior_batches WHERE id=$1)",
+            )
+            .bind(previous.id)
+            .fetch_one()
+            .await?;
         return Ok(previous);
     }
     drop(connection);
@@ -158,7 +174,7 @@ pub async fn create_batch(
         tx.commit().await?;
         return Ok(previous);
     }
-    let row:Option<(String,BehaviorSide,Uuid,i32,i64)>=sqlx::query_as("SELECT i.name,i.side,v.id,v.points,i.row_version FROM behavior_items i JOIN LATERAL(SELECT id,points FROM behavior_item_versions WHERE item_id=i.id AND effective_from<=$2 ORDER BY effective_from DESC,id DESC LIMIT 1)v ON true WHERE i.id=$1 AND i.enabled").bind(p.item_id).bind(date).fetch_optional(&mut *tx).await?;
+    let row:Option<(String,BehaviorSide,Uuid,i32,i64)>=DbSession::new(&mut *tx).query_as("behavior.services.manual.create_batch", "SELECT i.name,i.side,v.id,v.points,i.row_version FROM behavior_items i JOIN LATERAL(SELECT id,points FROM behavior_item_versions WHERE item_id=i.id AND effective_from<=$2 ORDER BY effective_from DESC,id DESC LIMIT 1)v ON true WHERE i.id=$1 AND i.enabled").bind(p.item_id).bind(date).fetch_optional().await?;
     let (name, side, version, points, item_row_version) =
         row.ok_or_else(|| AppError::Conflict("รายการนี้ไม่มีเกณฑ์ที่ใช้งานได้ในวันเกิดเหตุ".into()))?;
     if version != p.item_version_id || item_row_version != p.item_row_version {
@@ -197,7 +213,7 @@ pub async fn create_batch(
             "มีนักเรียนที่ไม่มีสิทธิ์บันทึกหรือไม่ได้อยู่ในรายชื่อของวันเกิดเหตุ".into(),
         ));
     }
-    let batch:Uuid=sqlx::query_scalar("INSERT INTO behavior_batches(academic_term_id,item_version_id,occurred_at,date,detail,created_by)VALUES($1,$2,$3,$4,$5,$6)RETURNING id").bind(p.academic_term_id).bind(version).bind(p.occurred_at).bind(date).bind(&p.detail).bind(access.actor_id).fetch_one(&mut *tx).await?;
+    let batch:Uuid=DbSession::new(&mut *tx).scalar("behavior.services.manual.create_batch", "INSERT INTO behavior_batches(academic_term_id,item_version_id,occurred_at,date,detail,created_by)VALUES($1,$2,$3,$4,$5,$6)RETURNING id").bind(p.academic_term_id).bind(version).bind(p.occurred_at).bind(date).bind(&p.detail).bind(access.actor_id).fetch_one().await?;
     let members: Vec<_> = members
         .into_iter()
         .map(|r| BatchMember {
@@ -206,16 +222,16 @@ pub async fn create_batch(
             homeroom_id: r.homeroom_id,
         })
         .collect();
-    sqlx::query(r#"INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points)
+    DbSession::new(&mut *tx).query("behavior.services.manual.create_batch", r#"INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points)
         SELECT x."studentId",$2,$3,x."gradeLevelId",x."homeroomId",$4,'manual',$5,$6
         FROM jsonb_to_recordset($1)x("studentId" uuid,"gradeLevelId" uuid,"homeroomId" uuid)
         ON CONFLICT(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)DO UPDATE SET points=behavior_daily_totals.points+EXCLUDED.points,row_version=behavior_daily_totals.row_version+1"#)
-        .bind(Json(&members)).bind(date).bind(p.academic_term_id).bind(side).bind(cycle.id).bind(points).execute(&mut *tx).await?;
-    sqlx::query(r#"INSERT INTO behavior_entries(total_id,batch_id,item_name,points,created_by)
+        .bind(Json(&members)).bind(date).bind(p.academic_term_id).bind(side).bind(cycle.id).bind(points).execute().await?;
+    DbSession::new(&mut *tx).query("behavior.services.manual.create_batch", r#"INSERT INTO behavior_entries(total_id,batch_id,item_name,points,created_by)
         SELECT t.id,$2,$3,$4,$5 FROM behavior_daily_totals t
         JOIN jsonb_to_recordset($1)x("studentId" uuid,"gradeLevelId" uuid,"homeroomId" uuid)ON x."studentId"=t.student_id AND x."gradeLevelId"=t.grade_level_id AND x."homeroomId" IS NOT DISTINCT FROM t.homeroom_id
         WHERE t.date=$6 AND t.academic_term_id=$7 AND t.side=$8 AND t.source='manual' AND t.cycle_id=$9"#)
-        .bind(Json(&members)).bind(batch).bind(name).bind(points).bind(access.actor_id).bind(date).bind(p.academic_term_id).bind(side).bind(cycle.id).execute(&mut *tx).await?;
+        .bind(Json(&members)).bind(batch).bind(name).bind(points).bind(access.actor_id).bind(date).bind(p.academic_term_id).bind(side).bind(cycle.id).execute().await?;
     let result = BehaviorBatchReceipt {
         id: batch,
         affected_students: members.len() as i64,
@@ -240,14 +256,15 @@ pub async fn cancel_entries(
     p.entry_ids = normalize_ids(p.entry_ids)?;
     validate_reason(&p.reason)?;
     p.reason = p.reason.trim().into();
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "behavior.manual.cancel_entries").await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     lock(&mut tx).await?;
     if let Some(previous) = receipt(&mut tx, access.actor_id, p.request_id, "cancel", &p).await? {
         tx.commit().await?;
         return Ok(previous);
     }
-    let rows:Vec<(Uuid,Option<Uuid>,Option<Uuid>,bool,String,Uuid)>=sqlx::query_as("SELECT e.id,e.batch_id,e.created_by,e.cancelled_at IS NOT NULL,c.state,t.academic_term_id FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id JOIN behavior_cycles c ON c.id=t.cycle_id WHERE e.id=ANY($1) ORDER BY e.id FOR UPDATE OF e").bind(&p.entry_ids).fetch_all(&mut *tx).await?;
+    let rows:Vec<(Uuid,Option<Uuid>,Option<Uuid>,bool,String,Uuid)>=DbSession::new(&mut *tx).query_as("behavior.services.manual.cancel_entries", "SELECT e.id,e.batch_id,e.created_by,e.cancelled_at IS NOT NULL,c.state,t.academic_term_id FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id JOIN behavior_cycles c ON c.id=t.cycle_id WHERE e.id=ANY($1) ORDER BY e.id FOR UPDATE OF e").bind(&p.entry_ids).fetch_all().await?;
     if rows.len() != p.entry_ids.len() {
         return Err(AppError::Conflict("รายการถูกล้างหรือไม่มีอยู่แล้ว".into()));
     }
@@ -270,12 +287,12 @@ pub async fn cancel_entries(
     // Transition lock prevents lifecycle races without taking academic row locks
     // after the Behavior module lock (the global ordering used by source writers).
     let terms: Vec<_> = rows.iter().map(|r| r.5).collect();
-    let closed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=ANY($1) AND(t.status IN('closed','cancelled')OR y.status IN('closed','archived')))").bind(terms).fetch_one(&mut *tx).await?;
+    let closed:bool=DbSession::new(&mut *tx).scalar("behavior.services.manual.cancel_entries", "SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=ANY($1) AND(t.status IN('closed','cancelled')OR y.status IN('closed','archived')))").bind(terms).fetch_one().await?;
     if closed {
         return Err(AppError::Conflict("ภาคเรียนปิดแล้ว ใช้การปรับยอดประวัติ".into()));
     }
-    sqlx::query("UPDATE behavior_daily_totals t SET points=t.points-x.points,row_version=t.row_version+1 FROM(SELECT total_id,sum(points)points FROM behavior_entries WHERE id=ANY($1) AND cancelled_at IS NULL GROUP BY total_id)x WHERE t.id=x.total_id").bind(&p.entry_ids).execute(&mut *tx).await?;
-    let cancelled=sqlx::query("UPDATE behavior_entries SET cancelled_by=$2,cancelled_at=now(),cancellation_reason=$3 WHERE id=ANY($1)AND cancelled_at IS NULL").bind(&p.entry_ids).bind(access.actor_id).bind(&p.reason).execute(&mut *tx).await?.rows_affected()as i64;
+    DbSession::new(&mut *tx).query("behavior.services.manual.cancel_entries", "UPDATE behavior_daily_totals t SET points=t.points-x.points,row_version=t.row_version+1 FROM(SELECT total_id,sum(points)points FROM behavior_entries WHERE id=ANY($1) AND cancelled_at IS NULL GROUP BY total_id)x WHERE t.id=x.total_id").bind(&p.entry_ids).execute().await?;
+    let cancelled=DbSession::new(&mut *tx).query("behavior.services.manual.cancel_entries", "UPDATE behavior_entries SET cancelled_by=$2,cancelled_at=now(),cancellation_reason=$3 WHERE id=ANY($1)AND cancelled_at IS NULL").bind(&p.entry_ids).bind(access.actor_id).bind(&p.reason).execute().await?.rows_affected()as i64;
     let outcome = BehaviorCancellation {
         cancelled,
         already_cancelled: rows.len() as i64 - cancelled,
@@ -296,6 +313,45 @@ pub async fn cancel_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn selector_and_overview_reads_finish_with_one_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "behavior_selector_connection",
+            1,
+        )
+        .await;
+        school_test_db::run_test_migrations(&pool).await;
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![school_permissions::registry::codes::BEHAVIOR_READ_SCHOOL.into()],
+        };
+        let access = BehaviorAccess::for_actor(&actor);
+        let query = BehaviorStudentsQuery {
+            academic_term_id: Uuid::new_v4(),
+            date: NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
+            grade_level_id: None,
+            homeroom_id: None,
+            search: None,
+            offset: None,
+            limit: None,
+        };
+        let options = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            selector_options(&pool, access, query, true),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(options.grade_levels.is_empty());
+        assert!(options.homerooms.is_empty());
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            super::super::catalog::overview(&pool, access),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
     #[test]
     fn roster_token_ignores_pagination_not_membership() {
         let term = Uuid::new_v4();
