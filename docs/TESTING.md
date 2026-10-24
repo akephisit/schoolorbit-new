@@ -2025,3 +2025,23 @@ in current and historical requirements/options, even after a later known revisio
 Run affected publication/order/current-subject/options/copy consumers, HTTP permissions,
 API schema/generate/check/test and documentation policy with the existing focused recipes.
 All mutation fixtures are synthetic; no production criteria or curricula are written.
+
+The deferred-upload cleanup protocol is exercised by File Platform's `cleanup_watch_tests` family
+and `profile_relationships::tests`, using the owning disposable PostgreSQL 18.6 fixture. Run those
+with the same `TEST_DATABASE_URL` ownership protocol as the existing Files suite; do not point them
+at production. Cases include independent late PUT completion after client cancellation, HEAD 404,
+real migration-039 Certificate hard purge and reconstructed-worker recovery; stale cleanup claims,
+namespace refusal, owner-only legacy binding (including a runtime role with the writable evidence
+GUC), manifest-wide revision validation, and expiry/promotion row-lock races. Migration 137 is
+required in addition to 136. Root `services::cleaner::phase_tests` includes persisted cross-sweep
+queue fairness and a managed watch path through actual AdminClient/Directory/PoolManager with a
+single physical connection and DB admission slot during blocked storage HEAD. Library-only tests
+do not substitute for that application composition regression.
+
+The `file_storage_namespace` binary has a pure inventory-validation unit test. Its rollout check
+must also be verified on disposable canonical owner-role databases with an independently trusted
+complete inventory digest: correct mappings pass, changed bytes/omitted inventory bytes, wrong-school
+or duplicate URL mappings, missing schema 137, unknown legacy namespaces and mismatched providers
+fail closed. Check/dry-run must leave all rows and permissions unchanged. Apply tests use exact
+watch IDs plus immutable identity digests and expected row revisions, with the actual table owner;
+no test-only production bypass is supported. Do not log URL/key values in fixture evidence.

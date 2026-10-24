@@ -101,21 +101,21 @@ pub async fn replace_logo(
             .scalar::<bool>(
                 "administration.settings.services.replace_logo",
                 r#"
-SELECT EXISTS(
-    SELECT 1
+SELECT true
     FROM files
     WHERE id = $1
       AND purpose_code = 'school_logo'
       AND visibility = 'public'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
-)
+    FOR UPDATE
 "#,
             )
             .bind(file_id)
-            .fetch_one()
+            .fetch_optional()
             .await
-            .map_err(database_error)?;
+            .map_err(database_error)
+            .map(|value| value.unwrap_or(false))?;
         if !valid {
             return Err(AppError::ValidationError(
                 "ไฟล์โลโก้ไม่พร้อมใช้งานหรือไม่ใช่โลโก้โรงเรียน".to_string(),

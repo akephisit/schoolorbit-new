@@ -1159,20 +1159,19 @@ pub async fn update_staff(
             .scalar::<bool>(
                 "staff.services.staff_service.update_staff",
                 r#"
-SELECT EXISTS(
-    SELECT 1
+SELECT true
     FROM files
     WHERE id = $1
       AND owner_user_id = $2
       AND purpose_code = 'profile_image'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
-)
+    FOR UPDATE
 "#,
             )
             .bind(file_id)
             .bind(staff_id)
-            .fetch_one()
+            .fetch_optional()
             .await
             .map_err(|error| {
                 tracing::error!(
@@ -1180,7 +1179,8 @@ SELECT EXISTS(
                     school_database::error_class(&error)
                 );
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
-            })?;
+            })
+            .map(|value| value.unwrap_or(false))?;
         if !valid {
             return Err(AppError::ValidationError(
                 "ไฟล์รูปโปรไฟล์ไม่พร้อมใช้งาน".to_string(),

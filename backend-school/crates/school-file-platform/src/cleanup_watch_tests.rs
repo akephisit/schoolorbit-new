@@ -28,6 +28,7 @@ impl MalwareScanner for Clean {
     }
 }
 struct Provider {
+    endpoint: &'static str,
     objects: Arc<Mutex<HashMap<String, Bytes>>>,
     remote: Option<mpsc::Sender<(StoredObject, Bytes)>>,
 }
@@ -36,7 +37,7 @@ impl StorageProvider for Provider {
     fn namespace(&self, class: StorageClass) -> Result<StorageNamespace, StorageError> {
         StorageNamespace::from_provider_locator(
             "r2",
-            "https://fixture.invalid",
+            self.endpoint,
             match class {
                 StorageClass::Public => "public",
                 StorageClass::Private => "private",
@@ -106,6 +107,7 @@ async fn fixture(name: &str) -> PgPool {
 }
 fn provider() -> Arc<Provider> {
     Arc::new(Provider {
+        endpoint: "https://fixture.invalid",
         objects: Default::default(),
         remote: None,
     })
@@ -167,6 +169,7 @@ async fn late_remote_put_after_client_cancel_head404_and_real039_purge_is_recove
             .insert(object.object_key.as_str().into(), body);
     });
     let provider = Arc::new(Provider {
+        endpoint: "https://fixture.invalid",
         objects: objects.clone(),
         remote: Some(send),
     });
@@ -466,6 +469,17 @@ async fn stale_expiry_candidate_promoted_under_file_lock_is_not_revoked() {
 async fn runtime_role_cannot_bind_legacy_namespace_even_with_attestation_guc() {
     let pool = fixture("watch_runtime_binding_refused").await;
     let id = legacy_watch(&pool).await;
+    let before: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(w) FROM file_storage_cleanup_watches w WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let schema_identifier = format!("\"{}\"", schema.replace('\"', "\"\""));
     let role = format!("watch_runtime_{}", Uuid::new_v4().simple());
     // Role and grants are rolled back, including on assertion failure.
     let mut transaction = pool.begin().await.unwrap();
@@ -479,6 +493,12 @@ async fn runtime_role_cannot_bind_legacy_namespace_even_with_attestation_guc() {
     .execute(&mut *transaction)
     .await
     .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "GRANT USAGE ON SCHEMA {schema_identifier} TO {role}"
+    )))
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!("SET LOCAL ROLE {role}")))
         .execute(&mut *transaction)
         .await
@@ -487,13 +507,40 @@ async fn runtime_role_cannot_bind_legacy_namespace_even_with_attestation_guc() {
         .execute(&mut *transaction)
         .await
         .unwrap();
+    let (visible, can_select, can_update, owner, evidence): (bool,bool,bool,bool,bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM file_storage_cleanup_watches WHERE id=$1),has_table_privilege(current_user,'file_storage_cleanup_watches','SELECT'),has_table_privilege(current_user,'file_storage_cleanup_watches','UPDATE'),pg_has_role(current_user,(SELECT relowner FROM pg_class WHERE oid='file_storage_cleanup_watches'::regclass),'USAGE'),current_setting('schoolorbit.storage_binding_attestation')=repeat('a',64)").bind(id).fetch_one(&mut *transaction).await.unwrap();
+    assert_eq!(
+        (visible, can_select, can_update, owner, evidence),
+        (true, true, true, false, true)
+    );
+    assert_eq!(
+        sqlx::query(
+            "UPDATE file_storage_cleanup_watches SET next_probe_at=next_probe_at WHERE id=$1"
+        )
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap()
+        .rows_affected(),
+        1
+    );
     let error = sqlx::query("UPDATE file_storage_cleanup_watches SET namespace_fingerprint=repeat('b',64),namespace_bound_at=statement_timestamp(),binding_evidence_digest=repeat('a',64) WHERE id=$1")
         .bind(id).execute(&mut *transaction).await.unwrap_err();
     assert_eq!(
         error.as_database_error().and_then(|e| e.code()).as_deref(),
         Some("42501")
     );
+    assert_eq!(
+        error.as_database_error().unwrap().message(),
+        "file_storage_namespace_owner_required"
+    );
     transaction.rollback().await.unwrap();
+    let after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(w) FROM file_storage_cleanup_watches w WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, after);
     // The same legacy row can be bound by the actual owner through the guarded API.
     let namespaces = ConfiguredNamespaces::from_provider(provider().as_ref()).unwrap();
     let manifest =
@@ -561,4 +608,104 @@ async fn claimed_watch_advances_due_order_even_when_worker_never_finishes() {
         .unwrap()
         .unwrap();
     assert_eq!(next.id, second);
+}
+
+#[tokio::test]
+async fn unbound_legacy_and_rotated_namespaces_never_delete_storage() {
+    let pool = fixture("watch_namespace_no_guess").await;
+    let id = legacy_watch(&pool).await;
+    let (file, key): (Uuid, String) =
+        sqlx::query_as("SELECT file_id,object_key FROM file_storage_cleanup_watches WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let provider = provider();
+    provider
+        .objects
+        .lock()
+        .unwrap()
+        .insert(key.clone(), Bytes::from_static(b"retained"));
+    let platform = FilePlatform::new(provider.clone(), Arc::new(Clean));
+    let repository = SqlFileRepository::new(pool.clone());
+    assert!(
+        platform
+            .request_delete(&repository, file)
+            .await
+            .unwrap()
+            .pending_retry
+    );
+    assert!(provider.objects.lock().unwrap().contains_key(&key));
+    let namespaces = ConfiguredNamespaces::from_provider(provider.as_ref()).unwrap();
+    let manifest =
+        namespace_binding::prepare_binding_manifest(&pool, &[id], "e".repeat(64), &namespaces)
+            .await
+            .unwrap();
+    namespace_binding::bind_attested_namespaces(&pool, &manifest, &namespaces, true)
+        .await
+        .unwrap();
+    let work = repository
+        .claim_cleanup_watch(
+            "verified",
+            Duration::from_secs(60),
+            &platform.storage_namespaces().unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let rotated = Arc::new(Provider {
+        endpoint: "https://rotated.invalid",
+        objects: provider.objects.clone(),
+        remote: None,
+    });
+    let rotated_namespaces = ConfiguredNamespaces::from_provider(rotated.as_ref()).unwrap();
+    assert_eq!(
+        namespace_binding::check_namespace_readiness(&pool, &rotated_namespaces)
+            .await
+            .unwrap()
+            .mismatched,
+        1
+    );
+    let rotated_platform = FilePlatform::new(rotated, Arc::new(Clean));
+    assert!(matches!(
+        perform_cleanup_watch(&rotated_platform, &work, Duration::from_secs(1)).await,
+        CleanupObservation::Failed {
+            error_code: "storage_namespace_unverified"
+        }
+    ));
+    assert!(provider.objects.lock().unwrap().contains_key(&key));
+}
+
+#[tokio::test]
+async fn attestation_validates_every_revision_before_binding_any_watch() {
+    let pool = fixture("watch_manifest_atomic").await;
+    let first = legacy_watch(&pool).await;
+    let second = legacy_watch(&pool).await;
+    let namespaces = ConfiguredNamespaces::from_provider(provider().as_ref()).unwrap();
+    let manifest = namespace_binding::prepare_binding_manifest(
+        &pool,
+        &[first, second],
+        "f".repeat(64),
+        &namespaces,
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE file_storage_cleanup_watches SET revoked_at=statement_timestamp() WHERE id=$1",
+    )
+    .bind(second)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        namespace_binding::bind_attested_namespaces(&pool, &manifest, &namespaces, true).await,
+        Err(BindingError::ChangedWatch)
+    ));
+    assert_eq!(
+        namespace_binding::check_namespace_readiness(&pool, &namespaces)
+            .await
+            .unwrap()
+            .unresolved,
+        2
+    );
 }

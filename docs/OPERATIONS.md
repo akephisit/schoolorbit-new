@@ -223,12 +223,56 @@ uncertain while the file was being deleted, fenced finish may queue a new durabl
 delete for that cancelled generation. It does not revive metadata or alter a newer,
 expired or reclaimed claim.
 
-Exact lease fencing protects database metadata and handles provider timeout/error
-after a derivative PUT starts. Storage PUTs are external to PostgreSQL: process death
-or task cancellation before the fenced finish may leave bytes committed after deletion.
-A separate persisted upload-intent/reconciliation protocol is required for crash
-recovery; this change does not guarantee orphan absence after interrupted external
-writes. The verified follow-up is tracked in [the backlog](../TODO.md).
+File storage cleanup watches (migrations 136 and 137) preserve physical locators independently
+of files, versions, operations and Certificate campaign purge. Every new PUT has a committed
+namespace-bound write permission first. Deletion revokes that physical identity permanently;
+cleanup records observations only for its exact unexpired claim. A stale/expired writer cannot
+revive metadata or authorize deletion of a still-accepted physical key. The worker shares its
+existing total batch and tenant budget between ordinary operations and watches; a persisted
+starting preference survives new sweeps, and claim-time due advancement prevents a crashed
+prefix from monopolizing later keys. No database lease or admission permit spans storage I/O.
+
+Storage PUTs remain external to PostgreSQL. R2 supplies no settlement receipt proving all earlier
+PUTs finished: cancellation, DELETE success and HEAD 404 are observations, not permanent absence.
+Revoked watches therefore remain and are reprobed indefinitely, including after a restart or
+actual Certificate hard purge; late bytes are deleted on a later successful probe. Recovery assumes
+the tenant database/watch survives, the configured namespace remains the same physical namespace,
+and the provider eventually answers probes/deletes. It does not promise instantaneous absence,
+finite watch retention, versioned-bucket cleanup, or reconstruction of already-purged historical
+locators. Same-name bucket recreation cannot be detected by the current provider; operators must
+maintain namespace continuity. Account/endpoint/bucket routing changes fail closed. Credential-only
+rotation does not change namespace identity.
+
+Roll out only during maintenance after draining all old writers. Apply the canonical migrations
+through 137 before enabling matching writers. Legacy watch namespaces are NULL and remain blocked;
+never infer their historical bucket from current configuration or a single HEAD response. An operator
+must independently verify historical routing, produce an evidence digest and explicitly bind exact
+watch IDs. `file_storage_namespace plan` reads one explicitly configured database through
+`FILE_STORAGE_BINDING_DATABASE_URL`, using only `R2_ACCOUNT_ID`, `R2_PUBLIC_BUCKET_NAME` and
+`R2_PRIVATE_BUCKET_NAME`; it needs no storage credentials, CDN URL or provider access. Plan output
+contains IDs, immutable locator digests, expected row revisions and namespace fingerprints, with
+0600 create-new file semantics. `dry-run --manifest <path>` is read-only. `apply --manifest <path>
+--attest-historical-namespace` requires actual watch-table-owner authority, validates all rows before
+any update and refuses changed revisions or active claims. The evidence GUC is not a security boundary.
+No command migrates or synchronizes permissions.
+
+Before enabling writers, run `file_storage_namespace check --inventory <path>
+--expected-inventory-sha256 <trusted-digest>`. Obtain that digest independently from the complete
+Admin/deployment tenant inventory; hashing a self-selected subset cannot establish completeness.
+The JSON has a nonempty `tenants` array; each entry contains `tenant_id`, `database_url_env`,
+`r2_account_id`, `public_bucket_name` and `private_bucket_name`. URL environment names must start
+`FILE_STORAGE_BINDING_URL_`; URL values and storage credentials never belong in this file or logs.
+There is no tenant filter. The gate visits every listed database, verifies its canonical
+`so_<tenant-simple>_owner` role and `schoolorbit:<tenant-uuid>:migration` marker, and checks all
+retained watches, including locators whose business records were purged. Any missing target,
+connection/identity/schema failure, unknown namespace or unsupported/mismatched provider blocks
+readiness. Only aggregate codes/counts are printed. Historical routing that cannot be attested
+blocks the rollout until separately resolved; the command never guesses or bypasses it.
+
+Expiry discovery alone never authorizes deletion: File Platform locks and rechecks current retention,
+expiry and lifecycle in the deletion transaction. Domain Save locks/revalidates files before promotion
+to standard retention. Thus an abandoned temporary ready upload can expire, while an accepted,
+referenced or historical file is not deleted simply because an earlier candidate list included it.
 
 Auth retains its hourly schedule, 120-second sweep budget and 100-row `SKIP LOCKED`
 cleanup transactions. Each tenant gets a ten-second timeout including pool admission;

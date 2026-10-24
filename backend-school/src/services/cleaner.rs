@@ -442,6 +442,7 @@ mod phase_tests {
         started: tokio::sync::Notify,
         release: tokio::sync::Notify,
         block: bool,
+        block_head: bool,
         head_calls: std::sync::atomic::AtomicUsize,
     }
     #[async_trait]
@@ -475,6 +476,10 @@ mod phase_tests {
         async fn head(&self, _: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
             self.head_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if self.block_head {
+                self.started.notify_one();
+                self.release.notified().await;
+            }
             Ok(None)
         }
         async fn delete(&self, _: &StoredObject) -> Result<(), StorageError> {
@@ -557,6 +562,7 @@ mod phase_tests {
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
             block,
+            block_head: false,
             head_calls: std::sync::atomic::AtomicUsize::new(0),
         });
         let config = FilePlatformRuntimeConfig {
@@ -598,7 +604,7 @@ mod phase_tests {
             .unwrap();
         // Preserve ordinary backlog while discarding the entire local continuation.
         worker.abort();
-        assert!(worker.await.unwrap_err().is_cancelled());
+        assert!(matches!(worker.await, Err(error) if error.is_cancelled()));
         sqlx::query("UPDATE file_operations SET leased_at=statement_timestamp()-interval '120 seconds',lease_expires_at=statement_timestamp()-interval '60 seconds' WHERE status='leased'").execute(&pool).await.unwrap();
         let turn = turns
             .begin("restart", TenantJobKind::FileReconciliation)
@@ -757,6 +763,118 @@ mod phase_tests {
     }
 
     #[tokio::test]
+    async fn managed_watch_network_releases_sole_connection_logical_lease_and_shared_admission() {
+        use crate::integration_tests::tenant_directory::{database_url, DirectoryServer};
+        use school_tenancy::PoolManagerConfig;
+        let fixture = fixture("cleaner_managed_watch_resources", 1).await;
+        let file: Uuid = sqlx::query_scalar("SELECT id FROM files")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let repository = SqlFileRepository::new(fixture.clone());
+        assert!(repository.request_expired_delete(file).await.unwrap());
+        sqlx::query("UPDATE file_storage_cleanup_watches SET prefer_watch_next=true")
+            .execute(&fixture)
+            .await
+            .unwrap();
+        let url = database_url(&fixture).await;
+        let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), false).await;
+        let admin = directory.client(2, Duration::from_secs(30));
+        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+            1, 1, 1,
+        )));
+        let provider = Arc::new(Provider {
+            started: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            block: false,
+            block_head: true,
+            head_calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let platform = Arc::new(FilePlatform::with_config(
+            provider.clone(),
+            Arc::new(Scanner),
+            FilePlatformRuntimeConfig {
+                reconciliation_lease: Duration::from_secs(20),
+                reconciliation_batch_size: 1,
+                ..FilePlatformRuntimeConfig::default()
+            },
+        ));
+        let worker_manager = manager.clone();
+        let worker_platform = platform.clone();
+        let worker = tokio::spawn(async move {
+            let turns = worker_manager.background_turns();
+            let turn = turns
+                .begin("watch-managed", TenantJobKind::FileReconciliation)
+                .unwrap();
+            reconcile_tenant_batch(
+                &FileDatabase::Managed {
+                    admin: &admin,
+                    pools: &worker_manager,
+                },
+                &worker_platform,
+                "watch-managed",
+                "watch-worker",
+                &turn,
+                None,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(3), provider.started.notified())
+            .await
+            .unwrap();
+        // Same tenant's max-one physical connection is free during the blocked HEAD.
+        {
+            let pool = manager
+                .get_pool_without_migrations(url.as_str(), "watch-managed")
+                .await
+                .unwrap();
+            assert_eq!(pool.as_ref().options().get_max_connections(), 1);
+            let mut connection = tokio::time::timeout(
+                Duration::from_millis(200),
+                pool.checkout("fixture.watch_same_pool"),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                school_database::DbSession::new(&mut connection)
+                    .scalar::<i32>("fixture.watch_same_pool", "SELECT 1")
+                    .fetch_one()
+                    .await
+                    .unwrap(),
+                1
+            );
+        }
+        // With total physical budget ONE, this requires evicting the watch pool.
+        // Success proves both logical lease release and availability of the sole DB turn.
+        let turns = manager.background_turns();
+        let value = tokio::time::timeout(
+            Duration::from_secs(1),
+            turns.run("healthy", TenantJobKind::AuthRetention, || async {
+                let pool = manager
+                    .get_pool_without_migrations(url.as_str(), "healthy")
+                    .await
+                    .unwrap();
+                let mut connection = pool.checkout("fixture.watch_other_kind").await.unwrap();
+                school_database::DbSession::new(&mut connection)
+                    .scalar::<i32>("fixture.watch_other_kind", "SELECT 1")
+                    .fetch_one()
+                    .await
+                    .unwrap()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(value, Some(1));
+        assert!(!worker.is_finished());
+        provider.release.notify_one();
+        worker.await.unwrap().unwrap();
+        let state:(bool,bool)=sqlx::query_as("SELECT last_absent_at IS NOT NULL,lease_owner IS NULL FROM file_storage_cleanup_watches").fetch_one(&fixture).await.unwrap();
+        assert_eq!(state, (true, true));
+        assert_eq!(directory.calls(), 1);
+    }
+
+    #[tokio::test]
     async fn managed_slow_admin_http_allows_other_kind_sql_and_cancels_without_file_mutation() {
         use crate::integration_tests::tenant_directory::{database_url, DirectoryServer};
         use school_tenancy::PoolManagerConfig;
@@ -822,7 +940,7 @@ mod phase_tests {
         assert_eq!(result, Some(1));
         assert!(!worker.is_finished());
         worker.abort();
-        assert!(worker.await.unwrap_err().is_cancelled());
+        assert!(matches!(worker.await, Err(error) if error.is_cancelled()));
         directory.unblock();
         assert!(turns
             .begin("cleaner_slow_admin", TenantJobKind::FileReconciliation)

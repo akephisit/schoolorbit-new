@@ -1811,6 +1811,14 @@ pub async fn attach_document(
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
+    let ready = DbSession::new(&mut *transaction).scalar::<bool>("admission.services.application_service.attach_document", "SELECT true FROM files WHERE id=$1 AND purpose_code='admission_application_document' AND lifecycle_status='ready' AND deleted_at IS NULL FOR UPDATE")
+        .bind(file.id).fetch_optional().await.map_err(document_relationship_error)?;
+    if ready != Some(true) {
+        return Err(AppError::ValidationError(
+            "ไฟล์เอกสารยังไม่พร้อมใช้งาน".to_string(),
+        ));
+    }
+
     let replaced_file_id = DbSession::new(&mut *transaction)
         .scalar::<Uuid>(
             "admission.services.application_service.attach_document",

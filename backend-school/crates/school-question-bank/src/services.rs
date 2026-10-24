@@ -440,7 +440,7 @@ pub async fn create_question(
         .await?;
 
     let image_file_ids = collect_payload_image_file_ids(&payload);
-    let temporary_image_file_ids = if (&image_file_ids).is_empty() {
+    let _preflight_temporary_image_file_ids = if (&image_file_ids).is_empty() {
         Ok(HashSet::new())
     } else {
         let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
@@ -463,6 +463,9 @@ pub async fn create_question(
                 AppError::InternalServerError("ไม่สามารถเริ่มบันทึกข้อสอบได้".to_string())
             })?;
 
+    // Revalidate under file locks in the relationship transaction, after preflight.
+    let temporary_image_file_ids =
+        validate_payload_files(&mut tx, actor_id, &image_file_ids, &HashSet::new()).await?;
     let question_id = DbSession::new(&mut *tx)
         .scalar::<Uuid>(
             "question-bank.src.services.create_question",
@@ -551,7 +554,7 @@ pub async fn update_question(
         .difference(&image_file_ids)
         .copied()
         .collect();
-    let temporary_image_file_ids = if (&image_file_ids).is_empty() {
+    let _preflight_temporary_image_file_ids = if (&image_file_ids).is_empty() {
         Ok(HashSet::new())
     } else {
         let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
@@ -580,6 +583,8 @@ pub async fn update_question(
                 AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขข้อสอบได้".to_string())
             })?;
 
+    let temporary_image_file_ids =
+        validate_payload_files(&mut tx, actor_id, &image_file_ids, &existing_file_ids).await?;
     DbSession::new(&mut *tx)
         .query(
             "question-bank.src.services.update_question",
@@ -863,6 +868,7 @@ WHERE id = ANY($1)
       OR expires_at IS NULL
       OR expires_at > NOW()
   )
+ORDER BY id FOR UPDATE
 "#,
         )
         .bind(&requested)

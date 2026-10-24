@@ -35,21 +35,21 @@ pub async fn promote_ready_owned_image(
         .scalar::<bool>(
             "file-platform.src.profile_relationships.promote_ready_owned_image",
             r#"
-SELECT EXISTS(
-    SELECT 1
+SELECT true
     FROM files
     WHERE id = $1
       AND owner_user_id = $2
       AND purpose_code = 'profile_image'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
-)
+    FOR UPDATE
 "#,
         )
         .bind(file_id)
         .bind(owner_user_id)
-        .fetch_one()
-        .await?;
+        .fetch_optional()
+        .await
+        .map(|value| value.unwrap_or(false))?;
     if !valid {
         return Err(ProfileRelationshipError::InvalidFile);
     }
@@ -170,5 +170,51 @@ INSERT INTO file_versions (
                 .await
                 .expect("promoted file should load");
         assert_eq!(promoted, ("standard".to_string(), None));
+    }
+    #[tokio::test]
+    async fn profile_promotion_waits_for_revocation_and_never_retains_revoked_file() {
+        use std::time::Duration;
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "profile_revocation_promotion_race",
+            3,
+        )
+        .await;
+        run_test_migrations(&pool).await;
+        let owner = create_test_user(&pool, "profile-race@example.test", "test-password")
+            .await
+            .unwrap();
+        let file = insert_ready_temporary_profile_image(&pool, owner).await;
+        let mut revocation = pool.begin().await.unwrap();
+        // Delete acceptance owns this row lock; the trigger persists irreversible revocation.
+        sqlx::query("UPDATE files SET lifecycle_status='delete_requested',delete_requested_at=statement_timestamp() WHERE id=$1").bind(file).execute(&mut *revocation).await.unwrap();
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *revocation)
+            .await
+            .unwrap();
+        let worker_pool = pool.clone();
+        let worker = tokio::spawn(async move {
+            let mut transaction = worker_pool.begin().await.unwrap();
+            let result = promote_ready_owned_image(&mut transaction, file, owner).await;
+            transaction.rollback().await.unwrap();
+            result
+        });
+        tokio::time::timeout(Duration::from_secs(3),async {loop {
+            sqlx::query("SELECT pg_stat_clear_snapshot()").execute(&mut *revocation).await.unwrap();
+            let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))").bind(pid).fetch_one(&mut *revocation).await.unwrap();
+            if waiting {break;}tokio::task::yield_now().await;
+        }}).await.unwrap();
+        let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('file',to_jsonb(f),'watch',to_jsonb(w)) FROM files f JOIN file_storage_cleanup_watches w ON w.file_id=f.id WHERE f.id=$1").bind(file).fetch_one(&mut *revocation).await.unwrap();
+        revocation.commit().await.unwrap();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(3), worker)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(ProfileRelationshipError::InvalidFile)
+        ));
+        let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('file',to_jsonb(f),'watch',to_jsonb(w)) FROM files f JOIN file_storage_cleanup_watches w ON w.file_id=f.id WHERE f.id=$1").bind(file).fetch_one(&pool).await.unwrap();
+        assert_eq!(before, after);
+        assert_eq!(after["file"]["retention_class"], "temporary");
+        assert!(after["watch"]["revoked_at"].is_string());
     }
 }

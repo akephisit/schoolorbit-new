@@ -637,8 +637,22 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   A narrowly owned exception permits queuing a new durable delete after a successful
   or uncertain derivative PUT only for the same cancelled attempt whose file is being
   deleted; never revive its metadata or change a newer/expired/reclaimed claim.
-  External storage writes remain nontransactional with PostgreSQL: interruption before
-  fenced finish may leave bytes and needs a separate persisted recovery protocol.
+  External storage writes remain nontransactional with PostgreSQL. Persist an independent,
+  immutable physical-locator watch and verified provider namespace before every permitted PUT,
+  including synchronous originals/derivatives and leased worker writes. Watch identities survive
+  business hard purge without file/domain foreign keys; revocation is irreversible. Only revoked
+  verified locators may be cleaned, with exact owner/generation/expiry completion fences and no DB
+  resources during provider I/O. With no provider settlement proof, reschedule after DELETE or HEAD
+  absence indefinitely; a later success never erases an older uncertain write. Mixed ordinary/watch
+  work shares the existing batch/budget and persists starting opportunities and claim-time due progress.
+  Legacy NULL namespaces fail closed; bind only with independently attested historical routing,
+  immutable locator digest, expected mutable revision, all-row validation and actual table-owner
+  authority. A writable custom GUC alone is never authorization. The read-only rollout gate checks
+  every target in an independently trusted complete tenant inventory, including database identity,
+  latest schema and all retained watches; it never migrates or silently adopts current routing.
+  File attachment validates under the caller transaction's file lock before promotion. Expiry deletion
+  revalidates temporary/expiry/lifecycle after that same lock, so a stale candidate cannot revoke a
+  promoted accepted file. Never age-clean standard, referenced or historical files.
   Keep synchronous upload/delete semantics with the File Platform provider.
   Revision pruning must reject stale async fills. Session/file retention uses existing domain
   owners; never delete business history merely to free disk. Autovacuum reuses dead row space

@@ -37,6 +37,18 @@ impl ConfiguredNamespaces {
                 .map_err(|_| BindingError::Configuration)?,
         })
     }
+    pub fn from_r2_routing(
+        routing: &super::r2_storage_provider::R2StorageRouting,
+    ) -> Result<Self, BindingError> {
+        Ok(Self {
+            public: routing
+                .namespace(StorageClass::Public)
+                .map_err(|_| BindingError::Configuration)?,
+            private: routing
+                .namespace(StorageClass::Private)
+                .map_err(|_| BindingError::Configuration)?,
+        })
+    }
     fn expected(&self, class: &str) -> Result<&str, BindingError> {
         match class {
             "public" => Ok(self.public.fingerprint()),

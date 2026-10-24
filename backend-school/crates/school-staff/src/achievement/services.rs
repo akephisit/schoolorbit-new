@@ -117,6 +117,7 @@ pub async fn create_achievement(
     )
     .await
     .map_err(achievement_write_error)?;
+    validate_achievement_image(&mut transaction, payload.image_file_id, target_user_id).await?;
     let achievement = DbSession::new(&mut *transaction).query_as::<Achievement>("staff.achievement.services.create_achievement",
         "INSERT INTO staff_achievements (user_id, title, description, achievement_date, image_file_id, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -149,7 +150,7 @@ pub async fn update_achievement(
     id: Uuid,
     payload: UpdateAchievementRequest,
 ) -> Result<AchievementMutationResult, AppError> {
-    let old_file_id = {
+    let (owner_id, old_file_id) = {
         let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
             pool,
             "staff.achievement.services.update_achievement.preflight",
@@ -159,7 +160,7 @@ pub async fn update_achievement(
             get_achievement_owner_and_file_id(&mut connection, id).await?;
         achievement_access_policy::can_update_achievement(actor, owner_id)?;
         validate_achievement_image(&mut connection, payload.image_file_id, owner_id).await?;
-        old_file_id
+        (owner_id, old_file_id)
     };
 
     let mut transaction = school_tenancy::TenantPool::begin_observed(
@@ -168,6 +169,7 @@ pub async fn update_achievement(
     )
     .await
     .map_err(achievement_write_error)?;
+    validate_achievement_image(&mut transaction, payload.image_file_id, owner_id).await?;
     let achievement = DbSession::new(&mut *transaction)
         .query_as::<Achievement>(
             "staff.achievement.services.update_achievement",
@@ -278,20 +280,19 @@ async fn validate_achievement_image(
         .scalar::<bool>(
             "staff.achievement.services.validate_achievement_image",
             r#"
-SELECT EXISTS(
-    SELECT 1
+SELECT true
     FROM files
     WHERE id = $1
       AND owner_user_id = $2
       AND purpose_code = 'achievement_image'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
-)
+    FOR UPDATE
 "#,
         )
         .bind(file_id)
         .bind(owner_user_id)
-        .fetch_one()
+        .fetch_optional()
         .await
         .map_err(|error| {
             tracing::error!(
@@ -300,7 +301,7 @@ SELECT EXISTS(
             );
             AppError::InternalServerError("Database error".to_string())
         })?;
-    if valid {
+    if valid == Some(true) {
         Ok(())
     } else {
         Err(AppError::ValidationError(
