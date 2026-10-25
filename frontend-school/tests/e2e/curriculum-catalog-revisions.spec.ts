@@ -45,7 +45,8 @@ test('only current v2 is selectable for new requirements in M1 through M3, with 
 	await openCurriculumEditor(page);
 	await expect(picker(page).getByRole('checkbox', { name: /^เลือก ค21101 / })).toHaveCount(1);
 	await expect(picker(page)).not.toContainText(/\bv\d+\b/);
-	await expect(picker(page)).not.toContainText('วิชาที่หมดอายุ');
+	await expect(picker(page)).not.toContainText('รายวิชารุ่นที่ถูกแทนที่');
+	await expect(picker(page)).toContainText('รายวิชาที่เริ่มใช้ล่าสุด');
 	await expect(
 		picker(page)
 			.locator('label')

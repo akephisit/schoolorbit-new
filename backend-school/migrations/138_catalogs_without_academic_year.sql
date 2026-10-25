@@ -1,11 +1,11 @@
--- Central catalogs use civil effective dates, independently of academic years.
+-- Central catalogs use civil start-only revisions, independently of academic years.
 -- The canonical runner executes this matched-release contraction atomically.
 LOCK TABLE subject_versions, activity_versions IN ACCESS EXCLUSIVE MODE;
 
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM subject_versions WHERE jsonb_typeof(migration_provenance) IS DISTINCT FROM 'object' OR migration_provenance ? 'historicalYearBinding')
-       OR EXISTS (SELECT 1 FROM activity_versions WHERE jsonb_typeof(migration_provenance) IS DISTINCT FROM 'object' OR migration_provenance ? 'historicalYearBinding') THEN
+    IF EXISTS (SELECT 1 FROM subject_versions WHERE jsonb_typeof(migration_provenance) IS DISTINCT FROM 'object' OR migration_provenance ? 'historicalCatalogContext')
+       OR EXISTS (SELECT 1 FROM activity_versions WHERE jsonb_typeof(migration_provenance) IS DISTINCT FROM 'object' OR migration_provenance ? 'historicalCatalogContext') THEN
         RAISE EXCEPTION 'CATALOG_138_PROVENANCE_UNMAPPABLE';
     END IF;
     IF (SELECT count(*) FROM pg_trigger WHERE
@@ -34,7 +34,7 @@ BEGIN
         WHERE n.nspname=current_schema() AND c.relkind IN ('r','p')
           AND c.relname NOT IN ('subject_versions','activity_versions')
           AND (c.relname IN ('subjects','activities','subject_default_instructors','activity_default_instructors',
-              'academic_delivery_versions','learning_delivery_apply_runs','academic_term_change_sets','academic_timetable_versions','offering_curriculum_sources') OR EXISTS (
+              'academic_delivery_versions','learning_delivery_apply_runs','academic_term_change_sets','academic_timetable_versions','learning_offering_curriculum_sources') OR EXISTS (
               SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
                 AND a.attname IN ('subject_version_id','activity_version_id','catalog_version_id')
           ) OR EXISTS (
@@ -48,15 +48,20 @@ BEGIN
     END LOOP;
 END $$;
 
+-- Start-only activity revisions may overlap by date. Stable activity identity,
+-- revision-number uniqueness and the provider's stable-row locks remain authoritative.
+DROP TRIGGER activity_versions_no_overlap ON activity_versions;
+DROP FUNCTION academic_assert_version_range() RESTRICT;
+
 -- Only historical metadata changes. Disable the exact published guards and the
 -- inherited subject timestamp trigger; never change the shared guard function.
 ALTER TABLE subject_versions DISABLE TRIGGER subject_versions_published_immutable;
 ALTER TABLE subject_versions DISABLE TRIGGER update_subjects_updated_at;
 ALTER TABLE activity_versions DISABLE TRIGGER activity_versions_published_immutable;
 UPDATE subject_versions SET migration_provenance=migration_provenance || jsonb_build_object(
-    'historicalYearBinding',jsonb_build_object('migration',138,'startAcademicYearId',start_academic_year_id));
+    'historicalCatalogContext',jsonb_build_object('migration',138,'startAcademicYearId',start_academic_year_id,'effectiveUntil',effective_until));
 UPDATE activity_versions SET migration_provenance=migration_provenance || jsonb_build_object(
-    'historicalYearBinding',jsonb_build_object('migration',138,'startAcademicYearId',start_academic_year_id));
+    'historicalCatalogContext',jsonb_build_object('migration',138,'startAcademicYearId',start_academic_year_id,'effectiveUntil',effective_until));
 ALTER TABLE subject_versions ENABLE TRIGGER subject_versions_published_immutable;
 ALTER TABLE subject_versions ENABLE TRIGGER update_subjects_updated_at;
 ALTER TABLE activity_versions ENABLE TRIGGER activity_versions_published_immutable;
@@ -67,8 +72,10 @@ ALTER TABLE activity_versions DROP CONSTRAINT activity_catalog_start_academic_ye
 ALTER TABLE activity_versions DROP CONSTRAINT unique_catalog_name_per_year;
 DROP INDEX idx_subjects_start_year RESTRICT;
 DROP INDEX idx_activity_catalog_year RESTRICT;
-ALTER TABLE subject_versions DROP COLUMN start_academic_year_id RESTRICT;
-ALTER TABLE activity_versions DROP COLUMN start_academic_year_id RESTRICT;
+ALTER TABLE subject_versions DROP CONSTRAINT subject_versions_effective_range_check;
+ALTER TABLE activity_versions DROP CONSTRAINT activity_versions_effective_range_check;
+ALTER TABLE subject_versions DROP COLUMN start_academic_year_id RESTRICT, DROP COLUMN effective_until RESTRICT;
+ALTER TABLE activity_versions DROP COLUMN start_academic_year_id RESTRICT, DROP COLUMN effective_until RESTRICT;
 
 DO $$
 DECLARE previous record; evidence record;
@@ -78,9 +85,9 @@ BEGIN
         RAISE EXCEPTION 'CATALOG_138_PRESERVATION_FAILED';
     END IF;
     IF EXISTS (
-        SELECT table_name,id,(facts-'start_academic_year_id') || jsonb_build_object(
+        SELECT table_name,id,(facts-ARRAY['start_academic_year_id','effective_until']) || jsonb_build_object(
             'migration_provenance',(facts->'migration_provenance') || jsonb_build_object(
-                'historicalYearBinding',jsonb_build_object('migration',138,'startAcademicYearId',facts->'start_academic_year_id')))
+                'historicalCatalogContext',jsonb_build_object('migration',138,'startAcademicYearId',facts->'start_academic_year_id','effectiveUntil',facts->'effective_until')))
         FROM catalog_138_versions
         EXCEPT ALL
         (SELECT 'subject_versions',id,to_jsonb(v) FROM subject_versions v
@@ -96,14 +103,14 @@ BEGIN
     END LOOP;
     IF (SELECT count(*) FROM pg_trigger WHERE
           (tgrelid='subject_versions'::regclass AND tgname IN ('subject_versions_published_immutable','update_subjects_updated_at')
-           OR tgrelid='activity_versions'::regclass AND tgname IN ('activity_versions_published_immutable','activity_versions_no_overlap'))
-          AND tgenabled='O') <> 4 THEN
+           OR tgrelid='activity_versions'::regclass AND tgname='activity_versions_published_immutable')
+          AND tgenabled='O') <> 3 THEN
         RAISE EXCEPTION 'CATALOG_138_GUARD_RESTORE_FAILED';
     END IF;
 END $$;
 
 INSERT INTO academic_audit_events(event_code,entity_type,entity_id,payload)
-SELECT 'catalog.year_binding_removed.reconciled','catalog',NULL,
+SELECT 'catalog.start_only_reconciled','catalog',NULL,
     jsonb_build_object('migration',138,'passed',true,'versions',
         (SELECT jsonb_object_agg(table_name,jsonb_build_object('count',row_count,'contentChecksum',content_checksum)) FROM (
             SELECT table_name,count(*) AS row_count,md5(COALESCE(string_agg(md5(facts::text),'' ORDER BY id),'')) AS content_checksum

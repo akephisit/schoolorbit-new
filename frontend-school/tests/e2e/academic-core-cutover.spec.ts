@@ -392,7 +392,6 @@ test('creates a new subject version while preserving published history', async (
 				credit: '1.75',
 				description: null,
 				effectiveFrom: '2026-10-21',
-				effectiveUntil: null,
 				gradeLevelIds: [subjectGrade.id],
 				hoursPerSemester: 60,
 				periodsPerWeek: 3,

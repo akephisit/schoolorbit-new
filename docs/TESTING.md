@@ -1101,7 +1101,7 @@ cargo run --locked --features api-docs --bin backend-school -- export-openapi
 Local verification checks default and documentation-enabled workspace targets, runs the three
 domain endpoint-contract tests with `api-docs`, and compares generated JSON/TypeScript with Git.
 
-Central catalog year independence uses disposable migration and service fixtures:
+Central catalog start-only revisions use disposable migration and service fixtures:
 
 ```bash
 ./scripts/test_backend_school.sh catalog_year_independence -- --nocapture --test-threads=2
@@ -1110,10 +1110,11 @@ Central catalog year independence uses disposable migration and service fixtures
 ```
 
 These cases cover fresh schemas without academic years, dates outside or within overlapping
-academic years, unchanged date/range and revision guards, separate activity identities sharing
-a name, migration 137→138 preservation of native/imported versions and pinned graphs,
+academic years, start-only selection and revision guards, separate activity identities sharing
+a name, migration 137→138 preservation of native/imported versions, old nullable expiry and pinned graphs,
 unchanged `migrated` meaning, historical year deletion when otherwise unreferenced, retry,
-unknown dependencies/provenance and disabled-guard refusal. Historical migration fixtures
+formerly expired eligibility, same-date activity revisions, unknown dependencies/provenance
+and disabled-guard refusal. Historical migration fixtures
 retain their original schemas and seed retired required fields with test-only SQL; current
 catalog writers run only against migration 138 or later. No load test or tenant cleanup is
 part of these fixtures.

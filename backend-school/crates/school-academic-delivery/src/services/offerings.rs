@@ -66,7 +66,6 @@ struct CourseVersionSource {
     standard_periods_per_week: Option<i32>,
     owning_organization_unit_id: Uuid,
     effective_from: chrono::NaiveDate,
-    effective_until: Option<chrono::NaiveDate>,
     status: String,
 }
 
@@ -80,7 +79,6 @@ struct ActivityVersionSource {
     scheduling_mode: super::super::models::ActivitySchedulingMode,
     owning_organization_unit_id: Uuid,
     effective_from: chrono::NaiveDate,
-    effective_until: Option<chrono::NaiveDate>,
     status: String,
 }
 
@@ -125,7 +123,6 @@ struct PreviewRequirementRow {
     hours: Option<String>,
     version_status: String,
     effective_from: chrono::NaiveDate,
-    effective_until: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1181,12 +1178,7 @@ pub(super) async fn insert_course(
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(
-        &source.status,
-        source.effective_from,
-        source.effective_until,
-        term,
-    )?;
+    validate_version_for_term(&source.status, source.effective_from, term)?;
     required_standard_periods_per_week(source.standard_periods_per_week)?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
         let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) =
@@ -1282,12 +1274,7 @@ pub(super) async fn insert_activity(
     validate_activity_rules(&request.attendance_requirement, &request.pass_criteria)?;
     let source = activity_version_source(transaction, request.activity_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(
-        &source.status,
-        source.effective_from,
-        source.effective_until,
-        term,
-    )?;
+    validate_version_for_term(&source.status, source.effective_from, term)?;
     if source.scheduling_mode != request.scheduling_mode {
         return Err(AppError::ValidationError(
             "รูปแบบตารางกิจกรรมต้องตรงกับเวอร์ชันกิจกรรม".to_string(),
@@ -1397,8 +1384,7 @@ async fn course_version_source(
                   version.hours_per_semester::text AS hours,
                   version.periods_per_week AS standard_periods_per_week,
                   subject.owning_organization_unit_id,
-                  version.effective_from,
-                  version.effective_until, version.status
+                  version.effective_from, version.status
            FROM subject_versions version
            JOIN subjects subject ON subject.id = version.subject_id
            WHERE version.id = $1"#,
@@ -1427,8 +1413,7 @@ async fn activity_version_source(
             r#"SELECT version.id AS activity_version_id, version.activity_id,
                   stable.code, version.name, version.hours_per_week::text AS hours,
                   version.scheduling_mode, stable.owning_organization_unit_id,
-                  version.effective_from,
-                  version.effective_until, version.status
+                  version.effective_from, version.status
            FROM activity_versions version
            JOIN activities stable ON stable.id = version.activity_id
            WHERE version.id = $1"#,
@@ -1457,7 +1442,6 @@ async fn catalog_version_owner(
 fn validate_version_for_term(
     status: &str,
     effective_from: chrono::NaiveDate,
-    effective_until: Option<chrono::NaiveDate>,
     term: &TermContext,
 ) -> Result<(), AppError> {
     if status != "published" {
@@ -1465,9 +1449,7 @@ fn validate_version_for_term(
             "เลือกได้เฉพาะเวอร์ชันที่เผยแพร่แล้ว".to_string(),
         ));
     }
-    if term.start_date < effective_from
-        || effective_until.is_some_and(|until| term.start_date >= until)
-    {
+    if term.start_date < effective_from {
         return Err(AppError::ValidationError(
             "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก".to_string(),
         ));
@@ -1695,34 +1677,32 @@ async fn validate_publishable(
     }
     match kind {
         LearningOfferingKind::Course => {
-            let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
-                DbSession::new(&mut **transaction)
-                    .query_as(
-                        "academic_delivery.services.offerings.validate_publishable",
-                        "SELECT version.status, version.effective_from, version.effective_until \
+            let (status, from): (String, chrono::NaiveDate) = DbSession::new(&mut **transaction)
+                .query_as(
+                    "academic_delivery.services.offerings.validate_publishable",
+                    "SELECT version.status, version.effective_from \
                      FROM course_offering_details detail \
                      JOIN subject_versions version ON version.id = detail.subject_version_id \
                      WHERE detail.learning_offering_id = $1",
-                    )
-                    .bind(offering_id)
-                    .fetch_one()
-                    .await?;
-            validate_version_for_term(&status, from, until, term)?;
+                )
+                .bind(offering_id)
+                .fetch_one()
+                .await?;
+            validate_version_for_term(&status, from, term)?;
         }
         LearningOfferingKind::Activity => {
-            let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
-                DbSession::new(&mut **transaction)
-                    .query_as(
-                        "academic_delivery.services.offerings.validate_publishable",
-                        "SELECT version.status, version.effective_from, version.effective_until \
+            let (status, from): (String, chrono::NaiveDate) = DbSession::new(&mut **transaction)
+                .query_as(
+                    "academic_delivery.services.offerings.validate_publishable",
+                    "SELECT version.status, version.effective_from \
                      FROM activity_offering_details detail \
                      JOIN activity_versions version ON version.id = detail.activity_version_id \
                      WHERE detail.learning_offering_id = $1",
-                    )
-                    .bind(offering_id)
-                    .fetch_one()
-                    .await?;
-            validate_version_for_term(&status, from, until, term)?;
+                )
+                .bind(offering_id)
+                .fetch_one()
+                .await?;
+            validate_version_for_term(&status, from, term)?;
         }
     }
     Ok(())
@@ -1909,8 +1889,7 @@ async fn build_curriculum_preview_for_term(
                   requirement.grade_level_id, requirement.requirement_kind,
                   version.code, version.name_th AS name,
                   version.credit::text AS credit, version.hours_per_semester::text AS hours,
-                  version.status AS version_status, version.effective_from,
-                  version.effective_until
+                  version.status AS version_status, version.effective_from
            FROM published_curriculum_course_requirements requirement
            JOIN subject_versions version ON version.id = requirement.subject_version_id
            JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id
@@ -1924,8 +1903,7 @@ async fn build_curriculum_preview_for_term(
                   requirement.grade_level_id, requirement.requirement_kind,
                   stable.code, version.name,
                   NULL::text AS credit, version.hours_per_week::text AS hours,
-                  version.status AS version_status, version.effective_from,
-                  version.effective_until
+                  version.status AS version_status, version.effective_from
            FROM published_curriculum_activity_requirements requirement
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            JOIN activities stable ON stable.id = version.activity_id
@@ -1970,12 +1948,7 @@ async fn build_curriculum_preview_for_term(
     let mut proposals = Vec::<CurriculumPreparationProposal>::new();
     let mut proposal_indexes = HashMap::<(LearningOfferingKind, Uuid), usize>::new();
     for row in rows {
-        validate_version_for_term(
-            &row.version_status,
-            row.effective_from,
-            row.effective_until,
-            &term,
-        )?;
+        validate_version_for_term(&row.version_status, row.effective_from, &term)?;
         let key = (row.resource_kind, row.catalog_version_id);
         let proposal_index = if let Some(index) = proposal_indexes.get(&key) {
             *index
@@ -2265,12 +2238,7 @@ async fn insert_generated_offering(
     match proposal.resource_kind {
         LearningOfferingKind::Course => {
             let source = course_version_source(transaction, proposal.catalog_version_id).await?;
-            validate_version_for_term(
-                &source.status,
-                source.effective_from,
-                source.effective_until,
-                term,
-            )?;
+            validate_version_for_term(&source.status, source.effective_from, term)?;
             required_standard_periods_per_week(source.standard_periods_per_week)?;
             DbSession::new(&mut **transaction)
                 .query(
@@ -2303,12 +2271,7 @@ async fn insert_generated_offering(
         }
         LearningOfferingKind::Activity => {
             let source = activity_version_source(transaction, proposal.catalog_version_id).await?;
-            validate_version_for_term(
-                &source.status,
-                source.effective_from,
-                source.effective_until,
-                term,
-            )?;
+            validate_version_for_term(&source.status, source.effective_from, term)?;
             DbSession::new(&mut **transaction)
                 .query(
                     "academic_delivery.services.offerings.insert_generated_offering",

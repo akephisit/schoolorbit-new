@@ -33,14 +33,12 @@ export const SCHOOL_CATALOG_OWNER_VALUE = '__school_catalog_owner__';
 export const CATALOG_DISPLAY_STATE_OPTIONS = [
 	{ value: 'current', label: 'ใช้อยู่ปัจจุบัน' },
 	{ value: 'upcoming', label: 'รอเริ่มใช้' },
-	{ value: 'expired', label: 'สิ้นสุดแล้ว' },
 	{ value: 'unpublished', label: 'ยังไม่เผยแพร่' }
 ] as const satisfies readonly CatalogChoice[];
 
 const DISPLAY_STATE_CLASSES: Record<CatalogDisplayState, string> = {
 	current: 'border-emerald-600/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
 	upcoming: 'border-sky-600/20 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-	expired: 'border-border bg-muted text-muted-foreground',
 	unpublished: 'border-amber-600/20 bg-amber-500/10 text-amber-700 dark:text-amber-300'
 };
 
@@ -101,10 +99,8 @@ export function formatThaiDate(value: string | null | undefined): string {
 	}).format(date);
 }
 
-export function formatEffectiveRange(from: string, until?: string | null): string {
-	return until
-		? `${formatThaiDate(from)} – ${formatThaiDate(until)}`
-		: `ตั้งแต่ ${formatThaiDate(from)}`;
+export function formatEffectiveFrom(from: string): string {
+	return `ตั้งแต่ ${formatThaiDate(from)}`;
 }
 
 export function normalizeCatalogSearch(value: string): string {

@@ -575,14 +575,12 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	const source = fixture.items[0].displayVersion!;
 	source.description = 'คำอธิบายที่เก็บไว้';
 	source.termCode = '1';
-	source.effectiveUntil = '2027-03-31';
 	const original = structuredClone(source);
 	const future = {
 		...source,
 		id: 'future-v2',
 		versionNo: 2,
 		effectiveFrom: '2027-05-01',
-		effectiveUntil: null,
 		nameTh: 'รุ่นอนาคต'
 	};
 	fixture.histories.get(source.subjectId)!.unshift(future);
@@ -597,8 +595,8 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	await expect(
 		form.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
 	).toContainText('1 พ.ค. 2569');
-	await expect(form.getByRole('button', { name: 'เลือกวันที่สิ้นสุด', exact: true })).toContainText(
-		'31 มี.ค. 2570'
+	await expect(form.getByRole('button', { name: 'เลือกวันที่สิ้นสุด', exact: true })).toHaveCount(
+		0
 	);
 	await expect(page.getByRole('button', { name: /แก้ไขรุ่น|คัดลอกรุ่น/ })).toHaveCount(0);
 	await form.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ }).click();
@@ -616,7 +614,6 @@ test('grade-only same-day revisions prefill the displayed published source and p
 		credit: original.credit,
 		description: original.description,
 		effectiveFrom: original.effectiveFrom,
-		effectiveUntil: original.effectiveUntil,
 		gradeLevelIds: [subjectGrade.id, 'grade-2', 'grade-3'],
 		hoursPerSemester: 60,
 		periodsPerWeek: 3,

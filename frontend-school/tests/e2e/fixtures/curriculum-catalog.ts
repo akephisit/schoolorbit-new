@@ -65,7 +65,6 @@ export function curriculumCatalogFixture(
 		name: original.name,
 		versionNo: 2,
 		effectiveFrom: '2026-05-01',
-		effectiveUntil: null,
 		selectableForNewRequirement: true,
 		gradeLevelIds: workspace.gradeLevels.map((grade) => grade.id),
 		section: 'basic_course',
@@ -87,14 +86,24 @@ export function curriculumCatalogFixture(
 			effectiveFrom: '2027-05-01',
 			selectableForNewRequirement: false
 		},
+		// Published history can have a higher revision but an earlier start than the current version.
 		{
 			...current,
-			id: 'subject-expired',
-			catalogId: 'expired-subject',
-			code: 'วหมดอายุ',
-			name: 'วิชาที่หมดอายุ',
-			effectiveUntil: '2026-01-01',
+			id: 'subject-superseded',
+			catalogId: 'superseded-subject',
+			code: 'ว20001',
+			name: 'รายวิชารุ่นที่ถูกแทนที่',
+			versionNo: 3,
+			effectiveFrom: '2025-05-01',
 			selectableForNewRequirement: false
+		},
+		{
+			...current,
+			id: 'subject-latest-start',
+			catalogId: 'superseded-subject',
+			code: 'ว20001',
+			name: 'รายวิชาที่เริ่มใช้ล่าสุด',
+			versionNo: 2
 		},
 		{
 			...current,

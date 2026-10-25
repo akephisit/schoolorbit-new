@@ -41,7 +41,6 @@ export function subjectVersion(subjectId: string, versionNo = 1): SubjectVersion
 		credit: '1.50',
 		description: null,
 		effectiveFrom: '2026-05-01',
-		effectiveUntil: null,
 		gradeLevelIds: [subjectGrade.id],
 		hoursPerSemester: 60,
 		periodsPerWeek: 3,

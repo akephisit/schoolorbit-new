@@ -3568,7 +3568,6 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: Some("T1".to_string()),
             periods_per_week: Some(3),
             grade_level_ids: vec![grade_level_id],
@@ -3601,7 +3600,6 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
             subject_type: published.subject_type,
             description: published.description,
             effective_from: published.effective_from,
-            effective_until: published.effective_until,
             term_code: published.term_code,
             periods_per_week: published.periods_per_week,
             grade_level_ids: published.grade_level_ids,
@@ -3720,7 +3718,6 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
             hours_per_term: Some("30.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: Some("T1".to_string()),
             grade_level_ids: vec![grade_level_id],
         },
@@ -3750,7 +3747,6 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
             hours_per_term: published.hours_per_term,
             scheduling_mode: published.scheduling_mode,
             effective_from: published.effective_from,
-            effective_until: published.effective_until,
             term_code: published.term_code,
             grade_level_ids: published.grade_level_ids,
             row_version: published.row_version,
@@ -3801,7 +3797,6 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
             hours_per_term: None,
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![grade_level_id],
         },
@@ -3853,7 +3848,6 @@ async fn catalog_publication_requires_subject_workload_and_accepts_zero_activity
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             periods_per_week: None,
             grade_level_ids: vec![grade_level_id],
@@ -3894,7 +3888,6 @@ async fn catalog_publication_requires_subject_workload_and_accepts_zero_activity
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             periods_per_week: Some(2),
             grade_level_ids: vec![grade_level_id],
@@ -3933,7 +3926,6 @@ async fn catalog_publication_requires_subject_workload_and_accepts_zero_activity
             hours_per_term: Some("0.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![grade_level_id],
         },
@@ -3960,9 +3952,7 @@ async fn create_overview_subject_version(
     grade_level_id: Uuid,
     name: &str,
     effective_from: NaiveDate,
-    effective_until: Option<NaiveDate>,
-    publish: bool,
-) {
+    publish: bool,) {
     let version = catalog::create_subject_version(
         pool,
         subject_id,
@@ -3974,7 +3964,6 @@ async fn create_overview_subject_version(
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from,
-            effective_until,
             term_code: None,
             periods_per_week: Some(2),
             grade_level_ids: vec![grade_level_id],
@@ -4021,9 +4010,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "รุ่นที่ใช้อยู่",
         NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-        Some(NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()),
-        true,
-    )
+        true,)
     .await;
     create_overview_subject_version(
         &pool,
@@ -4031,9 +4018,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "ร่างที่ยังไม่เผยแพร่",
         NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
-        Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
-        false,
-    )
+        false,)
     .await;
 
     let upcoming = catalog::create_subject(
@@ -4051,15 +4036,13 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "รุ่นอนาคต",
         NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
-        None,
-        true,
-    )
+        true,)
     .await;
 
-    let expired = catalog::create_subject(
+    let older = catalog::create_subject(
         &pool,
         CreateCatalogSubjectRequest {
-            code: "OVERVIEW-EXPIRED".to_string(),
+            code: "OVERVIEW-OLDER".to_string(),
             subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
         },
     )
@@ -4067,13 +4050,11 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
     .unwrap();
     create_overview_subject_version(
         &pool,
-        expired.id,
+        older.id,
         grade_level_id,
         "รุ่นเดิม",
         NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
-        Some(NaiveDate::from_ymd_opt(2026, 3, 31).unwrap()),
-        true,
-    )
+        true,)
     .await;
 
     let unpublished = catalog::create_subject(
@@ -4117,12 +4098,12 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
     assert_eq!(upcoming_item.display_state, CatalogDisplayState::Upcoming);
     assert_eq!(upcoming_item.draft_count, 0);
 
-    let expired_item = overview
+    let older_item = overview
         .items
         .iter()
-        .find(|item| item.subject.id == expired.id)
+        .find(|item| item.subject.id == older.id)
         .unwrap();
-    assert_eq!(expired_item.display_state, CatalogDisplayState::Expired);
+    assert_eq!(older_item.display_state, CatalogDisplayState::Current);
 
     let unpublished_item = overview
         .items
@@ -4207,7 +4188,6 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
             hours_per_term: Some("20.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![grade_level_id],
         },
@@ -4416,7 +4396,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             periods_per_week: Some(2),
             grade_level_ids: vec![grade_level_id],
@@ -4451,7 +4430,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             hours_per_term: Some("20.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![grade_level_id],
         },
@@ -4487,7 +4465,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
             subject_type: "BASIC".to_string(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             periods_per_week: Some(2),
             grade_level_ids: vec![grade_level_id],
@@ -4597,7 +4574,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
             hours_per_term: Some("20.00".to_string()),
             scheduling_mode: "synchronized".to_string(),
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![grade_level_id],
         },

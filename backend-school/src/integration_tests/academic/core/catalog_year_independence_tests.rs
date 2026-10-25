@@ -11,7 +11,6 @@ fn subject_values(from: NaiveDate, grade: Uuid) -> CreateSubjectVersionRequest {
         subject_type: "ADDITIONAL".into(),
         description: None,
         effective_from: from,
-        effective_until: None,
         term_code: None,
         periods_per_week: Some(2),
         grade_level_ids: vec![grade],
@@ -26,7 +25,6 @@ fn activity_values(from: NaiveDate, grade: Uuid) -> CreateActivityVersionRequest
         hours_per_term: Some("20.00".into()),
         scheduling_mode: "synchronized".into(),
         effective_from: from,
-        effective_until: None,
         term_code: None,
         grade_level_ids: vec![grade],
     }
@@ -257,7 +255,7 @@ async fn pins(pool: &PgPool) -> Value {
         "learning_delivery_apply_runs",
         "academic_term_change_sets",
         "academic_timetable_versions",
-        "offering_curriculum_sources",
+        "learning_offering_curriculum_sources",
     ] {
         let value:Value=sqlx::query_scalar(&format!("SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),'[]'::jsonb) FROM {table} r")).fetch_one(pool).await.unwrap();
         result.insert(table.into(), value);

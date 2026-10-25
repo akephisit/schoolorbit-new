@@ -1317,7 +1317,6 @@ pub async fn delivery_management_options_on_connection(
             JOIN subjects subject ON subject.id = version.subject_id
             WHERE version.status = 'published'
               AND version.effective_from <= $1
-              AND (version.effective_until IS NULL OR version.effective_until > $1)
               AND ($2 OR subject.owning_organization_unit_id = ANY($3))
             UNION ALL
             SELECT version.id, 'activity'::text AS kind, activity.code,
@@ -1327,7 +1326,6 @@ pub async fn delivery_management_options_on_connection(
             JOIN activities activity ON activity.id = version.activity_id
             WHERE version.status = 'published'
               AND version.effective_from <= $1
-              AND (version.effective_until IS NULL OR version.effective_until > $1)
               AND ($2 OR activity.owning_organization_unit_id = ANY($3))
         ) option
         ORDER BY option.kind, option.code, option.version_no DESC, option.id

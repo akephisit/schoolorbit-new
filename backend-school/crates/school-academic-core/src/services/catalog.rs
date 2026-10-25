@@ -206,21 +206,17 @@ struct SubjectRevisionSelection {
     subject_id: Uuid,
     version_no: i32,
     effective_from: NaiveDate,
-    effective_until: Option<NaiveDate>,
 }
 
 fn select_current_subject_revision<'a, T: 'a>(
     versions: impl Iterator<Item = &'a T>,
     today: NaiveDate,
-    dates: impl Fn(&T) -> (NaiveDate, Option<NaiveDate>, i32),
+    dates: impl Fn(&T) -> (NaiveDate, i32),
 ) -> Option<&'a T> {
     versions
-        .filter(|version| {
-            let (from, until, _) = dates(version);
-            from <= today && until.is_none_or(|until| today < until)
-        })
+        .filter(|version| dates(version).0 <= today)
         .max_by_key(|version| {
-            let (from, _, revision) = dates(version);
+            let (from, revision) = dates(version);
             (from, revision)
         })
 }
@@ -232,7 +228,7 @@ pub struct CurrentSubjectRevision {
     pub version_no: i32,
 }
 
-/// Current published metadata only: no upcoming/expired fallback. Callers making a
+/// Current published metadata only: future revisions never become current early. Callers making a
 /// write decision hold stable-subject locks until their transaction commits.
 pub async fn current_subject_revisions(
     pool: &PgPool,
@@ -250,7 +246,7 @@ pub async fn current_subject_revisions_on_connection(
     subject_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, CurrentSubjectRevision>, AppError> {
     let versions = DbSession::new(connection).query_as::<SubjectRevisionSelection>("academic_core.services.catalog.current_subject_revisions_on_connection",
-        "SELECT id,subject_id,version_no,effective_from,effective_until FROM subject_versions WHERE subject_id=ANY($1) AND status='published'",
+        "SELECT id,subject_id,version_no,effective_from FROM subject_versions WHERE subject_id=ANY($1) AND status='published'",
     ).bind(subject_ids).fetch_all().await?;
     let mut grouped = HashMap::<Uuid, Vec<SubjectRevisionSelection>>::new();
     for version in versions {
@@ -261,11 +257,7 @@ pub async fn current_subject_revisions_on_connection(
         .iter()
         .filter_map(|(subject_id, versions)| {
             select_current_subject_revision(versions.iter(), today, |version| {
-                (
-                    version.effective_from,
-                    version.effective_until,
-                    version.version_no,
-                )
+                (version.effective_from, version.version_no)
             })
             .map(|version| {
                 (
@@ -654,11 +646,11 @@ pub async fn create_subject_version(
         INSERT INTO subject_versions (
             id, subject_id, version_no, code, name_th, name_en, credit,
             hours_per_semester, type, description, effective_from,
-            effective_until, term, is_active,
+            term, is_active,
             periods_per_week, status
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13, true, $14, 'draft'
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, true, $13, 'draft'
         )
         "#,
         )
@@ -673,12 +665,10 @@ pub async fn create_subject_version(
         .bind(request.subject_type.trim())
         .bind(request.description)
         .bind(request.effective_from)
-        .bind(request.effective_until)
         .bind(request.term_code)
         .bind(request.periods_per_week)
         .execute()
-        .await
-        .map_err(map_version_write_error)?;
+        .await?;
     replace_subject_grade_levels(&mut transaction, id, request.grade_level_ids).await?;
     transaction.commit().await?;
     get_subject_version(pool, id).await
@@ -698,7 +688,6 @@ pub async fn update_subject_version(
         subject_type: request.subject_type,
         description: request.description,
         effective_from: request.effective_from,
-        effective_until: request.effective_until,
         term_code: request.term_code,
         periods_per_week: request.periods_per_week,
         grade_level_ids: request.grade_level_ids,
@@ -729,10 +718,10 @@ pub async fn update_subject_version(
             r#"
         UPDATE subject_versions SET name_th = $1, name_en = $2, credit = $3,
             hours_per_semester = $4, type = $5, description = $6,
-            effective_from = $7, effective_until = $8, term = $9,
-            periods_per_week = $10,
+            effective_from = $7, term = $8,
+            periods_per_week = $9,
             row_version = row_version + 1, updated_at = now()
-        WHERE id = $11 AND row_version = $12 AND status = 'draft'
+        WHERE id = $10 AND row_version = $11 AND status = 'draft'
         "#,
         )
         .bind(values.name_th.trim())
@@ -742,14 +731,12 @@ pub async fn update_subject_version(
         .bind(values.subject_type.trim())
         .bind(values.description)
         .bind(values.effective_from)
-        .bind(values.effective_until)
         .bind(values.term_code)
         .bind(values.periods_per_week)
         .bind(id)
         .bind(row_version)
         .execute()
-        .await
-        .map_err(map_version_write_error)?;
+        .await?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "เวอร์ชันรายวิชาถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
@@ -1201,9 +1188,8 @@ pub async fn create_activity_version(
         INSERT INTO activity_versions (
             id, activity_id, version_no, name, activity_type, description,
             periods_per_week, hours_per_week, hours_per_term, scheduling_mode, is_active,
-            term, grade_level_ids, effective_from,
-            effective_until, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, 'draft')
+            term, grade_level_ids, effective_from, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, 'draft')
         "#,
         )
         .bind(id)
@@ -1219,10 +1205,8 @@ pub async fn create_activity_version(
         .bind(request.term_code)
         .bind(grade_level_ids)
         .bind(request.effective_from)
-        .bind(request.effective_until)
         .execute()
-        .await
-        .map_err(map_version_write_error)?;
+        .await?;
     transaction.commit().await?;
     get_activity_version(pool, id).await
 }
@@ -1238,8 +1222,6 @@ pub async fn update_activity_version(
         &request.scheduling_mode,
         &request.hours_per_week,
         request.hours_per_term.as_deref(),
-        request.effective_from,
-        request.effective_until,
     )?;
 
     let mut transaction = school_tenancy::TenantPool::begin_observed(
@@ -1249,10 +1231,7 @@ pub async fn update_activity_version(
     .await?;
     lock_activity_for_version(&mut transaction, id).await?;
     let version = update_activity_version_on_connection(&mut transaction, id, request).await?;
-    transaction
-        .commit()
-        .await
-        .map_err(map_version_write_error)?;
+    transaction.commit().await?;
     Ok(version)
 }
 
@@ -1269,7 +1248,6 @@ pub async fn update_activity_version_on_connection(
         hours_per_term: request.hours_per_term,
         scheduling_mode: request.scheduling_mode,
         effective_from: request.effective_from,
-        effective_until: request.effective_until,
         term_code: request.term_code,
         grade_level_ids: request.grade_level_ids,
     };
@@ -1287,10 +1265,10 @@ pub async fn update_activity_version_on_connection(
             "academic_core.services.catalog.update_activity_version_on_connection",
             r#"
         UPDATE activity_versions SET name = $1, description = $2, hours_per_week = $3,
-            hours_per_term = $4, scheduling_mode = $5, effective_from = $6, effective_until = $7,
-            term = $8, grade_level_ids = $9, row_version = row_version + 1,
+            hours_per_term = $4, scheduling_mode = $5, effective_from = $6,
+            term = $7, grade_level_ids = $8, row_version = row_version + 1,
             updated_at = now()
-        WHERE id = $10 AND row_version = $11 AND status = 'draft'
+        WHERE id = $9 AND row_version = $10 AND status = 'draft'
         "#,
         )
         .bind(values.name.trim())
@@ -1299,14 +1277,12 @@ pub async fn update_activity_version_on_connection(
         .bind(hours_per_term)
         .bind(values.scheduling_mode.trim())
         .bind(values.effective_from)
-        .bind(values.effective_until)
         .bind(values.term_code)
         .bind(grade_level_ids)
         .bind(id)
         .bind(row_version)
         .execute()
-        .await
-        .map_err(map_version_write_error)?;
+        .await?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "เวอร์ชันกิจกรรมเผยแพร่แล้วหรือถูกแก้ไขโดยผู้ใช้อื่น".to_string(),
@@ -1346,12 +1322,9 @@ pub async fn publish_activity_version(
     DbSession::new(&mut *transaction).query(
         "academic_core.services.catalog.publish_activity_version",
         "UPDATE activity_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
-    ).bind(id).execute().await.map_err(map_version_write_error)?;
+    ).bind(id).execute().await?;
     let version = get_activity_version_on_connection(&mut transaction, id).await?;
-    transaction
-        .commit()
-        .await
-        .map_err(map_version_write_error)?;
+    transaction.commit().await?;
     Ok(version)
 }
 
@@ -1778,45 +1751,14 @@ fn select_subject_display(
         .iter()
         .filter(|version| version.status == VersionStatus::Draft)
         .count() as i64;
-    let published = versions
-        .iter()
-        .filter(|version| version.status == VersionStatus::Published)
-        .collect::<Vec<_>>();
-    let display = select_current_subject_revision(published.iter().copied(), today, |version| {
-        (
-            version.effective_from,
-            version.effective_until,
-            version.version_no,
-        )
-    })
-    .map(|version| (version, CatalogDisplayState::Current))
-    .or_else(|| {
-        published
+    let display = select_display_version(
+        versions
             .iter()
-            .copied()
-            .filter(|version| version.effective_from > today)
-            .min_by_key(|version| {
-                (
-                    version.effective_from,
-                    std::cmp::Reverse(version.version_no),
-                )
-            })
-            .map(|version| (version, CatalogDisplayState::Upcoming))
-    })
-    .or_else(|| {
-        published
-            .iter()
-            .copied()
-            .filter(|version| version.effective_until.is_some_and(|until| until <= today))
-            .max_by_key(|version| {
-                (
-                    version.effective_until,
-                    version.effective_from,
-                    version.version_no,
-                )
-            })
-            .map(|version| (version, CatalogDisplayState::Expired))
-    });
+            .filter(|version| version.status == VersionStatus::Published),
+        today,
+        |version| version.effective_from,
+        |version| version.version_no,
+    );
     match display {
         Some((version, state)) => (Some(version.clone()), state, draft_count),
         None => (None, CatalogDisplayState::Unpublished, draft_count),
@@ -1837,7 +1779,6 @@ fn select_activity_display(
             .filter(|version| version.status == VersionStatus::Published),
         today,
         |version| version.effective_from,
-        |version| version.effective_until,
         |version| version.version_no,
     );
     match display {
@@ -1850,40 +1791,25 @@ fn select_display_version<'a, T: 'a>(
     versions: impl Iterator<Item = &'a T>,
     today: NaiveDate,
     effective_from: impl Fn(&T) -> NaiveDate,
-    effective_until: impl Fn(&T) -> Option<NaiveDate>,
     version_no: impl Fn(&T) -> i32,
 ) -> Option<(&'a T, CatalogDisplayState)> {
     let versions = versions.collect::<Vec<_>>();
-    if let Some(current) = versions
-        .iter()
-        .copied()
-        .filter(|version| {
-            effective_from(version) <= today
-                && effective_until(version).is_none_or(|until| until >= today)
-        })
-        .max_by_key(|version| (effective_from(version), version_no(version)))
-    {
-        return Some((current, CatalogDisplayState::Current));
-    }
-    if let Some(upcoming) = versions
-        .iter()
-        .copied()
-        .filter(|version| effective_from(version) > today)
-        .min_by_key(|version| (effective_from(version), version_no(version)))
-    {
-        return Some((upcoming, CatalogDisplayState::Upcoming));
-    }
-    versions
-        .into_iter()
-        .filter(|version| effective_until(version).is_some_and(|until| until < today))
-        .max_by_key(|version| {
-            (
-                effective_until(version).unwrap_or_else(|| effective_from(version)),
-                effective_from(version),
-                version_no(version),
-            )
-        })
-        .map(|version| (version, CatalogDisplayState::Expired))
+    select_current_subject_revision(versions.iter().copied(), today, |version| {
+        (effective_from(version), version_no(version))
+    })
+    .map(|version| (version, CatalogDisplayState::Current))
+    .or_else(|| {
+        versions
+            .into_iter()
+            .filter(|version| effective_from(version) > today)
+            .min_by_key(|version| {
+                (
+                    effective_from(version),
+                    std::cmp::Reverse(version_no(version)),
+                )
+            })
+            .map(|version| (version, CatalogDisplayState::Upcoming))
+    })
 }
 
 fn subject_version_select(predicate: &str, order: &str) -> String {
@@ -1892,12 +1818,12 @@ fn subject_version_select(predicate: &str, order: &str) -> String {
         SELECT version.id, version.subject_id, version.version_no, version.name_th,
                version.name_en, version.credit::text AS credit,
                version.hours_per_semester, version.type AS subject_type,
-               version.description, version.effective_from, version.effective_until,
+               version.description, version.effective_from,
                version.term AS term_code, version.periods_per_week,
                ARRAY(SELECT link.grade_level_id FROM subject_version_grade_levels link
                      WHERE link.subject_id = version.id ORDER BY link.grade_level_id) AS grade_level_ids,
                version.status, version.published_at, version.row_version,
-               (version.migration_provenance - 'historicalYearBinding') <> '{{}}'::jsonb AS migrated,
+               (version.migration_provenance - 'historicalCatalogContext') <> '{{}}'::jsonb AS migrated,
                version.created_at, version.updated_at
         FROM subject_versions version
         WHERE {predicate}
@@ -1912,11 +1838,11 @@ fn activity_version_select(predicate: &str, order: &str) -> String {
         SELECT version.id, version.activity_id, version.version_no, version.name,
                version.description, version.hours_per_week::text AS hours_per_week,
                version.hours_per_term::text AS hours_per_term,
-               version.scheduling_mode, version.effective_from, version.effective_until,
+               version.scheduling_mode, version.effective_from,
                version.term AS term_code,
                COALESCE(ARRAY(SELECT jsonb_array_elements_text(COALESCE(version.grade_level_ids, '[]'::jsonb))::uuid), ARRAY[]::uuid[]) AS grade_level_ids,
                version.status, version.published_at, version.row_version,
-               (version.migration_provenance - 'historicalYearBinding') <> '{{}}'::jsonb AS migrated,
+               (version.migration_provenance - 'historicalCatalogContext') <> '{{}}'::jsonb AS migrated,
                version.created_at, version.updated_at
         FROM activity_versions version
         WHERE {predicate}
@@ -1926,7 +1852,6 @@ fn activity_version_select(predicate: &str, order: &str) -> String {
 }
 
 fn validate_subject_version(request: &CreateSubjectVersionRequest) -> Result<(), AppError> {
-    validate_effective_range(request.effective_from, request.effective_until)?;
     validate_canonical_decimal(&request.credit, 2)?;
     if request.periods_per_week.is_some_and(|value| value < 0)
         || request.hours_per_semester.is_some_and(|value| value < 0)
@@ -1949,8 +1874,6 @@ fn validate_activity_version(request: &CreateActivityVersionRequest) -> Result<(
         &request.scheduling_mode,
         &request.hours_per_week,
         request.hours_per_term.as_deref(),
-        request.effective_from,
-        request.effective_until,
     )
 }
 
@@ -1959,10 +1882,7 @@ fn validate_activity_version_fields(
     scheduling_mode: &str,
     hours_per_week: &str,
     hours_per_term: Option<&str>,
-    effective_from: chrono::NaiveDate,
-    effective_until: Option<chrono::NaiveDate>,
 ) -> Result<(), AppError> {
-    validate_effective_range(effective_from, effective_until)?;
     validate_canonical_decimal(hours_per_week, 2)?;
     hours_per_term
         .map(|value| validate_canonical_decimal(value, 2))
@@ -1971,16 +1891,6 @@ fn validate_activity_version_fields(
         return Err(AppError::ValidationError(
             "ข้อมูลเวอร์ชันกิจกรรมไม่ถูกต้อง".to_string(),
         ));
-    }
-    Ok(())
-}
-
-fn validate_effective_range(
-    from: chrono::NaiveDate,
-    until: Option<chrono::NaiveDate>,
-) -> Result<(), AppError> {
-    if until.is_some_and(|until| until <= from) {
-        return Err(AppError::ValidationError("ช่วงวันที่มีผลไม่ถูกต้อง".to_string()));
     }
     Ok(())
 }
@@ -2053,7 +1963,6 @@ fn subject_version_content(version: &SubjectVersion) -> CreateSubjectVersionRequ
         subject_type: version.subject_type.clone(),
         description: version.description.clone(),
         effective_from: version.effective_from,
-        effective_until: version.effective_until,
         term_code: version.term_code.clone(),
         periods_per_week: version.periods_per_week,
         grade_level_ids: version.grade_level_ids.clone(),
@@ -2078,7 +1987,7 @@ async fn ensure_subject_revision_differs(
             SELECT id FROM subject_versions
             WHERE subject_id = $1 AND status = 'published'
               AND ($2::uuid IS NULL OR id <> $2)
-              AND effective_from <= $3 AND (effective_until IS NULL OR $3 < effective_until)
+              AND effective_from <= $3
             ORDER BY effective_from DESC, version_no DESC LIMIT 1
         )
         SELECT EXISTS (
@@ -2088,10 +1997,10 @@ async fn ensure_subject_revision_differs(
               AND name_th = $4 AND name_en IS NOT DISTINCT FROM $5
               AND credit = $6 AND hours_per_semester IS NOT DISTINCT FROM $7
               AND type = $8 AND description IS NOT DISTINCT FROM $9
-              AND effective_from = $3 AND effective_until IS NOT DISTINCT FROM $10
-              AND term IS NOT DISTINCT FROM $11 AND periods_per_week IS NOT DISTINCT FROM $12
+              AND effective_from = $3
+              AND term IS NOT DISTINCT FROM $10 AND periods_per_week IS NOT DISTINCT FROM $11
               AND ARRAY(SELECT grade_level_id FROM subject_version_grade_levels
-                        WHERE subject_id = version.id ORDER BY grade_level_id) = $13::uuid[]
+                        WHERE subject_id = version.id ORDER BY grade_level_id) = $12::uuid[]
         )"#,
         )
         .bind(subject_id)
@@ -2103,7 +2012,6 @@ async fn ensure_subject_revision_differs(
         .bind(request.hours_per_semester)
         .bind(request.subject_type.trim())
         .bind(&request.description)
-        .bind(request.effective_until)
         .bind(&request.term_code)
         .bind(request.periods_per_week)
         .bind(grades)
@@ -2240,14 +2148,6 @@ fn map_catalog_write_error(error: sqlx::Error) -> AppError {
         }
     }
     AppError::DbError(error)
-}
-
-fn map_version_write_error(error: sqlx::Error) -> AppError {
-    if error.to_string().contains("VERSION_RANGE_OVERLAP") {
-        AppError::Conflict("ช่วงวันที่ของเวอร์ชันทับซ้อนกับเวอร์ชันเดิม".to_string())
-    } else {
-        AppError::DbError(error)
-    }
 }
 
 /// Minimal catalogue metadata for already-authorized subject versions.

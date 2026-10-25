@@ -15,7 +15,6 @@ const published: SubjectVersion = {
 	credit: '1.50',
 	description: 'คำอธิบายเดิม',
 	effectiveFrom: '2026-05-01',
-	effectiveUntil: '2027-03-31',
 	gradeLevelIds: ['grade-1'],
 	hoursPerSemester: 60,
 	periodsPerWeek: 3,
@@ -29,7 +28,7 @@ const published: SubjectVersion = {
 	updatedAt: '2026-05-01T00:00:00Z'
 };
 
-test('a grade-only revision preserves source dates, decimal text and hidden values without editing published data', () => {
+test('a grade-only revision preserves the source start date, decimal text and hidden values without editing published data', () => {
 	const original = structuredClone(published);
 	const draft = createCatalogVersionDraft(published);
 	draft.gradeLevelIds.push('grade-2');
@@ -40,7 +39,6 @@ test('a grade-only revision preserves source dates, decimal text and hidden valu
 		totalValue: '60',
 		standardPeriodsPerWeek: '3',
 		effectiveFrom: '2026-05-01',
-		effectiveUntil: '2027-03-31',
 		gradeLevelIds: ['grade-1', 'grade-2'],
 		classification: 'BASIC',
 		description: published.description,

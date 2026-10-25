@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 135).await.unwrap();
+    apply_migrations_through(&pool, 138).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 135).await.unwrap();
+    apply_migrations_through(&pool, 138).await.unwrap();
     pool
 }
 
@@ -1131,7 +1131,6 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -1802,12 +1801,12 @@ async fn add_operational_change_catalog_fixture(
         r#"INSERT INTO subject_versions (
                id, subject_id, version_no, code, name_th, name_en, credit,
                hours_per_semester, type, description, effective_from,
-               effective_until, start_academic_year_id, term, is_active,
+               term, is_active,
                periods_per_week, status, published_at
            )
            SELECT $1, $2, 1, 'ท99999', 'รายวิชาทดสอบกลางภาค', NULL, credit,
                   hours_per_semester, type, 'fixture', effective_from,
-                  effective_until, start_academic_year_id, term, true,
+                  term, true,
                   periods_per_week, 'published', now()
            FROM subject_versions
            WHERE id = $3"#,
@@ -1825,7 +1824,6 @@ async fn add_operational_change_catalog_fixture(
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -1854,13 +1852,13 @@ async fn add_operational_change_catalog_fixture(
         r#"INSERT INTO activity_versions (
                id, activity_id, version_no, name, activity_type, description,
                periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-               is_active, term, grade_level_ids, start_academic_year_id,
-               effective_from, effective_until, status, published_at
+               is_active, term, grade_level_ids,
+               effective_from, status, published_at
            )
            SELECT $1, $2, 1, 'กิจกรรมทดสอบกลางภาค', activity_type, 'fixture',
                   periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-                  true, term, grade_level_ids, start_academic_year_id,
-                  effective_from, effective_until, 'published', now()
+                  true, term, grade_level_ids,
+                  effective_from, 'published', now()
            FROM activity_versions
            WHERE id = $3"#,
     )
@@ -4825,7 +4823,6 @@ async fn self_registration_activity_uses_common_delivery() {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -4985,7 +4982,6 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -5711,7 +5707,6 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
            WHERE version.status = 'published'
              AND version.periods_per_week IS NOT NULL
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
              AND NOT EXISTS (
                  SELECT 1
                  FROM curriculum_course_requirements requirement
@@ -6040,7 +6035,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -6763,7 +6757,7 @@ async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_
 async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_central() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_activity_groups").await;
     let context = planning_runtime_context(&pool).await;
-    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date AND (version.effective_until IS NULL OR version.effective_until > term.start_date) ORDER BY version.id LIMIT 1")
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date ORDER BY version.id LIMIT 1")
         .bind(context.term_id).fetch_one(&pool).await.unwrap();
     let request = CreateActivityOfferingRequest {
         create_homeroom_groups: false,
@@ -6868,7 +6862,6 @@ async fn zero_workload_subject(
             subject_type: "BASIC".into(),
             description: None,
             effective_from: start,
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![context.grade_level_id],
         },
@@ -6952,7 +6945,6 @@ async fn subject_zero_workload_manual_opening_keeps_zero_and_refuses_activity_ze
             hours_per_term: Some("0.00".into()),
             scheduling_mode: "synchronized".into(),
             effective_from: version.effective_from,
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![context.grade_level_id],
         },

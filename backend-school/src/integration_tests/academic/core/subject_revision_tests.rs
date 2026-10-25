@@ -11,7 +11,6 @@ fn content(version: &SubjectVersion) -> CreateSubjectVersionRequest {
         subject_type: version.subject_type.clone(),
         description: version.description.clone(),
         effective_from: version.effective_from,
-        effective_until: version.effective_until,
         term_code: version.term_code.clone(),
         periods_per_week: version.periods_per_week,
         grade_level_ids: version.grade_level_ids.clone(),
@@ -79,7 +78,6 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
         sqlx::query("UPDATE subject_versions SET status='published',published_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1")
             .bind(version_id).execute(&pool).await.unwrap();
     }
-    let unrelated_before = unrelated_snapshot(&pool).await;
     let before = catalog_snapshot(&pool).await;
     let pins = pinned_snapshot(&pool).await;
     apply_migrations_through(&pool, 131).await.unwrap();
@@ -88,6 +86,7 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
     apply_migrations_through(&pool, 131).await.unwrap();
     assert_eq!(before, catalog_snapshot(&pool).await);
     apply_migrations_through(&pool, 138).await.unwrap();
+    let unrelated_before = unrelated_snapshot(&pool).await;
     let old_id:Uuid = sqlx::query_scalar("SELECT d.subject_version_id FROM course_offering_details d JOIN curriculum_course_requirements r ON r.subject_version_id=d.subject_version_id LIMIT 1").fetch_one(&pool).await.unwrap();
     let old = catalog::get_subject_version(&pool, old_id).await.unwrap();
     let old_json = serde_json::to_value(&old).unwrap();
@@ -133,14 +132,10 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
         .to_string()
         .contains("PUBLISHED_VERSION_IMMUTABLE"));
     assert!(sqlx::query("UPDATE activity_versions SET name='changed' WHERE id=(SELECT id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1)").execute(&pool).await.unwrap_err().to_string().contains("PUBLISHED_VERSION_IMMUTABLE"));
-    let activity_overlap = sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft','name','overlap-fixture-131'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err();
-    assert!(
-        activity_overlap
-            .to_string()
-            .contains("ACTIVITY_VERSION_RANGE_OVERLAP"),
-        "{activity_overlap}"
-    );
-    assert!(sqlx::query("INSERT INTO subject_versions SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+100,'status','draft','effective_until',effective_from))).* FROM subject_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err().to_string().contains("subject_versions_effective_range_check"));
+    // Migration 138 intentionally replaces the activity range policy with
+    // start-only revisions. Existing pinned rows and published guards stay intact.
+    sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft','published_at',NULL,'name','start-only-fixture-138'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap();
+
 }
 
 async fn new_subject(pool: &PgPool, code: &str) -> (Uuid, CreateSubjectVersionRequest) {
@@ -164,7 +159,6 @@ async fn new_subject(pool: &PgPool, code: &str) -> (Uuid, CreateSubjectVersionRe
             subject_type: "ADDITIONAL".into(),
             description: None,
             effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-            effective_until: None,
             term_code: None,
             periods_per_week: Some(2),
             grade_level_ids: grades,
@@ -301,10 +295,9 @@ async fn subject_revision_concurrent_creates_and_updates_keep_one_semantic_draft
 }
 
 #[tokio::test]
-async fn subject_revision_current_future_and_exclusive_end_selection() {
+async fn subject_revision_current_future_and_start_only_selection() {
     let pool = fixture("subject_revision_selection").await;
     let (id, mut a) = new_subject(&pool, "REV-SELECT").await;
-    a.effective_until = Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap());
     let first = publish(
         &pool,
         catalog::create_subject_version(&pool, id, a.clone())
@@ -321,7 +314,6 @@ async fn subject_revision_current_future_and_exclusive_end_selection() {
     )
     .await;
     a.effective_from = NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
-    a.effective_until = None;
     publish(
         &pool,
         catalog::create_subject_version(&pool, id, a.clone())
@@ -349,8 +341,8 @@ async fn subject_revision_current_future_and_exclusive_end_selection() {
         ),
         (
             NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
-            future.id,
-            CatalogDisplayState::Upcoming,
+            second.id,
+            CatalogDisplayState::Current,
         ),
         (
             NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),

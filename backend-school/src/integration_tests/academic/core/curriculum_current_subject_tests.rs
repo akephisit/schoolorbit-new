@@ -28,9 +28,7 @@ async fn publish(pool: &PgPool, version: SubjectVersion) -> SubjectVersion {
 fn version_request(
     name: &str,
     grade: Uuid,
-    from: NaiveDate,
-    until: Option<NaiveDate>,
-) -> CreateSubjectVersionRequest {
+    from: NaiveDate,) -> CreateSubjectVersionRequest {
     CreateSubjectVersionRequest {
         name_th: name.into(),
         name_en: None,
@@ -39,7 +37,6 @@ fn version_request(
         subject_type: "BASIC".into(),
         description: None,
         effective_from: from,
-        effective_until: until,
         term_code: None,
         periods_per_week: Some(2),
         grade_level_ids: vec![grade],
@@ -101,7 +98,7 @@ async fn fixture(name: &str) -> Fixture {
         catalog::create_subject_version(
             &pool,
             subject.id,
-            version_request("รายวิชารุ่นหนึ่ง", grade, catalog::subject_catalog_today(), None),
+            version_request("รายวิชารุ่นหนึ่ง", grade, catalog::subject_catalog_today()),
         )
         .await
         .unwrap(),
@@ -153,7 +150,7 @@ async fn revision(f: &Fixture, name: &str) -> SubjectVersion {
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request(name, f.grade, f.v1.effective_from, None),
+            version_request(name, f.grade, f.v1.effective_from),
         )
         .await
         .unwrap(),
@@ -173,7 +170,7 @@ async fn seed_existing(f: &Fixture, version: Uuid) {
 async fn curriculum_current_subject_options_keep_history_and_reject_no_current_fallback() {
     let f = fixture("curriculum_current_subject_options").await;
     let grades:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year").fetch_all(&f.pool).await.unwrap();
-    let mut widened = version_request(&f.v1.name_th, f.grade, f.v1.effective_from, None);
+    let mut widened = version_request(&f.v1.name_th, f.grade, f.v1.effective_from);
     widened.grade_level_ids = grades.clone();
     let v2 = publish(
         &f.pool,
@@ -191,7 +188,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     let draft = catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("ยังไม่เผยแพร่", f.grade, today, None),
+        version_request("ยังไม่เผยแพร่", f.grade, today),
     )
     .await
     .unwrap();
@@ -209,7 +206,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("หมดอายุวันนี้", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("หมดอายุวันนี้", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -220,7 +217,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("เริ่มพรุ่งนี้", f.grade, today.succ_opt().unwrap(), None),
+            version_request("เริ่มพรุ่งนี้", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -382,9 +379,7 @@ async fn curriculum_current_subject_grandfathers_duplicate_buckets_and_future_ex
             version_request(
                 "ฉบับอนาคต",
                 f.grade,
-                catalog::subject_catalog_today().succ_opt().unwrap(),
-                None,
-            ),
+                catalog::subject_catalog_today().succ_opt().unwrap(),),
         )
         .await
         .unwrap(),
@@ -396,7 +391,7 @@ async fn curriculum_current_subject_grandfathers_duplicate_buckets_and_future_ex
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("ฉบับหมดอายุ", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("ฉบับหมดอายุ", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -554,7 +549,6 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
             hours_per_term: Some("20".into()),
             scheduling_mode: "synchronized".into(),
             effective_from: catalog::subject_catalog_today().succ_opt().unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![f.grade],
         },
@@ -616,7 +610,7 @@ async fn curriculum_current_subject_save_waits_for_publication_lock_and_rolls_ba
     let draft = catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("รายวิชารุ่นสอง", f.grade, f.v1.effective_from, None),
+        version_request("รายวิชารุ่นสอง", f.grade, f.v1.effective_from),
     )
     .await
     .unwrap();
@@ -652,7 +646,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
     catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("ร่างใหม่", f.grade, today, None),
+        version_request("ร่างใหม่", f.grade, today),
     )
     .await
     .unwrap();
@@ -661,7 +655,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("อนาคตใหม่", f.grade, today.succ_opt().unwrap(), None),
+            version_request("อนาคตใหม่", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -672,7 +666,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("หมดอายุใหม่", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("หมดอายุใหม่", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -716,7 +710,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("หมดอายุ", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("หมดอายุ", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -727,7 +721,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("อนาคต", f.grade, today.succ_opt().unwrap(), None),
+            version_request("อนาคต", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -736,7 +730,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
     catalog::create_subject_version(
         &f.pool,
         unavailable.id,
-        version_request("ร่าง", f.grade, today, None),
+        version_request("ร่าง", f.grade, today),
     )
     .await
     .unwrap();
@@ -770,9 +764,7 @@ async fn curriculum_credit_category_unknown_published_pin_stays_unknown_after_ne
     let mut unknown = version_request(
         "รายวิชาพื้นฐานชื่อนี้ไม่กำหนดประเภท",
         f.grade,
-        f.v1.effective_from,
-        None,
-    );
+        f.v1.effective_from,);
     unknown.subject_type = "LEGACY-UNKNOWN".into();
     let unknown = publish(
         &f.pool,
@@ -869,7 +861,7 @@ async fn subject_zero_workload_publishes_and_preserves_curriculum_and_catalog_pi
     )
     .await
     .unwrap();
-    let mut values = version_request("รายวิชาไม่มีชั่วโมงสอน", f.grade, f.v1.effective_from, None);
+    let mut values = version_request("รายวิชาไม่มีชั่วโมงสอน", f.grade, f.v1.effective_from);
     values.hours_per_semester = Some(0);
     values.periods_per_week = Some(0);
     let draft = catalog::create_subject_version(&f.pool, stable.id, values.clone())
@@ -960,7 +952,7 @@ async fn subject_zero_workload_publishes_and_preserves_curriculum_and_catalog_pi
 #[tokio::test]
 async fn subject_zero_workload_keeps_negative_missing_and_credit_guards() {
     let f = fixture("subject_zero_workload_validation").await;
-    let base = version_request("รายวิชาตรวจข้อมูลภาระงาน", f.grade, f.v1.effective_from, None);
+    let base = version_request("รายวิชาตรวจข้อมูลภาระงาน", f.grade, f.v1.effective_from);
     for (periods, hours) in [(Some(-1), Some(0)), (Some(0), Some(-1))] {
         let mut values = base.clone();
         values.periods_per_week = periods;

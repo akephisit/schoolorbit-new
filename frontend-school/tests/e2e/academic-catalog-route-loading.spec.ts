@@ -357,7 +357,6 @@ const namedActivityOverview = {
 				hoursPerTerm: '30.00',
 				schedulingMode: 'synchronized',
 				effectiveFrom: '2026-05-01',
-				effectiveUntil: null,
 				gradeLevelIds: [],
 				status: 'published',
 				rowVersion: 1,
@@ -622,6 +621,12 @@ test('edited activity version hours remain decimal strings and required blanks d
 	);
 	await page.goto(activityPath);
 	await page.getByRole('button', { name: /เปิดรายละเอียด ชุมนุมวิทยาศาสตร์/ }).click();
+	await expect(
+		page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+	).toContainText('20 ต.ค. 2569');
+	await expect(page.getByRole('button', { name: 'เลือกวันที่สิ้นสุด', exact: true })).toHaveCount(
+		0
+	);
 	await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('กิจกรรมฉบับทดสอบ');
 	await page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true }).fill('');
 	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
@@ -651,7 +656,6 @@ test('edited activity version hours remain decimal strings and required blanks d
 			hoursPerTerm: '35.25',
 			schedulingMode: 'synchronized',
 			effectiveFrom: '2026-10-20',
-			effectiveUntil: null,
 			gradeLevelIds: [],
 			termCode: null
 		}

@@ -709,8 +709,7 @@ pub async fn lookup_subjects_on_connection(
              SELECT candidate.*
              FROM subject_versions candidate
              WHERE candidate.subject_id = subject.id
-               AND candidate.effective_from <= year.end_date
-               AND (candidate.effective_until IS NULL OR candidate.effective_until > year.start_date)",
+               AND candidate.effective_from <= year.end_date",
     );
 
     if active_only {

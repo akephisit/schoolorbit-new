@@ -22,7 +22,6 @@ const current: CurriculumCatalogOption = {
 	creditCategory: 'basic',
 	versionNo: 2,
 	effectiveFrom: '2026-05-01',
-	effectiveUntil: null,
 	selectableForNewRequirement: true
 };
 const old: CurriculumCatalogOption = {
