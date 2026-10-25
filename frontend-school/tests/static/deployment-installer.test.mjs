@@ -974,7 +974,34 @@ test('backend workflows emit bounded deployment phase timings', async () => {
 	}
 });
 
-test('GHCR retention is bounded, dry-run by default, and isolated from deployment secrets', async () => {
+function assertRetentionSecretIsolation(definition, retentionSource) {
+	const job = definition.jobs.retain;
+	const guards = job.steps.filter(
+		(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+	);
+	assert.equal(guards.length, 1, 'retention requires exactly one canonical interlock step');
+	assert.deepEqual(guards[0], {
+		name: 'Refuse an active or unresolved owned cleanup',
+		uses: './.github/actions/owned-cleanup-interlock',
+		with: {
+			host: '${{ secrets.SERVER_IP }}',
+			username: '${{ secrets.SERVER_USER }}',
+			port: '${{ secrets.SERVER_PORT }}',
+			key: '${{ secrets.SSH_PRIVATE_KEY }}'
+		}
+	});
+	const guardIndex = job.steps.indexOf(guards[0]);
+	const pruneIndex = job.steps.findIndex((step) => step.env?.PACKAGE_NAME);
+	assert.ok(pruneIndex > guardIndex, 'the readonly interlock must precede pruning');
+
+	const remaining = structuredClone(definition);
+	remaining.jobs.retain.steps.splice(guardIndex, 1);
+	const deploymentSecrets = /(?:SERVER_|SSH_|DATABASE_|R2_|CLOUDFLARE_|JWT_|INTERNAL_API_SECRET)/;
+	assert.doesNotMatch(JSON.stringify(remaining), deploymentSecrets);
+	assert.doesNotMatch(retentionSource, deploymentSecrets);
+}
+
+test('GHCR retention is bounded and dry-run by default with one readonly interlock', async () => {
 	const workflow = await readRepo('.github/workflows/maintenance.yml');
 	const retention = await readRepo('scripts/prune_ghcr_versions.mjs');
 
@@ -1004,16 +1031,62 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	);
 	assert.match(workflow, /--execute/);
 	assert.match(workflow, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
-	assert.doesNotMatch(
-		workflow,
-		/(?:SERVER_|SSH_|DATABASE_|R2_|CLOUDFLARE_|JWT_|INTERNAL_API_SECRET)/
-	);
+	assertRetentionSecretIsolation(parseYaml(workflow), retention);
 
 	assert.match(retention, /\^\[0-9a-f\]\{40\}\$/);
 	assert.match(retention, /tags\.includes\('latest'\)/);
 	assert.match(retention, /MAX_DELETIONS = 100/);
 	assert.match(retention, /method: 'DELETE'/);
 	assert.match(retention, /method = 'GET'/);
+});
+
+test('GHCR retention rejects secret leaks outside its dedicated interlock', async () => {
+	const definition = parseYaml(await readRepo('.github/workflows/maintenance.yml'));
+	const retention = await readRepo('scripts/prune_ghcr_versions.mjs');
+	const mutations = [
+		(copy) => {
+			copy.env = { DATABASE_URL: '${{ secrets.DATABASE_URL }}' };
+		},
+		(copy) => {
+			copy.jobs.retain.env = { R2_ACCOUNT_ID: '${{ secrets.R2_ACCOUNT_ID }}' };
+		},
+		(copy) => {
+			copy.jobs.retain.steps.find((step) => step.env?.PACKAGE_NAME).env.SSH_PRIVATE_KEY =
+				'${{ secrets.SSH_PRIVATE_KEY }}';
+		},
+		(copy) => {
+			copy.jobs.retain.steps.find(
+				(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+			).env = { INTERNAL_API_SECRET: '${{ secrets.INTERNAL_API_SECRET }}' };
+		},
+		(copy) => {
+			const guard = copy.jobs.retain.steps.find(
+				(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+			);
+			guard.with.host = '${{ secrets.SERVER_USER }}';
+		},
+		(copy) => {
+			copy.jobs.retain.steps.push(
+				structuredClone(
+					copy.jobs.retain.steps.find(
+						(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+					)
+				)
+			);
+		},
+		(copy) => {
+			const index = copy.jobs.retain.steps.findIndex(
+				(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+			);
+			copy.jobs.retain.steps.push(copy.jobs.retain.steps.splice(index, 1)[0]);
+		}
+	];
+	for (const mutate of mutations) {
+		const copy = structuredClone(definition);
+		mutate(copy);
+		assert.throws(() => assertRetentionSecretIsolation(copy, retention));
+	}
+	assert.throws(() => assertRetentionSecretIsolation(definition, `${retention}\n// JWT_SECRET`));
 });
 
 test('local verification retains every API, architecture and database consumer gate', async () => {
