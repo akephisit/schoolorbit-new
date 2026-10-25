@@ -169,12 +169,16 @@ test('invalid version values block writes and failed saves preserve exact decima
 	await credit.pressSequentially('1.50');
 	for (const label of ['คาบมาตรฐานต่อสัปดาห์', 'ชั่วโมงรวมต่อภาคเรียน']) {
 		const input = page.getByLabel(label, { exact: true });
-		await input.clear();
-		await input.pressSequentially('1.5');
-		await save.click();
-		expect(requests.writes).toEqual([]);
-		await input.clear();
-		await input.pressSequentially('2');
+		for (const value of ['', '-1', '1.5']) {
+			await input.fill(value);
+			expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(
+				false
+			);
+			await save.click();
+			expect(requests.writes).toEqual([]);
+		}
+		await input.fill('0');
+		expect(await input.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(true);
 	}
 	await chooseSubjectDate(page, '2026-10-23');
 	await save.click();
@@ -187,7 +191,12 @@ test('invalid version values block writes and failed saves preserve exact decima
 	await save.click();
 	await expect.poll(() => requests.writes.length).toBe(2);
 	for (const write of requests.writes)
-		expect(write.body).toMatchObject({ credit: '1.50', effectiveFrom: '2026-10-23' });
+		expect(write.body).toMatchObject({
+			credit: '1.50',
+			effectiveFrom: '2026-10-23',
+			hoursPerSemester: 0,
+			periodsPerWeek: 0
+		});
 	expect(requests.pageErrors).toEqual([]);
 });
 

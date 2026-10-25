@@ -796,14 +796,14 @@ pub async fn publish_subject_version(
             "หน่วยกิตต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
-    if !version.periods_per_week.is_some_and(|value| value > 0) {
+    if !version.periods_per_week.is_some_and(|value| value >= 0) {
         return Err(AppError::ValidationError(
-            "ระบุคาบมาตรฐานต่อสัปดาห์ให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
+            "ระบุคาบมาตรฐานต่อสัปดาห์เป็น 0 หรือมากกว่าก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
-    if !version.hours_per_semester.is_some_and(|value| value > 0) {
+    if !version.hours_per_semester.is_some_and(|value| value >= 0) {
         return Err(AppError::ValidationError(
-            "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
+            "ระบุชั่วโมงรวมต่อภาคเรียนเป็น 0 หรือมากกว่าก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
@@ -1934,6 +1934,13 @@ fn activity_version_select(predicate: &str, order: &str) -> String {
 fn validate_subject_version(request: &CreateSubjectVersionRequest) -> Result<(), AppError> {
     validate_effective_range(request.effective_from, request.effective_until)?;
     validate_canonical_decimal(&request.credit, 2)?;
+    if request.periods_per_week.is_some_and(|value| value < 0)
+        || request.hours_per_semester.is_some_and(|value| value < 0)
+    {
+        return Err(AppError::ValidationError(
+            "คาบมาตรฐานต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนต้องเป็น 0 หรือมากกว่า".to_string(),
+        ));
+    }
     if request.name_th.trim().is_empty() || request.subject_type.trim().is_empty() {
         return Err(AppError::ValidationError(
             "ชื่อและประเภทรายวิชาห้ามว่าง".to_string(),

@@ -71,7 +71,7 @@
 	// Keep canonical decimals as strings, including intermediate typing such as `1.`.
 	const positiveDecimalPattern = '(?=.*[1-9])(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
 	const nonnegativeDecimalPattern = '(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
-	const positiveIntegerPattern = '(?=.*[1-9])[0-9]+(\\.0+)?';
+	const nonnegativeIntegerPattern = '[0-9]+(\\.0+)?';
 
 	let pendingAction = $state<string | null>(null);
 	let busy = $derived(pendingAction !== null);
@@ -225,7 +225,7 @@
 						</p>
 						<p class="text-xs text-muted-foreground">
 							{kind === 'subject'
-								? 'ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน'
+								? 'กำหนดคาบต่อสัปดาห์และชั่วโมงรวมเป็น 0 ได้สำหรับรายวิชาที่อยู่ในหลักสูตรแต่ไม่มีการจัดสอน'
 								: 'กำหนด 0 ชั่วโมงได้สำหรับกิจกรรมที่อยู่ในหลักสูตรแต่ไม่มีการจัดสอน'}
 						</p>
 					</div>
@@ -249,7 +249,7 @@
 								<Input
 									id={`${code}-version-periods`}
 									type="text"
-									pattern={positiveIntegerPattern}
+									pattern={nonnegativeIntegerPattern}
 									inputmode="numeric"
 									bind:value={draft.standardPeriodsPerWeek}
 									required
@@ -261,7 +261,7 @@
 							<Input
 								id={`${code}-version-total`}
 								type="text"
-								pattern={kind === 'subject' ? positiveIntegerPattern : nonnegativeDecimalPattern}
+								pattern={kind === 'subject' ? nonnegativeIntegerPattern : nonnegativeDecimalPattern}
 								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
 								bind:value={draft.totalValue}
 								required

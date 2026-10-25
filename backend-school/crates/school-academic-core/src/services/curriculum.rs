@@ -757,18 +757,18 @@ async fn validate_publishable(
            JOIN subject_versions version ON version.id = requirement.subject_version_id
            WHERE requirement.curriculum_level_id = $1
              AND (version.periods_per_week IS NULL
-                  OR version.periods_per_week <= 0
+                  OR version.periods_per_week < 0
                   OR version.credit IS NULL
                   OR version.credit <= 0
                   OR version.hours_per_semester IS NULL
-                  OR version.hours_per_semester <= 0)"#,
+                  OR version.hours_per_semester < 0)"#,
         )
         .bind(version.id)
         .fetch_one()
         .await?;
     if incomplete_course_metrics != 0 {
         return Err(AppError::ValidationError(
-            "รายวิชาในโครงสร้างต้องมีหน่วยกิต จำนวนคาบ และชั่วโมงรวมจากบัญชีรายวิชาให้ครบและมากกว่า 0"
+            "รายวิชาในโครงสร้างต้องมีหน่วยกิตมากกว่า 0 และระบุจำนวนคาบกับชั่วโมงรวมเป็น 0 หรือมากกว่า"
                 .to_string(),
         ));
     }

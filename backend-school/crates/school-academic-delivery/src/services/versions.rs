@@ -334,7 +334,7 @@ pub(super) async fn include_offering(
         refresh_revision_snapshot(tx, revision_id).await?;
         return Ok(());
     }
-    let target: i32 = DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.include_offering", "SELECT COALESCE(subject.periods_per_week,activity.periods_per_week)
+    let (kind, target): (LearningOfferingKind, i32) = DbSession::new(&mut **tx).query_as("academic_delivery.services.versions.include_offering", "SELECT offering.kind,COALESCE(subject.periods_per_week,activity.periods_per_week)
         FROM learning_offerings offering LEFT JOIN course_offering_details course ON course.learning_offering_id=offering.id
         LEFT JOIN subject_versions subject ON subject.id=course.subject_version_id
         LEFT JOIN activity_offering_details detail ON detail.learning_offering_id=offering.id
@@ -343,8 +343,10 @@ pub(super) async fn include_offering(
         AND (offering.starts_on IS NULL OR offering.starts_on<=$4) AND (offering.ends_on IS NULL OR offering.ends_on>=$4)")
         .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional().await?
         .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่ตรงกับรุ่นหรือวันที่ที่เลือก".into()))?;
-    if target <= 0 {
-        return Err(AppError::ValidationError("กรุณาระบุจำนวนคาบมากกว่าศูนย์".into()));
+    if !valid_weekly_period_target(kind, target) {
+        return Err(AppError::ValidationError(
+            "จำนวนคาบรายวิชาต้องเป็น 0 หรือมากกว่า และจำนวนคาบกิจกรรมต้องมากกว่า 0".into(),
+        ));
     }
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
         VALUES(gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6)")

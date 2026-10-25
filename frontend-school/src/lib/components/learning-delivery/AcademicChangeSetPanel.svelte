@@ -97,7 +97,7 @@
 				id: item.id,
 				label: item.kind === 'activity' ? item.name : item.label,
 				description:
-					item.kind === 'course' && item.standardPeriodsPerWeek
+					item.kind === 'course' && item.standardPeriodsPerWeek != null
 						? `มาตรฐาน ${item.standardPeriodsPerWeek} คาบ/สัปดาห์`
 						: item.kind === 'activity'
 							? `กิจกรรมพัฒนาผู้เรียน · ฉบับ ${item.versionNo}`

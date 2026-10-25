@@ -1410,8 +1410,10 @@ async fn course_version_source(
 }
 
 fn required_standard_periods_per_week(value: Option<i32>) -> Result<i32, AppError> {
-    value.filter(|periods| *periods > 0).ok_or_else(|| {
-        AppError::ValidationError("เวอร์ชันรายวิชาต้องมีคาบมาตรฐานต่อสัปดาห์มากกว่า 0 ก่อนเปิดสอน".to_string())
+    value.filter(|periods| *periods >= 0).ok_or_else(|| {
+        AppError::ValidationError(
+            "เวอร์ชันรายวิชาต้องระบุคาบมาตรฐานต่อสัปดาห์เป็น 0 หรือมากกว่าก่อนเปิดสอน".to_string(),
+        )
     })
 }
 
