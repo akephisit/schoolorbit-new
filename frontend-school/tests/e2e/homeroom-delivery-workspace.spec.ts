@@ -1460,7 +1460,14 @@ for (const viewport of [
 						name: item.name,
 						label: `${item.code} — ${item.name} (ฉบับ 1)`,
 						versionNo: 1,
-						standardPeriodsPerWeek: item.kind === 'course' ? 1 : null,
+						standardPeriodsPerWeek:
+							item.kind === 'course'
+								? item.code === 'ส21201'
+									? 0
+									: item.code === 'ส23201'
+										? null
+										: 1
+								: null,
 						schedulingMode: item.kind === 'activity' ? 'independent' : null
 					})),
 					gradeLevels: [],
@@ -1479,7 +1486,19 @@ for (const viewport of [
 			await page.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true }).click();
 			const courses = [/ส21201/, /ส23201/, /ส32201/, /ส33201/];
 			await expect(page.getByRole('option')).toHaveText(courses);
+			await expect(page.getByRole('option', { name: /ส21201/ })).toContainText(
+				'มาตรฐาน 0 คาบ/สัปดาห์'
+			);
+			await expect(page.getByRole('option', { name: /ส23201/ })).not.toContainText('มาตรฐาน');
+			await expect(page.getByRole('option', { name: /ส32201/ })).toContainText(
+				'มาตรฐาน 1 คาบ/สัปดาห์'
+			);
+			await page.getByPlaceholder('ค้นหารหัสหรือชื่อ...').fill('ส21201');
+			await expect(page.getByRole('option')).toHaveCount(1);
+			await expect(page.getByRole('option')).toContainText('มาตรฐาน 0 คาบ/สัปดาห์');
 			await page.getByRole('option', { name: /ส21201/ }).click();
+			await expect(page.getByText('0 คาบ/สัปดาห์', { exact: true })).toBeVisible();
+			await expect(page.getByText('เริ่มต้น 0 คาบ/สัปดาห์', { exact: true })).toBeVisible();
 			await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
 			const formBody = page.getByRole('dialog').locator('fieldset').locator('..');
 			if (viewport.height === 600) {
