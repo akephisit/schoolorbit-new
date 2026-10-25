@@ -2320,6 +2320,23 @@ the separate commit phase can create/fsync dispatch intent and execute the revie
 A new main queued during the subsequent readonly observation does not invalidate a still-unchanged
 serving process or release.
 
+Before preparation, commit and post-dispatch reconciliation, the canonical
+[DNS verification owner](../scripts/lib/pipeline-remote/api-dns-verification.sh) performs an
+explicit verify-only path. It checks current provider ownership and exact API records, DNS,
+public TLS and authenticated full context without DNS, proxy, maintenance or rollback mutations.
+Only the catalogue's exact legacy journal filename and SHA can be classified as historical;
+the original failed journal and later successful no-op verification history remain unchanged.
+Current owned DNS journals use terminal `accepted` or `rolled_back`; intermediate states and
+unknown legacy journals still stop cleanup.
+
+The owner writes separate private verification evidence. It checks fixed TLS/smoke source hashes
+and executes verified copies from private tmpfs. Cloudflare and smoke credentials remain confined
+to that owner phase and are removed from the cleanup controller's environment. Proof must be
+fresh within 60 seconds before DML. The actual binding compares accepted release and stable DNS
+facts, while observation timestamps and run identities remain separate, so the 300-second watch
+does not falsely expire the proof. Reconciliation classifies a proven pre-dispatch abort before
+calling the DNS owner; that abort remains possible during a DNS outage.
+
 The rootless driver resolves active tenant metadata through fixed loopback Admin HTTP, without
 redirects or environment proxies, then obtains the existing tenant owner connection without
 `include_inactive`. Admin owns decryption. Credentials remain in memory/private tmpfs, with
@@ -2347,4 +2364,4 @@ previous counter floor. Reconciliation can finalize a validated completed window
 loss. Journals stay private under `/opt/stack/deployment/owned-load-cleanup`; no raw business rows,
 credentials or test-result attestations are uploaded. The common interlock refuses a surviving
 fixed-name PostgreSQL client and malformed or unresolved cleanup evidence. The cleanup owner
-additionally refuses legacy release, rollout, TLS and DNS recovery work before starting.
+additionally refuses unresolved release, rollout, TLS and DNS recovery work before starting.

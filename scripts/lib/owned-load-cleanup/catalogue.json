@@ -25,5 +25,13 @@
     "cleanup-commit.sql": "913dac04605eb990fa9ec4907049f7ca81d61654e649b7aaaac16146be7d34d5",
     "reconcile.sql": "bc5c7e08c5a256c25f4b19668879272a5e2f23c449e7b3b0c8966bbb723d3bf9",
     "original-watch-counters.json": "acda8575222c12f9deead5f9ec765ba7cad509787e2220c6dc14350413583e20"
+  },
+  "legacyDns": {
+    "filename": "39302306278-1.json",
+    "sha256": "3fd9f65efa8d886b18839e40963d0c611eab808a57f136e76a0d33a88f7ef552",
+    "successfulNoopRun": 39306710439,
+    "successfulNoopJob": 118245556761,
+    "successfulNoopSource": "24d1662a00826f66b975ae4ef6702e57f0c75152",
+    "maxAgeSeconds": 60
   }
 }

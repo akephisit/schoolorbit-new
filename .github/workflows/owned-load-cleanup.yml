@@ -32,6 +32,9 @@ jobs:
       catalogue_sha256: ${{ steps.gate.outputs.catalogue_sha256 }}
       controller_sha256: ${{ steps.gate.outputs.controller_sha256 }}
       proof_sha256: ${{ steps.gate.outputs.proof_sha256 }}
+      dns_owner_sha256: ${{ steps.gate.outputs.dns_owner_sha256 }}
+      dns_tls_owner_sha256: ${{ steps.gate.outputs.dns_tls_owner_sha256 }}
+      dns_smoke_owner_sha256: ${{ steps.gate.outputs.dns_smoke_owner_sha256 }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -69,26 +72,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-      - name: Assemble only trusted controller source
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import base64
-          import os
-          from pathlib import Path
-          proof = base64.b64encode(Path('scripts/lib/owned-load-cleanup-proof.py').read_bytes()).decode()
-          controller = base64.b64encode(Path('scripts/lib/pipeline-remote/owned-load-cleanup.py').read_bytes()).decode()
-          bootstrap = "import base64,hashlib,os,sys,types\n"
-          bootstrap += f"proof=base64.b64decode('{proof}');controller=base64.b64decode('{controller}')\n"
-          bootstrap += "if hashlib.sha256(proof).hexdigest()!=os.environ['CLEANUP_PROOF_SHA256']: raise SystemExit('Trusted proof source mismatch')\n"
-          bootstrap += "if hashlib.sha256(controller).hexdigest()!=os.environ['CLEANUP_CONTROLLER_SHA256']: raise SystemExit('Trusted controller source mismatch')\n"
-          bootstrap += "module=types.ModuleType('owned_cleanup_proof');sys.modules[module.__name__]=module\n"
-          bootstrap += "exec(compile(proof,'owned-load-cleanup-proof.py','exec'),module.__dict__)\n"
-          bootstrap += "exec(compile(controller,'owned-load-cleanup.py','exec'),{'__name__':'__main__'})\n"
-          output = Path(os.environ['RUNNER_TEMP']) / 'owned-load-cleanup.sh'
-          output.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython3 - <<'OWNED_CLEANUP_PY'\n" + bootstrap + "OWNED_CLEANUP_PY\n")
-          output.chmod(0o600)
-          PY
+      - name: Assemble only trusted controller and DNS owner source
+        run: python3 -B scripts/lib/owned-load-cleanup-transport.py
       - name: Prepare readonly state or reconcile an existing intent
         uses: appleboy/ssh-action@v1.2.5
         env:
@@ -102,13 +87,22 @@ jobs:
           CLEANUP_CATALOGUE_SHA256: ${{ needs.plan.outputs.catalogue_sha256 }}
           CLEANUP_CONTROLLER_SHA256: ${{ needs.plan.outputs.controller_sha256 }}
           CLEANUP_PROOF_SHA256: ${{ needs.plan.outputs.proof_sha256 }}
+          CLEANUP_DNS_OWNER_SHA256: ${{ needs.plan.outputs.dns_owner_sha256 }}
+          DNS_TLS_OWNER_SHA256: ${{ needs.plan.outputs.dns_tls_owner_sha256 }}
+          DNS_SMOKE_OWNER_SHA256: ${{ needs.plan.outputs.dns_smoke_owner_sha256 }}
+          ACCEPTED_APP_SHA: ${{ needs.plan.outputs.accepted_app_sha }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          TARGET_ORIGIN_IP: ${{ secrets.SERVER_IP }}
+          API_TLS_CLOUDFLARE_TOKEN: ${{ secrets.API_TLS_CLOUDFLARE_TOKEN }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 18m
-          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256
+          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256,CLEANUP_DNS_OWNER_SHA256,DNS_TLS_OWNER_SHA256,DNS_SMOKE_OWNER_SHA256,ACCEPTED_APP_SHA,BASE_DOMAIN,TARGET_ORIGIN_IP,API_TLS_CLOUDFLARE_TOKEN,SMOKE_USERNAME,SMOKE_PASSWORD
           script_path: ${{ runner.temp }}/owned-load-cleanup.sh
       - uses: actions/setup-node@v6
         if: needs.plan.outputs.action == 'execute'
@@ -142,11 +136,20 @@ jobs:
           CLEANUP_CATALOGUE_SHA256: ${{ needs.plan.outputs.catalogue_sha256 }}
           CLEANUP_CONTROLLER_SHA256: ${{ needs.plan.outputs.controller_sha256 }}
           CLEANUP_PROOF_SHA256: ${{ needs.plan.outputs.proof_sha256 }}
+          CLEANUP_DNS_OWNER_SHA256: ${{ needs.plan.outputs.dns_owner_sha256 }}
+          DNS_TLS_OWNER_SHA256: ${{ needs.plan.outputs.dns_tls_owner_sha256 }}
+          DNS_SMOKE_OWNER_SHA256: ${{ needs.plan.outputs.dns_smoke_owner_sha256 }}
+          ACCEPTED_APP_SHA: ${{ needs.plan.outputs.accepted_app_sha }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          TARGET_ORIGIN_IP: ${{ secrets.SERVER_IP }}
+          API_TLS_CLOUDFLARE_TOKEN: ${{ secrets.API_TLS_CLOUDFLARE_TOKEN }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 18m
-          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256
+          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256,CLEANUP_DNS_OWNER_SHA256,DNS_TLS_OWNER_SHA256,DNS_SMOKE_OWNER_SHA256,ACCEPTED_APP_SHA,BASE_DOMAIN,TARGET_ORIGIN_IP,API_TLS_CLOUDFLARE_TOKEN,SMOKE_USERNAME,SMOKE_PASSWORD
           script_path: ${{ runner.temp }}/owned-load-cleanup.sh

@@ -196,6 +196,51 @@ class OwnerJob:
                 refuse('bundle_hash_mismatch')
         self.floor = json_record(self.inputs / 'original-watch-counters.json')
 
+    def dns_verification(self, fresh=False):
+        expected = self.cat['legacyDns']
+        legacy = self.root.parent / 'api-dns' / expected['filename']
+        if not os.path.lexists(legacy):
+            refuse('legacy_dns_journal_missing')
+        if sha(private_bytes(legacy)) != expected['sha256']:
+            refuse('legacy_dns_journal_changed')
+        directory = self.root / 'dns-verification' / self.cat['operationId']
+        if not os.path.lexists(directory):
+            refuse('dns_verification_missing')
+        private_directory(self.root / 'dns-verification')
+        private_directory(directory)
+        phase = self.env['CLEANUP_PHASE']
+        path = directory / (self.run + '-' + phase + '.json')
+        if not os.path.lexists(path):
+            refuse('dns_verification_missing')
+        proof = json_record(path)
+        keys = {'schemaVersion', 'owner', 'operationId', 'phase', 'runId', 'runAttempt', 'observedAt', 'legacyJournal', 'acceptedRelease', 'stableFacts', 'stableDnsSha256', 'checks'}
+        if set(proof) != keys or type(proof['schemaVersion']) is not int or proof['schemaVersion'] != 1 or proof['owner'] != 'public-api-dns-verification' or proof['operationId'] != self.cat['operationId'] or proof['phase'] != phase or proof['runId'] != self.env['CLEANUP_RUN_ID'] or proof['runAttempt'] != self.env['CLEANUP_RUN_ATTEMPT'] or proof['acceptedRelease'] != self.env['CLEANUP_ACCEPTED_SHA'] or proof['legacyJournal'] != {'filename': expected['filename'], 'sha256': expected['sha256']}:
+            refuse('dns_verification_binding_invalid')
+        facts = proof['stableFacts']
+        if type(facts) is not dict or set(facts) != {'zone', 'account', 'targetIp', 'records'} or type(facts['records']) is not list or len(facts['records']) != 2:
+            refuse('dns_verification_facts_invalid')
+        historical = json_record(legacy)
+        if any(facts[key] != historical[old] for key, old in [('zone', 'zone'), ('account', 'account'), ('targetIp', 'target_ip')]):
+            refuse('dns_verification_facts_changed')
+        base = urllib.parse.urlsplit(self.cat['apiOrigin']).hostname.removeprefix('school-api.')
+        names = ['admin-api.' + base, 'school-api.' + base]
+        historical_records = {row['name']: row for row in historical['snapshot']}
+        ids = set()
+        for index, record in enumerate(facts['records']):
+            if type(record) is not dict or set(record) != {'id', 'type', 'name', 'content', 'ttl', 'proxied'} or record['name'] != names[index] or record['type'] != 'A' or record['content'] != facts['targetIp'] or record['proxied'] is not False or type(record['ttl']) is not int or record['ttl'] < 1 or not isinstance(record['id'], str) or not 1 <= len(record['id']) <= 128 or record['id'] in ids or record['id'] != historical_records[record['name']]['id'] or record['ttl'] != historical_records[record['name']]['ttl']:
+                refuse('dns_verification_facts_invalid')
+            ids.add(record['id'])
+        stable = json.dumps(facts, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+        if proof['stableDnsSha256'] != sha(stable):
+            refuse('dns_verification_hash_mismatch')
+        if type(proof['checks']) is not dict or set(proof['checks']) != {'provider', 'dns', 'tls', 'authenticatedFullContext', 'pendingAbsent', 'orphansAbsent'} or any(value is not True for value in proof['checks'].values()):
+            refuse('dns_verification_checks_failed')
+        age = time.time_ns() - timestamp_ns(proof['observedAt'])
+        if fresh and (age < -5 * 10**9 or age > expected['maxAgeSeconds'] * 10**9):
+            refuse('dns_verification_stale')
+        self.dns_evidence = {'filename': path.name, 'sha256': sha(private_bytes(path)), 'observedAt': proof['observedAt']}
+        return {'acceptedRelease': proof['acceptedRelease'], 'legacyJournal': proof['legacyJournal'], 'stableDnsSha256': proof['stableDnsSha256']}
+
     def legacy_clear(self):
         deployment = self.root.parent
         if os.path.lexists(deployment / 'pending-release'):
@@ -208,14 +253,21 @@ class OwnerJob:
         if os.path.lexists(tls) and json_record(tls).get('phase') != 'accepted':
             refuse('tls_recovery_pending')
         dns = deployment / 'api-dns'
-        if os.path.lexists(dns):
-            private_directory(dns)
-            for path in dns.iterdir():
-                if path.suffix == '.json' and json_record(path).get('status') not in ['accepted', 'rollback_applied']:
-                    refuse('dns_recovery_pending')
+        private_directory(dns)
+        for path in dns.iterdir():
+            if path.suffix != '.json':
+                continue
+            row = json_record(path)
+            if path.name == self.cat['legacyDns']['filename']:
+                self.dns_verification()
+            elif type(row.get('schema_version')) is int and row['schema_version'] == 1 and row.get('owner') == 'public-api-dns' and row.get('request_id') == path.stem and re.fullmatch('[0-9]+-[0-9]+', path.stem) and row.get('status') in ['accepted', 'rolled_back'] and {'accepted_app_sha', 'base_domain', 'target_ip', 'zone', 'account', 'snapshot_etag', 'snapshot'}.issubset(row):
+                continue
+            else:
+                refuse('dns_recovery_pending')
 
     def actual_binding(self):
         self.legacy_clear()
+        dns_binding = self.dns_verification()
         accepted = (self.root.parent / 'accepted-release').read_text().strip()
         if accepted != self.env['CLEANUP_ACCEPTED_SHA'] or not re.fullmatch('[0-9a-f]{40}', accepted):
             refuse('accepted_release_changed')
@@ -241,7 +293,7 @@ class OwnerJob:
         self.public_ready(accepted)
         self.backend_env = current['Config']['Env']
         return {**self.common, 'tenantId': self.cat['tenantId'], 'subdomain': self.cat['subdomain'],
-            'databaseSchemaVersion': self.cat['databaseSchemaVersion'], 'acceptedRelease': accepted,
+            'databaseSchemaVersion': self.cat['databaseSchemaVersion'], 'acceptedRelease': accepted, 'dns': dns_binding,
             'backendInputHash': self.env['CLEANUP_BACKEND_INPUT_HASH'], 'catalogueSha256': self.catalogue_hash,
             'controllerSha256': self.env['CLEANUP_CONTROLLER_SHA256'], 'proofSha256': self.env['CLEANUP_PROOF_SHA256'],
             'backend': {'image': image, 'configId': config_id, 'containerId': current['Id'], 'pid': state['Pid'], 'startedAt': utc_timestamp(state['StartedAt']), 'restartCount': current['RestartCount'], **kernel}}
@@ -339,6 +391,7 @@ class OwnerJob:
         if os.path.lexists(self.active) or os.path.lexists(self.journal):
             refuse('cleanup_already_reserved')
         self.legacy_clear()
+        self.dns_verification(fresh=True)
         binding = self.actual_binding()
         self.owner_connection()
         with self.work() as work:
@@ -371,6 +424,7 @@ class OwnerJob:
         if prepared.get('actualBindingSha256') != sha(canonical(binding)) or prepared.get('snapshotSha256') != sha(canonical(approved)) or prepared.get('catalogueSha256') != self.catalogue_hash:
             refuse('prepared_input_changed')
         self.same_binding(binding)
+        self.dns_verification(fresh=True)
         self.owner_connection()
         # A durable prepared reservation already fenced the gate-to-SSH cancellation gap.
         durable(self.stage / 'commit-reservation.json', {**self.common, 'status': 'reserved', 'run': self.run, 'controller': self.identity, 'catalogueSha256': self.catalogue_hash, 'controllerSha256': self.env['CLEANUP_CONTROLLER_SHA256'], 'proofSha256': self.env['CLEANUP_PROOF_SHA256']})
@@ -386,12 +440,14 @@ class OwnerJob:
             validate_snapshot(current, self.floor, self.cat)
             validate_preservation(approved, current)
             self.same_binding(binding)
+            self.dns_verification(fresh=True)
             private_directory(self.journal, True)
             durable(self.journal / 'actual-binding.json', binding)
             durable(self.journal / 'approved-snapshot.json', approved)
             self.binding_hash = sha(canonical(binding))
             self.receipt_common = {**self.common, 'actualBindingSha256': self.binding_hash, 'approvedSnapshotSha256': sha(canonical(approved)), 'sqlSha256': self.cat['files']['cleanup-commit.sql']}
             durable(self.journal / 'dispatch-intent.json', {**self.receipt_common, 'status': 'dispatching', 'controller': self.identity, 'run': self.run, 'catalogueSha256': self.catalogue_hash})
+            durable(self.journal / 'dns-verification-reference.json', self.dns_evidence)
             raw = self.psql(work, 'cleanup-commit.sql', dispatch=True)
             candidate = extract_object(raw, 'committedCandidate')
             if candidate.get('operationId') != self.cat['operationId'] or candidate.get('committedCandidate') is not True:
@@ -474,7 +530,7 @@ class OwnerJob:
         sync_directory(self.root)
         print('Owned cleanup completed and observed; private receipts retained.')
 
-    def reconcile(self):
+    def reconcile(self, classify_only=False):
         self.active_fd = os.open(self.active, os.O_RDONLY | os.O_NOFOLLOW)
         fcntl.flock(self.active_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         reservation = json_record(self.active)
@@ -501,6 +557,8 @@ class OwnerJob:
             sync_directory(self.root)
             print('Pre-dispatch reservation aborted; no cleanup success claimed.')
             return
+        if classify_only:
+            return 10
         private_directory(self.journal)
         binding = json_record(self.journal / 'actual-binding.json')
         approved = json_record(self.journal / 'approved-snapshot.json')
@@ -536,10 +594,12 @@ def main():
     raw = base64.b64decode(environment['CLEANUP_CATALOGUE'], validate=True)
     catalogue = json.loads(raw)
     action, phase = environment['CLEANUP_ACTION'], environment['CLEANUP_PHASE']
-    if (action, phase) not in [('execute', 'prepare'), ('execute', 'commit'), ('reconcile', 'reconcile')]:
+    if (action, phase) not in [('execute', 'prepare'), ('execute', 'commit'), ('reconcile', 'reconcile'), ('reconcile', 'classify-recovery')]:
         refuse('cleanup_action_invalid')
     job = OwnerJob(catalogue, raw, environment)
     job.initialize()
+    if phase == 'classify-recovery':
+        raise SystemExit(job.reconcile(classify_only=True))
     {'prepare': job.prepare, 'commit': job.commit, 'reconcile': job.reconcile}[phase]()
 
 

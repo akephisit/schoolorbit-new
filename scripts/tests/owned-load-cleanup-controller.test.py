@@ -67,7 +67,7 @@ class ControllerTests(unittest.TestCase):
             actual = {'Image': config, 'ImageDigest': CAT['image'], 'ImageName': 'ghcr.io/akephisit/schoolorbit-backend-school@' + CAT['image'], 'Id': 'a' * 64,
                 'State': {'Running': True, 'Pid': 123, 'StartedAt': '2026-10-25T16:56:38.687447862+07:00'}, 'RestartCount': 0, 'Config': {'Env': []}}
             peer = {'Names': ['schoolorbit-backend-school'], 'ImageID': config}
-            with patch.object(job, 'legacy_clear'), patch.object(job, 'public_ready'), patch.object(job, 'command', side_effect=[json.dumps([actual]).encode(), json.dumps([peer]).encode()]), patch.object(controller, 'process_identity', return_value=job.identity):
+            with patch.object(job, 'legacy_clear'), patch.object(job, 'dns_verification', return_value={'stableDnsSha256': 'f' * 64}), patch.object(job, 'public_ready'), patch.object(job, 'command', side_effect=[json.dumps([actual]).encode(), json.dumps([peer]).encode()]), patch.object(controller, 'process_identity', return_value=job.identity):
                 binding = job.actual_binding()
             self.assertEqual(binding['backend']['image'], CAT['image'])
             self.assertEqual(binding['backend']['configId'], config)
@@ -158,7 +158,7 @@ class ControllerTests(unittest.TestCase):
             @contextlib.contextmanager
             def work():
                 yield job.stage
-            with patch.object(job, 'legacy_clear'), patch.object(job, 'actual_binding', return_value=binding), patch.object(job, 'same_binding'), patch.object(job, 'owner_connection'), patch.object(job, 'work', work), patch.object(job, 'database_identity'), patch.object(job, 'psql', return_value=json.dumps(snapshot).encode()) as psql, patch.object(controller, 'validate_snapshot'):
+            with patch.object(job, 'legacy_clear'), patch.object(job, 'dns_verification'), patch.object(job, 'actual_binding', return_value=binding), patch.object(job, 'same_binding'), patch.object(job, 'owner_connection'), patch.object(job, 'work', work), patch.object(job, 'database_identity'), patch.object(job, 'psql', return_value=json.dumps(snapshot).encode()) as psql, patch.object(controller, 'validate_snapshot'):
                 job.prepare()
             self.assertEqual(psql.call_args.args[1], 'preflight.sql')
             self.assertEqual(psql.call_count, 1)
@@ -259,6 +259,82 @@ class ControllerTests(unittest.TestCase):
                     job.watch(job.stage, approved, {})
             self.assertTrue(job.active.exists())
             self.assertFalse((job.journal / 'watch-receipt.json').exists())
+
+    def dns_fixture(self, directory):
+        job = self.job(directory)
+        job.root = Path(directory) / 'deployment' / 'owned-load-cleanup'
+        job.root.mkdir(parents=True, mode=0o700)
+        dns = job.root.parent / 'api-dns'; dns.mkdir(mode=0o700)
+        legacy = {'accepted_app_sha': '4' * 40, 'base_domain': 'schoolorbit.app', 'target_ip': '203.0.113.1', 'zone': 'zone', 'account': 'account', 'snapshot_etag': 'a' * 64, 'snapshot': [
+            {'id': 'admin', 'type': 'A', 'name': 'admin-api.schoolorbit.app', 'content': '203.0.113.1', 'ttl': 1, 'proxied': True, 'modified_on': '2026-10-19T00:00:00Z'},
+            {'id': 'school', 'type': 'A', 'name': 'school-api.schoolorbit.app', 'content': '203.0.113.1', 'ttl': 1, 'proxied': True, 'modified_on': '2026-10-19T00:00:00Z'}], 'status': 'applied'}
+        job.cat = json.loads(json.dumps(CAT))
+        old = dns / job.cat['legacyDns']['filename']; old.write_bytes(controller.canonical(legacy)); old.chmod(0o600)
+        job.cat['legacyDns']['sha256'] = controller.sha(old.read_bytes())
+        (job.root / 'dns-verification').mkdir(mode=0o700)
+        proof_dir = job.root / 'dns-verification' / job.cat['operationId']; proof_dir.mkdir(mode=0o700)
+        job.env.update(CLEANUP_PHASE='prepare', CLEANUP_RUN_ID='123', CLEANUP_RUN_ATTEMPT='1', CLEANUP_ACCEPTED_SHA='7' * 40)
+        facts = {'zone': 'zone', 'account': 'account', 'targetIp': legacy['target_ip'], 'records': [{key: value for key, value in row.items() if key != 'modified_on'} for row in legacy['snapshot']]}
+        for row in facts['records']: row['proxied'] = False
+        proof = {'schemaVersion': 1, 'owner': 'public-api-dns-verification', 'operationId': job.cat['operationId'], 'phase': 'prepare', 'runId': '123', 'runAttempt': '1', 'observedAt': '2026-10-26T00:00:00Z', 'legacyJournal': {'filename': old.name, 'sha256': job.cat['legacyDns']['sha256']}, 'acceptedRelease': '7' * 40, 'stableFacts': facts, 'stableDnsSha256': controller.sha(json.dumps(facts, sort_keys=True, separators=(',', ':')).encode()), 'checks': {key: True for key in ['provider', 'dns', 'tls', 'authenticatedFullContext', 'pendingAbsent', 'orphansAbsent']}}
+        path = proof_dir / '123-1-prepare.json'; path.write_bytes(controller.canonical(proof)); path.chmod(0o600)
+        return job, old, path, proof
+
+    def test_known_legacy_requires_exact_hash_and_fresh_provider_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, old, path, proof = self.dns_fixture(directory)
+            now = controller.timestamp_ns(proof['observedAt'])
+            with patch.object(controller.time, 'time_ns', return_value=now + 60 * 10**9):
+                stable = job.dns_verification(fresh=True)
+            with patch.object(controller.time, 'time_ns', return_value=now + 61 * 10**9):
+                with self.assertRaises(controller.ControllerRefusal): job.dns_verification(fresh=True)
+                self.assertEqual(job.dns_verification(), stable)
+            old.write_text('{}')
+            with self.assertRaises(controller.ControllerRefusal): job.dns_verification()
+
+    def test_refreshed_proof_changes_evidence_but_not_dns_business_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, old, path, proof = self.dns_fixture(directory)
+            before = job.dns_verification()
+            proof.update(phase='commit', observedAt='2026-10-26T00:01:00Z')
+            job.env['CLEANUP_PHASE'] = 'commit'
+            target = path.with_name('123-1-commit.json'); target.write_bytes(controller.canonical(proof)); target.chmod(0o600)
+            self.assertEqual(job.dns_verification(), before)
+            self.assertEqual(job.dns_evidence['filename'], target.name)
+
+    def test_dns_proof_drift_or_failed_checks_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, old, path, proof = self.dns_fixture(directory)
+            for changed in [{'checks': {**proof['checks'], 'provider': False}}, {'legacyJournal': {'filename': old.name, 'sha256': '0' * 64}}, {'stableDnsSha256': '0' * 64}, {'acceptedRelease': '8' * 40}]:
+                path.write_bytes(controller.canonical({**proof, **changed}))
+                with self.assertRaises(controller.ControllerRefusal): job.dns_verification()
+
+    def test_terminal_rolled_back_is_history_but_rollback_applied_is_pending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, old, path, proof = self.dns_fixture(directory)
+            other = old.with_name('456-1.json')
+            terminal = {**json.loads(old.read_text()), 'schema_version': 1, 'owner': 'public-api-dns', 'request_id': '456-1', 'status': 'rolled_back'}
+            other.write_bytes(controller.canonical(terminal)); other.chmod(0o600)
+            absent = subprocess.CompletedProcess([], 1)
+            with patch.object(controller.subprocess, 'run', return_value=absent): job.legacy_clear()
+            terminal['status'] = 'rollback_applied'; other.write_bytes(controller.canonical(terminal))
+            with patch.object(controller.subprocess, 'run', return_value=absent):
+                with self.assertRaises(controller.ControllerRefusal): job.legacy_clear()
+            other.write_text('{"status":"accepted"}')
+            with patch.object(controller.subprocess, 'run', return_value=absent):
+                with self.assertRaises(controller.ControllerRefusal): job.legacy_clear()
+
+    def test_dns_reference_is_not_written_into_the_no_intent_abort_window(self):
+        source = (ROOT / 'scripts/lib/pipeline-remote/owned-load-cleanup.py').read_text()
+        commit = source[source.index('    def commit(self):'):source.index('    def observation_floor')]
+        self.assertLess(commit.index("durable(self.journal / 'dispatch-intent.json'"), commit.index("durable(self.journal / 'dns-verification-reference.json'"))
+
+    def test_recovery_classification_cannot_touch_dns_or_clear_postintent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, approved, observed = self.recovery_fixture(directory)
+            with patch.object(controller, 'controller_dead', return_value=True), patch.object(job, 'client_absent'), patch.object(job, 'dns_verification', side_effect=AssertionError('must not call DNS')):
+                self.assertEqual(job.reconcile(classify_only=True), 10)
+            self.assertTrue(job.active.exists())
 
     def test_admin_proxy_environment_is_disabled(self):
         with tempfile.TemporaryDirectory() as directory:

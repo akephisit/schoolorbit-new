@@ -6,6 +6,7 @@ import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 
+import {classify} from '../lib/pipeline-policy.mjs';
 import {catalogue, verifyInputs, validateDispatch, relatedFiles, requireQuiescentBeforeDispatch} from '../lib/pipeline-owned-load-cleanup.mjs';
 
 const repo = path.resolve(import.meta.dirname, '../..');
@@ -189,7 +190,7 @@ test('both cleanup jobs retain the ancestry required by the trusted Git gate', (
 });
 
 test('local deployment verification owns the pure proof and controller Python cases', () => {
-  for (const file of ['owned-load-cleanup-proof.test.py', 'owned-load-cleanup-controller.test.py', 'owned-load-cleanup-transport.test.py']) {
+  for (const file of ['owned-load-cleanup-proof.test.py', 'owned-load-cleanup-controller.test.py', 'owned-load-cleanup-transport.test.py', 'owned-load-cleanup-bootstrap.test.py']) {
     execFileSync('python3', ['-B', path.join(repo, 'scripts/tests', file)], {stdio: 'pipe'});
   }
 });
@@ -224,4 +225,16 @@ test('a validated no-dispatch abort is distinct from successful cleanup', t => {
   assert.equal(readFileSync(path.join(aborted, `${run}.json`), 'utf8').includes('exitCode'), false);
   writeFileSync(path.join(origin, 'aborted-reservation.json'), '{}');
   assert.equal(f.run().status, 78);
+});
+
+
+test('manual Operations helpers select deployment verification without replacing application artifacts', () => {
+  for (const file of ['scripts/lib/pipeline-remote/owned-load-cleanup.py', 'scripts/lib/pipeline-remote/api-dns-operation.sh', 'scripts/lib/pipeline-remote/api-dns-verification.sh']) {
+    const plan = classify([file]);
+    assert.deepEqual(plan.deploy, [], file);
+    assert.ok(plan.verify.includes('deployment'), file);
+  }
+  for (const file of ['scripts/lib/pipeline-remote/school-deploy-backend.sh', 'scripts/lib/pipeline-remote/maintenance.sh']) {
+    assert.ok(classify([file]).deploy.length > 0, file);
+  }
 });
