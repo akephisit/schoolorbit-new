@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "operationId": "cleanup-3962938a-54d0fe6f-73f5-49be-908f-4ec14aee486b",
+  "loadRunId": "3962938a-e006-4b05-8bb0-20bcc3cd6bef",
+  "inputSha256": "9649a38dd08f91bcd1fbcb899a5fda28e7f0689cb0f06c55f77040b3177b33ae",
+  "tenantId": "0e297ca4-0809-4aab-a03f-1915045257b8",
+  "subdomain": "snwsb",
+  "databaseName": "schoolorbit_snwsb_v2",
+  "apiOrigin": "https://school-api.schoolorbit.app",
+  "image": "sha256:f983b8e4593e2a7b480b13643c9778e7b79a55c6fa7eb72f6987a8562fd89043",
+  "authCutoff": "2026-10-25T09:56:38.687447862Z",
+  "databaseSchemaVersion": 138,
+  "watchSeconds": 300,
+  "originalWatch": {
+    "rows": 109,
+    "md5": "09f9b2dd52673377ddd7d7fa6d0aa42f",
+    "sourceSHA256": "47f6eade0ed3a0ca24993ef26156acbc92247f2cb37c2343e4af77b9d5ee72ed"
+  },
+  "files": {
+    "owned-manifest.json": "ed1b387eca4e4f0548f8550fbd1ff98c95a44145130b5850f1ea1947ee54f34b",
+    "operation.json": "c571dee8a381ff4cf507c43e8f45297710f6d6db6cd1b3c2fb00cf78fa0b554e",
+    "original-frozen-index.json": "a6c23d9d38319e1da75f0430ea3c1434f6ae4c9deba827c62458089aafb050ba",
+    "candidate-sha256.json": "9649a38dd08f91bcd1fbcb899a5fda28e7f0689cb0f06c55f77040b3177b33ae",
+    "preflight.sql": "3e8c116ad8ce43341601f78ba4821bf91dc8cfc03dda1ed67da8ab1b7c0a63ba",
+    "cleanup-commit.sql": "913dac04605eb990fa9ec4907049f7ca81d61654e649b7aaaac16146be7d34d5",
+    "reconcile.sql": "bc5c7e08c5a256c25f4b19668879272a5e2f23c449e7b3b0c8966bbb723d3bf9",
+    "original-watch-counters.json": "acda8575222c12f9deead5f9ec765ba7cad509787e2220c6dc14350413583e20"
+  }
+}
