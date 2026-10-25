@@ -91,6 +91,7 @@ async fn catalog_year_independence_create_update_publish_without_any_academic_ye
     let draft = catalog::create_subject_version(&pool, subject, subject_values(from, grade))
         .await
         .unwrap();
+    assert_eq!(draft.id.get_version_num(), 7);
     assert!(!draft.migrated);
     let mut values = subject_values(from, grade);
     values.effective_from = from + chrono::Duration::days(1);
@@ -112,6 +113,7 @@ async fn catalog_year_independence_create_update_publish_without_any_academic_ye
     let draft = catalog::create_activity_version(&pool, activity, activity_values(from, grade))
         .await
         .unwrap();
+    assert_eq!(draft.id.get_version_num(), 7);
     assert!(!draft.migrated);
     let mut values = activity_values(from, grade);
     values.effective_from = from + chrono::Duration::days(1);

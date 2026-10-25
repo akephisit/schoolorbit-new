@@ -1180,7 +1180,7 @@ pub async fn create_activity_version(
         .and_then(|value| value.parse::<i32>().ok())
         .unwrap_or(1)
         .max(1);
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     DbSession::new(&mut *transaction)
         .query(
             "academic_core.services.catalog.create_activity_version",
