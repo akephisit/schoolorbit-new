@@ -2275,3 +2275,76 @@ On failure retain maintenance and repair forward through the existing release pr
 require an explicit staff choice and save; opening or reporting never writes user criteria.
 
 Pre-135 School binaries cannot maintain or restore criteria semantics, and the compiled migration-history gate prohibits their use after migration 135. Keep a compatible 135-or-later writer and repair forward; never restore an older binary after this migration.
+
+
+## Reviewed owned load fixture cleanup
+
+[Operations](../.github/workflows/operations.yml) exposes `owned-load-cleanup` for the single
+[reviewed catalogue](../scripts/lib/owned-load-cleanup/catalogue.json). This owner job uses
+`schoolorbit-production` with cancellation disabled; the callable workflow does not reacquire
+that group. It performs no load test, school reset, catalog retarget, runtime grant change,
+or arbitrary SQL execution.
+
+Stage only the catalogue's eight inert files through the existing authorized backend operator
+transport at `/opt/stack/deployment/owned-load-cleanup/inputs/<operationId>`, with owner-only
+`0700` directories and `0600` regular files. Staging transports data, never an executable or an
+activation request. Verify the local source before staging:
+
+```bash
+node scripts/lib/pipeline-owned-load-cleanup.mjs verify-inputs "$PRIVATE_INPUTS"
+```
+
+The fixed input SQL and original 64 inputs remain immutable. The SQL's old process timestamp is
+a conservative authentication cutoff, not the current PID. A fresh ActualExecutionBinding under
+the shared lock verifies the sole rootless backend, exact reviewed registry image digest, public
+ready/release identity, accepted state, and unchanged schema-138 timeline. Image configuration
+IDs are recorded separately from registry digests; offset timestamps retain nanosecond precision.
+A different business image or changed ownership data requires a reviewed catalogue update.
+
+Explicitly confirm the fixed selectors; the generic form's default `sandbox` is rejected:
+
+```bash
+gh workflow run operations.yml --ref main \
+  -f operation=owned-load-cleanup \
+  -f request_id=cleanup-3962938a-54d0fe6f-73f5-49be-908f-4ec14aee486b \
+  -f subdomain=snwsb \
+  -f school_id=0e297ca4-0809-4aab-a03f-1915045257b8 \
+  -f api_url=https://school-api.schoolorbit.app \
+  -f options='{"action":"execute"}'
+```
+
+The workflow checks exact main, the latest prepared Pipeline gate, trusted accepted state and
+absence of related open changes or active production work. It prepares through readonly SQL,
+then holds a durable reservation while repeating the GitHub gate immediately before DML. Only
+the separate commit phase can create/fsync dispatch intent and execute the reviewed SQL once.
+A new main queued during the subsequent readonly observation does not invalidate a still-unchanged
+serving process or release.
+
+The rootless driver resolves active tenant metadata through fixed loopback Admin HTTP, without
+redirects or environment proxies, then obtains the existing tenant owner connection without
+`include_inactive`. Admin owns decryption. Credentials remain in memory/private tmpfs, with
+`0600` pgpass and the canonical CA; pinned PostgreSQL 18.6 verifies the exact owner role/database
+marker and TLS. No human database-host SSH identity, new credential, or runtime privilege is used.
+
+Fresh snapshot approval verifies the original 109 watch identities, original business MD5 and
+counter floors before accepting the schema-138 baseline. Cleanup locks the queue before deleting
+identified inbox rows, jobs and attendance source ledgers. It preserves all real catalog metadata,
+the retained inactive actor/password hash, original ten audit rows and all outside fingerprints.
+The actual PostgreSQL client exit is durable before parsing output emitted before COMMIT.
+
+After a failure or controller loss, use the same dispatch with `options='{"action":"reconcile"}'`.
+Never remove the interlock, change receipts, replay the old load controller, or manually rerun DML.
+A proven dead controller plus absent client and no dispatch/exit/commit artifacts permits a
+separate aborted-before-dispatch receipt; it is not successful cleanup. A later explicit execution
+can prepare again because no dispatch occurred. Unknown or nonzero post-dispatch outcomes remain
+blocked. A genuine bound exit zero can recover a missing commit receipt only after fresh owner
+identity and exact preserved readback, without DML.
+
+Successful completion requires durable receipt hashes and at least 300 seconds of preserved state
+with unchanged serving release, image, PID and start identity, zero resurrected owned data/auth,
+and monotonic counters. Interrupted observation may restart the full window but retains every
+previous counter floor. Reconciliation can finalize a validated completed window after controller
+loss. Journals stay private under `/opt/stack/deployment/owned-load-cleanup`; no raw business rows,
+credentials or test-result attestations are uploaded. The common interlock refuses a surviving
+fixed-name PostgreSQL client and malformed or unresolved cleanup evidence. The cleanup owner
+additionally refuses legacy release, rollout, TLS and DNS recovery work before starting.

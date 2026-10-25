@@ -16,6 +16,13 @@ jobs:
         uses: actions/checkout@v6
       # Resolve inside this job: GitHub can redact raw digests passed through
       # outputs of a job that also receives deployment secrets.
+      - name: Refuse an active or unresolved owned cleanup
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Download prepared Admin backend manifest
         uses: actions/download-artifact@v7
         with:

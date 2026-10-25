@@ -9,6 +9,7 @@ on:
         default: smoke
         options:
           - provision
+          - owned-load-cleanup
           - smoke
           - diagnostics
           - recreate-admin-frontend
@@ -43,6 +44,19 @@ permissions:
   actions: read
   packages: write
 jobs:
+  owned-load-cleanup:
+    if: inputs.operation == 'owned-load-cleanup' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/owned-load-cleanup.yml
+    with:
+      request_id: ${{ inputs.request_id }}
+      subdomain: ${{ inputs.subdomain }}
+      school_id: ${{ inputs.school_id }}
+      api_url: ${{ inputs.api_url }}
+      options: ${{ inputs.options }}
+    secrets: inherit
   api-dns:
     if: (inputs.operation == 'api-dns-only' || inputs.operation == 'rollback-api-dns') && github.ref == 'refs/heads/main'
     concurrency:

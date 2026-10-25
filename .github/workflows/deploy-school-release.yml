@@ -155,6 +155,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Refuse an active or unresolved owned cleanup
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Restore locked School deployment tooling
         uses: ./.github/actions/setup-deployment-tooling
         with:
@@ -444,6 +451,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Refuse an active or unresolved owned cleanup
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Validate Academic Core authenticated smoke inputs
         env:
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
@@ -528,6 +542,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Refuse an active or unresolved owned cleanup
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Restore locked School deployment tooling
         uses: ./.github/actions/setup-deployment-tooling
         with:

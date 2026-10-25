@@ -1,0 +1,26 @@
+name: Observe owned cleanup interlock
+description: Refuse production mutations while an owned cleanup is active or unresolved
+inputs:
+  host:
+    required: true
+    description: Existing backend SSH host
+  username:
+    required: true
+    description: Existing rootless backend operator
+  port:
+    required: true
+    description: Existing backend SSH port
+  key:
+    required: true
+    description: Existing deployment SSH identity
+runs:
+  using: composite
+  steps:
+    - name: Check canonical guard without uploading host files
+      uses: appleboy/ssh-action@v1.2.5
+      with:
+        host: ${{ inputs.host }}
+        username: ${{ inputs.username }}
+        port: ${{ inputs.port }}
+        key: ${{ inputs.key }}
+        script_path: scripts/lib/pipeline-remote/owned-load-cleanup-interlock.sh
