@@ -672,7 +672,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     )
     .await
     .unwrap();
-    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=t.start_date AND (v.effective_until IS NULL OR t.start_date<v.effective_until) ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(&pool).await.unwrap();
+    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=t.start_date ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(&pool).await.unwrap();
     let (homeroom_id,grade_level_id,study_program_id):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 1").bind(year_id).fetch_one(&pool).await.unwrap();
     let changed = change_sets::upsert_change_item(
         &pool,

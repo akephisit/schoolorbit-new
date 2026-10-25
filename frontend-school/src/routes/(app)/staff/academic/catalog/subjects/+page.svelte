@@ -22,7 +22,7 @@
 		SUBJECT_TYPE_OPTIONS,
 		displayStateClass,
 		displayStateLabel,
-		formatEffectiveRange,
+		formatEffectiveFrom,
 		gradeLevelSummary,
 		matchesCatalogSearch,
 		optionLabel
@@ -377,7 +377,6 @@
 			credit: draft.exactValue,
 			description: draft.description ?? null,
 			effectiveFrom: draft.effectiveFrom,
-			effectiveUntil: draft.effectiveUntil || null,
 			gradeLevelIds: draft.gradeLevelIds,
 			hoursPerSemester: Number.parseInt(draft.totalValue, 10),
 			periodsPerWeek: Number.parseInt(draft.standardPeriodsPerWeek, 10),
@@ -651,9 +650,8 @@
 												</p>{/if}{#if item.displayVersion}<p
 													class="mt-1 text-xs text-muted-foreground"
 												>
-													v{item.displayVersion.versionNo} · {formatEffectiveRange(
-														item.displayVersion.effectiveFrom,
-														item.displayVersion.effectiveUntil
+													v{item.displayVersion.versionNo} · {formatEffectiveFrom(
+														item.displayVersion.effectiveFrom
 													)}
 												</p>{/if}</Table.Cell
 										>
@@ -750,9 +748,8 @@
 								</dl>
 								<p class="text-xs">{gradeLevelSummary(item.gradeLevels)}</p>
 								{#if item.displayVersion}<p class="text-xs text-muted-foreground">
-										v{item.displayVersion.versionNo} · {formatEffectiveRange(
-											item.displayVersion.effectiveFrom,
-											item.displayVersion.effectiveUntil
+										v{item.displayVersion.versionNo} · {formatEffectiveFrom(
+											item.displayVersion.effectiveFrom
 										)}
 									</p>{/if}
 								<div class="flex flex-wrap gap-1.5">
@@ -814,10 +811,7 @@
 					>{/if}</Sheet.Title
 			><Sheet.Description
 				>{selected?.displayVersion
-					? formatEffectiveRange(
-							selected.displayVersion.effectiveFrom,
-							selected.displayVersion.effectiveUntil
-						)
+					? formatEffectiveFrom(selected.displayVersion.effectiveFrom)
 					: 'ยังไม่มีรายละเอียดรุ่น สร้างรุ่นแรกได้ด้านล่าง'}</Sheet.Description
 			></Sheet.Header
 		>
@@ -901,7 +895,6 @@
 									totalValue: item.hoursPerSemester?.toString() ?? '',
 									standardPeriodsPerWeek: item.periodsPerWeek,
 									effectiveFrom: item.effectiveFrom,
-									effectiveUntil: item.effectiveUntil,
 									classification: item.subjectType,
 									gradeLevels: gradeLevelsFor(item),
 									status: item.status,

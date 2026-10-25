@@ -732,7 +732,7 @@ async fn headless_context_works_at_135_then_migrates_complete_inactive_inventory
             school_migrations::verify_tenant_schema(&mut *connection)
                 .await
                 .unwrap(),
-            137
+            school_migrations::latest_migration_version()
         );
     }
     let runtime_pool = PgPoolOptions::new()
@@ -766,9 +766,9 @@ async fn headless_context_works_at_135_then_migrates_complete_inactive_inventory
     );
     let statuses = admin.statuses.lock().unwrap().clone();
     assert_eq!(statuses.len(), 2);
-    assert!(statuses.iter().all(
-        |status| status["migration_version"] == 137 && status["migration_status"] == "migrated"
-    ));
+    assert!(statuses.iter().all(|status| status["migration_version"]
+        == school_migrations::latest_migration_version()
+        && status["migration_status"] == "migrated"));
     fixture.finish().await;
 }
 
@@ -1088,14 +1088,17 @@ async fn committed_migration_version_survives_later_runtime_verification_failure
             school_migrations::verify_tenant_schema(&mut *connection)
                 .await
                 .unwrap(),
-            137
+            school_migrations::latest_migration_version()
         );
     }
     let statuses = admin.statuses.lock().unwrap().clone();
     assert_eq!(statuses.len(), 2);
-    assert!(statuses
-        .iter()
-        .all(|status| status["migration_version"] == 137));
+    assert!(
+        statuses
+            .iter()
+            .all(|status| status["migration_version"]
+                == school_migrations::latest_migration_version())
+    );
     assert!(statuses
         .iter()
         .any(|status| status["school"] == "school-0" && status["migration_status"] == "failed"));

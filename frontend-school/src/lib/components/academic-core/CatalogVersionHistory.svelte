@@ -8,7 +8,6 @@
 		totalValue?: string | null;
 		standardPeriodsPerWeek?: number | null;
 		effectiveFrom: string;
-		effectiveUntil?: string | null;
 		classification?: string | null;
 		gradeLevels?: import('#lib/api/academic-core.js').GradeLevelOption[];
 		status: 'draft' | 'published' | 'archived';
@@ -27,7 +26,7 @@
 	import {
 		SCHEDULING_MODE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
-		formatEffectiveRange,
+		formatEffectiveFrom,
 		gradeLevelSummary,
 		optionLabel,
 		versionStatusLabel
@@ -101,7 +100,7 @@
 			if (kind === 'subject') {
 				draft = createCatalogVersionDraft();
 				sourceRevision = null;
-			} else draft = { ...draft, name: '', secondaryName: '', effectiveUntil: '' };
+			} else draft = { ...draft, name: '', secondaryName: '' };
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรุ่นใหม่ไม่สำเร็จ';
 		} finally {
@@ -169,7 +168,7 @@
 							{#if item.classification}
 								<span>{optionLabel(classificationOptions, item.classification)}</span>
 							{/if}
-							<span>{formatEffectiveRange(item.effectiveFrom, item.effectiveUntil)}</span>
+							<span>{formatEffectiveFrom(item.effectiveFrom)}</span>
 							{#if item.gradeLevels}
 								<span>{gradeLevelSummary(item.gradeLevels)}</span>
 							{/if}
@@ -299,29 +298,16 @@
 					/>
 					<p class="text-xs text-muted-foreground">ไม่เลือก หมายถึงใช้ได้กับทุกระดับชั้น</p>
 				</div>
-				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-					<div class="space-y-1.5">
-						<Label for={`${code}-version-from`}>เริ่มใช้</Label>
-						<DatePicker
-							id={`${code}-version-from`}
-							bind:value={draft.effectiveFrom}
-							disabled={busy}
-							placeholder="เลือกวันเริ่มใช้"
-							ariaLabel="เลือกวันที่เริ่มใช้"
-							required
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<Label for={`${code}-version-until`}>สิ้นสุด</Label>
-						<DatePicker
-							id={`${code}-version-until`}
-							bind:value={draft.effectiveUntil}
-							disabled={busy}
-							placeholder="ไม่กำหนดวันสิ้นสุด"
-							ariaLabel="เลือกวันที่สิ้นสุด"
-							clearable
-						/>
-					</div>
+				<div class="space-y-1.5">
+					<Label for={`${code}-version-from`}>เริ่มใช้</Label>
+					<DatePicker
+						id={`${code}-version-from`}
+						bind:value={draft.effectiveFrom}
+						disabled={busy}
+						placeholder="เลือกวันเริ่มใช้"
+						ariaLabel="เลือกวันที่เริ่มใช้"
+						required
+					/>
 				</div>
 			</fieldset>
 			{#if errorMessage && errorAction === 'create'}<p

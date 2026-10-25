@@ -38,7 +38,7 @@ test('catalog presentation keeps one canonical set of human-readable choices', a
 	assert.match(presentation, /ACTIVITY_TYPE_OPTIONS/);
 	assert.match(presentation, /SCHEDULING_MODE_OPTIONS/);
 	assert.match(presentation, /displayStateLabel/);
-	assert.match(presentation, /formatEffectiveRange/);
+	assert.match(presentation, /formatEffectiveFrom/);
 });
 
 test('subject catalog uses the responsive overview information architecture', async () => {
@@ -61,7 +61,7 @@ test('subject catalog uses the responsive overview information architecture', as
 	assert.match(subjects, /กลุ่มสาระของรายวิชา/);
 	assert.doesNotMatch(subjects, /owningOrganizationUnitId/);
 	assert.match(subjects, /canManage=\{selected\.canManage\}/);
-	assert.match(subjects, /formatEffectiveRange/);
+	assert.match(subjects, /formatEffectiveFrom/);
 	assert.match(subjects, /subject\.archivedAt/);
 	assert.match(subjects, /md:hidden/);
 	assert.match(subjects, /hidden md:block/);
@@ -97,7 +97,7 @@ test('activity catalog uses the responsive overview information architecture', a
 	assert.doesNotMatch(activities, /new-activity-code|เพิ่มรหัสกิจกรรม|item\.activity\.code/);
 	assert.doesNotMatch(activities, /owningOrganizationUnitId/);
 	assert.match(activities, /canManage=\{selected\.canManage\}/);
-	assert.match(activities, /formatEffectiveRange/);
+	assert.match(activities, /formatEffectiveFrom/);
 	assert.match(activities, /activity\.archivedAt/);
 	assert.match(activities, /ACTIVITY_TYPE_OPTIONS/);
 	assert.match(activities, /SCHEDULING_MODE_OPTIONS/);

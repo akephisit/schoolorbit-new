@@ -7,7 +7,6 @@ export type CatalogVersionDraft = {
 	totalValue: string;
 	standardPeriodsPerWeek: string;
 	effectiveFrom: string;
-	effectiveUntil: string;
 	gradeLevelIds: string[];
 	classification: string;
 	description?: string | null;
@@ -41,7 +40,6 @@ export function createCatalogVersionDraft(source?: SubjectVersion | null): Catal
 				month: '2-digit',
 				day: '2-digit'
 			}).format(new Date()),
-		effectiveUntil: source?.effectiveUntil ?? '',
 		gradeLevelIds: [...(source?.gradeLevelIds ?? [])],
 		classification: source?.subjectType ?? '',
 		description: source?.description ?? null,

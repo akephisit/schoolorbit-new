@@ -1810,13 +1810,6 @@
             "format": "date",
             "type": "string"
           },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevelIds": {
             "items": {
               "format": "uuid",
@@ -3569,13 +3562,6 @@
               "effectiveFrom": {
                 "format": "date",
                 "type": "string"
-              },
-              "effectiveUntil": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
               },
               "gradeLevelIds": {
                 "items": {
@@ -17147,13 +17133,6 @@
                 "format": "date",
                 "type": "string"
               },
-              "effectiveUntil": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "gradeLevelIds": {
                 "items": {
                   "format": "uuid",
@@ -20392,13 +20371,6 @@
                 "effectiveFrom": {
                   "format": "date",
                   "type": "string"
-                },
-                "effectiveUntil": {
-                  "format": "date",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
                 },
                 "gradeLevelIds": {
                   "items": {
@@ -27736,13 +27708,6 @@
                 "effectiveFrom": {
                   "format": "date",
                   "type": "string"
-                },
-                "effectiveUntil": {
-                  "format": "date",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
                 },
                 "gradeLevelIds": {
                   "items": {
@@ -35406,7 +35371,6 @@
         "enum": [
           "current",
           "upcoming",
-          "expired",
           "unpublished"
         ],
         "type": "string"
@@ -39729,13 +39693,6 @@
             "format": "date",
             "type": "string"
           },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevelIds": {
             "items": {
               "format": "uuid",
@@ -41616,13 +41573,6 @@
             "format": "date",
             "type": "string"
           },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevelIds": {
             "items": {
               "format": "uuid",
@@ -42141,13 +42091,6 @@
           "effectiveFrom": {
             "format": "date",
             "type": "string"
-          },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "gradeLevelIds": {
             "items": {
@@ -62511,13 +62454,6 @@
             "format": "date",
             "type": "string"
           },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevelIds": {
             "items": {
               "format": "uuid",
@@ -68135,13 +68071,6 @@
             "format": "date",
             "type": "string"
           },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevelIds": {
             "items": {
               "format": "uuid",
@@ -69816,13 +69745,6 @@
           "effectiveFrom": {
             "format": "date",
             "type": "string"
-          },
-          "effectiveUntil": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "gradeLevelIds": {
             "items": {

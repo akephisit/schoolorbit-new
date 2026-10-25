@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 135).await.unwrap();
+    apply_migrations_through(&pool, 138).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 135).await.unwrap();
+    apply_migrations_through(&pool, 138).await.unwrap();
     pool
 }
 
@@ -1131,7 +1131,6 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -1802,12 +1801,12 @@ async fn add_operational_change_catalog_fixture(
         r#"INSERT INTO subject_versions (
                id, subject_id, version_no, code, name_th, name_en, credit,
                hours_per_semester, type, description, effective_from,
-               effective_until, start_academic_year_id, term, is_active,
+               term, is_active,
                periods_per_week, status, published_at
            )
            SELECT $1, $2, 1, 'ท99999', 'รายวิชาทดสอบกลางภาค', NULL, credit,
                   hours_per_semester, type, 'fixture', effective_from,
-                  effective_until, start_academic_year_id, term, true,
+                  term, true,
                   periods_per_week, 'published', now()
            FROM subject_versions
            WHERE id = $3"#,
@@ -1825,7 +1824,6 @@ async fn add_operational_change_catalog_fixture(
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -1854,13 +1852,13 @@ async fn add_operational_change_catalog_fixture(
         r#"INSERT INTO activity_versions (
                id, activity_id, version_no, name, activity_type, description,
                periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-               is_active, term, grade_level_ids, start_academic_year_id,
-               effective_from, effective_until, status, published_at
+               is_active, term, grade_level_ids,
+               effective_from, status, published_at
            )
            SELECT $1, $2, 1, 'กิจกรรมทดสอบกลางภาค', activity_type, 'fixture',
                   periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-                  true, term, grade_level_ids, start_academic_year_id,
-                  effective_from, effective_until, 'published', now()
+                  true, term, grade_level_ids,
+                  effective_from, 'published', now()
            FROM activity_versions
            WHERE id = $3"#,
     )
@@ -3987,21 +3985,49 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         .to_string()
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
 
-    let ineffective_subject_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT version.id
-           FROM subject_versions version
-           JOIN academic_terms term ON term.id = $1
-           WHERE version.status = 'published'
-             AND (term.start_date < version.effective_from
-                  OR (version.effective_until IS NOT NULL
-                      AND term.start_date >= version.effective_until))
-           ORDER BY version.id
-           LIMIT 1"#,
+    // The old candidate could be expired. Start-only catalogs need an explicit
+    // new future revision to retain this independent term-start denial case.
+    let source = school_academic_core::services::catalog::get_subject_version(
+        &pool,
+        context.subject_version_id,
     )
-    .bind(context.term_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
+    let term_start: NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let future = school_academic_core::services::catalog::create_subject_version(
+        &pool,
+        source.subject_id,
+        school_academic_core::models::CreateSubjectVersionRequest {
+            name_th: format!("{} ฉบับเริ่มหลังเปิดภาคเรียน", source.name_th),
+            name_en: source.name_en,
+            credit: source.credit,
+            hours_per_semester: source.hours_per_semester,
+            subject_type: source.subject_type,
+            description: source.description,
+            effective_from: term_start + chrono::Duration::days(1),
+            term_code: source.term_code,
+            periods_per_week: source.periods_per_week,
+            grade_level_ids: source.grade_level_ids,
+        },
+    )
+    .await
+    .unwrap();
+    let future = school_academic_core::services::catalog::publish_subject_version(
+        &pool,
+        future.id,
+        school_academic_core::models::PublishVersionRequest {
+            row_version: future.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(future.effective_from > term_start);
+    let ineffective_subject_version_id = future.id;
     let mut ineffective_version_request = course_request(&context);
     let CreateLearningOfferingRequest::Course(course) = &mut ineffective_version_request else {
         unreachable!();
@@ -4011,7 +4037,7 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         offerings::create(&pool, context.teacher_id, ineffective_version_request).await;
     assert!(matches!(
         ineffective_version,
-        Err(AppError::ValidationError(_))
+        Err(AppError::ValidationError(message)) if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"
     ));
 
     let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
@@ -4443,6 +4469,69 @@ async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
 }
 
 #[tokio::test]
+async fn catalog_start_only_former_expiry_allows_explicit_offering_pin_and_preserves_facts() {
+    let pool = prepare_delivery_runtime_fixture("catalog_start_only_explicit_old_pin").await;
+    let context = planning_runtime_context(&pool).await;
+    // The historical Passing fixture was imported before migration 138. Select
+    // preserved finite-expiry evidence; no existing year, room or version is edited.
+    let (old_id,stable_id,code,name,credit,hours,standard,source_before,former_expiry,term_start):(Uuid,Uuid,String,String,String,Option<String>,i32,serde_json::Value,NaiveDate,NaiveDate)=sqlx::query_as(
+        "SELECT version.id,version.subject_id,subject.code,version.name_th,version.credit::text,version.hours_per_semester::text,version.periods_per_week,to_jsonb(version),(version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date,term.start_date FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.effective_from<=term.start_date AND (version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date<term.start_date AND version.periods_per_week IS NOT NULL AND version.hours_per_semester IS NOT NULL ORDER BY version.effective_from DESC,version.version_no DESC LIMIT 1"
+    ).bind(context.term_id).fetch_one(&pool).await.unwrap();
+    assert!(former_expiry < term_start);
+    let mut request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(course) = &mut request else {
+        unreachable!()
+    };
+    course.subject_version_id = old_id;
+    let offering = offerings::create(&pool, context.teacher_id, request)
+        .await
+        .unwrap();
+    assert_eq!(offering.academic_year_id, context.year_id);
+    assert_eq!(offering.academic_term_id, context.term_id);
+    assert_eq!(offering.code_snapshot, code);
+    assert_eq!(offering.name_snapshot, name);
+    assert_eq!(offering.targets.len(), 1);
+    assert_eq!(offering.targets[0].homeroom_id, Some(context.homeroom_id));
+    let LearningOfferingSnapshot::Course(snapshot) = &offering.snapshot else {
+        panic!("an explicit course pin must retain a course snapshot")
+    };
+    assert_eq!(snapshot.subject_version_id, old_id);
+    assert_eq!(snapshot.subject_id, stable_id);
+    assert_eq!(
+        snapshot.credit.parse::<bigdecimal::BigDecimal>().unwrap(),
+        credit.parse::<bigdecimal::BigDecimal>().unwrap()
+    );
+    assert_eq!(
+        snapshot
+            .hours
+            .as_deref()
+            .unwrap()
+            .parse::<bigdecimal::BigDecimal>()
+            .unwrap(),
+        hours
+            .as_deref()
+            .unwrap()
+            .parse::<bigdecimal::BigDecimal>()
+            .unwrap()
+    );
+    assert_eq!(snapshot.standard_periods_per_week, standard);
+    assert_eq!(snapshot.assessment_total_score, "100.00");
+    let source_after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(version) FROM subject_versions version WHERE id=$1")
+            .bind(old_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(source_before, source_after);
+    let reloaded = offerings::get(&pool, offering.id).await.unwrap();
+    let LearningOfferingSnapshot::Course(reloaded) = reloaded.snapshot else {
+        panic!("readback must retain the pinned course snapshot")
+    };
+    assert_eq!(reloaded.subject_version_id, old_id);
+    assert_eq!(reloaded.subject_id, stable_id);
+}
+
+#[tokio::test]
 async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_curriculum").await;
     let context = planning_runtime_context(&pool).await;
@@ -4471,9 +4560,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await;
     assert!(
-        matches!(&earlier_edition, Err(AppError::ValidationError(message))
-            if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"),
-        "the earlier plan passes selection, while its expired catalog version remains guarded: {earlier_edition:?}"
+        matches!(&earlier_edition,Err(AppError::ValidationError(message))
+            if message == "ไม่พบห้องประจำชั้นที่ใช้แผนการเรียนนี้ในปีการศึกษาของภาคเรียนที่เลือก"),
+        "the earlier catalog pin passes expiry removal; its independent missing-room guard remains: {earlier_edition:?}"
     );
 
     let preview = offerings::preview_from_curriculum(
@@ -4825,7 +4914,6 @@ async fn self_registration_activity_uses_common_delivery() {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -4985,7 +5073,6 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -5711,7 +5798,6 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
            WHERE version.status = 'published'
              AND version.periods_per_week IS NOT NULL
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
              AND NOT EXISTS (
                  SELECT 1
                  FROM curriculum_course_requirements requirement
@@ -6040,7 +6126,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.effective_from <= term.start_date
-             AND (version.effective_until IS NULL OR version.effective_until > term.start_date)
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -6763,7 +6848,7 @@ async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_
 async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_central() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_activity_groups").await;
     let context = planning_runtime_context(&pool).await;
-    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date AND (version.effective_until IS NULL OR version.effective_until > term.start_date) ORDER BY version.id LIMIT 1")
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date ORDER BY version.id LIMIT 1")
         .bind(context.term_id).fetch_one(&pool).await.unwrap();
     let request = CreateActivityOfferingRequest {
         create_homeroom_groups: false,
@@ -6868,7 +6953,6 @@ async fn zero_workload_subject(
             subject_type: "BASIC".into(),
             description: None,
             effective_from: start,
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![context.grade_level_id],
         },
@@ -6952,7 +7036,6 @@ async fn subject_zero_workload_manual_opening_keeps_zero_and_refuses_activity_ze
             hours_per_term: Some("0.00".into()),
             scheduling_mode: "synchronized".into(),
             effective_from: version.effective_from,
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![context.grade_level_id],
         },

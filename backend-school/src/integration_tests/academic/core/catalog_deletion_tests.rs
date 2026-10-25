@@ -42,7 +42,6 @@ async fn activity_values(pool: &PgPool) -> CreateActivityVersionRequest {
         hours_per_term: Some("0.00".into()),
         scheduling_mode: "independent".into(),
         effective_from: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-        effective_until: None,
         term_code: None,
         grade_level_ids: vec![grade],
     }
@@ -117,7 +116,6 @@ async fn catalog_deletion_empty_and_draft_rows_preserves_unrelated_history() {
         grade,
         "ฉบับร่างที่จะลบ",
         NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-        None,
         false,
     )
     .await;

@@ -92,7 +92,6 @@ pub enum TimetableVersionStatus {
 pub enum CatalogDisplayState {
     Current,
     Upcoming,
-    Expired,
     Unpublished,
 }
 
@@ -410,7 +409,6 @@ pub struct SubjectVersion {
     pub subject_type: String,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub periods_per_week: Option<i32>,
     pub grade_level_ids: Vec<Uuid>,
@@ -434,7 +432,6 @@ pub struct CreateSubjectVersionRequest {
     pub subject_type: String,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub periods_per_week: Option<i32>,
     pub grade_level_ids: Vec<Uuid>,
@@ -452,7 +449,6 @@ pub struct UpdateSubjectVersionRequest {
     pub subject_type: String,
     pub description: Option<String>,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub periods_per_week: Option<i32>,
     pub grade_level_ids: Vec<Uuid>,
@@ -504,7 +500,6 @@ pub struct ActivityVersion {
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub grade_level_ids: Vec<Uuid>,
     pub status: VersionStatus,
@@ -598,7 +593,6 @@ pub struct CreateActivityVersionRequest {
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub grade_level_ids: Vec<Uuid>,
 }
@@ -615,7 +609,6 @@ pub struct UpdateActivityVersionRequest {
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub term_code: Option<String>,
     pub grade_level_ids: Vec<Uuid>,
     pub row_version: i64,
@@ -1052,7 +1045,6 @@ pub struct CurriculumCatalogVersionOption {
     pub name: String,
     pub version_no: i32,
     pub effective_from: NaiveDate,
-    pub effective_until: Option<NaiveDate>,
     pub grade_level_ids: Vec<Uuid>,
     pub section: CurriculumDocumentSection,
     pub credit_category: Option<CurriculumCourseCreditCategory>,

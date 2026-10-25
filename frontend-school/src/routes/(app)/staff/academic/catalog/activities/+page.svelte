@@ -21,7 +21,7 @@
 		SCHEDULING_MODE_OPTIONS,
 		displayStateClass,
 		displayStateLabel,
-		formatEffectiveRange,
+		formatEffectiveFrom,
 		gradeLevelSummary,
 		matchesCatalogSearch,
 		optionLabel
@@ -51,7 +51,6 @@
 		totalValue: string;
 		standardPeriodsPerWeek: string;
 		effectiveFrom: string;
-		effectiveUntil: string;
 		gradeLevelIds: string[];
 		classification: string;
 	};
@@ -263,7 +262,6 @@
 			hoursPerTerm: draft.totalValue,
 			description: draft.secondaryName || null,
 			effectiveFrom: draft.effectiveFrom,
-			effectiveUntil: draft.effectiveUntil || null,
 			gradeLevelIds: draft.gradeLevelIds,
 			schedulingMode: draft.classification,
 			termCode: null
@@ -468,10 +466,7 @@
 												</p>{/if}
 											{#if item.displayVersion}
 												<p class="mt-1 text-xs text-muted-foreground">
-													{formatEffectiveRange(
-														item.displayVersion.effectiveFrom,
-														item.displayVersion.effectiveUntil
-													)}
+													{formatEffectiveFrom(item.displayVersion.effectiveFrom)}
 												</p>
 											{/if}
 										</Table.Cell>
@@ -554,10 +549,7 @@
 										<div class="col-span-2">
 											<p class="text-xs text-muted-foreground">ช่วงที่มีผล</p>
 											<p>
-												{formatEffectiveRange(
-													item.displayVersion.effectiveFrom,
-													item.displayVersion.effectiveUntil
-												)}
+												{formatEffectiveFrom(item.displayVersion.effectiveFrom)}
 											</p>
 										</div>
 									{/if}
@@ -597,9 +589,8 @@
 				<span>{selected ? activityName(selected) : 'รายละเอียดกิจกรรม'}</span>
 			</Sheet.Title>
 			<Sheet.Description>
-				{#if selected?.displayVersion}{formatEffectiveRange(
-						selected.displayVersion.effectiveFrom,
-						selected.displayVersion.effectiveUntil
+				{#if selected?.displayVersion}{formatEffectiveFrom(
+						selected.displayVersion.effectiveFrom
 					)}{:else}ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง{/if}
 			</Sheet.Description>
 		</Sheet.Header>
@@ -636,7 +627,6 @@
 						exactValue: item.hoursPerWeek,
 						totalValue: item.hoursPerTerm,
 						effectiveFrom: item.effectiveFrom,
-						effectiveUntil: item.effectiveUntil,
 						classification: item.schedulingMode,
 						gradeLevels: gradeLevelsFor(item),
 						status: item.status,

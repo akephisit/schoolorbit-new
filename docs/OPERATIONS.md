@@ -636,10 +636,34 @@ Deploy the backend, generated API contracts and frontend through the normal main
 Deploy [migration 131](../backend-school/migrations/131_subject_catalog_revisions.sql) with
 its matching catalog provider through the normal universal maintenance and all-tenant
 migration gates. It removes subject-only legacy code/year uniqueness and overlapping-range
-rejection without changing historical rows, pinned curriculum/offering version IDs, activity
-range guards or published immutability. New same-date revisions become the default only
+rejection without changing historical rows, pinned curriculum/offering version IDs, published immutability. Migration 138 later retires activity range guards with start-only revisions. New same-date revisions become the default only
 through the subject provider's date and revision selection; prior pinned consumers retain
 their versions.
+
+Deploy [migration 138](../backend-school/migrations/138_catalogs_without_academic_year.sql)
+with its matching School catalog provider through universal maintenance and the canonical
+all-tenant migration gates. Central subjects and activities use start-only civil dates independently
+of academic years and have no expiry. The migration preserves every existing version's former year UUID and exact nullable expiry under
+`migration_provenance.historicalCatalogContext`, retains the prior provenance object, and removes
+the active year and expiry columns, foreign keys, year indexes, activity name/year uniqueness
+and obsolete activity overlap/range guards.
+Historical metadata has no foreign key and never selects or validates an academic year or expiry.
+Formerly expired revisions become eligible under the start-only policy; explicit historical pins
+retain their facts. Current metadata uses latest eligible start and highest revision; future
+revisions never become current early.
+
+The migration locks and reconciles catalog facts and actual reference owners, including
+publication and delivery snapshots, without changing IDs, timestamps, revisions, statuses,
+published values or pinned references. It temporarily disables only the two published-version
+triggers and the inherited subject timestamp trigger within the migration transaction, then
+restores and verifies them. Published guards, stable catalog locks and revision uniqueness remain
+required; the obsolete activity interval trigger/function is retired before backfill.
+The bounded `catalog.start_only_reconciled` audit records preservation evidence.
+A reserved provenance-key collision, unsupported provenance, disabled guard or unexpected
+column dependency refuses the migration atomically. Keep maintenance active and investigate
+bounded findings on a protected copy; repair forward with a matching release. Pre-138 writers
+require the retired columns and must not be restored against schema 138. Never retarget dates,
+rewrite academic years, delete catalog/history rows or alter SQLx history to force success.
 
 Curriculum additions use the catalog provider's current published subject revision on
 Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together

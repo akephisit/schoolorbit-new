@@ -19,23 +19,44 @@ fn bangkok_day_changes_at_seventeen_utc() {
 }
 
 #[test]
-fn current_subject_revision_has_exclusive_ends_and_no_future_or_expired_fallback() {
+fn current_catalog_revision_uses_start_date_then_revision_without_expiry() {
     let day = NaiveDate::from_ymd_opt(2026, 10, 21).unwrap();
     let versions = [
-        (day, Some(day.succ_opt().unwrap()), 1),
-        (day, None, 2),
-        (day.succ_opt().unwrap(), None, 3),
+        (day.pred_opt().unwrap(), 9),
+        (day, 1),
+        (day, 2),
+        (day.succ_opt().unwrap(), 3),
     ];
     assert_eq!(
         select_current_subject_revision(versions.iter(), day, |version| *version),
-        Some(&versions[1])
+        Some(&versions[2])
     );
-    let unavailable = [
-        (day.pred_opt().unwrap(), Some(day), 1),
-        (day.succ_opt().unwrap(), None, 2),
-    ];
     assert_eq!(
-        select_current_subject_revision(unavailable.iter(), day, |version| *version),
+        select_current_subject_revision(
+            versions.iter(),
+            day + chrono::Duration::days(400),
+            |version| *version
+        ),
+        Some(&versions[3])
+    );
+    assert_eq!(
+        select_current_subject_revision(
+            versions.iter(),
+            day - chrono::Duration::days(2),
+            |version| *version
+        ),
         None
     );
+}
+
+#[test]
+fn upcoming_catalog_revision_uses_earliest_start_then_highest_revision() {
+    let day = NaiveDate::from_ymd_opt(2026, 10, 21).unwrap();
+    let versions = [
+        (day.succ_opt().unwrap(), 1),
+        (day.succ_opt().unwrap(), 2),
+        (day + chrono::Duration::days(2), 3),
+    ];
+    let selected = select_display_version(versions.iter(), day, |v| v.0, |v| v.1).unwrap();
+    assert_eq!(selected, (&versions[1], CatalogDisplayState::Upcoming));
 }

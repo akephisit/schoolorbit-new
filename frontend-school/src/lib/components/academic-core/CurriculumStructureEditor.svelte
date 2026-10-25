@@ -23,7 +23,7 @@
 		validateCreditCriteria
 	} from '#lib/academic-core/curriculum-credit-criteria.js';
 	import { curriculumMetric } from '#lib/academic/curriculum-structure.js';
-	import { formatEffectiveRange } from '#lib/academic-core/catalog-presentation.js';
+	import { formatEffectiveFrom } from '#lib/academic-core/catalog-presentation.js';
 	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import CurriculumTermSlotEditor from '#lib/components/academic-core/CurriculumTermSlotEditor.svelte';
@@ -715,7 +715,7 @@
 									class="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted/60"
 								>
 									<Checkbox
-										aria-label={`เลือก ${option.resourceKind === 'course' ? option.code + ' ' : ''}${option.name} · ${formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}`}
+										aria-label={`เลือก ${option.resourceKind === 'course' ? option.code + ' ' : ''}${option.name} · ${formatEffectiveFrom(option.effectiveFrom)}`}
 										disabled={hasExistingCourse || !selectionReady || saving}
 										checked={selectedCatalogIds.includes(option.id)}
 										onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
@@ -726,7 +726,7 @@
 										>
 										<span class="block text-sm">{option.name}</span>
 										<span class="block text-xs text-muted-foreground"
-											>{formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}</span
+											>{formatEffectiveFrom(option.effectiveFrom)}</span
 										>
 										{#if hasExistingCourse}<span class="block text-xs text-muted-foreground"
 												>มีรายวิชานี้แล้ว</span
@@ -736,7 +736,7 @@
 							{/each}
 						</div>
 						<Select.Root type="single" bind:value={requirementKind}>
-							<Select.Trigger>
+							<Select.Trigger aria-label="เงื่อนไขของรายการที่จะเพิ่ม">
 								{requirementKind === 'required'
 									? 'บังคับ'
 									: requirementKind === 'elective'
@@ -787,7 +787,7 @@
 												><Table.Cell colspan={4} class="font-semibold">{section.label}</Table.Cell
 												></Table.Row
 											>{/if}
-										{#each section.rows as requirement (requirement)}
+										{#each section.rows as requirement, index (requirement)}
 											{@const option = catalogOption(requirement.catalogVersionId)}
 											{@const source = requirementSource(requirement.catalogVersionId)}
 											<Table.Row>
@@ -815,7 +815,9 @@
 																requirementKind: value
 															})}
 													>
-														<Select.Trigger>
+														<Select.Trigger
+															aria-label={`เงื่อนไขของ ${requirement.resourceKind === 'course' ? `${source?.code ?? option?.code ?? ''} ` : ''}${source?.name ?? option?.name ?? 'ไม่มีข้อมูลชื่อในทะเบียน'} · ${section.label} รายการที่ ${index + 1}`}
+														>
 															{requirement.requirementKind === 'required'
 																? 'บังคับ'
 																: requirement.requirementKind === 'elective'

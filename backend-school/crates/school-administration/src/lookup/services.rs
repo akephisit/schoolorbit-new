@@ -709,8 +709,7 @@ pub async fn lookup_subjects_on_connection(
              SELECT candidate.*
              FROM subject_versions candidate
              WHERE candidate.subject_id = subject.id
-               AND candidate.effective_from <= year.end_date
-               AND (candidate.effective_until IS NULL OR candidate.effective_until > year.start_date)",
+               AND candidate.effective_from <= year.end_date",
     );
 
     if active_only {
@@ -728,20 +727,23 @@ pub async fn lookup_subjects_on_connection(
     let mut bind_search: Option<String> = None;
 
     if let Some(ref subject_type) = query.subject_type {
-        sql.push_str(&format!(" AND type = ${}", param_idx));
+        sql.push_str(&format!(" AND version.type = ${}", param_idx));
         bind_subject_type = Some(subject_type.clone());
         param_idx += 1;
     }
 
     if let Some(ref pattern) = search_pattern(query.search.clone()) {
         sql.push_str(&format!(
-            " AND (name_th ILIKE ${0} OR code ILIKE ${0})",
+            " AND (version.name_th ILIKE ${0} OR subject.code ILIKE ${0})",
             param_idx
         ));
         bind_search = Some(pattern.clone());
     }
 
-    sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
+    sql.push_str(&format!(
+        " ORDER BY subject.code, version.name_th LIMIT {}",
+        limit
+    ));
 
     let mut query_builder =
         sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
@@ -943,6 +945,51 @@ mod tests {
         assert!(!homerooms.is_empty());
         assert!(students.iter().any(|student| student.homeroom.is_some()));
         assert!(!subjects.is_empty());
+    }
+
+    #[tokio::test]
+    async fn catalog_start_only_lookup_preserves_selected_year_and_former_expiry_is_metadata() {
+        let pool = create_named_test_pool("catalog_start_only_subject_lookup").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        apply_migrations_through(&pool, 137).await.unwrap();
+        let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let stable = Uuid::new_v4();
+        let version = Uuid::new_v4();
+        sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT $1,'LOOKUP-STARTONLY','lookup-startonly',subject_group_id,owning_organization_unit_id FROM subjects LIMIT 1").bind(stable).execute(&pool).await.unwrap();
+        // Historical required fields are seeded only before migration 138.
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,effective_until,status,published_at) SELECT $1,$2,1,'LOOKUP-STARTONLY','Lookup old expiry',1,'BASIC',id,start_date-730,end_date-366,'published',now() FROM academic_years WHERE id=$3").bind(version).bind(stable).bind(year).execute(&pool).await.unwrap();
+        apply_migrations_through(&pool, 138).await.unwrap();
+        let mut query = academic_query(year);
+        query.search = Some("LOOKUP-STARTONLY".into());
+        let found = lookup_subjects(&pool, query).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, stable);
+        let mut by_name = academic_query(year);
+        by_name.search = Some("Lookup old expiry".into());
+        by_name.subject_type = Some("BASIC".into());
+        let named = lookup_subjects(&pool, by_name).await.unwrap();
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].id, stable);
+        let unsearched = lookup_subjects(&pool, academic_query(year)).await.unwrap();
+        assert!(unsearched.iter().any(|item| item.id == stable));
+        let mut wrong_type = academic_query(year);
+        wrong_type.search = Some("LOOKUP-STARTONLY".into());
+        wrong_type.subject_type = Some("ADDITIONAL".into());
+        assert!(lookup_subjects(&pool, wrong_type).await.unwrap().is_empty());
+        let future = Uuid::new_v4();
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) SELECT $1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',end_date+1,'published',now() FROM academic_years WHERE id=$3").bind(future).bind(stable).bind(year).execute(&pool).await.unwrap();
+        let mut query = academic_query(year);
+        query.search = Some("LOOKUP-STARTONLY".into());
+        let unchanged = lookup_subjects(&pool, query).await.unwrap();
+        assert_eq!(unchanged.len(), 1);
+        assert_eq!(unchanged[0].name, "Lookup old expiry");
     }
 
     #[test]

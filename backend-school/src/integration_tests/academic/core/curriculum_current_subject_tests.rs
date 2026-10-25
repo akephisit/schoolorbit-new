@@ -25,12 +25,7 @@ async fn publish(pool: &PgPool, version: SubjectVersion) -> SubjectVersion {
     .unwrap()
 }
 
-fn version_request(
-    name: &str,
-    grade: Uuid,
-    from: NaiveDate,
-    until: Option<NaiveDate>,
-) -> CreateSubjectVersionRequest {
+fn version_request(name: &str, grade: Uuid, from: NaiveDate) -> CreateSubjectVersionRequest {
     CreateSubjectVersionRequest {
         name_th: name.into(),
         name_en: None,
@@ -39,7 +34,6 @@ fn version_request(
         subject_type: "BASIC".into(),
         description: None,
         effective_from: from,
-        effective_until: until,
         term_code: None,
         periods_per_week: Some(2),
         grade_level_ids: vec![grade],
@@ -47,7 +41,7 @@ fn version_request(
 }
 
 async fn fixture(name: &str) -> Fixture {
-    let pool = prepare_core_fixture_through(name, 135).await;
+    let pool = prepare_core_fixture_through(name, 138).await;
     let grades: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(grades.len(), 3);
@@ -101,7 +95,7 @@ async fn fixture(name: &str) -> Fixture {
         catalog::create_subject_version(
             &pool,
             subject.id,
-            version_request("รายวิชารุ่นหนึ่ง", grade, catalog::subject_catalog_today(), None),
+            version_request("รายวิชารุ่นหนึ่ง", grade, catalog::subject_catalog_today()),
         )
         .await
         .unwrap(),
@@ -153,7 +147,7 @@ async fn revision(f: &Fixture, name: &str) -> SubjectVersion {
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request(name, f.grade, f.v1.effective_from, None),
+            version_request(name, f.grade, f.v1.effective_from),
         )
         .await
         .unwrap(),
@@ -173,7 +167,7 @@ async fn seed_existing(f: &Fixture, version: Uuid) {
 async fn curriculum_current_subject_options_keep_history_and_reject_no_current_fallback() {
     let f = fixture("curriculum_current_subject_options").await;
     let grades:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year").fetch_all(&f.pool).await.unwrap();
-    let mut widened = version_request(&f.v1.name_th, f.grade, f.v1.effective_from, None);
+    let mut widened = version_request(&f.v1.name_th, f.grade, f.v1.effective_from);
     widened.grade_level_ids = grades.clone();
     let v2 = publish(
         &f.pool,
@@ -191,7 +185,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     let draft = catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("ยังไม่เผยแพร่", f.grade, today, None),
+        version_request("ยังไม่เผยแพร่", f.grade, today),
     )
     .await
     .unwrap();
@@ -204,12 +198,12 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     )
     .await
     .unwrap();
-    let expired = publish(
+    let superseded = publish(
         &f.pool,
         catalog::create_subject_version(
             &f.pool,
-            unavailable.id,
-            version_request("หมดอายุวันนี้", f.grade, today.pred_opt().unwrap(), Some(today)),
+            f.subject,
+            version_request("ฉบับเริ่มก่อนฉบับปัจจุบัน", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -220,7 +214,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("เริ่มพรุ่งนี้", f.grade, today.succ_opt().unwrap(), None),
+            version_request("เริ่มพรุ่งนี้", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -233,7 +227,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     let options = workspaces::curriculum_management_options(&f.pool, f.level, &filter)
         .await
         .unwrap();
-    for version in [&f.v1, &v2, &expired, &future] {
+    for version in [&f.v1, &v2, &superseded, &future] {
         let option = options
             .catalog_versions
             .iter()
@@ -254,7 +248,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
         .iter()
         .any(|option| option.id == draft.id));
     let before = snapshot(&f).await;
-    for version in [&f.v1, &expired, &future, &draft] {
+    for version in [&f.v1, &superseded, &future, &draft] {
         assert!(matches!(
             save(&f, vec![row(&f, version.id)]).await,
             Err(school_errors::AppError::Conflict(_))
@@ -383,7 +377,6 @@ async fn curriculum_current_subject_grandfathers_duplicate_buckets_and_future_ex
                 "ฉบับอนาคต",
                 f.grade,
                 catalog::subject_catalog_today().succ_opt().unwrap(),
-                None,
             ),
         )
         .await
@@ -391,19 +384,19 @@ async fn curriculum_current_subject_grandfathers_duplicate_buckets_and_future_ex
     )
     .await;
     let today = catalog::subject_catalog_today();
-    let expired = publish(
+    let superseded = publish(
         &f.pool,
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("ฉบับหมดอายุ", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("ฉบับเริ่มก่อน", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
     )
     .await;
     // Existing/copied unavailable tuples are retained; changing term makes a new tuple.
-    for version_id in [future.id, expired.id] {
+    for version_id in [future.id, superseded.id] {
         sqlx::query("DELETE FROM curriculum_course_requirements WHERE study_program_id=$1")
             .bind(f.program.id)
             .execute(&f.pool)
@@ -554,7 +547,6 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
             hours_per_term: Some("20".into()),
             scheduling_mode: "synchronized".into(),
             effective_from: catalog::subject_catalog_today().succ_opt().unwrap(),
-            effective_until: None,
             term_code: None,
             grade_level_ids: vec![f.grade],
         },
@@ -616,7 +608,7 @@ async fn curriculum_current_subject_save_waits_for_publication_lock_and_rolls_ba
     let draft = catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("รายวิชารุ่นสอง", f.grade, f.v1.effective_from, None),
+        version_request("รายวิชารุ่นสอง", f.grade, f.v1.effective_from),
     )
     .await
     .unwrap();
@@ -648,11 +640,11 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
     let initial = save(&f, vec![row(&f, f.v1.id)]).await.unwrap();
     assert!(!initial.requirements[0].has_newer_current_version);
     let today = catalog::subject_catalog_today();
-    // A newer draft, future publication, or expired publication is not current.
+    // A newer draft, future publication, or a publication with an older start date is not current.
     catalog::create_subject_version(
         &f.pool,
         f.subject,
-        version_request("ร่างใหม่", f.grade, today, None),
+        version_request("ร่างใหม่", f.grade, today),
     )
     .await
     .unwrap();
@@ -661,18 +653,18 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("อนาคตใหม่", f.grade, today.succ_opt().unwrap(), None),
+            version_request("อนาคตใหม่", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
     )
     .await;
-    let expired = publish(
+    let superseded = publish(
         &f.pool,
         catalog::create_subject_version(
             &f.pool,
             f.subject,
-            version_request("หมดอายุใหม่", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("ฉบับเก่าเริ่มก่อน", f.grade, today.pred_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -716,7 +708,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("หมดอายุ", f.grade, today.pred_opt().unwrap(), Some(today)),
+            version_request("ฉบับอนาคตที่ถูกอ้างอิง", f.grade, today.succ_opt().unwrap()),
         )
         .await
         .unwrap(),
@@ -727,7 +719,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         catalog::create_subject_version(
             &f.pool,
             unavailable.id,
-            version_request("อนาคต", f.grade, today.succ_opt().unwrap(), None),
+            version_request("ฉบับอนาคตถัดไป", f.grade, today + chrono::Duration::days(2)),
         )
         .await
         .unwrap(),
@@ -736,7 +728,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
     catalog::create_subject_version(
         &f.pool,
         unavailable.id,
-        version_request("ร่าง", f.grade, today, None),
+        version_request("ร่าง", f.grade, today),
     )
     .await
     .unwrap();
@@ -757,7 +749,7 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         .iter()
         .all(|item| !item.has_newer_current_version));
     assert_eq!(before, snapshot(&f).await);
-    assert!(expired.version_no > f.v1.version_no);
+    assert!(superseded.version_no > f.v1.version_no);
 }
 
 #[tokio::test]
@@ -767,12 +759,7 @@ async fn curriculum_credit_category_unknown_published_pin_stays_unknown_after_ne
     };
     use school_academic_core::services::curriculum_publications;
     let f = fixture("curriculum_credit_category_unknown_pin").await;
-    let mut unknown = version_request(
-        "รายวิชาพื้นฐานชื่อนี้ไม่กำหนดประเภท",
-        f.grade,
-        f.v1.effective_from,
-        None,
-    );
+    let mut unknown = version_request("รายวิชาพื้นฐานชื่อนี้ไม่กำหนดประเภท", f.grade, f.v1.effective_from);
     unknown.subject_type = "LEGACY-UNKNOWN".into();
     let unknown = publish(
         &f.pool,
@@ -869,7 +856,7 @@ async fn subject_zero_workload_publishes_and_preserves_curriculum_and_catalog_pi
     )
     .await
     .unwrap();
-    let mut values = version_request("รายวิชาไม่มีชั่วโมงสอน", f.grade, f.v1.effective_from, None);
+    let mut values = version_request("รายวิชาไม่มีชั่วโมงสอน", f.grade, f.v1.effective_from);
     values.hours_per_semester = Some(0);
     values.periods_per_week = Some(0);
     let draft = catalog::create_subject_version(&f.pool, stable.id, values.clone())
@@ -960,7 +947,7 @@ async fn subject_zero_workload_publishes_and_preserves_curriculum_and_catalog_pi
 #[tokio::test]
 async fn subject_zero_workload_keeps_negative_missing_and_credit_guards() {
     let f = fixture("subject_zero_workload_validation").await;
-    let base = version_request("รายวิชาตรวจข้อมูลภาระงาน", f.grade, f.v1.effective_from, None);
+    let base = version_request("รายวิชาตรวจข้อมูลภาระงาน", f.grade, f.v1.effective_from);
     for (periods, hours) in [(Some(-1), Some(0)), (Some(0), Some(-1))] {
         let mut values = base.clone();
         values.periods_per_week = periods;
