@@ -70,6 +70,7 @@
 	);
 	// Keep canonical decimals as strings, including intermediate typing such as `1.`.
 	const positiveDecimalPattern = '(?=.*[1-9])(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
+	const nonnegativeDecimalPattern = '(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
 	const positiveIntegerPattern = '(?=.*[1-9])[0-9]+(\\.0+)?';
 
 	let pendingAction = $state<string | null>(null);
@@ -234,7 +235,7 @@
 							<Input
 								id={`${code}-version-exact`}
 								type="text"
-								pattern={positiveDecimalPattern}
+								pattern={kind === 'subject' ? positiveDecimalPattern : nonnegativeDecimalPattern}
 								inputmode="decimal"
 								bind:value={draft.exactValue}
 								required
@@ -258,7 +259,7 @@
 							<Input
 								id={`${code}-version-total`}
 								type="text"
-								pattern={kind === 'subject' ? positiveIntegerPattern : positiveDecimalPattern}
+								pattern={kind === 'subject' ? positiveIntegerPattern : nonnegativeDecimalPattern}
 								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
 								bind:value={draft.totalValue}
 								required

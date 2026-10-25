@@ -888,6 +888,7 @@ for (const [index, font] of FONTS.entries()) {
 					},
 					displayState: 'current',
 					canManage: true,
+					canDelete: false,
 					draftCount: 0,
 					gradeLevels: [],
 					displayVersion: {

@@ -780,16 +780,16 @@ async fn validate_publishable(
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            WHERE requirement.curriculum_level_id = $1
              AND (version.hours_per_week IS NULL
-                  OR version.hours_per_week <= 0
+                  OR version.hours_per_week < 0
                   OR version.hours_per_term IS NULL
-                  OR version.hours_per_term <= 0)"#,
+                  OR version.hours_per_term < 0)"#,
         )
         .bind(version.id)
         .fetch_one()
         .await?;
     if incomplete_activity_metrics != 0 {
         return Err(AppError::ValidationError(
-            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบและมากกว่า 0".to_string(),
+            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบและเป็น 0 หรือมากกว่า".to_string(),
         ));
     }
     Ok(())

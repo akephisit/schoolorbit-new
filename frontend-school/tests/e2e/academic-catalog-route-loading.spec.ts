@@ -183,7 +183,8 @@ for (const entry of [
 							displayState: 'unpublished',
 							draftCount: 0,
 							gradeLevels: [],
-							canManage: true
+							canManage: true,
+							canDelete: false
 						}
 					]
 				: [],
@@ -367,7 +368,8 @@ const namedActivityOverview = {
 			displayState: 'current',
 			draftCount: 0,
 			gradeLevels: [],
-			canManage: true
+			canManage: true,
+			canDelete: false
 		}
 	],
 	gradeLevelOptions: [],

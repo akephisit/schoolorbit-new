@@ -970,6 +970,39 @@ pub async fn update_catalog_subject(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/academic/catalog/subjects/{id}",
+    operation_id = "deleteCatalogSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    request_body = DeleteCatalogRequest,
+    responses(
+        (status = 200, description = "Unpublished catalog subject deleted", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Invalid row version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog subject changed, has publication history, or is referenced", body = ApiErrorResponse)
+    )
+))]
+pub async fn delete_catalog_subject(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<DeleteCatalogRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool, &actor, CatalogResourceRef::Subject(id), CatalogAction::Manage,
+    ).await?;
+    catalog::delete_subject(&pool, id, request).await?;
+    signal_core_changed(&state, &session, &actor, "catalog_subject", Some(id), None, None);
+    Ok(Json(ApiResponse::empty()).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects/{id}/versions",
     operation_id = "listSubjectVersions",
@@ -1572,6 +1605,39 @@ pub async fn update_catalog_activity(
         None,
     );
     Ok(ok(activity))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/academic/catalog/activities/{id}",
+    operation_id = "deleteCatalogActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    request_body = DeleteCatalogRequest,
+    responses(
+        (status = 200, description = "Unpublished catalog activity deleted", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Invalid row version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog activity changed, has publication history, or is referenced", body = ApiErrorResponse)
+    )
+))]
+pub async fn delete_catalog_activity(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<DeleteCatalogRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool, &actor, CatalogResourceRef::Activity(id), CatalogAction::Manage,
+    ).await?;
+    catalog::delete_activity(&pool, id, request).await?;
+    signal_core_changed(&state, &session, &actor, "catalog_activity", Some(id), None, None);
+    Ok(Json(ApiResponse::empty()).into_response())
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

@@ -545,6 +545,7 @@ pub struct CatalogSubjectOverviewItem {
     pub draft_count: i64,
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub can_manage: bool,
+    pub can_delete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -566,6 +567,7 @@ pub struct CatalogActivityOverviewItem {
     pub draft_count: i64,
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub can_manage: bool,
+    pub can_delete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -575,6 +577,13 @@ pub struct CatalogActivityOverview {
     pub items: Vec<CatalogActivityOverviewItem>,
     pub grade_level_options: Vec<GradeLevelLookupItem>,
     pub can_create: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteCatalogRequest {
+    pub row_version: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

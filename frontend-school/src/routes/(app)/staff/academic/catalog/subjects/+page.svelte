@@ -2,9 +2,11 @@
 	import { invalidate } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createCatalogSubject,
 		createSubjectVersion,
+		deleteCatalogSubject,
 		listSubjectVersions,
 		publishSubjectVersion,
 		updateCatalogSubject,
@@ -25,6 +27,7 @@
 		matchesCatalogSearch,
 		optionLabel
 	} from '#lib/academic-core/catalog-presentation.js';
+	import CatalogDeleteDialog from '#lib/components/academic-core/CatalogDeleteDialog.svelte';
 	import CatalogVersionHistory, {
 		type CatalogVersionDraft
 	} from '#lib/components/academic-core/CatalogVersionHistory.svelte';
@@ -74,14 +77,15 @@
 	let subjectMetadataError = $state('');
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
-	let historyRevision = 0;
+	const historyRequests = new LatestRequest();
+	const deletedSubjectIds = new Set<string>();
 	let pendingOpenSubjectId = '';
 	let pendingOpenSelectionRevision = 0;
 	let pendingOpenCreateRevision = 0;
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
-		historyRevision += 1;
+		historyRequests.abort();
 	});
 
 	let subjectItems = $derived(overview?.items ?? []);
@@ -187,7 +191,10 @@
 				if (!current) return;
 				untrack(() => {
 					if (result.ok) {
-						const latest = result.data;
+						const latest = {
+							...result.data,
+							items: result.data.items.filter((item) => !deletedSubjectIds.has(item.subject.id))
+						};
 						const selectedId = selected?.subject.id;
 						overview = latest;
 						pageNumber = 1;
@@ -227,7 +234,7 @@
 
 	async function openSubject(item: CatalogSubjectOverviewItem) {
 		selectionRevision += 1;
-		const currentHistoryRevision = ++historyRevision;
+		const request = historyRequests.begin();
 		selected = item;
 		editingSubjectGroupValue = item.subject.subjectGroupId;
 		subjectMetadataError = '';
@@ -243,46 +250,70 @@
 		versions = [];
 		historyLoading = true;
 		try {
-			const loaded = await listSubjectVersions(item.subject.id);
-			if (currentHistoryRevision !== historyRevision) return;
+			const loaded = await listSubjectVersions(item.subject.id, { signal: request.signal });
+			if (!historyRequests.isCurrent(request.revision)) return;
 			subjectHistoryCache.set(item.subject.id, loaded);
 			versions = loaded;
 		} catch (error) {
-			if (currentHistoryRevision === historyRevision) {
+			if (historyRequests.isCurrent(request.revision) && !isAbortError(error)) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
 			}
 		} finally {
-			if (currentHistoryRevision === historyRevision) historyLoading = false;
+			if (historyRequests.isCurrent(request.revision)) historyLoading = false;
 		}
 	}
 
 	async function reloadSelectedHistory(refreshOverview = true) {
 		if (!selected) return;
-		const currentHistoryRevision = ++historyRevision;
+		const request = historyRequests.begin();
 		const subjectId = selected.subject.id;
 		subjectHistoryCache.delete(subjectId);
 		historyLoading = true;
 		historyError = '';
 		try {
-			const loaded = await listSubjectVersions(subjectId);
-			if (currentHistoryRevision !== historyRevision) return;
+			const loaded = await listSubjectVersions(subjectId, { signal: request.signal });
+			if (!historyRequests.isCurrent(request.revision)) return;
 			subjectHistoryCache.set(subjectId, loaded);
 			versions = loaded;
 			if (refreshOverview) await loadOverview();
 		} catch (error) {
-			if (currentHistoryRevision === historyRevision) {
+			if (historyRequests.isCurrent(request.revision) && !isAbortError(error)) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
 			}
 		} finally {
-			if (currentHistoryRevision === historyRevision) historyLoading = false;
+			if (historyRequests.isCurrent(request.revision)) historyLoading = false;
 		}
 	}
 
 	function setSheetOpen(open: boolean) {
 		sheetOpen = open;
 		if (!open) {
-			historyRevision += 1;
+			historyRequests.abort();
 			selectionRevision += 1;
+		}
+	}
+
+	async function deleteSubject() {
+		if (!selected?.canDelete) return;
+		const target = selected.subject;
+		await deleteCatalogSubject(target.id, { rowVersion: target.rowVersion });
+		if (disposed) return;
+		deletedSubjectIds.add(target.id);
+		subjectHistoryCache.delete(target.id);
+		if (pendingOpenSubjectId === target.id) pendingOpenSubjectId = '';
+		if (overview) {
+			overview = {
+				...overview,
+				items: overview.items.filter((item) => item.subject.id !== target.id)
+			};
+			pageNumber = Math.min(pageNumber, Math.max(1, Math.ceil(filteredSubjects.length / pageSize)));
+		}
+		if (selected?.subject.id === target.id) {
+			setSheetOpen(false);
+			selected = null;
+			versions = [];
+			historyLoading = false;
+			historyError = '';
 		}
 	}
 
@@ -791,6 +822,16 @@
 			></Sheet.Header
 		>
 		{#if selected}
+			{#key selected.subject.id}
+				<CatalogDeleteDialog
+					kind="subject"
+					name={selected.displayVersion
+						? `${selected.subject.code} · ${selected.displayVersion.nameTh}`
+						: selected.subject.code}
+					canDelete={selected.canDelete}
+					onDelete={deleteSubject}
+				/>
+			{/key}
 			<div class="flex flex-wrap gap-2">
 				<Badge variant="outline" class={displayStateClass(selected.displayState)}
 					>{displayStateLabel(selected.displayState)}</Badge

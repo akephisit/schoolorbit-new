@@ -13,7 +13,7 @@ use super::super::models::{
     CatalogDisplayState, CatalogSubject, CatalogSubjectGroupOption, CatalogSubjectOverview,
     CatalogSubjectOverviewItem, CreateActivityVersionRequest, CreateCatalogActivityRequest,
     CreateCatalogSubjectRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
-    DefaultTeacher, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
+    DefaultTeacher, DeleteCatalogRequest, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
     SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
     UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
     VersionStatus,
@@ -24,6 +24,133 @@ const SUBJECT_COLUMNS: &str =
     "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 const ACTIVITY_COLUMNS: &str =
     "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+
+// Owned links (draft grades and default teachers) are removed with the catalog entry.
+// All downstream references, including publication snapshots without catalog FKs, refuse deletion.
+#[derive(Clone, Copy)]
+enum CatalogKind {
+    Subject,
+    Activity,
+}
+
+impl CatalogKind {
+    fn tables(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Subject => ("subjects", "subject_versions", "subject_id"),
+            Self::Activity => ("activities", "activity_versions", "activity_id"),
+        }
+    }
+
+    fn deletable_predicate(self) -> &'static str {
+        match self {
+            Self::Subject => r#"stable.archived_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM subject_versions v WHERE v.subject_id = stable.id
+                    AND (v.status <> 'draft' OR v.published_at IS NOT NULL))
+                AND NOT EXISTS (SELECT 1 FROM course_offering_details r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM academic_exam_schedule_items r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM academic_question_bank_questions r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM subject_term_evaluation_configurations r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM subject_term_evaluation_criteria r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM subject_term_evaluation_locks r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (SELECT 1 FROM academic_course_result_locks r WHERE r.subject_id = stable.id)
+                AND NOT EXISTS (
+                    SELECT 1 FROM subject_versions v WHERE v.subject_id = stable.id AND (
+                        EXISTS (SELECT 1 FROM curriculum_course_requirements r WHERE r.subject_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM curriculum_publication_courses r WHERE r.subject_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM curriculum_requirement_sources r WHERE r.resource_kind = 'course' AND r.catalog_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM course_assessment_plans r WHERE r.subject_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM academic_question_bank_questions r WHERE r.legacy_subject_version_id = v.id)
+                    ))"#,
+            Self::Activity => r#"stable.archived_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM activity_versions v WHERE v.activity_id = stable.id
+                    AND (v.status <> 'draft' OR v.published_at IS NOT NULL))
+                AND NOT EXISTS (SELECT 1 FROM activity_offering_details r WHERE r.activity_id = stable.id)
+                AND NOT EXISTS (
+                    SELECT 1 FROM activity_versions v WHERE v.activity_id = stable.id AND (
+                        EXISTS (SELECT 1 FROM curriculum_activity_requirements r WHERE r.activity_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM curriculum_publication_activities r WHERE r.activity_version_id = v.id)
+                        OR EXISTS (SELECT 1 FROM curriculum_requirement_sources r WHERE r.resource_kind = 'activity' AND r.catalog_version_id = v.id)
+                    ))"#,
+        }
+    }
+}
+
+async fn deletable_catalog_ids(
+    connection: &mut sqlx::PgConnection,
+    kind: CatalogKind,
+    ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let (table, _, _) = kind.tables();
+    let sql = format!("SELECT stable.id FROM {table} stable WHERE stable.id = ANY($1) AND {}", kind.deletable_predicate());
+    Ok(DbSession::new(connection)
+        .scalar("academic_core.services.catalog.deletable_catalog_ids", sqlx::AssertSqlSafe(sql))
+        .bind(ids).fetch_all().await?.into_iter().collect())
+}
+
+pub async fn delete_subject(
+    pool: &PgPool,
+    id: Uuid,
+    request: DeleteCatalogRequest,
+) -> Result<(), AppError> {
+    delete_catalog(pool, CatalogKind::Subject, id, request).await
+}
+
+pub async fn delete_activity(
+    pool: &PgPool,
+    id: Uuid,
+    request: DeleteCatalogRequest,
+) -> Result<(), AppError> {
+    delete_catalog(pool, CatalogKind::Activity, id, request).await
+}
+
+async fn delete_catalog(
+    pool: &PgPool,
+    kind: CatalogKind,
+    id: Uuid,
+    request: DeleteCatalogRequest,
+) -> Result<(), AppError> {
+    parse_row_version(request.row_version)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool, "academic_core.services.catalog.delete_catalog",
+    ).await?;
+    let (table, versions, foreign_key) = kind.tables();
+    // Create and publish commands take this same stable-identity lock before inspecting versions.
+    let row_version: i64 = DbSession::new(&mut *transaction)
+        .scalar("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
+            "SELECT row_version FROM {table} WHERE id = $1 FOR UPDATE"
+        )))
+        .bind(id).fetch_optional().await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการในคลัง".to_string()))?;
+    if row_version != request.row_version {
+        return Err(AppError::Conflict("รายการในคลังถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่".to_string()));
+    }
+    if !deletable_catalog_ids(&mut transaction, kind, &[id]).await?.contains(&id) {
+        return Err(AppError::Conflict("ลบได้เฉพาะรายการที่ยังไม่เคยเผยแพร่ ไม่เก็บถาวร และยังไม่มีการอ้างอิง".to_string()));
+    }
+    DbSession::new(&mut *transaction)
+        .query("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
+            "DELETE FROM {versions} WHERE {foreign_key} = $1"
+        )))
+        .bind(id).execute().await.map_err(map_catalog_delete_error)?;
+    DbSession::new(&mut *transaction)
+        .query("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
+            "DELETE FROM {table} WHERE id = $1"
+        )))
+        .bind(id).execute().await.map_err(map_catalog_delete_error)?;
+    transaction.commit().await.map_err(map_catalog_delete_error)?;
+    Ok(())
+}
+
+fn map_catalog_delete_error(error: sqlx::Error) -> AppError {
+    if matches!(&error, sqlx::Error::Database(database) if database.code().as_deref() == Some("23503")) {
+        AppError::Conflict("รายการในคลังมีการอ้างอิงแล้ว จึงไม่สามารถลบได้".to_string())
+    } else {
+        AppError::DbError(error)
+    }
+}
 
 /// The school civil date used for subject catalog eligibility.
 pub fn subject_catalog_today() -> NaiveDate {
@@ -232,6 +359,7 @@ pub async fn list_subject_overview_on_connection(
             .fetch_all()
             .await?
     };
+    let deletable_ids = deletable_catalog_ids(connection, CatalogKind::Subject, &subject_ids).await?;
     let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
     let subject_group_options =
@@ -258,7 +386,9 @@ pub async fn list_subject_overview_on_connection(
                 .unwrap_or_default();
             let can_manage =
                 owner_allowed(manage_filter, Some(subject.owning_organization_unit_id));
+            let can_delete = can_manage && deletable_ids.contains(&subject.id);
             CatalogSubjectOverviewItem {
+                can_delete,
                 subject,
                 display_version,
                 display_state,
@@ -715,6 +845,7 @@ pub async fn list_activity_overview_on_connection(
             .fetch_all()
             .await?
     };
+    let deletable_ids = deletable_catalog_ids(connection, CatalogKind::Activity, &activity_ids).await?;
     let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
     let can_create = owner_allowed(
@@ -745,7 +876,9 @@ pub async fn list_activity_overview_on_connection(
                 .unwrap_or_default();
             let can_manage =
                 owner_allowed(manage_filter, Some(activity.owning_organization_unit_id));
+            let can_delete = can_manage && deletable_ids.contains(&activity.id);
             CatalogActivityOverviewItem {
+                can_delete,
                 activity,
                 display_version,
                 display_state,
@@ -999,14 +1132,6 @@ pub async fn create_activity_version(
         "academic_core.services.catalog.create_activity_version",
     )
     .await?;
-    let version_no: i32 = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_core.services.catalog.create_activity_version",
-            "SELECT COALESCE(max(version_no), 0) + 1 FROM activity_versions WHERE activity_id = $1",
-        )
-        .bind(activity_id)
-        .fetch_one()
-        .await?;
     let activity_type: String = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.catalog.create_activity_version",
@@ -1016,6 +1141,14 @@ pub async fn create_activity_version(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรม".to_string()))?;
+    let version_no: i32 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.create_activity_version",
+            "SELECT COALESCE(max(version_no), 0) + 1 FROM activity_versions WHERE activity_id = $1",
+        )
+        .bind(activity_id)
+        .fetch_one()
+        .await?;
     let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
     let legacy_periods = request
         .hours_per_week
@@ -1074,12 +1207,13 @@ pub async fn update_activity_version(
         request.effective_until,
     )?;
 
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_core.services.catalog.update_activity_version",
-    )
-    .await?;
-    update_activity_version_on_connection(&mut connection, id, request).await
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool, "academic_core.services.catalog.update_activity_version",
+    ).await?;
+    lock_activity_for_version(&mut transaction, id).await?;
+    let version = update_activity_version_on_connection(&mut transaction, id, request).await?;
+    transaction.commit().await.map_err(map_version_write_error)?;
+    Ok(version)
 }
 
 pub async fn update_activity_version_on_connection(
@@ -1146,40 +1280,32 @@ pub async fn publish_activity_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
+    parse_row_version(request.row_version)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool, "academic_core.services.catalog.publish_activity_version",
+    ).await?;
+    lock_activity_for_version(&mut transaction, id).await?;
+    let (row_version, status, weekly_valid, total_valid): (i64, VersionStatus, bool, Option<bool>) =
+        DbSession::new(&mut *transaction).query_as(
+            "academic_core.services.catalog.publish_activity_version",
+            "SELECT row_version, status, hours_per_week >= 0, hours_per_term >= 0 FROM activity_versions WHERE id = $1 FOR UPDATE",
+        ).bind(id).fetch_one().await?;
+    ensure_draft_version(status)?;
+    if row_version != request.row_version {
+        return Err(AppError::Conflict("เวอร์ชันกิจกรรมถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
+    }
+    if !weekly_valid || total_valid != Some(true) {
+        return Err(AppError::ValidationError(
+            "ระบุชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนเป็น 0 หรือมากกว่าก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
+        ));
+    }
+    DbSession::new(&mut *transaction).query(
         "academic_core.services.catalog.publish_activity_version",
-    )
-    .await?;
-    publish_activity_version_on_connection(&mut connection, id, request).await
-}
-
-pub async fn publish_activity_version_on_connection(
-    connection: &mut sqlx::PgConnection,
-    id: Uuid,
-    request: PublishVersionRequest,
-) -> Result<ActivityVersion, AppError> {
-    let (weekly_positive, total_positive): (bool, Option<bool>) = DbSession::new(connection)
-        .query_as(
-            "academic_core.services.catalog.publish_activity_version_on_connection",
-            "SELECT hours_per_week > 0, hours_per_term > 0 FROM activity_versions WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))?;
-    if !weekly_positive {
-        return Err(AppError::ValidationError(
-            "ชั่วโมงต่อสัปดาห์ต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
-        ));
-    }
-    if total_positive != Some(true) {
-        return Err(AppError::ValidationError(
-            "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
-        ));
-    }
-    publish_version(connection, "activity_versions", id, request.row_version).await?;
-    get_activity_version_on_connection(connection, id).await
+        "UPDATE activity_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
+    ).bind(id).execute().await.map_err(map_version_write_error)?;
+    let version = get_activity_version_on_connection(&mut transaction, id).await?;
+    transaction.commit().await.map_err(map_version_write_error)?;
+    Ok(version)
 }
 
 pub async fn list_subject_default_teachers(
@@ -1853,6 +1979,17 @@ async fn lock_subject_for_version(
         .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
 }
 
+async fn lock_activity_for_version(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(&mut **transaction)
+        .scalar("academic_core.services.catalog.lock_activity_for_version",
+            "SELECT activity.id FROM activities activity JOIN activity_versions version ON version.activity_id = activity.id WHERE version.id = $1 FOR UPDATE OF activity")
+        .bind(id).fetch_optional().await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))
+}
+
 fn subject_version_content(version: &SubjectVersion) -> CreateSubjectVersionRequest {
     CreateSubjectVersionRequest {
         name_th: version.name_th.clone(),
@@ -1966,35 +2103,6 @@ async fn replace_subject_grade_levels(
         .bind(grade_level_id)
         .execute()
         .await?;
-    }
-    Ok(())
-}
-
-async fn publish_version(
-    connection: &mut sqlx::PgConnection,
-    table: &str,
-    id: Uuid,
-    row_version: i64,
-) -> Result<(), AppError> {
-    parse_row_version(row_version)?;
-    let sql = format!(
-        "UPDATE {table} SET status = 'published', published_at = now(), \
-         row_version = row_version + 1, updated_at = now() \
-         WHERE id = $1 AND row_version = $2 AND status = 'draft'"
-    );
-    let result = DbSession::new(connection)
-        .query(
-            "academic_core.services.catalog.publish_version",
-            sqlx::AssertSqlSafe(sql),
-        )
-        .bind(id)
-        .bind(row_version)
-        .execute()
-        .await?;
-    if result.rows_affected() == 0 {
-        return Err(AppError::Conflict(
-            "เวอร์ชันเผยแพร่แล้วหรือถูกแก้ไขโดยผู้ใช้อื่น".to_string(),
-        ));
     }
     Ok(())
 }
