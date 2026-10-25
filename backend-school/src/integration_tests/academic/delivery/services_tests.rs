@@ -6834,3 +6834,319 @@ async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_
 
 #[path = "roster_tracking_tests.rs"]
 mod roster_tracking_tests;
+
+async fn zero_workload_subject(
+    pool: &PgPool,
+    context: &RuntimeContext,
+) -> school_academic_core::models::SubjectVersion {
+    use school_academic_core::{models as core_models, services::catalog};
+    let group: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
+        .fetch_one(pool).await.unwrap();
+    let start: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
+        .bind(context.term_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let stable = catalog::create_subject(
+        pool,
+        core_models::CreateCatalogSubjectRequest {
+            code: "ZERO-OPENING".into(),
+            subject_group_id: group,
+        },
+    )
+    .await
+    .unwrap();
+    let version = catalog::create_subject_version(
+        pool,
+        stable.id,
+        core_models::CreateSubjectVersionRequest {
+            name_th: "รายวิชาศูนย์ชั่วโมงและคาบ".into(),
+            name_en: None,
+            credit: "1.00".into(),
+            hours_per_semester: Some(0),
+            periods_per_week: Some(0),
+            subject_type: "BASIC".into(),
+            description: None,
+            effective_from: start,
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![context.grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    catalog::publish_subject_version(
+        pool,
+        version.id,
+        core_models::PublishVersionRequest {
+            row_version: version.row_version,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn subject_zero_workload_manual_opening_keeps_zero_and_refuses_activity_zero_target() {
+    use school_academic_core::{models as core_models, services::catalog};
+    let pool = prepare_delivery_runtime_fixture("subject_zero_workload_manual").await;
+    let context = planning_runtime_context(&pool).await;
+    let version = zero_workload_subject(&pool, &context).await;
+    let opening = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        7,
+        "subject-zero-manual",
+    )
+    .await;
+    let mut request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(course) = &mut request else {
+        panic!("course fixture");
+    };
+    course.subject_version_id = version.id;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(opening.target_delivery_version_id),
+        request,
+    )
+    .await
+    .unwrap();
+    let draft = school_academic_delivery::services::versions::get_version(
+        &pool,
+        opening.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    let captured = draft
+        .snapshot
+        .offerings
+        .iter()
+        .find(|item| item.id == offering.id)
+        .unwrap();
+    assert_eq!(captured.weekly_period_target, 0);
+    let LearningOfferingSnapshot::Course(course) = &captured.catalog else {
+        panic!("course snapshot");
+    };
+    assert_eq!(course.standard_periods_per_week, 0);
+    assert_eq!(course.hours.as_deref(), Some("0.00"));
+    assert_eq!(course.credit, "1.00");
+
+    // Legacy activity periods are a separate actual-target input; zero must remain refused.
+    let activity = catalog::create_activity(
+        &pool,
+        core_models::CreateCatalogActivityRequest {
+            activity_type: "guidance".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let activity = catalog::create_activity_version(
+        &pool,
+        activity.id,
+        core_models::CreateActivityVersionRequest {
+            name: "กิจกรรมตรวจข้อจำกัดคาบจริงศูนย์".into(),
+            description: None,
+            hours_per_week: "0.00".into(),
+            hours_per_term: Some("0.00".into()),
+            scheduling_mode: "synchronized".into(),
+            effective_from: version.effective_from,
+            effective_until: None,
+            term_code: None,
+            grade_level_ids: vec![context.grade_level_id],
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE activity_versions SET periods_per_week=0 WHERE id=$1")
+        .bind(activity.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let activity = catalog::publish_activity_version(
+        &pool,
+        activity.id,
+        core_models::PublishVersionRequest {
+            row_version: activity.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let refused = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(opening.target_delivery_version_id),
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: false,
+            academic_term_id: context.term_id,
+            activity_version_id: activity.id,
+            curriculum_activity_requirement_id: None,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode: ActivitySchedulingMode::Synchronized,
+            capacity: None,
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(refused, AppError::ValidationError(_)));
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
+    use school_academic_core::{
+        models as core_models,
+        services::{curriculum, curriculum_structure},
+    };
+    let pool = prepare_delivery_runtime_fixture("subject_zero_workload_generated").await;
+    let context = planning_runtime_context(&pool).await;
+    let version = zero_workload_subject(&pool, &context).await;
+    let edition = curriculum::create(
+        &pool,
+        core_models::CreateCurriculumRequest {
+            name: "หลักสูตรเปิดรายวิชาศูนย์คาบ".into(),
+            revision_year: 2569,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let token = edition.draft_id.unwrap();
+    let level = curriculum::create_level(
+        &pool,
+        edition.id,
+        core_models::CreateCurriculumLevelRequest {
+            draft_id: token,
+            name_th: "ระดับทดสอบ".into(),
+            grade_level_ids: vec![context.grade_level_id],
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let program = curriculum::create_program(
+        &pool,
+        level.id,
+        core_models::CreateStudyProgramRequest {
+            draft_id: token,
+            name_th: "แผนศูนย์คาบ".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = curriculum_structure::get_workspace(&pool, level.id)
+        .await
+        .unwrap();
+    curriculum_structure::replace_program_structure(
+        &pool,
+        program.id,
+        core_models::ReplaceCurriculumStructureRequest {
+            draft_id: token,
+            row_version: program.row_version,
+            requirements: vec![core_models::CurriculumStructureRequirementInput {
+                resource_kind: core_models::RequirementResourceKind::Course,
+                catalog_version_id: version.id,
+                grade_level_id: context.grade_level_id,
+                term_slot_id: workspace.term_slots[0].id,
+                requirement_kind: core_models::RequirementKind::Required,
+                display_order: 1,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let edition = curriculum::get(&pool, edition.id).await.unwrap();
+    curriculum::publish(
+        &pool,
+        edition.id,
+        core_models::PublishCurriculumRequest {
+            draft_id: token,
+            change_note: "เพิ่มรายวิชาศูนย์คาบ".into(),
+            row_version: edition.row_version,
+        },
+        context.teacher_id,
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,capacity,is_active) VALUES(gen_random_uuid(),'ZERO-GEN','ห้องศูนย์คาบ',$1,$2,$3,40,true)")
+        .bind(context.year_id).bind(context.grade_level_id).bind(program.id).execute(&pool).await.unwrap();
+    let opening = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        7,
+        "subject-zero-generated",
+    )
+    .await;
+    let preview = offerings::preview_from_curriculum(
+        &pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![program.id],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview.proposals.len(), 1);
+    assert_eq!(preview.proposals[0].hours.as_deref(), Some("0"));
+    let choices = default_preparation_choices(&preview);
+    let applied = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            academic_term_id: context.term_id,
+            study_program_ids: vec![program.id],
+            delivery_version_id: Some(opening.target_delivery_version_id),
+            source_hash: preview.source_hash,
+            idempotency_key: Uuid::new_v4(),
+            choices,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(applied.created_offering_count, 1);
+    let draft = school_academic_delivery::services::versions::get_version(
+        &pool,
+        opening.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    let captured = draft
+        .snapshot
+        .offerings
+        .iter()
+        .find(|item| applied.offering_ids.contains(&item.id))
+        .unwrap();
+    assert_eq!(captured.weekly_period_target, 0);
+    let LearningOfferingSnapshot::Course(course) = &captured.catalog else {
+        panic!("course snapshot");
+    };
+    assert_eq!(course.standard_periods_per_week, 0);
+    assert_eq!(course.hours.as_deref(), Some("0.00"));
+    assert_eq!(course.credit, "1.00");
+    assert!(course.curriculum_course_requirement_id.is_some());
+}
