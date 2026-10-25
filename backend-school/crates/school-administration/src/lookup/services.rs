@@ -727,20 +727,23 @@ pub async fn lookup_subjects_on_connection(
     let mut bind_search: Option<String> = None;
 
     if let Some(ref subject_type) = query.subject_type {
-        sql.push_str(&format!(" AND type = ${}", param_idx));
+        sql.push_str(&format!(" AND version.type = ${}", param_idx));
         bind_subject_type = Some(subject_type.clone());
         param_idx += 1;
     }
 
     if let Some(ref pattern) = search_pattern(query.search.clone()) {
         sql.push_str(&format!(
-            " AND (name_th ILIKE ${0} OR code ILIKE ${0})",
+            " AND (version.name_th ILIKE ${0} OR subject.code ILIKE ${0})",
             param_idx
         ));
         bind_search = Some(pattern.clone());
     }
 
-    sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
+    sql.push_str(&format!(
+        " ORDER BY subject.code, version.name_th LIMIT {}",
+        limit
+    ));
 
     let mut query_builder =
         sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
@@ -968,6 +971,18 @@ mod tests {
         let found = lookup_subjects(&pool, query).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, stable);
+        let mut by_name = academic_query(year);
+        by_name.search = Some("Lookup old expiry".into());
+        by_name.subject_type = Some("BASIC".into());
+        let named = lookup_subjects(&pool, by_name).await.unwrap();
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].id, stable);
+        let unsearched = lookup_subjects(&pool, academic_query(year)).await.unwrap();
+        assert!(unsearched.iter().any(|item| item.id == stable));
+        let mut wrong_type = academic_query(year);
+        wrong_type.search = Some("LOOKUP-STARTONLY".into());
+        wrong_type.subject_type = Some("ADDITIONAL".into());
+        assert!(lookup_subjects(&pool, wrong_type).await.unwrap().is_empty());
         let future = Uuid::new_v4();
         sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) SELECT $1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',end_date+1,'published',now() FROM academic_years WHERE id=$3").bind(future).bind(stable).bind(year).execute(&pool).await.unwrap();
         let mut query = academic_query(year);
