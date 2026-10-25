@@ -2345,5 +2345,6 @@ with unchanged serving release, image, PID and start identity, zero resurrected 
 and monotonic counters. Interrupted observation may restart the full window but retains every
 previous counter floor. Reconciliation can finalize a validated completed window after controller
 loss. Journals stay private under `/opt/stack/deployment/owned-load-cleanup`; no raw business rows,
-credentials or test-result attestations are uploaded. The common guard also refuses a surviving
-fixed-name PostgreSQL client, malformed evidence, and unresolved legacy release/TLS/DNS work.
+credentials or test-result attestations are uploaded. The common interlock refuses a surviving
+fixed-name PostgreSQL client and malformed or unresolved cleanup evidence. The cleanup owner
+additionally refuses legacy release, rollout, TLS and DNS recovery work before starting.
