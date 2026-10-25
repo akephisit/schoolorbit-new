@@ -1697,6 +1697,106 @@ mod protected_router {
             .await
             .expect("authenticated timetable version clone");
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let subject_group_id: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
+                .fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let subject = school_academic_core::services::catalog::create_subject(
+            &fixture.tenant_a_pool,
+            school_academic_core::models::CreateCatalogSubjectRequest {
+                code: "HTTP-DELETE-DRAFT".into(),
+                subject_group_id,
+            },
+        )
+        .await
+        .unwrap();
+        let activity = school_academic_core::services::catalog::create_activity(
+            &fixture.tenant_a_pool,
+            school_academic_core::models::CreateCatalogActivityRequest {
+                activity_type: "guidance".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let catalog_paths = [
+            format!("/api/academic/catalog/subjects/{}", subject.id),
+            format!("/api/academic/catalog/activities/{}", activity.id),
+        ];
+        for path in &catalog_paths {
+            for (origin, token, csrf, expected) in [
+                (origin, None, None, StatusCode::UNAUTHORIZED),
+                (
+                    "https://tenant-b.schoolorbit.test",
+                    Some(&token),
+                    Some(csrf.as_str()),
+                    StatusCode::UNAUTHORIZED,
+                ),
+                (origin, Some(&token), None, StatusCode::FORBIDDEN),
+                (
+                    origin,
+                    Some(&token),
+                    Some(csrf.as_str()),
+                    StatusCode::FORBIDDEN,
+                ),
+            ] {
+                let mut mutation = request(Method::DELETE, path, Some(origin), token, csrf);
+                mutation.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                *mutation.body_mut() = Body::from(serde_json::json!({"rowVersion": 1}).to_string());
+                let response = app.clone().oneshot(mutation).await.unwrap();
+                assert_eq!(
+                    response.status(),
+                    expected,
+                    "catalog deletion boundary {path}"
+                );
+            }
+        }
+        // Grant the existing management permission, then verify the actual DELETE transport.
+        let role: Uuid = sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES('CATALOG_DELETE_HTTP','Catalog deletion HTTP','staff') RETURNING id")
+                .fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+                .bind(role).bind(school_permissions::registry::codes::ACADEMIC_CATALOG_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+        sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+            .bind(user_id)
+            .bind(role)
+            .execute(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+        fixture
+            .runtime
+            .permission_cache
+            .invalidate_user("tenant-a", user_id);
+        for path in &catalog_paths {
+            for (row_version, expected) in [
+                (2, StatusCode::CONFLICT),
+                (1, StatusCode::OK),
+                (1, StatusCode::NOT_FOUND),
+            ] {
+                let mut mutation = request(
+                    Method::DELETE,
+                    path,
+                    Some(origin),
+                    Some(&token),
+                    Some(&csrf),
+                );
+                mutation.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                *mutation.body_mut() =
+                    Body::from(serde_json::json!({"rowVersion": row_version}).to_string());
+                let response = app.clone().oneshot(mutation).await.unwrap();
+                assert_eq!(response.status(), expected, "catalog deletion {path}");
+                if expected == StatusCode::OK {
+                    let body: serde_json::Value = serde_json::from_slice(
+                        &axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(body["success"], true);
+                    assert_eq!(body["data"], serde_json::json!({}));
+                }
+            }
+        }
         let response = app
             .oneshot(request(
                 Method::POST,

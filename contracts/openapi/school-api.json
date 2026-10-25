@@ -35295,6 +35295,9 @@
           "activity": {
             "$ref": "#/components/schemas/CatalogActivity"
           },
+          "canDelete": {
+            "type": "boolean"
+          },
           "canManage": {
             "type": "boolean"
           },
@@ -35327,7 +35330,8 @@
           "displayState",
           "draftCount",
           "gradeLevels",
-          "canManage"
+          "canManage",
+          "canDelete"
         ],
         "type": "object"
       },
@@ -35576,6 +35580,9 @@
       },
       "CatalogSubjectOverviewItem": {
         "properties": {
+          "canDelete": {
+            "type": "boolean"
+          },
           "canManage": {
             "type": "boolean"
           },
@@ -35611,7 +35618,8 @@
           "displayState",
           "draftCount",
           "gradeLevels",
-          "canManage"
+          "canManage",
+          "canDelete"
         ],
         "type": "object"
       },
@@ -43846,6 +43854,19 @@
         "required": [
           "changeSetRowVersion",
           "itemRowVersion"
+        ],
+        "type": "object"
+      },
+      "DeleteCatalogRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -72006,6 +72027,96 @@
       }
     },
     "/api/academic/catalog/activities/{id}": {
+      "delete": {
+        "operationId": "deleteCatalogActivity",
+        "parameters": [
+          {
+            "description": "Catalog activity ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCatalogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Unpublished catalog activity deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid row version"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic catalog management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Catalog activity not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Catalog activity changed, has publication history, or is referenced"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
       "get": {
         "operationId": "getCatalogActivity",
         "parameters": [
@@ -73358,6 +73469,96 @@
       }
     },
     "/api/academic/catalog/subjects/{id}": {
+      "delete": {
+        "operationId": "deleteCatalogSubject",
+        "parameters": [
+          {
+            "description": "Catalog subject ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCatalogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Unpublished catalog subject deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid row version"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic catalog management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Catalog subject not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Catalog subject changed, has publication history, or is referenced"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
       "get": {
         "operationId": "getCatalogSubject",
         "parameters": [

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createCatalogSubject,
@@ -78,7 +78,7 @@
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	const historyRequests = new LatestRequest();
-	const deletedSubjectIds = new Set<string>();
+	const deletedSubjectIds = new SvelteSet<string>();
 	let pendingOpenSubjectId = '';
 	let pendingOpenSelectionRevision = 0;
 	let pendingOpenCreateRevision = 0;

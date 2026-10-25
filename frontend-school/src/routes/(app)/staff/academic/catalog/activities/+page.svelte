@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createActivityVersion,
@@ -58,7 +59,7 @@
 	const allValue = 'all';
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
 	const historyRequests = new LatestRequest();
-	const deletedActivityIds = new Set<string>();
+	const deletedActivityIds = new SvelteSet<string>();
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;

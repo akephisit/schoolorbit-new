@@ -995,10 +995,22 @@ pub async fn delete_catalog_subject(
     let pool = context.tenant.pool;
     let actor = context.actor;
     academic_catalog_access_policy::require_academic_catalog_access(
-        &pool, &actor, CatalogResourceRef::Subject(id), CatalogAction::Manage,
-    ).await?;
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(id),
+        CatalogAction::Manage,
+    )
+    .await?;
     catalog::delete_subject(&pool, id, request).await?;
-    signal_core_changed(&state, &session, &actor, "catalog_subject", Some(id), None, None);
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_subject",
+        Some(id),
+        None,
+        None,
+    );
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -1633,10 +1645,22 @@ pub async fn delete_catalog_activity(
     let pool = context.tenant.pool;
     let actor = context.actor;
     academic_catalog_access_policy::require_academic_catalog_access(
-        &pool, &actor, CatalogResourceRef::Activity(id), CatalogAction::Manage,
-    ).await?;
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(id),
+        CatalogAction::Manage,
+    )
+    .await?;
     catalog::delete_activity(&pool, id, request).await?;
-    signal_core_changed(&state, &session, &actor, "catalog_activity", Some(id), None, None);
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_activity",
+        Some(id),
+        None,
+        None,
+    );
     Ok(Json(ApiResponse::empty()).into_response())
 }
 

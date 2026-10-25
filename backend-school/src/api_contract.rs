@@ -3271,6 +3271,46 @@ mod tests {
     }
 
     #[test]
+    fn catalog_deletion_contract_requires_revision_and_returns_empty_envelope() {
+        let document = school_api_value().expect("document should serialize");
+        for (kind, operation_id) in [
+            ("subjects", "deleteCatalogSubject"),
+            ("activities", "deleteCatalogActivity"),
+        ] {
+            let path = format!("/api/academic/catalog/{kind}/{{id}}");
+            let operation = &document["paths"][&path]["delete"];
+            assert_eq!(operation["operationId"], operation_id);
+            assert_eq!(
+                operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/DeleteCatalogRequest"
+            );
+            assert_eq!(
+                operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData"
+            );
+            for status in ["400", "401", "403", "404", "409"] {
+                assert_eq!(
+                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse"
+                );
+            }
+        }
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            required(&schemas["DeleteCatalogRequest"]),
+            vec!["rowVersion"]
+        );
+        assert_eq!(
+            schemas["DeleteCatalogRequest"]["additionalProperties"],
+            false
+        );
+        for name in ["CatalogSubjectOverviewItem", "CatalogActivityOverviewItem"] {
+            assert!(required(&schemas[name]).contains(&"canDelete"));
+            assert_eq!(schemas[name]["properties"]["canDelete"]["type"], "boolean");
+        }
+    }
+
+    #[test]
     fn academic_core_and_delivery_cutover_contracts() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(

@@ -28,6 +28,7 @@ function activityFixture(canDelete = true): CatalogActivityOverview {
 			{
 				activity: {
 					id: activityId,
+					owningOrganizationUnitId: 'activity-owner',
 					code: 'internal-activity-code',
 					activityType: 'club',
 					rowVersion: 7,
@@ -45,20 +46,30 @@ function activityFixture(canDelete = true): CatalogActivityOverview {
 	};
 }
 
-async function setup(page: Page, kind: 'subject' | 'activity', canDelete = true) {
-	const subjects = subjectFixture(2);
+async function setup(
+	page: Page,
+	kind: 'subject' | 'activity',
+	canDelete = true,
+	canManage = canDelete,
+	mode: 'light' | 'dark' = 'light'
+) {
+	const subjects = subjectFixture(2, !canManage);
 	subjects.items[0].canDelete = canDelete;
-	subjects.items[0].canManage = canDelete;
+	subjects.items[0].canManage = canManage;
 	subjects.items[0].displayState = 'unpublished';
 	subjects.items[0].displayVersion = null;
 	subjects.histories.set('subject-1', []);
 	const activities = activityFixture(canDelete);
+	activities.items[0].canManage = canManage;
+	activities.canCreate = canManage;
 	const historyGate = subjectGate();
 	const deleteGate = subjectGate();
 	let refuse = false;
 	const api = kind === 'subject' ? '/api/academic/catalog/subjects' : activityApi;
 	const id = kind === 'subject' ? 'subject-1' : activityId;
 	const requests = await installSubjectCatalog(page, subjects, {
+		readOnly: !canManage,
+		mode,
 		onRequest: async (route, url) => {
 			if (url.pathname === `${activityApi}/overview`) {
 				await replySubject(route, activities);
@@ -79,12 +90,11 @@ async function setup(page: Page, kind: 'subject' | 'activity', canDelete = true)
 		}
 	});
 	await page.goto(kind === 'subject' ? subjectPath : activityPath);
-	await page
-		.getByRole('button', {
-			name: kind === 'subject' ? 'เปิด ค00001' : `เปิดรายละเอียด ${activityName}`,
-			exact: true
-		})
-		.click();
+	await (
+		kind === 'subject'
+			? page.getByRole('button', { name: 'เปิด ค00001', exact: true })
+			: page.getByRole('button', { name: /^ชุมนุม · ยังไม่ได้ตั้งชื่อ/ })
+	).click();
 	return {
 		requests,
 		historyGate,
@@ -97,52 +107,78 @@ async function setup(page: Page, kind: 'subject' | 'activity', canDelete = true)
 
 for (const kind of ['subject', 'activity'] as const) {
 	const label = kind === 'subject' ? 'รายวิชา' : 'กิจกรรม';
-	test(`${kind}: unnamed stable record requires confirmation and patches only its list after deletion`, async ({
-		page
-	}) => {
-		const fixture = await setup(page, kind);
-		const deleteButton = page.getByRole('button', { name: `ลบ${label}`, exact: true });
-		await deleteButton.click();
-		const confirm = page.getByRole('dialog', { name: `ยืนยันลบ${label}`, exact: true });
-		await expect(confirm).toContainText(kind === 'subject' ? 'ค00001' : activityName);
-		await confirm.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-		expect(fixture.requests.writes).toEqual([]);
-		await expect(deleteButton).toBeVisible();
-		await deleteButton.click();
-		await confirm.getByRole('button', { name: `ยืนยันลบ${label}`, exact: true }).click();
-		try {
-			await expect.poll(() => fixture.requests.writes.length).toBe(1);
-			await expect(confirm.getByRole('button', { name: 'กำลังลบ...', exact: true })).toBeDisabled();
-			await expect(confirm.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
-			await confirm.press('Escape');
+	for (const [width, mode] of [
+		[1280, 'light'],
+		[390, 'dark']
+	] as const) {
+		test(`${kind}: ${width}px ${mode} unnamed record confirmation patches only its list`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width, height: 900 });
+			const fixture = await setup(page, kind, true, true, mode);
+			const deleteButton = page.getByRole('button', { name: `ลบ${label}`, exact: true });
+			await deleteButton.focus();
+			await deleteButton.press('Enter');
+			const confirm = page.getByRole('dialog', { name: `ยืนยันลบ${label}`, exact: true });
+			await expect(confirm).toContainText(kind === 'subject' ? 'ค00001' : activityName);
+			await confirm.getByRole('button', { name: 'ยกเลิก', exact: true }).focus();
+			await page.keyboard.press('Enter');
+			expect(fixture.requests.writes).toEqual([]);
+			await expect(deleteButton).toBeFocused();
+			await deleteButton.click();
 			await expect(confirm).toBeVisible();
-			expect(fixture.requests.writes).toEqual([
-				{
-					method: 'DELETE',
-					path: `${fixture.api}/${fixture.id}`,
-					body: { rowVersion: kind === 'subject' ? 2 : 7 }
-				}
-			]);
-		} finally {
-			fixture.deleteGate.release();
-		}
-		await expect(page.getByRole('dialog')).toHaveCount(0);
-		fixture.historyGate.release();
-		await expect(
-			page.getByTestId(`catalog-${kind === 'subject' ? 'subjects' : 'activities'}-ready`)
-		).toBeVisible();
-		await expect(
-			page.getByRole('button', {
-				name: kind === 'subject' ? 'เปิด ค00001' : `เปิดรายละเอียด ${activityName}`,
-				exact: true
-			})
-		).toHaveCount(0);
-		if (kind === 'subject') {
-			await expect(page.getByRole('button', { name: 'เปิด ค00002', exact: true })).toBeVisible();
-			expect(fixture.requests.overviewReads()).toBe(1);
-		} else await expect(page.getByText('ยังไม่มีกิจกรรมในทะเบียน', { exact: true })).toBeVisible();
-		expect(fixture.requests.pageErrors).toEqual([]);
-	});
+			const bounds = await confirm.boundingBox();
+			expect(bounds).not.toBeNull();
+			expect(bounds!.x).toBeGreaterThanOrEqual(0);
+			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+				width
+			);
+			await page.screenshot({
+				path: testInfo.outputPath(`${kind}-delete-${width}-${mode}.png`),
+				animations: 'disabled'
+			});
+			await confirm.getByRole('button', { name: `ยืนยันลบ${label}`, exact: true }).click();
+			try {
+				await expect.poll(() => fixture.requests.writes.length).toBe(1);
+				await expect(
+					confirm.getByRole('button', { name: 'กำลังลบ...', exact: true })
+				).toBeDisabled();
+				await confirm
+					.getByRole('button', { name: 'กำลังลบ...', exact: true })
+					.dispatchEvent('click');
+				await expect(confirm.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+				await confirm.press('Escape');
+				await expect(confirm).toBeVisible();
+				expect(fixture.requests.writes).toEqual([
+					{
+						method: 'DELETE',
+						path: `${fixture.api}/${fixture.id}`,
+						body: { rowVersion: kind === 'subject' ? 2 : 7 }
+					}
+				]);
+			} finally {
+				fixture.deleteGate.release();
+			}
+			await expect(page.getByRole('dialog')).toHaveCount(0);
+			fixture.historyGate.release();
+			await expect(
+				page.getByTestId(`catalog-${kind === 'subject' ? 'subjects' : 'activities'}-ready`)
+			).toBeVisible();
+			await expect(
+				page.getByRole('button', {
+					name: kind === 'subject' ? 'เปิด ค00001' : `เปิดรายละเอียด ${activityName}`,
+					exact: true
+				})
+			).toHaveCount(0);
+			if (kind === 'subject') {
+				await expect(page.getByRole('button', { name: 'เปิด ค00002', exact: true })).toBeVisible();
+				expect(fixture.requests.overviewReads()).toBe(1);
+			} else
+				await expect(page.getByText('ยังไม่มีกิจกรรมในทะเบียน', { exact: true })).toBeVisible();
+			expect(fixture.requests.pageErrors).toEqual([]);
+		});
+	}
 
 	test(`${kind}: refused deletion retains the selected record and entered version draft`, async ({
 		page
@@ -163,6 +199,16 @@ for (const kind of ['subject', 'activity'] as const) {
 		await expect(page.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('ร่างที่ต้องเก็บไว้');
 		expect(fixture.requests.writes).toHaveLength(1);
 		expect(fixture.requests.pageErrors).toEqual([]);
+	});
+
+	test(`${kind}: manage permission alone does not expose deletion when canDelete is false`, async ({
+		page
+	}) => {
+		const fixture = await setup(page, kind, false, true);
+		fixture.historyGate.release();
+		await expect(page.getByLabel('ชื่อภาษาไทย', { exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: `ลบ${label}`, exact: true })).toHaveCount(0);
+		expect(fixture.requests.writes).toEqual([]);
 	});
 
 	test(`${kind}: unavailable delete capability hides the destructive action`, async ({ page }) => {
@@ -251,5 +297,57 @@ test('activity zero weekly and term hours remain decimal strings through draft a
 	await expect(page.getByRole('region', { name: 'ประวัติรุ่น', exact: true })).toContainText(
 		'ชม./สัปดาห์ 0'
 	);
+	expect(requests.pageErrors).toEqual([]);
+});
+
+test('a delayed overview cannot restore a deleted subject or reopen its sheet', async ({
+	page
+}) => {
+	const subjects = subjectFixture(2);
+	subjects.items[0].canDelete = true;
+	subjects.items[0].displayState = 'unpublished';
+	subjects.items[0].displayVersion = null;
+	subjects.histories.set('subject-1', []);
+	const gate = subjectGate();
+	let overviewReads = 0;
+	const requests = await installSubjectCatalog(page, subjects, {
+		onRequest: async (route, url) => {
+			if (url.pathname === '/api/academic/catalog/subjects/overview' && ++overviewReads === 2) {
+				const stale = structuredClone(subjects.overview());
+				await gate.promise;
+				await replySubject(route, stale);
+				return true;
+			}
+			if (
+				url.pathname === '/api/academic/catalog/subjects/subject-1' &&
+				route.request().method() === 'DELETE'
+			) {
+				await replySubject(route, {});
+				return true;
+			}
+			return false;
+		}
+	});
+	await page.goto(subjectPath);
+	await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+	await page.getByLabel('เพิ่มรหัสรายวิชา', { exact: true }).fill('คสร้างใหม่');
+	await page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด', exact: true }).click();
+	await expect.poll(() => requests.overviewReads()).toBe(2);
+	await page.getByRole('button', { name: 'เปิด ค00001', exact: true }).click();
+	await page.getByRole('button', { name: 'ลบรายวิชา', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'ยืนยันลบรายวิชา', exact: true })
+		.getByRole('button', { name: 'ยืนยันลบรายวิชา', exact: true })
+		.click();
+	try {
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'เปิด ค00001', exact: true })).toHaveCount(0);
+	} finally {
+		gate.release();
+	}
+	await expect(page.getByRole('button', { name: 'เปิด คสร้างใหม่', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เปิด ค00002', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เปิด ค00001', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('dialog')).toHaveCount(0);
 	expect(requests.pageErrors).toEqual([]);
 });

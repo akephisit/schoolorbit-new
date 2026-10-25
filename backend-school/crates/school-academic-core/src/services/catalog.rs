@@ -13,8 +13,8 @@ use super::super::models::{
     CatalogDisplayState, CatalogSubject, CatalogSubjectGroupOption, CatalogSubjectOverview,
     CatalogSubjectOverviewItem, CreateActivityVersionRequest, CreateCatalogActivityRequest,
     CreateCatalogSubjectRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
-    DefaultTeacher, DeleteCatalogRequest, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
-    SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
+    DefaultTeacher, DeleteCatalogRequest, PublishVersionRequest, ReplaceDefaultTeachersRequest,
+    SubjectGroup, SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
     UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
     VersionStatus,
 };
@@ -43,7 +43,8 @@ impl CatalogKind {
 
     fn deletable_predicate(self) -> &'static str {
         match self {
-            Self::Subject => r#"stable.archived_at IS NULL
+            Self::Subject => {
+                r#"stable.archived_at IS NULL
                 AND NOT EXISTS (SELECT 1 FROM subject_versions v WHERE v.subject_id = stable.id
                     AND (v.status <> 'draft' OR v.published_at IS NOT NULL))
                 AND NOT EXISTS (SELECT 1 FROM course_offering_details r WHERE r.subject_id = stable.id)
@@ -59,9 +60,10 @@ impl CatalogKind {
                         OR EXISTS (SELECT 1 FROM curriculum_publication_courses r WHERE r.subject_version_id = v.id)
                         OR EXISTS (SELECT 1 FROM curriculum_requirement_sources r WHERE r.resource_kind = 'course' AND r.catalog_version_id = v.id)
                         OR EXISTS (SELECT 1 FROM course_assessment_plans r WHERE r.subject_version_id = v.id)
-                        OR EXISTS (SELECT 1 FROM academic_question_bank_questions r WHERE r.legacy_subject_version_id = v.id)
-                    ))"#,
-            Self::Activity => r#"stable.archived_at IS NULL
+                    ))"#
+            }
+            Self::Activity => {
+                r#"stable.archived_at IS NULL
                 AND NOT EXISTS (SELECT 1 FROM activity_versions v WHERE v.activity_id = stable.id
                     AND (v.status <> 'draft' OR v.published_at IS NOT NULL))
                 AND NOT EXISTS (SELECT 1 FROM activity_offering_details r WHERE r.activity_id = stable.id)
@@ -70,7 +72,8 @@ impl CatalogKind {
                         EXISTS (SELECT 1 FROM curriculum_activity_requirements r WHERE r.activity_version_id = v.id)
                         OR EXISTS (SELECT 1 FROM curriculum_publication_activities r WHERE r.activity_version_id = v.id)
                         OR EXISTS (SELECT 1 FROM curriculum_requirement_sources r WHERE r.resource_kind = 'activity' AND r.catalog_version_id = v.id)
-                    ))"#,
+                    ))"#
+            }
         }
     }
 }
@@ -84,10 +87,20 @@ async fn deletable_catalog_ids(
         return Ok(std::collections::HashSet::new());
     }
     let (table, _, _) = kind.tables();
-    let sql = format!("SELECT stable.id FROM {table} stable WHERE stable.id = ANY($1) AND {}", kind.deletable_predicate());
+    let sql = format!(
+        "SELECT stable.id FROM {table} stable WHERE stable.id = ANY($1) AND {}",
+        kind.deletable_predicate()
+    );
     Ok(DbSession::new(connection)
-        .scalar("academic_core.services.catalog.deletable_catalog_ids", sqlx::AssertSqlSafe(sql))
-        .bind(ids).fetch_all().await?.into_iter().collect())
+        .scalar(
+            "academic_core.services.catalog.deletable_catalog_ids",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(ids)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect())
 }
 
 pub async fn delete_subject(
@@ -114,38 +127,64 @@ async fn delete_catalog(
 ) -> Result<(), AppError> {
     parse_row_version(request.row_version)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool, "academic_core.services.catalog.delete_catalog",
-    ).await?;
+        pool,
+        "academic_core.services.catalog.delete_catalog",
+    )
+    .await?;
     let (table, versions, foreign_key) = kind.tables();
     // Create and publish commands take this same stable-identity lock before inspecting versions.
     let row_version: i64 = DbSession::new(&mut *transaction)
-        .scalar("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
-            "SELECT row_version FROM {table} WHERE id = $1 FOR UPDATE"
-        )))
-        .bind(id).fetch_optional().await?
+        .scalar(
+            "academic_core.services.catalog.delete_catalog",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT row_version FROM {table} WHERE id = $1 FOR UPDATE"
+            )),
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการในคลัง".to_string()))?;
     if row_version != request.row_version {
-        return Err(AppError::Conflict("รายการในคลังถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่".to_string()));
+        return Err(AppError::Conflict(
+            "รายการในคลังถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่".to_string(),
+        ));
     }
-    if !deletable_catalog_ids(&mut transaction, kind, &[id]).await?.contains(&id) {
-        return Err(AppError::Conflict("ลบได้เฉพาะรายการที่ยังไม่เคยเผยแพร่ ไม่เก็บถาวร และยังไม่มีการอ้างอิง".to_string()));
+    if !deletable_catalog_ids(&mut transaction, kind, &[id])
+        .await?
+        .contains(&id)
+    {
+        return Err(AppError::Conflict(
+            "ลบได้เฉพาะรายการที่ยังไม่เคยเผยแพร่ ไม่เก็บถาวร และยังไม่มีการอ้างอิง".to_string(),
+        ));
     }
     DbSession::new(&mut *transaction)
-        .query("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
-            "DELETE FROM {versions} WHERE {foreign_key} = $1"
-        )))
-        .bind(id).execute().await.map_err(map_catalog_delete_error)?;
+        .query(
+            "academic_core.services.catalog.delete_catalog",
+            sqlx::AssertSqlSafe(format!("DELETE FROM {versions} WHERE {foreign_key} = $1")),
+        )
+        .bind(id)
+        .execute()
+        .await
+        .map_err(map_catalog_delete_error)?;
     DbSession::new(&mut *transaction)
-        .query("academic_core.services.catalog.delete_catalog", sqlx::AssertSqlSafe(format!(
-            "DELETE FROM {table} WHERE id = $1"
-        )))
-        .bind(id).execute().await.map_err(map_catalog_delete_error)?;
-    transaction.commit().await.map_err(map_catalog_delete_error)?;
+        .query(
+            "academic_core.services.catalog.delete_catalog",
+            sqlx::AssertSqlSafe(format!("DELETE FROM {table} WHERE id = $1")),
+        )
+        .bind(id)
+        .execute()
+        .await
+        .map_err(map_catalog_delete_error)?;
+    transaction
+        .commit()
+        .await
+        .map_err(map_catalog_delete_error)?;
     Ok(())
 }
 
 fn map_catalog_delete_error(error: sqlx::Error) -> AppError {
-    if matches!(&error, sqlx::Error::Database(database) if database.code().as_deref() == Some("23503")) {
+    if matches!(&error, sqlx::Error::Database(database) if database.code().as_deref() == Some("23503"))
+    {
         AppError::Conflict("รายการในคลังมีการอ้างอิงแล้ว จึงไม่สามารถลบได้".to_string())
     } else {
         AppError::DbError(error)
@@ -359,7 +398,8 @@ pub async fn list_subject_overview_on_connection(
             .fetch_all()
             .await?
     };
-    let deletable_ids = deletable_catalog_ids(connection, CatalogKind::Subject, &subject_ids).await?;
+    let deletable_ids =
+        deletable_catalog_ids(connection, CatalogKind::Subject, &subject_ids).await?;
     let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
     let subject_group_options =
@@ -845,7 +885,8 @@ pub async fn list_activity_overview_on_connection(
             .fetch_all()
             .await?
     };
-    let deletable_ids = deletable_catalog_ids(connection, CatalogKind::Activity, &activity_ids).await?;
+    let deletable_ids =
+        deletable_catalog_ids(connection, CatalogKind::Activity, &activity_ids).await?;
     let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
     let can_create = owner_allowed(
@@ -1208,8 +1249,10 @@ pub async fn update_activity_version(
     )?;
 
     let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool, "academic_core.services.catalog.update_activity_version",
-    ).await?;
+        pool,
+        "academic_core.services.catalog.update_activity_version",
+    )
+    .await?;
     lock_activity_for_version(&mut transaction, id).await?;
     let version = update_activity_version_on_connection(&mut transaction, id, request).await?;
     transaction.commit().await.map_err(map_version_write_error)?;
@@ -1282,8 +1325,10 @@ pub async fn publish_activity_version(
 ) -> Result<ActivityVersion, AppError> {
     parse_row_version(request.row_version)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool, "academic_core.services.catalog.publish_activity_version",
-    ).await?;
+        pool,
+        "academic_core.services.catalog.publish_activity_version",
+    )
+    .await?;
     lock_activity_for_version(&mut transaction, id).await?;
     let (row_version, status, weekly_valid, total_valid): (i64, VersionStatus, bool, Option<bool>) =
         DbSession::new(&mut *transaction).query_as(
@@ -1292,7 +1337,9 @@ pub async fn publish_activity_version(
         ).bind(id).fetch_one().await?;
     ensure_draft_version(status)?;
     if row_version != request.row_version {
-        return Err(AppError::Conflict("เวอร์ชันกิจกรรมถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
+        return Err(AppError::Conflict(
+            "เวอร์ชันกิจกรรมถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+        ));
     }
     if !weekly_valid || total_valid != Some(true) {
         return Err(AppError::ValidationError(
@@ -1304,7 +1351,10 @@ pub async fn publish_activity_version(
         "UPDATE activity_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
     ).bind(id).execute().await.map_err(map_version_write_error)?;
     let version = get_activity_version_on_connection(&mut transaction, id).await?;
-    transaction.commit().await.map_err(map_version_write_error)?;
+    transaction
+        .commit()
+        .await
+        .map_err(map_version_write_error)?;
     Ok(version)
 }
 

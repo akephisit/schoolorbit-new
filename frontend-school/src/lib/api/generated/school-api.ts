@@ -143,7 +143,7 @@ export interface paths {
 		get: operations['getCatalogActivity'];
 		put?: never;
 		post?: never;
-		delete?: never;
+		delete: operations['deleteCatalogActivity'];
 		options?: never;
 		head?: never;
 		patch: operations['updateCatalogActivity'];
@@ -319,7 +319,7 @@ export interface paths {
 		get: operations['getCatalogSubject'];
 		put?: never;
 		post?: never;
-		delete?: never;
+		delete: operations['deleteCatalogSubject'];
 		options?: never;
 		head?: never;
 		patch: operations['updateCatalogSubject'];
@@ -18119,6 +18119,7 @@ export interface components {
 		};
 		CatalogActivityOverviewItem: {
 			activity: components['schemas']['CatalogActivity'];
+			canDelete: boolean;
 			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
 			displayVersion?: components['schemas']['ActivityVersion'] | null;
@@ -18193,6 +18194,7 @@ export interface components {
 			subjectGroupOptions: components['schemas']['CatalogSubjectGroupOption'][];
 		};
 		CatalogSubjectOverviewItem: {
+			canDelete: boolean;
 			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
 			displayVersion?: components['schemas']['SubjectVersion'] | null;
@@ -20377,6 +20379,10 @@ export interface components {
 			changeSetRowVersion: number;
 			/** Format: int64 */
 			itemRowVersion: number;
+		};
+		DeleteCatalogRequest: {
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		DeletedDeliveryVersion: {
 			/** Format: uuid */
@@ -28683,6 +28689,78 @@ export interface operations {
 			};
 		};
 	};
+	deleteCatalogActivity: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog activity ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DeleteCatalogRequest'];
+			};
+		};
+		responses: {
+			/** @description Unpublished catalog activity deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid row version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog activity not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog activity changed, has publication history, or is referenced */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	updateCatalogActivity: {
 		parameters: {
 			query?: never;
@@ -29784,6 +29862,78 @@ export interface operations {
 			};
 			/** @description Catalog subject not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteCatalogSubject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Catalog subject ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DeleteCatalogRequest'];
+			};
+		};
+		responses: {
+			/** @description Unpublished catalog subject deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid row version */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic catalog management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Catalog subject changed, has publication history, or is referenced */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

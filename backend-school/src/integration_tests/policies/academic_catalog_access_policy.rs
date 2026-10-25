@@ -162,6 +162,22 @@ mod tests {
             AcademicResourceAccess::None
         );
 
+        for resource in [
+            CatalogResourceRef::Subject(child_subject_id),
+            CatalogResourceRef::Activity(school_activity_id),
+        ] {
+            assert!(matches!(
+                require_academic_catalog_access(
+                    &pool,
+                    &unit_manager,
+                    resource,
+                    CatalogAction::Manage
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
+
         let tree_manager = actor(&[codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_TREE]);
         assert_eq!(
             academic_catalog_access(

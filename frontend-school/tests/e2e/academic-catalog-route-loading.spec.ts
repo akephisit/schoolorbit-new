@@ -184,7 +184,7 @@ for (const entry of [
 							draftCount: 0,
 							gradeLevels: [],
 							canManage: true,
-							canDelete: false
+							canDelete: true
 						}
 					]
 				: [],
@@ -240,6 +240,7 @@ for (const entry of [
 					page.getByRole('dialog', { name: 'เพิ่มกิจกรรม', exact: true })
 				).not.toBeVisible();
 				await expect(page.getByRole('dialog')).toBeVisible();
+				await expect(page.getByRole('button', { name: 'ลบกิจกรรม', exact: true })).toBeVisible();
 				await expect.poll(() => historyReads).toBe(1);
 				expect(requests.primary).toBe(1);
 				expect(writes).toBe(1);
@@ -260,6 +261,7 @@ for (const entry of [
 			refreshGate.release();
 		}
 		await expect(page.getByRole('dialog', { name: entry.code, exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'ลบรายวิชา', exact: true })).toBeVisible();
 		await expect.poll(() => historyReads).toBe(1);
 		expect(writes).toBe(1);
 		expect(requests.otherCatalogReads).toBe(0);
