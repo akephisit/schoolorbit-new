@@ -41,6 +41,7 @@ const operations = [
 	['/api/academic/catalog/subjects/overview', 'get', 'getCatalogSubjectOverview'],
 	['/api/academic/catalog/subjects/{id}', 'get', 'getCatalogSubject'],
 	['/api/academic/catalog/subjects/{id}', 'patch', 'updateCatalogSubject'],
+	['/api/academic/catalog/subjects/{id}', 'delete', 'deleteCatalogSubject'],
 	['/api/academic/catalog/subjects/{id}/versions', 'get', 'listSubjectVersions'],
 	['/api/academic/catalog/subjects/{id}/versions', 'post', 'createSubjectVersion'],
 	['/api/academic/catalog/subject-versions/{id}', 'get', 'getSubjectVersion'],
@@ -57,6 +58,7 @@ const operations = [
 	['/api/academic/catalog/activities/overview', 'get', 'getCatalogActivityOverview'],
 	['/api/academic/catalog/activities/{id}', 'get', 'getCatalogActivity'],
 	['/api/academic/catalog/activities/{id}', 'patch', 'updateCatalogActivity'],
+	['/api/academic/catalog/activities/{id}', 'delete', 'deleteCatalogActivity'],
 	['/api/academic/catalog/activities/{id}/versions', 'get', 'listActivityVersions'],
 	['/api/academic/catalog/activities/{id}/versions', 'post', 'createActivityVersion'],
 	['/api/academic/catalog/activity-versions/{id}', 'get', 'getActivityVersion'],
@@ -162,6 +164,7 @@ test('catalog overview schemas are generated from the backend contract', async (
 	assert.ok(!schemas.CatalogActivityOverview.required.includes('ownerOptions'));
 	for (const itemName of ['CatalogSubjectOverviewItem', 'CatalogActivityOverviewItem']) {
 		assert.ok(schemas[itemName].required.includes('canManage'));
+		assert.ok(schemas[itemName].required.includes('canDelete'));
 	}
 });
 

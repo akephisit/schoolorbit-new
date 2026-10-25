@@ -32,6 +32,9 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[path = "catalog_deletion_tests.rs"]
+mod catalog_deletion_tests;
+
 #[path = "subject_revision_tests.rs"]
 mod subject_revision_tests;
 
@@ -3819,7 +3822,7 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
 }
 
 #[tokio::test]
-async fn catalog_publication_requires_positive_official_workload() {
+async fn catalog_publication_requires_subject_workload_and_accepts_zero_activity_hours() {
     let pool = prepare_current_core_fixture("academic_core_catalog_workload_publish").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
@@ -3934,7 +3937,7 @@ async fn catalog_publication_requires_positive_official_workload() {
     )
     .await
     .unwrap();
-    let zero_hours_error = catalog::publish_activity_version(
+    let zero_hours_published = catalog::publish_activity_version(
         &pool,
         zero_hours_activity_version.id,
         PublishVersionRequest {
@@ -3942,8 +3945,10 @@ async fn catalog_publication_requires_positive_official_workload() {
         },
     )
     .await
-    .unwrap_err();
-    assert!(zero_hours_error.public_message().contains("มากกว่า 0"));
+    .unwrap();
+    assert_eq!(zero_hours_published.status, VersionStatus::Published);
+    assert_eq!(zero_hours_published.hours_per_week, "0.00");
+    assert_eq!(zero_hours_published.hours_per_term.as_deref(), Some("0.00"));
 }
 
 async fn create_overview_subject_version(
@@ -5070,7 +5075,7 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE activity_versions SET hours_per_term = 0 WHERE id = $1")
+    sqlx::query("UPDATE activity_versions SET hours_per_term = NULL WHERE id = $1")
         .bind(activity_version_id)
         .execute(&pool)
         .await

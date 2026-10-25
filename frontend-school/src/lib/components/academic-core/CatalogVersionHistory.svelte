@@ -70,6 +70,7 @@
 	);
 	// Keep canonical decimals as strings, including intermediate typing such as `1.`.
 	const positiveDecimalPattern = '(?=.*[1-9])(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
+	const nonnegativeDecimalPattern = '(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
 	const positiveIntegerPattern = '(?=.*[1-9])[0-9]+(\\.0+)?';
 
 	let pendingAction = $state<string | null>(null);
@@ -223,7 +224,9 @@
 							{kind === 'subject' ? 'ภาระการเรียนตามหลักสูตร' : 'ชั่วโมงกิจกรรมทางการ'}
 						</p>
 						<p class="text-xs text-muted-foreground">
-							ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน
+							{kind === 'subject'
+								? 'ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน'
+								: 'กำหนด 0 ชั่วโมงได้สำหรับกิจกรรมที่อยู่ในหลักสูตรแต่ไม่มีการจัดสอน'}
 						</p>
 					</div>
 					<div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-2">
@@ -234,7 +237,7 @@
 							<Input
 								id={`${code}-version-exact`}
 								type="text"
-								pattern={positiveDecimalPattern}
+								pattern={kind === 'subject' ? positiveDecimalPattern : nonnegativeDecimalPattern}
 								inputmode="decimal"
 								bind:value={draft.exactValue}
 								required
@@ -258,7 +261,7 @@
 							<Input
 								id={`${code}-version-total`}
 								type="text"
-								pattern={kind === 'subject' ? positiveIntegerPattern : positiveDecimalPattern}
+								pattern={kind === 'subject' ? positiveIntegerPattern : nonnegativeDecimalPattern}
 								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
 								bind:value={draft.totalValue}
 								required

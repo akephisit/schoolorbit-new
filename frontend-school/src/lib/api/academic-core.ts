@@ -93,6 +93,7 @@ export type CreateSubjectGroupRequest = Schemas['CreateSubjectGroupRequest'];
 export type UpdateSubjectGroupRequest = Schemas['UpdateSubjectGroupRequest'];
 export type CreateCatalogSubjectRequest = Schemas['CreateCatalogSubjectRequest'];
 export type UpdateCatalogSubjectRequest = Schemas['UpdateCatalogSubjectRequest'];
+export type DeleteCatalogRequest = Schemas['DeleteCatalogRequest'];
 export type CreateSubjectVersionRequest = Schemas['CreateSubjectVersionRequest'];
 export type UpdateSubjectVersionRequest = Schemas['UpdateSubjectVersionRequest'];
 export type CreateCatalogActivityRequest = Schemas['CreateCatalogActivityRequest'];
@@ -256,9 +257,17 @@ export const updateCatalogSubject = (id: string, body: UpdateCatalogSubjectReque
 		apiClient.patch<CatalogSubject>(`/api/academic/catalog/subjects/${id}`, body),
 		'แก้ไขรหัสรายวิชาไม่สำเร็จ'
 	);
-export const listSubjectVersions = (subjectId: string) =>
+export const deleteCatalogSubject = (id: string, body: DeleteCatalogRequest) =>
 	academicData(
-		apiClient.get<SubjectVersion[]>(`/api/academic/catalog/subjects/${subjectId}/versions`),
+		apiClient.deleteWithBody<Schemas['EmptyData']>(`/api/academic/catalog/subjects/${id}`, body),
+		'ลบรายวิชาไม่สำเร็จ'
+	);
+export const listSubjectVersions = (subjectId: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<SubjectVersion[]>(
+			`/api/academic/catalog/subjects/${subjectId}/versions`,
+			options
+		),
 		'ไม่สามารถโหลดประวัติรายวิชาได้'
 	);
 export const createSubjectVersion = (subjectId: string, body: CreateSubjectVersionRequest) =>
@@ -296,6 +305,11 @@ export const updateCatalogActivity = (id: string, body: UpdateCatalogActivityReq
 	academicData(
 		apiClient.patch<CatalogActivity>(`/api/academic/catalog/activities/${id}`, body),
 		'แก้ไขกิจกรรมไม่สำเร็จ'
+	);
+export const deleteCatalogActivity = (id: string, body: DeleteCatalogRequest) =>
+	academicData(
+		apiClient.deleteWithBody<Schemas['EmptyData']>(`/api/academic/catalog/activities/${id}`, body),
+		'ลบกิจกรรมไม่สำเร็จ'
 	);
 export const listActivityVersions = (activityId: string, options: ApiRequestOptions = {}) =>
 	academicData(

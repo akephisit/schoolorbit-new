@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createActivityVersion,
 		createCatalogActivity,
+		deleteCatalogActivity,
 		listActivityVersions,
 		publishActivityVersion,
 		type ActivityVersion,
@@ -24,6 +26,7 @@
 		matchesCatalogSearch,
 		optionLabel
 	} from '#lib/academic-core/catalog-presentation.js';
+	import CatalogDeleteDialog from '#lib/components/academic-core/CatalogDeleteDialog.svelte';
 	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
@@ -56,6 +59,7 @@
 	const allValue = 'all';
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
 	const historyRequests = new LatestRequest();
+	const deletedActivityIds = new SvelteSet<string>();
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
@@ -146,7 +150,10 @@
 				if (!current) return;
 				untrack(() => {
 					if (result.ok) {
-						const latest = result.data;
+						const latest = {
+							...result.data,
+							items: result.data.items.filter((item) => !deletedActivityIds.has(item.activity.id))
+						};
 						const selectedId = selected?.activity.id;
 						overview = latest;
 						if (selectedId) {
@@ -213,7 +220,8 @@
 				displayState: 'unpublished',
 				draftCount: 0,
 				gradeLevels: [],
-				canManage: true
+				canManage: true,
+				canDelete: true
 			};
 			overview = { ...overview, items: [...overview.items, item] };
 			createOpen = false;
@@ -222,6 +230,27 @@
 			mutationError = error instanceof Error ? error.message : 'เพิ่มกิจกรรมไม่สำเร็จ';
 		} finally {
 			creating = false;
+		}
+	}
+
+	async function deleteActivity() {
+		if (!selected?.canDelete) return;
+		const target = selected.activity;
+		await deleteCatalogActivity(target.id, { rowVersion: target.rowVersion });
+		if (disposed) return;
+		deletedActivityIds.add(target.id);
+		if (overview)
+			overview = {
+				...overview,
+				items: overview.items.filter((item) => item.activity.id !== target.id)
+			};
+		if (selected?.activity.id === target.id) {
+			historyRequests.abort();
+			sheetOpen = false;
+			selected = null;
+			versions = [];
+			historyLoading = false;
+			historyError = '';
 		}
 	}
 
@@ -574,6 +603,16 @@
 					)}{:else}ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง{/if}
 			</Sheet.Description>
 		</Sheet.Header>
+		{#if selected}
+			{#key selected.activity.id}
+				<CatalogDeleteDialog
+					kind="activity"
+					name={activityName(selected)}
+					canDelete={selected.canDelete}
+					onDelete={deleteActivity}
+				/>
+			{/key}
+		{/if}
 		{#if historyLoading}
 			<PageSkeleton variant="cards" rows={3} />
 		{:else if historyError}

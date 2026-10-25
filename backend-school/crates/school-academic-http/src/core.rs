@@ -56,7 +56,9 @@ pub fn routes() -> Router<AcademicHttpState> {
         )
         .route(
             "/catalog/subjects/{id}",
-            get(handlers::get_catalog_subject).patch(handlers::update_catalog_subject),
+            get(handlers::get_catalog_subject)
+                .patch(handlers::update_catalog_subject)
+                .delete(handlers::delete_catalog_subject),
         )
         .route(
             "/catalog/subjects/{id}/versions",
@@ -93,7 +95,9 @@ pub fn routes() -> Router<AcademicHttpState> {
         )
         .route(
             "/catalog/activities/{id}",
-            get(handlers::get_catalog_activity).patch(handlers::update_catalog_activity),
+            get(handlers::get_catalog_activity)
+                .patch(handlers::update_catalog_activity)
+                .delete(handlers::delete_catalog_activity),
         )
         .route(
             "/catalog/activities/{id}/versions",

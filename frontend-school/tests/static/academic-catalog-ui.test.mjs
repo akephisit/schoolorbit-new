@@ -53,7 +53,8 @@ test('subject catalog uses the responsive overview information architecture', as
 	assert.match(subjects, /\* as Sheet/);
 	assert.match(subjects, /\* as Select/);
 	assert.match(subjects, /subjectHistoryCache/);
-	assert.match(subjects, /historyRevision/);
+	assert.match(subjects, /LatestRequest/);
+	assert.match(subjects, /historyRequests\.abort\(\)/);
 	assert.match(subjects, /subjectGroupOptions/);
 	assert.match(subjects, /manageableSubjectGroupOptions/);
 	assert.match(subjects, /updateCatalogSubject/);

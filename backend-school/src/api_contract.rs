@@ -618,6 +618,7 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::create_catalog_subject,
         school_academic_http::core::handlers::get_catalog_subject,
         school_academic_http::core::handlers::update_catalog_subject,
+        school_academic_http::core::handlers::delete_catalog_subject,
         school_academic_http::core::handlers::list_subject_versions,
         school_academic_http::core::handlers::create_subject_version,
         school_academic_http::core::handlers::get_subject_version,
@@ -634,6 +635,7 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::create_catalog_activity,
         school_academic_http::core::handlers::get_catalog_activity,
         school_academic_http::core::handlers::update_catalog_activity,
+        school_academic_http::core::handlers::delete_catalog_activity,
         school_academic_http::core::handlers::list_activity_versions,
         school_academic_http::core::handlers::create_activity_version,
         school_academic_http::core::handlers::get_activity_version,
@@ -1328,6 +1330,7 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     CatalogSubjectOverview,
     CreateCatalogSubjectRequest,
     UpdateCatalogSubjectRequest,
+    DeleteCatalogRequest,
     SubjectVersion,
     CreateSubjectVersionRequest,
     UpdateSubjectVersionRequest,
@@ -3265,6 +3268,46 @@ mod tests {
             achievement["properties"]["achievement_date"]["format"],
             "date"
         );
+    }
+
+    #[test]
+    fn catalog_deletion_contract_requires_revision_and_returns_empty_envelope() {
+        let document = school_api_value().expect("document should serialize");
+        for (kind, operation_id) in [
+            ("subjects", "deleteCatalogSubject"),
+            ("activities", "deleteCatalogActivity"),
+        ] {
+            let path = format!("/api/academic/catalog/{kind}/{{id}}");
+            let operation = &document["paths"][&path]["delete"];
+            assert_eq!(operation["operationId"], operation_id);
+            assert_eq!(
+                operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/DeleteCatalogRequest"
+            );
+            assert_eq!(
+                operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData"
+            );
+            for status in ["400", "401", "403", "404", "409"] {
+                assert_eq!(
+                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse"
+                );
+            }
+        }
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            required(&schemas["DeleteCatalogRequest"]),
+            vec!["rowVersion"]
+        );
+        assert_eq!(
+            schemas["DeleteCatalogRequest"]["additionalProperties"],
+            false
+        );
+        for name in ["CatalogSubjectOverviewItem", "CatalogActivityOverviewItem"] {
+            assert!(required(&schemas[name]).contains(&"canDelete"));
+            assert_eq!(schemas[name]["properties"]["canDelete"]["type"], "boolean");
+        }
     }
 
     #[test]

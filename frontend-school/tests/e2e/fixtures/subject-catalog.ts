@@ -105,7 +105,8 @@ export function subjectFixture(count = 3, readOnly = false) {
 			displayState: 'current',
 			draftCount: 0,
 			gradeLevels: [subjectGrade],
-			canManage: group.canManage
+			canManage: group.canManage,
+			canDelete: false
 		};
 	});
 	return {
@@ -233,7 +234,8 @@ export async function installSubjectCatalog(
 					displayState: 'unpublished',
 					draftCount: 0,
 					gradeLevels: [],
-					canManage: true
+					canManage: true,
+					canDelete: true
 				});
 				fixture.histories.set(created.id, []);
 				return replySubject(route, created);
@@ -255,6 +257,7 @@ export async function installSubjectCatalog(
 					if (item) {
 						item.displayVersion = version;
 						item.displayState = 'current';
+						item.canDelete = false;
 						item.draftCount = Math.max(0, item.draftCount - 1);
 					}
 					return replySubject(route, version);
