@@ -59,6 +59,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Refuse unresolved work before a new execution
         if: needs.plan.outputs.action == 'execute'
         uses: ./.github/actions/owned-cleanup-interlock

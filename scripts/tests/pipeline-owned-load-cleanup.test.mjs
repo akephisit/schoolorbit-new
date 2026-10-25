@@ -177,6 +177,17 @@ test('only the outer Operations caller owns cleanup concurrency', () => {
   assert.doesNotMatch(child, /assert hashlib/);
 });
 
+test('both cleanup jobs retain the ancestry required by the trusted Git gate', () => {
+  const workflow = read('.github/workflows/owned-load-cleanup.yml');
+  for (const job of ['plan', 'cleanup']) {
+    const start = workflow.indexOf(`  ${job}:\n`);
+    assert.ok(start >= 0, `${job} job missing`);
+    const section = workflow.slice(start).split(/\n(?= {2}\S)/, 1)[0];
+    assert.match(section, /uses: actions\/checkout@v6\n        with:\n          fetch-depth: 0/,
+      `${job} requires complete Git history`);
+  }
+});
+
 test('local deployment verification owns the pure proof and controller Python cases', () => {
   for (const file of ['owned-load-cleanup-proof.test.py', 'owned-load-cleanup-controller.test.py', 'owned-load-cleanup-transport.test.py']) {
     execFileSync('python3', ['-B', path.join(repo, 'scripts/tests', file)], {stdio: 'pipe'});
