@@ -2,14 +2,20 @@
 # Source-only public DNS verification owner. Callers hold schoolorbit-production.
 
 api_dns_public_smoke() {
-    local deployment=$1 domain=$2 output status=0
+    local deployment=$1 domain=$2 output status=0 script
+    local -a copy_environment=()
+    script="$deployment/scripts/smoke_test.sh"
+    if (($# == 3)); then
+        script=$3
+        copy_environment=(SMOKE_ENV_FILE=/dev/null FILE_SMOKE_PNG=)
+    fi
     output=$(mktemp "${TMPDIR:-/tmp}/schoolorbit-public-smoke.XXXXXX") || return
     chmod 0600 "$output" || return
     SMOKE_SUBDOMAIN=sandbox SMOKE_API_URL="https://school-api.$domain" \
         SMOKE_ADMIN_API_URL="https://admin-api.$domain" SMOKE_TENANT_URL="https://sandbox.$domain" \
         SMOKE_ORIGIN="https://sandbox.$domain" SMOKE_REQUIRE_AUTH=true SMOKE_ACADEMIC_CONTEXT=true \
         SMOKE_DIRECT_BACKEND=false SMOKE_RESOLVE_IP='' SMOKE_CA_CERT='' \
-        SMOKE_RELEASE_PROBE_TOKEN='' bash "$deployment/scripts/smoke_test.sh" >"$output" 2>&1 || status=69
+        SMOKE_RELEASE_PROBE_TOKEN='' env "${copy_environment[@]}" bash "$script" >"$output" 2>&1 || status=69
     rm -f "$output"
     if ((status != 0)); then
         echo 'Public authenticated full-context verification failed.' >&2
@@ -117,17 +123,27 @@ try:
     require(root.is_absolute())
     for parent in reversed((root, *root.parents)):
         directory(parent)
-    for name, variable in [('lib/pipeline-remote/api-tls.sh', 'DNS_TLS_OWNER_SHA256'), ('smoke_test.sh', 'DNS_SMOKE_OWNER_SHA256')]:
-        expected = os.environ[variable]
-        require(text(expected, '[0-9a-f]{64}'))
-        script = root / 'scripts' / name
-        for parent in script.parents:
-            if parent == root:
-                break
-            directory(parent)
-        s = script.lstat()
-        require(stat.S_ISREG(s.st_mode) and s.st_uid == os.getuid() and s.st_size <= 2 * 1024 * 1024)
-        require(hashlib.sha256(script.read_bytes()).hexdigest() == expected)
+    if sys.argv[1] == 'stage':
+        temporary = Path(os.environ['TMPDIR'])
+        directory(temporary, True)
+        for name, variable, copied in [('lib/pipeline-remote/api-tls.sh', 'DNS_TLS_OWNER_SHA256', 'api-tls-status.sh'),
+                                       ('smoke_test.sh', 'DNS_SMOKE_OWNER_SHA256', 'public-smoke.sh')]:
+            expected = os.environ[variable]
+            require(text(expected, '[0-9a-f]{64}'))
+            script = root / 'scripts' / name
+            for parent in script.parents:
+                if parent == root:
+                    break
+                directory(parent)
+            fd = os.open(script, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, 'rb') as stream:
+                metadata = os.fstat(stream.fileno())
+                require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.getuid() and metadata.st_size <= 2 * 1024 * 1024)
+                verified = stream.read(2 * 1024 * 1024 + 1)
+            require(len(verified) <= 2 * 1024 * 1024 and hashlib.sha256(verified).hexdigest() == expected)
+            fd = os.open(temporary / copied, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(verified)
     accepted_path = root / 'accepted-release'
     s = accepted_path.lstat()
     require(stat.S_ISREG(s.st_mode) and s.st_uid == os.getuid() and s.st_size <= 41)
@@ -178,7 +194,7 @@ try:
                 require(path.name == operation or not any(path.iterdir()))
     state = {'operationId': operation, 'legacyJournal': {'filename': legacy['filename'], 'sha256': known_hash},
              'zone': known['zone'], 'account': known['account'], 'acceptedRelease': accepted}
-    if sys.argv[1] == 'check':
+    if sys.argv[1] in ['check', 'stage']:
         print(json.dumps(state, sort_keys=True, separators=(',', ':')))
     elif sys.argv[1] == 'write':
         facts = json.loads(Path(sys.argv[2]).read_text())
@@ -253,7 +269,7 @@ api_dns_verify_only() (
     trap 'exit 130' INT
     trap 'exit 143' TERM HUP
     export TMPDIR=$temporary
-    before=$(_api_dns_verification_state check) || exit 78
+    before=$(_api_dns_verification_state stage) || exit 78
     _api_dns_verification_orphans_absent || exit 78
     declare -A SO_CONFIG=() SO_SECRETS=()
     SO_CONFIG[base_domain]=$BASE_DOMAIN
@@ -269,8 +285,8 @@ api_dns_verify_only() (
     [[ $(jq -r .zone <<<"$before") == "$SO_CF_ZONE_ID" && $(jq -r .account <<<"$before") == "$SO_CF_ACCOUNT_ID" ]] || exit 78
     cf_snapshot_dns >"$temporary/provider.log" 2>&1 || exit 78
     cf_wait_for_target_resolution >"$temporary/dns.log" 2>&1 || exit 78
-    bash "$root/scripts/lib/pipeline-remote/api-tls.sh" status >"$temporary/tls.log" 2>&1 || exit 78
-    api_dns_public_smoke "$root" "$BASE_DOMAIN" || exit 69
+    bash "$temporary/api-tls-status.sh" status >"$temporary/tls.log" 2>&1 || exit 78
+    api_dns_public_smoke "$root" "$BASE_DOMAIN" "$temporary/public-smoke.sh" || exit 69
     cf_assert_cutover_state >"$temporary/provider.log" 2>&1 || exit 78
     cf_dns_preflight >"$temporary/provider.log" 2>&1 || exit 78
     current=$(_api_dns_verification_facts 2>"$temporary/facts.log") || exit 78

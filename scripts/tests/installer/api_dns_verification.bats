@@ -45,6 +45,7 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 [[ $SMOKE_ACADEMIC_CONTEXT == true && $SMOKE_REQUIRE_AUTH == true && $SMOKE_DIRECT_BACKEND == false ]]
+[[ $SMOKE_ENV_FILE == /dev/null && -z $FILE_SMOKE_PNG ]]
 [[ -z $SMOKE_RESOLVE_IP && -z $SMOKE_CA_CERT && -z $SMOKE_RELEASE_PROBE_TOKEN ]]
 [[ $SMOKE_API_URL == https://school-api.schoolorbit.app && $SMOKE_ADMIN_API_URL == https://admin-api.schoolorbit.app ]]
 [[ $SMOKE_ORIGIN == https://sandbox.schoolorbit.app && $SMOKE_TENANT_URL == https://sandbox.schoolorbit.app ]]
@@ -81,6 +82,11 @@ done
 case "$url" in
     */zones\?*)
         printf 'GET zones\n' >>"$COMMAND_LOG"
+        if [[ ${REPLACE_PINNED_SOURCES:-false} == true ]]; then
+            for script in "$SCHOOLORBIT_STACK_ROOT/deployment/scripts/lib/pipeline-remote/api-tls.sh" "$SCHOOLORBIT_STACK_ROOT/deployment/scripts/smoke_test.sh"; do
+                printf '#!/usr/bin/env bash\nprintf forbidden-replaced-source\\n >>"$COMMAND_LOG"\nexit 99\n' >"$script"
+            done
+        fi
         if [[ ${ZONE_AFTER_PUBLIC:-false} == true ]] && grep -q 'public auth' "$COMMAND_LOG"; then
             jq '.result[0].account.id="foreign-account"' "$FIXTURE_DIR/cloudflare-zone.json" >"$output"
         else cp "$FIXTURE_DIR/cloudflare-zone.json" "$output"; fi ;;
@@ -334,5 +340,26 @@ teardown() { rm -rf "$TEST_ROOT" "$XDG_RUNTIME_DIR"; }
     [ "$(jq -c .stableFacts "$commit")" = "$(jq -c .stableFacts "$reconcile")" ]
     [ "$(jq -r .stableDnsSha256 "$commit")" = "$(jq -r .stableDnsSha256 "$reconcile")" ]
     [ "$(jq -r .phase "$commit")" != "$(jq -r .phase "$reconcile")" ]
+    assert_untouched
+}
+
+@test "verified private copies execute despite later replacement of writable deployed sources" {
+    chmod 0775 "$root/scripts" "$root/scripts/lib"
+    chmod 0664 "$root/scripts/lib/pipeline-remote/api-tls.sh" "$root/scripts/smoke_test.sh"
+    export REPLACE_PINNED_SOURCES=true
+    run bash "$DNS_OPERATION" verify-only
+    [ "$status" -eq 0 ]
+    [ -s "$PROOF" ]
+    grep -q '^tls status$' "$COMMAND_LOG"
+    grep -q '^public auth full context$' "$COMMAND_LOG"
+    assert_untouched
+}
+
+@test "unknown deployed smoke bytes refuse before private copies can execute" {
+    export DNS_SMOKE_OWNER_SHA256=$(printf '%064d' 0)
+    run bash "$DNS_OPERATION" verify-only
+    [ "$status" -ne 0 ]
+    [ ! -e "$PROOF" ]
+    [ ! -e "$COMMAND_LOG" ]
     assert_untouched
 }

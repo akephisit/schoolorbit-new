@@ -2125,6 +2125,11 @@ loss, no-dispatch abort, non-replay, full observation duration, and counter-floo
 Only its own Docker container/network are removed. It does not connect to production or generate
 load. The fixture has no production bypass in the executor CLI.
 
+The suite also runs trusted-bootstrap cases for secret confinement, the no-intent abort without
+DNS credentials, and mandatory verification before post-intent recovery. The deployment runner's
+`api_dns_verification.bats` cases use mutation-denying stubs to verify the provider's read-only
+path, exact legacy hash, private source copies and evidence, and refusal of DNS/provider drift.
+
 The existing `./scripts/pipeline verify --scope deployment` includes this Node owner alongside
 all affected production workflow/interlock guards, ShellCheck/shfmt and actionlint. Do not run
 its Python children separately and repeat them without a changed input or diagnostic need. Record
