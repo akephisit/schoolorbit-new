@@ -646,7 +646,6 @@ pub async fn create_subject_version(
         .bind(subject_id)
         .fetch_one()
         .await?;
-    let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
     let id = Uuid::now_v7();
     DbSession::new(&mut *transaction)
         .query(
@@ -655,11 +654,11 @@ pub async fn create_subject_version(
         INSERT INTO subject_versions (
             id, subject_id, version_no, code, name_th, name_en, credit,
             hours_per_semester, type, description, effective_from,
-            effective_until, start_academic_year_id, term, is_active,
+            effective_until, term, is_active,
             periods_per_week, status
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, true, $15, 'draft'
+            $13, true, $14, 'draft'
         )
         "#,
         )
@@ -675,7 +674,6 @@ pub async fn create_subject_version(
         .bind(request.description)
         .bind(request.effective_from)
         .bind(request.effective_until)
-        .bind(start_year_id)
         .bind(request.term_code)
         .bind(request.periods_per_week)
         .execute()
@@ -725,7 +723,6 @@ pub async fn update_subject_version(
         .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
     ensure_draft_version(status)?;
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
-    let start_year_id = resolve_start_year(&mut transaction, values.effective_from).await?;
     let result = DbSession::new(&mut *transaction)
         .query(
             "academic_core.services.catalog.update_subject_version",
@@ -733,7 +730,7 @@ pub async fn update_subject_version(
         UPDATE subject_versions SET name_th = $1, name_en = $2, credit = $3,
             hours_per_semester = $4, type = $5, description = $6,
             effective_from = $7, effective_until = $8, term = $9,
-            periods_per_week = $10, start_academic_year_id = $13,
+            periods_per_week = $10,
             row_version = row_version + 1, updated_at = now()
         WHERE id = $11 AND row_version = $12 AND status = 'draft'
         "#,
@@ -750,7 +747,6 @@ pub async fn update_subject_version(
         .bind(values.periods_per_week)
         .bind(id)
         .bind(row_version)
-        .bind(start_year_id)
         .execute()
         .await
         .map_err(map_version_write_error)?;
@@ -1190,7 +1186,6 @@ pub async fn create_activity_version(
         .bind(activity_id)
         .fetch_one()
         .await?;
-    let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
     let legacy_periods = request
         .hours_per_week
         .split('.')
@@ -1206,9 +1201,9 @@ pub async fn create_activity_version(
         INSERT INTO activity_versions (
             id, activity_id, version_no, name, activity_type, description,
             periods_per_week, hours_per_week, hours_per_term, scheduling_mode, is_active,
-            term, grade_level_ids, start_academic_year_id, effective_from,
+            term, grade_level_ids, effective_from,
             effective_until, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, 'draft')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, 'draft')
         "#,
         )
         .bind(id)
@@ -1223,7 +1218,6 @@ pub async fn create_activity_version(
         .bind(request.scheduling_mode.trim())
         .bind(request.term_code)
         .bind(grade_level_ids)
-        .bind(start_year_id)
         .bind(request.effective_from)
         .bind(request.effective_until)
         .execute()
@@ -1903,7 +1897,7 @@ fn subject_version_select(predicate: &str, order: &str) -> String {
                ARRAY(SELECT link.grade_level_id FROM subject_version_grade_levels link
                      WHERE link.subject_id = version.id ORDER BY link.grade_level_id) AS grade_level_ids,
                version.status, version.published_at, version.row_version,
-               version.migration_provenance <> '{{}}'::jsonb AS migrated,
+               (version.migration_provenance - 'historicalYearBinding') <> '{{}}'::jsonb AS migrated,
                version.created_at, version.updated_at
         FROM subject_versions version
         WHERE {predicate}
@@ -1922,7 +1916,7 @@ fn activity_version_select(predicate: &str, order: &str) -> String {
                version.term AS term_code,
                COALESCE(ARRAY(SELECT jsonb_array_elements_text(COALESCE(version.grade_level_ids, '[]'::jsonb))::uuid), ARRAY[]::uuid[]) AS grade_level_ids,
                version.status, version.published_at, version.row_version,
-               version.migration_provenance <> '{{}}'::jsonb AS migrated,
+               (version.migration_provenance - 'historicalYearBinding') <> '{{}}'::jsonb AS migrated,
                version.created_at, version.updated_at
         FROM activity_versions version
         WHERE {predicate}
@@ -2121,22 +2115,6 @@ async fn ensure_subject_revision_differs(
         ));
     }
     Ok(())
-}
-
-async fn resolve_start_year(
-    transaction: &mut Transaction<'_, Postgres>,
-    effective_from: chrono::NaiveDate,
-) -> Result<Uuid, AppError> {
-    DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_core.services.catalog.resolve_start_year",
-            "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 \
-         ORDER BY start_date DESC LIMIT 1",
-        )
-        .bind(effective_from)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่อยู่ในปีการศึกษาใด".to_string()))
 }
 
 async fn replace_subject_grade_levels(

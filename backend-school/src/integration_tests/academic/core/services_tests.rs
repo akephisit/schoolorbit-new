@@ -35,6 +35,9 @@ use uuid::Uuid;
 #[path = "catalog_deletion_tests.rs"]
 mod catalog_deletion_tests;
 
+#[path = "catalog_year_independence_tests.rs"]
+mod catalog_year_independence_tests;
+
 #[path = "subject_revision_tests.rs"]
 mod subject_revision_tests;
 
@@ -52,11 +55,11 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 135).await
+    prepare_core_fixture_through(name, 138).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 135).await
+    prepare_core_fixture_through(name, 138).await
 }
 
 pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -139,7 +142,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 135).await;
+    let pool = prepare_core_fixture_through(name, 138).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();

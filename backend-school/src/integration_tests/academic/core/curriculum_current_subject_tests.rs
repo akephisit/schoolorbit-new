@@ -47,7 +47,7 @@ fn version_request(
 }
 
 async fn fixture(name: &str) -> Fixture {
-    let pool = prepare_core_fixture_through(name, 135).await;
+    let pool = prepare_core_fixture_through(name, 138).await;
     let grades: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(grades.len(), 3);

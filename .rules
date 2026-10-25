@@ -284,6 +284,8 @@ For every feature or behavior change:
 8. Update canonical documentation only when the durable system, verification, or operational procedure changed. Do not add a completion report.
 9. Run all applicable checks from section 11.
 
+Frontend flows, generated API contracts, backend rules and database constraints must express the same domain meaning for scope, context, required values, defaults, validation, lifecycle and persistence. When an approved domain change removes a context or field, remove silent backend inference, required lookup dependencies and stale database constraints at their authoritative owners; do not retain them merely because the UI no longer submits the value. Preserve existing facts and required history through an explicit reconciled migration.
+
 A feature is not complete when only its UI is hidden. Backend authorization, resource scope, contract generation, migrations, tests, and operational impact are part of the same change.
 
 Feature toggles are optional. Add one only for staged rollout or operational control, and enforce it in the backend as well as the UI; a frontend-only toggle is not an authorization or safety boundary.
@@ -515,6 +517,7 @@ Use `ApiResponse` and `ApiErrorResponse` for application responses; do not retur
 - List endpoints combine independent scopes as a union. `own`, `assigned`, `organization_unit`, and `organization_tree` must not hide one another. Only a true `school`/all-record scope may short-circuit.
 - Add focused policy/service tests for allowed, denied, and multi-scope union behavior.
 - Organization grants apply to the exact unit and matching position. Do not infer parent/child permission inheritance; grant and enforce `*.organization_tree` explicitly.
+- Central subject and activity catalogs are independent of academic years. Their stable identities and dated versions do not require or infer an academic year from an effective date. Keep effective-date/range validation, subject revision semantics, activity overlap guards and immutable published/pinned versions; Year and term context belongs only to consumers whose own domain requires it, such as actual offerings and academic lifecycle; curriculum editions retain their independent semantics. Historical year-binding metadata is provenance only, with no runtime relationship or validation authority.
 - `subject_groups` owns learning-area names, status and order; its transactional database projection owns the linked organization row. Ordinary learning areas attach directly to `SCHOOL`. Create them only through the registry, preserve AC/ACAD-ACT, and never infer administrative-tree access across that separation.
 - Organization/learning-area codes are server-generated and immutable; preserve existing codes and use UUIDv7 for new business identities.
 - `SCHOOL` remains the root organization unit. Display membership derives recursively from direct administrative assignments without persisting ancestor copies or inheriting exact-unit permissions. `is_primary` is the HR/home assignment, not an authorization source; one primary learning-area assignment (`unit_type = subject_group`) and one primary administration assignment (all other unit types, including linked activity divisions) may coexist. Primary assignments in the same domain must not overlap in their effective dates.

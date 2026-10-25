@@ -37,7 +37,7 @@ async fn publish(pool: &PgPool, version: SubjectVersion) -> SubjectVersion {
 }
 
 async fn fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 131).await
+    prepare_core_fixture_through(name, 138).await
 }
 
 async fn pinned_snapshot(pool: &PgPool) -> Value {
@@ -60,13 +60,24 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
     let pool = prepare_core_fixture_through("subject_revision_migration", 130).await;
     for index in 0..27 {
         let (id, values) = new_subject(&pool, &format!("UNRELATED-{index}")).await;
-        publish(
-            &pool,
-            catalog::create_subject_version(&pool, id, values)
-                .await
-                .unwrap(),
-        )
-        .await;
+        // This fixture intentionally exercises schema 130; seed its historical
+        // required year field directly rather than calling today's schema-138 writer.
+        let version_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,name_en,credit,hours_per_semester,type,start_academic_year_id,effective_from,periods_per_week,status,published_at,row_version) SELECT $1,$2,1,code,$3,$4,1,40,'ADDITIONAL',$5,$6,2,'draft',NULL,1 FROM subjects WHERE id=$2")
+            .bind(version_id).bind(id).bind(values.name_th).bind(values.name_en).bind(CURRENT_YEAR_ID).bind(values.effective_from)
+            .execute(&pool).await.unwrap();
+        for grade in values.grade_level_ids {
+            sqlx::query(
+                "INSERT INTO subject_version_grade_levels(subject_id,grade_level_id) VALUES($1,$2)",
+            )
+            .bind(version_id)
+            .bind(grade)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query("UPDATE subject_versions SET status='published',published_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1")
+            .bind(version_id).execute(&pool).await.unwrap();
     }
     let unrelated_before = unrelated_snapshot(&pool).await;
     let before = catalog_snapshot(&pool).await;
@@ -76,6 +87,7 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
     assert_eq!(pins, pinned_snapshot(&pool).await);
     apply_migrations_through(&pool, 131).await.unwrap();
     assert_eq!(before, catalog_snapshot(&pool).await);
+    apply_migrations_through(&pool, 138).await.unwrap();
     let old_id:Uuid = sqlx::query_scalar("SELECT d.subject_version_id FROM course_offering_details d JOIN curriculum_course_requirements r ON r.subject_version_id=d.subject_version_id LIMIT 1").fetch_one(&pool).await.unwrap();
     let old = catalog::get_subject_version(&pool, old_id).await.unwrap();
     let old_json = serde_json::to_value(&old).unwrap();

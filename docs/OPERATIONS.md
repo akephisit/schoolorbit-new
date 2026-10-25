@@ -641,6 +641,26 @@ range guards or published immutability. New same-date revisions become the defau
 through the subject provider's date and revision selection; prior pinned consumers retain
 their versions.
 
+Deploy [migration 138](../backend-school/migrations/138_catalogs_without_academic_year.sql)
+with its matching School catalog provider through universal maintenance and the canonical
+all-tenant migration gates. Central subjects and activities use effective dates independently
+of academic years. The migration preserves every existing version's former year UUID under
+`migration_provenance.historicalYearBinding`, retains the prior provenance object, and removes
+the active year columns, foreign keys, year indexes and activity name/year uniqueness.
+Historical metadata has no foreign key and never selects or validates an academic year.
+
+The migration locks and reconciles catalog facts and actual reference owners, including
+publication and delivery snapshots, without changing IDs, timestamps, revisions, statuses,
+published values or pinned references. It temporarily disables only the two published-version
+triggers and the inherited subject timestamp trigger within the migration transaction, then
+restores and verifies them; published guards and activity range overlap remain required.
+The bounded `catalog.year_binding_removed.reconciled` audit records preservation evidence.
+A reserved provenance-key collision, unsupported provenance, disabled guard or unexpected
+column dependency refuses the migration atomically. Keep maintenance active and investigate
+bounded findings on a protected copy; repair forward with a matching release. Pre-138 writers
+require the retired columns and must not be restored against schema 138. Never retarget dates,
+rewrite academic years, delete catalog/history rows or alter SQLx history to force success.
+
 Curriculum additions use the catalog provider's current published subject revision on
 Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
 under normal maintenance. Existing curriculum rows, published snapshots, copied programs
