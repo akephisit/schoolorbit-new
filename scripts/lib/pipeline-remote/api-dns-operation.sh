@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=scripts/lib/pipeline-remote/api-dns-verification.sh
+source "$(dirname "${BASH_SOURCE[0]}")/api-dns-verification.sh"
 mode=${1:?DNS operation is required}
+if [[ $mode == verify-only ]]; then
+    stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
+    # shellcheck source=scripts/lib/schoolorbit-installer/common.sh
+    source "$stack/deployment/scripts/lib/schoolorbit-installer/common.sh"
+    # shellcheck source=scripts/lib/schoolorbit-installer/cloudflare.sh
+    source "$stack/deployment/scripts/lib/schoolorbit-installer/cloudflare.sh"
+    api_dns_verify_only
+    exit
+fi
 case "$mode" in dns-only | dns-rollback) ;; *) exit 64 ;; esac
 : "${SMOKE_USERNAME:?Authenticated smoke username is required}"
 : "${SMOKE_PASSWORD:?Authenticated smoke password is required}"
@@ -32,6 +43,7 @@ umask 077
 runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 test -d "$runtime" && test -w "$runtime"
 operation_temp=$(mktemp -d "$runtime/schoolorbit-api-dns.XXXXXX")
+# shellcheck disable=SC2031 # Each operation owns its runtime directory; verification runs in a separate subshell.
 export TMPDIR=$operation_temp
 acceptance_window=false
 cleanup() {
@@ -51,14 +63,6 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 install -d -m 0700 "$root/api-dns"
 cf_dns_preflight
-
-public_smoke() {
-    SMOKE_SUBDOMAIN=sandbox SMOKE_API_URL="https://school-api.$base" \
-        SMOKE_ADMIN_API_URL="https://admin-api.$base" SMOKE_TENANT_URL="https://sandbox.$base" \
-        SMOKE_ORIGIN="https://sandbox.$base" SMOKE_REQUIRE_AUTH=true SMOKE_ACADEMIC_CONTEXT=true \
-        SMOKE_DIRECT_BACKEND=false SMOKE_RESOLVE_IP='' SMOKE_CA_CERT='' \
-        SMOKE_RELEASE_PROBE_TOKEN='' bash "$root/scripts/smoke_test.sh"
-}
 
 public_maintenance() {
     local part body status
@@ -149,7 +153,7 @@ elif [[ $mode == dns-only ]]; then
     done
     if jq -e 'all(.[]; .proxied == false)' <<<"$SO_DNS_SNAPSHOT" >/dev/null; then
         cf_wait_for_target_resolution
-        public_smoke
+        api_dns_public_smoke "$root" "$base"
         cf_assert_cutover_state
         echo 'Both DNS-only APIs passed public TLS and authenticated full-context smoke; no DNS or proxy mutation needed.'
         exit 0
@@ -192,7 +196,7 @@ acceptance_window=true
 bash "$maintenance" accept
 # Public credentials are used only after reopening. The private release token
 # remains loopback-only in the shared smoke owner, without any bypass here.
-if ! public_smoke; then
+if ! api_dns_public_smoke "$root" "$base"; then
     echo 'Public authenticated smoke failed; restoring owned DNS maintenance' >&2
     exit 69
 fi

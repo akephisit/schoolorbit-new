@@ -28,6 +28,9 @@ const buildRecipes = {
   frontend: '.github/actions/build-frontend-bundle/'
 };
 const releaseOwners = {
+  'scripts/lib/pipeline-remote/owned-load-cleanup.py': [],
+  'scripts/lib/pipeline-remote/api-dns-operation.sh': [],
+  'scripts/lib/pipeline-remote/api-dns-verification.sh': [],
   '.github/workflows/deploy-backend-admin.yml': ['backend-admin'],
   '.github/workflows/deploy-frontend-admin.yml': ['frontend-admin'],
   'scripts/lib/pipeline-admin-worker.mjs': ['frontend-admin'],

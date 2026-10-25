@@ -85,7 +85,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: scripts/lib/pipeline-remote/api-tls.sh,scripts/lib/pipeline-remote/api-tls-operation.sh,scripts/lib/pipeline-remote/api-dns-operation.sh,scripts/lib/pipeline-remote/maintenance.sh,scripts/lib/schoolorbit-installer/common.sh,scripts/lib/schoolorbit-installer/cloudflare.sh,scripts/render_nginx_config.sh,scripts/smoke_test.sh,nginx-configs
+          source: scripts/lib/pipeline-remote/api-tls.sh,scripts/lib/pipeline-remote/api-tls-operation.sh,scripts/lib/pipeline-remote/api-dns-operation.sh,scripts/lib/pipeline-remote/api-dns-verification.sh,scripts/lib/pipeline-remote/maintenance.sh,scripts/lib/schoolorbit-installer/common.sh,scripts/lib/schoolorbit-installer/cloudflare.sh,scripts/render_nginx_config.sh,scripts/smoke_test.sh,nginx-configs
           target: /opt/stack/deployment
       - name: Stage and accept public API certificate under universal maintenance
         uses: appleboy/ssh-action@v1.2.5

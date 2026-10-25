@@ -89,8 +89,15 @@ function plan(emit = true) {
   const raw = readFileSync(new URL('./owned-load-cleanup/catalogue.json', import.meta.url));
   const controller = readFileSync(new URL('./pipeline-remote/owned-load-cleanup.py', import.meta.url));
   const proof = readFileSync(new URL('./owned-load-cleanup-proof.py', import.meta.url));
+  const dnsOwner = Buffer.concat([
+    readFileSync(new URL('./schoolorbit-installer/common.sh', import.meta.url)),
+    readFileSync(new URL('./schoolorbit-installer/cloudflare.sh', import.meta.url)),
+    readFileSync(new URL('./pipeline-remote/api-dns-verification.sh', import.meta.url))
+  ]);
+  const tlsOwner = readFileSync(new URL('./pipeline-remote/api-tls.sh', import.meta.url));
+  const smokeOwner = readFileSync(new URL('../smoke_test.sh', import.meta.url));
   const hash = value => createHash('sha256').update(value).digest('hex');
-  if (emit) appendFileSync(process.env.GITHUB_OUTPUT, `action=${request.action}\noperation_id=${request.operationId}\naccepted_app_sha=${state.sha}\nbackend_input_hash=${state.components['backend-school'].inputHash}\ncatalogue_base64=${raw.toString('base64')}\ncatalogue_sha256=${hash(raw)}\ncontroller_sha256=${hash(controller)}\nproof_sha256=${hash(proof)}\n`);
+  if (emit) appendFileSync(process.env.GITHUB_OUTPUT, `action=${request.action}\noperation_id=${request.operationId}\naccepted_app_sha=${state.sha}\nbackend_input_hash=${state.components['backend-school'].inputHash}\ncatalogue_base64=${raw.toString('base64')}\ncatalogue_sha256=${hash(raw)}\ncontroller_sha256=${hash(controller)}\nproof_sha256=${hash(proof)}\ndns_owner_sha256=${hash(dnsOwner)}\ndns_tls_owner_sha256=${hash(tlsOwner)}\ndns_smoke_owner_sha256=${hash(smokeOwner)}\n`);
   console.log('Fixed cleanup input and trusted operation gate verified.');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
