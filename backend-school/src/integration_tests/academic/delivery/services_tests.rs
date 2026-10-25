@@ -3985,19 +3985,49 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         .to_string()
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
 
-    let ineffective_subject_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT version.id
-           FROM subject_versions version
-           JOIN academic_terms term ON term.id = $1
-           WHERE version.status = 'published'
-             AND term.start_date < version.effective_from
-           ORDER BY version.id
-           LIMIT 1"#,
+    // The old candidate could be expired. Start-only catalogs need an explicit
+    // new future revision to retain this independent term-start denial case.
+    let source = school_academic_core::services::catalog::get_subject_version(
+        &pool,
+        context.subject_version_id,
     )
-    .bind(context.term_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
+    let term_start: NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let future = school_academic_core::services::catalog::create_subject_version(
+        &pool,
+        source.subject_id,
+        school_academic_core::models::CreateSubjectVersionRequest {
+            name_th: format!("{} ฉบับเริ่มหลังเปิดภาคเรียน", source.name_th),
+            name_en: source.name_en,
+            credit: source.credit,
+            hours_per_semester: source.hours_per_semester,
+            subject_type: source.subject_type,
+            description: source.description,
+            effective_from: term_start + chrono::Duration::days(1),
+            term_code: source.term_code,
+            periods_per_week: source.periods_per_week,
+            grade_level_ids: source.grade_level_ids,
+        },
+    )
+    .await
+    .unwrap();
+    let future = school_academic_core::services::catalog::publish_subject_version(
+        &pool,
+        future.id,
+        school_academic_core::models::PublishVersionRequest {
+            row_version: future.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(future.effective_from > term_start);
+    let ineffective_subject_version_id = future.id;
     let mut ineffective_version_request = course_request(&context);
     let CreateLearningOfferingRequest::Course(course) = &mut ineffective_version_request else {
         unreachable!();
@@ -4007,7 +4037,7 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         offerings::create(&pool, context.teacher_id, ineffective_version_request).await;
     assert!(matches!(
         ineffective_version,
-        Err(AppError::ValidationError(_))
+        Err(AppError::ValidationError(message)) if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"
     ));
 
     let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
@@ -4439,6 +4469,69 @@ async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
 }
 
 #[tokio::test]
+async fn catalog_start_only_former_expiry_allows_explicit_offering_pin_and_preserves_facts() {
+    let pool = prepare_delivery_runtime_fixture("catalog_start_only_explicit_old_pin").await;
+    let context = planning_runtime_context(&pool).await;
+    // The historical Passing fixture was imported before migration 138. Select
+    // preserved finite-expiry evidence; no existing year, room or version is edited.
+    let (old_id,stable_id,code,name,credit,hours,standard,source_before,former_expiry,term_start):(Uuid,Uuid,String,String,String,Option<String>,i32,serde_json::Value,NaiveDate,NaiveDate)=sqlx::query_as(
+        "SELECT version.id,version.subject_id,subject.code,version.name_th,version.credit::text,version.hours_per_semester::text,version.periods_per_week,to_jsonb(version),(version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date,term.start_date FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.effective_from<=term.start_date AND (version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date<term.start_date AND version.periods_per_week IS NOT NULL AND version.hours_per_semester IS NOT NULL ORDER BY version.effective_from DESC,version.version_no DESC LIMIT 1"
+    ).bind(context.term_id).fetch_one(&pool).await.unwrap();
+    assert!(former_expiry < term_start);
+    let mut request = course_request(&context);
+    let CreateLearningOfferingRequest::Course(course) = &mut request else {
+        unreachable!()
+    };
+    course.subject_version_id = old_id;
+    let offering = offerings::create(&pool, context.teacher_id, request)
+        .await
+        .unwrap();
+    assert_eq!(offering.academic_year_id, context.year_id);
+    assert_eq!(offering.academic_term_id, context.term_id);
+    assert_eq!(offering.code_snapshot, code);
+    assert_eq!(offering.name_snapshot, name);
+    assert_eq!(offering.targets.len(), 1);
+    assert_eq!(offering.targets[0].homeroom_id, Some(context.homeroom_id));
+    let LearningOfferingSnapshot::Course(snapshot) = &offering.snapshot else {
+        panic!("an explicit course pin must retain a course snapshot")
+    };
+    assert_eq!(snapshot.subject_version_id, old_id);
+    assert_eq!(snapshot.subject_id, stable_id);
+    assert_eq!(
+        snapshot.credit.parse::<bigdecimal::BigDecimal>().unwrap(),
+        credit.parse::<bigdecimal::BigDecimal>().unwrap()
+    );
+    assert_eq!(
+        snapshot
+            .hours
+            .as_deref()
+            .unwrap()
+            .parse::<bigdecimal::BigDecimal>()
+            .unwrap(),
+        hours
+            .as_deref()
+            .unwrap()
+            .parse::<bigdecimal::BigDecimal>()
+            .unwrap()
+    );
+    assert_eq!(snapshot.standard_periods_per_week, standard);
+    assert_eq!(snapshot.assessment_total_score, "100.00");
+    let source_after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(version) FROM subject_versions version WHERE id=$1")
+            .bind(old_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(source_before, source_after);
+    let reloaded = offerings::get(&pool, offering.id).await.unwrap();
+    let LearningOfferingSnapshot::Course(reloaded) = reloaded.snapshot else {
+        panic!("readback must retain the pinned course snapshot")
+    };
+    assert_eq!(reloaded.subject_version_id, old_id);
+    assert_eq!(reloaded.subject_id, stable_id);
+}
+
+#[tokio::test]
 async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_curriculum").await;
     let context = planning_runtime_context(&pool).await;
@@ -4467,8 +4560,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await;
     assert!(
-        earlier_edition.is_ok(),
-        "the earlier plan and its preserved catalog pins remain start-eligible after expiry removal: {earlier_edition:?}"
+        matches!(&earlier_edition,Err(AppError::ValidationError(message))
+            if message == "ไม่พบห้องประจำชั้นที่ใช้แผนการเรียนนี้ในปีการศึกษาของภาคเรียนที่เลือก"),
+        "the earlier catalog pin passes expiry removal; its independent missing-room guard remains: {earlier_edition:?}"
     );
 
     let preview = offerings::preview_from_curriculum(
