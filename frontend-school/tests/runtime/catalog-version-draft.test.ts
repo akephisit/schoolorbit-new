@@ -67,3 +67,13 @@ test('new subject and post-save defaults are independent empty drafts', () => {
 	draft.gradeLevelIds.push('grade-1');
 	assert.deepEqual(createCatalogVersionDraft().gradeLevelIds, []);
 });
+
+test('subject draft prefills retain zero hours and periods without replacing them with defaults', () => {
+	const source = { ...published, hoursPerSemester: 0, periodsPerWeek: 0 };
+	const draft = createCatalogVersionDraft(source);
+	assert.equal(draft.totalValue, '0');
+	assert.equal(draft.standardPeriodsPerWeek, '0');
+	assert.equal(draft.exactValue, '1.50');
+	assert.equal(source.hoursPerSemester, 0);
+	assert.equal(source.periodsPerWeek, 0);
+});

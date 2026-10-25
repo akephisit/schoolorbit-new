@@ -847,3 +847,171 @@ async fn curriculum_credit_category_unknown_published_pin_stays_unknown_after_ne
         .filter(|option| option.resource_kind == RequirementResourceKind::Activity)
         .all(|option| option.credit_category.is_none()));
 }
+
+fn workload_update(
+    values: &CreateSubjectVersionRequest,
+    row_version: i64,
+) -> UpdateSubjectVersionRequest {
+    let mut wire = serde_json::to_value(values).unwrap();
+    wire["rowVersion"] = json!(row_version);
+    serde_json::from_value(wire).unwrap()
+}
+
+#[tokio::test]
+async fn subject_zero_workload_publishes_and_preserves_curriculum_and_catalog_pins() {
+    let f = fixture("subject_zero_workload_publication").await;
+    let stable = catalog::create_subject(
+        &f.pool,
+        CreateCatalogSubjectRequest {
+            code: "ZERO-WORKLOAD".into(),
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
+        },
+    )
+    .await
+    .unwrap();
+    let mut values = version_request("รายวิชาไม่มีชั่วโมงสอน", f.grade, f.v1.effective_from, None);
+    values.hours_per_semester = Some(0);
+    values.periods_per_week = Some(0);
+    let draft = catalog::create_subject_version(&f.pool, stable.id, values.clone())
+        .await
+        .unwrap();
+    assert_eq!(draft.hours_per_semester, Some(0));
+    assert_eq!(draft.periods_per_week, Some(0));
+    values.name_th.push_str(" ฉบับแก้ไข");
+    let updated = catalog::update_subject_version(
+        &f.pool,
+        draft.id,
+        workload_update(&values, draft.row_version),
+    )
+    .await
+    .unwrap();
+    let zero = publish(&f.pool, updated).await;
+    let workspace = save(&f, vec![row(&f, f.v1.id), row(&f, zero.id)])
+        .await
+        .unwrap();
+    let requirement = workspace
+        .requirements
+        .iter()
+        .find(|row| row.catalog_version_id == zero.id)
+        .unwrap();
+    assert_eq!(requirement.metrics.weekly_value.as_deref(), Some("0"));
+    assert_eq!(requirement.metrics.total_hours.as_deref(), Some("0"));
+    assert_eq!(requirement.metrics.credit.as_deref(), Some("1.00"));
+    assert!(workspace.validation.blockers.is_empty());
+    publish_level_fixture(
+        &f.pool,
+        f.level,
+        PublishVersionRequest {
+            row_version: workspace.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    // A later positive revision must leave both published catalog content and curriculum pins intact.
+    let zero_snapshot = serde_json::to_value(&zero).unwrap();
+    values.name_th.push_str(" มีชั่วโมงสอน");
+    values.hours_per_semester = Some(20);
+    values.periods_per_week = Some(1);
+    let positive = publish(
+        &f.pool,
+        catalog::create_subject_version(&f.pool, stable.id, values)
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(positive.version_no > zero.version_no);
+    assert_eq!(
+        zero_snapshot,
+        serde_json::to_value(
+            catalog::get_subject_version(&f.pool, zero.id)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    let frozen = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    let zero_pin = frozen
+        .requirements
+        .iter()
+        .find(|row| row.catalog_version_id == zero.id)
+        .unwrap();
+    assert_eq!(zero_pin.metrics.weekly_value.as_deref(), Some("0"));
+    assert_eq!(zero_pin.metrics.total_hours.as_deref(), Some("0"));
+    let old_pin = frozen
+        .requirements
+        .iter()
+        .find(|row| row.catalog_version_id == f.v1.id)
+        .unwrap();
+    assert_eq!(old_pin.metrics.weekly_value.as_deref(), Some("2"));
+    assert_eq!(old_pin.metrics.total_hours.as_deref(), Some("40"));
+    assert_eq!(
+        serde_json::to_value(&f.v1).unwrap(),
+        serde_json::to_value(
+            catalog::get_subject_version(&f.pool, f.v1.id)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn subject_zero_workload_keeps_negative_missing_and_credit_guards() {
+    let f = fixture("subject_zero_workload_validation").await;
+    let base = version_request("รายวิชาตรวจข้อมูลภาระงาน", f.grade, f.v1.effective_from, None);
+    for (periods, hours) in [(Some(-1), Some(0)), (Some(0), Some(-1))] {
+        let mut values = base.clone();
+        values.periods_per_week = periods;
+        values.hours_per_semester = hours;
+        assert!(matches!(
+            catalog::create_subject_version(&f.pool, f.subject, values).await,
+            Err(school_errors::AppError::ValidationError(_))
+        ));
+    }
+    for (index, periods, hours, credit) in [
+        (0, None, Some(0), "1.00"),
+        (1, Some(0), None, "1.00"),
+        (2, Some(0), Some(0), "0.00"),
+    ] {
+        let mut values = base.clone();
+        values.name_th.push_str(&format!(" {index}"));
+        values.periods_per_week = periods;
+        values.hours_per_semester = hours;
+        values.credit = credit.into();
+        let draft = catalog::create_subject_version(&f.pool, f.subject, values.clone())
+            .await
+            .unwrap();
+        let error = catalog::publish_subject_version(
+            &f.pool,
+            draft.id,
+            PublishVersionRequest {
+                row_version: draft.row_version,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, school_errors::AppError::ValidationError(_)));
+        for (periods, hours) in [(Some(-1), Some(0)), (Some(0), Some(-1))] {
+            values.periods_per_week = periods;
+            values.hours_per_semester = hours;
+            assert!(matches!(
+                catalog::update_subject_version(
+                    &f.pool,
+                    draft.id,
+                    workload_update(&values, draft.row_version)
+                )
+                .await,
+                Err(school_errors::AppError::ValidationError(_))
+            ));
+        }
+        let unchanged = catalog::get_subject_version(&f.pool, draft.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(draft).unwrap(),
+            serde_json::to_value(unchanged).unwrap()
+        );
+    }
+}
