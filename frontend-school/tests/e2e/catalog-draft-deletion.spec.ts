@@ -119,7 +119,7 @@ for (const kind of ['subject', 'activity'] as const) {
 			const deleteButton = page.getByRole('button', { name: `ลบ${label}`, exact: true });
 			await deleteButton.focus();
 			await deleteButton.press('Enter');
-			const confirm = page.getByRole('dialog', { name: `ยืนยันลบ${label}`, exact: true });
+			const confirm = page.getByRole('alertdialog', { name: `ยืนยันลบ${label}`, exact: true });
 			await expect(confirm).toContainText(kind === 'subject' ? 'ค00001' : activityName);
 			await confirm.getByRole('button', { name: 'ยกเลิก', exact: true }).focus();
 			await page.keyboard.press('Enter');
@@ -161,6 +161,7 @@ for (const kind of ['subject', 'activity'] as const) {
 				fixture.deleteGate.release();
 			}
 			await expect(page.getByRole('dialog')).toHaveCount(0);
+			await expect(page.getByRole('alertdialog')).toHaveCount(0);
 			fixture.historyGate.release();
 			await expect(
 				page.getByTestId(`catalog-${kind === 'subject' ? 'subjects' : 'activities'}-ready`)
@@ -189,7 +190,7 @@ for (const kind of ['subject', 'activity'] as const) {
 		await page.getByRole('button', { name: `ลบ${label}`, exact: true }).click();
 		fixture.refuse();
 		fixture.deleteGate.release();
-		const confirm = page.getByRole('dialog', { name: `ยืนยันลบ${label}`, exact: true });
+		const confirm = page.getByRole('alertdialog', { name: `ยืนยันลบ${label}`, exact: true });
 		await confirm.getByRole('button', { name: `ยืนยันลบ${label}`, exact: true }).click();
 		await expect(confirm.getByRole('alert')).toContainText('มีรุ่นที่เผยแพร่แล้ว');
 		await expect(
@@ -336,11 +337,12 @@ test('a delayed overview cannot restore a deleted subject or reopen its sheet', 
 	await page.getByRole('button', { name: 'เปิด ค00001', exact: true }).click();
 	await page.getByRole('button', { name: 'ลบรายวิชา', exact: true }).click();
 	await page
-		.getByRole('dialog', { name: 'ยืนยันลบรายวิชา', exact: true })
+		.getByRole('alertdialog', { name: 'ยืนยันลบรายวิชา', exact: true })
 		.getByRole('button', { name: 'ยืนยันลบรายวิชา', exact: true })
 		.click();
 	try {
 		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'เปิด ค00001', exact: true })).toHaveCount(0);
 	} finally {
 		gate.release();
@@ -349,5 +351,6 @@ test('a delayed overview cannot restore a deleted subject or reopen its sheet', 
 	await expect(page.getByRole('button', { name: 'เปิด ค00002', exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'เปิด ค00001', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
 	expect(requests.pageErrors).toEqual([]);
 });

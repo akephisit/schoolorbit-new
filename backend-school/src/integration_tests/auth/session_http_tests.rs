@@ -1699,23 +1699,33 @@ mod protected_router {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let subject_group_id: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
                 .fetch_one(&fixture.tenant_a_pool).await.unwrap();
-        let subject = school_academic_core::services::catalog::create_subject(
-            &fixture.tenant_a_pool,
-            school_academic_core::models::CreateCatalogSubjectRequest {
-                code: "HTTP-DELETE-DRAFT".into(),
-                subject_group_id,
-            },
-        )
-        .await
-        .unwrap();
-        let activity = school_academic_core::services::catalog::create_activity(
-            &fixture.tenant_a_pool,
-            school_academic_core::models::CreateCatalogActivityRequest {
-                activity_type: "guidance".into(),
-            },
-        )
-        .await
-        .unwrap();
+        // Setup is a separate managed operation; DELETE requests below acquire their own leases.
+        let (subject, activity) = {
+            let tenant = school_auth_http::tenant::tenant_context_by_subdomain(
+                &fixture.runtime,
+                "tenant-a",
+            )
+            .await
+            .unwrap();
+            let subject = school_academic_core::services::catalog::create_subject(
+                &tenant.pool,
+                school_academic_core::models::CreateCatalogSubjectRequest {
+                    code: "HTTP-DELETE-DRAFT".into(),
+                    subject_group_id,
+                },
+            )
+            .await
+            .unwrap();
+            let activity = school_academic_core::services::catalog::create_activity(
+                &tenant.pool,
+                school_academic_core::models::CreateCatalogActivityRequest {
+                    activity_type: "guidance".into(),
+                },
+            )
+            .await
+            .unwrap();
+            (subject, activity)
+        };
         let catalog_paths = [
             format!("/api/academic/catalog/subjects/{}", subject.id),
             format!("/api/academic/catalog/activities/{}", activity.id),

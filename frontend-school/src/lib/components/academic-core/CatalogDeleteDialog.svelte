@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { Trash2 } from '@lucide/svelte';
 
 	let {
@@ -48,10 +48,9 @@
 	</Button>
 {/if}
 
-<Dialog.Root {open} onOpenChange={changeOpen}>
-	<Dialog.Content
+<AlertDialog.Root {open} onOpenChange={changeOpen}>
+	<AlertDialog.Content
 		class="sm:max-w-md"
-		showCloseButton={!deleting}
 		onInteractOutside={(event) => {
 			if (deleting) event.preventDefault();
 		}}
@@ -59,16 +58,15 @@
 			if (deleting) event.preventDefault();
 		}}
 	>
-		<Dialog.Header>
-			<Dialog.Title>ยืนยันลบ{label}</Dialog.Title>
-			<Dialog.Description>
+		<AlertDialog.Header>
+			<AlertDialog.Title>ยืนยันลบ{label}</AlertDialog.Title>
+			<AlertDialog.Description>
 				ลบ “{name}” และรุ่นร่างทั้งหมดออกจากทะเบียนอย่างถาวร การดำเนินการนี้ย้อนกลับไม่ได้
-			</Dialog.Description>
-		</Dialog.Header>
+			</AlertDialog.Description>
+		</AlertDialog.Header>
 		{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-		<Dialog.Footer>
-			<Button variant="outline" disabled={deleting} onclick={() => changeOpen(false)}>ยกเลิก</Button
-			>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={deleting}>ยกเลิก</AlertDialog.Cancel>
 			<LoadingButton
 				variant="destructive"
 				loading={deleting}
@@ -76,6 +74,6 @@
 				loadingLabel="กำลังลบ..."
 				onclick={confirm}>ยืนยันลบ{label}</LoadingButton
 			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
