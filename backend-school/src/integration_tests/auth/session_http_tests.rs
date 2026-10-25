@@ -1701,12 +1701,10 @@ mod protected_router {
                 .fetch_one(&fixture.tenant_a_pool).await.unwrap();
         // Setup is a separate managed operation; DELETE requests below acquire their own leases.
         let (subject, activity) = {
-            let tenant = school_auth_http::tenant::tenant_context_by_subdomain(
-                &fixture.runtime,
-                "tenant-a",
-            )
-            .await
-            .unwrap();
+            let tenant =
+                school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
+                    .await
+                    .unwrap();
             let subject = school_academic_core::services::catalog::create_subject(
                 &tenant.pool,
                 school_academic_core::models::CreateCatalogSubjectRequest {
@@ -1799,7 +1797,9 @@ mod protected_router {
                 assert_eq!(response.status(), expected, "catalog deletion {path}");
                 if expected == StatusCode::OK {
                     let body: serde_json::Value = serde_json::from_slice(
-                        &axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+                        &axum::body::to_bytes(response.into_body(), usize::MAX)
+                            .await
+                            .unwrap(),
                     )
                     .unwrap();
                     assert_eq!(body["success"], true);

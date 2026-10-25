@@ -789,7 +789,8 @@ async fn validate_publishable(
         .await?;
     if incomplete_activity_metrics != 0 {
         return Err(AppError::ValidationError(
-            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบและเป็น 0 หรือมากกว่า".to_string(),
+            "กิจกรรมในโครงสร้างต้องมีชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนให้ครบและเป็น 0 หรือมากกว่า"
+                .to_string(),
         ));
     }
     Ok(())

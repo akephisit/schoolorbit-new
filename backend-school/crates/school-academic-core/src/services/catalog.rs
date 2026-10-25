@@ -1255,7 +1255,10 @@ pub async fn update_activity_version(
     .await?;
     lock_activity_for_version(&mut transaction, id).await?;
     let version = update_activity_version_on_connection(&mut transaction, id, request).await?;
-    transaction.commit().await.map_err(map_version_write_error)?;
+    transaction
+        .commit()
+        .await
+        .map_err(map_version_write_error)?;
     Ok(version)
 }
 
