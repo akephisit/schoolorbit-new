@@ -944,6 +944,39 @@ mod tests {
         assert!(!subjects.is_empty());
     }
 
+    #[tokio::test]
+    async fn catalog_start_only_lookup_preserves_selected_year_and_former_expiry_is_metadata() {
+        let pool = create_named_test_pool("catalog_start_only_subject_lookup").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        apply_migrations_through(&pool, 137).await.unwrap();
+        let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let stable = Uuid::new_v4();
+        let version = Uuid::new_v4();
+        sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT $1,'LOOKUP-STARTONLY','lookup-startonly',subject_group_id,owning_organization_unit_id FROM subjects LIMIT 1").bind(stable).execute(&pool).await.unwrap();
+        // Historical required fields are seeded only before migration 138.
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,effective_until,status,published_at) SELECT $1,$2,1,'LOOKUP-STARTONLY','Lookup old expiry',1,'BASIC',id,start_date-730,end_date-366,'published',now() FROM academic_years WHERE id=$3").bind(version).bind(stable).bind(year).execute(&pool).await.unwrap();
+        apply_migrations_through(&pool, 138).await.unwrap();
+        let mut query = academic_query(year);
+        query.search = Some("LOOKUP-STARTONLY".into());
+        let found = lookup_subjects(&pool, query).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, stable);
+        let future = Uuid::new_v4();
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) SELECT $1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',end_date+1,'published',now() FROM academic_years WHERE id=$3").bind(future).bind(stable).bind(year).execute(&pool).await.unwrap();
+        let mut query = academic_query(year);
+        query.search = Some("LOOKUP-STARTONLY".into());
+        let unchanged = lookup_subjects(&pool, query).await.unwrap();
+        assert_eq!(unchanged.len(), 1);
+        assert_eq!(unchanged[0].name, "Lookup old expiry");
+    }
+
     #[test]
     fn classroom_grade_level_label_returns_none_for_missing_level_data() {
         assert_eq!(

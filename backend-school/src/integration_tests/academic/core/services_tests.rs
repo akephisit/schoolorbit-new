@@ -1926,7 +1926,6 @@ fn flat_version_update_contract_rejects_unknown_fields() {
         "subjectType": "BASIC",
         "description": null,
         "effectiveFrom": "2027-05-01",
-        "effectiveUntil": null,
         "termCode": "T1",
         "periodsPerWeek": 3,
         "gradeLevelIds": [],
@@ -3952,7 +3951,8 @@ async fn create_overview_subject_version(
     grade_level_id: Uuid,
     name: &str,
     effective_from: NaiveDate,
-    publish: bool,) {
+    publish: bool,
+) {
     let version = catalog::create_subject_version(
         pool,
         subject_id,
@@ -4010,7 +4010,8 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "รุ่นที่ใช้อยู่",
         NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-        true,)
+        true,
+    )
     .await;
     create_overview_subject_version(
         &pool,
@@ -4018,7 +4019,8 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "ร่างที่ยังไม่เผยแพร่",
         NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
-        false,)
+        false,
+    )
     .await;
 
     let upcoming = catalog::create_subject(
@@ -4036,7 +4038,8 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "รุ่นอนาคต",
         NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
-        true,)
+        true,
+    )
     .await;
 
     let older = catalog::create_subject(
@@ -4054,7 +4057,8 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
         grade_level_id,
         "รุ่นเดิม",
         NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
-        true,)
+        true,
+    )
     .await;
 
     let unpublished = catalog::create_subject(

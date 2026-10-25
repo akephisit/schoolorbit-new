@@ -3271,6 +3271,51 @@ mod tests {
     }
 
     #[test]
+    fn catalog_start_only_contract_retires_expiry_and_preserves_delivery_temporal_fields() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+        for name in [
+            "SubjectVersion",
+            "CreateSubjectVersionRequest",
+            "UpdateSubjectVersionRequest",
+            "ActivityVersion",
+            "CreateActivityVersionRequest",
+            "UpdateActivityVersionRequest",
+            "CurriculumCatalogVersionOption",
+        ] {
+            let properties = schemas[name]["properties"]
+                .as_object()
+                .expect("catalog schema properties");
+            assert!(properties.contains_key("effectiveFrom"), "{name}");
+            for retired in [
+                "effectiveUntil",
+                "effective_until",
+                "startAcademicYearId",
+                "academicYearId",
+            ] {
+                assert!(
+                    !properties.contains_key(retired),
+                    "{name} must not expose {retired}"
+                );
+            }
+        }
+        assert_eq!(
+            schemas["CatalogDisplayState"]["enum"],
+            serde_json::json!(["current", "upcoming", "unpublished"])
+        );
+        for name in [
+            "DeliveryVersion",
+            "DeliveryVersionSummary",
+            "TimetableVersion",
+        ] {
+            assert!(
+                schemas[name]["properties"].get("effectiveUntil").is_some(),
+                "{name} retains its independently derived interval"
+            );
+        }
+    }
+
+    #[test]
     fn catalog_deletion_contract_requires_revision_and_returns_empty_envelope() {
         let document = school_api_value().expect("document should serialize");
         for (kind, operation_id) in [

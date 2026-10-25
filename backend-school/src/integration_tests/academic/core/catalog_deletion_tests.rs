@@ -116,7 +116,8 @@ async fn catalog_deletion_empty_and_draft_rows_preserves_unrelated_history() {
         grade,
         "ฉบับร่างที่จะลบ",
         NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
-        false,)
+        false,
+    )
     .await;
     let version = catalog::list_subject_versions(&pool, draft_subject.id)
         .await

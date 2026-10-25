@@ -36,7 +36,7 @@ test('filters the complete authorized catalog, resets paging, and separates read
 	await expect(table.getByRole('button', { name: 'ค00031', exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'ล้างตัวกรอง', exact: true }).click();
 	await page.getByRole('button', { name: /^ตัวกรอง/ }).click();
-	await page.getByRole('button', { name: 'กรองกลุ่มสาระ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กรองกลุ่มสาระ', exact: true }).click();
 	await page.getByRole('option', { name: 'ภาษาไทย', exact: true }).click();
 	await expect(table.getByRole('row')).toHaveCount(11);
 	await page.getByRole('button', { name: /^ตัวกรอง/ }).click();
@@ -298,14 +298,14 @@ test('metadata failures stay with their owning subject and preserve another subj
 	});
 	await page.goto(subjectPath);
 	await openSubjectDetails(page);
-	await page.getByRole('button', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
 	await page.getByRole('option', { name: 'วิทยาศาสตร์และเทคโนโลยี', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกกลุ่มสาระ', exact: true }).click();
 	try {
 		await expect.poll(() => requests.writes.length).toBe(1);
 		await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
 		await openSubjectDetails(page, 'ค00002');
-		await page.getByRole('button', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
+		await page.getByRole('combobox', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
 		await page.getByRole('option', { name: 'คณิตศาสตร์', exact: true }).click();
 		await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('แบบร่างรายวิชาที่สอง');
 	} finally {
@@ -314,7 +314,7 @@ test('metadata failures stay with their owning subject and preserve another subj
 	await expect.poll(() => responseFinished).toBe(true);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	await expect(page.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('แบบร่างรายวิชาที่สอง');
-	await expect(page.getByRole('button', { name: 'กลุ่มสาระของรายวิชา', exact: true })).toHaveText(
+	await expect(page.getByRole('combobox', { name: 'กลุ่มสาระของรายวิชา', exact: true })).toHaveText(
 		'คณิตศาสตร์'
 	);
 	await expect(page.getByRole('button', { name: 'บันทึกกลุ่มสาระ', exact: true })).toBeEnabled();
@@ -668,7 +668,7 @@ test('server semantic duplicate errors preserve the prefilled revision and refre
 	await expect(form.getByRole('alert')).toContainText('กรุณาปรับข้อมูลก่อนสร้างรุ่นใหม่');
 	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue(subjectName);
 	await form.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('แบบร่างที่ยังไม่บันทึก');
-	await page.getByRole('button', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
 	await page.getByRole('option', { name: 'วิทยาศาสตร์และเทคโนโลยี', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกกลุ่มสาระ', exact: true }).click();
 	await expect.poll(requests.overviewReads).toBe(2);

@@ -318,14 +318,14 @@ export async function openSubjectDetails(page: Page, code = 'ค00001') {
 export async function chooseSubjectDate(page: Page, date = '2026-10-21') {
 	await page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true }).click();
 	const target = new Date(`${date}T12:00:00Z`);
-	await page.getByRole('button', { name: 'เลือกเดือน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เลือกเดือน', exact: true }).click();
 	await page
 		.getByRole('option', {
 			name: new Intl.DateTimeFormat('th-TH', { month: 'short', timeZone: 'UTC' }).format(target),
 			exact: true
 		})
 		.click();
-	await page.getByRole('button', { name: 'เลือกปี', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เลือกปี', exact: true }).click();
 	await page
 		.getByRole('option', {
 			name: new Intl.DateTimeFormat('th-TH', { year: 'numeric', timeZone: 'UTC' }).format(target),

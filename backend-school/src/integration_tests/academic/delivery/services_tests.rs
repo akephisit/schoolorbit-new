@@ -3990,9 +3990,7 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
            FROM subject_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND (term.start_date < version.effective_from
-                  OR (version.effective_until IS NOT NULL
-                      AND term.start_date >= version.effective_until))
+             AND term.start_date < version.effective_from
            ORDER BY version.id
            LIMIT 1"#,
     )
@@ -4469,9 +4467,8 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await;
     assert!(
-        matches!(&earlier_edition, Err(AppError::ValidationError(message))
-            if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"),
-        "the earlier plan passes selection, while its expired catalog version remains guarded: {earlier_edition:?}"
+        earlier_edition.is_ok(),
+        "the earlier plan and its preserved catalog pins remain start-eligible after expiry removal: {earlier_edition:?}"
     );
 
     let preview = offerings::preview_from_curriculum(

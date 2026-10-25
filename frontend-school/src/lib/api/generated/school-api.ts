@@ -8989,8 +8989,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
@@ -9484,8 +9482,6 @@ export interface components {
 				description?: string | null;
 				/** Format: date */
 				effectiveFrom: string;
-				/** Format: date */
-				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
 				hoursPerTerm?: string | null;
 				hoursPerWeek: string;
@@ -13111,8 +13107,6 @@ export interface components {
 				description?: string | null;
 				/** Format: date */
 				effectiveFrom: string;
-				/** Format: date */
-				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
 				/** Format: int32 */
 				hoursPerSemester?: number | null;
@@ -14004,8 +13998,6 @@ export interface components {
 				description?: string | null;
 				/** Format: date */
 				effectiveFrom: string;
-				/** Format: date */
-				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
 				hoursPerTerm?: string | null;
 				hoursPerWeek: string;
@@ -15994,8 +15986,6 @@ export interface components {
 				description?: string | null;
 				/** Format: date */
 				effectiveFrom: string;
-				/** Format: date */
-				effectiveUntil?: string | null;
 				gradeLevelIds: string[];
 				/** Format: int32 */
 				hoursPerSemester?: number | null;
@@ -18146,7 +18136,7 @@ export interface components {
 			weeklyValue?: string | null;
 		};
 		/** @enum {string} */
-		CatalogDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		CatalogDisplayState: 'current' | 'upcoming' | 'unpublished';
 		CatalogEvaluationSummary: {
 			average: components['schemas']['ExactAverage'];
 			/** Format: uuid */
@@ -19300,8 +19290,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
@@ -19769,8 +19757,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			/** Format: int32 */
 			hoursPerSemester?: number | null;
@@ -19906,8 +19892,6 @@ export interface components {
 			creditCategory?: components['schemas']['CurriculumCourseCreditCategory'] | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			/** Format: uuid */
 			id: string;
@@ -25567,8 +25551,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			/** Format: int32 */
 			hoursPerSemester?: number | null;
@@ -27176,8 +27158,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			hoursPerTerm?: string | null;
 			hoursPerWeek: string;
@@ -27565,8 +27545,6 @@ export interface components {
 			description?: string | null;
 			/** Format: date */
 			effectiveFrom: string;
-			/** Format: date */
-			effectiveUntil?: string | null;
 			gradeLevelIds: string[];
 			/** Format: int32 */
 			hoursPerSemester?: number | null;

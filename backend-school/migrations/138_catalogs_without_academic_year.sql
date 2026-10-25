@@ -74,6 +74,29 @@ DROP INDEX idx_subjects_start_year RESTRICT;
 DROP INDEX idx_activity_catalog_year RESTRICT;
 ALTER TABLE subject_versions DROP CONSTRAINT subject_versions_effective_range_check;
 ALTER TABLE activity_versions DROP CONSTRAINT activity_versions_effective_range_check;
+-- PostgreSQL 18 represents these original NOT NULL attributes as intrinsic
+-- pg_constraint owners. Retire only those exact column flags before inventory;
+-- unrelated CHECK/index dependencies must still refuse contraction.
+ALTER TABLE subject_versions ALTER COLUMN start_academic_year_id DROP NOT NULL;
+ALTER TABLE activity_versions ALTER COLUMN start_academic_year_id DROP NOT NULL;
+
+-- PostgreSQL automatically removes same-table CHECK/index dependencies even
+-- with DROP COLUMN RESTRICT. After removing the exact known owners above,
+-- refuse every remaining dependency on a retired attribute before contraction.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_depend dependency
+        JOIN pg_attribute attribute ON attribute.attrelid=dependency.refobjid
+          AND attribute.attnum=dependency.refobjsubid
+        WHERE dependency.refclassid='pg_class'::regclass
+          AND attribute.attrelid IN ('subject_versions'::regclass,'activity_versions'::regclass)
+          AND attribute.attname IN ('start_academic_year_id','effective_until')
+          AND NOT attribute.attisdropped
+    ) THEN
+        RAISE EXCEPTION 'CATALOG_138_DEPENDENCY_UNSUPPORTED';
+    END IF;
+END $$;
 ALTER TABLE subject_versions DROP COLUMN start_academic_year_id RESTRICT, DROP COLUMN effective_until RESTRICT;
 ALTER TABLE activity_versions DROP COLUMN start_academic_year_id RESTRICT, DROP COLUMN effective_until RESTRICT;
 

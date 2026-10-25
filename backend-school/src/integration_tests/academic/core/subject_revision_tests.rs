@@ -85,6 +85,16 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
     assert_eq!(pins, pinned_snapshot(&pool).await);
     apply_migrations_through(&pool, 131).await.unwrap();
     assert_eq!(before, catalog_snapshot(&pool).await);
+    // Keep migration 131's original interval assertions on its historical
+    // schema. Schema 138 deliberately retires this policy afterward.
+    let activity_overlap=sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft','name','overlap-fixture-131'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err();
+    assert!(
+        activity_overlap
+            .to_string()
+            .contains("ACTIVITY_VERSION_RANGE_OVERLAP"),
+        "{activity_overlap}"
+    );
+    assert!(sqlx::query("INSERT INTO subject_versions SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+100,'status','draft','effective_until',effective_from))).* FROM subject_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err().to_string().contains("subject_versions_effective_range_check"));
     apply_migrations_through(&pool, 138).await.unwrap();
     let unrelated_before = unrelated_snapshot(&pool).await;
     let old_id:Uuid = sqlx::query_scalar("SELECT d.subject_version_id FROM course_offering_details d JOIN curriculum_course_requirements r ON r.subject_version_id=d.subject_version_id LIMIT 1").fetch_one(&pool).await.unwrap();
@@ -135,7 +145,6 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
     // Migration 138 intentionally replaces the activity range policy with
     // start-only revisions. Existing pinned rows and published guards stay intact.
     sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft','published_at',NULL,'name','start-only-fixture-138'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap();
-
 }
 
 async fn new_subject(pool: &PgPool, code: &str) -> (Uuid, CreateSubjectVersionRequest) {
@@ -384,7 +393,6 @@ async fn subject_revision_each_meaningful_field_can_create_a_revision() {
         ("subjectType", json!("BASIC")),
         ("description", json!("คำอธิบาย")),
         ("effectiveFrom", json!("2026-06-01")),
-        ("effectiveUntil", json!("2026-12-01")),
         ("termCode", json!("2")),
         ("periodsPerWeek", json!(3)),
         ("gradeLevelIds", json!([a.grade_level_ids[0]])),

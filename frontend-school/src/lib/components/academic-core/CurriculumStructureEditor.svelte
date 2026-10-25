@@ -736,7 +736,7 @@
 							{/each}
 						</div>
 						<Select.Root type="single" bind:value={requirementKind}>
-							<Select.Trigger>
+							<Select.Trigger aria-label="เงื่อนไขของรายการที่จะเพิ่ม">
 								{requirementKind === 'required'
 									? 'บังคับ'
 									: requirementKind === 'elective'
@@ -787,7 +787,7 @@
 												><Table.Cell colspan={4} class="font-semibold">{section.label}</Table.Cell
 												></Table.Row
 											>{/if}
-										{#each section.rows as requirement (requirement)}
+										{#each section.rows as requirement, index (requirement)}
 											{@const option = catalogOption(requirement.catalogVersionId)}
 											{@const source = requirementSource(requirement.catalogVersionId)}
 											<Table.Row>
@@ -815,7 +815,9 @@
 																requirementKind: value
 															})}
 													>
-														<Select.Trigger>
+														<Select.Trigger
+															aria-label={`เงื่อนไขของ ${requirement.resourceKind === 'course' ? `${source?.code ?? option?.code ?? ''} ` : ''}${source?.name ?? option?.name ?? 'ไม่มีข้อมูลชื่อในทะเบียน'} · ${section.label} รายการที่ ${index + 1}`}
+														>
 															{requirement.requirementKind === 'required'
 																? 'บังคับ'
 																: requirement.requirementKind === 'elective'
