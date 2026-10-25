@@ -1,0 +1,150 @@
+name: Reviewed owned load fixture cleanup
+on:
+  workflow_call:
+    inputs:
+      request_id:
+        type: string
+        required: true
+      subdomain:
+        type: string
+        required: true
+      school_id:
+        type: string
+        default: ""
+      api_url:
+        type: string
+        required: true
+      options:
+        type: string
+        default: "{}"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      action: ${{ steps.gate.outputs.action }}
+      accepted_app_sha: ${{ steps.gate.outputs.accepted_app_sha }}
+      backend_input_hash: ${{ steps.gate.outputs.backend_input_hash }}
+      catalogue_base64: ${{ steps.gate.outputs.catalogue_base64 }}
+      catalogue_sha256: ${{ steps.gate.outputs.catalogue_sha256 }}
+      controller_sha256: ${{ steps.gate.outputs.controller_sha256 }}
+      proof_sha256: ${{ steps.gate.outputs.proof_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - name: Validate fixed inputs and exact prepared main
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_REQUEST: ${{ inputs.request_id }}
+          CLEANUP_SUBDOMAIN: ${{ inputs.subdomain }}
+          CLEANUP_SCHOOL_ID: ${{ inputs.school_id }}
+          CLEANUP_API_URL: ${{ inputs.api_url }}
+          CLEANUP_OPTIONS: ${{ inputs.options }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: node scripts/lib/pipeline-owned-load-cleanup.mjs
+  cleanup:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Refuse unresolved work before a new execution
+        if: needs.plan.outputs.action == 'execute'
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Assemble only trusted controller source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          proof = base64.b64encode(Path('scripts/lib/owned-load-cleanup-proof.py').read_bytes()).decode()
+          controller = base64.b64encode(Path('scripts/lib/pipeline-remote/owned-load-cleanup.py').read_bytes()).decode()
+          bootstrap = "import base64,hashlib,os,sys,types\n"
+          bootstrap += f"proof=base64.b64decode('{proof}');controller=base64.b64decode('{controller}')\n"
+          bootstrap += "if hashlib.sha256(proof).hexdigest()!=os.environ['CLEANUP_PROOF_SHA256']: raise SystemExit('Trusted proof source mismatch')\n"
+          bootstrap += "if hashlib.sha256(controller).hexdigest()!=os.environ['CLEANUP_CONTROLLER_SHA256']: raise SystemExit('Trusted controller source mismatch')\n"
+          bootstrap += "module=types.ModuleType('owned_cleanup_proof');sys.modules[module.__name__]=module\n"
+          bootstrap += "exec(compile(proof,'owned-load-cleanup-proof.py','exec'),module.__dict__)\n"
+          bootstrap += "exec(compile(controller,'owned-load-cleanup.py','exec'),{'__name__':'__main__'})\n"
+          output = Path(os.environ['RUNNER_TEMP']) / 'owned-load-cleanup.sh'
+          output.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython3 - <<'OWNED_CLEANUP_PY'\n" + bootstrap + "OWNED_CLEANUP_PY\n")
+          output.chmod(0o600)
+          PY
+      - name: Prepare readonly state or reconcile an existing intent
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          CLEANUP_RUN_ID: ${{ github.run_id }}
+          CLEANUP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CLEANUP_PHASE: ${{ needs.plan.outputs.action == 'execute' && 'prepare' || 'reconcile' }}
+          CLEANUP_ACTION: ${{ needs.plan.outputs.action }}
+          CLEANUP_ACCEPTED_SHA: ${{ needs.plan.outputs.accepted_app_sha }}
+          CLEANUP_BACKEND_INPUT_HASH: ${{ needs.plan.outputs.backend_input_hash }}
+          CLEANUP_CATALOGUE: ${{ needs.plan.outputs.catalogue_base64 }}
+          CLEANUP_CATALOGUE_SHA256: ${{ needs.plan.outputs.catalogue_sha256 }}
+          CLEANUP_CONTROLLER_SHA256: ${{ needs.plan.outputs.controller_sha256 }}
+          CLEANUP_PROOF_SHA256: ${{ needs.plan.outputs.proof_sha256 }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 18m
+          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256
+          script_path: ${{ runner.temp }}/owned-load-cleanup.sh
+      - uses: actions/setup-node@v6
+        if: needs.plan.outputs.action == 'execute'
+        with:
+          node-version-file: .node-version
+      - name: Recheck current main and change quiescence immediately before DML
+        if: needs.plan.outputs.action == 'execute'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_REQUEST: ${{ inputs.request_id }}
+          CLEANUP_SUBDOMAIN: ${{ inputs.subdomain }}
+          CLEANUP_SCHOOL_ID: ${{ inputs.school_id }}
+          CLEANUP_API_URL: ${{ inputs.api_url }}
+          CLEANUP_OPTIONS: ${{ inputs.options }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: node scripts/lib/pipeline-owned-load-cleanup.mjs recheck
+      - name: Dispatch once, persist actual exit, reconcile and observe
+        if: needs.plan.outputs.action == 'execute'
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          CLEANUP_RUN_ID: ${{ github.run_id }}
+          CLEANUP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CLEANUP_PHASE: commit
+          CLEANUP_ACTION: ${{ needs.plan.outputs.action }}
+          CLEANUP_ACCEPTED_SHA: ${{ needs.plan.outputs.accepted_app_sha }}
+          CLEANUP_BACKEND_INPUT_HASH: ${{ needs.plan.outputs.backend_input_hash }}
+          CLEANUP_CATALOGUE: ${{ needs.plan.outputs.catalogue_base64 }}
+          CLEANUP_CATALOGUE_SHA256: ${{ needs.plan.outputs.catalogue_sha256 }}
+          CLEANUP_CONTROLLER_SHA256: ${{ needs.plan.outputs.controller_sha256 }}
+          CLEANUP_PROOF_SHA256: ${{ needs.plan.outputs.proof_sha256 }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 18m
+          envs: CLEANUP_RUN_ID,CLEANUP_RUN_ATTEMPT,CLEANUP_PHASE,CLEANUP_ACTION,CLEANUP_ACCEPTED_SHA,CLEANUP_BACKEND_INPUT_HASH,CLEANUP_CATALOGUE,CLEANUP_CATALOGUE_SHA256,CLEANUP_CONTROLLER_SHA256,CLEANUP_PROOF_SHA256
+          script_path: ${{ runner.temp }}/owned-load-cleanup.sh

@@ -2108,3 +2108,26 @@ This optional native recipe assumes no target-triple override; OS, architecture,
 libraries must fit the operator host. Verify the approved revision, lockfile and artifact digest
 after transfer. Debug/test builds do not establish release compatibility. The wrapper never starts
 a server or substitutes another migration engine; production rollout uses the prepared main image.
+
+
+### Owned load cleanup operation
+
+Run the focused owner suite while diagnosing cleanup transport, proof, workflow or journal changes:
+
+```bash
+node --test scripts/tests/pipeline-owned-load-cleanup.test.mjs
+```
+
+This suite owns the pure Python proof/controller tests and an actual disposable PostgreSQL 18.6
+owner/TLS transport fixture. It verifies runtime TEMP refusal, owner TEMP/function/DML access,
+verify-full rejection, inert input hashes, redirects/proxies, receipt and intent links, controller
+loss, no-dispatch abort, non-replay, full observation duration, and counter-floor preservation.
+Only its own Docker container/network are removed. It does not connect to production or generate
+load. The fixture has no production bypass in the executor CLI.
+
+The existing `./scripts/pipeline verify --scope deployment` includes this Node owner alongside
+all affected production workflow/interlock guards, ShellCheck/shfmt and actionlint. Do not run
+its Python children separately and repeat them without a changed input or diagnostic need. Record
+operational inputs/receipts separately from local verification results; Actions never certifies
+local tests. Production execution still requires the fixed reviewed bundle, fresh approval under
+the shared lock and the actual 300-second observation described in Operations.

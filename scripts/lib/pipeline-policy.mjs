@@ -14,7 +14,7 @@ export const suites = [
   ...components
 ];
 const control =
-  /^(?:\.github\/|scripts\/(?:pipeline|lib\/pipeline|lib\/schoolorbit-installer|schoolorbit-installer|render_nginx|discover_school|find_worker|smoke_test|prune_runtime|clamd_runtime|reconcile_r2)|podman-compose\.yml$|nginx-configs\/)/;
+  /^(?:\.github\/|scripts\/(?:pipeline|lib\/pipeline|lib\/owned-load-cleanup|lib\/schoolorbit-installer|schoolorbit-installer|render_nginx|discover_school|find_worker|smoke_test|prune_runtime|clamd_runtime|reconcile_r2)|podman-compose\.yml$|nginx-configs\/)/;
 const contracts =
   /^(?:contracts\/|scripts\/(?:generate-(?:api-contracts|permissions)|tests\/generate-))/;
 const testOnly = (file) =>

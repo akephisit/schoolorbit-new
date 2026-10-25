@@ -41,18 +41,32 @@ def directory(path, private=False):
     if private and (stat.S_IMODE(st.st_mode) != 0o700 or st.st_uid != os.getuid()):
         refuse()
 
-def record(path):
+def record(path, protocol=True):
     st = path.lstat()
     if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) != 0o600 or st.st_size > 2 * 1024 * 1024:
         refuse()
     raw = path.read_bytes()
     value = json.loads(raw)
-    if not isinstance(value, dict) or type(value.get('schemaVersion')) is not int or value['schemaVersion'] != 1 or value.get('operationId') != operation:
+    if not isinstance(value, dict) or (protocol and (type(value.get('schemaVersion')) is not int or value['schemaVersion'] != 1 or value.get('operationId') != operation)):
         refuse()
     return value, hashlib.sha256(raw).hexdigest()
 
 def integer(value, minimum):
     return type(value) is int and value >= minimum
+
+def dead_controller(identity):
+    if not isinstance(identity, dict) or not integer(identity.get('pid'), 1) or not integer(identity.get('startTicks'), 1) or not re.fullmatch('[0-9a-f-]{36}', identity.get('bootId', '')):
+        refuse()
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    if boot != identity['bootId']:
+        return True
+    try:
+        raw = Path('/proc/' + str(identity['pid']) + '/stat').read_text()
+    except FileNotFoundError:
+        return True
+    fields = raw.rsplit(')', 1)[1].split()
+    return int(fields[19]) != identity['startTicks']
+
 
 try:
     for ancestor in reversed(root.parents):
@@ -62,6 +76,30 @@ try:
         directory(root, True)
         if exists(root / 'active'):
             refuse()
+        aborted = root / 'aborted'
+        if exists(aborted):
+            directory(aborted, True)
+            if len(list(aborted.iterdir())) > 100:
+                refuse()
+            for path in aborted.iterdir():
+                if not re.fullmatch('[0-9]+-[0-9]+\.json', path.name):
+                    refuse()
+                receipt, _ = record(path)
+                run = path.stem
+                origin = root / 'staging' / run
+                directory(root / 'staging', True)
+                directory(origin, True)
+                reservation, reserved_hash = record(origin / 'aborted-reservation.json')
+                if receipt.get('status') != 'aborted-before-dispatch' or receipt.get('run') != run or receipt.get('reservationSha256') != reserved_hash or receipt.get('noDispatchIntent') is not True or reservation.get('status') not in ['prepared', 'reserved'] or reservation.get('run') != run or receipt.get('inputSha256') != inputs or reservation.get('inputSha256') != inputs or not dead_controller(reservation.get('controller')):
+                    refuse()
+                for key in ['catalogueSha256', 'controllerSha256', 'proofSha256']:
+                    if not re.fullmatch('[0-9a-f]{64}', receipt.get(key, '')) or receipt[key] != reservation.get(key):
+                        refuse()
+                archive = origin / 'aborted-journal'
+                if exists(archive):
+                    directory(archive, True)
+                    if any(p.name not in ['actual-binding.json', 'approved-snapshot.json'] for p in archive.iterdir()):
+                        refuse()
         operations = root / 'operations'
         if exists(operations):
             directory(operations, True)
@@ -77,6 +115,7 @@ try:
                     commit, commit_hash = record(journal / 'commit-receipt.json')
                     watch, watch_hash = record(journal / 'watch-receipt.json')
                     completed, _ = record(journal / 'completed.json')
+                    approved, approved_hash = record(journal / 'approved-snapshot.json', False)
                     backend = binding.get('backend', {})
                     if binding.get('tenantId') != '0e297ca4-0809-4aab-a03f-1915045257b8' or binding.get('subdomain') != 'snwsb' or type(binding.get('databaseSchemaVersion')) is not int or binding['databaseSchemaVersion'] != 138 or backend.get('image') != image:
                         refuse()
@@ -87,7 +126,7 @@ try:
                     if started < cutoff:
                         refuse()
                     for item in [intent, exited, commit, watch, completed]:
-                        if item.get('inputSha256') != inputs or item.get('actualBindingSha256') != binding_hash:
+                        if item.get('inputSha256') != inputs or item.get('actualBindingSha256') != binding_hash or item.get('approvedSnapshotSha256') != approved_hash:
                             refuse()
                     if intent.get('status') != 'dispatching' or exited.get('status') != 'exited' or type(exited.get('exitCode')) is not int or exited['exitCode'] != 0:
                         refuse()
@@ -98,7 +137,7 @@ try:
                     if completed.get('status') != 'completed' or not integer(completed.get('watchSeconds'), 300) or completed.get('dispatchIntentSha256') != intent_hash or completed.get('commitReceiptSha256') != commit_hash or completed.get('watchReceiptSha256') != watch_hash or completed.get('watchSeconds') != watch['watchSeconds']:
                         refuse()
     print('Owned cleanup interlock is clear.')
-except (OSError, ValueError, TypeError, KeyError, AttributeError):
+except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
     print('Production mutation refused: owned cleanup requires reconciliation.', file=sys.stderr)
     sys.exit(78)
 PY

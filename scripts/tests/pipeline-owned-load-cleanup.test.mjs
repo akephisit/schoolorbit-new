@@ -6,6 +6,8 @@ import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 
+import {catalogue, verifyInputs, validateDispatch, relatedFiles, requireQuiescentBeforeDispatch} from '../lib/pipeline-owned-load-cleanup.mjs';
+
 const repo = path.resolve(import.meta.dirname, '../..');
 const operation = 'cleanup-3962938a-54d0fe6f-73f5-49be-908f-4ec14aee486b';
 const guard = path.join(repo, 'scripts/lib/pipeline-remote/owned-load-cleanup-interlock.sh');
@@ -53,7 +55,8 @@ function completedChain(f, watchOverrides = {}) {
   };
   const binding = put('actual-binding.json', {subdomain: 'snwsb', acceptedRelease: '7'.repeat(40), tenantId: '0e297ca4-0809-4aab-a03f-1915045257b8', databaseSchemaVersion: 138,
     backend: {containerId: 'a'.repeat(64), pid: 123, restartCount: 0, startedAt: '2026-10-25T10:00:00Z', image: 'sha256:f983b8e4593e2a7b480b13643c9778e7b79a55c6fa7eb72f6987a8562fd89043'}});
-  const common = {inputSha256, actualBindingSha256: binding};
+  const approved = put('approved-snapshot.json', {outside: []});
+  const common = {inputSha256, actualBindingSha256: binding, approvedSnapshotSha256: approved};
   const intent = put('dispatch-intent.json', {...common, status: 'dispatching'});
   const exited = put('postgres-exit.json', {...common, status: 'exited', exitCode: 0});
   const commit = put('commit-receipt.json', {...common, status: 'committed', postgresExitSha256: exited, postCommitVerified: true});
@@ -139,4 +142,75 @@ test('every public and callable production mutator observes the guard before its
   const action = read('.github/actions/owned-cleanup-interlock/action.yml');
   assert.match(action, /script_path: scripts\/lib\/pipeline-remote\/owned-load-cleanup-interlock\.sh/);
   assert.doesNotMatch(action, /scp-action|upload-artifact/);
+});
+
+
+test('cleanup dispatch requires explicit fixed selectors and inert typed options', () => {
+  const request = {request: catalogue.operationId, subdomain: catalogue.subdomain, schoolId: '', apiUrl: catalogue.apiOrigin, options: '{}'};
+  assert.equal(validateDispatch(request).action, 'execute');
+  assert.equal(validateDispatch({...request, options: '{"action":"reconcile"}'}).action, 'reconcile');
+  for (const change of [{subdomain: 'sandbox'}, {schoolId: 'another'}, {apiUrl: 'https://outside.invalid'}, {request: ''}, {options: '{"sql":"DELETE"}'}, {options: '{"action":"retry"}'}, {options: '[]'}]) {
+    assert.throws(() => validateDispatch({...request, ...change}));
+  }
+});
+
+test('related application and cleanup owner changes fence DML while docs remain independent', () => {
+  for (const file of ['frontend-school/src/a.ts', 'frontend-admin/src/a.ts', 'backend-school/src/a.rs', 'backend-admin/src/a.rs', 'contracts/a.json', 'scripts/lib/owned-load-cleanup-proof.py', 'scripts/lib/owned-load-cleanup/catalogue.json', '.github/workflows/operations.yml']) {
+    assert.ok(relatedFiles([file]), file);
+    assert.throws(() => requireQuiescentBeforeDispatch([[file]], [], '1'));
+  }
+  requireQuiescentBeforeDispatch([['docs/TESTING.md', 'backend-school/tests/catalog.rs']], [], '1');
+  for (const status of ['queued', 'in_progress', 'waiting', 'pending', 'requested']) {
+    assert.throws(() => requireQuiescentBeforeDispatch([], [{id: 2, head_branch: 'main', path: '.github/workflows/pipeline.yml', status}], '1'));
+  }
+});
+
+test('only the outer Operations caller owns cleanup concurrency', () => {
+  const outer = read('.github/workflows/operations.yml');
+  const child = read('.github/workflows/owned-load-cleanup.yml');
+  const owner = outer.slice(outer.indexOf('  owned-load-cleanup:'), outer.indexOf('  api-dns:'));
+  assert.match(owner, /group: schoolorbit-production/);
+  assert.match(owner, /cancel-in-progress: false/);
+  assert.doesNotMatch(child, /concurrency:/);
+  assert.match(child, /CLEANUP_PHASE: commit/);
+  assert.ok(child.indexOf('Recheck current main and change quiescence') < child.indexOf('Dispatch once, persist actual exit'));
+  assert.doesNotMatch(child, /assert hashlib/);
+});
+
+test('local deployment verification owns the pure proof and controller Python cases', () => {
+  for (const file of ['owned-load-cleanup-proof.test.py', 'owned-load-cleanup-controller.test.py', 'owned-load-cleanup-transport.test.py']) {
+    execFileSync('python3', ['-B', path.join(repo, 'scripts/tests', file)], {stdio: 'pipe'});
+  }
+});
+
+
+test('inert staging verifies exact files without accepting executables or symlinks', t => {
+  const f = fixture(t);
+  const bundle = path.join(f.stack, 'bundle'); mkdirSync(bundle, {mode: 0o700});
+  writeFileSync(path.join(bundle, 'scope.json'), '{}', {mode: 0o600});
+  const expected = {files: {'scope.json': createHash('sha256').update('{}').digest('hex')}};
+  verifyInputs(bundle, expected);
+  writeFileSync(path.join(bundle, 'run.py'), 'wrong', {mode: 0o600});
+  assert.throws(() => verifyInputs(bundle, expected));
+  rmSync(path.join(bundle, 'run.py')); rmSync(path.join(bundle, 'scope.json'));
+  symlinkSync('/etc/passwd', path.join(bundle, 'scope.json'));
+  assert.throws(() => verifyInputs(bundle, expected));
+});
+
+test('a validated no-dispatch abort is distinct from successful cleanup', t => {
+  const f = fixture(t); const run = '123-1';
+  const staging = path.join(f.state, 'staging'); const origin = path.join(staging, run);
+  mkdirSync(origin, {recursive: true, mode: 0o700});
+  const aborted = path.join(f.state, 'aborted'); mkdirSync(aborted, {mode: 0o700});
+  const reservation = {schemaVersion: 1, operationId: operation, inputSha256: catalogue.inputSha256,
+    status: 'prepared', run, controller: {pid: 2147483647, startTicks: 1, bootId: readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()},
+    catalogueSha256: 'a'.repeat(64), controllerSha256: 'b'.repeat(64), proofSha256: 'c'.repeat(64)};
+  const raw = JSON.stringify(reservation);
+  writeFileSync(path.join(origin, 'aborted-reservation.json'), raw, {mode: 0o600});
+  const receipt = {...reservation, status: 'aborted-before-dispatch', reservationSha256: createHash('sha256').update(raw).digest('hex'), noDispatchIntent: true};
+  writeFileSync(path.join(aborted, `${run}.json`), JSON.stringify(receipt), {mode: 0o600});
+  assert.equal(f.run().status, 0);
+  assert.equal(readFileSync(path.join(aborted, `${run}.json`), 'utf8').includes('exitCode'), false);
+  writeFileSync(path.join(origin, 'aborted-reservation.json'), '{}');
+  assert.equal(f.run().status, 78);
 });
