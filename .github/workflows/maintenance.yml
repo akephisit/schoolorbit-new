@@ -47,6 +47,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Refuse an active or unresolved owned cleanup
+        uses: ./.github/actions/owned-cleanup-interlock
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
