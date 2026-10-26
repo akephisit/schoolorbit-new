@@ -1,16 +1,23 @@
 <script lang="ts">
+	import type { CurriculumQuickAction } from '#lib/academic-core/curriculum-quick-actions.js';
 	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
 	import CurriculumStructureMatrix from '#lib/components/academic-core/CurriculumStructureMatrix.svelte';
 	let {
 		workspace,
 		studyProgramId,
 		gradeLevelId,
-		termSlotIds
+		termSlotIds,
+		canManage = false,
+		onQuickAction,
+		busy = false
 	}: {
 		workspace: CurriculumStructureWorkspace;
 		studyProgramId: string;
 		gradeLevelId: string;
 		termSlotIds?: readonly string[];
+		canManage?: boolean;
+		onQuickAction?: (action: CurriculumQuickAction) => void;
+		busy?: boolean;
 	} = $props();
 </script>
 
@@ -23,5 +30,13 @@
 		</h2>
 		<p class="text-sm text-muted-foreground">{workspace.level.editionName}</p>
 	</header>
-	<CurriculumStructureMatrix {workspace} {gradeLevelId} {termSlotIds} {studyProgramId} />
+	<CurriculumStructureMatrix
+		{canManage}
+		{onQuickAction}
+		{busy}
+		{workspace}
+		{gradeLevelId}
+		{termSlotIds}
+		{studyProgramId}
+	/>
 </article>

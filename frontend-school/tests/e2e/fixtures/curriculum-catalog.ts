@@ -306,6 +306,8 @@ export async function installCurriculumCatalog(
 					...fixture.workspace.requirements.filter((item) => item.studyProgramId !== programId),
 					...requirements
 				];
+				const program = fixture.workspace.programs.find((item) => item.id === programId)!;
+				program.rowVersion++;
 				return reply(route, fixture.workspace);
 			}
 			if (

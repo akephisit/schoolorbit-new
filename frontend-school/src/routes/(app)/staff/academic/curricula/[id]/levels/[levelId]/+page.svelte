@@ -1,4 +1,11 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import CurriculumQuickActionForm from '#lib/components/academic-core/CurriculumQuickActionForm.svelte';
+	import {
+		captureCurriculumQuickAction,
+		type CurriculumQuickAction,
+		type CurriculumQuickActionBaseline
+	} from '#lib/academic-core/curriculum-quick-actions.js';
 	import CurriculumProgramCreateDialog from '#lib/components/academic-core/CurriculumProgramCreateDialog.svelte';
 	import CurriculumDeliveryAlignmentPanel from '#lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte';
 	import {
@@ -51,6 +58,10 @@
 	let loading = $state(true);
 	let error = $state('');
 	let editorOpen = $state(false);
+	let quickBaseline = $state.raw<CurriculumQuickActionBaseline | null>(null);
+	let programWriting = $state(false);
+	let quickReturnFocus: HTMLElement | null = null;
+	const quickOptionsRequest = new LatestRequest();
 	let options = $state.raw<CurriculumManagementOptions | null>(null);
 	let editorLoading = $state(false);
 	let viewMode = $state<'comparison' | 'document'>('comparison');
@@ -71,6 +82,15 @@
 	let canManage = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && !!workspace?.level.draftId
 	);
+	$effect(() => {
+		if (!canManage) {
+			quickOptionsRequest.abort();
+			editorRequest.abort();
+			quickBaseline = null;
+			editorOpen = false;
+			editorLoading = false;
+		}
+	});
 	function apply(result: CurriculumStructureWorkspace) {
 		const previousTerms = workspace?.termSlots.map((term) => term.id) ?? [];
 		if (!termsInitialized) {
@@ -108,6 +128,8 @@
 			alignmentLoading = !!ap;
 			studyProgramId = data.studyProgramId;
 			editorOpen = false;
+			quickBaseline = null;
+			quickReturnFocus = null;
 			editorLoading = false;
 			loading = true;
 			error = '';
@@ -133,6 +155,7 @@
 			current = false;
 			workspaceRequest.abort();
 			editorRequest.abort();
+			quickOptionsRequest.abort();
 			alignmentRequest.abort();
 			abortEditorReviews();
 		};
@@ -168,7 +191,7 @@
 		}
 	}
 	async function edit() {
-		if (!canManage) return;
+		if (!canManage || quickBaseline || editorOpen || programWriting) return;
 		abortEditorReviews();
 		const levelId = data.levelId;
 		const { revision, signal } = editorRequest.begin();
@@ -176,7 +199,12 @@
 		error = '';
 		try {
 			const result = await getCurriculumManagementOptions(levelId, { signal });
-			if (editorRequest.isCurrent(revision) && levelId === data.levelId) {
+			if (
+				editorRequest.isCurrent(revision) &&
+				levelId === data.levelId &&
+				canManage &&
+				!quickBaseline
+			) {
 				options = result;
 				editorOpen = true;
 			}
@@ -187,25 +215,113 @@
 			if (editorRequest.isCurrent(revision)) editorLoading = false;
 		}
 	}
+	function openQuickAction(action: CurriculumQuickAction) {
+		if (!workspace || !canManage || editorOpen || editorLoading || quickBaseline || programWriting)
+			return;
+		const baseline = captureCurriculumQuickAction(workspace, action, canManage);
+		if (!baseline) return;
+		quickReturnFocus =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		quickBaseline = baseline;
+	}
+	function closeQuickAction() {
+		const context = quickBaseline?.action.context;
+		quickOptionsRequest.abort();
+		quickBaseline = null;
+		void tick().then(() => {
+			if (quickReturnFocus?.isConnected) quickReturnFocus.focus();
+			else if (context)
+				document
+					.querySelector<HTMLElement>(
+						`[data-term-header][data-program-id="${context.studyProgramId}"][data-grade-id="${context.gradeLevelId}"][data-term-id="${context.termSlotId}"]`
+					)
+					?.focus();
+			quickReturnFocus = null;
+		});
+	}
+	async function loadQuickOptions() {
+		const baseline = quickBaseline;
+		if (!baseline || !canManage) throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
+		const { revision, signal } = quickOptionsRequest.begin();
+		const result = await getCurriculumManagementOptions(baseline.levelId, { signal });
+		if (
+			!quickOptionsRequest.isCurrent(revision) ||
+			quickBaseline !== baseline ||
+			workspace?.level.draftId !== baseline.draftId ||
+			data.levelId !== baseline.levelId ||
+			!canManage
+		)
+			throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
+		return result;
+	}
+	async function saveQuickAction(requirements: CurriculumStructureRequirementInput[]) {
+		const baseline = quickBaseline;
+		if (!baseline) throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
+		await saveStructure(
+			baseline.action.context.studyProgramId,
+			baseline.rowVersion,
+			requirements,
+			baseline
+		);
+	}
+	async function latestQuickContext() {
+		const baseline = quickBaseline;
+		if (!baseline) return;
+		const { revision, signal } = workspaceRequest.begin();
+		const initialRevision = mutationRevision;
+		const result = await getCurriculumStructureWorkspace(baseline.levelId, {
+			signal,
+			...data.view
+		});
+		if (
+			!workspaceRequest.isCurrent(revision) ||
+			quickBaseline !== baseline ||
+			mutationRevision !== initialRevision ||
+			data.levelId !== baseline.levelId ||
+			result.level.editionId !== data.editionId
+		)
+			throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
+		mutationRevision++;
+		apply(result);
+		closeQuickAction();
+	}
 	async function saveStructure(
 		programId: string,
 		rowVersion: number,
-		requirements: CurriculumStructureRequirementInput[]
+		requirements: CurriculumStructureRequirementInput[],
+		baseline?: CurriculumQuickActionBaseline
 	) {
-		if (!workspace) return;
-		const draftId = workspace.level.draftId;
-		if (!draftId) return;
+		if (!workspace || !canManage || programWriting)
+			throw new Error('ไม่สามารถบันทึกโครงสร้างในขณะนี้');
 		const selected = workspace.level;
+		const draftId = baseline?.draftId ?? selected.draftId;
+		if (
+			!draftId ||
+			(baseline && (baseline.levelId !== data.levelId || selected.draftId !== draftId))
+		)
+			throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
 		abortEditorReviews();
-		const result = await replaceCurriculumStructure(programId, {
-			rowVersion,
-			requirements,
-			draftId
-		});
-		if (data.levelId !== selected.id || workspace?.level.draftId !== selected.draftId) return;
-		mutationRevision++;
-		apply(result);
+		programWriting = true;
+		try {
+			const result = await replaceCurriculumStructure(programId, {
+				rowVersion,
+				requirements,
+				draftId
+			});
+			if (
+				data.levelId !== selected.id ||
+				workspace?.level.draftId !== draftId ||
+				result.level.id !== selected.id ||
+				result.level.draftId !== draftId
+			)
+				throw new DOMException('บริบทเปลี่ยนไปแล้ว', 'AbortError');
+			mutationRevision++;
+			apply(result);
+		} finally {
+			programWriting = false;
+		}
 	}
+
 	async function saveSlots(rowVersion: number, slots: CurriculumTermSlotInput[]) {
 		if (!workspace) return;
 		const draftId = workspace.level.draftId;
@@ -442,12 +558,23 @@
 					bind:termSlotIds
 					{canManage}
 					onEdit={edit}
-					busy={editorLoading}
-				/>{#if viewMode === 'comparison'}<CurriculumProgramComparison
+					busy={editorLoading || !!quickBaseline || programWriting}
+				/>
+				{#if canManage}<p class="text-xs text-muted-foreground">
+						คลิกขวาที่หัวภาคเรียน หมวด หรือรายการเพื่อจัดการ · ใช้ Shift+F10 หรือปุ่มเมนูบนแป้นพิมพ์
+						· อุปกรณ์สัมผัสใช้ปุ่ม ⋯
+					</p>{/if}
+				{#if viewMode === 'comparison'}<CurriculumProgramComparison
+						{canManage}
+						onQuickAction={openQuickAction}
+						busy={editorOpen || editorLoading || !!quickBaseline || programWriting}
 						{workspace}
 						{gradeLevelId}
 						{termSlotIds}
 					/>{:else}<CurriculumTermDocument
+						{canManage}
+						onQuickAction={openQuickAction}
+						busy={editorOpen || editorLoading || !!quickBaseline || programWriting}
 						{workspace}
 						{gradeLevelId}
 						{studyProgramId}
@@ -475,4 +602,12 @@
 		onSaveCreditCriteria={saveCreditCriteria}
 		onReviewCreditCriteria={reviewCreditCriteria}
 		onClose={closeEditor}
+	/>{/if}
+
+{#if quickBaseline}<CurriculumQuickActionForm
+		baseline={quickBaseline}
+		onLoadOptions={loadQuickOptions}
+		onSave={saveQuickAction}
+		onClose={closeQuickAction}
+		onLatest={latestQuickContext}
 	/>{/if}

@@ -72,8 +72,12 @@ export function captureCurriculumQuickAction(
 				)
 			: undefined;
 	if ('requirementId' in action && !target) return null;
+	const snapshotAction: CurriculumQuickAction = {
+		...action,
+		context: { studyProgramId, gradeLevelId, termSlotId, section: action.context.section }
+	};
 	return structuredClone({
-		action,
+		action: snapshotAction,
 		levelId: workspace.level.id,
 		draftId: workspace.level.draftId,
 		rowVersion: program.rowVersion,

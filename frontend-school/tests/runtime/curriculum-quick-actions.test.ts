@@ -126,3 +126,15 @@ test('add scopes current eligible selections and retains pinned existing course 
 		programRequirementInputs(stageCurriculumRequirements(workspace.requirements), ids.program)
 	);
 });
+
+test('menu state proxies are converted to plain action context before snapshot cloning', () => {
+	const workspace = fixture();
+	const action = new Proxy(
+		{ kind: 'edit' as const, context: new Proxy({ ...context }, {}), requirementId: 'duplicate' },
+		{}
+	);
+	const baseline = captureCurriculumQuickAction(workspace, action, true)!;
+	assert.equal(baseline.action.context.studyProgramId, context.studyProgramId);
+	assert.equal(baseline.target?.id, 'duplicate');
+	assert.doesNotThrow(() => structuredClone(baseline));
+});
