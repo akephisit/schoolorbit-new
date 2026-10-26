@@ -527,7 +527,7 @@
 		outline: 2px solid var(--ring);
 		outline-offset: -2px;
 	}
-	:global([data-quick-target][data-selected='true']) {
+	.matrix-viewport :global([data-quick-target][data-selected='true']) {
 		background: color-mix(in srgb, var(--primary) 12%, var(--card));
 	}
 	:global(.quick-touch-action) {

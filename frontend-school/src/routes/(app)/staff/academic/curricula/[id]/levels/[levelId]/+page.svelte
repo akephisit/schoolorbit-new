@@ -294,6 +294,7 @@
 		if (!workspace || !canManage || programWriting)
 			throw new Error('ไม่สามารถบันทึกโครงสร้างในขณะนี้');
 		const selected = workspace.level;
+		const structureContext = data.structure;
 		const draftId = baseline?.draftId ?? selected.draftId;
 		if (
 			!draftId ||
@@ -309,6 +310,7 @@
 				draftId
 			});
 			if (
+				data.structure !== structureContext ||
 				data.levelId !== selected.id ||
 				workspace?.level.draftId !== draftId ||
 				result.level.id !== selected.id ||
