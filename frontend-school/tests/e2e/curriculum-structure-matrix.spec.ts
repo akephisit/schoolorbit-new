@@ -397,7 +397,12 @@ test('settings and atomic program order save preserve selections, requirement ki
 	const oldRow = staged
 		.getByRole('row')
 		.filter({ has: page.getByRole('button', { name: 'เก่า', exact: true }) });
-	await oldRow.getByRole('button', { name: 'บังคับ', exact: true }).click();
+	const requirementKind = oldRow.getByRole('button', {
+		name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 1',
+		exact: true
+	});
+	await expect(requirementKind).toHaveText('บังคับ');
+	await requirementKind.click();
 	await page.getByRole('option', { name: 'เลือก', exact: true }).click();
 	const pendingActivity = editor.getByRole('checkbox', {
 		name: /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/
@@ -427,7 +432,7 @@ test('settings and atomic program order save preserve selections, requirement ki
 		'แผนการเรียนพื้นฐาน'
 	);
 	await expect(pendingActivity).toBeChecked();
-	await expect(oldRow.getByRole('button', { name: 'เลือก', exact: true })).toBeVisible();
+	await expect(requirementKind).toHaveText('เลือก');
 	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
 	await editor.getByLabel('ชื่อภาคเรียน', { exact: true }).first().fill('ภาคเรียนที่ 1');
 	await editor.getByRole('button', { name: 'กลับไปจัดรายวิชา', exact: true }).click();
@@ -554,7 +559,12 @@ test('successful ordering never rebases a staged structure over an unseen concur
 	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
 	const staged = editor.getByRole('region', { name: 'รายการในหลักสูตร' });
 	const course = staged.getByRole('row').filter({ hasText: 'ค21101' });
-	await course.getByRole('button', { name: 'บังคับ', exact: true }).click();
+	const requirementKind = course.getByRole('button', {
+		name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 1',
+		exact: true
+	});
+	await expect(requirementKind).toHaveText('บังคับ');
+	await requirementKind.click();
 	await page.getByRole('option', { name: 'เลือก', exact: true }).click();
 	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
 	await editor.getByRole('button', { name: 'เลื่อนแผน 2 ขึ้น', exact: true }).click();
@@ -563,7 +573,7 @@ test('successful ordering never rebases a staged structure over an unseen concur
 	await editor.getByRole('button', { name: 'กลับไปจัดรายวิชา', exact: true }).click();
 	await editor.getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	await expect(editor.getByRole('alert')).toContainText('โครงสร้างแผนเปลี่ยนไปแล้ว');
-	await expect(course.getByRole('button', { name: 'เลือก', exact: true })).toBeVisible();
+	await expect(requirementKind).toHaveText('เลือก');
 	expect(state.writes).toHaveLength(2);
 	expect(state.writes[1].body).toMatchObject({ rowVersion: 1 });
 	expect(

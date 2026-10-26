@@ -14,6 +14,7 @@ function fixture() {
 	workspace.level.draftId = 'draft';
 	const row = workspace.requirements[0];
 	context.termSlotId = row.termSlotId;
+	// Same-pin duplicates are defensive helper inputs, not reachable persisted requirements.
 	workspace.requirements.push(
 		{ ...row, id: 'duplicate', displayOrder: 9 },
 		{ ...row, id: 'other-grade', gradeLevel: { ...row.gradeLevel, id: 'g2' }, termSlotId: 't2' },
@@ -22,7 +23,7 @@ function fixture() {
 	workspace.programs[0].rowVersion = 8;
 	return workspace;
 }
-test('editing a clicked legacy duplicate preserves other grades, terms, pinned versions and order', () => {
+test('defensive same-pin helper input edits preserve other grades, terms, pins and order', () => {
 	const workspace = fixture();
 	const baseline = captureCurriculumQuickAction(
 		workspace,
@@ -45,7 +46,7 @@ test('editing a clicked legacy duplicate preserves other grades, terms, pinned v
 	assert.equal(rows[2].termSlotId, 't2');
 	assert.equal(workspace.requirements[1].requirementKind, 'required');
 });
-test('remove resolves exact ID and snapshot is isolated from subsequent workspace changes', () => {
+test('defensive same-pin helper removal resolves exact ID and isolates its snapshot', () => {
 	const workspace = fixture();
 	const baseline = captureCurriculumQuickAction(
 		workspace,

@@ -412,19 +412,20 @@ test.describe('touch and panel layouts', () => {
 			});
 });
 
-test('same-version legacy rows are edited and removed by clicked identity rather than catalog tuple', async ({
+test('legacy pinned revisions with identical labels and order are edited and removed by clicked identity', async ({
 	page
 }) => {
 	const fixture = curriculumCatalogFixture();
 	fixture.workspace.requirements.push({
 		...fixture.original,
-		id: 'same-pin-second-row',
-		displayOrder: 9,
-		requirementKind: 'elective'
+		id: 'same-presentation-second-row',
+		catalogVersionId: currentSubjectVersionId,
+		versionNo: 2,
+		hasNewerCurrentVersion: false
 	});
 	const state = await installCurriculumCatalog(page, fixture);
 	await page.goto(curriculumCatalogPath);
-	await menu(page, requirement(page, 'same-pin-second-row'));
+	await menu(page, requirement(page, 'same-presentation-second-row'));
 	await page.getByRole('menuitem', { name: 'แก้ไขเงื่อนไข…', exact: true }).click();
 	const edit = page.getByRole('dialog', { name: 'แก้ไขเงื่อนไข', exact: true });
 	await edit.getByRole('button', { name: 'เงื่อนไข', exact: true }).click();
@@ -433,9 +434,15 @@ test('same-version legacy rows are edited and removed by clicked identity rather
 	await expect(edit).toBeHidden();
 	expect(body(state).requirements).toEqual([
 		input(fixture.original),
-		{ ...input(fixture.original), displayOrder: 9, requirementKind: 'optional' }
+		{
+			...input(fixture.original),
+			catalogVersionId: currentSubjectVersionId,
+			requirementKind: 'optional'
+		}
 	]);
-	const second = fixture.workspace.requirements.find((row) => row.displayOrder === 9)!;
+	const second = fixture.workspace.requirements.find(
+		(row) => row.catalogVersionId === currentSubjectVersionId
+	)!;
 	await menu(page, requirement(page, second.id));
 	await page.getByRole('menuitem', { name: 'นำรายการนี้ออก…', exact: true }).click();
 	await page

@@ -26,7 +26,7 @@ async function selectContext(
 	option: string
 ) {
 	await editor(page)
-		.getByRole('combobox', { name: `${field}ที่จะจัดโครงสร้าง`, exact: true })
+		.getByRole('button', { name: `${field}ที่จะจัดโครงสร้าง`, exact: true })
 		.click();
 	await page.getByRole('option', { name: option, exact: true }).click();
 }
@@ -46,7 +46,7 @@ test('only current v2 is selectable for new requirements in M1 through M3, with 
 	await expect(picker(page).getByRole('checkbox', { name: /^เลือก ค21101 / })).toHaveCount(1);
 	await expect(picker(page)).not.toContainText(/\bv\d+\b/);
 	await expect(
-		picker(page).getByRole('combobox', { name: 'เงื่อนไขของรายการที่จะเพิ่ม', exact: true })
+		picker(page).getByRole('button', { name: 'เงื่อนไขของรายการที่จะเพิ่ม', exact: true })
 	).toHaveText('บังคับ');
 	await expect(picker(page)).not.toContainText('รายวิชารุ่นที่ถูกแทนที่');
 	await expect(picker(page)).toContainText('รายวิชาที่เริ่มใช้ล่าสุด');
@@ -133,7 +133,7 @@ test('legacy v1 and v2 duplicates remain independently editable and are not sile
 	await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว');
 	const oldRequirementKind = rows(page)
 		.filter({ has: page.getByRole('button', { name: 'เก่า', exact: true }) })
-		.getByRole('combobox', {
+		.getByRole('button', {
 			name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 1',
 			exact: true
 		});
@@ -142,7 +142,7 @@ test('legacy v1 and v2 duplicates remain independently editable and are not sile
 	await page.getByRole('option', { name: 'เลือก', exact: true }).click();
 	const currentRequirementKind = rows(page)
 		.filter({ hasNot: page.getByRole('button', { name: 'เก่า', exact: true }) })
-		.getByRole('combobox', {
+		.getByRole('button', {
 			name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 2',
 			exact: true
 		});
@@ -301,7 +301,7 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 		)
 		.toEqual([ids.catalogVersion]);
 	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
-	await page.getByRole('combobox', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
+	await page.getByRole('button', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
 	await page.getByRole('option', { name: 'แผนคัดลอก', exact: true }).click();
 	await expect(
 		page
