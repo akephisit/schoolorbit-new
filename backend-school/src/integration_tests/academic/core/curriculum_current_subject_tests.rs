@@ -1005,17 +1005,38 @@ async fn subject_zero_workload_keeps_negative_missing_and_credit_guards() {
 
 #[tokio::test]
 async fn catalog_grade_snapshot_existing_empty_pins_resave_without_new_admission() {
-    let f = fixture("catalog_grade_snapshot_existing_pins").await;
+    let mut f = fixture("catalog_grade_snapshot_existing_pins").await;
     // A sanitized pre-fix published subject retains its immutable empty scope.
     sqlx::query("DELETE FROM subject_version_grade_levels WHERE subject_id=$1")
-        .bind(f.v1.id).execute(&f.pool).await.unwrap();
+        .bind(f.v1.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     seed_existing(&f, f.v1.id).await;
-    let activity = catalog::create_activity(&f.pool, CreateCatalogActivityRequest { activity_type: "guidance".into() }).await.unwrap();
-    let activity = catalog::create_activity_version(&f.pool, activity.id, CreateActivityVersionRequest {
-        name: "กิจกรรมประวัติ".into(), description: None, hours_per_week: "1.00".into(),
-        hours_per_term: Some("20.00".into()), scheduling_mode: "synchronized".into(),
-        effective_from: catalog::subject_catalog_today(), term_code: None, grade_level_ids: vec![f.grade],
-    }).await.unwrap();
+    let activity = catalog::create_activity(
+        &f.pool,
+        CreateCatalogActivityRequest {
+            activity_type: "guidance".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let activity = catalog::create_activity_version(
+        &f.pool,
+        activity.id,
+        CreateActivityVersionRequest {
+            name: "กิจกรรมประวัติ".into(),
+            description: None,
+            hours_per_week: "1.00".into(),
+            hours_per_term: Some("20.00".into()),
+            scheduling_mode: "synchronized".into(),
+            effective_from: catalog::subject_catalog_today(),
+            term_code: None,
+            grade_level_ids: vec![f.grade],
+        },
+    )
+    .await
+    .unwrap();
     sqlx::query("UPDATE activity_versions SET grade_level_ids='[]',status='published',published_at=now() WHERE id=$1")
         .bind(activity.id).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO curriculum_activity_requirements(id,curriculum_level_id,study_program_id,activity_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'required',2)")
@@ -1023,18 +1044,126 @@ async fn catalog_grade_snapshot_existing_empty_pins_resave_without_new_admission
     let mut event = row(&f, activity.id);
     event.resource_kind = RequirementResourceKind::Activity;
     event.display_order = 2;
-    save(&f, vec![row(&f, f.v1.id), event.clone()]).await.unwrap();
-    assert!(catalog::get_subject_version(&f.pool, f.v1.id).await.unwrap().grade_level_ids.is_empty());
-    assert!(catalog::get_activity_version(&f.pool, activity.id).await.unwrap().grade_level_ids.is_empty());
-    let other_grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2").fetch_one(&f.pool).await.unwrap();
+    save(&f, vec![row(&f, f.v1.id), event.clone()])
+        .await
+        .unwrap();
+    assert!(catalog::get_subject_version(&f.pool, f.v1.id)
+        .await
+        .unwrap()
+        .grade_level_ids
+        .is_empty());
+    assert!(catalog::get_activity_version(&f.pool, activity.id)
+        .await
+        .unwrap()
+        .grade_level_ids
+        .is_empty());
+    let other_grade: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
     let mut new_course = row(&f, f.v1.id);
     new_course.grade_level_id = other_grade;
     let before = snapshot(&f).await;
-    assert!(save(&f, vec![row(&f, f.v1.id), new_course, event.clone()]).await.is_err());
+    assert!(save(&f, vec![row(&f, f.v1.id), new_course, event.clone()])
+        .await
+        .is_err());
     assert_eq!(before, snapshot(&f).await);
     event.grade_level_id = other_grade;
     assert!(save(&f, vec![row(&f, f.v1.id), event]).await.is_err());
     assert_eq!(before, snapshot(&f).await);
+    let other_slot = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap()
+        .term_slots
+        .into_iter()
+        .find(|slot| slot.id != f.slot)
+        .unwrap()
+        .id;
+    let mut new_slot = row(&f, f.v1.id);
+    new_slot.term_slot_id = other_slot;
+    assert!(save(&f, vec![row(&f, f.v1.id), new_slot]).await.is_err());
+    assert_eq!(before, snapshot(&f).await);
+
+    publish_level_fixture(&f.pool, f.level, PublishVersionRequest { row_version: 1 })
+        .await
+        .unwrap();
+    let destination = curriculum::create(
+        &f.pool,
+        CreateCurriculumRequest {
+            name: "สำเนาประวัติขอบเขตว่าง".into(),
+            revision_year: 2570,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let level = curriculum::create_level(
+        &f.pool,
+        destination.id,
+        CreateCurriculumLevelRequest {
+            draft_id: destination.draft_id.unwrap(),
+            name_th: "สำเนา".into(),
+            grade_level_ids: vec![f.grade],
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let source = curriculum::get_program(&f.pool, f.program.id)
+        .await
+        .unwrap();
+    let copied = curriculum::copy_program(
+        &f.pool,
+        level.id,
+        CopyStudyProgramRequest {
+            draft_id: destination.draft_id.unwrap(),
+            source_program_id: source.id,
+            source_row_version: source.row_version,
+            destination_row_version: level.row_version,
+            name_th: None,
+        },
+    )
+    .await
+    .unwrap();
+    let workspace = curriculum_structure::get_workspace(&f.pool, level.id)
+        .await
+        .unwrap();
+    let requirements = workspace
+        .requirements
+        .iter()
+        .map(|item| CurriculumStructureRequirementInput {
+            resource_kind: item.resource_kind,
+            catalog_version_id: item.catalog_version_id,
+            grade_level_id: item.grade_level.id,
+            term_slot_id: item.term_slot_id,
+            requirement_kind: item.requirement_kind,
+            display_order: item.display_order,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(requirements.len(), 2);
+    assert!(requirements
+        .iter()
+        .any(|item| item.catalog_version_id == f.v1.id));
+    assert!(requirements
+        .iter()
+        .any(|item| item.catalog_version_id == activity.id));
+    curriculum_structure::replace_program_structure(
+        &f.pool,
+        copied.id,
+        ReplaceCurriculumStructureRequest {
+            draft_id: destination.draft_id.unwrap(),
+            requirements,
+            row_version: copied.row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    f.program = copied;
+    f.level = level.id;
+    f.edition = destination.id;
+    f.slot = workspace.requirements[0].term_slot_id;
     // Removing a preserved pin never makes it admissible again.
     save(&f, vec![]).await.unwrap();
     assert!(save(&f, vec![row(&f, f.v1.id)]).await.is_err());
@@ -1043,7 +1172,11 @@ async fn catalog_grade_snapshot_existing_empty_pins_resave_without_new_admission
 #[tokio::test]
 async fn catalog_grade_snapshot_existing_nonempty_pin_does_not_bypass_scope() {
     let f = fixture("catalog_grade_snapshot_nonempty_pin").await;
-    let other_grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2").fetch_one(&f.pool).await.unwrap();
+    let other_grade: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
     sqlx::query("INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'required',1)")
         .bind(f.level).bind(f.program.id).bind(f.v1.id).bind(other_grade).bind(f.slot).execute(&f.pool).await.unwrap();
     let mut invalid = row(&f, f.v1.id);

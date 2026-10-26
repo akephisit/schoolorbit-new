@@ -1316,11 +1316,16 @@ pub async fn publish_activity_version(
     )
     .await?;
     lock_activity_for_version(&mut transaction, id).await?;
-    let (row_version, status, weekly_valid, total_valid): (i64, VersionStatus, bool, Option<bool>) =
-        DbSession::new(&mut *transaction).query_as(
-            "academic_core.services.catalog.publish_activity_version",
-            "SELECT row_version, status, hours_per_week >= 0, hours_per_term >= 0 FROM activity_versions WHERE id = $1 FOR UPDATE",
-        ).bind(id).fetch_one().await?;
+    let (row_version, status, weekly_valid, total_valid, grade_level_ids): (
+        i64,
+        VersionStatus,
+        bool,
+        Option<bool>,
+        sqlx::types::Json<Vec<Uuid>>,
+    ) = DbSession::new(&mut *transaction).query_as(
+        "academic_core.services.catalog.publish_activity_version",
+        "SELECT row_version, status, hours_per_week >= 0, hours_per_term >= 0, COALESCE(grade_level_ids, '[]'::jsonb) FROM activity_versions WHERE id = $1 FOR UPDATE",
+    ).bind(id).fetch_one().await?;
     ensure_draft_version(status)?;
     if row_version != request.row_version {
         return Err(AppError::Conflict(
@@ -1332,8 +1337,7 @@ pub async fn publish_activity_version(
             "ระบุชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนเป็น 0 หรือมากกว่าก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
         ));
     }
-    let version = get_activity_version_on_connection(&mut transaction, id).await?;
-    let grades = normalize_catalog_grade_level_ids(&mut transaction, &version.grade_level_ids).await?;
+    let grades = normalize_catalog_grade_level_ids(&mut transaction, &grade_level_ids.0).await?;
     DbSession::new(&mut *transaction).query(
         "academic_core.services.catalog.publish_activity_version",
         "UPDATE activity_versions SET grade_level_ids = $2, status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
