@@ -73,9 +73,18 @@ export function gradeLevelLabel(option: GradeLevelOption): string {
 	return option.short_name || option.name || option.code;
 }
 
-export function gradeLevelSummary(options: readonly GradeLevelOption[]): string {
-	if (options.length === 0) return 'ทุกระดับชั้น';
-	return options.map(gradeLevelLabel).join(', ');
+export function gradeLevelSummary(
+	options: readonly GradeLevelOption[],
+	gradeLevelIds: readonly string[] = options.map((option) => option.id)
+): string {
+	const ids = new Set(gradeLevelIds);
+	if (ids.size === 0) return 'ไม่ระบุรายชั้น';
+	const resolved = options.filter((option) => ids.has(option.id));
+	const missing = ids.size - new Set(resolved.map((option) => option.id)).size;
+	return [
+		...resolved.map(gradeLevelLabel),
+		...(missing > 0 ? [`${resolved.length ? 'อีก ' : ''}${missing} ระดับชั้น`] : [])
+	].join(', ');
 }
 
 export function catalogOwnerValue(option: CatalogOwnerOption): string {

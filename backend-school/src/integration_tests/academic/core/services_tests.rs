@@ -35,6 +35,9 @@ use uuid::Uuid;
 #[path = "catalog_deletion_tests.rs"]
 mod catalog_deletion_tests;
 
+#[path = "catalog_grade_snapshot_tests.rs"]
+mod catalog_grade_snapshot_tests;
+
 #[path = "catalog_year_independence_tests.rs"]
 mod catalog_year_independence_tests;
 

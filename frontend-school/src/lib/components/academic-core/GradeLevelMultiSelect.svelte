@@ -15,13 +15,15 @@
 		options: GradeLevelOption[];
 		disabled?: boolean;
 		ariaLabel?: string;
+		emptyMeansAll?: boolean;
 	}
 
 	let {
 		value = $bindable([]),
 		options,
 		disabled = false,
-		ariaLabel = 'เลือกระดับชั้น'
+		ariaLabel = 'เลือกระดับชั้น',
+		emptyMeansAll = false
 	}: Props = $props();
 
 	let open = $state(false);
@@ -38,9 +40,11 @@
 		);
 	});
 	let triggerLabel = $derived.by(() => {
-		if (selectedOptions.length === 0) return 'ทุกระดับชั้น';
-		if (selectedOptions.length <= 2) return selectedOptions.map(gradeLevelLabel).join(', ');
-		return `เลือกแล้ว ${selectedOptions.length} ระดับ`;
+		const count = new Set(value).size;
+		if (count === 0) return emptyMeansAll ? 'ทุกระดับชั้น' : 'เลือกระดับชั้น';
+		if (count <= 2 && selectedOptions.length === count)
+			return selectedOptions.map(gradeLevelLabel).join(', ');
+		return `เลือกแล้ว ${count} ระดับ`;
 	});
 
 	function toggle(optionId: string) {
@@ -108,7 +112,7 @@
 			</Command.List>
 			<div class="flex items-center justify-between border-t p-2">
 				<Button type="button" size="sm" variant="ghost" onclick={clearSelection}>
-					ทุกระดับชั้น
+					{emptyMeansAll ? 'ทุกระดับชั้น' : 'ล้างการเลือก'}
 				</Button>
 				<Button type="button" size="sm" variant="ghost" onclick={selectAll}>เลือกทั้งหมด</Button>
 			</div>
