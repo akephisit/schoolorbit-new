@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { MoreHorizontal } from '@lucide/svelte';
 	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -119,9 +119,20 @@
 	} | null>(null);
 	let returnFocus: HTMLElement | null = null;
 	let chosen = false;
+	let pendingAction: {
+		action: CurriculumQuickAction;
+		workspace: CurriculumStructureWorkspace;
+	} | null = null;
 	let editable = $derived(canManage && !!workspace.level.draftId && !!onQuickAction && !busy);
 	$effect(() => {
-		if (!editable) menuOpen = false;
+		const currentWorkspace = workspace;
+		if (!editable || (pendingAction && pendingAction.workspace !== currentWorkspace)) {
+			pendingAction = null;
+			menuOpen = false;
+		}
+	});
+	onDestroy(() => {
+		pendingAction = null;
 	});
 	function targetProps(
 		context: CurriculumQuickActionContext,
@@ -173,6 +184,7 @@
 		).find((cell) => cell.dataset.quickTarget === key);
 		node = identity ?? node;
 		chosen = false;
+		pendingAction = null;
 		returnFocus = node;
 		node.focus();
 		menuTarget = { context, key, requirementId };
@@ -193,16 +205,21 @@
 	}
 	function choose(kind: CurriculumQuickAction['kind']) {
 		if (!menuTarget || !editable) return;
-		chosen = true;
 		const { context, requirementId } = menuTarget;
+		if (kind === 'edit' || kind === 'remove') {
+			if (!requirementId) return;
+			pendingAction = { action: { kind, context, requirementId }, workspace };
+		} else pendingAction = { action: { kind, context }, workspace };
+		chosen = true;
 		menuOpen = false;
-		void tick().then(() => {
-			if (!editable) return;
-			returnFocus?.focus();
-			if (kind === 'edit' || kind === 'remove') {
-				if (requirementId) onQuickAction?.({ kind, context, requirementId });
-			} else onQuickAction?.({ kind, context });
-		});
+	}
+	function completeMenuTransition(open: boolean) {
+		if (open || !pendingAction) return;
+		const pending = pendingAction;
+		pendingAction = null;
+		if (!editable || pending.workspace !== workspace) return;
+		returnFocus?.focus();
+		onQuickAction?.(pending.action);
 	}
 	function measureHeader(node: HTMLDivElement) {
 		const header = node.querySelector('thead');
@@ -235,38 +252,38 @@
 			}}><MoreHorizontal class="size-4" /></Button
 		>{/if}
 {/snippet}
-<ContextMenu.Root bind:open={menuOpen}>
+<ContextMenu.Root bind:open={menuOpen} onOpenChangeComplete={completeMenuTransition}>
 	<ContextMenu.Trigger
 		bind:ref={menuTrigger}
 		class="sr-only"
 		aria-hidden="true"
 		disabled={!editable}
 	/>
-	{#if editable}<ContextMenu.Content
-			class="max-w-[calc(100vw-1rem)] w-72"
-			collisionPadding={8}
-			onCloseAutoFocus={(event) => {
-				event.preventDefault();
-				if (!chosen) returnFocus?.focus();
-			}}
-		>
-			<ContextMenu.Group
-				><ContextMenu.GroupHeading
-					class="px-2 py-1.5 text-xs text-muted-foreground whitespace-normal"
-					>{workspace.programs.find((p) => p.id === menuTarget?.context.studyProgramId)?.nameTh} · {workspace.gradeLevels.find(
-						(g) => g.id === menuTarget?.context.gradeLevelId
-					)?.name} · {workspace.termSlots.find((t) => t.id === menuTarget?.context.termSlotId)
-						?.name}</ContextMenu.GroupHeading
-				>
-				<ContextMenu.Item onSelect={() => choose('add-course')}>เพิ่มรายวิชา…</ContextMenu.Item>
-				<ContextMenu.Item onSelect={() => choose('add-activity')}>เพิ่มกิจกรรม…</ContextMenu.Item>
-				{#if menuTarget?.requirementId}<ContextMenu.Item onSelect={() => choose('edit')}
-						>แก้ไขเงื่อนไข…</ContextMenu.Item
-					><ContextMenu.Item variant="destructive" onSelect={() => choose('remove')}
-						>นำรายการนี้ออก…</ContextMenu.Item
-					>{/if}</ContextMenu.Group
+	<!-- The root must finish closing its content before an action makes the matrix busy. -->
+	<ContextMenu.Content
+		class="max-w-[calc(100vw-1rem)] w-72"
+		collisionPadding={8}
+		onCloseAutoFocus={(event) => {
+			event.preventDefault();
+			if (!chosen) returnFocus?.focus();
+		}}
+	>
+		<ContextMenu.Group
+			><ContextMenu.GroupHeading class="px-2 py-1.5 text-xs text-muted-foreground whitespace-normal"
+				>{workspace.programs.find((p) => p.id === menuTarget?.context.studyProgramId)?.nameTh} · {workspace.gradeLevels.find(
+					(g) => g.id === menuTarget?.context.gradeLevelId
+				)?.name} · {workspace.termSlots.find((t) => t.id === menuTarget?.context.termSlotId)
+					?.name}</ContextMenu.GroupHeading
 			>
-		</ContextMenu.Content>{/if}
+			<ContextMenu.Item onSelect={() => choose('add-course')}>เพิ่มรายวิชา…</ContextMenu.Item>
+			<ContextMenu.Item onSelect={() => choose('add-activity')}>เพิ่มกิจกรรม…</ContextMenu.Item>
+			{#if menuTarget?.requirementId}<ContextMenu.Item onSelect={() => choose('edit')}
+					>แก้ไขเงื่อนไข…</ContextMenu.Item
+				><ContextMenu.Item variant="destructive" onSelect={() => choose('remove')}
+					>นำรายการนี้ออก…</ContextMenu.Item
+				>{/if}</ContextMenu.Group
+		>
+	</ContextMenu.Content>
 	<div class="space-y-4" data-testid="curriculum-matrix">
 		{#each matrix.grades as { grade, sections } (grade.id)}
 			<section
