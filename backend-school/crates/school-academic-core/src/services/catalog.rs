@@ -611,7 +611,7 @@ pub async fn get_subject_version_on_connection(
 pub async fn create_subject_version(
     pool: &PgPool,
     subject_id: Uuid,
-    request: CreateSubjectVersionRequest,
+    mut request: CreateSubjectVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
     validate_subject_version(&request)?;
     let credit = validate_canonical_decimal(&request.credit, 2)?;
@@ -629,6 +629,8 @@ pub async fn create_subject_version(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชา".to_string()))?;
+    request.grade_level_ids =
+        normalize_catalog_grade_level_ids(&mut transaction, &request.grade_level_ids).await?;
     ensure_subject_revision_differs(&mut transaction, subject_id, None, &request).await?;
     let version_no: i32 = DbSession::new(&mut *transaction)
         .scalar(
@@ -680,7 +682,7 @@ pub async fn update_subject_version(
     request: UpdateSubjectVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
     let row_version = request.row_version;
-    let values = CreateSubjectVersionRequest {
+    let mut values = CreateSubjectVersionRequest {
         name_th: request.name_th,
         name_en: request.name_en,
         credit: request.credit,
@@ -711,6 +713,8 @@ pub async fn update_subject_version(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
     ensure_draft_version(status)?;
+    values.grade_level_ids =
+        normalize_catalog_grade_level_ids(&mut transaction, &values.grade_level_ids).await?;
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
     let result = DbSession::new(&mut *transaction)
         .query(
@@ -773,7 +777,9 @@ pub async fn publish_subject_version(
             "เวอร์ชันรายวิชาถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
-    let values = subject_version_content(&version);
+    let mut values = subject_version_content(&version);
+    values.grade_level_ids =
+        normalize_catalog_grade_level_ids(&mut transaction, &values.grade_level_ids).await?;
     if validate_canonical_decimal(&version.credit, 2)? <= sqlx::types::BigDecimal::from(0) {
         return Err(AppError::ValidationError(
             "หน่วยกิตต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
@@ -790,6 +796,9 @@ pub async fn publish_subject_version(
         ));
     }
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
+    if values.grade_level_ids != version.grade_level_ids {
+        replace_subject_grade_levels(&mut transaction, id, values.grade_level_ids).await?;
+    }
     DbSession::new(&mut *transaction).query("academic_core.services.catalog.publish_subject_version", "UPDATE subject_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1")
         .bind(id).execute().await?;
     transaction.commit().await?;
@@ -1150,7 +1159,6 @@ pub async fn create_activity_version(
         .as_deref()
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
-    let grade_level_ids = sqlx::types::Json(request.grade_level_ids.clone());
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_core.services.catalog.create_activity_version",
@@ -1165,6 +1173,9 @@ pub async fn create_activity_version(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรม".to_string()))?;
+    let grade_level_ids = sqlx::types::Json(
+        normalize_catalog_grade_level_ids(&mut transaction, &request.grade_level_ids).await?,
+    );
     let version_no: i32 = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.catalog.create_activity_version",
@@ -1259,7 +1270,9 @@ pub async fn update_activity_version_on_connection(
         .as_deref()
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
-    let grade_level_ids = sqlx::types::Json(values.grade_level_ids.clone());
+    let grade_level_ids = sqlx::types::Json(
+        normalize_catalog_grade_level_ids(connection, &values.grade_level_ids).await?,
+    );
     let result = DbSession::new(connection)
         .query(
             "academic_core.services.catalog.update_activity_version_on_connection",
@@ -1303,11 +1316,16 @@ pub async fn publish_activity_version(
     )
     .await?;
     lock_activity_for_version(&mut transaction, id).await?;
-    let (row_version, status, weekly_valid, total_valid): (i64, VersionStatus, bool, Option<bool>) =
-        DbSession::new(&mut *transaction).query_as(
-            "academic_core.services.catalog.publish_activity_version",
-            "SELECT row_version, status, hours_per_week >= 0, hours_per_term >= 0 FROM activity_versions WHERE id = $1 FOR UPDATE",
-        ).bind(id).fetch_one().await?;
+    let (row_version, status, weekly_valid, total_valid, grade_level_ids): (
+        i64,
+        VersionStatus,
+        bool,
+        Option<bool>,
+        sqlx::types::Json<Vec<Uuid>>,
+    ) = DbSession::new(&mut *transaction).query_as(
+        "academic_core.services.catalog.publish_activity_version",
+        "SELECT row_version, status, hours_per_week >= 0, hours_per_term >= 0, COALESCE(grade_level_ids, '[]'::jsonb) FROM activity_versions WHERE id = $1 FOR UPDATE",
+    ).bind(id).fetch_one().await?;
     ensure_draft_version(status)?;
     if row_version != request.row_version {
         return Err(AppError::Conflict(
@@ -1319,10 +1337,11 @@ pub async fn publish_activity_version(
             "ระบุชั่วโมงต่อสัปดาห์และชั่วโมงรวมต่อภาคเรียนเป็น 0 หรือมากกว่าก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
         ));
     }
+    let grades = normalize_catalog_grade_level_ids(&mut transaction, &grade_level_ids.0).await?;
     DbSession::new(&mut *transaction).query(
         "academic_core.services.catalog.publish_activity_version",
-        "UPDATE activity_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
-    ).bind(id).execute().await?;
+        "UPDATE activity_versions SET grade_level_ids = $2, status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1",
+    ).bind(id).bind(sqlx::types::Json(grades)).execute().await?;
     let version = get_activity_version_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
     Ok(version)
@@ -2023,6 +2042,36 @@ async fn ensure_subject_revision_differs(
         ));
     }
     Ok(())
+}
+
+// Empty input is an all-active-grades command, never a persisted wildcard. The caller's
+// transaction owns this snapshot and the selected grade locks until the save commits.
+async fn normalize_catalog_grade_level_ids(
+    connection: &mut sqlx::PgConnection,
+    requested: &[Uuid],
+) -> Result<Vec<Uuid>, AppError> {
+    let mut requested = requested.to_vec();
+    requested.sort_unstable();
+    requested.dedup();
+    let grades = DbSession::new(connection)
+        .scalar::<Uuid>(
+            "academic_core.services.catalog.normalize_catalog_grade_level_ids",
+            "SELECT id FROM grade_levels WHERE (cardinality($1::uuid[]) = 0 AND is_active IS TRUE) OR id = ANY($1) ORDER BY id FOR SHARE",
+        )
+        .bind(&requested)
+        .fetch_all()
+        .await?;
+    if requested.is_empty() && grades.is_empty() {
+        return Err(AppError::ValidationError(
+            "ยังไม่มีระดับชั้นที่เปิดใช้งาน กรุณาตั้งค่าระดับชั้นก่อนบันทึก".to_string(),
+        ));
+    }
+    if !requested.is_empty() && grades != requested {
+        return Err(AppError::ValidationError(
+            "ระดับชั้นที่เลือกไม่อยู่ในทะเบียนของโรงเรียน".to_string(),
+        ));
+    }
+    Ok(grades)
 }
 
 async fn replace_subject_grade_levels(

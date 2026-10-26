@@ -10,6 +10,7 @@
 		effectiveFrom: string;
 		classification?: string | null;
 		gradeLevels?: import('#lib/api/academic-core.js').GradeLevelOption[];
+		gradeLevelIds: string[];
 		status: 'draft' | 'published' | 'archived';
 		rowVersion: number;
 	};
@@ -170,7 +171,7 @@
 							{/if}
 							<span>{formatEffectiveFrom(item.effectiveFrom)}</span>
 							{#if item.gradeLevels}
-								<span>{gradeLevelSummary(item.gradeLevels)}</span>
+								<span>{gradeLevelSummary(item.gradeLevels, item.gradeLevelIds)}</span>
 							{/if}
 						</div>
 					</div>
@@ -293,10 +294,14 @@
 					<GradeLevelMultiSelect
 						bind:value={draft.gradeLevelIds}
 						options={gradeLevelOptions}
+						emptyMeansAll
 						disabled={busy}
 						ariaLabel={`เลือกระดับชั้นสำหรับ ${code}`}
 					/>
-					<p class="text-xs text-muted-foreground">ไม่เลือก หมายถึงใช้ได้กับทุกระดับชั้น</p>
+					<p class="text-xs text-muted-foreground">
+						ทุกระดับชั้นจะบันทึกชั้นที่เปิดใช้งานในวันที่บันทึก
+						รุ่นนี้จะไม่เพิ่มชั้นใหม่ในภายหลังโดยอัตโนมัติ
+					</p>
 				</div>
 				<div class="space-y-1.5">
 					<Label for={`${code}-version-from`}>เริ่มใช้</Label>

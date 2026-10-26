@@ -186,6 +186,27 @@ test('concrete grade coverage is rechecked when adding stale picker selections',
 	);
 });
 
+test('corrective course and activity snapshots admit covered grades without making old empty scopes wildcards', () => {
+	for (const resourceKind of ['course', 'activity'] as const) {
+		const corrected = { ...current, resourceKind, id: `${resourceKind}-corrected` };
+		const legacy = { ...corrected, id: `${resourceKind}-old-empty`, gradeLevelIds: [] };
+		assert.equal(selectableCatalogOption(corrected, context.gradeLevelId), true);
+		assert.equal(selectableCatalogOption(corrected, 'grade-added-later'), false);
+		assert.equal(selectableCatalogOption(legacy, context.gradeLevelId), false);
+		assert.deepEqual(
+			appendSelectedCatalogRequirements(
+				[],
+				[legacy.id, corrected.id],
+				context,
+				[legacy, corrected],
+				[],
+				'required'
+			).map((item) => item.catalogVersionId),
+			[corrected.id]
+		);
+	}
+});
+
 test('section presentation prefers pinned metadata, preserves every duplicate and retains unknown legacy rows', () => {
 	const activity = { ...existing, resourceKind: 'activity' as const, catalogVersionId: 'activity' };
 	const unknown = { ...existing, catalogVersionId: 'missing' };

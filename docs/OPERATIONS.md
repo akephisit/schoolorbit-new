@@ -680,6 +680,38 @@ duplicate rejection under the stable-subject lock. Keep maintenance active on fa
 recover with the matching release or a compatible forward fix. Do not restore an older writer,
 recreate the removed guards, repair tenant content in the migration, or edit SQLx history.
 
+## Catalog grade snapshots
+
+Deploy [migration 141](../backend-school/migrations/141_catalog_grade_snapshots.sql) with the
+matching catalog provider and School frontend through universal maintenance and the canonical
+all-tenant migration gates. Empty all-grades commands snapshot active school grade IDs at save;
+explicit nonempty snapshots retain their coverage, including inactive existing IDs. Later registry
+additions do not expand saved revisions. With no active grades an all-grades save fails atomically.
+
+The migration fills empty never-published drafts of unarchived catalogs and appends corrective
+published revisions for empty winning revisions at each effective-date boundary. Past, current
+and scheduled dates retain their meaning; a newer same-day explicit scope is never widened.
+Archived versions/catalogs and all old published rows, grade links, publication/offering snapshots
+and reference IDs stay unchanged. Corrective revisions publish at migration time, retain the
+source effective date, and carry deterministic source mapping and captured grade IDs under
+`migration_provenance.catalogGradeSnapshot141`. Historical empty pins, including copied pins,
+may be retained unchanged on save; new unsupported grade/slot tuples remain invalid.
+
+The bounded `catalog.grade_snapshots_reconciled` audit proves source, mapping and reference
+checksums and repair counts. Existing published guards remain enabled throughout. Missing active
+grades when repair is needed, malformed relevant activity scopes, unsupported provenance,
+deterministic-ID collisions, revision overflow or disabled guards refuse the transaction with a
+bounded `CATALOG_141_*` code. A clean tenant requiring no repair may migrate without active grades.
+Keep maintenance active on refusal; investigate aggregate findings on a protected copy and prepare
+an explicit forward correction. Do not modify old publications, dates, reference IDs or SQLx history.
+Atomic rollback leaves no partial correction; after resolving the cause rerun the canonical runner.
+Applied migrations replay as a no-op.
+
+Pre-141 binaries are prohibited after cutover: they can persist empty scopes and do not implement
+the matched snapshot owner. Compiled migration-history checks and coordinated deployment enforce
+this boundary. Recover with the matching release or a compatible forward fix while maintenance
+stays active; do not restore an older writer or add a runtime wildcard fallback.
+
 ## Notification inbox-first cutover
 
 Tenant [migration 139](../backend-school/migrations/139_notification_inbox_first.sql) and

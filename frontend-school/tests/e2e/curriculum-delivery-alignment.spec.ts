@@ -600,6 +600,20 @@ test('create a level with covered grades within an edition, then create its plan
 	await page.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('ชื่อระดับการศึกษา *').fill('ระดับมัธยมศึกษาตอนต้น');
+	await expect(page.getByRole('combobox', { name: 'เลือกระดับชั้นที่ครอบคลุม' })).toHaveText(
+		'เลือกระดับชั้น'
+	);
+	await expect(
+		dialog.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true })
+	).toBeDisabled();
+	await page.getByRole('combobox', { name: 'เลือกระดับชั้นที่ครอบคลุม' }).click();
+	await expect(page.getByRole('button', { name: 'ทุกระดับชั้น', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+	await page.getByRole('button', { name: 'ล้างการเลือก', exact: true }).click();
+	await page.keyboard.press('Escape');
+	await expect(
+		dialog.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true })
+	).toBeDisabled();
 	await page.getByRole('combobox', { name: 'เลือกระดับชั้นที่ครอบคลุม' }).click();
 	await page.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
 	await page.keyboard.press('Escape');

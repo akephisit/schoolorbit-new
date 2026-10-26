@@ -480,7 +480,10 @@
 											)}</Table.Cell
 										>
 										<Table.Cell class="max-w-[190px] whitespace-normal"
-											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
+											>{gradeLevelSummary(
+												item.gradeLevels,
+												item.displayVersion?.gradeLevelIds ?? []
+											)}</Table.Cell
 										>
 										<Table.Cell class="text-end tabular-nums"
 											>{item.displayVersion?.hoursPerWeek ?? '—'}</Table.Cell
@@ -543,7 +546,12 @@
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
-										<p>{gradeLevelSummary(item.gradeLevels)}</p>
+										<p>
+											{gradeLevelSummary(
+												item.gradeLevels,
+												item.displayVersion?.gradeLevelIds ?? []
+											)}
+										</p>
 									</div>
 									{#if item.displayVersion}
 										<div class="col-span-2">
@@ -629,6 +637,7 @@
 						effectiveFrom: item.effectiveFrom,
 						classification: item.schedulingMode,
 						gradeLevels: gradeLevelsFor(item),
+						gradeLevelIds: item.gradeLevelIds,
 						status: item.status,
 						rowVersion: item.rowVersion
 					}))}

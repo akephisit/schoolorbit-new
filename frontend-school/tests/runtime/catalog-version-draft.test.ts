@@ -66,6 +66,14 @@ test('new subject and post-save defaults are independent empty drafts', () => {
 	assert.deepEqual(createCatalogVersionDraft().gradeLevelIds, []);
 });
 
+test('a saved all-grade snapshot remains explicit when a later revision is opened', () => {
+	const source = { ...published, gradeLevelIds: ['grade-1', 'grade-2'] };
+	const draft = createCatalogVersionDraft(source);
+	assert.deepEqual(draft.gradeLevelIds, ['grade-1', 'grade-2']);
+	draft.gradeLevelIds.push('grade-added-later');
+	assert.deepEqual(source.gradeLevelIds, ['grade-1', 'grade-2']);
+});
+
 test('subject draft prefills retain zero hours and periods without replacing them with defaults', () => {
 	const source = { ...published, hoursPerSemester: 0, periodsPerWeek: 0 };
 	const draft = createCatalogVersionDraft(source);

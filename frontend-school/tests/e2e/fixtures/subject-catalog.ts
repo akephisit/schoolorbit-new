@@ -199,10 +199,19 @@ export async function installSubjectCatalog(
 				const body: CreateSubjectVersionRequest = request.postDataJSON();
 				if (typeof body.credit !== 'string')
 					return failSubject(route, 400, 'credit must be a JSON string');
+				if (!body.gradeLevelIds.length && !fixture.grades.length)
+					return failSubject(route, 400, 'ไม่มีระดับชั้นที่เปิดใช้งาน');
 				const versions = fixture.histories.get(subjectId) ?? [];
 				const created = {
 					...subjectVersion(subjectId, versions.length + 1),
 					...body,
+					gradeLevelIds: [
+						...new Set(
+							body.gradeLevelIds.length
+								? body.gradeLevelIds
+								: fixture.grades.map((grade) => grade.id)
+						)
+					].sort(),
 					status: 'draft' as const,
 					publishedAt: null
 				};
@@ -213,6 +222,9 @@ export async function installSubjectCatalog(
 					if (!item.displayVersion) {
 						item.displayVersion = created;
 						item.displayState = 'unpublished';
+						item.gradeLevels = fixture.grades.filter((grade) =>
+							created.gradeLevelIds.includes(grade.id)
+						);
 					}
 				}
 				return replySubject(route, created);
@@ -249,13 +261,20 @@ export async function installSubjectCatalog(
 					if (!version) continue;
 					if (body.rowVersion !== version.rowVersion)
 						return failSubject(route, 409, 'รุ่นข้อมูลเปลี่ยนแล้ว');
+					if (!version.gradeLevelIds.length && !fixture.grades.length)
+						return failSubject(route, 400, 'ไม่มีระดับชั้นที่เปิดใช้งาน');
 					version.status = 'published';
+					if (!version.gradeLevelIds.length)
+						version.gradeLevelIds = fixture.grades.map((grade) => grade.id).sort();
 					version.rowVersion += 1;
 					version.publishedAt = '2026-10-20T05:00:00Z';
 					const item = fixture.items.find((item) => item.subject.id === id);
 					if (item) {
 						item.displayVersion = version;
 						item.displayState = 'current';
+						item.gradeLevels = fixture.grades.filter((grade) =>
+							version.gradeLevelIds.includes(grade.id)
+						);
 						item.canDelete = false;
 						item.draftCount = Math.max(0, item.draftCount - 1);
 					}

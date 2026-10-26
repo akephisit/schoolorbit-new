@@ -665,7 +665,10 @@
 											)}</Table.Cell
 										>
 										<Table.Cell class="min-w-28 whitespace-normal"
-											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
+											>{gradeLevelSummary(
+												item.gradeLevels,
+												item.displayVersion?.gradeLevelIds ?? []
+											)}</Table.Cell
 										>
 										<Table.Cell class="text-end tabular-nums"
 											>{item.displayVersion?.credit ?? '—'}</Table.Cell
@@ -746,7 +749,9 @@
 										<dd>{item.displayVersion?.hoursPerSemester ?? '—'}</dd>
 									</div>
 								</dl>
-								<p class="text-xs">{gradeLevelSummary(item.gradeLevels)}</p>
+								<p class="text-xs">
+									{gradeLevelSummary(item.gradeLevels, item.displayVersion?.gradeLevelIds ?? [])}
+								</p>
 								{#if item.displayVersion}<p class="text-xs text-muted-foreground">
 										v{item.displayVersion.versionNo} · {formatEffectiveFrom(
 											item.displayVersion.effectiveFrom
@@ -897,6 +902,7 @@
 									effectiveFrom: item.effectiveFrom,
 									classification: item.subjectType,
 									gradeLevels: gradeLevelsFor(item),
+									gradeLevelIds: item.gradeLevelIds,
 									status: item.status,
 									rowVersion: item.rowVersion
 								}))}

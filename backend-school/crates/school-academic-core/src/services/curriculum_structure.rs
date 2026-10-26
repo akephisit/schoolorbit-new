@@ -336,6 +336,7 @@ pub async fn replace_program_structure(
 
     validate_requirement_ownership(
         &mut transaction,
+        program_id,
         program.curriculum_level_id,
         &request.requirements,
     )
@@ -711,6 +712,7 @@ fn subject_selection_conflict() -> AppError {
 
 async fn validate_requirement_ownership(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
+    program_id: Uuid,
     version_id: Uuid,
     requirements: &[CurriculumStructureRequirementInput],
 ) -> Result<(), AppError> {
@@ -769,6 +771,18 @@ async fn validate_requirement_ownership(
     let course_grades = load_catalog_grades(transaction, &course_ids, true).await?;
     let activity_grades = load_catalog_grades(transaction, &activity_ids, false).await?;
 
+    // Retaining an exact historical pin does not admit a new grade or slot. Empty
+    // immutable history remains empty; only its already persisted tuples survive.
+    let existing = DbSession::new(&mut **transaction)
+        .query_as::<(bool, Uuid, Uuid, Uuid)>(
+            "academic_core.services.curriculum_structure.validate_requirement_ownership",
+            "SELECT true,subject_version_id,grade_level_id,term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$1 UNION ALL SELECT false,activity_version_id,grade_level_id,term_slot_id FROM curriculum_activity_requirements WHERE study_program_id=$1",
+        )
+        .bind(program_id)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect::<HashSet<_>>();
     for requirement in requirements {
         let grades = match requirement.resource_kind {
             RequirementResourceKind::Course => course_grades.get(&requirement.catalog_version_id),
@@ -779,7 +793,14 @@ async fn validate_requirement_ownership(
         .ok_or_else(|| {
             AppError::ValidationError("เลือกได้เฉพาะเวอร์ชันรายวิชาหรือกิจกรรมที่เผยแพร่แล้ว".to_string())
         })?;
-        if !grades.contains(&requirement.grade_level_id) {
+        let preserved_empty_pin = grades.is_empty()
+            && existing.contains(&(
+                requirement.resource_kind == RequirementResourceKind::Course,
+                requirement.catalog_version_id,
+                requirement.grade_level_id,
+                requirement.term_slot_id,
+            ));
+        if !grades.contains(&requirement.grade_level_id) && !preserved_empty_pin {
             return Err(AppError::ValidationError(
                 "เวอร์ชันรายการที่เลือกไม่รองรับระดับชั้นนี้".to_string(),
             ));
