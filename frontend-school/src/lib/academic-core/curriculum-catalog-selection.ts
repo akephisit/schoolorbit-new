@@ -66,6 +66,16 @@ function duplicateRequirements(
 	});
 }
 
+export function hasExistingCatalogRequirement(
+	option: CurriculumCatalogOption,
+	context: CurriculumSelectionContext,
+	requirements: StagedCurriculumRequirement[],
+	options: CurriculumCatalogOption[],
+	originals: CurriculumStructureRequirement[]
+): boolean {
+	return duplicateRequirements(option, context, requirements, options, originals).length > 0;
+}
+
 export function hasExistingCourseRequirement(
 	option: CurriculumCatalogOption,
 	context: CurriculumSelectionContext,
@@ -75,7 +85,7 @@ export function hasExistingCourseRequirement(
 ): boolean {
 	return (
 		option.resourceKind === 'course' &&
-		duplicateRequirements(option, context, requirements, options, originals).length > 0
+		hasExistingCatalogRequirement(option, context, requirements, options, originals)
 	);
 }
 

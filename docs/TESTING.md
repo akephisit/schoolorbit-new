@@ -1998,8 +1998,8 @@ and the existing API generate/check/test commands. These checks never use produc
 From `frontend-school`, run the matrix and picker helper cases with the pinned Node 24 runtime:
 
 ```bash
-node --experimental-strip-types --test tests/runtime/curriculum-structure.test.ts tests/runtime/curriculum-catalog-selection.test.ts
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-structure-matrix.spec.ts tests/e2e/curriculum-catalog-revisions.spec.ts tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium
+node --experimental-strip-types --test tests/runtime/curriculum-structure.test.ts tests/runtime/curriculum-catalog-selection.test.ts tests/runtime/curriculum-quick-actions.test.ts
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-structure-matrix.spec.ts tests/e2e/curriculum-catalog-revisions.spec.ts tests/e2e/curriculum-delivery-alignment.spec.ts tests/e2e/curriculum-quick-actions.spec.ts --project=chromium
 ```
 
 Use an owned local preview for the synthetic intercepted-API browser fixtures. They cover
@@ -2007,6 +2007,8 @@ all configured terms (including empty and more than two), grade and classificati
 conservative pairing and partial totals, sticky table context and screenshots across the
 configured layouts/themes. These fixtures never write production curriculum data and do not
 replace deferred live UI acceptance.
+Quick-action cases verify whole-program scope and pinned-revision preservation, dirty closing,
+conflict recovery, keyboard and touch access, and bounded add panels.
 
 
 Custom curriculum program order uses owned disposable fixtures:

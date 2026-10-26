@@ -17,6 +17,10 @@
 		selectableCatalogOption,
 		type StagedCurriculumRequirement
 	} from '#lib/academic-core/curriculum-catalog-selection.js';
+	import {
+		stageCurriculumRequirements,
+		programRequirementInputs
+	} from '#lib/academic-core/curriculum-quick-actions.js';
 	import CurriculumCreditCriteriaSettings from './CurriculumCreditCriteriaSettings.svelte';
 	import {
 		sameCoveredGrades,
@@ -114,15 +118,7 @@
 		);
 	}
 	function initialRequirements(): StagedRequirement[] {
-		return workspace.requirements.map((requirement) => ({
-			studyProgramId: requirement.studyProgramId,
-			resourceKind: requirement.resourceKind,
-			catalogVersionId: requirement.catalogVersionId,
-			gradeLevelId: requirement.gradeLevel.id,
-			termSlotId: requirement.termSlotId,
-			requirementKind: requirement.requirementKind,
-			displayOrder: requirement.displayOrder
-		}));
+		return stageCurriculumRequirements(workspace.requirements);
 	}
 	function initialSlots(): CurriculumTermSlotInput[] {
 		return workspace.termSlots.map((slot) => ({
@@ -457,7 +453,7 @@
 			await onSaveStructure(
 				selectedProgram.id,
 				requirementRowVersions[selectedProgram.id],
-				stagedProgramRequirements.map(({ studyProgramId: _, ...requirement }) => requirement)
+				programRequirementInputs(stagedProgramRequirements, selectedProgram.id)
 			);
 			onClose();
 		} catch (error) {
