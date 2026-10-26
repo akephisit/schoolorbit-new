@@ -272,6 +272,64 @@ pub async fn current_subject_revisions_on_connection(
         .collect())
 }
 
+#[derive(sqlx::FromRow)]
+struct ActivityRevisionSelection {
+    id: Uuid,
+    activity_id: Uuid,
+    version_no: i32,
+    effective_from: NaiveDate,
+}
+
+/// Provider-selected current published revision for one stable activity.
+#[derive(Debug, Clone, Copy)]
+pub struct CurrentActivityRevision {
+    pub id: Uuid,
+    pub version_no: i32,
+}
+
+/// Read-time current metadata only; this does not restrict activity addition eligibility.
+pub async fn current_activity_revisions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    activity_ids: &[Uuid],
+) -> Result<HashMap<Uuid, CurrentActivityRevision>, AppError> {
+    if activity_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let versions = DbSession::new(connection)
+        .query_as::<ActivityRevisionSelection>(
+            "academic_core.services.catalog.current_activity_revisions_on_connection",
+            "SELECT id,activity_id,version_no,effective_from FROM activity_versions WHERE activity_id=ANY($1) AND status='published'",
+        )
+        .bind(activity_ids)
+        .fetch_all()
+        .await?;
+    let mut grouped = HashMap::<Uuid, Vec<ActivityRevisionSelection>>::new();
+    for version in versions {
+        grouped
+            .entry(version.activity_id)
+            .or_default()
+            .push(version);
+    }
+    let today = subject_catalog_today();
+    Ok(grouped
+        .iter()
+        .filter_map(|(activity_id, versions)| {
+            select_current_subject_revision(versions.iter(), today, |version| {
+                (version.effective_from, version.version_no)
+            })
+            .map(|version| {
+                (
+                    *activity_id,
+                    CurrentActivityRevision {
+                        id: version.id,
+                        version_no: version.version_no,
+                    },
+                )
+            })
+        })
+        .collect())
+}
+
 /// ID-only adapter for current revision admission decisions.
 pub async fn current_subject_version_ids(
     pool: &PgPool,
