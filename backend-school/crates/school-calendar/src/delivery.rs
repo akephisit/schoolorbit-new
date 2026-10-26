@@ -1,4 +1,5 @@
-mod notifications;
+pub(crate) mod notifications;
+pub use notifications::authorize_reminder_on_connection;
 mod reminders;
 mod request_workflow;
 pub use request_workflow::CalendarRequestWorkflow;
@@ -16,8 +17,6 @@ pub use crate::services::{
 use chrono::{NaiveDate, Utc};
 pub use notifications::resolve_event_recipient_user_ids;
 pub use notifications::send_event_notification;
-#[cfg(test)]
-use notifications::CalendarNotificationSendOutcome;
 #[cfg(test)]
 use notifications::{calendar_notification_link_for_user_type, calendar_notification_text};
 pub use reminders::process_due_calendar_reminders_for_all_tenants;

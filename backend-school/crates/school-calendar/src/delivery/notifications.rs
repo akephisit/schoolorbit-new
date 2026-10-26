@@ -1,14 +1,13 @@
-use sqlx::{PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::models::CalendarEvent;
 use crate::services::{dedupe_user_ids, CalendarNotificationKind};
 use school_errors::AppError;
+use school_notifications::dispatch::{self, NewNotification, NotificationSource, Presentation};
 use school_notifications::events::TenantNotificationEvent;
-use school_notifications::publisher::NotificationService;
 use school_notifications::publisher::NotificationType;
-use school_notifications::publisher::TenantNotificationPublisher;
 
 #[derive(sqlx::FromRow)]
 struct NotificationRecipientRow {
@@ -21,12 +20,6 @@ pub struct CalendarNotificationSendOutcome {
     pub recipient_count: usize,
     pub successful_count: usize,
     pub failed_count: usize,
-}
-
-impl CalendarNotificationSendOutcome {
-    pub(super) fn should_mark_reminder_sent(self) -> bool {
-        self.recipient_count == 0 || self.successful_count > 0
-    }
 }
 
 pub async fn resolve_event_recipient_user_ids(
@@ -132,86 +125,99 @@ async fn resolve_event_recipient_user_ids_on_connection(
 
 pub async fn send_event_notification(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    _notification_channel: &broadcast::Sender<TenantNotificationEvent>,
     tenant: &str,
     event: &CalendarEvent,
-    notification_kind: CalendarNotificationKind,
+    kind: CalendarNotificationKind,
 ) -> Result<CalendarNotificationSendOutcome, AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.notification").await?;
-    send_event_notification_on_connection(
-        &mut connection,
-        notification_channel,
-        tenant,
-        event,
-        notification_kind,
-    )
-    .await
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "calendar.notification").await?;
+    let result = accept_event_in_transaction(&mut tx, event, &kind, None).await?;
+    tx.commit().await?;
+    school_notifications::runtime::wake_after_commit(tenant);
+    Ok(result)
 }
-
-pub(super) async fn send_event_notification_on_connection(
-    connection: &mut PgConnection,
-    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
-    tenant: &str,
+pub(crate) async fn accept_event_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
     event: &CalendarEvent,
-    notification_kind: CalendarNotificationKind,
+    kind: &CalendarNotificationKind,
+    reminder_id: Option<Uuid>,
 ) -> Result<CalendarNotificationSendOutcome, AppError> {
-    let recipient_ids =
-        resolve_event_recipient_user_ids_on_connection(&mut *connection, event.id).await?;
-    if recipient_ids.is_empty() {
-        return Ok(CalendarNotificationSendOutcome {
-            recipient_count: 0,
-            successful_count: 0,
-            failed_count: 0,
-        });
-    }
-
-    let recipients = school_database::DbSession::new(&mut *connection)
-        .query_as::<NotificationRecipientRow>(
-            "calendar.delivery.notifications.send_event_notification_on_connection",
-            r#"
-        SELECT id, user_type
-        FROM users
-        WHERE id = ANY($1)
-        "#,
+    let ids = resolve_event_recipient_user_ids_on_connection(tx, event.id).await?;
+    let recipients: Vec<NotificationRecipientRow> = school_database::DbSession::new(&mut **tx)
+        .query_as(
+            "calendar.notifications.snapshot_types",
+            "SELECT id,user_type FROM users WHERE id=ANY($1) ORDER BY id",
         )
-        .bind(&recipient_ids)
+        .bind(&ids)
         .fetch_all()
         .await?;
-
-    let (title, message) = calendar_notification_text(event, &notification_kind);
-    let publisher = TenantNotificationPublisher::new(tenant, notification_channel);
-    let mut successful_count = 0;
-    let mut failed_count = 0;
-    for recipient in recipients {
-        if let Err(error) = NotificationService::send_on_connection(
-            &mut *connection,
-            &publisher,
-            recipient.id,
-            &title,
-            &message,
-            NotificationType::Info,
-            calendar_notification_link_for_user_type(&recipient.user_type),
-        )
-        .await
-        {
-            tracing::error!(
-                event_id = %event.id,
-                recipient_user_id = %recipient.id,
-                error = %error,
-                "Calendar event notification failed for recipient"
-            );
-            failed_count += 1;
-        } else {
-            successful_count += 1;
+    let (title, message) = calendar_notification_text(event, kind);
+    let identity = match (kind, reminder_id) {
+        (CalendarNotificationKind::Reminder { .. }, Some(id)) => format!("calendar-reminder:{id}"),
+        (CalendarNotificationKind::Reminder { .. }, None) => {
+            return Err(AppError::Conflict(
+                "calendar_reminder_source_required".into(),
+            ))
         }
-    }
-
+        (CalendarNotificationKind::Created, _) => format!("calendar-event:{}:created", event.id),
+        (CalendarNotificationKind::Updated, _) => format!(
+            "calendar-event:{}:updated:{}",
+            event.id,
+            event.updated_at.to_rfc3339()
+        ),
+    };
+    let items: Vec<_> = recipients
+        .iter()
+        .map(|r| {
+            NewNotification::new(
+                r.id,
+                reminder_id
+                    .map(|source_id| NotificationSource::CalendarReminder { source_id })
+                    .unwrap_or(NotificationSource::Direct),
+                identity.clone(),
+                dispatch::NotificationContent {
+                    title: title.clone(),
+                    message: message.clone(),
+                    type_: NotificationType::Info,
+                    link: calendar_notification_link_for_user_type(&r.user_type).map(str::to_owned),
+                },
+                Presentation::AlertOnce,
+            )
+        })
+        .collect();
+    dispatch::create_in_transaction(tx, &items).await?;
     Ok(CalendarNotificationSendOutcome {
-        recipient_count: successful_count + failed_count,
-        successful_count,
-        failed_count,
+        recipient_count: items.len(),
+        successful_count: items.len(),
+        failed_count: 0,
     })
+}
+/// Event/reminder structural validity only; accepted recipient snapshots never change here.
+pub async fn authorize_reminder_on_connection(
+    connection: &mut PgConnection,
+    source_id: Uuid,
+) -> Result<bool, AppError> {
+    let event: Option<Uuid> = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "calendar.reminder_source.event",
+            "SELECT event_id FROM calendar_event_reminders WHERE id=$1",
+        )
+        .bind(source_id)
+        .fetch_optional()
+        .await?;
+    let Some(event) = event else { return Ok(false) };
+    let live: Option<Uuid> = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "calendar.reminder_source.lock_event",
+            "SELECT id FROM calendar_events WHERE id=$1 AND deleted_at IS NULL FOR SHARE",
+        )
+        .bind(event)
+        .fetch_optional()
+        .await?;
+    if live.is_none() {
+        return Ok(false);
+    }
+    Ok(school_database::DbSession::new(connection).scalar("calendar.reminder_source.live","SELECT EXISTS(SELECT 1 FROM calendar_event_reminders WHERE id=$1 AND event_id=$2 FOR SHARE)").bind(source_id).bind(event).fetch_one().await?)
 }
 
 pub(super) fn calendar_notification_text(

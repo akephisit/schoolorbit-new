@@ -8,6 +8,7 @@ import type { components } from '#lib/api/generated/school-api.js';
 import { clearSessionSecurity } from '#lib/api/session-security.js';
 import { authRefreshDecision, type AuthRefreshResult } from '#lib/auth/auth-refresh-policy.js';
 import { authStore, type User } from '#lib/stores/auth.js';
+import { notificationStore } from '#lib/stores/notification.js';
 import { toast } from 'svelte-sonner';
 
 type Schemas = components['schemas'];
@@ -85,6 +86,8 @@ class AuthAPI {
 	 */
 	async logout(): Promise<void> {
 		const epoch = authStore.sessionEpoch;
+		await notificationStore.prepareLogout();
+		if (epoch !== authStore.sessionEpoch) return;
 		const response = await apiClient.post<EmptyData>('/api/auth/logout');
 		requireApiData(response, 'ออกจากระบบไม่สำเร็จ');
 		if (epoch !== authStore.sessionEpoch) return;
@@ -100,6 +103,8 @@ class AuthAPI {
 
 	async revokeSession(sessionId: string, options: { current?: boolean } = {}): Promise<void> {
 		const epoch = authStore.sessionEpoch;
+		if (options.current) await notificationStore.prepareLogout();
+		if (epoch !== authStore.sessionEpoch) return;
 		const response = await apiClient.delete<EmptyData>(`/api/auth/sessions/${sessionId}`);
 		requireApiData(response, 'ไม่สามารถเพิกถอนเซสชันได้');
 		if (options.current === true && epoch === authStore.sessionEpoch) {
@@ -110,6 +115,8 @@ class AuthAPI {
 
 	async logoutAll(): Promise<void> {
 		const epoch = authStore.sessionEpoch;
+		await notificationStore.prepareLogout();
+		if (epoch !== authStore.sessionEpoch) return;
 		const response = await apiClient.post<EmptyData>('/api/auth/logout-all');
 		requireApiData(response, 'ไม่สามารถออกจากระบบทุกอุปกรณ์ได้');
 		if (epoch !== authStore.sessionEpoch) return;

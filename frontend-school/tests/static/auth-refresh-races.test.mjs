@@ -36,6 +36,7 @@ async function harness(extraClient = {}) {
 		'#lib/api/session-security.js': { clearSessionSecurity() {} },
 		'#lib/auth/auth-refresh-policy.js': { authRefreshDecision },
 		'#lib/stores/auth.js': { authStore },
+		'#lib/stores/notification.js': { notificationStore: { async prepareLogout() {} } },
 		'svelte-sonner': { toast: { success() {} } }
 	});
 	return {
@@ -220,6 +221,7 @@ for (const action of ['logout', 'logoutAll', 'revokeSession']) {
 			action === 'revokeSession'
 				? h.authAPI.revokeSession('current', { current: true })
 				: h.authAPI[action]();
+		await Promise.resolve();
 		h.authStore.clearUser();
 		h.authStore.setUser(user, []);
 		release({ success: true, data: {} });
@@ -239,6 +241,7 @@ for (const action of ['logout', 'logoutAll', 'revokeSession']) {
 			action === 'revokeSession'
 				? h.authAPI.revokeSession('current', { current: true })
 				: h.authAPI[action]();
+		await Promise.resolve();
 		h.authStore.setUser(user, []);
 		release({ success: true, data: {} });
 		await pending;

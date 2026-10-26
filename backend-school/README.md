@@ -65,7 +65,7 @@ Required groups include:
 - optional `SCHOOL_ALLOWED_DEV_ORIGINS` for exact local origins only; production leaves it empty;
 - optional backend-admin timeout/retry tuning;
 - R2-compatible storage credentials and upload limits;
-- Web Push VAPID values;
+- optional Web Push VAPID values, required to enable Push; inbox/SSE remain available without them;
 - `HOST`, `PORT`, and `RUST_LOG`.
 
 See `.env.example` for names. Keep the session HMAC, encryption, and blind-index keys stable after data exists. School uses only opaque sessions and has no JWT runtime key or pre-session rollback image mapping. Backend-admin keeps its separate `JWT_SECRET`. See [Operations](../docs/OPERATIONS.md) for the full cutover and rollback procedure.
@@ -86,3 +86,17 @@ Staff leave and planned school-exit requests live in `school-staff::leave`, with
 Policy profiles are immutable and resolve by personnel category, effective date and version; disabling a later profile ends new eligibility while retaining submitted history. Calendar or working-day counting uses the profile's explicit weekdays and excluded dates. Half-day granularity counts a full day as two units and a single morning/afternoon as one; minute requests use planned same-day times. Unit and quota-year basis cannot change after a type's first policy, and requests crossing a quota year must be split. Pending reservations and approved usage share the annual allowance across policy versions. Usage reports aggregate requests starting in the selected interval; their recorded policy limit is not a current statutory or remaining-entitlement calculation.
 
 Approved cancellation uses a separate audited approval process. Its route comes from the current school profile for the original frozen personnel category, including disabled profiles and archived types; a future-only profile falls back to the original route. The original approval, policy and usage remain until cancellation is approved. Missing approvers require a school administrator to repair the current route. This capability does not track actual departure/return times or send late alerts.
+
+
+`school-notifications` accepts authoritative inboxes through typed transactional bulk creation.
+Producers own recipient snapshots, content, idempotency and schedules; application composition
+provides source guards. A small pending presentation reference is consumed before independent
+SSE/Push attempts and is never retried after an uncertain result. Canonical hashed receipts retain
+business/source identities and terminal outcomes; read state remains inbox-owned. Authenticated
+Push devices use runtime VAPID configuration, session ownership, expiry and exact-version cleanup.
+See [Operations](../docs/OPERATIONS.md#notification-inbox-first-cutover) for migrations 139→140 and
+forward recovery, and [Testing](../docs/TESTING.md) for owner and preservation fixtures.
+
+Automatic device refresh requires an existing exact binding version and cannot recreate a remotely
+revoked device. After legacy cutover, users explicitly enable/sync Push once; inbox and SSE remain
+available immediately. New enrollment and any required session/key reactivation use that explicit flow.

@@ -1,3 +1,4 @@
+pub mod devices;
 pub mod dispatch;
 pub mod events;
 pub mod models;

@@ -1,18 +1,16 @@
-use crate::{events::TenantNotificationEvent, models::Notification};
+use crate::{devices, events::TenantNotificationEvent, models::Notification};
+use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt};
-use sqlx::Connection;
-use std::{env, time::Duration};
+use std::time::Duration;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use web_push::*;
 
 pub struct NotificationService;
-
 pub struct TenantNotificationPublisher<'a> {
     tenant: &'a str,
     notification_tx: &'a broadcast::Sender<TenantNotificationEvent>,
 }
-
 impl<'a> TenantNotificationPublisher<'a> {
     pub fn new(
         tenant: &'a str,
@@ -23,16 +21,14 @@ impl<'a> TenantNotificationPublisher<'a> {
             notification_tx,
         }
     }
-
-    fn publish(&self, user_id: Uuid, notification: Notification) {
+    pub(crate) fn publish(&self, user: Uuid, notification: Notification) {
         drop(self.notification_tx.send(TenantNotificationEvent::new(
             self.tenant,
-            user_id,
+            user,
             notification,
         )));
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationType {
     Info,
@@ -40,471 +36,352 @@ pub enum NotificationType {
     Warning,
     Error,
 }
-
 impl NotificationType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            NotificationType::Info => "info",
-            NotificationType::Success => "success",
-            NotificationType::Warning => "warning",
-            NotificationType::Error => "error",
+            Self::Info => "info",
+            Self::Success => "success",
+            Self::Warning => "warning",
+            Self::Error => "error",
         }
     }
 }
-
 #[derive(sqlx::FromRow)]
 struct PushSubscription {
+    id: Uuid,
+    version: Uuid,
+    binding_token: Uuid,
     endpoint: String,
     p256dh_key: String,
     auth_key: String,
 }
-
-/// Owned transport input; it cannot retain a pool, transaction or database permit.
+/// Owned transport inputs cannot retain a pool, transaction or database admission permit.
 pub(crate) struct PreparedNotification {
     pub(crate) notification: Notification,
+    expires_at: DateTime<Utc>,
     subscriptions: Vec<PushSubscription>,
 }
+#[derive(Default)]
 pub(crate) struct DeliveryReceipt {
-    pub(crate) invalid_endpoints: Vec<String>,
-    pub(crate) retryable: bool,
+    pub(crate) invalid_devices: Vec<(Uuid, Uuid)>,
 }
-
 impl NotificationService {
-    /// Deliver an already durably stored notification without inserting a second row.
-    pub async fn deliver_stored(
-        pool: &sqlx::PgPool,
-        publisher: &TenantNotificationPublisher<'_>,
-        user_id: Uuid,
-        notification: Notification,
-    ) -> Result<(), &'static str> {
-        let prepared = Self::prepare_stored(pool, user_id, notification, 1).await?;
-        let receipt = Self::deliver_prepared(publisher, user_id, prepared).await?;
-        Self::complete_delivery(pool, user_id, receipt).await
-    }
-
     pub(crate) async fn prepare_stored(
         pool: &sqlx::PgPool,
-        user_id: Uuid,
+        user: Uuid,
         notification: Notification,
-        attempts: i32,
+        expires_at: DateTime<Utc>,
     ) -> Result<PreparedNotification, &'static str> {
-        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-            pool,
-            "notifications.prepare_stored",
-        )
-        .await
-        .map_err(|_| "notification_database_unavailable")?;
-        let mut subscriptions = school_database::DbSession::new(&mut *connection).query_as::<PushSubscription>("notifications.src.publisher.prepare_stored",
-            "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id=$1 ORDER BY endpoint")
-            .bind(user_id).fetch_all().await.map_err(|_| "notification_subscription_unavailable")?;
-        rotate_for_attempt(&mut subscriptions, attempts);
+        let mut subscriptions = Vec::new();
+        if let Some(config) = devices::vapid_config() {
+            let mut c = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "notifications.prepare_stored",
+            )
+            .await
+            .map_err(|_| "notification_database_unavailable")?;
+            subscriptions=school_database::DbSession::new(&mut *c).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM push_subscriptions p
+                JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
+                WHERE p.user_id=$1 AND p.key_id=$2 AND p.expires_at>now() AND s.revoked_at IS NULL
+                AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
+                .bind(user).bind(config.key_id).fetch_all().await.map_err(|_|"notification_subscription_unavailable")?;
+        }
         Ok(PreparedNotification {
             notification,
+            expires_at,
             subscriptions,
         })
     }
-
     pub(crate) async fn deliver_prepared(
-        publisher: &TenantNotificationPublisher<'_>,
-        user_id: Uuid,
+        _publisher: &TenantNotificationPublisher<'_>,
+        _user: Uuid,
         prepared: PreparedNotification,
     ) -> Result<DeliveryReceipt, &'static str> {
-        publisher.publish(user_id, prepared.notification.clone());
-        Self::send_web_push(prepared)
-            .await
-            .map_err(|_| "notification_transport_unavailable")
+        // SSE was already attempted independently before subscription lookup.
+        Ok(Self::send_web_push(prepared).await)
     }
-
     pub(crate) async fn complete_delivery(
         pool: &sqlx::PgPool,
-        user_id: Uuid,
+        user: Uuid,
         receipt: DeliveryReceipt,
     ) -> Result<(), &'static str> {
-        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        if receipt.invalid_devices.is_empty() {
+            return Ok(());
+        }
+        let mut c = school_tenancy::TenantPool::observed_checkout_pool(
             pool,
             "notifications.complete_delivery",
         )
         .await
         .map_err(|_| "notification_database_unavailable")?;
-        Self::complete_delivery_on_connection(&mut connection, user_id, receipt).await
-    }
-    pub(crate) async fn complete_delivery_on_connection(
-        connection: &mut sqlx::PgConnection,
-        user_id: Uuid,
-        receipt: DeliveryReceipt,
-    ) -> Result<(), &'static str> {
-        for endpoint in receipt.invalid_endpoints {
-            school_database::DbSession::new(&mut *connection)
+        // Exact registration-version cleanup cannot revoke an updated account/key binding.
+        for (id, version) in receipt.invalid_devices {
+            school_database::DbSession::new(&mut *c)
                 .query(
-                    "notifications.src.publisher.complete_delivery_on_connection",
-                    "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
+                    "notifications.presentation.retire_invalid_device",
+                    "DELETE FROM push_subscriptions WHERE id=$1 AND user_id=$2 AND version=$3",
                 )
-                .bind(endpoint)
-                .bind(user_id)
+                .bind(id)
+                .bind(user)
+                .bind(version)
                 .execute()
                 .await
-                .map_err(|_| "notification_subscription_unavailable")?;
+                .map_err(|_| "notification_subscription_cleanup_unavailable")?;
         }
-        if receipt.retryable {
-            Err("notification_push_retry")
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
-
-    /// Send a notification to a specific user.
-    /// Store the inbox and durable dispatch job atomically; transport follows commit.
-    pub async fn send(
-        pool: &sqlx::PgPool,
-        publisher: &TenantNotificationPublisher<'_>,
-        user_id: Uuid,
-        title: &str,
-        message: &str,
-        type_: NotificationType,
-        link: Option<&str>,
-    ) -> Result<Uuid, sqlx::Error> {
-        let mut connection =
-            school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.send").await?;
-        Self::send_on_connection(
-            &mut connection,
-            publisher,
-            user_id,
-            title,
-            message,
-            type_,
-            link,
-        )
-        .await
-    }
-
-    /// Preserve the caller's held session while committing each recipient independently.
-    pub async fn send_on_connection(
-        connection: &mut sqlx::PgConnection,
-        publisher: &TenantNotificationPublisher<'_>,
-        user_id: Uuid,
-        title: &str,
-        message: &str,
-        type_: NotificationType,
-        link: Option<&str>,
-    ) -> Result<Uuid, sqlx::Error> {
-        let item = crate::dispatch::QueuedNotification {
-            id: Uuid::now_v7(),
-            notification_id: Uuid::now_v7(),
-            recipient_id: user_id,
-            source: crate::dispatch::NotificationSource::Direct,
-            dedup_key: None,
-            title: title.into(),
-            message: message.into(),
-            type_,
-            link: link.map(str::to_owned),
-        };
-        let mut tx = connection.begin().await?;
-        // Direct notifications select their recipient once at acceptance, not retry.
-        school_database::DbSession::new(&mut *tx)
-            .scalar::<Uuid>(
-                "notifications.src.publisher.send_on_connection",
-                "SELECT id FROM users WHERE id=$1 AND status='active'",
-            )
-            .bind(user_id)
-            .fetch_one()
-            .await?;
-        let id = crate::dispatch::store_and_enqueue_in_transaction(&mut tx, &item)
-            .await
-            .map_err(|_| sqlx::Error::Protocol("notification_enqueue_failed".into()))?;
-        tx.commit().await?;
-        crate::runtime::wake_after_commit(publisher.tenant);
-        Ok(id)
-    }
-
-    /// External I/O only. Invalid endpoint cleanup returns to the admitted DB phase.
-    async fn send_web_push(
-        prepared: PreparedNotification,
-    ) -> Result<DeliveryReceipt, Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_web_push(prepared: PreparedNotification) -> DeliveryReceipt {
         let PreparedNotification {
             notification,
-            subscriptions: subs,
+            expires_at,
+            subscriptions,
         } = prepared;
-        if subs.is_empty() {
-            return Ok(DeliveryReceipt {
-                invalid_endpoints: Vec::new(),
-                retryable: false,
-            });
+        if subscriptions.is_empty() {
+            return DeliveryReceipt::default();
         }
-        // 1. Get VAPID config from .env
-        let _vapid_public = env::var("VAPID_PUBLIC_KEY")?;
-        let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
-        let vapid_subject =
-            env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
-
-        let payload = serde_json::to_vec(&PushPayload {
-            id: notification.id,
-            title: &notification.title,
-            body: &notification.message,
-            link: notification.link.as_deref(),
-        })?;
-
-        let client = IsahcWebPushClient::new()?;
-        let result = attempt_subscriptions(subs, |sub| {
+        let Some(config) = devices::vapid_config() else {
+            tracing::warn!(
+                error_code = "notification_push_configuration_unavailable",
+                "Push unavailable; consumed presentation will not replay"
+            );
+            return DeliveryReceipt::default();
+        };
+        let Ok(client) = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(2))
+            .connect_timeout(Duration::from_secs(1))
+            .no_proxy()
+            .build()
+        else {
+            tracing::warn!(
+                error_code = "notification_push_client_unavailable",
+                "Push unavailable"
+            );
+            return DeliveryReceipt::default();
+        };
+        let results = attempt_subscriptions(subscriptions, |sub| {
             let client = &client;
-            let payload = &payload;
-            let vapid_private = &vapid_private;
-            let vapid_subject = &vapid_subject;
+            let notification = &notification;
+            let config = &config;
             async move {
-                let subscription_info = SubscriptionInfo {
-                    endpoint: sub.endpoint.clone(),
+                let remaining = (expires_at - Utc::now()).num_seconds();
+                if remaining <= 0 {
+                    return EndpointResult::Skipped;
+                }
+                // Revalidate persisted endpoints before any external I/O, including old data.
+                if !devices::valid_endpoint(&sub.endpoint) {
+                    return EndpointResult::Skipped;
+                }
+                let info = SubscriptionInfo {
+                    endpoint: sub.endpoint,
                     keys: SubscriptionKeys {
                         p256dh: sub.p256dh_key,
                         auth: sub.auth_key,
                     },
                 };
-                // One malformed/device failure must not skip the remaining subscriptions.
+                let payload = PushPayload {
+                    id: notification.id,
+                    title: "SchoolOrbit",
+                    body: "มีการแจ้งเตือนใหม่ กรุณาเปิดแอปเพื่อดูรายละเอียด",
+                    link: notification
+                        .link
+                        .as_deref()
+                        .filter(|p| crate::dispatch::valid_app_link(p))
+                        .unwrap_or("/"),
+                    device_id: sub.id,
+                    device_version: sub.version,
+                    binding_token: sub.binding_token,
+                    expires_at,
+                };
+                let Ok(payload) = serde_json::to_vec(&payload) else {
+                    return EndpointResult::MessageDefect;
+                };
                 let result = async {
-                    let mut builder = WebPushMessageBuilder::new(&subscription_info);
-                    builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_slice());
+                    let mut builder = WebPushMessageBuilder::new(&info);
+                    builder.set_ttl(u32::try_from(remaining).unwrap_or(0));
+                    builder.set_payload(ContentEncoding::Aes128Gcm, &payload);
                     let mut signature =
-                        VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
-                    signature.add_claim("sub", vapid_subject.clone());
+                        VapidSignatureBuilder::from_base64(&config.private_key, &info)?;
+                    signature.add_claim("sub", config.subject.clone());
                     builder.set_vapid_signature(signature.build()?);
-                    client.send(builder.build()?).await
+                    send_message(client, builder.build()?).await
                 }
                 .await;
                 match result {
-                    Ok(()) => Ok(EndpointDelivery::Delivered),
-                    Err(WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)) => {
-                        Ok(EndpointDelivery::Removed(sub.endpoint))
-                    }
-                    Err(_) => Err(()),
+                    Ok(()) => EndpointResult::Attempted,
+                    Err(error) => classify_push_error(&error, sub.id, sub.version),
                 }
             }
         })
         .await;
-        let (counts, retryable) = match result {
-            Ok(counts) => (counts, false),
-            Err(counts) => (counts, true),
-        };
-        if retryable {
+        let mut receipt = DeliveryReceipt::default();
+        let mut failed = 0usize;
+        let mut config_errors = 0usize;
+        for result in results {
+            match result {
+                EndpointResult::InvalidDevice(id, version) => {
+                    receipt.invalid_devices.push((id, version))
+                }
+                EndpointResult::Configuration => config_errors += 1,
+                EndpointResult::Failed | EndpointResult::MessageDefect => failed += 1,
+                _ => {}
+            }
+        }
+        if failed + config_errors > 0 {
             tracing::warn!(
-                error_code = "notification_push_retry",
-                retryable = counts.retryable,
-                "Push subscription delivery will retry"
+                error_code = "notification_push_attempt_failed",
+                failed,
+                configuration_failures = config_errors,
+                "Push attempts ended without retry; devices retained"
             );
         }
-        Ok(DeliveryReceipt {
-            invalid_endpoints: counts.invalid_endpoints,
-            retryable,
-        })
+        receipt
     }
 }
-
+/// The library's default client traces whole requests and has no native timeout.
+/// Keep its protocol/encryption builder, with a redacted, redirect-free bounded HTTP adapter.
+async fn send_message(
+    client: &reqwest::Client,
+    message: WebPushMessage,
+) -> Result<(), WebPushError> {
+    let request = web_push::request_builder::build_request::<reqwest::Body>(message);
+    let (parts, body) = request.into_parts();
+    let mut builder = client.post(parts.uri.to_string()).body(body);
+    for (name, value) in &parts.headers {
+        let mut header = reqwest::header::HeaderValue::from_bytes(value.as_bytes())
+            .map_err(|_| WebPushError::Unspecified)?;
+        header.set_sensitive(true);
+        builder = builder.header(name.as_str(), header);
+    }
+    let response = builder
+        .send()
+        .await
+        .map_err(|_| WebPushError::Unspecified)?;
+    // Status alone determines lifecycle policy; provider bodies never enter logs or storage.
+    let status = response
+        .status()
+        .as_u16()
+        .try_into()
+        .map_err(|_| WebPushError::InvalidResponse)?;
+    web_push::request_builder::parse_response(status, Vec::new())
+}
 #[derive(serde::Serialize)]
 struct PushPayload<'a> {
     id: Uuid,
     title: &'a str,
     body: &'a str,
-    link: Option<&'a str>,
+    link: &'a str,
+    device_id: Uuid,
+    device_version: Uuid,
+    binding_token: Uuid,
+    expires_at: DateTime<Utc>,
 }
-#[derive(Default, Debug, PartialEq)]
-struct SubscriptionCounts {
-    delivered: usize,
-    removed: usize,
-    retryable: usize,
-    invalid_endpoints: Vec<String>,
+#[derive(Debug, PartialEq, Eq)]
+enum EndpointResult {
+    Attempted,
+    InvalidDevice(Uuid, Uuid),
+    Configuration,
+    MessageDefect,
+    Failed,
+    Skipped,
 }
-enum EndpointDelivery {
-    Delivered,
-    Removed(String),
-}
-fn rotate_for_attempt<T>(items: &mut [T], attempts: i32) {
-    if !items.is_empty() {
-        let wave = usize::try_from(attempts.saturating_sub(1)).unwrap_or(0);
-        let offset = wave.saturating_mul(4) % items.len();
-        items.rotate_left(offset);
+fn classify_push_error(error: &WebPushError, id: Uuid, version: Uuid) -> EndpointResult {
+    match error {
+        WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_) => {
+            EndpointResult::InvalidDevice(id, version)
+        }
+        WebPushError::Unauthorized(_) | WebPushError::InvalidClaims => {
+            EndpointResult::Configuration
+        }
+        WebPushError::Other(info) if info.code == 401 || info.code == 403 => {
+            EndpointResult::Configuration
+        }
+        WebPushError::PayloadTooLarge | WebPushError::InvalidTtl | WebPushError::InvalidTopic => {
+            EndpointResult::MessageDefect
+        }
+        // A generic 400 is not proof that a device is bad. Preserve it for future messages.
+        _ => EndpointResult::Failed,
     }
 }
-
-async fn attempt_subscriptions<T, F, Fut>(
-    items: Vec<T>,
-    deliver: F,
-) -> Result<SubscriptionCounts, SubscriptionCounts>
+async fn attempt_subscriptions<T, F, Fut>(items: Vec<T>, deliver: F) -> Vec<EndpointResult>
 where
     F: Fn(T) -> Fut,
-    Fut: std::future::Future<Output = Result<EndpointDelivery, ()>>,
+    Fut: std::future::Future<Output = EndpointResult>,
 {
-    // Four item futures each poll at most four endpoints: at most 16 push requests.
-    // A stalled first endpoint times out independently so later devices still run.
-    let mut attempts = stream::iter(items)
-        .map(|item| tokio::time::timeout(Duration::from_secs(2), deliver(item)))
-        .buffer_unordered(4);
-    let mut counts = SubscriptionCounts::default();
-    while let Some(result) = attempts.next().await {
-        match result {
-            Ok(Ok(EndpointDelivery::Delivered)) => counts.delivered += 1,
-            Ok(Ok(EndpointDelivery::Removed(endpoint))) => {
-                counts.removed += 1;
-                counts.invalid_endpoints.push(endpoint);
-            }
-            Ok(Err(())) | Err(_) => counts.retryable += 1,
-        }
-    }
-    if counts.retryable > 0 {
-        Err(counts)
-    } else {
-        Ok(counts)
-    }
+    stream::iter(items)
+        .map(|item| async {
+            tokio::time::timeout(Duration::from_secs(2), deliver(item))
+                .await
+                .unwrap_or(EndpointResult::Failed)
+        })
+        .buffer_unordered(4)
+        .collect()
+        .await
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
-
+    macro_rules! info { ($code:expr) => {serde_json::from_value(serde_json::json!({"code":$code,"errno":0,"error":"synthetic","message":"synthetic"})).unwrap()}; }
     #[test]
-    fn push_payload_serializes_notification_identity_and_browser_fields() {
-        let id = Uuid::now_v7();
-        let value = serde_json::to_value(PushPayload {
-            id,
-            title: "หัวข้อ",
-            body: "ข้อความ",
-            link: Some("/staff/work"),
-        })
-        .unwrap();
+    fn only_gone_or_missing_devices_are_retired() {
+        let id = Uuid::new_v4();
+        let version = Uuid::new_v4();
+        for e in [
+            WebPushError::Unauthorized(info!(401)),
+            WebPushError::Other(info!(403)),
+            WebPushError::BadRequest(info!(400)),
+            WebPushError::PayloadTooLarge,
+            WebPushError::Other(info!(429)),
+            WebPushError::ServerError {
+                retry_after: None,
+                info: info!(500),
+            },
+        ] {
+            assert!(!matches!(
+                classify_push_error(&e, id, version),
+                EndpointResult::InvalidDevice(..)
+            ))
+        }
         assert_eq!(
-            value,
-            serde_json::json!({"id":id.to_string(),"title":"หัวข้อ","body":"ข้อความ","link":"/staff/work"})
+            classify_push_error(&WebPushError::EndpointNotValid(info!(410)), id, version),
+            EndpointResult::InvalidDevice(id, version)
         );
-        let value = serde_json::to_value(PushPayload {
-            id,
-            title: "หัวข้อ",
-            body: "ข้อความ",
-            link: None,
-        })
-        .unwrap();
-        assert!(value["link"].is_null());
     }
-
     #[tokio::test]
-    async fn subscription_failure_propagates_after_all_siblings_and_terminal_removal_succeeds() {
-        let attempted = std::sync::atomic::AtomicUsize::new(0);
-        let result = attempt_subscriptions(vec![0, 1, 2], |item| {
-            attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    async fn later_devices_run_after_multiple_stalled_waves_without_whole_message_deadline() {
+        let visited = std::sync::atomic::AtomicUsize::new(0);
+        let results = attempt_subscriptions((0..12).collect(), |item| {
+            let visited = &visited;
             async move {
-                match item {
-                    0 => Err(()),
-                    1 => Ok(EndpointDelivery::Removed("synthetic".into())),
-                    _ => Ok(EndpointDelivery::Delivered),
+                if item < 8 {
+                    std::future::pending::<()>().await;
                 }
+                visited.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                EndpointResult::Attempted
             }
         })
         .await;
-        assert_eq!(attempted.load(std::sync::atomic::Ordering::SeqCst), 3);
-        assert_eq!(
-            result,
-            Err(SubscriptionCounts {
-                delivered: 1,
-                removed: 1,
-                retryable: 1,
-                invalid_endpoints: vec!["synthetic".into()],
-            })
-        );
-        assert_eq!(
-            attempt_subscriptions(vec![()], |_| async {
-                Ok(EndpointDelivery::Removed("synthetic".into()))
-            })
-            .await,
-            Ok(SubscriptionCounts {
-                delivered: 0,
-                removed: 1,
-                retryable: 0,
-                invalid_endpoints: vec!["synthetic".into()],
-            })
-        );
+        assert_eq!(visited.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert_eq!(results.len(), 12);
     }
-    #[tokio::test]
-    async fn slow_first_endpoint_does_not_block_later_endpoints_or_outlive_cancellation() {
-        use std::sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        };
-        struct Active(Arc<AtomicUsize>);
-        impl Drop for Active {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let active = Arc::new(AtomicUsize::new(0));
-        let delivered = Arc::new(AtomicUsize::new(0));
-        let result = tokio::time::timeout(
-            Duration::from_millis(100),
-            attempt_subscriptions((0..8).collect(), |item| {
-                let active = active.clone();
-                let delivered = delivered.clone();
-                async move {
-                    active.fetch_add(1, Ordering::SeqCst);
-                    let _active = Active(active);
-                    if item == 0 {
-                        std::future::pending::<()>().await;
-                    }
-                    delivered.fetch_add(1, Ordering::SeqCst);
-                    Ok(EndpointDelivery::Delivered)
-                }
-            }),
-        )
-        .await;
-        assert!(result.is_err());
-        assert_eq!(delivered.load(Ordering::SeqCst), 7);
-        assert_eq!(active.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn retry_rotation_reaches_tail_after_multiple_stalled_endpoint_waves() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let reached_tail = AtomicUsize::new(0);
-        for attempt in 1..=3 {
-            let mut endpoints: Vec<_> = (0..12).collect();
-            rotate_for_attempt(&mut endpoints, attempt);
-            let _deadline = tokio::time::timeout(
-                Duration::from_millis(30),
-                attempt_subscriptions(endpoints, |endpoint| {
-                    let reached_tail = &reached_tail;
-                    async move {
-                        if endpoint < 8 {
-                            std::future::pending::<()>().await;
-                        }
-                        reached_tail.fetch_add(1, Ordering::SeqCst);
-                        Ok(EndpointDelivery::Delivered)
-                    }
-                }),
-            )
-            .await;
-            assert_eq!(
-                reached_tail.load(Ordering::SeqCst),
-                if attempt < 3 { 0 } else { 4 }
-            );
-        }
-    }
-
     #[test]
-    fn tenant_publisher_emits_supplied_tenant_and_user() {
-        let (notification_tx, mut notification_rx) = broadcast::channel(1);
-        let tenant = "tenant-a";
-        let user_id = Uuid::new_v4();
-        let publisher = TenantNotificationPublisher::new(tenant, &notification_tx);
-        let notification = Notification {
-            id: Uuid::new_v4(),
-            title: "Test".to_string(),
-            message: "Message".to_string(),
-            type_: "info".to_string(),
-            link: None,
-            read_at: None,
-            created_at: Utc::now(),
-        };
-
-        publisher.publish(user_id, notification);
-
-        let event = notification_rx
-            .try_recv()
-            .expect("tenant notification event should be published");
-        assert_eq!(event.tenant, tenant);
-        assert_eq!(event.user_id, user_id);
+    fn tenant_publisher_retains_tenant_and_recipient_scope() {
+        let (tx, mut rx) = broadcast::channel(1);
+        let user = Uuid::new_v4();
+        TenantNotificationPublisher::new("a", &tx).publish(
+            user,
+            Notification {
+                id: Uuid::new_v4(),
+                title: "x".into(),
+                message: "y".into(),
+                type_: "info".into(),
+                link: None,
+                read_at: None,
+                created_at: Utc::now(),
+            },
+        );
+        let event = rx.try_recv().unwrap();
+        assert!(event.applies_to("a", user));
+        assert!(!event.applies_to("b", user));
     }
 }

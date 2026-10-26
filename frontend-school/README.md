@@ -49,7 +49,7 @@ Use `npm run preview` to inspect a production build locally.
 
 ```bash
 npm run lint
-PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 npm run test:static
 npm run build
 ```
@@ -60,7 +60,7 @@ API and permission types are generated contracts. Follow the workflows in [`.rul
 
 - `PUBLIC_BACKEND_URL` selects backend-school.
 - `PUBLIC_SCHOOL_SUBDOMAIN` is an optional explicit tenant override.
-- `PUBLIC_VAPID_KEY` configures Web Push.
+- Web Push reads its current public key and availability from the authenticated backend runtime configuration. Enable an unbound or revoked device explicitly from account notification settings; automatic synchronization only refreshes an existing versioned binding.
 - `npm run sync:menu-routes` requires server-only `DEPLOY_KEY` and `SUBDOMAIN`; Pipeline
   synchronizes routes through VPS loopback before acceptance and fails if synchronization is incomplete.
 

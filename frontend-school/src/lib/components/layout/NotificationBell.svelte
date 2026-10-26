@@ -7,12 +7,17 @@
 	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
 
 	import { authStore } from '#lib/stores/auth.js';
-	const isAuthenticated = $derived($authStore.isAuthenticated);
+	const identity = $derived(
+		$authStore.isAuthenticated && $authStore.user
+			? `${$authStore.user.id}:${$authStore.user.user_type ?? ''}:${authStore.sessionEpoch}`
+			: null
+	);
 
 	// Svelte 5 Effect Rune
 	// This automatically tracks dependencies and runs cleanup function when re-running or destroying
 	$effect(() => {
-		if (isAuthenticated) {
+		notificationStore.bindIdentity();
+		if (identity) {
 			notificationStore.fetchNotifications();
 			notificationStore.initSSE();
 		} else {

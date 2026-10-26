@@ -115,30 +115,31 @@ async fn enqueue_new_ledger(
     rows: Vec<NewLedgerNotice>,
 ) -> Result<(), AppError> {
     use school_notifications::{
-        dispatch::{self, NotificationSource, QueuedNotification},
+        dispatch::{self, NewNotification, NotificationSource},
         publisher::NotificationType,
     };
     let items: Vec<_> = rows
         .into_iter()
-        .map(|n| QueuedNotification {
+        .map(|n| NewNotification {
             id: n.id,
             notification_id: n.notification_id,
             recipient_id: n.recipient_id,
             source: NotificationSource::Attendance { source_id: n.id },
             // The domain ledger owns business deduplication. Its immutable ID
             // distinguishes a new intent after that ledger has been reset.
-            dedup_key: Some(format!("attendance-ledger:{}", n.id)),
+            idempotency_key: format!("attendance-ledger:{}", n.id),
             title: n.title,
             message: n.message,
             type_: NotificationType::Info,
+            presentation: school_notifications::dispatch::Presentation::AlertOnce,
             link: Some(n.link),
         })
         .collect();
-    let outcomes = dispatch::enqueue_in_transaction(tx, &items).await?;
+    let outcomes = dispatch::create_in_transaction(tx, &items).await?;
     if outcomes.len() != items.len()
         || outcomes.iter().zip(&items).any(|(o, n)| {
             o.input_id != n.id
-                || o.queue_id != n.id
+                || o.receipt_id != n.id
                 || o.notification_id != n.notification_id
                 || o.source != n.source
         })
@@ -154,6 +155,7 @@ pub async fn authorize_delivery_on_connection(
     connection: &mut sqlx::PgConnection,
     source_id: Uuid,
     recipient_id: Uuid,
+    notification_id: Uuid,
 ) -> Result<bool, AppError> {
     DbSession::new(&mut *connection)
         .query(
@@ -162,16 +164,20 @@ pub async fn authorize_delivery_on_connection(
         )
         .execute()
         .await?;
-    Ok(DbSession::new(connection)
-        .scalar(
-            "attendance.services.notifications.authorize_delivery_on_connection",
-            "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE id=$1 AND recipient_id=$2)",
-        )
-        .bind(source_id)
-        .bind(recipient_id)
-        .fetch_one()
-        .await?)
+    let ledger:Option<(Uuid,Uuid)>=DbSession::new(connection).query_as("attendance.notifications.source_identity","SELECT recipient_id,notification_id FROM attendance_notifications WHERE id=$1 FOR SHARE").bind(source_id).fetch_optional().await?;
+    match ledger {
+        None => Ok(false),
+        Some((recipient, notification))
+            if recipient == recipient_id && notification == notification_id =>
+        {
+            Ok(true)
+        }
+        Some(_) => Err(AppError::Conflict(
+            "notification_ledger_identity_conflict".into(),
+        )),
+    }
 }
+
 pub async fn queue_digest(
     pool: &PgPool,
     term: Uuid,

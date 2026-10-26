@@ -275,7 +275,7 @@ pub async fn purge_in_transaction(
         school_notifications::dispatch::progress_on_connection(&mut tx, &notification_ids).await?;
     let pending = progress
         .iter()
-        .any(|n| n.stored_at.is_none() && n.published_at.is_none());
+        .any(|n| n.inbox_accepted_at.is_none() && n.presentation_consumed_at.is_none());
     if pending {
         return Err(AppError::Conflict("รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง".into()));
     }
@@ -364,7 +364,7 @@ pub async fn purge_in_transaction(
         .await?;
     let completed: Vec<Uuid> = progress
         .iter()
-        .filter(|n| n.published_at.is_some())
+        .filter(|n| n.presentation_consumed_at.is_some())
         .map(|n| n.notification_id)
         .collect();
     DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "DELETE FROM attendance_notifications WHERE academic_term_id=$1 AND notification_id=ANY($2)").bind(term).bind(completed).execute().await?;

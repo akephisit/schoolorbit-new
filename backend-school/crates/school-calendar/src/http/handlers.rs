@@ -74,23 +74,7 @@ pub async fn create_calendar_event(
             .await?;
     let event = outcome.event;
 
-    if outcome.notify_audience {
-        if let Err(error) = calendar_service::send_event_notification(
-            &context.tenant.pool,
-            &state.notification_channel,
-            &context.tenant.subdomain,
-            &event,
-            outcome.notification_kind,
-        )
-        .await
-        {
-            tracing::error!(
-                event_id = %event.id,
-                error = %error,
-                "Calendar event notification failed after create"
-            );
-        }
-    }
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(event))))
 }
@@ -125,23 +109,7 @@ pub async fn update_calendar_event(
             .await?;
     let event = outcome.event;
 
-    if outcome.notify_audience {
-        if let Err(error) = calendar_service::send_event_notification(
-            &context.tenant.pool,
-            &state.notification_channel,
-            &context.tenant.subdomain,
-            &event,
-            outcome.notification_kind,
-        )
-        .await
-        {
-            tracing::error!(
-                event_id = %event.id,
-                error = %error,
-                "Calendar event notification failed after update"
-            );
-        }
-    }
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
 
     Ok(Json(ApiResponse::ok(event)))
 }

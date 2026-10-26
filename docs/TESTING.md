@@ -304,10 +304,11 @@ unsuffixed private `hydrate_templates(pool)` that performs its own checkout/quer
 Actual managed regressions use the real AdminClient, DirectoryCache, PoolManager and
 production Notification/Cleaner phase orchestration with only loopback Admin HTTP and
 external delivery/storage fakes. They cover slow Admin HTTP plus another kind's actual
-SQL under the sole permit, cancellation without a claim/file mutation, queued fence,
-same-UUID credentials, expiry/eviction, endpoint cleanup/ack refusal, and invalidation
+SQL under the sole permit, cancellation before Notification consumption or File claim/mutation,
+queued fences, same-UUID credentials, expiry/eviction, stale endpoint-cleanup refusal and invalidation
 while waiting for actual physical PoolManager capacity. The physical-wait case asserts
-no business claim SQL occurred after stale admission; pool bootstrap verification may
+no Notification pending-read/consumption or File claim SQL occurred after stale admission;
+pool bootstrap verification may
 still have run before the second local validation.
 
 ```bash
@@ -315,7 +316,9 @@ still have run before the second local validation.
 ./scripts/test_backend_school.sh services::cleaner::phase_tests::managed_ -- --test-threads=1
 ```
 
-All timeouts remain the production phase/item budgets. Fixed-label trace observations
+Notification DB phases retain five-second deadlines and Push endpoints retain two-second
+deadlines, with no Notification whole-item deadline. Cleaner retains its existing phase/lease
+budgets. Fixed-label trace observations
 provide deterministic queue handshakes; no test swaps in a separate resolver or database
 completion algorithm. DirectoryCache unit tests separately cover refill revisions,
 real TTL expiry, eviction, mutation and cancellation without a stale fallback.
@@ -345,12 +348,13 @@ occupied slots, and payload-free SSE reconciliation with retained tenant filteri
 and identity fail-close. Notification fake transport cases hold two slow item futures
 while every other kind obtains shared database admission, and confirm cancellation
 joins delivery work. Slow-first-endpoint coverage verifies later device progress and
-no surviving endpoint future after the enclosing deadline. A twelve-endpoint case
-with two stalled waves verifies attempt-based rotation reaches the tail on retries.
+joined cancellation without detached endpoint work. A twelve-endpoint case
+with two stalled waves verifies all later devices run in the same consumed attempt without a
+whole-message deadline or retry rotation.
 Managed-batch database fixtures use the actual AdminClient and PoolManager with only
 external transport controlled: while blocked, another kind receives the sole permit
 and resident-pool pressure evicts the original pool. A mock directory UUID change plus
-cache fencing then proves both endpoint deletion and acknowledgment are refused.
+cache fencing then proves stale endpoint cleanup is refused while the already-consumed presentation stays terminal.
 Cleaner database fixtures hold a real table lock until its phase deadline releases
 admission, and verify a healthy tenant completes while a sibling's provider is blocked.
 They do not measure production capacity.
@@ -373,8 +377,8 @@ Run the new managed Notification and Cleaner regressions from the repository roo
 The Calendar cases use 401 durable reminders, lock the first 200, verify suffix
 progress and next-invocation retry, observe a real advisory lock before cancelling
 a blocked event load, and verify that its session releases the lock before retry. A one-connection pool
-also verifies complete event hydration, two recipient acceptance transactions, durable
-queue/inbox rows and confirmed advisory unlock without nested pool acquisition.
+also verifies complete event hydration, one atomic two-recipient acceptance transaction, durable
+receipt/inbox rows and confirmed advisory unlock without nested pool acquisition.
 A controlled slow tenant and a healthy multi-turn backlog verify completion-driven
 fair revisits without a round barrier. Auth cases preserve 100-row batches and
 `SKIP LOCKED`, and cancel after an earlier cleanup statement to verify transaction
@@ -756,7 +760,7 @@ From `frontend-school`:
 
 ```bash
 npm run lint
-PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 npm run test:menu-sync
 npm run test:route-loading
 npm run test:static
@@ -767,7 +771,7 @@ Spreadsheet fixtures cover displayed values, zero-padded IDs, literal formula te
 
 ```bash
 node --test tests/static/spreadsheet.test.mjs tests/static/certificate-importer.test.mjs
-PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npx playwright test tests/e2e/certificate-import-review.spec.ts --project=chromium --workers=1
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/certificate-import-review.spec.ts --project=chromium --workers=1
 ```
 
 Against the production preview described below, run `admission-final-region-loading.spec.ts` and `admission-exam-room-region-loading.spec.ts` for student-ID import, template downloads, and room exports. These use disposable mocked data and do not mutate a tenant.
@@ -831,8 +835,8 @@ Against the local production preview below, run `E2E_BASE_URL=http://127.0.0.1:4
 For the Academic Delivery region-loading browser gate, build and preview the frontend with a local API origin in one terminal, then run the mocked Chromium spec in another:
 
 ```bash
-PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run build
-PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -- --host 127.0.0.1 --port 4173
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 npm run build
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 npm run preview -- --host 127.0.0.1 --port 4173
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/subject-catalog-workspace.spec.ts tests/e2e/facility-workspace.spec.ts tests/e2e/facility-region-loading.spec.ts tests/e2e/table-layout.spec.ts --project=chromium --workers=1
@@ -1067,7 +1071,7 @@ npm run generate:permissions
 npm run check:permissions
 npm run test:permissions
 npm run test:static
-PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 ```
 
 Commit the contract, `contracts/permissions.lock.json`, backend registry, frontend registry, migration when DB permission data changes, and focused authorization tests together.
@@ -1085,7 +1089,7 @@ npm run generate:api-contracts
 npm run check:api-contracts
 npm run test:api-contracts
 npm run test:static
-PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 ```
 
 Generation must work offline without database credentials or a running backend.
@@ -1614,7 +1618,7 @@ The sandbox E2E workflow uses Ubuntu 24.04.
 
 ## Date calendar and activity requests
 
-Run `cargo test -p school-calendar services::tests` and `cargo test -p school-calendar requests::tests` for pure date/time validation and request authorization policy; run `./scripts/test_backend_school.sh --package school-calendar` from the repository root for the complete package, including reminder fairness/cancellation database cases. Run `./scripts/test_backend_school.sh integration_tests::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants when resolving the notification recipients; and verify immediate inbox visibility with central dispatch acceptance, tenant/user-scoped realtime delivery, concurrent decision deduplication and committed outcomes when notification enqueue fails. Calendar retains its business post-commit enqueue boundary; these checks do not imply atomicity between its business mutation and central enqueue or external device receipt. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
+Run `cargo test -p school-calendar services::tests` and `cargo test -p school-calendar requests::tests` for pure date/time validation and request authorization policy; run `./scripts/test_backend_school.sh --package school-calendar` from the repository root for the complete package, including reminder fairness/cancellation database cases. Run `./scripts/test_backend_school.sh integration_tests::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants when resolving the notification recipients; and verify immediate inbox visibility with central atomic acceptance, tenant/user-scoped realtime delivery, concurrent decision deduplication and full business/inbox/receipt rollback when notification acceptance fails. Calendar accepts the whole recipient snapshot in the business transaction; only best-effort presentation follows commit. These checks do not prove external device receipt. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
 
 Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-region-loading.spec.ts tests/e2e/calendar-requests.spec.ts tests/e2e/calendar-pending-overlay.spec.ts tests/e2e/calendar-timed-display.spec.ts tests/e2e/calendar-event-popovers.spec.ts tests/e2e/calendar-embed-dialog.spec.ts tests/e2e/calendar-action-menus.spec.ts --project=chromium`. The fixtures use synthetic staff sessions and intercept calendar APIs. Action-menu cases cover header and selected-day creation menus, date inheritance, manager/requester/reader permissions, disabled catalog actions, settings tools and the absence of an extra empty-month box. They do not exercise a deployed database. The request tests cover selected-day defaults in a future month, timed defaults, 24-hour compact input normalization, invalid time refusal, minimal payloads, failure draft retention, own status tracking, approval and rejection, including desktop and mobile layouts. Timed-display cases inspect centered dates, continuous all-day bars, per-day timed dots, retained edit values and desktop/mobile light/dark layouts; pure helper tests cover time boundaries, week-spanning layout and per-day timed lane packing. Event popover cases verify full-width staff calendars, direct event selection, complete details, manager/reader actions, keyboard focus return, outside mouse/touch dismissal without reopening another day, context changes and mobile/desktop light/dark layouts. Region-loading cases verify stable paired navigation buttons and an immediately visible new-month grid during delayed event reads. Public and staff mobile cases hide grid times while retaining full times in details and on desktop. Pending overlay cases cover inline manager approval/rejection with local draft retry, lazy detail loading and cancellation, compact filter popovers, removed notices, lazy reads, multiday and timed markers, toggle cancellation, month/history ownership, independent errors/retry, explicit overflow, scope controls and mutation patches. The calendar database suite also verifies oldest-first review paging and ties with approved requests excluded before pagination, manager-only detail access, newest-first own history, pending-only date overlap, private scope and bounded overlay results.
 
@@ -1628,11 +1632,61 @@ Run `cargo test -p school-attendance` from `backend-school` for result validatio
 
 Run `./scripts/test_backend_school.sh attendance_history_student_scope -- --test-threads=1 --nocapture` for dated Core/Delivery provider equivalence and frozen-roster exclusion before and after cancellation. Its disposable 100-room, 3,000-pupil fixture reports full versus selected-student row counts and median snapshot hold time without asserting machine-dependent timings; these measurements cover provider work rather than production request capacity. Keep the existing transfer, history/report snapshot, virtual coverage and mixed-permission cases when changing this path.
 
-From the repository root, run `./scripts/test_backend_school.sh notification_dispatch -- --test-threads=4` for central provider/runtime coverage: transactional deferred enqueue and immediate direct inbox visibility, disjoint bounded claims and stale-token fencing, direct acceptance refusing missing/inactive recipients, immutable queued recipients surviving later deactivation/guardian unlink, identity drift and missing stored inbox refusal, exact-source/owned cancellation, and fair two-tenant backlog delivery. This root module filter is separate from the external migration test target below. From `backend-school`, run `cargo test -p school-notifications runtime::tests::delivery_batch_bounds_concurrency_and_joins_failed_and_timed_out_siblings` for the central worker's four-item bound, independent sibling outcomes and timeout cancellation without detached work. From the repository root, run `./scripts/test_backend_school.sh --integration notification_dispatch_migration -- --test-threads=1` against the owned disposable PostgreSQL fixture. Its four cases verify complete queue/ledger/inbox state preservation and stable replay across migrations 119/120, atomic refusal of identity/payload/inbox conflicts followed by canonical retry, reconciliation-drift refusal before contraction, and rejection of unsupported source shapes. Existing inbox read timestamps, terminal/suppressed job state and intentionally absent inbox rows must remain unchanged; replacing IDs or truncating source payloads is not a valid migration repair.
-
 Against a local School frontend, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/attendance.spec.ts --project=chromium --workers=1` from `frontend-school`. Its intercepted synthetic APIs and camera driver test unsaved-input preservation, repeated reactive settings saves, typed partial result patches, unchecked preservation, additions without correction reasons, read-only previews, calendar overrides, independent settings/options failure and focused retry, saved-versus-draft weekday rules, exact route/action permissions with immediate identity disposal and delayed-response rejection, malformed-date recovery, pending-month write exclusion, report-only parent retries, Bangkok-midnight camera cleanup, special audience/teacher creation, enrollment context/stop cleanup, separate student history, desktop/mobile light/dark layouts, and acknowledgment only after evidence upload and scan commit. The route-glob matching guard exercises Vite's actual glob implementation against all app route metadata owners so literal route-group parentheses cannot silently empty the permission or preview registry. A separate case loads the real pinned models against a blank synthetic webcam and rejects face enrollment. This does not measure physical recognition accuracy or demonstrate resistance to photo/video spoofing.
 
-Before operational use, enroll consenting synthetic/test subjects on the intended HTTPS tenant, pair an operator and webcam, and check single-person capture, lighting, look-alike refusal, present/late cutoff in Asia/Bangkok, manual fallback, private image access for linked guardians, every-guardian delivery, unchanged-save deduplication and correction messages. Test both selected and unselected calendar days. Verify scheduled digests and offline/retry behavior using dedicated disposable accounts; production acceptance remains separate from fixture results.
+Before operational use, enroll consenting synthetic/test subjects on the intended HTTPS tenant, pair an operator and webcam, and check single-person capture, lighting, look-alike refusal, present/late cutoff in Asia/Bangkok, manual fallback, private image access for linked guardians, every-guardian delivery, unchanged-save deduplication and correction messages. Test both selected and unselected calendar days. Verify scheduled digests, inbox reconciliation after offline use and business-acceptance retries using dedicated disposable accounts; consumed presentation is not retried; production acceptance remains separate from fixture results.
+
+
+## Inbox-first notification regressions
+
+Use the canonical disposable runner for current acceptance/consumption, managed tenant phases,
+source/reset progress, Calendar atomic reminders and 139→140 preservation/refusal:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::notification_dispatch -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::attendance::services::db_tests::attendance_notification -- --test-threads=1
+./scripts/test_backend_school.sh --package school-calendar -- --test-threads=1
+./scripts/test_backend_school.sh --integration notification_inbox_first_migration -- --test-threads=1
+```
+
+Owner pure checks include `cargo test -p school-notifications`, followed by the static architecture
+and database execution policy tests. Acceptance fixtures assert transactional rollback, immediate
+inbox visibility, stable identity replay, payload/policy conflicts and preserved read timestamps.
+Presentation fixtures assert concurrent at-most-one consumption, no replay after process/network
+or finish uncertainty, recoverable unconsumed work, expired/cancelled/missing-inbox suppression and
+bounded all-device progress. Legacy fixtures preserve original IDs/timestamps/read state, materialize
+claimed-but-never-stored pending rows, refuse payload mismatches and evidence drift between 139/140,
+and never recreate intentionally absent terminal inboxes. Historical 119/120 tests retain their
+original preservation/refusal assertions against the exact predecessor; current readiness rejects
+historical schema 120. Full current-runner replay coverage lives in the 139/140 fixtures. No production
+notification or database fault injection is a check.
+
+For focused pure worker cancellation and endpoint fairness, run from `backend-school`:
+
+```bash
+cargo test -p school-notifications runtime::tests::network_wait_holds_no_database_admission_and_cancellation_joins_items -- --exact
+cargo test -p school-notifications publisher::tests::later_devices_run_after_multiple_stalled_waves_without_whole_message_deadline -- --exact
+```
+
+The current runtime suite covers atomic acceptance/replay/conflicts and preserved read state;
+concurrent irreversible consumption; pending recovery, expiry/missing-inbox suppression and permanent
+identity blocking; bounded pre-consumption backoff; original recipient snapshots; owned cancellation;
+idle-tenant post-commit wake; managed directory/tenant fences and device-version cleanup. Device cases
+cover Auth session/account parity, conditional refresh that cannot undo remote revocation, stable
+identical refresh, explicit reenrollment, atomic caps and bounded expiry cleanup.
+
+Historical migrations 119/120 have a separate predecessor-only fixture:
+
+```bash
+./scripts/test_backend_school.sh --integration notification_dispatch_migration -- --test-threads=1
+```
+
+Its four cases preserve original queue/ledger/inbox identities, timestamps and suppressed/terminal
+state, and refuse identity/payload/inbox drift before the historical contraction. These tests retain
+the old schema vocabulary solely to verify applied history; they do not describe the current runtime.
+The 139→140 fixture above verifies current canonical receipt contraction, stale evidence refusal,
+source/assignment eligibility, cross-source key ambiguity and nullable legacy keys. Never replace IDs,
+truncate payloads, alter evidence or edit applied migrations to repair a failed fixture.
 
 ## Behavior scores and Attendance delivery
 
@@ -1652,7 +1706,7 @@ Use the existing disposable database runner for persistence, encryption, replay 
 checks; never point these fixtures at a tenant database:
 
 ```bash
-./scripts/test_backend_school.sh --package school-student-care -- --test-threads=1
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh --package school-student-care -- --test-threads=1
 ./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
 ```
 
@@ -1903,7 +1957,7 @@ Staff leave and planned school exit use `./scripts/test_backend_school.sh --pack
 
 Directed routing uses synthetic staff and document fixtures in
 `frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend
-with `PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run build`, start an
+with `PUBLIC_BACKEND_URL=http://localhost:3000 npm run build`, start an
 owned production preview with `npm run preview -- --host 127.0.0.1 --port 4183 --strictPort`.
 Run from `frontend-school`:
 
@@ -1914,7 +1968,7 @@ node --test tests/static/correspondence-*.test.mjs
 
 The identity/realtime workflow cases named by that exclusion exercise development
 module imports. Run them against a separate owned development server started with
-`PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
+`PUBLIC_BACKEND_URL=http://localhost:3000 npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
 
 ```bash
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/correspondence-workflow.spec.ts --grep 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=1

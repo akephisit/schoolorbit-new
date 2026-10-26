@@ -548,20 +548,21 @@ async fn activate_step(
     let jobs: Vec<_> = step
         .recipients
         .iter()
-        .map(|r| school_notifications::dispatch::QueuedNotification {
+        .map(|r| school_notifications::dispatch::NewNotification {
             id: Uuid::now_v7(),
             notification_id: Uuid::now_v7(),
             recipient_id: r.user_id,
             source: school_notifications::dispatch::NotificationSource::Process {
                 source_id: Uuid::now_v7(),
             },
-            dedup_key: Some(format!(
+            idempotency_key: format!(
                 "process:{}:{}:{}:{}",
                 instance.id, instance.revision, instance.current_step, r.user_id
-            )),
+            ),
             title: instance.title.clone(),
             message: step.definition.title.clone(),
             type_: school_notifications::publisher::NotificationType::Info,
+            presentation: school_notifications::dispatch::Presentation::AlertOnce,
             link: Some(instance.action_path.clone()),
         })
         .collect();
@@ -571,8 +572,8 @@ async fn activate_step(
         {
             DbSession::new(&mut **tx).query("workflow.src.process.activate_step", "INSERT INTO process_notification_sources(id,instance_id,recipient_id,work_item_id) VALUES($1,$2,$3,$4)").bind(source_id).bind(instance.id).bind(job.recipient_id).bind(item).execute().await?;
         }
-        school_notifications::dispatch::store_and_enqueue_in_transaction(tx, job).await?;
     }
+    school_notifications::dispatch::create_in_transaction(tx, &jobs).await?;
     Ok(())
 }
 pub fn step_satisfied(step: &ProcessRuntimeStep) -> bool {
@@ -821,18 +822,22 @@ pub async fn authorize_notification_on_connection(
 ) -> Result<bool, AppError> {
     // Central materialization calls this inside its transaction before locking its job.
     // Share the engine's instance guard so a transition cannot invalidate this decision mid-commit.
-    let instance: Option<Uuid> = DbSession::new(&mut *connection)
-        .scalar(
+    let identity: Option<(Uuid, Uuid)> = DbSession::new(&mut *connection)
+        .query_as(
             "workflow.src.process.authorize_notification_on_connection",
-            "SELECT instance_id FROM process_notification_sources WHERE id=$1 AND recipient_id=$2",
+            "SELECT instance_id,recipient_id FROM process_notification_sources WHERE id=$1",
         )
         .bind(id)
-        .bind(user)
         .fetch_optional()
         .await?;
-    let Some(instance) = instance else {
+    let Some((instance, recipient)) = identity else {
         return Ok(false);
     };
+    if recipient != user {
+        return Err(AppError::Conflict(
+            "notification_source_identity_conflict".into(),
+        ));
+    }
     let present: Option<Uuid> = DbSession::new(&mut *connection)
         .scalar(
             "workflow.src.process.authorize_notification_on_connection",
@@ -959,22 +964,23 @@ pub(crate) async fn notify_in_transaction(
     .bind(work_item)
     .execute()
     .await?;
-    school_notifications::dispatch::store_and_enqueue_in_transaction(
+    school_notifications::dispatch::create_in_transaction(
         tx,
-        &school_notifications::dispatch::QueuedNotification {
+        &[school_notifications::dispatch::NewNotification {
             id: Uuid::now_v7(),
             notification_id: Uuid::now_v7(),
             recipient_id: user,
             source: school_notifications::dispatch::NotificationSource::Process { source_id },
-            dedup_key: Some(format!(
+            idempotency_key: format!(
                 "process:{}:{}:{}:{}",
                 instance.id, instance.revision, identity, user
-            )),
+            ),
             title: instance.title.clone(),
             message: message.into(),
             type_: school_notifications::publisher::NotificationType::Info,
+            presentation: school_notifications::dispatch::Presentation::AlertOnce,
             link: Some(instance.action_path.clone()),
-        },
+        }],
     )
     .await?;
     Ok(())

@@ -325,7 +325,7 @@ async fn care_submission_pins_version_replay_durable_alert_and_scoped_ack() {
     .await
     .is_err());
     let jobs: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=$1")
+        sqlx::query_scalar("SELECT count(*) FROM notification_receipts WHERE recipient_id=$1")
             .bind(f.teacher.actor_id)
             .fetch_one(&f.pool)
             .await
@@ -812,7 +812,7 @@ async fn care_submit_notification_failure_rolls_back_and_retries_once() {
     let assignment = assignment(&f, &v, &r, f.student).await;
     let own = access(f.student, &[codes::STUDENT_CARE_READ_OWN]);
     let p = response(1);
-    sqlx::raw_sql("CREATE FUNCTION reject_care_notification() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic_failure'; END $$; CREATE TRIGGER reject_care_notification BEFORE INSERT ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION reject_care_notification();").execute(&f.pool).await.unwrap();
+    sqlx::raw_sql("CREATE FUNCTION reject_care_notification() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic_failure'; END $$; CREATE TRIGGER reject_care_notification BEFORE INSERT ON notification_receipts FOR EACH ROW EXECUTE FUNCTION reject_care_notification();").execute(&f.pool).await.unwrap();
     assert!(save_response(&f.pool, own, assignment.id, p.clone(), true)
         .await
         .is_err());
@@ -827,7 +827,7 @@ async fn care_submit_notification_failure_rolls_back_and_retries_once() {
             .await
             .unwrap();
     assert_eq!(receipt_count, 0);
-    sqlx::query("DROP TRIGGER reject_care_notification ON notification_dispatch_jobs")
+    sqlx::query("DROP TRIGGER reject_care_notification ON notification_receipts")
         .execute(&f.pool)
         .await
         .unwrap();
@@ -837,7 +837,7 @@ async fn care_submit_notification_failure_rolls_back_and_retries_once() {
     save_response(&f.pool, own, assignment.id, p, true)
         .await
         .unwrap();
-    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM notification_dispatch_jobs")
+    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM notification_receipts")
         .fetch_one(&f.pool)
         .await
         .unwrap();
@@ -901,7 +901,7 @@ async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() 
     let submitted = save_response(&f.pool, own, digital.id, response(1), true)
         .await
         .unwrap();
-    let receivers:Vec<Uuid>=sqlx::query_scalar("SELECT recipient_id FROM notification_dispatch_jobs WHERE dedup_key LIKE $1 ORDER BY recipient_id").bind(format!("care:urgent:{}:%",digital.id)).fetch_all(&f.pool).await.unwrap();
+    let receivers:Vec<Uuid>=sqlx::query_scalar("SELECT recipient_id FROM notification_receipts WHERE idempotency_key LIKE $1 ORDER BY recipient_id").bind(format!("care:urgent:{}:%",digital.id)).fetch_all(&f.pool).await.unwrap();
     assert!(receivers.contains(&f.admin.actor_id));
     assert!(receivers.contains(&f.teacher.actor_id));
     let handoff = UpdateCareAssignmentReviewers {
@@ -958,7 +958,7 @@ async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() 
         .await
         .is_err());
     let jobs: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM notification_dispatch_jobs WHERE dedup_key LIKE $1",
+        "SELECT count(*) FROM notification_receipts WHERE idempotency_key LIKE $1",
     )
     .bind(format!("care:reviewer-handoff:{}:%", digital.id))
     .fetch_one(&f.pool)
@@ -1027,7 +1027,7 @@ async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() 
     assert!(last.assignment.urgent);
     assert_eq!(last.assignment.status, CareAssignmentStatus::Submitted);
     let jobs: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM notification_dispatch_jobs WHERE dedup_key LIKE $1",
+        "SELECT count(*) FROM notification_receipts WHERE idempotency_key LIKE $1",
     )
     .bind(format!("care:urgent:{}:%", no_receiver.id))
     .fetch_one(&f.pool)

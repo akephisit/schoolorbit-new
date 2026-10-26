@@ -73,6 +73,13 @@ pub(crate) async fn create_event_in_transaction(
     .fetch_one()
     .await?;
     replace_event_configuration(transaction, event_id, payload).await?;
+    accept_mutation_notifications(
+        transaction,
+        event_id,
+        payload.notify_audience,
+        CalendarNotificationKind::Created,
+    )
+    .await?;
     Ok(event_id)
 }
 
@@ -171,6 +178,13 @@ pub async fn update_event(
         .bind(if payload.all_day { None } else { payload.end_time }).bind(payload.is_public).bind(actor_user_id).bind(id)
         .execute().await?;
     replace_event_configuration(&mut transaction, id, &payload).await?;
+    accept_mutation_notifications(
+        &mut transaction,
+        id,
+        payload.notify_audience,
+        CalendarNotificationKind::Updated,
+    )
+    .await?;
     transaction.commit().await?;
     event_outcome(
         pool,
@@ -377,5 +391,19 @@ async fn replace_pending_event_reminders(
         .execute()
         .await?;
 
+    Ok(())
+}
+
+async fn accept_mutation_notifications(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    notify: bool,
+    kind: CalendarNotificationKind,
+) -> Result<(), AppError> {
+    if notify {
+        let event = super::get_event_for_response_on_connection(tx, id).await?;
+        crate::delivery::notifications::accept_event_in_transaction(tx, &event, &kind, None)
+            .await?;
+    }
     Ok(())
 }

@@ -37,7 +37,9 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 		}
 	}
 	const dependencies = {
-		'$app/env/public': { PUBLIC_VAPID_KEY: '' },
+		'#lib/notifications/browser-state.js': { watchIdentityChanges: () => () => {} },
+		'#lib/api/notifications.js': {},
+		'#lib/stores/auth.js': {},
 		'#lib/api/client.js': {
 			BACKEND_URL: 'https://school.example',
 			getSchoolSubdomainHint: () => null,

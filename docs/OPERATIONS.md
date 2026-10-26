@@ -139,16 +139,16 @@ fill changes its value revision, including same-UUID credential rotation; mutati
 eviction or expiry invalidates older proofs. Inside admission,
 `pool_for_resolved_work` validates the proof and expected tenant UUID locally before
 and after the nonmigrating PoolManager acquisition. It never refetches HTTP or retries
-a failed proof inside admission. Work defers through the existing durable retry path.
-Claim/status retain their single five-second deadline; each Notification item retains
-its whole five-second deadline, and Cleaner phases retain `min(5 seconds, lease / 4)`.
-These deadlines include resolution, admission, pool waiting and database work. The
-logical same-key guard spans network phases; database permits, pools and checked-out
+a failed proof inside admission. Never-consumed Notification work defers to a bounded later probe; consumed presentations never replay.
+Notification DB phases each have a five-second deadline and no whole-item transport deadline;
+Cleaner phases retain `min(5 seconds, lease / 4)`. These DB deadlines include resolution,
+admission, pool waiting and database work. The logical same-key guard spans network phases; database permits, pools and checked-out
 connections end before external delivery/storage I/O.
 
 The second local validation covers a mapping/credential change during a physical
 pool wait. It does not make directory mutation and subsequent SQL atomic; the existing
-domain transaction, source, claim-token and lease fences remain authoritative. A
+domain transaction/source guards remain authoritative; Notification adds irreversible presentation
+consumption and exact device-version cleanup, while Cleaner retains its claim-token/lease fences. A
 fixed `tenant_physical_budget`/`waiting` event identifies contested physical admission;
 its completion/cancellation event retains the separate admission duration. No event
 contains credentials or a database URL.
@@ -189,7 +189,8 @@ The single `PoolManager` owns the executor. Each owner bounds its tenant futures
 excludes overlapping turns for the same tenant/job kind. A logical turn may span
 external I/O, but releases its shared database permit and logical pool lease before
 network delivery. Only owned payloads cross that boundary; completion resolves the
-same tenant UUID and validates its durable claim again. Independent item database
+same tenant UUID; Notification cleanup validates the exact device version, while File Platform
+validates its durable claim. Independent item database
 phases each consume a permit. No idle scheduler pins a pool. Fixed work/operation
 labels report admission, phase hold, checkout and logical lease durations without
 SQL parameters, database URLs, endpoint credentials or personal data.
@@ -205,9 +206,10 @@ past failed or contended rows for this invocation, then resets on the next cron
 invocation. Healthy due backlogs continue in the same invocation. New rows behind
 the cursor are picked up next invocation. An interrupted lock attempt or failed
 unlock closes the advisory-lock session instead of returning it to the pool.
-Calendar's existing partial-success completion and all-failed retry policy remains. Event
-hydration, recipient resolution and each recipient's acceptance transaction reuse the
-advisory-lock connection, including when the tenant pool has only one connection.
+Calendar event hydration, recipient snapshot resolution, bulk inbox acceptance and reminder
+`sent_at` update use one transaction on the advisory-lock connection, including with a one-connection
+tenant pool. All recipients commit together; acceptance failure leaves the reminder unsent for
+business-level recovery. `sent_at` records accepted inboxes, never external delivery.
 
 File reconciliation has a process-local sweep guard and gives unfinished tenants a
 bounded batch before requeuing behind other tenants. The existing 120-second budget
@@ -678,21 +680,93 @@ duplicate rejection under the stable-subject lock. Keep maintenance active on fa
 recover with the matching release or a compatible forward fix. Do not restore an older writer,
 recreate the removed guards, repair tenant content in the migration, or edit SQLx history.
 
+## Notification inbox-first cutover
+
+Tenant [migration 139](../backend-school/migrations/139_notification_inbox_first.sql) and
+[migration 140](../backend-school/migrations/140_notification_receipt_contraction.sql) must deploy with the matching backend, generated API and frontend
+under maintenance with all older writers/dispatchers quiesced. Migration 139 checks inbox/source
+identity, materializes only source-valid pending never-stored rows using original IDs (including
+claims that failed before storage), preserves intentionally absent stored/terminal inboxes and
+marks every legacy presentation `legacy_skipped`. No historical alert is replayed. Its hashed
+migration-owned evidence persists across an interrupted deployment; 140 refuses changed inbox
+content/read/timestamps, receipts or source ledgers before removing redundant payload and obsolete
+lease/retry fields. On refusal retain maintenance, investigate the bounded finding code and repair
+through the owner; never delete inboxes, alter evidence or skip the reconciliation gate.
+
+The typed [acceptance provider](../backend-school/crates/school-notifications/src/dispatch.rs)
+accepts `NewNotification` content, source, stable recipient/business key and presentation policy.
+Producers resolve recipients once and call `create_in_transaction` inside their business save;
+all recipient inboxes and canonical receipts commit together. A failed acceptance rolls back the
+business mutation. Standalone `create(pool, tenant, items)` validates newly accepted recipients and
+wakes the worker only after commit; transactional producers retain their application-owned
+post-commit wake. Replays return the original IDs without changing read state, recreating an absent
+inbox or reopening a presentation. The browser has no arbitrary-recipient notification-send API.
+
+The sole [central worker](../backend-school/crates/school-notifications/src/runtime.rs) reads at most
+32 pending references per tenant pass and runs four items concurrently. It validates source and
+exact ledger/inbox identity, then commits irreversible consumption before SSE or Push. SSE is
+attempted before subscription lookup, so Push configuration/query failure cannot suppress it.
+Push uses four endpoint futures per item, each with a two-second deadline; there is no whole-item
+deadline or endpoint rotation that can exclude later devices. All DB phases have their own
+five-second deadline and release admission, connections and logical pool leases before network I/O.
+Tenant/directory proofs and exact registration versions fence later device cleanup. Startup,
+post-commit hints and the five-minute directory refresh recover never-consumed work without pinning
+idle tenant pools. Transient pre-consumption DB failures defer the tenant probe fifteen seconds;
+identity conflicts terminally block the exact pending reference without transport. Consumed work
+never retries after network, timeout or cleanup uncertainty. Freshness expires after fifteen minutes,
+and Push TTL is bounded by the remaining freshness budget.
+
+Migrations [119](../backend-school/migrations/119_notification_dispatch.sql) and
+[120](../backend-school/migrations/120_notification_dispatch_cutover.sql) are historical predecessors:
+they moved Attendance's former transport queue into the previous central dispatch schema. Their
+preservation/refusal checks remain part of migration history; their lease/retry runtime is superseded
+by 139→140 and must not be restored against the current schema. Historical `published_at` could
+mean suppression, not delivery; the cutover preserves that evidence without replaying old alerts.
+
+The current canonical owner is `notification_receipts`; `notification_presentations` contains
+pending receipt/expiry references only. Presentation consumes that reference and persists an
+attempted/skipped/expired/blocked receipt before SSE/network I/O. Process loss or uncertain network/cleanup
+can lose a presentation and cannot replay it. These outcomes never prove human delivery. Read
+state is independent. Source reset/cancellation prevents unconsumed work; it cannot recall an
+in-flight request or an OS notification. Preserve receipts, source/dedup identities and unread
+inboxes during recovery; roll forward with a 140-compatible writer rather than restoring an old
+lease/retry runtime.
+
+Configure matching `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (HTTPS or mailto contact).
+The runtime config API returns availability and a public-key SHA256 identifier. A malformed or
+mismatched key pair disables Push while inbox/SSE stay available. Browser refresh preserves a
+binding only for the same installation, crypto, key and authenticated session; key/session/account
+changes rotate its version and worker binding token. Revoked/expired sessions are immediately
+ineligible for new Push snapshots. Devices expire after ninety days without confirmation; admission
+allows twenty active bindings per user and bounded cleanup removes at most 100 stale bindings per
+turn. 404/410 retires only the attempted version; 401/403 and global VAPID errors retain devices and
+emit aggregate diagnostics. Never log endpoint URLs, crypto keys or private notification payloads.
+The browser uses the runtime public key; a compiled `PUBLIC_VAPID_KEY` is no longer authoritative.
+
+Automatic browser synchronization conditionally refreshes only an existing local device binding
+using `expected_version`. A remotely revoked/missing/stale binding returns 409 and cannot silently
+re-enroll. New and legacy unproven devices require the user to explicitly select
+“เปิดและซิงก์การแจ้งเตือน”; inbox and SSE work immediately without Push enrollment. Session/key
+changes may require explicit reactivation. Configuration failure preserves an existing good binding.
+
+Notification device eligibility mirrors Auth's session validity, including active-account state,
+through the narrow device/session adapter. Deactivation excludes a binding and bounded cleanup may
+revoke it; reactivation does not recreate that removed binding. This does not reselect recipients,
+change accepted inbox/receipt rows or alter source-owned business snapshots.
+
 ## Attendance rollout and retention
 
 Migration [101](../backend-school/migrations/101_attendance.sql) introduces the attendance owner; [104](../backend-school/migrations/104_attendance_rosters_expand.sql) and [105](../backend-school/migrations/105_attendance_sparse_results_cutover.sql) establish its sparse-result model. Deploy the backend, generated contracts and School frontend through the coordinated maintenance and all-tenant migration gates described below. In the selected academic term, save the central attendance settings, choose counted weekdays/calendar overrides, and assign device operators. Calendar selection controls reports and teacher digests; captures and individual notices remain available on unselected days. Opening a round is read-only. Save persists only explicit changed results; missing results stay unchecked, and absence always requires an explicit check. A saved round retains its compact participant roster so later academic changes cannot rewrite that round's expected coverage.
 
-History and reports use one `REPEATABLE READ READ ONLY` snapshot with shared module, lifecycle and term guards, allowing parallel readers and ordinary saves while retaining exclusion against reset, purge and lifecycle transitions. The [Attendance runtime](../backend-school/crates/school-attendance/src/runtime.rs) owns scheduled teacher digests, finalization and domain work; it does not backfill result placeholders or dispatch transport. Attendance resolves active students/recipients and guardian relationships once in the business save transaction, freezing recipients with the queued message and retaining its thin term/student notification ledger. Later account deactivation or guardian unlink does not change an accepted recipient snapshot. Result and digest transactions use the central provider's typed enqueue operation so ledger and dispatch work commit together; inbox materialization and transport follow later. Dated academic providers supply unchecked coverage when reports or digests are read. Arrival notices deduplicate per recipient/day; corrections have revision keys, and student notifications include the active linked guardians resolved at that save. The operational kinds remain arrival, lesson and special; times use Asia/Bangkok.
+History and reports use one `REPEATABLE READ READ ONLY` snapshot with shared module, lifecycle and term guards, allowing parallel readers and ordinary saves while retaining exclusion against reset, purge and lifecycle transitions. The [Attendance runtime](../backend-school/crates/school-attendance/src/runtime.rs) owns scheduled teacher digests, finalization and domain work; it does not backfill result placeholders or dispatch transport. Attendance resolves active students/recipients and guardian relationships once in the business save transaction, freezing recipients in the inbox and retaining its thin term/student notification ledger. Result and digest transactions call central `create_in_transaction`, so business facts, ledger, all inboxes and canonical receipts commit atomically. Later account deactivation or guardian unlink does not change that accepted recipient snapshot. Dated academic providers supply unchecked coverage when reports or digests are read. Arrival notices deduplicate per recipient/day; corrections have revision keys, and student notifications include active linked guardians resolved at that save. The operational kinds remain arrival, lesson and special; times use Asia/Bangkok.
 
-The sole [central notification worker](../backend-school/crates/school-notifications/src/runtime.rs), registered at application startup, owns transport through the [dispatch provider](../backend-school/crates/school-notifications/src/dispatch.rs). It claims at most 32 due items per tenant pass, runs four items concurrently with a five-second whole-item deadline including admission, preparation, external transport and completion, and fences materialization, suppression and acknowledgment with a token on each 120-second lease. Preparation loads subscriptions once. Push attempts use at most four endpoint futures per item with a two-second endpoint deadline (at most 16 push requests across four items); endpoint order rotates by four positions using the durable dispatch attempt count, so repeated slow prefixes cannot permanently starve the tail across retries. The same batch/item algorithm serves disposable fixtures and the managed runtime. Database preparation and token-fenced cleanup/acknowledgment use separate admitted phases, releasing logical pools before SSE/WebPush. Completion verifies immutable tenant identity before endpoint cleanup and acknowledgment. It visits other tenants before revisiting backlog; future retry leases wait for the regular timer. Startup, periodic discovery and post-commit hints recover durable work, including failed admissions, without retaining idle tenant pools or copying credentials into the tenant-name registry. During materialization, source/job validity and the module guard precede the central queue lock; exact source-ledger identity and owned cancellation remain enforced. Workers and retries do not query current recipient activity or guardian relationships. Physical account/job deletion still cancels through its foreign keys or owned cancellation; reset and purge use typed provider operations under their domain guards. Reset cancels only resolved owned queue/inbox identities before removing source rows, preventing prefetched work from recreating an inbox. Purge blocks unmaterialized nonsuppressed work but permits stored, unpublished work to finish. Stable IDs preserve one inbox row and its read state; a missing previously stored inbox is suppressed rather than recreated. Delivery remains at least once, so SSE or WebPush may repeat. Retryable push/configuration/database failures retain work for retry, invalid endpoints are removed, and transport diagnostics use safe aggregate codes/counts without endpoints or credentials. Server acknowledgment does not prove browser or device receipt; already emitted transport cannot be retracted by reset.
-
-Deploy [migration 119](../backend-school/migrations/119_notification_dispatch.sql), [migration 120](../backend-school/migrations/120_notification_dispatch_cutover.sql) and the matching central-dispatch backend through the protected maintenance and all-tenant migration gates. Stop the previous backend/Attendance dispatcher before cutover; never run both dispatchers. Migration 119 is structurally additive, but strict compiled-history verification prevents an 118 binary from starting or reacquiring a tenant after it applies. Migration 120 atomically copies and reconciles stable identities, payloads, timestamps, attempts and inbox preservation before removing Attendance transport columns. Existing terminal/suppressed rows remain terminal; the recipient snapshot policy does not reopen them. A bounded preservation finding must leave maintenance active for diagnosis and a matching-timeline forward repair; do not normalize source data, replace IDs, delete queue/audit rows or edit applied migrations to force acceptance. After history advances, do not restore the 118 binary. Verify every active tenant's schema, matching release, one central worker, queue progress and authenticated acceptance before reopening traffic. Existing retention behavior is unchanged.
+Use the [inbox-first cutover](#notification-inbox-first-cutover) for the current notification runtime, migration and recovery contract. Source/module guards precede the central receipt lock, including exact Attendance ledger notification/recipient identity. Reset removes only resolved owned receipt/inbox identities before deleting source rows, so prefetched work cannot recreate an inbox. Purge requires accepted inbox or explicit terminal progress and retains source ledgers needed by never-consumed presentation; it does not wait for external delivery. Stable receipts preserve original IDs/read state and prevent resurrection of a missing inbox. Cancellation can prevent an unconsumed attempt but cannot retract in-flight SSE, Push or an OS notification.
 
 Face enrollment requires its own scoped permission and recorded consent acknowledgment. Operators use an assigned enabled station on HTTPS with a webcam; browser models are pinned, locally served assets. Descriptors are encrypted with the existing `ENCRYPTION_KEY`, remain in bounded short-lived process memory for matching, and are never persisted in browser storage. Withdrawal removes templates and invalidates the gallery cache. The turn-and-return camera challenge needs physical acceptance testing and is not a certified liveness detector. Manual attendance remains available.
 
 Accepted JPEG evidence uses the existing private File Platform/R2 path and its configured scanner. Verify that private storage and the scanner are healthy before testing scans. Student and linked-parent access is rechecked on download; evidence is not a public push attachment. The default evidence retention is 30 days and can be set centrally. Expiry enqueues durable File Platform object deletion; a pending storage operation is not proof that bytes have already disappeared from R2.
 
-Term detail purge is restricted to authorized managers and closed terms. Preview the record/byte impact, finish pending notices, provide a reason and confirm the expected record count. The service reconciles explicit results plus virtual unchecked coverage, freezes arrival/lesson/special and assigned-teacher summaries, and enqueues evidence deletion in the same transaction before removing details. Purged terms cannot be edited; summaries and their unchecked coverage remain readable. Export any required individual evidence/history before purge, because aggregate summaries cannot reconstruct deleted details. Do not test purge on a live tenant. Roll forward with a compatible fix rather than altering migration checksums or deleting history.
+Term detail purge is restricted to authorized managers and closed terms. Preview the record/byte impact, verify authoritative notification acceptance/terminal progress, provide a reason and confirm the expected record count. The service reconciles explicit results plus virtual unchecked coverage, freezes arrival/lesson/special and assigned-teacher summaries, and enqueues evidence deletion in the same transaction before removing details. Purged terms cannot be edited; summaries and their unchecked coverage remain readable. Export any required individual evidence/history before purge, because aggregate summaries cannot reconstruct deleted details. Do not test purge on a live tenant. Roll forward with a compatible fix rather than altering migration checksums or deleting history.
 
 ## Required Environment and Secrets
 
@@ -1927,9 +2001,9 @@ Migration [098](../backend-school/migrations/098_calendar_requests_and_date_cont
 
 Deploy the backend, generated permission/API contracts and frontend together behind the usual maintenance and all-tenant migration gates. Migration 098 removes academic context columns from events, so an older backend cannot be restored against the migrated schema. Recovery requires a compatible forward fix or a reviewed database restore; never alter migration history. Run the calendar database suite before rollout and verify request submission, manager approval and the resulting date-calendar entry on an isolated tenant.
 
-Calendar request notifications use the central `NotificationService` through the Calendar delivery adapter in [request_workflow.rs](../backend-school/crates/school-calendar/src/delivery/request_workflow.rs). Calendar retains message/recipient selection and reminder scheduling. New requests notify active staff with both calendar read and manage permissions, resolved through the same role, organization and delegation grants as actor authorization. Decisions notify the active requester independently of the event audience notification option. Central send checks the direct recipient once inside its acceptance transaction, returning `RowNotFound` for a missing/inactive account, then commits the inbox row and dispatch job together to preserve immediate bell/inbox visibility. The central worker later delivers SSE and subscribed WebPush to that accepted recipient snapshot without checking subsequent activity changes. Its stable returned ID records accepted durable work, not external receipt. Links lead to the pending review queue or the requester's approved/rejected history; rejection reasons remain in the private request details.
+Calendar owns notification meaning, recipient selection and reminder schedules. New requests resolve active staff with both calendar read and manage permissions through the same role, organization and delegation grants as actor authorization. Decisions notify the active requester independently of the event audience option. The [request owner](../backend-school/crates/school-calendar/src/requests.rs) accepts these inboxes through central `create_in_transaction` inside the request/decision transaction; event mutations and reminders likewise accept their whole recipient snapshot atomically. Storage failure rolls back the business save and every related inbox/receipt. The [workflow adapter](../backend-school/crates/school-calendar/src/delivery/request_workflow.rs) only wakes presentation after commit.
 
-Calendar still commits its business mutation before resolving recipients and calling central send. A failure or interruption before successful enqueue can therefore leave a saved request or decision without a notification; central delivery guarantees begin when inbox/job enqueue commits. Later transport failures retry centrally and do not invalidate the committed business mutation. Inspect safe producer diagnostics and central queue progress before considering an explicit notification retry. Never replay request approval to resend a notification or submit test notifications to real tenant users.
+The [inbox-first contract](#notification-inbox-first-cutover) governs subsequent presentation. Receipt IDs prove durable acceptance, never browser/device receipt. Source cancellation and missing-inbox guards remain enforced; accepted recipients are not resolved again for transport. Links lead to the pending review queue or the requester's approved/rejected history; rejection reasons remain private request details. Inspect aggregate diagnostics and canonical receipt outcomes when presentation is absent. Never replay approval or create another business event to resend a consumed presentation, and never submit test notifications to real tenant users.
 
 ### Attendance sparse-result cutover and scoped reset
 

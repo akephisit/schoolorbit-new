@@ -1924,7 +1924,7 @@ test('frontend application code routes business API calls through apiClient', as
 	);
 });
 
-test('web push notifications favor fresh visible Android notifications', async () => {
+test('web push notifications bind generic fresh presentation to one device notification id', async () => {
 	const serviceWorker = await readFile(
 		path.join(repoRoot, 'frontend-school/src/service-worker.ts'),
 		'utf8'
@@ -1940,16 +1940,22 @@ test('web push notifications favor fresh visible Android notifications', async (
 
 	assert.match(
 		backendNotificationService,
-		/serde_json::to_vec\(&PushPayload\s*\{\s*id:\s*notification\.id,/
+		/let payload = PushPayload\s*\{\s*id:\s*notification\.id,[\s\S]*serde_json::to_vec\(&payload\)/
 	);
 	assert.match(
 		backendNotificationService,
 		/#\[derive\(serde::Serialize\)\]\s*struct PushPayload<'a>\s*\{\s*id:\s*Uuid,/
 	);
+	assert.match(backendNotificationService, /device_id:\s*sub\.id/);
+	assert.match(backendNotificationService, /device_version:\s*sub\.version/);
+	assert.match(backendNotificationService, /binding_token:\s*sub\.binding_token/);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
 	assert.doesNotMatch(serviceWorker, /options\.tag\s*=/);
-	assert.doesNotMatch(serviceWorker, /renotify:/);
+	assert.match(serviceWorker, /renotify:\s*false/);
 	assert.doesNotMatch(serviceWorker, /options\.renotify\s*=/);
+	assert.match(serviceWorker, /tag:\s*`schoolorbit:\$\{payload\.id\}`/);
+	assert.match(serviceWorker, /bindingMatches/);
+	assert.match(serviceWorker, /claimPresentation\([\s\S]*payload\.id/);
 	assert.match(serviceWorker, /silent:\s*false/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-512\.png['"]/);
@@ -1996,7 +2002,12 @@ test('web push subscription setup stays user gesture safe for iOS', async () => 
 		);
 	assert.ok(syncMethod, 'notification store must expose syncExistingPushSubscription');
 	assert.match(syncMethod[0], /getSubscription\(\)/);
-	assert.match(syncMethod[0], /syncPushSubscription\(subscription\)/);
+	assert.match(
+		syncMethod[0],
+		/syncPushSubscription\(\s*subscription,\s*config,\s*generation,\s*\{\s*binding,\s*intent:\s*state\.intent\s*\}\s*\)/
+	);
+	assert.match(syncMethod[0], /subscriptionKeyMatches\(subscription, config\.public_key\)/);
+	assert.match(syncMethod[0], /getPushConfig\(\)/);
 	assert.doesNotMatch(syncMethod[0], /Notification\.requestPermission\(/);
 	assert.doesNotMatch(syncMethod[0], /pushManager\.subscribe\(/);
 
@@ -2020,7 +2031,7 @@ test('web push subscription setup stays user gesture safe for iOS', async () => 
 	assert.match(pushSettingsComponent, /from '#lib\/components\/ui\/badge\/index\.js'/);
 	assert.match(pushSettingsComponent, /from '#lib\/components\/app-state\/index\.js'/);
 	assert.match(pushSettingsComponent, /notificationStore\.getPushStatus\(\)/);
-	assert.match(pushSettingsComponent, /notificationStore\.enablePushFromUserAction\(true\)/);
+	assert.match(pushSettingsComponent, /notificationStore\.enablePushFromUserAction\(\)/);
 	assert.match(pushSettingsComponent, /เปิด\/ซิงก์การแจ้งเตือน/);
 });
 

@@ -195,8 +195,11 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-academic-lifecycle/src/services/term_activation.rs",
             &["activate_term"],
         ),
-        // Notification completion is the token-fenced acknowledgement work phase.
-        ("school-notifications/src/dispatch.rs", &["finish_delivery"]),
+        // Device cleanup is a bounded runtime DB phase, independently admitted after presentation.
+        (
+            "school-notifications/src/devices.rs",
+            &["cleanup", "register_with_key"],
+        ),
         // Observation status owns locks+mutation+commit, then a fresh response read.
         (
             "school-supervision/src/services/observations.rs",
@@ -204,7 +207,8 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
         ),
         (
             "school-academic-core/src/services/catalog.rs",
-            &["replace_default_teachers"],
+            // Both private entries own begin/locked validation/mutations/commit; query helpers remain connection-only.
+            &["replace_default_teachers", "delete_catalog"],
         ),
         (
             "school-academic-core/src/services/homeroom_roster.rs",

@@ -13388,6 +13388,35 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ListPushDevicesResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/PushDevice"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_LockOutcome": {
         "properties": {
           "data": {
@@ -15396,6 +15425,116 @@
               "status",
               "roles",
               "organization_units"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PushConfigResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "device_expiry_days": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "key_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "max_devices": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "public_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "available",
+              "public_key",
+              "key_id",
+              "max_devices",
+              "device_expiry_days"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PushDevice": {
+        "properties": {
+          "data": {
+            "properties": {
+              "binding_token": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "installation_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "key_id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "last_confirmed_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "version": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "installation_id",
+              "label",
+              "version",
+              "binding_token",
+              "key_id",
+              "last_confirmed_at",
+              "expires_at"
             ],
             "type": "object"
           },
@@ -51478,6 +51617,20 @@
         ],
         "type": "object"
       },
+      "ListPushDevicesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PushDevice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "LockBlocker": {
         "properties": {
           "learningGroupId": {
@@ -55802,6 +55955,86 @@
         ],
         "type": "object"
       },
+      "PushConfigResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "device_expiry_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_devices": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "public_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "public_key",
+          "key_id",
+          "max_devices",
+          "device_expiry_days"
+        ],
+        "type": "object"
+      },
+      "PushDevice": {
+        "properties": {
+          "binding_token": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "installation_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last_confirmed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "installation_id",
+          "label",
+          "version",
+          "binding_token",
+          "key_id",
+          "last_confirmed_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "QrCertificateVerificationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -56590,6 +56823,46 @@
           "reason",
           "evidenceFileIds",
           "allocations"
+        ],
+        "type": "object"
+      },
+      "RegisterPushDeviceRequest": {
+        "properties": {
+          "auth": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "expected_version": {
+            "description": "Conditional automatic refresh cannot recreate a revoked binding. Omit only for explicit enable.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "installation_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "p256dh": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "installation_id",
+          "label",
+          "endpoint",
+          "p256dh",
+          "auth",
+          "key_id"
         ],
         "type": "object"
       },
@@ -109245,6 +109518,185 @@
           }
         },
         "summary": "List notifications for current user",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/push/config": {
+      "get": {
+        "operationId": "getPushConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PushConfigResponse"
+                }
+              }
+            },
+            "description": "Current Web Push key and admission limits"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/push/devices": {
+      "get": {
+        "operationId": "listPushDevices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ListPushDevicesResponse"
+                }
+              }
+            },
+            "description": "Current user's active Push device bindings"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "notifications"
+        ]
+      },
+      "post": {
+        "operationId": "registerPushDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PushDevice"
+                }
+              }
+            },
+            "description": "Registered or refreshed this installation binding"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid endpoint, label or crypto keys"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Key or binding changed, or device limit reached"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Push configuration unavailable"
+          }
+        },
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/push/devices/{id}": {
+      "delete": {
+        "operationId": "unregisterPushDevice",
+        "parameters": [
+          {
+            "description": "Owned device ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Exact owned binding revoked or already absent"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
         "tags": [
           "notifications"
         ]

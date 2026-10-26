@@ -1406,7 +1406,7 @@ async fn every_future_recipient_resolves_before_any_send_and_snapshot_survives_s
     .unwrap();
     assert_eq!(finished.record.status, CorrespondenceStatus::Completed);
     let jobs: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM notification_dispatch_jobs WHERE source_kind='process'",
+        "SELECT count(*) FROM notification_receipts WHERE source_kind='process'",
     )
     .fetch_one(&pool)
     .await
