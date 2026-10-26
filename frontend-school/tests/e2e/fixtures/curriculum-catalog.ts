@@ -26,6 +26,7 @@ export function curriculumCatalogFixture(
 		legacyDuplicates?: boolean;
 		readOnly?: boolean;
 		longCatalog?: boolean;
+		pinnedActivity?: 'outdated' | 'unwarned';
 	} = {}
 ) {
 	const workspace = curriculumStructure({
@@ -130,6 +131,27 @@ export function curriculumCatalogFixture(
 			effectiveFrom: '2027-06-01'
 		}
 	];
+	if (options.pinnedActivity) {
+		for (const version of catalog.filter((item) => item.resourceKind === 'activity'))
+			version.effectiveFrom = version.versionNo === 1 ? '2025-05-01' : '2026-05-01';
+		const activity = catalog.find((item) => item.id === 'activity-v1')!;
+		workspace.requirements.push({
+			...original,
+			id: 'pinned-activity',
+			catalogVersionId: activity.id,
+			catalogId: activity.catalogId,
+			resourceKind: activity.resourceKind,
+			code: activity.code,
+			name: activity.name,
+			section: activity.section,
+			creditCategory: null,
+			subjectGroupId: null,
+			subjectGroupOrder: null,
+			hasNewerCurrentVersion: options.pinnedActivity === 'outdated',
+			metrics: { credit: null, totalHours: '20', weeklyUnit: 'hour', weeklyValue: '1' },
+			displayOrder: 2
+		});
+	}
 	if (options.longCatalog)
 		for (let index = 0; index < 18; index++)
 			catalog.push({
@@ -387,11 +409,15 @@ export async function installCurriculumCatalog(
 					displayOrder: 3
 				};
 				fixture.workspace.programs.push(copied);
-				fixture.workspace.requirements.push({
-					...fixture.original,
-					id: 'copied-requirement',
-					studyProgramId: copied.id
-				});
+				fixture.workspace.requirements.push(
+					...fixture.workspace.requirements
+						.filter((item) => item.studyProgramId === fixture.workspace.programs[0].id)
+						.map((item, index) => ({
+							...structuredClone(item),
+							id: `copied-requirement-${index}`,
+							studyProgramId: copied.id
+						}))
+				);
 				return reply(route, copied);
 			}
 			if (path === '/api/menu/user') return reply(route, { groups: [] });

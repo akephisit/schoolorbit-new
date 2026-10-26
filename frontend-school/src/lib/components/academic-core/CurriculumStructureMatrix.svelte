@@ -426,6 +426,7 @@
 																>
 																{@render touchAction(context, key, requirement.id)}
 																<CurriculumOutdatedBadge
+																	resourceKind={requirement.resourceKind}
 																	hasNewerCurrentVersion={requirement.hasNewerCurrentVersion}
 																/>
 															</Table.Cell>

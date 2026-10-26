@@ -1185,3 +1185,448 @@ async fn catalog_grade_snapshot_existing_nonempty_pin_does_not_bypass_scope() {
     assert!(save(&f, vec![invalid]).await.is_err());
     assert_eq!(before, snapshot(&f).await);
 }
+
+fn activity_row(f: &Fixture, version: Uuid) -> CurriculumStructureRequirementInput {
+    let mut input = row(f, version);
+    input.resource_kind = RequirementResourceKind::Activity;
+    input
+}
+
+async fn activity_revision(
+    f: &Fixture,
+    activity: Uuid,
+    name: &str,
+    from: NaiveDate,
+    status: VersionStatus,
+) -> school_academic_core::models::ActivityVersion {
+    let draft = catalog::create_activity_version(
+        &f.pool,
+        activity,
+        CreateActivityVersionRequest {
+            name: name.into(),
+            description: None,
+            hours_per_week: "1.00".into(),
+            hours_per_term: Some("20.00".into()),
+            scheduling_mode: "synchronized".into(),
+            effective_from: from,
+            term_code: None,
+            grade_level_ids: vec![f.grade],
+        },
+    )
+    .await
+    .unwrap();
+    if status == VersionStatus::Published {
+        catalog::publish_activity_version(
+            &f.pool,
+            draft.id,
+            PublishVersionRequest {
+                row_version: draft.row_version,
+            },
+        )
+        .await
+        .unwrap()
+    } else {
+        if status == VersionStatus::Archived {
+            // Sanitized unavailable revision; the warning provider must exclude archived rows.
+            sqlx::query("UPDATE activity_versions SET status='archived' WHERE id=$1")
+                .bind(draft.id)
+                .execute(&f.pool)
+                .await
+                .unwrap();
+        }
+        catalog::get_activity_version(&f.pool, draft.id)
+            .await
+            .unwrap()
+    }
+}
+
+async fn stable_activity(f: &Fixture) -> Uuid {
+    catalog::create_activity(
+        &f.pool,
+        CreateCatalogActivityRequest {
+            activity_type: "guidance".into(),
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+async fn activity_persistence_snapshot(f: &Fixture) -> Value {
+    sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'program', (SELECT to_jsonb(p) FROM study_programs p WHERE id=$1),
+            'requirements', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_activity_requirements r WHERE study_program_id=$1),
+            'catalog', (SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM activity_versions v),
+            'publications', (SELECT jsonb_agg(to_jsonb(r) ORDER BY publication_id,id) FROM curriculum_publication_activities r))",
+    )
+    .bind(f.program.id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn curriculum_current_activity_warns_only_for_same_stable_current_revision() {
+    let f = fixture("curriculum_current_activity_warning").await;
+    let today = catalog::subject_catalog_today();
+    let activity = stable_activity(&f).await;
+    let old = activity_revision(&f, activity, "กิจกรรมเดิม", today, VersionStatus::Published).await;
+    let other_activity = stable_activity(&f).await;
+    let independent = activity_revision(
+        &f,
+        other_activity,
+        "กิจกรรมอิสระ",
+        today,
+        VersionStatus::Published,
+    )
+    .await;
+    let initial = save(
+        &f,
+        vec![
+            row(&f, f.v1.id),
+            activity_row(&f, old.id),
+            activity_row(&f, independent.id),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(initial
+        .requirements
+        .iter()
+        .all(|r| !r.has_newer_current_version));
+    let current =
+        activity_revision(&f, activity, "กิจกรรมใหม่", today, VersionStatus::Published).await;
+    // Both published activity revisions remain selectable, including in the same grade/term.
+    let options = workspaces::curriculum_management_options(
+        &f.pool,
+        f.level,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for version in [&old, &current] {
+        assert!(
+            options
+                .catalog_versions
+                .iter()
+                .find(|option| option.id == version.id)
+                .unwrap()
+                .selectable_for_new_requirement
+        );
+    }
+    let saved = save(
+        &f,
+        vec![
+            row(&f, f.v1.id),
+            activity_row(&f, old.id),
+            activity_row(&f, current.id),
+            activity_row(&f, independent.id),
+        ],
+    )
+    .await
+    .unwrap();
+    for requirement in &saved.requirements {
+        assert_eq!(
+            requirement.has_newer_current_version,
+            requirement.catalog_version_id == old.id
+        );
+    }
+    let pinned = saved
+        .requirements
+        .iter()
+        .find(|r| r.catalog_version_id == old.id)
+        .unwrap();
+    assert_eq!(pinned.catalog_id, activity);
+    assert_eq!(pinned.version_no, old.version_no);
+    assert_eq!(pinned.name, old.name);
+    assert_eq!(pinned.metrics.weekly_value.as_deref(), Some("1.00"));
+    let before = activity_persistence_snapshot(&f).await;
+    let reread = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(saved).unwrap(),
+        serde_json::to_value(reread).unwrap()
+    );
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+}
+
+#[tokio::test]
+async fn curriculum_current_activity_selection_excludes_unavailable_and_prioritizes_start_date() {
+    let f = fixture("curriculum_current_activity_selection").await;
+    let today = catalog::subject_catalog_today();
+    let activity = stable_activity(&f).await;
+    let v1 = activity_revision(&f, activity, "เริ่มวันนี้", today, VersionStatus::Published).await;
+    activity_revision(&f, activity, "ร่างใหม่", today, VersionStatus::Draft).await;
+    let future = activity_revision(
+        &f,
+        activity,
+        "อนาคต",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    activity_revision(&f, activity, "เก็บถาวร", today, VersionStatus::Archived).await;
+    let earlier = activity_revision(
+        &f,
+        activity,
+        "เลขสูงแต่เริ่มก่อน",
+        today.pred_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    let unavailable = stable_activity(&f).await;
+    let future_only = activity_revision(
+        &f,
+        unavailable,
+        "อนาคตเท่านั้น",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    activity_revision(
+        &f,
+        unavailable,
+        "อนาคตรุ่นถัดไป",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    activity_revision(&f, unavailable, "ร่างเท่านั้น", today, VersionStatus::Draft).await;
+    activity_revision(
+        &f,
+        unavailable,
+        "เก็บถาวรเท่านั้น",
+        today,
+        VersionStatus::Archived,
+    )
+    .await;
+    {
+        let mut connection = f.pool.acquire().await.unwrap();
+        let selected = catalog::current_activity_revisions_on_connection(
+            &mut connection,
+            &[activity, unavailable],
+        )
+        .await
+        .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[&activity].id, v1.id);
+        assert_eq!(selected[&activity].version_no, v1.version_no);
+        assert!(
+            catalog::current_activity_revisions_on_connection(&mut connection, &[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    // Future and old published activity options still use the existing addition policy.
+    let saved = save(
+        &f,
+        vec![
+            activity_row(&f, v1.id),
+            activity_row(&f, future.id),
+            activity_row(&f, earlier.id),
+            activity_row(&f, future_only.id),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(saved
+        .requirements
+        .iter()
+        .all(|r| !r.has_newer_current_version));
+    let same_day =
+        activity_revision(&f, activity, "เริ่มวันนี้รุ่นใหม่", today, VersionStatus::Published).await;
+    let highest_same_day = activity_revision(
+        &f,
+        activity,
+        "เริ่มวันนี้รุ่นล่าสุด",
+        today,
+        VersionStatus::Published,
+    )
+    .await;
+    // Revision number alone cannot override a more recent eligible start date.
+    activity_revision(
+        &f,
+        activity,
+        "เลขสูงสุดแต่เริ่มก่อน",
+        today.pred_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    {
+        let mut connection = f.pool.acquire().await.unwrap();
+        let selected =
+            catalog::current_activity_revisions_on_connection(&mut connection, &[activity])
+                .await
+                .unwrap();
+        assert_eq!(selected[&activity].id, highest_same_day.id);
+    }
+    let saved = save(
+        &f,
+        vec![
+            activity_row(&f, v1.id),
+            activity_row(&f, same_day.id),
+            activity_row(&f, highest_same_day.id),
+            activity_row(&f, future_only.id),
+        ],
+    )
+    .await
+    .unwrap();
+    for requirement in &saved.requirements {
+        assert_eq!(
+            requirement.has_newer_current_version,
+            [v1.id, same_day.id].contains(&requirement.catalog_version_id)
+        );
+    }
+}
+
+#[tokio::test]
+async fn curriculum_current_activity_preserves_draft_history_and_copied_pins() {
+    use school_academic_core::models::{CurriculumViewQuery, OpenCurriculumDraftRequest};
+    use school_academic_core::services::curriculum_publications;
+    let mut f = fixture("curriculum_current_activity_history").await;
+    let activity = stable_activity(&f).await;
+    let old = activity_revision(
+        &f,
+        activity,
+        "กิจกรรมที่ตรึง",
+        catalog::subject_catalog_today(),
+        VersionStatus::Published,
+    )
+    .await;
+    let saved = save(&f, vec![activity_row(&f, old.id)]).await.unwrap();
+    let published = publish_level_fixture(
+        &f.pool,
+        f.level,
+        PublishVersionRequest {
+            row_version: saved.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let first_publication = published.current_publication_id.unwrap();
+    let first_view = CurriculumViewQuery {
+        publication_id: Some(first_publication),
+        draft_id: None,
+    };
+    let before = curriculum_publications::read_workspace(&f.pool, f.level, &first_view)
+        .await
+        .unwrap();
+    assert!(!before.requirements[0].has_newer_current_version);
+    activity_revision(
+        &f,
+        activity,
+        "กิจกรรมปัจจุบัน",
+        old.effective_from,
+        VersionStatus::Published,
+    )
+    .await;
+    let persisted = activity_persistence_snapshot(&f).await;
+    for view in [&first_view, &CurriculumViewQuery::default()] {
+        let after = curriculum_publications::read_workspace(&f.pool, f.level, view)
+            .await
+            .unwrap();
+        let mut expected = serde_json::to_value(&before).unwrap();
+        expected["requirements"][0]["hasNewerCurrentVersion"] = json!(true);
+        assert_eq!(expected, serde_json::to_value(after).unwrap());
+    }
+    assert_eq!(persisted, activity_persistence_snapshot(&f).await);
+    let draft = curriculum_publications::open_draft(
+        &f.pool,
+        f.edition,
+        OpenCurriculumDraftRequest {
+            row_version: published.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let draft_view = CurriculumViewQuery {
+        publication_id: None,
+        draft_id: draft.draft_id,
+    };
+    let draft_workspace = curriculum_publications::read_workspace(&f.pool, f.level, &draft_view)
+        .await
+        .unwrap();
+    assert_eq!(draft_workspace.requirements[0].catalog_version_id, old.id);
+    assert!(draft_workspace.requirements[0].has_newer_current_version);
+    let second = publish_level_fixture(
+        &f.pool,
+        f.level,
+        PublishVersionRequest {
+            row_version: draft_workspace.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(second.current_publication_id, Some(first_publication));
+    let persisted = activity_persistence_snapshot(&f).await;
+    let historical = curriculum_publications::read_workspace(&f.pool, f.level, &first_view)
+        .await
+        .unwrap();
+    assert_eq!(historical.requirements[0].catalog_version_id, old.id);
+    assert_eq!(historical.requirements[0].name, old.name);
+    assert!(historical.requirements[0].has_newer_current_version);
+    assert_eq!(persisted, activity_persistence_snapshot(&f).await);
+
+    let destination = curriculum::create(
+        &f.pool,
+        CreateCurriculumRequest {
+            name: "สำเนากิจกรรม".into(),
+            revision_year: 2570,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let level = curriculum::create_level(
+        &f.pool,
+        destination.id,
+        CreateCurriculumLevelRequest {
+            draft_id: destination.draft_id.unwrap(),
+            name_th: "สำเนา".into(),
+            grade_level_ids: vec![f.grade],
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let source = curriculum::get_program(&f.pool, f.program.id)
+        .await
+        .unwrap();
+    let copied = curriculum::copy_program(
+        &f.pool,
+        level.id,
+        CopyStudyProgramRequest {
+            draft_id: destination.draft_id.unwrap(),
+            source_program_id: source.id,
+            source_row_version: source.row_version,
+            destination_row_version: level.row_version,
+            name_th: None,
+        },
+    )
+    .await
+    .unwrap();
+    f.edition = destination.id;
+    f.level = level.id;
+    f.program = copied;
+    let workspace = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    let pin = &workspace.requirements[0];
+    f.slot = pin.term_slot_id;
+    assert_eq!(pin.catalog_version_id, old.id);
+    assert_eq!(pin.version_no, old.version_no);
+    assert_eq!(pin.name, old.name);
+    assert!(pin.has_newer_current_version);
+    let mut retained = activity_row(&f, old.id);
+    retained.display_order = 7;
+    retained.requirement_kind = RequirementKind::Elective;
+    let saved = save(&f, vec![retained]).await.unwrap();
+    assert_eq!(saved.requirements[0].catalog_version_id, old.id);
+    assert!(saved.requirements[0].has_newer_current_version);
+}

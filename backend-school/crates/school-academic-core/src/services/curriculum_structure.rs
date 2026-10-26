@@ -213,8 +213,17 @@ pub(super) async fn get_workspace_from_publication(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let current_revisions =
+    let current_subject_revisions =
         super::catalog::current_subject_revisions_on_connection(connection, &subject_ids).await?;
+    let activity_ids = rows
+        .iter()
+        .filter(|row| row.resource_kind == RequirementResourceKind::Activity)
+        .map(|row| row.catalog_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current_activity_revisions =
+        super::catalog::current_activity_revisions_on_connection(connection, &activity_ids).await?;
 
     let version_ids = rows
         .iter()
@@ -241,10 +250,16 @@ pub(super) async fn get_workspace_from_publication(
     let mut requirements = rows
         .into_iter()
         .map(|row| {
-            let has_newer_current_version = row.resource_kind == RequirementResourceKind::Course
-                && current_revisions
+            let current_version_no = match row.resource_kind {
+                RequirementResourceKind::Course => current_subject_revisions
                     .get(&row.catalog_id)
-                    .is_some_and(|current| current.version_no > row.version_no);
+                    .map(|current| current.version_no),
+                RequirementResourceKind::Activity => current_activity_revisions
+                    .get(&row.catalog_id)
+                    .map(|current| current.version_no),
+            };
+            let has_newer_current_version =
+                current_version_no.is_some_and(|version_no| version_no > row.version_no);
             let group = groups.get(&row.catalog_version_id);
             let mut requirement =
                 requirement_from_row(row, has_newer_current_version, &mut validation);

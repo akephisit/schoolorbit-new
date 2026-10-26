@@ -275,10 +275,10 @@ test('published comparison and document show only the old badge without creating
 	expect(state.errors).toEqual([]);
 });
 
-test('copying a published program keeps its pinned v1 even when v2 is current', async ({
+test('copying a published program keeps its pinned course and activity v1 warnings', async ({
 	page
 }) => {
-	const fixture = curriculumCatalogFixture();
+	const fixture = curriculumCatalogFixture({ pinnedActivity: 'outdated' });
 	const state = await installCurriculumCatalog(page, fixture);
 	await page.goto(curriculumCatalogPath);
 	await page.getByRole('button', { name: 'คัดลอกแผนจากฉบับเดิม', exact: true }).click();
@@ -299,7 +299,7 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 				.filter((item) => item.studyProgramId === 'copied-program')
 				.map((item) => item.catalogVersionId)
 		)
-		.toEqual([ids.catalogVersion]);
+		.toEqual([ids.catalogVersion, 'activity-v1']);
 	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
 	await page.getByRole('combobox', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
 	await page.getByRole('option', { name: 'แผนคัดลอก', exact: true }).click();
@@ -310,6 +310,11 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 			.getByRole('button', { name: 'เก่า', exact: true })
 	).toBeVisible();
 	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).not.toContainText(/\bv\d+\b/);
+	const activity = page.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' });
+	await expect(activity.getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
+	await activity.getByRole('button', { name: 'เก่า', exact: true }).focus();
+	await expect(page.getByRole('tooltip')).toHaveText('มีกิจกรรมรุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน');
+	await expect(activity).not.toContainText(/\bv\d+\b/);
 	expect(state.writes).toHaveLength(1);
 	expect(state.writes[0].path).toContain('/copy-program');
 	expect(state.errors).toEqual([]);
@@ -321,7 +326,7 @@ for (const width of [1440, 390])
 			page
 		}, testInfo) => {
 			await page.setViewportSize({ width, height: 900 });
-			const fixture = curriculumCatalogFixture({ longCatalog: true });
+			const fixture = curriculumCatalogFixture({ longCatalog: true, pinnedActivity: 'outdated' });
 			const state = await installCurriculumCatalog(page, fixture, { mode });
 			await openCurriculumEditor(page);
 			await expect(page.locator('html')).toHaveClass(mode === 'dark' ? /dark/ : /^(?!.*dark)/);
@@ -368,6 +373,21 @@ for (const width of [1440, 390])
 					fullPage: true
 				});
 			}
+			const activity = editor(page).getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' });
+			const activityBadge = activity.getByRole('button', { name: 'เก่า', exact: true });
+			await expect(activityBadge).toBeVisible();
+			await expect(activityBadge.locator('[data-slot="badge"]')).toHaveClass(/text-warning/);
+			if (width === 390) await page.keyboard.press('Escape');
+			await activityBadge.scrollIntoViewIfNeeded();
+			if (width === 390) await activityBadge.tap();
+			else await activityBadge.focus();
+			await expect(page.getByRole('tooltip')).toHaveText(
+				'มีกิจกรรมรุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน'
+			);
+			await page.screenshot({
+				path: path.join(dir, `outdated-activity-${width}-${mode}-explanation.png`),
+				fullPage: true
+			});
 			expect(state.errors).toEqual([]);
 			expect(state.unexpected).toEqual([]);
 		});
@@ -391,4 +411,85 @@ test('false server status shows no badge in comparison, document or editor even 
 	await expect(editor(page)).not.toContainText(/\bv\d+\b/);
 	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
+});
+
+for (const status of ['outdated', 'unwarned'] as const) {
+	test(`activity ${status} server status flows through editor and current/historical comparison/document`, async ({
+		page
+	}) => {
+		const fixture = curriculumCatalogFixture({ pinnedActivity: status });
+		const state = await installCurriculumCatalog(page, fixture);
+		await openCurriculumEditor(page);
+		const activityRow = (scope: ReturnType<typeof editor> | Page) =>
+			scope.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' });
+		const assertActivity = async (scope: ReturnType<typeof editor> | Page) => {
+			const row = activityRow(scope);
+			await expect(row).toHaveCount(1);
+			await expect(row).not.toContainText(/\bv\d+\b/);
+			const badge = row.getByRole('button', { name: 'เก่า', exact: true });
+			await expect(badge).toHaveCount(status === 'outdated' ? 1 : 0);
+			if (status === 'outdated') {
+				await badge.focus();
+				await expect(page.getByRole('tooltip')).toHaveText(
+					'มีกิจกรรมรุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน'
+				);
+				await page.keyboard.press('Escape');
+			}
+		};
+		await assertActivity(editor(page));
+		await editor(page).getByRole('button', { name: 'Close', exact: true }).click();
+		for (const tab of ['เทียบทุกแผน', 'เอกสารรายแผน']) {
+			await page.getByRole('tab', { name: tab, exact: true }).click();
+			await assertActivity(page);
+		}
+		fixture.workspace.level = {
+			...fixture.workspace.level,
+			status: 'published',
+			draftId: null,
+			publicationId: 'f2000000-0000-4000-8000-000000000401'
+		};
+		await page.goto(
+			`${curriculumCatalogPath.split('?')[0]}?publicationId=${fixture.workspace.level.publicationId}`
+		);
+		await expect(page.getByText('ประวัติการเผยแพร่ · อ่านอย่างเดียว')).toBeVisible();
+		for (const tab of ['เทียบทุกแผน', 'เอกสารรายแผน']) {
+			await page.getByRole('tab', { name: tab, exact: true }).click();
+			await assertActivity(page);
+		}
+		await expect(page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true })).toHaveCount(0);
+		expect(state.writes).toEqual([]);
+		expect(state.errors).toEqual([]);
+		expect(state.unexpected).toEqual([]);
+	});
+}
+
+test('changing an outdated activity requirement kind and saving retains its pinned version and warning', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture({ pinnedActivity: 'outdated' });
+	const state = await installCurriculumCatalog(page, fixture);
+	await openCurriculumEditor(page);
+	const activity = editor(page).getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' });
+	await activity.getByRole('combobox', { name: /^เงื่อนไขของ กิจกรรมชุมนุม/ }).click();
+	await page.getByRole('option', { name: 'เลือก', exact: true }).click();
+	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
+	await expect(editor(page)).toBeHidden();
+	expect(state.writes).toHaveLength(1);
+	expect(state.writes[0].body).toMatchObject({
+		requirements: [
+			{ catalogVersionId: ids.catalogVersion, resourceKind: 'course' },
+			{ catalogVersionId: 'activity-v1', resourceKind: 'activity', requirementKind: 'elective' }
+		]
+	});
+	await expect(
+		page
+			.getByRole('row')
+			.filter({ hasText: 'กิจกรรมชุมนุม' })
+			.getByRole('button', { name: 'เก่า', exact: true })
+	).toBeVisible();
+	expect(
+		fixture.workspace.requirements.find((item) => item.resourceKind === 'activity')
+	).toMatchObject({ catalogVersionId: 'activity-v1', versionNo: 1, hasNewerCurrentVersion: true });
+	expect(state.errors).toEqual([]);
+	expect(state.unexpected).toEqual([]);
 });

@@ -797,6 +797,7 @@
 														{source?.name ?? option?.name ?? 'ไม่มีข้อมูลชื่อในทะเบียน'}
 													</div>
 													<CurriculumOutdatedBadge
+														resourceKind={requirement.resourceKind}
 														hasNewerCurrentVersion={source?.hasNewerCurrentVersion ?? false}
 													/>
 												</Table.Cell>
