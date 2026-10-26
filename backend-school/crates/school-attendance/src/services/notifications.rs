@@ -155,6 +155,7 @@ pub async fn authorize_delivery_on_connection(
     connection: &mut sqlx::PgConnection,
     source_id: Uuid,
     recipient_id: Uuid,
+    notification_id: Uuid,
 ) -> Result<bool, AppError> {
     DbSession::new(&mut *connection)
         .query(
@@ -163,16 +164,20 @@ pub async fn authorize_delivery_on_connection(
         )
         .execute()
         .await?;
-    Ok(DbSession::new(connection)
-        .scalar(
-            "attendance.services.notifications.authorize_delivery_on_connection",
-            "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE id=$1 AND recipient_id=$2)",
-        )
-        .bind(source_id)
-        .bind(recipient_id)
-        .fetch_one()
-        .await?)
+    let ledger:Option<(Uuid,Uuid)>=DbSession::new(connection).query_as("attendance.notifications.source_identity","SELECT recipient_id,notification_id FROM attendance_notifications WHERE id=$1 FOR SHARE").bind(source_id).fetch_optional().await?;
+    match ledger {
+        None => Ok(false),
+        Some((recipient, notification))
+            if recipient == recipient_id && notification == notification_id =>
+        {
+            Ok(true)
+        }
+        Some(_) => Err(AppError::Conflict(
+            "notification_ledger_identity_conflict".into(),
+        )),
+    }
 }
+
 pub async fn queue_digest(
     pool: &PgPool,
     term: Uuid,

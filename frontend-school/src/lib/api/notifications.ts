@@ -19,11 +19,17 @@ export async function listPushDevices(): Promise<PushDevice[]> {
 		'ไม่สามารถโหลดอุปกรณ์ได้'
 	).items;
 }
+export class PushBindingChangedError extends Error {
+	constructor() {
+		super('push_binding_changed');
+		this.name = 'PushBindingChangedError';
+	}
+}
 export async function registerPushDevice(body: RegisterPushDeviceRequest): Promise<PushDevice> {
-	return requireApiData(
-		await apiClient.post<PushDevice>('/api/notifications/push/devices', body),
-		'ไม่สามารถเชื่อมต่ออุปกรณ์ได้'
-	);
+	const response = await apiClient.post<PushDevice>('/api/notifications/push/devices', body);
+	if (!response.success && response.status === 409 && response.error === 'push_binding_changed')
+		throw new PushBindingChangedError();
+	return requireApiData(response, 'ไม่สามารถเชื่อมต่ออุปกรณ์ได้');
 }
 export async function unregisterPushDevice(id: string, version: string): Promise<void> {
 	requireApiData(

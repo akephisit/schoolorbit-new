@@ -5,6 +5,8 @@ import {
 import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
 import {
 	beginBinding,
+	beginBindingRefresh,
+	forgetBinding,
 	clearBinding,
 	readBrowserState,
 	saveBinding,
@@ -17,12 +19,13 @@ import {
 	getPushConfig,
 	listPushDevices,
 	registerPushDevice,
+	PushBindingChangedError,
 	unregisterPushDevice,
 	type PushConfig,
 	type PushDevice
 } from '#lib/api/notifications.js';
 import { authStore } from '#lib/stores/auth.js';
-import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
+import { apiClient, BACKEND_URL, getSchoolSubdomainHint, requireApiData } from '#lib/api/client.js';
 import type { components } from '#lib/api/generated/school-api.js';
 import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
 import { workStore } from '#lib/stores/work.js';
@@ -91,6 +94,7 @@ type Schemas = components['schemas'];
 
 export type Notification = Schemas['Notification'];
 type ListNotificationsResponse = Schemas['ListNotificationsResponse'];
+type EmptyData = Schemas['EmptyData'];
 
 export interface NotificationState {
 	notifications: Notification[];
@@ -162,7 +166,8 @@ function createNotificationStore() {
 	async function closeDeviceNotifications() {
 		if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
 		try {
-			const registration = await getPushRegistration();
+			const registration = await navigator.serviceWorker.getRegistration('/');
+			if (!registration) return;
 			for (const notification of await registration.getNotifications()) notification.close();
 		} catch (error) {
 			console.error('Failed to close device notifications', error);
@@ -219,6 +224,7 @@ function createNotificationStore() {
 	};
 	let needsReconcile = false;
 	let dataGeneration = 0;
+	let lifetimeGeneration = 0;
 	let signalVersion = 0;
 	let reconcileInFlight: EventSource | null = null;
 	const idle = createVisibilityIdle({
@@ -427,6 +433,11 @@ function createNotificationStore() {
 							? 0
 							: 1)
 				}));
+				if (replay) {
+					// Transaction timestamps cannot prove that an unknown inbox row was in the snapshot.
+					markReconcileRequired();
+					void reconcileAfterOpen(source, generation);
+				}
 				const expiresAt = created + 15 * 60_000;
 				if (!readAt && !replay && expiresAt > Date.now()) {
 					void presentLive(newNotif, expiresAt, () => ownsEventSource(source, generation));
@@ -543,6 +554,7 @@ function createNotificationStore() {
 
 	function closeSSE() {
 		dataGeneration++;
+		lifetimeGeneration++;
 		stopIdentityListener?.();
 		stopIdentityListener = null;
 		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator)
@@ -590,7 +602,13 @@ function createNotificationStore() {
 					`/api/notifications?limit=${limit}`
 				);
 
-				if (!ownsRequest()) return false;
+				if (!ownsRequest()) {
+					if (generation === dataGeneration && isCurrent() && eventSource?.readyState === 1) {
+						markReconcileRequired();
+						void reconcileAfterOpen(eventSource, sseGeneration);
+					}
+					return false;
+				}
 				if (response.success && response.data) {
 					const items = response.data.items.map((item) => ({
 						...item,
@@ -622,15 +640,15 @@ function createNotificationStore() {
 		closeSSE,
 
 		async markAsRead(id: string) {
-			const generation = dataGeneration;
+			const generation = lifetimeGeneration;
 			try {
-				await apiClient.post<Record<string, never>>(`/api/notifications/${id}/read`);
-				if (generation !== dataGeneration) return;
+				requireApiData(
+					await apiClient.post<EmptyData>(`/api/notifications/${id}/read`),
+					'ไม่สามารถบันทึกการอ่านแจ้งเตือนได้'
+				);
+				if (generation !== lifetimeGeneration) return;
 				signalVersion++;
 				update((state) => {
-					const unread =
-						(seen.has(id) && !seen.get(id)) ||
-						state.notifications.some((item) => item.id === id && !item.read_at);
 					const readAt = new Date().toISOString();
 					seen.set(id, readAt);
 					return {
@@ -638,33 +656,35 @@ function createNotificationStore() {
 						notifications: state.notifications.map((item) =>
 							item.id === id ? { ...item, read_at: readAt } : item
 						),
-						unreadCount: Math.max(0, state.unreadCount - (unread ? 1 : 0))
+						unreadCount: state.unreadCount
 					};
 				});
+				await notificationStore.fetchNotifications();
 			} catch (error) {
 				console.error('Failed to mark as read', error);
 			}
 		},
 
 		async markAllAsRead() {
-			const generation = dataGeneration;
-			const version = signalVersion;
+			const generation = lifetimeGeneration;
+			const ids = new Set(seen.keys());
 			try {
-				await apiClient.post<Record<string, never>>('/api/notifications/read-all');
-				if (generation !== dataGeneration) return;
-				if (version !== signalVersion) {
-					await notificationStore.fetchNotifications();
-					return;
-				}
+				requireApiData(
+					await apiClient.post<EmptyData>('/api/notifications/read-all'),
+					'ไม่สามารถบันทึกการอ่านแจ้งเตือนทั้งหมดได้'
+				);
+				if (generation !== lifetimeGeneration) return;
 				signalVersion++;
 				const readAt = new Date().toISOString();
-				for (const id of seen.keys()) seen.set(id, readAt);
+				for (const id of ids) seen.set(id, readAt);
 				update((state) => ({
 					...state,
-					notifications: state.notifications.map((item) => ({ ...item, read_at: readAt })),
-					unreadCount: 0
+					notifications: state.notifications.map((item) =>
+						ids.has(item.id) ? { ...item, read_at: readAt } : item
+					)
 				}));
-				toast.success('อ่านทั้งหมดแล้ว');
+				await notificationStore.fetchNotifications();
+				if (generation === lifetimeGeneration) toast.success('อ่านทั้งหมดแล้ว');
 			} catch (error) {
 				console.error('Failed to mark all as read', error);
 			}
@@ -677,7 +697,10 @@ function createNotificationStore() {
 			if (!previous) return;
 			try {
 				await identityReady;
-				const binding = await clearBinding(previous);
+				if (generation !== pushGeneration) return;
+				const state = await readBrowserState();
+				if (generation !== pushGeneration) return;
+				const binding = await clearBinding(previous, state.intent);
 				await closeDeviceNotifications();
 				if (binding) {
 					try {
@@ -688,34 +711,37 @@ function createNotificationStore() {
 				}
 				if (generation !== pushGeneration) return;
 				if (isPushMessagingSupported()) {
-					const registration = await getPushRegistration();
+					const registration = await navigator.serviceWorker.getRegistration('/');
+					if (!registration || generation !== pushGeneration) return;
+					const subscription = await registration.pushManager.getSubscription();
 					if (generation !== pushGeneration) return;
-					await (await registration.pushManager.getSubscription())?.unsubscribe();
+					await subscription?.unsubscribe();
 				}
 			} catch (error) {
 				console.error('Failed to clear local notification device', error);
 			}
 		},
 
-		async unsubscribe() {
-			await this.prepareLogout();
-			return true;
-		},
 		async revokePushDevice(device: PushDevice) {
 			const generation = pushGeneration;
 			await unregisterPushDevice(device.id, device.version);
 			if (generation !== pushGeneration) return;
 			const state = await readBrowserState();
+			if (generation !== pushGeneration) return;
 			if (
 				state.binding &&
 				state.binding.id === device.id &&
 				state.binding.version === device.version
 			) {
-				pushGeneration++;
+				const currentGeneration = ++pushGeneration;
 				await clearBinding(state.identity!, state.intent);
+				if (currentGeneration !== pushGeneration) return;
 				await closeDeviceNotifications();
-				const registration = await getPushRegistration();
-				await (await registration.pushManager.getSubscription())?.unsubscribe();
+				const registration = await navigator.serviceWorker.getRegistration('/');
+				if (!registration || currentGeneration !== pushGeneration) return;
+				const subscription = await registration.pushManager.getSubscription();
+				if (currentGeneration !== pushGeneration) return;
+				await subscription?.unsubscribe();
 			}
 		},
 		async syncExistingPushSubscription() {
@@ -725,6 +751,15 @@ function createNotificationStore() {
 			const generation = pushGeneration;
 			try {
 				await identityReady;
+				const state = await readBrowserState();
+				const binding = state.binding;
+				if (
+					!binding ||
+					binding.identity !== deviceIdentity() ||
+					state.identity !== binding.identity ||
+					generation !== pushGeneration
+				)
+					return false;
 				const config = await getPushConfig();
 				if (
 					!config.available ||
@@ -736,7 +771,10 @@ function createNotificationStore() {
 				const registration = await getPushRegistration();
 				const subscription = await registration.pushManager.getSubscription();
 				if (!subscription || !subscriptionKeyMatches(subscription, config.public_key)) return false;
-				return await syncPushSubscription(subscription, config, generation);
+				return await syncPushSubscription(subscription, config, generation, {
+					binding,
+					intent: state.intent
+				});
 			} catch (error) {
 				console.error('Failed to sync existing push subscription', error);
 				return false;
@@ -746,10 +784,10 @@ function createNotificationStore() {
 			bindIdentity();
 			if (!identity || !isPushMessagingSupported()) return false;
 			// Request permission within the user's action, before asynchronous configuration reads.
+			const generation = pushGeneration;
 			const permission =
 				Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-			if (permission !== 'granted') return false;
-			const generation = pushGeneration;
+			if (permission !== 'granted' || generation !== pushGeneration) return false;
 			try {
 				await identityReady;
 				const config = await getPushConfig();
@@ -846,24 +884,43 @@ function createNotificationStore() {
 	async function syncPushSubscription(
 		subscription: PushSubscription,
 		config: PushConfig,
-		generation: number
+		generation: number,
+		refresh?: { binding: DeviceBinding; intent: string }
 	) {
 		const payload = subscriptionPayload(subscription);
 		if (!payload || !identity || !config.key_id || generation !== pushGeneration) return false;
 		const scope = deviceIdentity();
 		if (!scope) return false;
 		const intent = crypto.randomUUID();
-		const state = await beginBinding(scope, intent);
-		if (generation !== pushGeneration) return false;
-		const device = await registerPushDevice({
-			...payload,
-			installation_id: state.installation_id,
-			label: isIOSDevice() ? 'iPhone / iPad' : 'เว็บเบราว์เซอร์',
-			key_id: config.key_id
-		});
+		const state = refresh
+			? await beginBindingRefresh(refresh.binding, refresh.intent, intent)
+			: await beginBinding(scope, intent);
+		if (!state || generation !== pushGeneration) return false;
+		let device: PushDevice;
+		try {
+			device = await registerPushDevice({
+				...payload,
+				installation_id: state.installation_id,
+				label: isIOSDevice() ? 'iPhone / iPad' : 'เว็บเบราว์เซอร์',
+				key_id: config.key_id,
+				...(refresh ? { expected_version: refresh.binding.version } : {})
+			});
+		} catch (error) {
+			if (refresh && error instanceof PushBindingChangedError) {
+				if (generation !== pushGeneration) return false;
+				const retiredIntent = await forgetBinding(refresh.binding, intent);
+				if (!retiredIntent || generation !== pushGeneration) return false;
+				await closeDeviceNotifications();
+				const current = await readBrowserState();
+				if (generation === pushGeneration && current.intent === retiredIntent && !current.binding)
+					await subscription.unsubscribe();
+				return false;
+			}
+			throw error;
+		}
 		const binding: DeviceBinding = { ...device, identity: scope, intent };
 		if (generation !== pushGeneration || !(await saveBinding(binding))) {
-			if (generation !== pushGeneration) {
+			if (generation !== pushGeneration && (await readBrowserState()).identity !== scope) {
 				try {
 					await unregisterPushDevice(device.id, device.version);
 				} catch (error) {

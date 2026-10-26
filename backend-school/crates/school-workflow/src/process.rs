@@ -822,18 +822,22 @@ pub async fn authorize_notification_on_connection(
 ) -> Result<bool, AppError> {
     // Central materialization calls this inside its transaction before locking its job.
     // Share the engine's instance guard so a transition cannot invalidate this decision mid-commit.
-    let instance: Option<Uuid> = DbSession::new(&mut *connection)
-        .scalar(
+    let identity: Option<(Uuid, Uuid)> = DbSession::new(&mut *connection)
+        .query_as(
             "workflow.src.process.authorize_notification_on_connection",
-            "SELECT instance_id FROM process_notification_sources WHERE id=$1 AND recipient_id=$2",
+            "SELECT instance_id,recipient_id FROM process_notification_sources WHERE id=$1",
         )
         .bind(id)
-        .bind(user)
         .fetch_optional()
         .await?;
-    let Some(instance) = instance else {
+    let Some((instance, recipient)) = identity else {
         return Ok(false);
     };
+    if recipient != user {
+        return Err(AppError::Conflict(
+            "notification_source_identity_conflict".into(),
+        ));
+    }
     let present: Option<Uuid> = DbSession::new(&mut *connection)
         .scalar(
             "workflow.src.process.authorize_notification_on_connection",

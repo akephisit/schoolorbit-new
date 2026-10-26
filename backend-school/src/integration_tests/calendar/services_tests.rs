@@ -1646,21 +1646,16 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
 }
 
 #[tokio::test]
-async fn request_workflow_keeps_committed_mutations_when_notification_storage_fails() {
+async fn request_workflow_rolls_back_business_and_all_inboxes_on_acceptance_failure_then_retries_once(
+) {
     use school_authorization::ActorContext;
     use school_calendar::requests::{CalendarRequestStatus, CreateCalendarRequest};
     use school_permissions::registry::codes;
-    let pool = migrated_pool("calendar_request_notification_failure").await;
+    let pool = migrated_pool("calendar_request_atomic_notification_failure").await;
     let fixture = insert_fixture(&pool).await;
     let manager_id = insert_user(&pool, "staff", "Manager").await;
     let required = [codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_MANAGE_SCHOOL];
     grant_calendar_role(&pool, manager_id, &required).await;
-    sqlx::query(
-        "ALTER TABLE notifications ADD CONSTRAINT synthetic_notification_failure CHECK (false)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
     let actor = ActorContext {
         user_id: fixture.staff_user_id,
         permissions: vec![required[0].into(), codes::CALENDAR_REQUEST_OWN.into()],
@@ -1671,23 +1666,63 @@ async fn request_workflow_keeps_committed_mutations_when_notification_storage_fa
     };
     let (tx, mut rx) = broadcast::channel::<TenantNotificationEvent>(8);
     let workflow = services::CalendarRequestWorkflow::new(&pool, &tx, "failure-test");
-    let request = workflow
-        .create(
-            &actor,
-            CreateCalendarRequest {
-                title: "Storage failure fixture".into(),
-                description: "Synthetic".into(),
-                location: None,
-                start_date: calendar_today(),
-                end_date: calendar_today(),
-                all_day: true,
-                start_time: None,
-                end_time: None,
-            },
-        )
+    let payload = CreateCalendarRequest {
+        title: "Atomic storage failure fixture".into(),
+        description: "Synthetic".into(),
+        location: None,
+        start_date: calendar_today(),
+        end_date: calendar_today(),
+        all_day: true,
+        start_time: None,
+        end_time: None,
+    };
+    sqlx::query("ALTER TABLE notifications ADD CONSTRAINT synthetic_notification_failure CHECK(false) NOT VALID").execute(&pool).await.unwrap();
+    assert!(workflow.create(&actor, payload.clone()).await.is_err());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM calendar_event_requests")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_receipts")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(rx.try_recv().is_err());
+    sqlx::query("ALTER TABLE notifications DROP CONSTRAINT synthetic_notification_failure")
+        .execute(&pool)
         .await
         .unwrap();
+    let request = workflow.create(&actor, payload).await.unwrap();
     assert_eq!(request.status, CalendarRequestStatus::Pending);
+    let counts_before:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM calendar_events),(SELECT count(*) FROM notifications),(SELECT count(*) FROM notification_receipts)").fetch_one(&pool).await.unwrap();
+    sqlx::query("ALTER TABLE notifications ADD CONSTRAINT synthetic_notification_failure CHECK(false) NOT VALID").execute(&pool).await.unwrap();
+    assert!(workflow
+        .approve(
+            &manager,
+            request.id,
+            payload_event_for_pending_test(calendar_today(), fixture.academic_year_id)
+        )
+        .await
+        .is_err());
+    let counts_after:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM calendar_events),(SELECT count(*) FROM notifications),(SELECT count(*) FROM notification_receipts)").fetch_one(&pool).await.unwrap();
+    assert_eq!(counts_before, counts_after);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT status FROM calendar_event_requests WHERE id=$1")
+            .bind(request.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "pending"
+    );
+    sqlx::query("ALTER TABLE notifications DROP CONSTRAINT synthetic_notification_failure")
+        .execute(&pool)
+        .await
+        .unwrap();
     let outcome = workflow
         .approve(
             &manager,
@@ -1698,7 +1733,6 @@ async fn request_workflow_keeps_committed_mutations_when_notification_storage_fa
         .unwrap();
     assert_eq!(outcome.request.status, CalendarRequestStatus::Approved);
     assert!(outcome.request.event_id.is_some());
-    assert!(rx.try_recv().is_err());
     assert!(workflow
         .approve(
             &manager,
@@ -1707,4 +1741,5 @@ async fn request_workflow_keeps_committed_mutations_when_notification_storage_fa
         )
         .await
         .is_err());
+    assert!(rx.try_recv().is_err());
 }

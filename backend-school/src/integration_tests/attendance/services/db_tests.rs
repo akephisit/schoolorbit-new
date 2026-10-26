@@ -524,27 +524,24 @@ async fn attendance_partial_save_preserves_unchecked_and_deduplicates_every_guar
             .summaries
             .is_empty()
     );
-    for n in school_notifications::dispatch::claim(&f.pool)
+    for n in school_notifications::dispatch::pending(&f.pool)
         .await
         .unwrap()
     {
-        school_notifications::dispatch::materialize(
+        school_notifications::dispatch::consume(
             &f.pool,
             &n,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::materialize(
+        school_notifications::dispatch::consume(
             &f.pool,
             &n,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::acknowledge(&f.pool, &n)
-            .await
-            .unwrap();
     }
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
@@ -696,20 +693,17 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     )
     .await
     .is_err());
-    for n in school_notifications::dispatch::claim(&f.pool)
+    for n in school_notifications::dispatch::pending(&f.pool)
         .await
         .unwrap()
     {
-        school_notifications::dispatch::materialize(
+        school_notifications::dispatch::consume(
             &f.pool,
             &n,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::acknowledge(&f.pool, &n)
-            .await
-            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
         .bind(TERM)
@@ -1139,20 +1133,17 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
             .absent,
         1
     );
-    for n in school_notifications::dispatch::claim(&f.pool)
+    for n in school_notifications::dispatch::pending(&f.pool)
         .await
         .unwrap()
     {
-        school_notifications::dispatch::materialize(
+        school_notifications::dispatch::consume(
             &f.pool,
             &n,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::acknowledge(&f.pool, &n)
-            .await
-            .unwrap();
     }
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
@@ -2766,10 +2757,10 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     )
     .await
     .unwrap();
-    let pending = school_notifications::dispatch::claim(&f.pool)
+    let pending = school_notifications::dispatch::pending(&f.pool)
         .await
         .unwrap();
-    assert!(school_notifications::dispatch::materialize(
+    assert!(school_notifications::dispatch::consume(
         &f.pool,
         &pending[0],
         &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
@@ -2777,7 +2768,7 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     .await
     .unwrap()
     .is_some());
-    let owned_notice = pending[0].notification.notification_id;
+    let owned_notice = pending[0].notification_id;
     let evidence = evidence_file(&f.pool, STUDENT).await;
     let unrelated_file = evidence_file(&f.pool, STUDENT).await;
     sqlx::query("UPDATE files SET purpose_code='profile_avatar' WHERE id=$1")
@@ -2898,7 +2889,7 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     .await
     .unwrap());
     for notice in pending {
-        assert!(school_notifications::dispatch::materialize(
+        assert!(school_notifications::dispatch::consume(
             &f.pool,
             &notice,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
@@ -3337,20 +3328,17 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
             .unwrap(),
         1
     );
-    for n in school_notifications::dispatch::claim(&f.pool)
+    for n in school_notifications::dispatch::pending(&f.pool)
         .await
         .unwrap()
     {
-        school_notifications::dispatch::materialize(
+        school_notifications::dispatch::consume(
             &f.pool,
             &n,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::acknowledge(&f.pool, &n)
-            .await
-            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -3454,17 +3442,17 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
     )
     .await
     .unwrap();
-    for notice in school_notifications::dispatch::claim(&pool).await.unwrap() {
-        school_notifications::dispatch::materialize(
+    for notice in school_notifications::dispatch::pending(&pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::consume(
             &pool,
             &notice,
             &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
         )
         .await
         .unwrap();
-        school_notifications::dispatch::acknowledge(&pool, &notice)
-            .await
-            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -4011,9 +3999,9 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (0, 2));
     // Existing deployments may retain dispatch jobs with the old business key.
-    sqlx::query("UPDATE notification_dispatch_jobs job SET dedup_key=ledger.dedup_key FROM attendance_notifications ledger WHERE job.source_kind='attendance' AND job.source_id=ledger.id")
+    sqlx::query("UPDATE notification_receipts job SET idempotency_key=ledger.dedup_key FROM attendance_notifications ledger WHERE job.source_kind='attendance' AND job.source_id=ledger.id")
         .execute(&f.pool).await.unwrap();
-    let old_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+    let old_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_receipts job WHERE source_kind='attendance' ORDER BY id")
         .fetch_all(&f.pool).await.unwrap();
     assert_eq!(old_jobs.len(), 2);
     let old_ids: Vec<Uuid> = old_jobs.iter().map(|(id, _)| *id).collect();
@@ -4030,7 +4018,7 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     .await
     .unwrap();
     duplicate.commit().await.unwrap();
-    let after_duplicate: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+    let after_duplicate: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_receipts job WHERE source_kind='attendance' ORDER BY id")
         .fetch_all(&f.pool).await.unwrap();
     assert_eq!(after_duplicate, old_jobs);
 
@@ -4070,14 +4058,14 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (3, 0));
     let retained_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as(
-        "SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE id=ANY($1) ORDER BY id",
+        "SELECT id,to_jsonb(job) FROM notification_receipts job WHERE id=ANY($1) ORDER BY id",
     )
     .bind(&old_ids)
     .fetch_all(&f.pool)
     .await
     .unwrap();
     assert_eq!(retained_jobs, old_jobs);
-    let identity: (Uuid, Uuid, Uuid, Uuid, Uuid, String, String) = sqlx::query_as("SELECT ledger.id,ledger.notification_id,job.id,job.notification_id,job.source_id,job.dedup_key,ledger.dedup_key FROM attendance_notifications ledger JOIN notification_dispatch_jobs job ON job.id=ledger.id WHERE ledger.recipient_id=$1 AND ledger.student_id=$1 AND ledger.dedup_key LIKE 'arrival:%'")
+    let identity: (Uuid, Uuid, Uuid, Uuid, Uuid, String, String) = sqlx::query_as("SELECT ledger.id,ledger.notification_id,job.id,job.notification_id,job.source_id,job.idempotency_key,ledger.dedup_key FROM attendance_notifications ledger JOIN notification_receipts job ON job.id=ledger.id WHERE ledger.recipient_id=$1 AND ledger.student_id=$1 AND ledger.dedup_key LIKE 'arrival:%'")
         .bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!((identity.0, identity.1), (identity.2, identity.3));
     assert_eq!(identity.4, identity.0);
@@ -4787,7 +4775,7 @@ async fn attendance_notification_first_arrival_keeps_original_payload_across_rou
     .await
     .unwrap();
     let original: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+        "SELECT r.id,r.notification_id,n.message FROM notification_receipts r JOIN notifications n ON n.id=r.notification_id ORDER BY r.id",
     )
     .fetch_all(&f.pool)
     .await
@@ -4812,7 +4800,7 @@ async fn attendance_notification_first_arrival_keeps_original_payload_across_rou
     .await
     .unwrap();
     let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+        "SELECT r.id,r.notification_id,n.message FROM notification_receipts r JOIN notifications n ON n.id=r.notification_id ORDER BY r.id",
     )
     .fetch_all(&f.pool)
     .await
@@ -4835,7 +4823,6 @@ async fn snapshot_parent(f: &Fixture, active: bool, linked: bool) -> Uuid {
 
 #[tokio::test]
 async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_guardian_changes() {
-    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
     use school_notifications::dispatch;
     let f = fixture("attendance_recipient_snapshot").await;
     let original = snapshot_parent(&f, true, true).await;
@@ -4864,7 +4851,7 @@ async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_g
     .await
     .unwrap();
     let recipients: std::collections::HashSet<Uuid> =
-        sqlx::query_scalar("SELECT recipient_id FROM notification_dispatch_jobs")
+        sqlx::query_scalar("SELECT recipient_id FROM notification_receipts")
             .fetch_all(&f.pool)
             .await
             .unwrap()
@@ -4886,16 +4873,8 @@ async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_g
         .await
         .unwrap();
     let later = snapshot_parent(&f, true, true).await;
-    let claimed = dispatch::claim(&f.pool).await.unwrap();
+    let claimed = dispatch::pending(&f.pool).await.unwrap();
     assert_eq!(claimed.len(), 2);
-    for claim in &claimed {
-        assert!(
-            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
-                .await
-                .unwrap()
-                .is_some()
-        );
-    }
     sqlx::query("UPDATE notifications SET read_at=now() WHERE user_id=$1")
         .bind(original)
         .execute(&f.pool)
@@ -4910,8 +4889,8 @@ async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_g
         .fetch_all(&f.pool)
         .await
         .unwrap();
-    // Retry the unacknowledged snapshot, without recomputing any recipients.
-    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    // Present the accepted snapshot once, without recomputing any recipients.
+
     let (channel, mut events) = tokio::sync::broadcast::channel(8);
     crate::integration_tests::notification_dispatch::drain(
         &f.pool,
@@ -4934,10 +4913,18 @@ async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_g
         .await
         .unwrap();
     assert_eq!(before, after);
-    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM notification_dispatch_jobs WHERE attempts=2 AND published_at IS NOT NULL").fetch_one(&f.pool).await.unwrap(),2);
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=ANY($1)"
+            "SELECT count(*) FROM notification_receipts WHERE presentation_consumed_at IS NOT NULL"
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        2
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notification_receipts WHERE recipient_id=ANY($1)"
         )
         .bind(vec![inactive, unlinked, later])
         .fetch_one(&f.pool)
@@ -4990,7 +4977,7 @@ async fn attendance_notification_inactive_student_excludes_self_and_guardians_at
         0
     );
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_dispatch_jobs")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_receipts")
             .fetch_one(&f.pool)
             .await
             .unwrap(),
@@ -4999,8 +4986,8 @@ async fn attendance_notification_inactive_student_excludes_self_and_guardians_at
 }
 
 #[tokio::test]
-async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublished_after_archive() {
-    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
+async fn attendance_notification_purge_uses_atomic_inbox_acceptance_and_keeps_pending_sources_after_archive(
+) {
     use school_notifications::dispatch;
     let f = fixture("attendance_purge_dispatch_progress").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
@@ -5046,31 +5033,9 @@ async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublishe
         expected_records: impact.records,
         reason: "Preserve pending dispatch".into(),
     };
-    assert!(
-        matches!(reports::purge(&f.pool,TEACHER,TERM,request()).await,Err(AppError::Conflict(code)) if code=="รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง")
-    );
-    assert_eq!(
-        reports::impact(&f.pool, TERM).await.unwrap().records,
-        impact.records
-    );
-    assert!(!sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)"
-    )
-    .bind(TERM)
-    .fetch_one(&f.pool)
-    .await
-    .unwrap());
-    let claims = dispatch::claim(&f.pool).await.unwrap();
+    let claims = dispatch::pending(&f.pool).await.unwrap();
     assert!(!claims.is_empty());
-    for claim in &claims {
-        assert!(
-            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
-                .await
-                .unwrap()
-                .is_some()
-        );
-    }
-    let id = claims[0].notification.notification_id;
+    let id = claims[0].notification_id;
     sqlx::query("UPDATE notifications SET read_at=now() WHERE id=$1")
         .bind(id)
         .execute(&f.pool)
@@ -5083,7 +5048,7 @@ async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublishe
             .await
             .unwrap();
     assert!(inbox_before.0.is_some());
-    assert!(sqlx::query_scalar::<_,bool>("SELECT bool_and(stored_at IS NOT NULL AND published_at IS NULL) FROM notification_dispatch_jobs").fetch_one(&f.pool).await.unwrap());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT bool_and(inbox_accepted_at IS NOT NULL AND presentation_consumed_at IS NULL) FROM notification_receipts").fetch_one(&f.pool).await.unwrap());
     reports::purge(&f.pool, TEACHER, TERM, request())
         .await
         .unwrap();
@@ -5115,8 +5080,8 @@ async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublishe
         .unwrap(),
         claims.len() as i64
     );
-    // A retry after archive must keep its source identity and existing read inbox.
-    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    // Presentation after archive keeps its source identity and existing read inbox.
+
     let (channel, mut events) = tokio::sync::broadcast::channel(16);
     crate::integration_tests::notification_dispatch::drain(
         &f.pool,
@@ -5137,13 +5102,10 @@ async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublishe
     }
     assert_eq!(
         delivered_ids,
-        claims
-            .iter()
-            .map(|claim| claim.notification.notification_id)
-            .collect()
+        claims.iter().map(|claim| claim.notification_id).collect()
     );
     assert!(sqlx::query_scalar::<_, bool>(
-        "SELECT bool_and(published_at IS NOT NULL) FROM notification_dispatch_jobs"
+        "SELECT bool_and(presentation_consumed_at IS NOT NULL) FROM notification_receipts"
     )
     .fetch_one(&f.pool)
     .await
@@ -5175,10 +5137,10 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
         .await
         .unwrap();
     let payload = save_payload(&before, STUDENT, AttendanceResult::Present);
-    let counts_sql="SELECT (SELECT count(*) FROM attendance_records),(SELECT count(*) FROM attendance_notifications),(SELECT count(*) FROM notification_dispatch_jobs),(SELECT count(*) FROM attendance_score_changes),(SELECT count(*) FROM audit_logs WHERE entity_type='attendance')";
+    let counts_sql="SELECT (SELECT count(*) FROM attendance_records),(SELECT count(*) FROM attendance_notifications),(SELECT count(*) FROM notification_receipts),(SELECT count(*) FROM attendance_score_changes),(SELECT count(*) FROM audit_logs WHERE entity_type='attendance')";
     let counts_before: (i64, i64, i64, i64, i64) =
         sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
-    sqlx::raw_sql("CREATE FUNCTION reject_attendance_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_kind='attendance' THEN RAISE EXCEPTION 'synthetic_enqueue_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_attendance_dispatch BEFORE INSERT ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION reject_attendance_dispatch();")
+    sqlx::raw_sql("CREATE FUNCTION reject_attendance_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_kind='attendance' THEN RAISE EXCEPTION 'synthetic_enqueue_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_attendance_dispatch BEFORE INSERT ON notification_receipts FOR EACH ROW EXECUTE FUNCTION reject_attendance_dispatch();")
         .execute(&f.pool).await.unwrap();
     assert!(matches!(
         sessions::save(&f.pool, &f.actor, session.id, payload.clone()).await,
@@ -5196,7 +5158,7 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
     let counts_after: (i64, i64, i64, i64, i64) =
         sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
     assert_eq!(counts_before, counts_after);
-    sqlx::raw_sql("DROP TRIGGER reject_attendance_dispatch ON notification_dispatch_jobs; DROP FUNCTION reject_attendance_dispatch();").execute(&f.pool).await.unwrap();
+    sqlx::raw_sql("DROP TRIGGER reject_attendance_dispatch ON notification_receipts; DROP FUNCTION reject_attendance_dispatch();").execute(&f.pool).await.unwrap();
     let saved = sessions::save(&f.pool, &f.actor, session.id, payload)
         .await
         .unwrap();
@@ -5466,4 +5428,70 @@ async fn attendance_options_assigned_enrollment_and_kiosk_finish_with_one_connec
     assert_eq!(kiosk.faces.len(), 1);
     assert_eq!(kiosk.faces[0].student_id, STUDENT);
     assert_eq!(kiosk.faces[0].descriptors[0].values, vec![0.01; 128]);
+}
+
+#[tokio::test]
+async fn attendance_notification_source_identity_drift_refuses_presentation_until_repaired() {
+    let f = fixture("attendance_notification_identity_drift").await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let pending = school_notifications::dispatch::pending(&f.pool)
+        .await
+        .unwrap()
+        .remove(0);
+    let school_notifications::dispatch::NotificationSource::Attendance { source_id } =
+        pending.source
+    else {
+        panic!("attendance source required")
+    };
+    sqlx::query("UPDATE attendance_notifications SET notification_id=$2 WHERE id=$1")
+        .bind(source_id)
+        .bind(Uuid::new_v4())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(
+        matches!(school_notifications::dispatch::consume(&f.pool,&pending,&crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY).await,Err(AppError::Conflict(code)) if code=="notification_ledger_identity_conflict")
+    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM notification_presentations WHERE receipt_id=$1)"
+    )
+    .bind(pending.id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    sqlx::query("UPDATE attendance_notifications SET notification_id=$2 WHERE id=$1")
+        .bind(source_id)
+        .bind(pending.notification_id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(school_notifications::dispatch::consume(
+        &f.pool,
+        &pending,
+        &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
+    )
+    .await
+    .unwrap()
+    .is_some());
 }

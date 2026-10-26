@@ -15,6 +15,7 @@ impl DeliveryEligibilityPort for ApplicationNotificationEligibility {
         connection: &mut PgConnection,
         source: &NotificationSource,
         recipient_id: Uuid,
+        notification_id: Uuid,
     ) -> Result<bool, AppError> {
         match source {
             NotificationSource::Direct => Ok(true),
@@ -35,6 +36,7 @@ impl DeliveryEligibilityPort for ApplicationNotificationEligibility {
                     connection,
                     *source_id,
                     recipient_id,
+                    notification_id,
                 )
                 .await
             }

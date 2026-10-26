@@ -10,6 +10,11 @@ const source = await readFile(
 const compiled = ts.transpileModule(source, {
 	compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText;
+export class PushBindingChangedError extends Error {
+	constructor() {
+		super('push_binding_changed');
+	}
+}
 export const flush = () => new Promise((resolve) => setImmediate(resolve));
 export function deferred() {
 	let resolve;
@@ -59,7 +64,7 @@ export function deviceHarness(options = {}) {
 	const registration = {
 		pushManager: {
 			async getSubscription() {
-				return subscription;
+				return options.getSubscription?.() ?? subscription;
 			},
 			async subscribe(input) {
 				calls.subscribe.push(input);
@@ -78,12 +83,38 @@ export function deviceHarness(options = {}) {
 		}
 	};
 	const devices = [];
+	let deviceVersion = 0;
 	const browserState = {
 		watchIdentityChanges: () => () => {},
 		async beginBinding(identity, intent) {
 			if (state.identity !== identity) state.binding = null;
 			Object.assign(state, { identity, intent });
 			return { ...state };
+		},
+		async beginBindingRefresh(binding, previousIntent, intent) {
+			if (
+				state.identity !== binding.identity ||
+				state.intent !== previousIntent ||
+				state.binding?.id !== binding.id ||
+				state.binding.version !== binding.version ||
+				state.binding.binding_token !== binding.binding_token
+			)
+				return null;
+			state.intent = intent;
+			return { ...state };
+		},
+		async forgetBinding(binding, intent) {
+			if (
+				state.identity !== binding.identity ||
+				state.intent !== intent ||
+				state.binding?.id !== binding.id ||
+				state.binding.version !== binding.version ||
+				state.binding.binding_token !== binding.binding_token
+			)
+				return null;
+			state.binding = null;
+			state.intent = 'retired-' + intent;
+			return state.intent;
 		},
 		async readBrowserState() {
 			return { ...state };
@@ -106,6 +137,7 @@ export function deviceHarness(options = {}) {
 	const dependencies = {
 		'#lib/notifications/browser-state.js': browserState,
 		'#lib/api/notifications.js': {
+			PushBindingChangedError,
 			async getPushConfig() {
 				return config;
 			},
@@ -115,11 +147,16 @@ export function deviceHarness(options = {}) {
 			async registerPushDevice(body) {
 				calls.register.push(body);
 				if (options.register) return options.register(body, calls.register.length);
+				await options.beforeRegister?.(body, calls.register.length);
+				const existing = devices.find((device) => device.installation_id === body.installation_id);
+				if (body.expected_version && existing?.version !== body.expected_version)
+					throw new PushBindingChangedError();
+				if (!existing) deviceVersion++;
 				const device = {
 					...body,
 					id: 'device-1',
-					version: 'version-1',
-					binding_token: 'token-1',
+					version: existing?.version ?? `version-${deviceVersion}`,
+					binding_token: existing?.binding_token ?? `token-${deviceVersion}`,
 					last_confirmed_at: new Date().toISOString(),
 					expires_at: new Date(Date.now() + 86400_000).toISOString()
 				};
@@ -128,7 +165,8 @@ export function deviceHarness(options = {}) {
 			},
 			async unregisterPushDevice(id, version) {
 				calls.revoke.push({ id, version });
-				devices.splice(0);
+				const index = devices.findIndex((device) => device.id === id && device.version === version);
+				if (index >= 0) devices.splice(index, 1);
 			}
 		},
 		'#lib/api/client.js': {
@@ -170,14 +208,20 @@ export function deviceHarness(options = {}) {
 		{
 			userAgent: 'test',
 			maxTouchPoints: 0,
-			serviceWorker: { addEventListener() {}, removeEventListener() {} }
+			serviceWorker: {
+				async getRegistration() {
+					return registration;
+				},
+				addEventListener() {},
+				removeEventListener() {}
+			}
 		},
 		{ PushManager: {}, Notification: {}, atob, btoa, matchMedia: () => ({ matches: false }) },
 		{
-			permission: 'granted',
+			permission: options.permission ?? 'granted',
 			async requestPermission() {
 				calls.permission++;
-				return 'granted';
+				return options.requestPermission?.() ?? 'granted';
 			}
 		},
 		{ hidden: false, hasFocus: () => true },

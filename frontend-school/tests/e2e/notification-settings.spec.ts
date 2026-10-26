@@ -3,6 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 
+declare global {
+	interface Window {
+		__notificationBrowserState: typeof import('../../src/lib/notifications/browser-state.js');
+	}
+}
+
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const virtual = 'virtual:notification-settings-test';
 const prefix = '\0notification-settings-stub:';
@@ -34,12 +40,13 @@ function harnessPlugin(): Plugin {
 		enforce: 'pre',
 		resolveId(id) {
 			if (id === virtual) return `\0${virtual}`;
-			if (stubs.has(id)) return `${prefix}${id}`;
+			if (stubs.has(id)) return `${prefix}${[...stubs.keys()].indexOf(id)}`;
 		},
 		load(id) {
-			if (id.startsWith(prefix)) return stubs.get(id.slice(prefix.length));
+			if (id.startsWith(prefix))
+				return stubs.get([...stubs.keys()][Number(id.slice(prefix.length))]);
 			if (id !== `\0${virtual}`) return;
-			return `import {mount} from 'svelte'; import '/src/routes/layout.css'; import Settings from '/src/lib/components/settings/PushNotificationSettings.svelte'; import * as state from '/src/lib/notifications/browser-state.ts'; window.__state=state; window.__actions=[];window.__toasts=[];mount(Settings,{target:document.getElementById('app')});`;
+			return `import {mount} from 'svelte'; import '/src/routes/layout.css'; import Settings from '/src/lib/components/settings/PushNotificationSettings.svelte'; import * as state from '/src/lib/notifications/browser-state.ts'; window.__notificationBrowserState=state; window.__actions=[];window.__toasts=[];mount(Settings,{target:document.getElementById('app')});`;
 		},
 		configureServer(server) {
 			server.middlewares.use((request, response, next) => {
@@ -119,30 +126,40 @@ test('real IndexedDB serializes cross-tab presentation and rejects stale binding
 	context
 }) => {
 	await page.goto(`${origin}/__notification-settings`);
-	await page.waitForFunction('Boolean(window.__state)');
+	await page.waitForFunction('Boolean(window.__notificationBrowserState)');
 	const other = await context.newPage();
 	await other.goto(`${origin}/__notification-settings`);
-	await other.waitForFunction('Boolean(window.__state)');
-	const installation = await page.evaluate('window.__state.beginBinding("school:user","intent-a")');
-	const otherInstallation = await other.evaluate('window.__state.readBrowserState()');
+	await other.waitForFunction('Boolean(window.__notificationBrowserState)');
+	const installation = await page.evaluate(() =>
+		window.__notificationBrowserState.beginBinding('school:user', 'intent-a')
+	);
+	const otherInstallation = await other.evaluate(() =>
+		window.__notificationBrowserState.readBrowserState()
+	);
 	expect(otherInstallation.installation_id).toBe(installation.installation_id);
 	const claims = await Promise.all([
-		page.evaluate('window.__state.claimPresentation("shared-id",Date.now()+60000)'),
-		other.evaluate('window.__state.claimPresentation("shared-id",Date.now()+60000)')
+		page.evaluate(
+			'window.__notificationBrowserState.claimPresentation("shared-id",Date.now()+60000)'
+		),
+		other.evaluate(
+			'window.__notificationBrowserState.claimPresentation("shared-id",Date.now()+60000)'
+		)
 	]);
 	expect(claims.filter(Boolean)).toHaveLength(1);
-	await other.evaluate('window.__state.clearBinding("school:user")');
+	await other.evaluate('window.__notificationBrowserState.clearBinding("school:user")');
 	const staleSaved = await page.evaluate(
-		'window.__state.saveBinding({identity:"school:user",intent:"intent-a",id:"old",version:"v1",binding_token:"token",installation_id:"unused",expires_at:new Date(Date.now()+60000).toISOString()})'
+		'window.__notificationBrowserState.saveBinding({identity:"school:user",intent:"intent-a",id:"old",version:"v1",binding_token:"token",installation_id:"unused",expires_at:new Date(Date.now()+60000).toISOString()})'
 	);
 	expect(staleSaved).toBe(false);
-	await page.evaluate('window.__state.beginBinding("school:new-user","intent-b")');
+	await page.evaluate(
+		'window.__notificationBrowserState.beginBinding("school:new-user","intent-b")'
+	);
 	const staleAccount = await other.evaluate(
-		'window.__state.saveBinding({identity:"school:user",intent:"intent-a",id:"old",version:"v1",binding_token:"token",installation_id:"unused",expires_at:new Date(Date.now()+60000).toISOString()})'
+		'window.__notificationBrowserState.saveBinding({identity:"school:user",intent:"intent-a",id:"old",version:"v1",binding_token:"token",installation_id:"unused",expires_at:new Date(Date.now()+60000).toISOString()})'
 	);
 	expect(staleAccount).toBe(false);
-	expect((await other.evaluate('window.__state.readBrowserState()')).identity).toBe(
-		'school:new-user'
-	);
+	expect(
+		(await other.evaluate(() => window.__notificationBrowserState.readBrowserState())).identity
+	).toBe('school:new-user');
 	await other.close();
 });

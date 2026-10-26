@@ -81,9 +81,9 @@ impl NotificationService {
             .await
             .map_err(|_| "notification_database_unavailable")?;
             subscriptions=school_database::DbSession::new(&mut *c).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM push_subscriptions p
-                JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id
+                JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
                 WHERE p.user_id=$1 AND p.key_id=$2 AND p.expires_at>now() AND s.revoked_at IS NULL
-                AND s.idle_expires_at>now() AND s.absolute_expires_at>now() ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
+                AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
                 .bind(user).bind(config.key_id).fetch_all().await.map_err(|_|"notification_subscription_unavailable")?;
         }
         Ok(PreparedNotification {
@@ -131,6 +131,14 @@ impl NotificationService {
         Ok(())
     }
     async fn send_web_push(prepared: PreparedNotification) -> DeliveryReceipt {
+        let PreparedNotification {
+            notification,
+            expires_at,
+            subscriptions,
+        } = prepared;
+        if subscriptions.is_empty() {
+            return DeliveryReceipt::default();
+        }
         let Some(config) = devices::vapid_config() else {
             tracing::warn!(
                 error_code = "notification_push_configuration_unavailable",
@@ -138,18 +146,19 @@ impl NotificationService {
             );
             return DeliveryReceipt::default();
         };
-        let Ok(client) = IsahcWebPushClient::new() else {
+        let Ok(client) = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(2))
+            .connect_timeout(Duration::from_secs(1))
+            .no_proxy()
+            .build()
+        else {
             tracing::warn!(
                 error_code = "notification_push_client_unavailable",
                 "Push unavailable"
             );
             return DeliveryReceipt::default();
         };
-        let PreparedNotification {
-            notification,
-            expires_at,
-            subscriptions,
-        } = prepared;
         let results = attempt_subscriptions(subscriptions, |sub| {
             let client = &client;
             let notification = &notification;
@@ -195,7 +204,7 @@ impl NotificationService {
                         VapidSignatureBuilder::from_base64(&config.private_key, &info)?;
                     signature.add_claim("sub", config.subject.clone());
                     builder.set_vapid_signature(signature.build()?);
-                    client.send(builder.build()?).await
+                    send_message(client, builder.build()?).await
                 }
                 .await;
                 match result {
@@ -228,6 +237,33 @@ impl NotificationService {
         }
         receipt
     }
+}
+/// The library's default client traces whole requests and has no native timeout.
+/// Keep its protocol/encryption builder, with a redacted, redirect-free bounded HTTP adapter.
+async fn send_message(
+    client: &reqwest::Client,
+    message: WebPushMessage,
+) -> Result<(), WebPushError> {
+    let request = web_push::request_builder::build_request::<reqwest::Body>(message);
+    let (parts, body) = request.into_parts();
+    let mut builder = client.post(parts.uri.to_string()).body(body);
+    for (name, value) in &parts.headers {
+        let mut header = reqwest::header::HeaderValue::from_bytes(value.as_bytes())
+            .map_err(|_| WebPushError::Unspecified)?;
+        header.set_sensitive(true);
+        builder = builder.header(name.as_str(), header);
+    }
+    let response = builder
+        .send()
+        .await
+        .map_err(|_| WebPushError::Unspecified)?;
+    // Status alone determines lifecycle policy; provider bodies never enter logs or storage.
+    let status = response
+        .status()
+        .as_u16()
+        .try_into()
+        .map_err(|_| WebPushError::InvalidResponse)?;
+    web_push::request_builder::parse_response(status, Vec::new())
 }
 #[derive(serde::Serialize)]
 struct PushPayload<'a> {

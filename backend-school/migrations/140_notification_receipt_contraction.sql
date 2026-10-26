@@ -1,12 +1,16 @@
 -- Contract only after 139 has reconciled authoritative inbox and legacy state.
 LOCK TABLE notification_dispatch_jobs, notification_presentations, notifications,
-    attendance_notifications,process_notification_sources,notification_inbox_first_evidence IN ACCESS EXCLUSIVE MODE;
+    attendance_notifications,process_notification_sources,work_items,work_item_assignees,notification_inbox_first_evidence IN ACCESS EXCLUSIVE MODE;
 CREATE TEMP TABLE notification_contract_observed ON COMMIT DROP AS
 SELECT 'inbox'::text owner,id,sha256(convert_to(to_jsonb(n)::text,'UTF8')) row_hash FROM notifications n
 UNION ALL SELECT 'receipt',id,sha256(convert_to(to_jsonb(j)::text,'UTF8')) FROM notification_dispatch_jobs j
 UNION ALL SELECT 'attendance',id,sha256(convert_to(to_jsonb(a)::text,'UTF8')) FROM attendance_notifications a
 UNION ALL SELECT 'process',id,sha256(convert_to(to_jsonb(s)::text,'UTF8')) FROM process_notification_sources s
-UNION ALL SELECT 'presentation',receipt_id,sha256(convert_to(to_jsonb(p)::text,'UTF8')) FROM notification_presentations p;
+UNION ALL SELECT 'presentation',receipt_id,sha256(convert_to(to_jsonb(p)::text,'UTF8')) FROM notification_presentations p
+UNION ALL SELECT 'source_eligibility',s.id,sha256(convert_to(jsonb_build_array(s.work_item_id,
+    s.work_item_id IS NULL OR EXISTS(SELECT 1 FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id
+        WHERE w.id=s.work_item_id AND w.status='active' AND a.assignee_type='user' AND a.user_id=s.recipient_id
+            AND a.status IN ('assigned','read')))::text,'UTF8')) FROM process_notification_sources s;
 DO $$ BEGIN
     IF EXISTS(SELECT * FROM notification_inbox_first_evidence EXCEPT SELECT * FROM notification_contract_observed)
        OR EXISTS(SELECT * FROM notification_contract_observed EXCEPT SELECT * FROM notification_inbox_first_evidence)
@@ -31,12 +35,14 @@ LEFT JOIN notifications n ON n.id=j.notification_id;
 
 ALTER TABLE notification_dispatch_jobs RENAME TO notification_receipts;
 ALTER TABLE notification_receipts RENAME COLUMN dedup_key TO idempotency_key;
+CREATE UNIQUE INDEX notification_receipts_recipient_key_idx ON notification_receipts(recipient_id,idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 ALTER TABLE notification_receipts RENAME COLUMN stored_at TO inbox_accepted_at;
 ALTER TABLE notification_receipts RENAME COLUMN published_at TO legacy_published_at;
 ALTER TABLE notification_receipts ADD COLUMN payload_hash BYTEA,
     ADD COLUMN presentation TEXT NOT NULL DEFAULT 'alert_once' CHECK(presentation IN ('alert_once','inbox_only')),
     ADD COLUMN presentation_consumed_at TIMESTAMPTZ,
-    ADD COLUMN presentation_outcome TEXT CHECK(presentation_outcome IN ('attempted','skipped','expired','legacy_skipped'));
+    ADD COLUMN presentation_outcome TEXT CHECK(presentation_outcome IN ('attempted','skipped','expired','legacy_skipped','blocked'));
 UPDATE notification_receipts j SET payload_hash=e.payload_hash,inbox_accepted_at=e.inbox_accepted_at,
     presentation_consumed_at=e.presentation_consumed_at,presentation_outcome=e.presentation_outcome
 FROM notification_contract_expected e WHERE e.id=j.id;

@@ -195,8 +195,8 @@ test('logout fences pending authoritative catch-up and clears its session cookie
 	]);
 	fixture.releaseSnapshots();
 	for (const response of await staleResponses) await response.finished();
-	await expect(page.locator('#unread')).toHaveText('1');
-	await expect(page.locator('#inbox')).toHaveText('snapshot-1');
+	await expect(page.locator('#unread')).toHaveText('0');
+	await expect(page.locator('#inbox')).toBeEmpty();
 	await expect(page.locator('#work')).toHaveText('0');
 	expect(
 		(await context.cookies()).some((cookie) => cookie.name === '__Host-schoolorbit_session')
@@ -208,7 +208,7 @@ test('logout fences pending authoritative catch-up and clears its session cookie
 	expect(pathsAfter(0)).toEqual(sequence);
 	expect(fixture.connections).toBe(1);
 	await expect(page.locator('#identity')).toHaveText('signed-out');
-	await expect(page.locator('#unread')).toHaveText('1');
-	await expect(page.locator('#inbox')).toHaveText('snapshot-1');
+	await expect(page.locator('#unread')).toHaveText('0');
+	await expect(page.locator('#inbox')).toBeEmpty();
 	await expect(page.locator('#work')).toHaveText('0');
 });

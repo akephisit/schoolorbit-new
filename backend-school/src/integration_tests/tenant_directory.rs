@@ -147,7 +147,7 @@ impl tracing::Subscriber for PhaseSubscriber {
         event.record(&mut fields);
         if matches!(
             fields.operation.as_str(),
-            "notification_database_phase" | "file_database_phase"
+            "notification_database_phase" | "file_database_phase" | "notification_schedule"
         ) && fields.phase == self.0.phase
         {
             self.0.resolved.notify_one();

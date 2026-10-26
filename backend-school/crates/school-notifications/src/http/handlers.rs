@@ -19,10 +19,10 @@ use school_auth::{
     session_service::{self, AuthenticatedSession},
 };
 use school_auth_http::context::current_user_tenant_context_from_session;
-#[cfg(feature = "api-docs")]
-use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
 use std::{convert::Infallible, future::Future, time::Duration};
 use tokio::{
     sync::broadcast,
@@ -303,7 +303,7 @@ pub async fn list_push_devices(
         crate::devices::list(&context.tenant.pool, context.user_id).await?,
     )))
 }
-#[cfg_attr(feature="api-docs", utoipa::path(post,path="/api/notifications/push/devices",operation_id="registerPushDevice",tag="notifications",request_body=RegisterPushDeviceRequest,responses((status=200,description="Registered or refreshed this installation binding",body=ApiResponse<crate::models::PushDevice>),(status=400,description="Invalid endpoint, label or crypto keys",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=409,description="Key changed or device limit reached",body=ApiErrorResponse),(status=503,description="Push configuration unavailable",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs", utoipa::path(post,path="/api/notifications/push/devices",operation_id="registerPushDevice",tag="notifications",request_body=RegisterPushDeviceRequest,responses((status=200,description="Registered or refreshed this installation binding",body=ApiResponse<crate::models::PushDevice>),(status=400,description="Invalid endpoint, label or crypto keys",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=409,description="Key or binding changed, or device limit reached",body=ApiErrorResponse),(status=503,description="Push configuration unavailable",body=ApiErrorResponse))))]
 pub async fn register_push_device(
     Extension(session): Extension<AuthenticatedSession>,
     Json(request): Json<RegisterPushDeviceRequest>,
@@ -319,7 +319,7 @@ pub async fn register_push_device(
         .await?,
     )))
 }
-#[cfg_attr(feature="api-docs", utoipa::path(delete,path="/api/notifications/push/devices/{id}",operation_id="unregisterPushDevice",tag="notifications",params(("id"=Uuid,Path,description="Owned device ID"),UnregisterPushDeviceQuery),responses((status=200,description="Exact owned binding revoked or already absent",body=ApiResponse<serde_json::Value>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs", utoipa::path(delete,path="/api/notifications/push/devices/{id}",operation_id="unregisterPushDevice",tag="notifications",params(("id"=Uuid,Path,description="Owned device ID"),UnregisterPushDeviceQuery),responses((status=200,description="Exact owned binding revoked or already absent",body=ApiResponse<EmptyData>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
 pub async fn unregister_push_device(
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,

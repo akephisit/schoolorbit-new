@@ -101,7 +101,7 @@ async fn notification_acceptance_is_atomic_idempotent_conflict_checked_and_prese
     let mut replay = n.clone();
     replay.id = Uuid::new_v4();
     replay.notification_id = Uuid::new_v4();
-    let accepted = dispatch::create(&pool, std::slice::from_ref(&replay))
+    let accepted = dispatch::create(&pool, "synthetic", std::slice::from_ref(&replay))
         .await
         .unwrap();
     assert_eq!(accepted[0].notification_id, n.notification_id);
@@ -129,7 +129,7 @@ async fn notification_acceptance_is_atomic_idempotent_conflict_checked_and_prese
             }
         }
         assert!(matches!(
-            dispatch::create(&pool, &[bad]).await,
+            dispatch::create(&pool, "synthetic", &[bad]).await,
             Err(AppError::Conflict(_))
         ));
     }
@@ -138,7 +138,9 @@ async fn notification_acceptance_is_atomic_idempotent_conflict_checked_and_prese
         .execute(&pool)
         .await
         .unwrap();
-    dispatch::create(&pool, &[replay]).await.unwrap();
+    dispatch::create(&pool, "synthetic", &[replay])
+        .await
+        .unwrap();
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
             .fetch_one(&pool)
@@ -170,7 +172,7 @@ async fn notification_concurrent_consumption_restart_and_uncertain_finish_never_
     let (channel, mut events) = tokio::sync::broadcast::channel(8);
     drain(&pool, "synthetic", &channel).await;
     assert!(events.try_recv().is_err());
-    dispatch::create(&pool, &[n]).await.unwrap();
+    dispatch::create(&pool, "synthetic", &[n]).await.unwrap();
     assert!(dispatch::pending(&pool).await.unwrap().is_empty());
 }
 #[tokio::test]
@@ -459,7 +461,7 @@ impl school_notifications::runtime::test_support::ControlledTransport for Contro
     }
 }
 
-async fn managed_batch_phase_case(name: &str, remap: bool) {
+async fn managed_batch_phase_case(name: &str, remap: bool, refresh: bool) {
     use axum::{routing::get, Json, Router};
     use school_tenancy::{
         background::TenantJobKind, AdminClient, AdminClientConfig, PoolManager, PoolManagerConfig,
@@ -480,6 +482,13 @@ async fn managed_batch_phase_case(name: &str, remap: bool) {
     let endpoint = "https://synthetic.invalid/device";
     sqlx::query("INSERT INTO push_subscriptions(id,version,user_id,endpoint,p256dh_key,auth_key,expires_at) VALUES($3,$4,$1,$2,'synthetic','synthetic',now()+interval '90 days')")
         .bind(recipient).bind(endpoint).bind(queued.id).bind(queued.notification_id).execute(&fixture).await.unwrap();
+    let binding_session = device_session(&fixture, recipient).await;
+    sqlx::query("UPDATE push_subscriptions SET session_id=$1 WHERE id=$2")
+        .bind(binding_session)
+        .bind(queued.id)
+        .execute(&fixture)
+        .await
+        .unwrap();
     let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
         .fetch_one(&fixture)
         .await
@@ -582,6 +591,9 @@ async fn managed_batch_phase_case(name: &str, remap: bool) {
     assert!(!second.is_closed() && !third.is_closed());
     drop(second);
     drop(third);
+    if refresh {
+        sqlx::query("UPDATE push_subscriptions SET version=gen_random_uuid(),binding_token=gen_random_uuid(),last_confirmed_at=now() WHERE id=$1").bind(queued.id).execute(&fixture).await.unwrap();
+    }
     if remap {
         let token = Uuid::new_v4();
         state
@@ -618,8 +630,9 @@ async fn managed_batch_phase_case(name: &str, remap: bool) {
     .await
     .unwrap();
     assert_eq!(
-        present, remap,
-        "remapped finish must not delete an endpoint"
+        present,
+        remap || refresh,
+        "remapped or refreshed binding must survive old transport cleanup"
     );
     assert_eq!(
         published, true,
@@ -629,12 +642,12 @@ async fn managed_batch_phase_case(name: &str, remap: bool) {
 
 #[tokio::test]
 async fn notification_managed_batch_releases_real_pool_lease_and_shared_permit_during_transport() {
-    managed_batch_phase_case("dispatch_managed_phase_release", false).await;
+    managed_batch_phase_case("dispatch_managed_phase_release", false, false).await;
 }
 
 #[tokio::test]
 async fn notification_managed_batch_uuid_remap_refuses_endpoint_cleanup_and_acknowledgment() {
-    managed_batch_phase_case("dispatch_managed_uuid_remap", true).await;
+    managed_batch_phase_case("dispatch_managed_uuid_remap", true, false).await;
 }
 
 #[tokio::test]
@@ -732,6 +745,13 @@ async fn notification_managed_queued_finish_case(name: &str, change: QueuedDirec
     enqueue(&fixture, std::slice::from_ref(&queued)).await;
     let endpoint = "https://synthetic.invalid/queued-directory";
     sqlx::query("INSERT INTO push_subscriptions(id,version,user_id,endpoint,p256dh_key,auth_key,expires_at) VALUES($3,$4,$1,$2,'synthetic','synthetic',now()+interval '90 days')").bind(recipient).bind(endpoint).bind(queued.id).bind(queued.notification_id).execute(&fixture).await.unwrap();
+    let binding_session = device_session(&fixture, recipient).await;
+    sqlx::query("UPDATE push_subscriptions SET session_id=$1 WHERE id=$2")
+        .bind(binding_session)
+        .bind(queued.id)
+        .execute(&fixture)
+        .await
+        .unwrap();
     let url = database_url(&fixture).await;
     let tenant_id = Uuid::new_v4();
     let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
@@ -982,4 +1002,476 @@ async fn notification_managed_physical_pool_wait_rechecks_same_uuid_rotated_cred
     assert!(!published);
     assert_eq!(directory.calls(), 2);
     drop(second);
+}
+
+async fn device_session(pool: &PgPool, user: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO auth_sessions(id,user_id,current_token_hash,remember_me,device_label,created_at,last_seen_at,idle_expires_at,absolute_expires_at,rotated_at) VALUES($1,$2,sha256(convert_to($1::text,'UTF8')),false,'Synthetic browser',now(),now(),now()+interval '1 day',now()+interval '30 days',now())").bind(id).bind(user).execute(pool).await.unwrap();
+    id
+}
+fn device_request(
+    installation_id: Uuid,
+) -> school_notifications::models::RegisterPushDeviceRequest {
+    school_notifications::models::RegisterPushDeviceRequest {
+        expected_version:None,
+        installation_id,
+        label: "Synthetic browser".into(),
+        endpoint: format!("https://fcm.googleapis.com/fcm/send/{installation_id}"),
+        p256dh: "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ".into(),
+        auth: "BwcHBwcHBwcHBwcHBwcHBw".into(),
+        key_id: "synthetic-key".into(),
+    }
+}
+#[tokio::test]
+async fn notification_devices_preserve_identical_refresh_rotate_session_and_fence_exact_version_ownership(
+) {
+    use school_notifications::devices;
+    let (pool, user) = fixture("push_binding_lifecycle").await;
+    let first_session = device_session(&pool, user).await;
+    let installation = Uuid::new_v4();
+    let first = devices::register_for_tests(
+        &pool,
+        user,
+        first_session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    let again = devices::register_for_tests(
+        &pool,
+        user,
+        first_session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (first.id, first.version, first.binding_token),
+        (again.id, again.version, again.binding_token)
+    );
+    let second_session = device_session(&pool, user).await;
+    let second = devices::register_for_tests(
+        &pool,
+        user,
+        second_session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert_eq!(second.id, first.id);
+    assert_ne!(second.version, first.version);
+    assert_ne!(second.binding_token, first.binding_token);
+    devices::unregister(&pool, user, first.id, first.version)
+        .await
+        .unwrap();
+    devices::unregister(&pool, Uuid::new_v4(), second.id, second.version)
+        .await
+        .unwrap();
+    assert_eq!(devices::list(&pool, user).await.unwrap().items.len(), 1);
+    let disposable = devices::register_for_tests(
+        &pool,
+        user,
+        first_session,
+        device_request(Uuid::new_v4()),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    devices::unregister(&pool, user, disposable.id, disposable.version)
+        .await
+        .unwrap();
+    assert_eq!(devices::list(&pool, user).await.unwrap().items.len(), 1);
+    sqlx::query(
+        "UPDATE auth_sessions SET revoked_at=now(),revocation_reason='synthetic' WHERE id=$1",
+    )
+    .bind(second_session)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    assert!(matches!(
+        devices::register_for_tests(
+            &pool,
+            user,
+            second_session,
+            device_request(installation),
+            "synthetic-key"
+        )
+        .await,
+        Err(AppError::AuthError(_))
+    ));
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM push_subscriptions")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+#[tokio::test]
+async fn notification_devices_enforce_atomic_cap_validate_keys_and_bound_expiry_cleanup() {
+    use school_notifications::devices;
+    let (pool, user) = fixture("push_device_cap").await;
+    let session = device_session(&pool, user).await;
+    let invalid = device_request(Uuid::new_v4());
+    assert!(matches!(
+        devices::register_for_tests(&pool, user, session, invalid, "changed-key").await,
+        Err(AppError::Conflict(_))
+    ));
+    for _ in 0..19 {
+        devices::register_for_tests(
+            &pool,
+            user,
+            session,
+            device_request(Uuid::new_v4()),
+            "synthetic-key",
+        )
+        .await
+        .unwrap();
+    }
+    let (a, b) = tokio::join!(
+        devices::register_for_tests(
+            &pool,
+            user,
+            session,
+            device_request(Uuid::new_v4()),
+            "synthetic-key"
+        ),
+        devices::register_for_tests(
+            &pool,
+            user,
+            session,
+            device_request(Uuid::new_v4()),
+            "synthetic-key"
+        )
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    assert_eq!(devices::list(&pool, user).await.unwrap().items.len(), 20);
+    sqlx::query("UPDATE push_subscriptions SET expires_at=now()-interval '1 second'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM push_subscriptions")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("INSERT INTO push_subscriptions(user_id,endpoint,p256dh_key,auth_key,expires_at) SELECT $1,'https://synthetic.invalid/expired/'||n,'synthetic','synthetic',now()-interval '91 days' FROM generate_series(1,121) n").bind(user).execute(&pool).await.unwrap();
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM push_subscriptions")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        21
+    );
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM push_subscriptions")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn notification_idle_runtime_is_woken_by_standalone_acceptance_without_replaying_rollback() {
+    use crate::integration_tests::tenant_directory::{database_url, PhaseSignals};
+    use axum::{extract::Path, http::StatusCode, routing::get, Json, Router};
+    use std::{sync::Arc, time::Duration};
+    use tracing::instrument::WithSubscriber;
+    let (pool, user) = fixture("notification_idle_wake").await;
+    let url = database_url(&pool).await;
+    let tenant = format!("idle-{}", Uuid::new_v4().simple());
+    let id = Uuid::new_v4();
+    let list_tenant = tenant.clone();
+    let list_url = url.to_string();
+    let detail_tenant = tenant.clone();
+    let detail_url = url.to_string();
+    let app=Router::new().route("/internal/schools",get(move||{let tenant=list_tenant.clone();let url=list_url.clone();async move{Json(serde_json::json!({"schools":[{"subdomain":tenant,"db_connection_string":url}]}))}})).route("/internal/schools/{tenant}",get(move|Path(name):Path<String>|{let tenant=detail_tenant.clone();let url=detail_url.clone();async move{if name!=tenant{return Err(StatusCode::NOT_FOUND)}Ok(Json(serde_json::json!({"id":id,"name":"synthetic","db_connection_string":url})))}}));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    let state = school_notifications::runtime::NotificationRuntimeState {
+        admin_client: Arc::new(school_tenancy::AdminClient::new(
+            format!("http://{address}"),
+            "synthetic".into(),
+            school_tenancy::AdminClientConfig::from_env().unwrap(),
+        )),
+        pool_manager: Arc::new(school_tenancy::PoolManager::new()),
+        notification_channel: channel,
+        eligibility: &ELIGIBILITY,
+    };
+    let (signals, subscriber) = PhaseSignals::for_phase("idle");
+    let worker =
+        tokio::spawn(school_notifications::runtime::start(state).with_subscriber(subscriber));
+    tokio::time::timeout(Duration::from_secs(3), signals.resolved.notified())
+        .await
+        .unwrap();
+    let rolled_back = item(user);
+    let mut tx = pool.begin().await.unwrap();
+    dispatch::create_in_transaction(&mut tx, &[rolled_back])
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), events.recv())
+            .await
+            .is_err()
+    );
+    let accepted = item(user);
+    dispatch::create(&pool, &tenant, std::slice::from_ref(&accepted))
+        .await
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(3), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.notification.id, accepted.notification_id);
+    assert_eq!(event.tenant, tenant);
+    worker.abort();
+    let _ = worker.await;
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn notification_legacy_nullable_key_exact_collision_is_controlled_and_never_resurrects() {
+    let (pool, user) = fixture("notification_legacy_null_key").await;
+    let n = item(user);
+    enqueue(&pool, std::slice::from_ref(&n)).await;
+    sqlx::query("UPDATE notification_receipts SET idempotency_key=NULL WHERE id=$1")
+        .bind(n.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM notifications WHERE id=$1")
+        .bind(n.notification_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        matches!(dispatch::create(&pool,"synthetic",&[n]).await,Err(AppError::Conflict(code)) if code=="notification_identity_conflict")
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn notification_runtime_blocks_corrupt_first_pending_and_presents_healthy_sibling_once() {
+    let (pool, user) = fixture("notification_blocked_identity").await;
+    let bad = item(user);
+    let good = item(user);
+    enqueue(&pool, &[bad.clone(), good.clone()]).await;
+    sqlx::query("UPDATE notifications SET message='Synthetic corruption' WHERE id=$1")
+        .bind(bad.notification_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    let status = school_notifications::runtime::deliver_tenant_batch(
+        &pool,
+        "synthetic",
+        &channel,
+        &ELIGIBILITY,
+    )
+    .await
+    .unwrap();
+    assert!(!status.pending);
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.notification.id, good.notification_id);
+    assert!(events.try_recv().is_err());
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT presentation_outcome FROM notification_receipts WHERE id=$1"
+        )
+        .bind(bad.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        "blocked"
+    );
+    sqlx::query("UPDATE notifications SET message=$2 WHERE id=$1")
+        .bind(bad.notification_id)
+        .bind(&bad.message)
+        .execute(&pool)
+        .await
+        .unwrap();
+    drain(&pool, "synthetic", &channel).await;
+    assert!(events.try_recv().is_err());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+}
+#[tokio::test]
+async fn notification_runtime_defers_transient_unconsumed_database_work_then_recovers() {
+    let (pool, user) = fixture("notification_transient_backoff").await;
+    let n = item(user);
+    enqueue(&pool, std::slice::from_ref(&n)).await;
+    sqlx::raw_sql("CREATE FUNCTION fail_synthetic_consume() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic_transient_failure'; END $$; CREATE TRIGGER fail_synthetic_consume BEFORE UPDATE ON notification_receipts FOR EACH ROW EXECUTE FUNCTION fail_synthetic_consume();").execute(&pool).await.unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    let status = school_notifications::runtime::deliver_tenant_batch(
+        &pool,
+        "synthetic",
+        &channel,
+        &ELIGIBILITY,
+    )
+    .await
+    .unwrap();
+    assert!(status.pending);
+    assert!(
+        !status.due,
+        "transient pre-consume failure must defer, not hot-loop"
+    );
+    assert!(events.try_recv().is_err());
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT presentation_consumed_at IS NULL FROM notification_receipts WHERE id=$1"
+    )
+    .bind(n.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap());
+    sqlx::raw_sql("DROP TRIGGER fail_synthetic_consume ON notification_receipts; DROP FUNCTION fail_synthetic_consume();").execute(&pool).await.unwrap();
+    drain(&pool, "synthetic", &channel).await;
+    assert_eq!(
+        events.try_recv().unwrap().notification.id,
+        n.notification_id
+    );
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn notification_managed_batch_old_transport_result_cannot_delete_refreshed_device() {
+    managed_batch_phase_case("dispatch_managed_device_refresh", false, true).await;
+}
+
+#[tokio::test]
+async fn notification_conditional_device_refresh_cannot_undo_remote_revoke_or_win_identical_delete_race(
+) {
+    use school_notifications::devices;
+    let (pool, user) = fixture("notification_conditional_refresh").await;
+    let session = device_session(&pool, user).await;
+    let installation = Uuid::new_v4();
+    let first = devices::register_for_tests(
+        &pool,
+        user,
+        session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(first.version);
+    let same = devices::register_for_tests(&pool, user, session, refresh, "synthetic-key")
+        .await
+        .unwrap();
+    assert_eq!(
+        (same.version, same.binding_token),
+        (first.version, first.binding_token)
+    );
+    devices::unregister(&pool, user, first.id, first.version)
+        .await
+        .unwrap();
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(first.version);
+    assert!(
+        matches!(devices::register_for_tests(&pool,user,session,refresh,"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_binding_changed")
+    );
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    // A new explicit user action may enroll again, with a different binding generation.
+    let new = devices::register_for_tests(
+        &pool,
+        user,
+        session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert_ne!(new.version, first.version);
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(new.version);
+    let (deleted, refreshed) = tokio::join!(
+        devices::unregister(&pool, user, new.id, new.version),
+        devices::register_for_tests(&pool, user, session, refresh, "synthetic-key")
+    );
+    deleted.unwrap();
+    if let Err(error) = refreshed {
+        assert!(matches!(error,AppError::Conflict(code) if code=="push_binding_changed"));
+    }
+    assert!(
+        devices::list(&pool, user).await.unwrap().items.is_empty(),
+        "conditional refresh never resurrects a revoked exact version"
+    );
+}
+
+#[tokio::test]
+async fn notification_device_auth_validity_tracks_account_status_without_changing_inbox_snapshot() {
+    use school_notifications::devices;
+    let (pool, user) = fixture("notification_device_auth_parity").await;
+    let session = device_session(&pool, user).await;
+    let installation = Uuid::new_v4();
+    let binding = devices::register_for_tests(
+        &pool,
+        user,
+        session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    let n = item(user);
+    enqueue(&pool, std::slice::from_ref(&n)).await;
+    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(n) FROM notifications n WHERE id=$1),(SELECT to_jsonb(r) FROM notification_receipts r WHERE id=$2))").bind(n.notification_id).bind(n.id).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    assert!(matches!(
+        devices::register_for_tests(
+            &pool,
+            user,
+            session,
+            device_request(installation),
+            "synthetic-key"
+        )
+        .await,
+        Err(AppError::AuthError(_))
+    ));
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(binding.version);
+    assert!(
+        matches!(devices::register_for_tests(&pool,user,session,refresh,"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_binding_changed")
+    );
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(n) FROM notifications n WHERE id=$1),(SELECT to_jsonb(r) FROM notification_receipts r WHERE id=$2))").bind(n.notification_id).bind(n.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(before, after);
 }

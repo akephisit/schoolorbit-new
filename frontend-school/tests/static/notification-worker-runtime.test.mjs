@@ -134,3 +134,36 @@ test('notification clicks reject stale account bindings and constrain navigation
 test('worker owns no fetch handler or application caching', () => {
 	assert.doesNotMatch(source, /addEventListener\(['"]fetch|caches\./);
 });
+
+test('focused owned client claims foreground presentation and suppresses the OS duplicate', async () => {
+	let messages = 0;
+	const client = {
+		visibilityState: 'visible',
+		focused: true,
+		postMessage(message, ports) {
+			messages++;
+			assert.equal(message.type, 'schoolorbit:push');
+			ports[0].postMessage({ handled: true });
+			ports[0].close();
+		}
+	};
+	const h = harness({ clients: [client] });
+	await h.push();
+	assert.equal(messages, 1);
+	assert.equal(h.shown.length, 0);
+});
+test('visible unfocused clients do not suppress OS presentation', async () => {
+	const h = harness({
+		clients: [
+			{
+				visibilityState: 'visible',
+				focused: false,
+				postMessage() {
+					assert.fail('unfocused client was asked to present');
+				}
+			}
+		]
+	});
+	await h.push();
+	assert.equal(h.shown.length, 1);
+});

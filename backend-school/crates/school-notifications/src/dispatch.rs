@@ -140,6 +140,7 @@ pub trait DeliveryEligibilityPort: Send + Sync {
         connection: &mut PgConnection,
         source: &NotificationSource,
         recipient_id: Uuid,
+        notification_id: Uuid,
     ) -> Result<bool, AppError>;
 }
 #[derive(serde::Serialize)]
@@ -165,7 +166,7 @@ struct ResolvedInput {
     recipient_id: Uuid,
     source_kind: String,
     source_id: Option<Uuid>,
-    idempotency_key: String,
+    idempotency_key: Option<String>,
     payload_matches: bool,
     presentation: String,
 }
@@ -238,7 +239,7 @@ pub async fn create_in_transaction(
         let rows:Vec<ResolvedInput>=school_database::DbSession::new(&mut **tx).query_as("notifications.accept.resolve_receipts",r#"SELECT n.id input_id,j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.idempotency_key,j.presentation,
             j.payload_hash=sha256(convert_to(jsonb_build_array(n.title,n.message,n.type,n.link)::text,'UTF8')) payload_matches
             FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid,idempotency_key text,title text,message text,type text,link text,presentation text)
-            JOIN notification_receipts j ON j.id=n.id OR j.notification_id=n.notification_id OR (j.source_kind=n.source_kind AND j.recipient_id=n.recipient_id AND j.idempotency_key=n.idempotency_key)
+            JOIN notification_receipts j ON j.id=n.id OR j.notification_id=n.notification_id OR (j.recipient_id=n.recipient_id AND j.idempotency_key=n.idempotency_key)
             ORDER BY j.id FOR UPDATE OF j"#).bind(Json(&input)).fetch_all().await?;
         let inserted: HashSet<_> = inserted.into_iter().collect();
         for n in chunk {
@@ -249,7 +250,7 @@ pub async fn create_in_transaction(
             let source = NotificationSource::decode(&r.source_kind, r.source_id)?;
             if source != n.source
                 || r.recipient_id != n.recipient_id
-                || r.idempotency_key != n.idempotency_key
+                || r.idempotency_key.as_deref() != Some(n.idempotency_key.as_str())
                 || !r.payload_matches
                 || r.presentation != n.presentation.as_str()
                 || ((r.id == n.id || r.notification_id == n.notification_id)
@@ -275,25 +276,37 @@ pub async fn create_in_transaction(
 }
 pub async fn create(
     pool: &PgPool,
+    tenant: &str,
     items: &[NewNotification],
 ) -> Result<Vec<AcceptanceOutcome>, AppError> {
     let mut tx = school_tenancy::TenantPool::begin_observed(pool, "notifications.create").await?;
-    let recipients: Vec<_> = items.iter().map(|n| n.recipient_id).collect();
-    let active: i64 = school_database::DbSession::new(&mut *tx)
+    let result = create_in_transaction(&mut tx, items).await?;
+    // Only newly accepted recipients need validation; an idempotent replay retains its snapshot.
+    let inserted: HashSet<_> = result
+        .iter()
+        .filter(|r| r.inserted)
+        .map(|r| r.input_id)
+        .collect();
+    let recipients: HashSet<_> = items
+        .iter()
+        .filter(|n| inserted.contains(&n.id))
+        .map(|n| n.recipient_id)
+        .collect();
+    let active: Vec<Uuid> = school_database::DbSession::new(&mut *tx)
         .scalar(
             "notifications.create.active_recipients",
-            "SELECT count(*) FROM users WHERE id=ANY($1) AND status='active'",
+            "SELECT id FROM users WHERE id=ANY($1) AND status='active' ORDER BY id FOR SHARE",
         )
-        .bind(&recipients)
-        .fetch_one()
+        .bind(recipients.iter().copied().collect::<Vec<_>>())
+        .fetch_all()
         .await?;
-    if usize::try_from(active).ok() != Some(recipients.iter().collect::<HashSet<_>>().len()) {
+    if active.len() != recipients.len() {
         return Err(AppError::BadRequest(
             "notification_recipient_inactive".into(),
         ));
     }
-    let result = create_in_transaction(&mut tx, items).await?;
     tx.commit().await?;
+    crate::runtime::wake_after_commit(tenant);
     Ok(result)
 }
 /// Bounded candidates only: no claim/lease or transport retry exists. Consumption arbitrates races.
@@ -330,7 +343,12 @@ pub async fn consume(
 ) -> Result<Option<Notification>, AppError> {
     let mut tx = school_tenancy::TenantPool::begin_observed(pool, "notifications.consume").await?;
     let allowed = eligibility
-        .authorize_on_connection(&mut tx, &item.source, item.recipient_id)
+        .authorize_on_connection(
+            &mut tx,
+            &item.source,
+            item.recipient_id,
+            item.notification_id,
+        )
         .await?;
     let locked:Option<(Uuid,Uuid,String,Option<Uuid>,bool)>=school_database::DbSession::new(&mut *tx).query_as("notifications.presentation.lock","SELECT r.notification_id,r.recipient_id,r.source_kind,r.source_id,p.expires_at>now() FROM notification_receipts r JOIN notification_presentations p ON p.receipt_id=r.id WHERE r.id=$1 AND r.presentation_consumed_at IS NULL FOR UPDATE OF r,p").bind(item.id).fetch_optional().await?;
     let Some((notification_id, recipient, kind, source_id, fresh)) = locked else {
@@ -343,7 +361,11 @@ pub async fn consume(
     {
         return Err(integrity("notification_identity_conflict"));
     }
-    let notification:Option<Notification>=school_database::DbSession::new(&mut *tx).query_as("notifications.presentation.inbox","SELECT n.id,n.title,n.message,n.type type_,n.link,n.read_at,n.created_at FROM notifications n JOIN notification_receipts r ON r.notification_id=n.id WHERE r.id=$1 AND n.user_id=r.recipient_id AND r.payload_hash=sha256(convert_to(jsonb_build_array(n.title,n.message,n.type,n.link)::text,'UTF8')) FOR SHARE OF n").bind(item.id).fetch_optional().await?;
+    let inbox_matches:Option<bool>=school_database::DbSession::new(&mut *tx).scalar("notifications.presentation.inbox_identity","SELECT n.user_id=r.recipient_id AND r.payload_hash=sha256(convert_to(jsonb_build_array(n.title,n.message,n.type,n.link)::text,'UTF8')) FROM notifications n JOIN notification_receipts r ON r.notification_id=n.id WHERE r.id=$1 FOR SHARE OF n").bind(item.id).fetch_optional().await?;
+    if inbox_matches == Some(false) {
+        return Err(integrity("notification_inbox_identity_conflict"));
+    }
+    let notification:Option<Notification>=school_database::DbSession::new(&mut *tx).query_as("notifications.presentation.inbox","SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1").bind(item.notification_id).fetch_optional().await?;
     let outcome = if !fresh {
         "expired"
     } else if !allowed || notification.is_none() {
@@ -366,6 +388,26 @@ pub async fn consume(
     } else {
         None
     })
+}
+/// Permanently block an exact still-pending corrupted identity without attempting presentation.
+/// Repairing the source later cannot reopen this terminal presentation slot.
+pub async fn block(pool: &PgPool, item: &PendingPresentation) -> Result<(), AppError> {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "notifications.block").await?;
+    let (kind, source_id) = item.source.parts();
+    let present:Option<Uuid>=school_database::DbSession::new(&mut *tx).scalar("notifications.presentation.block_lock","SELECT r.id FROM notification_receipts r JOIN notification_presentations p ON p.receipt_id=r.id WHERE r.id=$1 AND r.notification_id=$2 AND r.recipient_id=$3 AND r.source_kind=$4 AND r.source_id IS NOT DISTINCT FROM $5 AND r.presentation_consumed_at IS NULL FOR UPDATE OF r,p").bind(item.id).bind(item.notification_id).bind(item.recipient_id).bind(kind).bind(source_id).fetch_optional().await?;
+    if present.is_some() {
+        school_database::DbSession::new(&mut *tx).query("notifications.presentation.block","UPDATE notification_receipts SET presentation_consumed_at=now(),presentation_outcome='blocked' WHERE id=$1").bind(item.id).execute().await?;
+        school_database::DbSession::new(&mut *tx)
+            .query(
+                "notifications.presentation.block_remove_pending",
+                "DELETE FROM notification_presentations WHERE receipt_id=$1",
+            )
+            .bind(item.id)
+            .execute()
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 pub async fn progress_on_connection(
     connection: &mut PgConnection,

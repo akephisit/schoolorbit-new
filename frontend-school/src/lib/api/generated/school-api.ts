@@ -6318,6 +6318,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/notifications/push/config': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPushConfig'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/notifications/push/devices': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPushDevices'];
+		put?: never;
+		post: operations['registerPushDevice'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/notifications/push/devices/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['unregisterPushDevice'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/organization/delegations/{id}': {
 		parameters: {
 			query?: never;
@@ -12118,6 +12166,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ListPushDevicesResponse: {
+			data: {
+				items: components['schemas']['PushDevice'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LockOutcome: {
 			data: {
 				blockers: components['schemas']['LockBlocker'][];
@@ -12650,6 +12705,38 @@ export interface components {
 				title: string | null;
 				user_type: string;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PushConfigResponse: {
+			data: {
+				available: boolean;
+				/** Format: int64 */
+				device_expiry_days: number;
+				key_id: string | null;
+				max_devices: number;
+				public_key: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PushDevice: {
+			data: {
+				/** Format: uuid */
+				binding_token: string;
+				/** Format: date-time */
+				expires_at: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				installation_id: string;
+				key_id: string;
+				label: string;
+				/** Format: date-time */
+				last_confirmed_at: string;
+				/** Format: uuid */
+				version: string;
 			};
 			message?: string;
 			success: boolean;
@@ -22557,6 +22644,9 @@ export interface components {
 			cycleId?: string | null;
 			status?: components['schemas']['SupervisionObservationStatus'] | null;
 		};
+		ListPushDevicesResponse: {
+			items: components['schemas']['PushDevice'][];
+		};
 		LockBlocker: {
 			/** Format: uuid */
 			learningGroupId: string;
@@ -23757,6 +23847,30 @@ export interface components {
 			expectedRecords: number;
 			reason: string;
 		};
+		PushConfigResponse: {
+			available: boolean;
+			/** Format: int64 */
+			device_expiry_days: number;
+			key_id: string | null;
+			max_devices: number;
+			public_key: string | null;
+		};
+		PushDevice: {
+			/** Format: uuid */
+			binding_token: string;
+			/** Format: date-time */
+			expires_at: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			installation_id: string;
+			key_id: string;
+			label: string;
+			/** Format: date-time */
+			last_confirmed_at: string;
+			/** Format: uuid */
+			version: string;
+		};
 		QrCertificateVerificationRequest: {
 			certificateNumber: string;
 			proof: string;
@@ -23987,6 +24101,20 @@ export interface components {
 			refundedOn: string;
 			/** Format: uuid */
 			requestId: string;
+		};
+		RegisterPushDeviceRequest: {
+			auth: string;
+			endpoint: string;
+			/**
+			 * Format: uuid
+			 * @description Conditional automatic refresh cannot recreate a revoked binding. Omit only for explicit enable.
+			 */
+			expected_version?: string | null;
+			/** Format: uuid */
+			installation_id: string;
+			key_id: string;
+			label: string;
+			p256dh: string;
 		};
 		RejectCalendarRequest: {
 			reason: string;
@@ -56812,6 +56940,158 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_ListNotificationsResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPushConfig: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current Web Push key and admission limits */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PushConfigResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPushDevices: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current user's active Push device bindings */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ListPushDevicesResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	registerPushDevice: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RegisterPushDeviceRequest'];
+			};
+		};
+		responses: {
+			/** @description Registered or refreshed this installation binding */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PushDevice'];
+				};
+			};
+			/** @description Invalid endpoint, label or crypto keys */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Key or binding changed, or device limit reached */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Push configuration unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	unregisterPushDevice: {
+		parameters: {
+			query: {
+				version: string;
+			};
+			header?: never;
+			path: {
+				/** @description Owned device ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exact owned binding revoked or already absent */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
 			/** @description Authentication required */

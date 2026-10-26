@@ -84,6 +84,41 @@ export async function beginBinding(identity: string | null, intent: string) {
 	if (result.changed) publishIdentityChange();
 	return result.state;
 }
+/** Reserve a refresh only while the exact prior binding and intent still own this installation. */
+export function beginBindingRefresh(
+	binding: DeviceBinding,
+	previousIntent: string,
+	intent: string
+) {
+	return stateTransaction((state) => {
+		if (
+			state.identity !== binding.identity ||
+			state.intent !== previousIntent ||
+			state.binding?.id !== binding.id ||
+			state.binding.version !== binding.version ||
+			state.binding.binding_token !== binding.binding_token
+		)
+			return null;
+		state.intent = intent;
+		return { ...state };
+	});
+}
+/** Forget a rejected push registration without changing the authenticated inbox identity. */
+export function forgetBinding(binding: DeviceBinding, intent: string) {
+	return stateTransaction((state) => {
+		if (
+			state.identity !== binding.identity ||
+			state.intent !== intent ||
+			state.binding?.id !== binding.id ||
+			state.binding.version !== binding.version ||
+			state.binding.binding_token !== binding.binding_token
+		)
+			return null;
+		state.binding = null;
+		state.intent = crypto.randomUUID();
+		return state.intent;
+	});
+}
 export function saveBinding(binding: DeviceBinding) {
 	return stateTransaction((state) => {
 		if (state.intent !== binding.intent || state.identity !== binding.identity) return false;

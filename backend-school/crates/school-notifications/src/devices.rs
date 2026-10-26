@@ -26,6 +26,9 @@ pub(crate) fn vapid_config() -> Option<VapidConfig> {
     let public_key = std::env::var("VAPID_PUBLIC_KEY").ok()?;
     let private_key = std::env::var("VAPID_PRIVATE_KEY").ok()?;
     let subject = std::env::var("VAPID_SUBJECT").ok()?;
+    validate_vapid(public_key, private_key, subject)
+}
+fn validate_vapid(public_key: String, private_key: String, subject: String) -> Option<VapidConfig> {
     if !decode(&public_key, 65) || !decode(&private_key, 32) || subject.len() > 512 {
         return None;
     }
@@ -104,8 +107,8 @@ pub async fn list(pool: &PgPool, user: Uuid) -> Result<ListPushDevicesResponse, 
         school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.devices.list")
             .await?;
     let items=school_database::DbSession::new(&mut *connection).query_as("notifications.devices.list",r#"SELECT p.id,p.installation_id,p.label,p.version,p.binding_token,p.key_id,p.last_confirmed_at,p.expires_at
-        FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id
-        WHERE p.user_id=$1 AND p.expires_at>now() AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()
+        FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
+        WHERE p.user_id=$1 AND p.expires_at>now() AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active'
         ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#).bind(user).fetch_all().await?;
     Ok(ListPushDevicesResponse { items })
 }
@@ -117,7 +120,16 @@ pub async fn register(
 ) -> Result<PushDevice, AppError> {
     let config =
         vapid_config().ok_or_else(|| AppError::ServiceUnavailable("push_unavailable".into()))?;
-    validate(&request, &config.key_id)?;
+    register_with_key(pool, user, session, request, &config.key_id).await
+}
+async fn register_with_key(
+    pool: &PgPool,
+    user: Uuid,
+    session: Uuid,
+    request: RegisterPushDeviceRequest,
+    key_id: &str,
+) -> Result<PushDevice, AppError> {
+    validate(&request, key_id)?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "notifications.devices.register").await?;
     // Serialize this installation across account switches, then all of a user's device admission.
@@ -137,13 +149,19 @@ pub async fn register(
         .bind(user)
         .execute()
         .await?;
-    let session_valid:bool=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.session","SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND idle_expires_at>now() AND absolute_expires_at>now() FOR SHARE)").bind(session).bind(user).fetch_one().await?;
+    let session_valid:bool=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.session","SELECT EXISTS(SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' FOR SHARE OF s)").bind(session).bind(user).fetch_one().await?;
     if !session_valid {
         return Err(AppError::AuthError("session_invalid".into()));
     }
-    let count:i64=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.admission",r#"SELECT count(*) FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id
+    if let Some(expected) = request.expected_version {
+        let binding:Option<(Uuid,Option<Uuid>,Uuid)>=school_database::DbSession::new(&mut *tx).query_as("notifications.devices.conditional_refresh","SELECT user_id,session_id,version FROM push_subscriptions WHERE installation_id=$1 FOR UPDATE").bind(request.installation_id).fetch_optional().await?;
+        if binding != Some((user, Some(session), expected)) {
+            return Err(AppError::Conflict("push_binding_changed".into()));
+        }
+    }
+    let count:i64=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.admission",r#"SELECT count(*) FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
         WHERE p.user_id=$1 AND p.installation_id IS DISTINCT FROM $2 AND p.expires_at>now()
-        AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()"#).bind(user).bind(request.installation_id).fetch_one().await?;
+        AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active'"#).bind(user).bind(request.installation_id).fetch_one().await?;
     if count >= MAX_DEVICES as i64 {
         return Err(AppError::Conflict("push_device_limit".into()));
     }
@@ -195,12 +213,34 @@ pub(crate) async fn cleanup(pool: &PgPool) -> Result<(), AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.devices.cleanup")
             .await?;
-    school_database::DbSession::new(&mut *connection).query("notifications.devices.cleanup",r#"WITH stale AS (SELECT p.id FROM push_subscriptions p WHERE p.expires_at<=now() OR NOT EXISTS(SELECT 1 FROM auth_sessions s WHERE s.id=p.session_id AND s.user_id=p.user_id AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()) ORDER BY p.expires_at,p.id LIMIT 100 FOR UPDATE OF p SKIP LOCKED) DELETE FROM push_subscriptions p USING stale WHERE p.id=stale.id"#).execute().await?;
+    school_database::DbSession::new(&mut *connection).query("notifications.devices.cleanup",r#"WITH stale AS (SELECT p.id FROM push_subscriptions p WHERE p.expires_at<=now() OR NOT EXISTS(SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=p.session_id AND s.user_id=p.user_id AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active') ORDER BY p.expires_at,p.id LIMIT 100 FOR UPDATE OF p SKIP LOCKED) DELETE FROM push_subscriptions p USING stale WHERE p.id=stale.id"#).execute().await?;
     Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn vapid_pair_and_subject_validation_fail_closed_without_touching_devices() {
+        let private = URL_SAFE_NO_PAD.encode([1u8; 32]);
+        let signer = web_push::VapidSignatureBuilder::from_base64_no_sub(&private).unwrap();
+        let public = URL_SAFE_NO_PAD.encode(signer.get_public_key());
+        assert!(validate_vapid(
+            public.clone(),
+            private.clone(),
+            "mailto:ops@example.invalid".into()
+        )
+        .is_some());
+        assert!(validate_vapid(
+            public.clone(),
+            URL_SAFE_NO_PAD.encode([2u8; 32]),
+            "mailto:ops@example.invalid".into()
+        )
+        .is_none());
+        assert!(validate_vapid(public.clone(), private.clone(), "not-a-contact".into()).is_none());
+        assert!(
+            validate_vapid(public, private, "https://example.invalid/contact".into()).is_some()
+        );
+    }
     #[test]
     fn endpoints_reject_arbitrary_hosts_userinfo_and_non_https() {
         for s in [
@@ -230,4 +270,19 @@ mod tests {
         assert!(!decode("bad", 16));
         assert!(!decode(&"a".repeat(4096), 32));
     }
+}
+
+#[cfg(feature = "test-support")]
+pub async fn register_for_tests(
+    pool: &PgPool,
+    user: Uuid,
+    session: Uuid,
+    request: RegisterPushDeviceRequest,
+    key_id: &str,
+) -> Result<PushDevice, AppError> {
+    register_with_key(pool, user, session, request, key_id).await
+}
+#[cfg(feature = "test-support")]
+pub async fn cleanup_for_tests(pool: &PgPool) -> Result<(), AppError> {
+    cleanup(pool).await
 }

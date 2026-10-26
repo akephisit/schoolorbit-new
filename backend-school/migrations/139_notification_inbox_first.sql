@@ -1,6 +1,6 @@
 -- Quiesce old writers under maintenance. Recover forward after this cutover.
 LOCK TABLE notification_dispatch_jobs, notifications, attendance_notifications,
-    process_notification_sources, push_subscriptions IN ACCESS EXCLUSIVE MODE;
+    process_notification_sources, work_items, work_item_assignees, push_subscriptions IN ACCESS EXCLUSIVE MODE;
 
 CREATE TEMP TABLE notification_inbox_before ON COMMIT DROP AS
 SELECT to_jsonb(n) value FROM notifications n;
@@ -14,6 +14,14 @@ DO $$ BEGIN
         OR n.link IS DISTINCT FROM j.link)
         OR EXISTS (SELECT 1 FROM notification_dispatch_jobs WHERE length(title)>255)
     THEN RAISE EXCEPTION 'NOTIFICATION_INBOX_FIRST_IDENTITY_CONFLICT'; END IF;
+    IF EXISTS(SELECT 1 FROM notification_dispatch_jobs j JOIN attendance_notifications a ON a.id=j.source_id
+        WHERE j.source_kind='attendance' AND (a.notification_id IS DISTINCT FROM j.notification_id OR a.recipient_id IS DISTINCT FROM j.recipient_id))
+       OR EXISTS(SELECT 1 FROM notification_dispatch_jobs j JOIN process_notification_sources s ON s.id=j.source_id
+        WHERE j.source_kind='process' AND s.recipient_id IS DISTINCT FROM j.recipient_id)
+    THEN RAISE EXCEPTION 'NOTIFICATION_INBOX_FIRST_SOURCE_IDENTITY_CONFLICT'; END IF;
+    IF EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE dedup_key IS NOT NULL
+        GROUP BY recipient_id,dedup_key HAVING count(*)>1)
+    THEN RAISE EXCEPTION 'NOTIFICATION_INBOX_FIRST_IDEMPOTENCY_CONFLICT'; END IF;
 END $$;
 
 -- Only never-stored, live-source deferred work may be materialized.
@@ -92,7 +100,7 @@ CREATE INDEX push_subscriptions_expiry_idx ON push_subscriptions(expires_at,id);
 -- Migration-owned hashed evidence survives an interruption between 139 and 140.
 -- It covers complete rows (including read_at and original timestamps), never private payload copies.
 CREATE TABLE notification_inbox_first_evidence (
-    owner TEXT NOT NULL CHECK(owner IN ('inbox','receipt','attendance','process','presentation')),
+    owner TEXT NOT NULL CHECK(owner IN ('inbox','receipt','attendance','process','presentation','source_eligibility')),
     id UUID NOT NULL,
     row_hash BYTEA NOT NULL CHECK(octet_length(row_hash)=32),
     PRIMARY KEY(owner,id)
@@ -102,4 +110,8 @@ SELECT 'inbox',id,sha256(convert_to(to_jsonb(n)::text,'UTF8')) FROM notification
 UNION ALL SELECT 'receipt',id,sha256(convert_to(to_jsonb(j)::text,'UTF8')) FROM notification_dispatch_jobs j
 UNION ALL SELECT 'attendance',id,sha256(convert_to(to_jsonb(a)::text,'UTF8')) FROM attendance_notifications a
 UNION ALL SELECT 'process',id,sha256(convert_to(to_jsonb(s)::text,'UTF8')) FROM process_notification_sources s
-UNION ALL SELECT 'presentation',receipt_id,sha256(convert_to(to_jsonb(p)::text,'UTF8')) FROM notification_presentations p;
+UNION ALL SELECT 'presentation',receipt_id,sha256(convert_to(to_jsonb(p)::text,'UTF8')) FROM notification_presentations p
+UNION ALL SELECT 'source_eligibility',s.id,sha256(convert_to(jsonb_build_array(s.work_item_id,
+    s.work_item_id IS NULL OR EXISTS(SELECT 1 FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id
+        WHERE w.id=s.work_item_id AND w.status='active' AND a.assignee_type='user' AND a.user_id=s.recipient_id
+            AND a.status IN ('assigned','read')))::text,'UTF8')) FROM process_notification_sources s;

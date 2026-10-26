@@ -1940,19 +1940,22 @@ test('web push notifications bind generic fresh presentation to one device notif
 
 	assert.match(
 		backendNotificationService,
-		/serde_json::to_vec\(&PushPayload\s*\{\s*id:\s*notification\.id,/
+		/let payload = PushPayload\s*\{\s*id:\s*notification\.id,[\s\S]*serde_json::to_vec\(&payload\)/
 	);
 	assert.match(
 		backendNotificationService,
 		/#\[derive\(serde::Serialize\)\]\s*struct PushPayload<'a>\s*\{\s*id:\s*Uuid,/
 	);
+	assert.match(backendNotificationService, /device_id:\s*sub\.id/);
+	assert.match(backendNotificationService, /device_version:\s*sub\.version/);
+	assert.match(backendNotificationService, /binding_token:\s*sub\.binding_token/);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
 	assert.doesNotMatch(serviceWorker, /options\.tag\s*=/);
 	assert.match(serviceWorker, /renotify:\s*false/);
 	assert.doesNotMatch(serviceWorker, /options\.renotify\s*=/);
 	assert.match(serviceWorker, /tag:\s*`schoolorbit:\$\{payload\.id\}`/);
 	assert.match(serviceWorker, /bindingMatches/);
-	assert.match(serviceWorker, /claimPresentation\(payload\.id/);
+	assert.match(serviceWorker, /claimPresentation\([\s\S]*payload\.id/);
 	assert.match(serviceWorker, /silent:\s*false/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-512\.png['"]/);
@@ -1999,7 +2002,10 @@ test('web push subscription setup stays user gesture safe for iOS', async () => 
 		);
 	assert.ok(syncMethod, 'notification store must expose syncExistingPushSubscription');
 	assert.match(syncMethod[0], /getSubscription\(\)/);
-	assert.match(syncMethod[0], /syncPushSubscription\(subscription, config, generation\)/);
+	assert.match(
+		syncMethod[0],
+		/syncPushSubscription\(\s*subscription,\s*config,\s*generation,\s*\{\s*binding,\s*intent:\s*state\.intent\s*\}\s*\)/
+	);
 	assert.match(syncMethod[0], /subscriptionKeyMatches\(subscription, config\.public_key\)/);
 	assert.match(syncMethod[0], /getPushConfig\(\)/);
 	assert.doesNotMatch(syncMethod[0], /Notification\.requestPermission\(/);

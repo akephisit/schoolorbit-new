@@ -69,6 +69,8 @@ pub struct ListPushDevicesResponse {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct RegisterPushDeviceRequest {
+    /// Conditional automatic refresh cannot recreate a revoked binding. Omit only for explicit enable.
+    pub expected_version: Option<Uuid>,
     pub installation_id: Uuid,
     pub label: String,
     pub endpoint: String,

@@ -104,7 +104,7 @@ unicode-normalization = "0.1.26"
 url = "2.5.8"
 utoipa = { version = "6.0.0", features = ["chrono", "uuid"] }
 uuid = { version = "1.28.0", features = ["serde", "v4", "v5", "v7"] }
-web-push = "0.11.0"
+web-push = { version = "0.11.0", default-features = false }
 zeroize = { version = "1.9.1", features = ["derive"] }
 school-permissions = { path = "crates/school-permissions" }
 school-migrations = { path = "crates/school-migrations" }
@@ -224,7 +224,6 @@ thiserror = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
-web-push = { workspace = true }
 school-migrations = { workspace = true }
 school-permissions = { workspace = true }
 school-errors = { workspace = true }

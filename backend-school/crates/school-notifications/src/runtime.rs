@@ -278,7 +278,7 @@ async fn deliver_database_batch(
     ))
     .await?;
     let outcome = deliver_batch(batch, DELIVERY_CONCURRENCY, |pending| async move {
-        let notification = database(resolved_phase(
+        let notification = match database(resolved_phase(
             access,
             tenant,
             Some(tenant_id),
@@ -286,7 +286,33 @@ async fn deliver_database_batch(
             "consume",
             |_, pool| async move { dispatch::consume(&pool, &pending, eligibility).await },
         ))
-        .await?;
+        .await
+        {
+            Ok(notification) => notification,
+            Err(AppError::Conflict(_)) => {
+                database(resolved_phase(
+                    access,
+                    tenant,
+                    Some(tenant_id),
+                    turn,
+                    "block",
+                    |_, pool| async move { dispatch::block(&pool, &pending).await },
+                ))
+                .await?;
+                tracing::warn!(
+                    error_code = "notification_presentation_blocked",
+                    "Corrupted presentation identity blocked without transport; inbox retained"
+                );
+                return Ok::<(), AppError>(());
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error_code = "notification_presentation_deferred",
+                    "Presentation remains unconsumed; database recovery deferred"
+                );
+                return Err(error);
+            }
+        };
         let Some(notification) = notification else {
             return Ok::<(), AppError>(());
         };
@@ -328,8 +354,15 @@ async fn deliver_database_batch(
             .deliver(&publisher, pending.recipient_id, prepared)
             .await
             .map_err(|_| {
+                tracing::warn!(
+                    error_code = "notification_consumed_transport_failed",
+                    "Consumed presentation transport ended without replay"
+                );
                 AppError::ServiceUnavailable("notification_transport_unavailable".into())
             })?;
+        if receipt.invalid_devices.is_empty() {
+            return Ok(());
+        }
         database(resolved_phase(
             access,
             tenant,
@@ -353,11 +386,11 @@ async fn deliver_database_batch(
         tracing::warn!(
             error_code = "notification_presentation_attempt_ended",
             failed = outcome.failed,
-            "Consumed presentations will not retry"
+            "Pending database work may recover; consumed presentations will not replay"
         );
     }
 
-    database(resolved_phase(
+    let mut progress = database(resolved_phase(
         access,
         tenant,
         Some(tenant_id),
@@ -368,7 +401,12 @@ async fn deliver_database_batch(
             dispatch::status(&pool).await
         },
     ))
-    .await
+    .await?;
+    // Pre-consumption database/source errors recover on a bounded later probe, never a hot loop.
+    if outcome.failed > 0 {
+        progress.due = false;
+    }
+    Ok(progress)
 }
 
 struct TenantSchedule {
@@ -388,6 +426,17 @@ impl TenantSchedule {
     }
 }
 pub async fn start(state: NotificationRuntimeState) {
+    if ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some())
+        && !crate::devices::push_config().available
+    {
+        tracing::warn!(
+            error_code = "notification_push_configuration_unavailable",
+            "Configured Push key pair/contact is invalid; inbox and SSE remain available"
+        );
+    }
+
     let mut tenants: BTreeMap<String, TenantSchedule> = BTreeMap::new();
     let mut refresh_due = true;
     let mut last_refresh = tokio::time::Instant::now();
@@ -442,6 +491,13 @@ pub async fn start(state: NotificationRuntimeState) {
             match result {
                 Ok(progress) => {
                     schedule.pending = progress.pending;
+                    if !progress.pending {
+                        tracing::debug!(
+                            operation = "notification_schedule",
+                            phase = "idle",
+                            "Notification tenant has no pending presentation"
+                        );
+                    }
                     schedule.next_probe = tokio::time::Instant::now()
                         + if progress.due {
                             Duration::ZERO

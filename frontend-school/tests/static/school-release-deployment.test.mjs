@@ -81,8 +81,18 @@ test('reconciled hashes leave a secret-free job and missing transport blocks mai
 	assert.equal(privateJob.needs, 'preflight');
 	assert.deepEqual(release.jobs.maintenance.needs, ['preflight', 'private-preflight']);
 	assert.match(release.jobs.maintenance.if, /needs.private-preflight.result == 'success'/);
-	const validation = privateJob.steps[2];
-	assert.equal(validation.name, 'Validate reconciled plan transport before private checks');
+	const validationIndex = privateJob.steps.findIndex(
+		(step) => step.name === 'Validate reconciled plan transport before private checks'
+	);
+	assert.ok(validationIndex >= 0, 'private preflight must validate the reconciled plan');
+	const validation = privateJob.steps[validationIndex];
+	const privateOperationIndex = privateJob.steps.findIndex(
+		(step) => step.name === 'Check former Admin alias ownership before entering maintenance'
+	);
+	assert.ok(
+		privateOperationIndex > validationIndex,
+		'plan validation must precede private release checks'
+	);
 	assert.equal(validation.env.PLAN, '${{ needs.preflight.outputs.plan }}');
 	const plan = {
 		schemaVersion: 1,

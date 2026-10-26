@@ -7610,12 +7610,20 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             assert!(phase.contains("access.pool(resolved.as_ref(), expected)"));
             let batch = extract_braced_block(&source, "async fn deliver_database_batch", false);
             assert!(batch.matches("resolved_phase(").count() >= 4);
-            assert!(batch.contains("dispatch::materialize"));
-            assert!(batch.contains("NotificationService::prepare_stored"));
+            // Inbox-first cutover: consumption commits before independent SSE/Push.
+            assert!(batch.contains("dispatch::consume"));
             assert!(
-                batch.contains(".deliver(&publisher, claimed.notification.recipient_id, prepared)")
+                batch.find("dispatch::consume").unwrap() < batch.find("publisher.publish").unwrap()
             );
-            assert!(batch.contains("dispatch::finish_delivery"));
+            assert!(
+                batch.find("publisher.publish").unwrap()
+                    < batch.find("NotificationService::prepare_stored").unwrap()
+            );
+            assert!(batch.contains("NotificationService::prepare_stored"));
+            assert!(batch.contains(".deliver(&publisher, pending.recipient_id, prepared)"));
+            assert!(batch.contains("NotificationService::complete_delivery"));
+            assert!(!source.contains("DELIVERY_ITEM_TIMEOUT"));
+            assert!(!source.contains("dispatch::claim"));
             assert!(!batch.contains("spawn("));
             let publisher = read_source(
                 repo_root().join("backend-school/crates/school-notifications/src/publisher.rs"),
@@ -9830,4 +9838,118 @@ fn database_query_provider_is_connection_bound_and_below_tenancy_and_domains() {
     }
     assert!(observed_methods.contains("pub async fn return_to_pool"));
     assert!(observed_methods.contains("pub async fn close"));
+}
+
+#[test]
+fn notification_inbox_first_has_one_acceptance_owner_and_irreversible_presentation() {
+    // SQL contracts are literals; preserve them while using the lexical parser for actual function boundaries.
+    let raw_block = |source: &str, marker: &str| {
+        let lexical = lexical_mask(source, false);
+        let start = lexical.structural.find(marker).unwrap();
+        let opening = start + lexical.structural[start..].find('{').unwrap();
+        let closing = balanced_delimiter_end(&lexical.structural, opening, b'{', b'}').unwrap();
+        strip_comments(&source[start..=closing])
+    };
+    let dispatch = read_source(manifest_dir().join("crates/school-notifications/src/dispatch.rs"));
+    let acceptance = raw_block(&dispatch, "pub async fn create_in_transaction");
+    for required in [
+        "INSERT INTO notification_receipts",
+        "INSERT INTO notifications",
+        "INSERT INTO notification_presentations",
+        "payload_hash=sha256",
+        "notification_identity_conflict",
+    ] {
+        assert!(
+            acceptance.contains(required),
+            "missing central acceptance invariant {required}"
+        )
+    }
+    let consume = raw_block(&dispatch, "pub async fn consume");
+    for required in [
+        "authorize_on_connection",
+        "FOR UPDATE OF r,p",
+        "presentation_consumed_at=now()",
+        "DELETE FROM notification_presentations",
+        "tx.commit().await?",
+    ] {
+        assert!(
+            consume.contains(required),
+            "missing consume invariant {required}"
+        )
+    }
+    assert!(
+        !consume.contains("INSERT INTO notifications"),
+        "presentation cannot resurrect an inbox"
+    );
+    for retired in [
+        "notification_dispatch_jobs",
+        "next_attempt_at",
+        "lease_token",
+        "attempts",
+    ] {
+        assert!(
+            !dispatch.contains(retired),
+            "retired transport state {retired}"
+        )
+    }
+    let routes = read_source(manifest_dir().join("crates/school-notifications/src/http/routes.rs"));
+    assert!(!routes.contains("create_notification"));
+    assert!(!routes.contains("subscribe_push"));
+    for endpoint in [
+        "/notifications/push/config",
+        "/notifications/push/devices",
+        "/notifications/push/devices/{id}",
+    ] {
+        assert!(routes.contains(endpoint))
+    }
+    let devices = read_source(manifest_dir().join("crates/school-notifications/src/devices.rs"));
+    for required in [
+        "MAX_DEVICES",
+        "s.revoked_at IS NULL",
+        "s.idle_expires_at>now()",
+        "s.absolute_expires_at>now()",
+        "version=$3",
+        "valid_endpoint",
+        "push_device_limit",
+    ] {
+        assert!(
+            devices.contains(required),
+            "missing device invariant {required}"
+        )
+    }
+    let publisher =
+        read_source(manifest_dir().join("crates/school-notifications/src/publisher.rs"));
+    for required in [
+        "binding_token",
+        "device_version",
+        "expires_at",
+        "set_ttl",
+        "buffer_unordered(4)",
+        "version=$3",
+    ] {
+        assert!(
+            publisher.contains(required),
+            "missing push invariant {required}"
+        )
+    }
+    assert!(!publisher.contains("rotate_for_attempt"));
+    let attendance =
+        read_source(manifest_dir().join("crates/school-attendance/src/services/notifications.rs"));
+    assert!(attendance.contains("dispatch::create_in_transaction"));
+    let calendar =
+        read_source(manifest_dir().join("crates/school-calendar/src/delivery/reminders.rs"));
+    assert!(calendar.contains("accept_event_in_transaction"));
+    let reminders = extract_braced_block(
+        &calendar,
+        "async fn process_advisory_locked_reminder",
+        false,
+    );
+    assert!(
+        reminders.find("accept_event_in_transaction").unwrap()
+            < reminders.find("mark_calendar_reminder_sent").unwrap()
+    );
+    assert!(
+        reminders.find("mark_calendar_reminder_sent").unwrap()
+            < reminders.rfind("tx.commit().await?").unwrap()
+    );
 }

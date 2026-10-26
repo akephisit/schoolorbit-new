@@ -130,13 +130,25 @@ async fn assert_refusal(pool: &PgPool, code: &str) {
     assert!(school_migrations::verify_tenant_schema(pool).await.is_err());
 }
 
+/// This target deliberately stays at the historical schema; current readiness must reject it.
+async fn assert_historical_schema_120(pool: &PgPool) {
+    let latest_successful: i64 =
+        sqlx::query_scalar("SELECT max(version) FROM _sqlx_migrations WHERE success")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(latest_successful, 120);
+    assert!(school_migrations::latest_migration_version() > 120);
+    assert!(school_migrations::verify_tenant_schema(pool).await.is_err());
+}
+
 #[tokio::test]
 async fn notification_dispatch_migration_preserves_all_states_and_replays() {
     let pool = fixture("dispatch_migration_preservation").await;
     let identities = seed_legacy(&pool).await;
     let legacy = legacy_rows(&pool).await;
     let inbox = inbox_rows(&pool).await;
-    // A compiled120 runtime refuses both predecessor histories; keep the strict gate.
+    // The current compiled runtime refuses these historical predecessor histories; keep the strict gate.
     assert!(school_migrations::verify_tenant_schema(&pool)
         .await
         .is_err());
@@ -201,18 +213,10 @@ async fn notification_dispatch_migration_preserves_all_states_and_replays() {
             "migration must not recreate absent inboxes"
         );
     }
-    school_migrations::run_tenant_migrations(&pool)
-        .await
-        .unwrap();
-    school_migrations::run_tenant_migrations(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        school_migrations::verify_tenant_schema(&pool)
-            .await
-            .unwrap(),
-        120
-    );
+    // Replay only the historical migration selection, so all original queue evidence remains queryable.
+    apply_migrations_through(&pool, 120).await.unwrap();
+    apply_migrations_through(&pool, 120).await.unwrap();
+    assert_historical_schema_120(&pool).await;
     assert_eq!(central_rows(&pool).await, expected_jobs);
     assert_eq!(legacy_rows(&pool).await, expected_ledger);
     assert_eq!(inbox_rows(&pool).await, inbox);
@@ -294,12 +298,7 @@ async fn notification_dispatch_migration_refuses_conflicts_and_retries() {
         .unwrap();
     // Repair only synthetic unmappable input, then retry the unchanged canonical migration.
     apply_migrations_through(&pool, 120).await.unwrap();
-    assert_eq!(
-        school_migrations::verify_tenant_schema(&pool)
-            .await
-            .unwrap(),
-        120
-    );
+    assert_historical_schema_120(&pool).await;
 }
 
 #[tokio::test]
@@ -333,12 +332,7 @@ async fn notification_dispatch_migration_refuses_reconciliation_drift_and_retrie
     sqlx::raw_sql("DROP TRIGGER corrupt_dispatch_inbox ON notification_dispatch_jobs; DROP FUNCTION corrupt_dispatch_inbox();")
         .execute(&pool).await.unwrap();
     apply_migrations_through(&pool, 120).await.unwrap();
-    assert_eq!(
-        school_migrations::verify_tenant_schema(&pool)
-            .await
-            .unwrap(),
-        120
-    );
+    assert_historical_schema_120(&pool).await;
 }
 
 #[tokio::test]
@@ -363,10 +357,5 @@ async fn notification_dispatch_migration_schema_rejects_unknown_sources() {
     }
     assert_eq!(central_rows(&pool).await, serde_json::json!([]));
     apply_migrations_through(&pool, 120).await.unwrap();
-    assert_eq!(
-        school_migrations::verify_tenant_schema(&pool)
-            .await
-            .unwrap(),
-        120
-    );
+    assert_historical_schema_120(&pool).await;
 }
