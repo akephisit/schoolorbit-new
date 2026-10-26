@@ -2021,26 +2021,34 @@ static suite does not include this runtime target):
 node --experimental-strip-types --test tests/runtime/catalog-version-draft.test.ts
 ```
 
-Curriculum additions and preserved subject revisions use these focused disposable fixtures:
+Curriculum additions and preserved subject/activity revisions use these focused disposable fixtures:
 
 ```bash
 ./scripts/test_backend_school.sh curriculum_current_subject -- --test-threads=2
+./scripts/test_backend_school.sh curriculum_current_activity -- --nocapture --test-threads=2
 cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core --lib revision_selection_tests
 ```
 
-The provider cases cover Bangkok midnight, same-day revision ordering and exclusive ends.
-Database cases exercise old/current option metadata, no future/expired/draft fallback,
-unchanged existing and copied version IDs, current-registry outdated warnings (including
-historical publication reads), no warnings from future/draft/expired-only revisions or a higher
-future pin, explicit replacement, grandfathered duplicate buckets, atomic stale-publication rejection under stable-subject locks, and activity parity.
+The provider cases cover Bangkok midnight, same-day revision ordering and start-only revisions
+without expiry. Database cases exercise old/current option metadata, no future/draft fallback,
+unchanged existing and copied version IDs, current-registry outdated warnings for both courses
+and activities (including historical publication reads), and no warnings from future/draft-only
+revisions, other stable identities, or a higher future pin. Activity cases also cover archived
+versions, current pins, latest eligible start-date ordering and unchanged old/future activity
+admission. Subject cases retain explicit replacement, grandfathered duplicate buckets and atomic
+stale-publication rejection under stable-subject locks.
 Run affected curriculum structure/copy and curriculum permission cases alongside them.
 Regenerate and check/test API contracts after DTO changes; compile affected Core/HTTP
 consumers both with default features and `api-docs`. These fixtures never use tenant data.
 From `frontend-school`, run `node --experimental-strip-types --test
 tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser workflow
 `tests/e2e/curriculum-catalog-revisions.spec.ts` against an owned local preview. The
-fixtures cover current-only additions, preserved pins with current-registry outdated badges
-and hidden revision numbers, explicit replacement, legacy duplicate buckets and conflict retention in the editor and read-only tables.
+fixtures cover current-only course additions, preserved course/activity pins with server-owned
+outdated badges and resource-specific keyboard/touch tooltips, hidden revision numbers, explicit
+replacement, legacy duplicate buckets and conflict retention. Activity cases verify true/false
+warning propagation through the editor, comparison and document tabs, read-only publication
+history, requirement-kind saves and copied programs, plus mobile/desktop light/dark layouts.
+Published activity versions remain selectable under the existing exact-version duplicate policy.
 
 Curriculum matrix contracts and default removal use the same owned disposable PostgreSQL runner:
 
