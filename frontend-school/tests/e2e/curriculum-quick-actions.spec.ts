@@ -152,7 +152,7 @@ test('adding current registry selections replaces the entire correct program and
 	await expect(sheet(page)).toContainText('มัธยมศึกษาปีที่ 1');
 	await expect(sheet(page)).toContainText('ภาคเรียนที่ 2');
 	await expect(course(page)).toHaveCount(1);
-	await expect(sheet(page).getByRole('button', { name: 'หมวดทะเบียน', exact: true })).toHaveText(
+	await expect(sheet(page).getByRole('combobox', { name: 'หมวดทะเบียน', exact: true })).toHaveText(
 		'รายวิชาพื้นฐาน'
 	);
 	await expect(sheet(page)).not.toContainText('รายวิชารุ่นที่ถูกแทนที่');
@@ -208,7 +208,7 @@ test('edit and confirmed removal affect only the clicked legacy duplicate; full-
 	await expect(edit).toContainText('คณิตศาสตร์พื้นฐาน');
 	await expect(edit.getByRole('spinbutton')).toHaveCount(0);
 	await expect(edit.getByRole('textbox')).toHaveCount(0);
-	await edit.getByRole('button', { name: 'เงื่อนไข', exact: true }).click();
+	await edit.getByRole('combobox', { name: 'เงื่อนไข', exact: true }).click();
 	await page.getByRole('option', { name: 'เพิ่มเติม', exact: true }).click();
 	await edit.getByRole('button', { name: /บันทึก/ }).click();
 	await expect(edit).toBeHidden();
@@ -428,7 +428,7 @@ test('legacy pinned revisions with identical labels and order are edited and rem
 	await menu(page, requirement(page, 'same-presentation-second-row'));
 	await page.getByRole('menuitem', { name: 'แก้ไขเงื่อนไข…', exact: true }).click();
 	const edit = page.getByRole('dialog', { name: 'แก้ไขเงื่อนไข', exact: true });
-	await edit.getByRole('button', { name: 'เงื่อนไข', exact: true }).click();
+	await edit.getByRole('combobox', { name: 'เงื่อนไข', exact: true }).click();
 	await page.getByRole('option', { name: 'เพิ่มเติม', exact: true }).click();
 	await edit.getByRole('button', { name: /บันทึก/ }).click();
 	await expect(edit).toBeHidden();
