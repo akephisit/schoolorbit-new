@@ -72,7 +72,7 @@ function matrixFixture() {
 	return fixture;
 }
 async function choose(page: Page, label: string, option: string) {
-	await page.getByRole('button', { name: label, exact: true }).click();
+	await page.getByRole('combobox', { name: label, exact: true }).click();
 	await page.getByRole('option', { name: option, exact: true }).click();
 }
 
@@ -243,13 +243,13 @@ test('editor starts from displayed concrete grade, program and single term; grad
 	await page.getByRole('checkbox', { name: 'ภาคเรียนที่ 1', exact: true }).uncheck();
 	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
 	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
-	await expect(editor.getByRole('button', { name: 'ระดับชั้นที่จะจัดโครงสร้าง' })).toHaveText(
+	await expect(editor.getByRole('combobox', { name: 'ระดับชั้นที่จะจัดโครงสร้าง' })).toHaveText(
 		'มัธยมศึกษาปีที่ 2'
 	);
-	await expect(editor.getByRole('button', { name: 'แผนการเรียนที่จะจัดโครงสร้าง' })).toHaveText(
+	await expect(editor.getByRole('combobox', { name: 'แผนการเรียนที่จะจัดโครงสร้าง' })).toHaveText(
 		'แผนวิทย์คณิต'
 	);
-	await expect(editor.getByRole('button', { name: 'ภาคเรียนที่จะจัดโครงสร้าง' })).toHaveText(
+	await expect(editor.getByRole('combobox', { name: 'ภาคเรียนที่จะจัดโครงสร้าง' })).toHaveText(
 		'ภาคเรียนที่ 2'
 	);
 	await expect(editor.getByLabel('ชื่อแผนการเรียนใหม่')).toBeHidden();
@@ -397,7 +397,7 @@ test('settings and atomic program order save preserve selections, requirement ki
 	const oldRow = staged
 		.getByRole('row')
 		.filter({ has: page.getByRole('button', { name: 'เก่า', exact: true }) });
-	const requirementKind = oldRow.getByRole('button', {
+	const requirementKind = oldRow.getByRole('combobox', {
 		name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 1',
 		exact: true
 	});
@@ -428,7 +428,7 @@ test('settings and atomic program order save preserve selections, requirement ki
 	});
 	expect(state.structureReads()).toBe(1);
 	await editor.getByRole('button', { name: 'กลับไปจัดรายวิชา', exact: true }).click();
-	await expect(editor.getByRole('button', { name: 'แผนการเรียนที่จะจัดโครงสร้าง' })).toHaveText(
+	await expect(editor.getByRole('combobox', { name: 'แผนการเรียนที่จะจัดโครงสร้าง' })).toHaveText(
 		'แผนการเรียนพื้นฐาน'
 	);
 	await expect(pendingActivity).toBeChecked();
@@ -468,7 +468,7 @@ test('settings and atomic program order save preserve selections, requirement ki
 			.first()
 	).toHaveText('แผนวิทย์คณิต');
 	await page.getByRole('tab', { name: 'เอกสารรายแผน', exact: true }).click();
-	await page.getByRole('button', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
+	await page.getByRole('combobox', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
 	await expect(page.getByRole('option')).toHaveText(['แผนวิทย์คณิต', 'แผนการเรียนพื้นฐาน']);
 	await page.keyboard.press('Escape');
 	expect(state.errors).toEqual([]);
@@ -559,7 +559,7 @@ test('successful ordering never rebases a staged structure over an unseen concur
 	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
 	const staged = editor.getByRole('region', { name: 'รายการในหลักสูตร' });
 	const course = staged.getByRole('row').filter({ hasText: 'ค21101' });
-	const requirementKind = course.getByRole('button', {
+	const requirementKind = course.getByRole('combobox', {
 		name: 'เงื่อนไขของ ค21101 คณิตศาสตร์พื้นฐาน · รายวิชาพื้นฐาน รายการที่ 1',
 		exact: true
 	});
