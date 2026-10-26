@@ -4,9 +4,10 @@ use crate::services::shared::{validate_event_date_time, validate_event_text};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use school_authorization::ActorContext;
 use school_errors::AppError;
+use school_notifications::publisher::NotificationType;
 use school_permissions::registry::codes;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 #[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -271,16 +272,19 @@ pub async fn create_request(
 ) -> Result<CalendarEventRequest, AppError> {
     actor.require_all_permissions(&[codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_REQUEST_OWN])?;
     validate_request(&payload)?;
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.create_request").await?;
-    let id=school_database::DbSession::new(&mut *connection).scalar::<Uuid>("calendar.src.requests.create_request", "INSERT INTO calendar_event_requests(requested_by,title,description,location,start_date,end_date,all_day,start_time,end_time)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "calendar.create_request").await?;
+    let id=school_database::DbSession::new(&mut *tx).scalar::<Uuid>("calendar.src.requests.create_request", "INSERT INTO calendar_event_requests(requested_by,title,description,location,start_date,end_date,all_day,start_time,end_time)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id")
         .bind(actor.user_id).bind(payload.title.trim()).bind(payload.description.trim())
         .bind(payload.location.as_deref().map(str::trim).filter(|value| !value.is_empty()))
         .bind(payload.start_date).bind(payload.end_date).bind(payload.all_day)
         .bind(if payload.all_day {None} else {payload.start_time})
         .bind(if payload.all_day {None} else {payload.end_time}).fetch_one().await?;
-    get_request_on_connection(&mut connection, id).await
+    let request = get_request_on_connection(&mut tx, id).await?;
+    accept_request_notifications(&mut tx, &request).await?;
+    tx.commit().await?;
+    Ok(request)
 }
 
 pub async fn approve_request(
@@ -305,9 +309,11 @@ pub async fn approve_request(
     let event_id = create_event_in_transaction(&mut tx, actor.user_id, &payload).await?;
     school_database::DbSession::new(&mut *tx).query("calendar.src.requests.approve_request", "UPDATE calendar_event_requests SET status='approved',reviewed_by=$2,reviewed_at=now(),event_id=$3 WHERE id=$1")
         .bind(id).bind(actor.user_id).bind(event_id).execute().await?;
+    let request = get_request_on_connection(&mut tx, id).await?;
+    accept_request_notifications(&mut tx, &request).await?;
     tx.commit().await?;
     Ok(CalendarRequestApproval {
-        request: get_request(pool, id).await?,
+        request,
         event: crate::services::get_event_for_response(pool, event_id).await?,
     })
 }
@@ -337,8 +343,10 @@ pub async fn reject_request(
     require_pending(status)?;
     school_database::DbSession::new(&mut *tx).query("calendar.src.requests.reject_request", "UPDATE calendar_event_requests SET status='rejected',reviewed_by=$2,reviewed_at=now(),rejection_reason=$3 WHERE id=$1")
         .bind(id).bind(actor.user_id).bind(reason).execute().await?;
+    let request = get_request_on_connection(&mut tx, id).await?;
+    accept_request_notifications(&mut tx, &request).await?;
     tx.commit().await?;
-    get_request(pool, id).await
+    Ok(request)
 }
 
 fn require_pending(status: Option<CalendarRequestStatus>) -> Result<(), AppError> {
@@ -423,5 +431,88 @@ mod tests {
         payload.all_day = true;
         payload.end_date = NaiveDate::from_ymd_opt(2030, 1, 4).unwrap();
         assert!(validate_request(&payload).is_err());
+    }
+}
+
+async fn accept_request_notifications(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &CalendarEventRequest,
+) -> Result<(), AppError> {
+    let recipients=match request.status{
+        CalendarRequestStatus::Pending=>school_authorization::staff_users_with_all_permissions_on_connection(tx,&[codes::CALENDAR_READ_SCHOOL,codes::CALENDAR_MANAGE_SCHOOL]).await?,
+        CalendarRequestStatus::Approved|CalendarRequestStatus::Rejected=>school_database::DbSession::new(&mut **tx).scalar::<Uuid>("calendar.request_notification.recipient","SELECT id FROM users WHERE id=$1 AND status='active' AND user_type='staff' FOR SHARE").bind(request.requested_by).fetch_all().await?,
+    };
+    let (title, message, link) = notification_content(request);
+    let items: Vec<_> = recipients
+        .into_iter()
+        .map(
+            |recipient_id| school_notifications::dispatch::NewNotification {
+                id: Uuid::now_v7(),
+                notification_id: Uuid::now_v7(),
+                recipient_id,
+                source: school_notifications::dispatch::NotificationSource::Direct,
+                idempotency_key: format!("calendar-request:{}:{:?}", request.id, request.status),
+                title: title.into(),
+                message: message.clone(),
+                type_: kind_for_status(&request.status),
+                link: Some(link.into()),
+                presentation: school_notifications::dispatch::Presentation::AlertOnce,
+            },
+        )
+        .collect();
+    school_notifications::dispatch::create_in_transaction(tx, &items).await?;
+    Ok(())
+}
+fn kind_for_status(status: &CalendarRequestStatus) -> NotificationType {
+    match status {
+        CalendarRequestStatus::Pending => NotificationType::Info,
+        CalendarRequestStatus::Approved => NotificationType::Success,
+        CalendarRequestStatus::Rejected => NotificationType::Warning,
+    }
+}
+
+fn notification_content(request: &CalendarEventRequest) -> (&'static str, String, &'static str) {
+    let (title, suffix, link) = match request.status {
+        CalendarRequestStatus::Pending => (
+            "มีคำร้องขอเพิ่มกิจกรรมใหม่",
+            "รอผู้ดูแลตรวจและอนุมัติ",
+            "/staff/calendar/requests?review=true&status=pending",
+        ),
+        CalendarRequestStatus::Approved => (
+            "คำร้องขอเพิ่มกิจกรรมได้รับอนุมัติ",
+            "ได้รับอนุมัติและเพิ่มในปฏิทินแล้ว",
+            "/staff/calendar/requests?status=approved",
+        ),
+        CalendarRequestStatus::Rejected => (
+            "คำร้องขอเพิ่มกิจกรรมไม่อนุมัติ",
+            "ไม่อนุมัติ ดูเหตุผลได้ในคำร้องของฉัน",
+            "/staff/calendar/requests?status=rejected",
+        ),
+    };
+    (
+        title,
+        format!("{} · {} · {}", request.title, request.start_date, suffix),
+        link,
+    )
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+
+    #[test]
+    fn decisions_use_success_and_warning_instead_of_new_request_info() {
+        assert_eq!(
+            kind_for_status(&CalendarRequestStatus::Pending).as_str(),
+            "info"
+        );
+        assert_eq!(
+            kind_for_status(&CalendarRequestStatus::Approved).as_str(),
+            "success"
+        );
+        assert_eq!(
+            kind_for_status(&CalendarRequestStatus::Rejected).as_str(),
+            "warning"
+        );
     }
 }

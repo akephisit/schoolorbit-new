@@ -115,30 +115,31 @@ async fn enqueue_new_ledger(
     rows: Vec<NewLedgerNotice>,
 ) -> Result<(), AppError> {
     use school_notifications::{
-        dispatch::{self, NotificationSource, QueuedNotification},
+        dispatch::{self, NewNotification, NotificationSource},
         publisher::NotificationType,
     };
     let items: Vec<_> = rows
         .into_iter()
-        .map(|n| QueuedNotification {
+        .map(|n| NewNotification {
             id: n.id,
             notification_id: n.notification_id,
             recipient_id: n.recipient_id,
             source: NotificationSource::Attendance { source_id: n.id },
             // The domain ledger owns business deduplication. Its immutable ID
             // distinguishes a new intent after that ledger has been reset.
-            dedup_key: Some(format!("attendance-ledger:{}", n.id)),
+            idempotency_key: format!("attendance-ledger:{}", n.id),
             title: n.title,
             message: n.message,
             type_: NotificationType::Info,
+            presentation: school_notifications::dispatch::Presentation::AlertOnce,
             link: Some(n.link),
         })
         .collect();
-    let outcomes = dispatch::enqueue_in_transaction(tx, &items).await?;
+    let outcomes = dispatch::create_in_transaction(tx, &items).await?;
     if outcomes.len() != items.len()
         || outcomes.iter().zip(&items).any(|(o, n)| {
             o.input_id != n.id
-                || o.queue_id != n.id
+                || o.receipt_id != n.id
                 || o.notification_id != n.notification_id
                 || o.source != n.source
         })

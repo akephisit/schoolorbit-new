@@ -39,6 +39,12 @@ function loadSource(source, dependencies, globals = {}) {
 
 function harness(options = {}) {
 	const sources = [];
+	const toasts = [];
+	const claims = options.claims ?? new Set();
+	const authStore = Object.assign(
+		writable({ isAuthenticated: true, user: { id: 'first', user_type: 'staff' } }),
+		{ sessionEpoch: 1 }
+	);
 	const timers = new Map();
 	const authOptions = [];
 	let timerId = 0;
@@ -87,11 +93,24 @@ function harness(options = {}) {
 	const { notificationStore: store } = loadSource(
 		notificationSource,
 		{
-			'$app/env/public': { PUBLIC_VAPID_KEY: '' },
+			'#lib/notifications/browser-state.js': {
+				claimPresentation: async (id) => {
+					if (claims.has(id)) return false;
+					claims.add(id);
+					return true;
+				},
+				beginBinding: async () => ({}),
+				readBrowserState: async () => ({ identity: ':first:staff' }),
+				watchIdentityChanges: () => () => {},
+				clearBinding: async () => null
+			},
+			'#lib/api/notifications.js': {},
+			'#lib/stores/auth.js': { authStore },
 			'#lib/api/client.js': {
 				BACKEND_URL: 'https://school.example',
 				getSchoolSubdomainHint: () => null,
 				apiClient: {
+					post: options.post ?? (async () => ({ success: true })),
 					get: async () => {
 						notificationCalls++;
 						return (
@@ -124,11 +143,18 @@ function harness(options = {}) {
 					}
 				}
 			},
-			'svelte-sonner': { toast: { success() {} } },
-			'svelte/store': { writable }
+			'svelte-sonner': {
+				toast: {
+					success(...args) {
+						toasts.push(args);
+					}
+				}
+			},
+			'svelte/store': { writable, get }
 		},
 		{
 			EventSource: Source,
+			document: { hidden: options.hidden ?? false, hasFocus: () => options.focused ?? true },
 			setTimeout: setTimer,
 			clearTimeout: clearTimer,
 			console: {
@@ -141,6 +167,8 @@ function harness(options = {}) {
 	const source = sources[0];
 	return {
 		store,
+		authStore,
+		toasts,
 		workStore,
 		source,
 		sources,
@@ -444,4 +472,126 @@ test('authoritative unauthenticated recovery closes the stream without catch-up 
 	assert.equal(h.notificationCalls, 0);
 	assert.equal(h.workCalls, 0);
 	assert.equal(h.timers.size, 0);
+});
+
+function live(id, extra = {}) {
+	return {
+		id,
+		title: id,
+		message: id,
+		created_at: new Date().toISOString(),
+		read_at: null,
+		...extra
+	};
+}
+function send(h, notification) {
+	h.source.onmessage({ data: JSON.stringify(notification) });
+}
+
+test('duplicate live events present and count once even after the latest inbox evicts them', async (t) => {
+	const h = harness();
+	t.after(() => h.store.closeSSE());
+	h.source.open();
+	const first = live('first');
+	send(h, first);
+	send(h, first);
+	await flush();
+	assert.equal(get(h.store).unreadCount, 1);
+	assert.equal(h.toasts.length, 1);
+	for (let index = 0; index < 12; index++) send(h, live(`next-${index}`));
+	await flush();
+	assert.equal(get(h.store).notifications.length, 10);
+	const count = get(h.store).unreadCount;
+	send(h, first);
+	await flush();
+	assert.equal(get(h.store).unreadCount, count);
+	assert.equal(h.toasts.length, 13);
+});
+test('authoritative snapshots are silent and preserve a separate read ledger and total unread', async (t) => {
+	let items = [live('read-me')];
+	const h = harness({
+		notifications: () => ({ success: true, data: { items, unread_count: 42 } })
+	});
+	t.after(() => h.store.closeSSE());
+	h.source.open();
+	await h.store.fetchNotifications();
+	assert.equal(h.toasts.length, 0);
+	await h.store.markAsRead('read-me');
+	assert.equal(get(h.store).unreadCount, 41, 'one read subtracts one from the full server total');
+	await h.store.markAsRead('read-me');
+	assert.equal(get(h.store).unreadCount, 41);
+	items = [live('newest')];
+	await h.store.fetchNotifications();
+	send(h, live('read-me'));
+	await flush();
+	assert.equal(
+		get(h.store).unreadCount,
+		42,
+		'read replay outside recent page does not add a count'
+	);
+	assert.equal(h.toasts.length, 0);
+});
+test('read, expired and snapshot-older events never create fresh presentation or unread counts', async (t) => {
+	const now = Date.now();
+	const h = harness({
+		notifications: () => ({
+			success: true,
+			data: {
+				items: [live('snapshot', { created_at: new Date(now).toISOString() })],
+				unread_count: 20
+			}
+		})
+	});
+	t.after(() => h.store.closeSSE());
+	h.source.open();
+	await h.store.fetchNotifications();
+	send(h, live('older', { created_at: new Date(now - 1000).toISOString() }));
+	send(h, live('already-read', { read_at: new Date().toISOString() }));
+	send(h, live('expired', { created_at: new Date(now - 3600_000).toISOString() }));
+	await flush();
+	assert.equal(h.toasts.length, 0);
+	assert.equal(get(h.store).unreadCount, 20);
+});
+test('foreground eligibility and atomic installation claims suppress duplicate tab presentation', async (t) => {
+	const claims = new Set();
+	const a = harness({ claims });
+	const b = harness({ claims });
+	const hidden = harness({ hidden: true });
+	t.after(() => {
+		a.store.closeSSE();
+		b.store.closeSSE();
+		hidden.store.closeSSE();
+	});
+	for (const h of [a, b, hidden]) {
+		h.source.open();
+		send(h, live('shared'));
+	}
+	await flush();
+	assert.equal(a.toasts.length + b.toasts.length, 1);
+	assert.equal(hidden.toasts.length, 0);
+	assert.equal(get(a.store).unreadCount, 1);
+	assert.equal(get(b.store).unreadCount, 1);
+});
+test('account binding clears identity data and rejects old source, pending read and mutation callbacks', async () => {
+	const snapshot = deferred();
+	const mutation = deferred();
+	const h = harness({ notifications: () => snapshot.promise, post: () => mutation.promise });
+	h.store.bindIdentity();
+	h.store.initSSE();
+	const source = h.sources.at(-1);
+	source.open();
+	source.onmessage({ data: JSON.stringify(live('old-account')) });
+	await flush();
+	const read = h.store.fetchNotifications();
+	const mark = h.store.markAsRead('old-account');
+	h.authStore.sessionEpoch++;
+	h.authStore.set({ isAuthenticated: true, user: { id: 'second', user_type: 'staff' } });
+	h.store.bindIdentity();
+	snapshot.resolve({ success: true, data: { items: [live('old-snapshot')], unread_count: 99 } });
+	mutation.resolve({ success: true });
+	await Promise.all([read, mark]);
+	source.onmessage({ data: JSON.stringify(live('old-callback')) });
+	await flush();
+	assert.deepEqual(get(h.store), { notifications: [], unreadCount: 0, loading: false });
+	h.store.closeSSE();
 });

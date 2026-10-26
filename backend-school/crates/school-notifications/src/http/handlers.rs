@@ -1,9 +1,8 @@
 use crate::events::TenantNotificationEvent;
 use crate::events::WorkChangeEvent;
 use crate::http::state::NotificationHttpState;
-use crate::models::CreateNotificationRequest;
 use crate::models::ListNotificationsQuery;
-use crate::models::SubscribePushRequest;
+use crate::models::{RegisterPushDeviceRequest, UnregisterPushDeviceQuery};
 use crate::services as notification_service;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
@@ -288,42 +287,47 @@ pub async fn stream_notifications(
     Ok(response)
 }
 
-/// Create manual notification (For testing/internal use)
-pub async fn create_notification(
-    State(state): State<NotificationHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<CreateNotificationRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_session(&session);
-    notification_service::create_notification(
-        &context.tenant.pool,
-        &state.notification_channel,
-        &context.tenant.subdomain,
-        context.user_id,
-        payload,
-    )
-    .await?;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(ApiResponse::empty_with_message("Notification created")),
-    ))
+#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/config",operation_id="getPushConfig",tag="notifications",responses((status=200,description="Current Web Push key and admission limits",body=ApiResponse<crate::models::PushConfigResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+pub async fn push_config(
+    Extension(_session): Extension<AuthenticatedSession>,
+) -> impl IntoResponse {
+    Json(ApiResponse::ok(crate::devices::push_config()))
 }
 
-/// Subscribe to Web Push Notifications
-pub async fn subscribe_push(
+#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/devices",operation_id="listPushDevices",tag="notifications",responses((status=200,description="Current user's active Push device bindings",body=ApiResponse<crate::models::ListPushDevicesResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+pub async fn list_push_devices(
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<SubscribePushRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
-    notification_service::subscribe_push(&context.tenant.pool, context.user_id, payload).await?;
-
-    Ok((
-        StatusCode::OK,
-        Json(ApiResponse::empty_with_message(
-            "Subscribed to push notifications",
-        )),
-    ))
+    Ok(Json(ApiResponse::ok(
+        crate::devices::list(&context.tenant.pool, context.user_id).await?,
+    )))
+}
+#[cfg_attr(feature="api-docs", utoipa::path(post,path="/api/notifications/push/devices",operation_id="registerPushDevice",tag="notifications",request_body=RegisterPushDeviceRequest,responses((status=200,description="Registered or refreshed this installation binding",body=ApiResponse<crate::models::PushDevice>),(status=400,description="Invalid endpoint, label or crypto keys",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=409,description="Key changed or device limit reached",body=ApiErrorResponse),(status=503,description="Push configuration unavailable",body=ApiErrorResponse))))]
+pub async fn register_push_device(
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<RegisterPushDeviceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = current_user_tenant_context_from_session(&session);
+    Ok(Json(ApiResponse::ok(
+        crate::devices::register(
+            &context.tenant.pool,
+            context.user_id,
+            session.session_id,
+            request,
+        )
+        .await?,
+    )))
+}
+#[cfg_attr(feature="api-docs", utoipa::path(delete,path="/api/notifications/push/devices/{id}",operation_id="unregisterPushDevice",tag="notifications",params(("id"=Uuid,Path,description="Owned device ID"),UnregisterPushDeviceQuery),responses((status=200,description="Exact owned binding revoked or already absent",body=ApiResponse<serde_json::Value>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+pub async fn unregister_push_device(
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<UnregisterPushDeviceQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = current_user_tenant_context_from_session(&session);
+    crate::devices::unregister(&context.tenant.pool, context.user_id, id, query.version).await?;
+    Ok(Json(ApiResponse::empty_with_message("Push device revoked")))
 }
 
 #[cfg(test)]

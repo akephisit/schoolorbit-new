@@ -18,6 +18,10 @@ impl DeliveryEligibilityPort for ApplicationNotificationEligibility {
     ) -> Result<bool, AppError> {
         match source {
             NotificationSource::Direct => Ok(true),
+            NotificationSource::CalendarReminder { source_id } => {
+                school_calendar::delivery::authorize_reminder_on_connection(connection, *source_id)
+                    .await
+            }
             NotificationSource::Process { source_id } => {
                 school_workflow::process::authorize_notification_on_connection(
                     connection,

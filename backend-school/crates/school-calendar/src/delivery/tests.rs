@@ -87,28 +87,6 @@ fn due_reminder_mark_query_sets_sent_after_attempt() {
 }
 
 #[test]
-fn notification_outcome_marks_reminders_sent_only_when_none_or_some_success() {
-    assert!(CalendarNotificationSendOutcome {
-        recipient_count: 0,
-        successful_count: 0,
-        failed_count: 0,
-    }
-    .should_mark_reminder_sent());
-    assert!(CalendarNotificationSendOutcome {
-        recipient_count: 2,
-        successful_count: 1,
-        failed_count: 1,
-    }
-    .should_mark_reminder_sent());
-    assert!(!CalendarNotificationSendOutcome {
-        recipient_count: 2,
-        successful_count: 0,
-        failed_count: 2,
-    }
-    .should_mark_reminder_sent());
-}
-
-#[test]
 fn advisory_lock_queries_use_two_integer_keys() {
     assert!(try_calendar_reminder_advisory_lock_sql().contains("pg_try_advisory_lock($1, $2)"));
     assert!(release_calendar_reminder_advisory_lock_sql().contains("pg_advisory_unlock($1, $2)"));

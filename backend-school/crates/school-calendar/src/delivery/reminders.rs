@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use futures::{stream::FuturesUnordered, StreamExt};
-use sqlx::{PgConnection, PgPool};
+use sqlx::{Connection, PgConnection, PgPool};
 use std::time::Duration;
 use std::{collections::VecDeque, future::Future};
 use tokio::sync::broadcast;
@@ -18,7 +18,7 @@ use school_tenancy::{
     AdminClient, PoolManager,
 };
 
-use super::notifications::send_event_notification_on_connection;
+use super::notifications::accept_event_in_transaction;
 
 const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, event_id, days_before, remind_on, created_at
@@ -206,77 +206,61 @@ async fn process_advisory_locked_reminder(
     connection: &mut PgConnection,
     reminder_id: Uuid,
 ) -> Result<bool, AppError> {
-    // The session-level advisory lock is held on this connection only for one reminder.
-    // No row transaction is kept open while event loading and notification fan-out run.
-    let reminder = school_database::DbSession::new(&mut *connection)
+    // One reminder's full recipient snapshot, inbox acceptance and sent_at commit atomically.
+    let mut tx = connection.begin().await?;
+    let reminder = school_database::DbSession::new(&mut *tx)
         .query_as::<DueCalendarEventReminderRow>(
-            "calendar.delivery.reminders.process_advisory_locked_reminder",
+            "calendar.reminder.refetch",
             refetch_due_calendar_reminder_after_lock_sql(),
         )
         .bind(reminder_id)
         .fetch_optional()
         .await?;
-
     let Some(reminder) = reminder else {
+        tx.commit().await?;
         return Ok(false);
     };
-
-    let event = match get_event_for_response_on_connection(connection, reminder.event_id).await {
-        Ok(event) => event,
-        Err(AppError::NotFound(_)) => {
-            tracing::warn!(
-                reminder_id = %reminder.id,
-                event_id = %reminder.event_id,
-                "Skipping calendar reminder for missing or deleted event"
-            );
-            return mark_calendar_reminder_sent(connection, reminder.id).await;
-        }
-        Err(error) => {
-            tracing::error!(
-                reminder_id = %reminder.id,
-                event_id = %reminder.event_id,
-                error = %error,
-                "Failed to load calendar event for reminder"
-            );
-            return Ok(false);
-        }
-    };
-
-    let send_outcome = match send_event_notification_on_connection(
-        connection,
-        notification_channel,
-        tenant,
-        &event,
-        CalendarNotificationKind::Reminder {
-            days_before: reminder.days_before,
-        },
-    )
-    .await
-    {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            tracing::error!(
-                reminder_id = %reminder.id,
-                event_id = %reminder.event_id,
-                error = %error,
-                "Calendar reminder notification failed"
-            );
-            return Ok(false);
-        }
-    };
-
-    if !send_outcome.should_mark_reminder_sent() {
-        tracing::warn!(
-            reminder_id = %reminder.id,
-            event_id = %reminder.event_id,
-            recipient_count = send_outcome.recipient_count,
-            failed_count = send_outcome.failed_count,
-            "Calendar reminder notification had no successful sends; leaving reminder pending"
-        );
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "calendar.reminder.lock_event",
+            "SELECT id FROM calendar_events WHERE id=$1 FOR SHARE",
+        )
+        .bind(reminder.event_id)
+        .execute()
+        .await?;
+    let current: Option<Uuid> = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "calendar.reminder.lock_source",
+            "SELECT id FROM calendar_event_reminders WHERE id=$1 AND sent_at IS NULL FOR UPDATE",
+        )
+        .bind(reminder.id)
+        .fetch_optional()
+        .await?;
+    if current.is_none() {
+        tx.commit().await?;
         return Ok(false);
     }
-
-    mark_calendar_reminder_sent(connection, reminder.id).await
+    let event = match get_event_for_response_on_connection(&mut tx, reminder.event_id).await {
+        Ok(event) => Some(event),
+        Err(AppError::NotFound(_)) => None,
+        Err(error) => return Err(error),
+    };
+    if let Some(event) = event {
+        accept_event_in_transaction(
+            &mut tx,
+            &event,
+            &CalendarNotificationKind::Reminder {
+                days_before: reminder.days_before,
+            },
+            Some(reminder.id),
+        )
+        .await?;
+    }
+    let marked = mark_calendar_reminder_sent(&mut tx, reminder.id).await?;
+    tx.commit().await?;
+    school_notifications::runtime::wake_after_commit(tenant);
+    let _ = notification_channel;
+    Ok(marked)
 }
 
 async fn mark_calendar_reminder_sent(
@@ -508,7 +492,7 @@ mod turn_tests {
                 .unwrap();
         assert_eq!(stored, 2);
         let jobs: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=ANY($1)",
+            "SELECT count(*) FROM notification_receipts WHERE recipient_id=ANY($1)",
         )
         .bind(recipients.as_slice())
         .fetch_one(&pool)

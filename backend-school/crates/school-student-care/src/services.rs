@@ -236,18 +236,19 @@ async fn notify(
     key: String,
     link: String,
 ) -> Result<(), AppError> {
-    let item = school_notifications::dispatch::QueuedNotification {
+    let item = school_notifications::dispatch::NewNotification {
         id: Uuid::now_v7(),
         notification_id: Uuid::now_v7(),
         recipient_id: recipient,
         source: school_notifications::dispatch::NotificationSource::Direct,
-        dedup_key: Some(key),
+        idempotency_key: key,
         title: "งานดูแลช่วยเหลือที่ต้องตรวจสอบ".into(),
         message: "มีรายการที่มอบหมายให้คุณ กรุณาเปิดระบบเพื่อตรวจสอบ".into(),
         type_: school_notifications::publisher::NotificationType::Warning,
+        presentation: school_notifications::dispatch::Presentation::AlertOnce,
         link: Some(link),
     };
-    school_notifications::dispatch::store_and_enqueue_in_transaction(tx, &item).await?;
+    school_notifications::dispatch::create_in_transaction(tx, std::slice::from_ref(&item)).await?;
     Ok(())
 }
 

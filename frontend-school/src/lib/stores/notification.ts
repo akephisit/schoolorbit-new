@@ -3,13 +3,31 @@ import {
 	browserVisibilityDependencies
 } from '#lib/realtime/visibility-idle.js';
 import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
-import { PUBLIC_VAPID_KEY } from '$app/env/public';
+import {
+	beginBinding,
+	clearBinding,
+	readBrowserState,
+	saveBinding,
+	bindingMatches,
+	claimPresentation,
+	watchIdentityChanges,
+	type DeviceBinding
+} from '#lib/notifications/browser-state.js';
+import {
+	getPushConfig,
+	listPushDevices,
+	registerPushDevice,
+	unregisterPushDevice,
+	type PushConfig,
+	type PushDevice
+} from '#lib/api/notifications.js';
+import { authStore } from '#lib/stores/auth.js';
 import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
 import type { components } from '#lib/api/generated/school-api.js';
 import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
 import { workStore } from '#lib/stores/work.js';
 import { toast } from 'svelte-sonner';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 
 // Helper for VAPID key conversion
 function urlBase64ToUint8Array(base64String: string) {
@@ -69,14 +87,6 @@ function subscriptionPayload(subscription: PushSubscription) {
 	};
 }
 
-async function syncPushSubscription(subscription: PushSubscription) {
-	const body = subscriptionPayload(subscription);
-	if (!body) return false;
-
-	await apiClient.post<Record<string, never>>('/api/notifications/subscribe', body);
-	return true;
-}
-
 type Schemas = components['schemas'];
 
 export type Notification = Schemas['Notification'];
@@ -94,6 +104,12 @@ export interface PushNotificationDeviceStatus {
 	hasSubscription: boolean;
 	isIOS: boolean;
 	isStandalone: boolean;
+	serverAvailable: boolean;
+	synced: boolean;
+	currentDeviceId: string | null;
+	devices: PushDevice[];
+	config: PushConfig | null;
+	error: string | null;
 }
 
 let eventSource: EventSource | null = null;
@@ -112,6 +128,95 @@ function createNotificationStore() {
 		loading: false
 	});
 
+	let identity: string | null = null;
+	let stopIdentityListener: (() => void) | null = null;
+	let identityReady: Promise<unknown> = Promise.resolve();
+	let bindingIntent = '';
+	let pushGeneration = 0;
+	function currentAuthIdentity(): string | null {
+		const auth = get(authStore);
+		return auth.isAuthenticated && auth.user
+			? `${getSchoolSubdomainHint() ?? ''}:${auth.user.id}:${auth.user.user_type ?? ''}:${authStore.sessionEpoch}`
+			: null;
+	}
+	function deviceIdentity(): string | null {
+		const auth = get(authStore);
+		return auth.isAuthenticated && auth.user
+			? `${getSchoolSubdomainHint() ?? ''}:${auth.user.id}:${auth.user.user_type ?? ''}`
+			: null;
+	}
+	function bindIdentity() {
+		const next = currentAuthIdentity();
+		if (next === identity) return;
+		const previous = identity;
+		closeSSE();
+		pushGeneration++;
+		identity = next;
+		bindingIntent = crypto.randomUUID();
+		identityReady = beginBinding(deviceIdentity(), bindingIntent)
+			.then(async () => {
+				if (previous && previous !== next) await closeDeviceNotifications();
+			})
+			.catch((error) => console.error('Failed to clear notification device identity', error));
+	}
+	async function closeDeviceNotifications() {
+		if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+		try {
+			const registration = await getPushRegistration();
+			for (const notification of await registration.getNotifications()) notification.close();
+		} catch (error) {
+			console.error('Failed to close device notifications', error);
+		}
+	}
+	const foregroundPush = (event: MessageEvent) => {
+		if (event.data?.type !== 'schoolorbit:push' || !event.ports[0]) return;
+		const port = event.ports[0];
+		const generation = pushGeneration;
+		void (async () => {
+			let handled = false;
+			try {
+				const state = await readBrowserState();
+				if (
+					identity &&
+					state.identity === deviceIdentity() &&
+					bindingMatches(state.binding, event.data.payload) &&
+					!document.hidden &&
+					document.hasFocus()
+				) {
+					handled = await claimPresentation(
+						`${deviceIdentity()}:${event.data.payload.id}`,
+						Date.parse(event.data.payload.expires_at)
+					);
+					if (handled && generation === pushGeneration && !document.hidden && document.hasFocus()) {
+						toast.success('SchoolOrbit', {
+							description: 'มีการแจ้งเตือนใหม่ กรุณาเปิดดูในกล่องแจ้งเตือน'
+						});
+						void notificationStore.fetchNotifications();
+					}
+				}
+			} catch (error) {
+				console.error('Failed to handle foreground push', error);
+			}
+			port.postMessage({ handled });
+			port.close();
+		})();
+	};
+	const seen = new Map<string, string | null>();
+	const seenCreated = new Map<string, number>();
+	let snapshotWatermark = 0;
+	let evictionWatermark = 0;
+	const remember = (notification: Notification) => {
+		seen.set(notification.id, notification.read_at ?? seen.get(notification.id) ?? null);
+		seenCreated.set(notification.id, Date.parse(notification.created_at));
+		while (seen.size > 2048) {
+			const oldest = seen.keys().next().value!;
+			const created = seenCreated.get(oldest);
+			if (created && Number.isFinite(created))
+				evictionWatermark = Math.max(evictionWatermark, created);
+			seen.delete(oldest);
+			seenCreated.delete(oldest);
+		}
+	};
 	let needsReconcile = false;
 	let dataGeneration = 0;
 	let signalVersion = 0;
@@ -306,28 +411,26 @@ function createNotificationStore() {
 				const newNotif: Notification = JSON.parse(event.data);
 				signalVersion++;
 
-				update((state) => {
-					if (state.notifications.some((notification) => notification.id === newNotif.id)) {
-						return state;
-					}
-
-					return {
-						...state,
-						notifications: [newNotif, ...state.notifications],
-						unreadCount: state.unreadCount + 1
-					};
-				});
-
-				toast.success(newNotif.title, {
-					description: newNotif.message,
-					duration: 5000,
-					action: {
-						label: 'ดู',
-						onClick: () => {
-							if (newNotif.link) window.location.href = newNotif.link;
-						}
-					}
-				});
+				const known = seen.has(newNotif.id);
+				const readAt = newNotif.read_at ?? seen.get(newNotif.id) ?? null;
+				const created = Date.parse(newNotif.created_at);
+				const replay =
+					Number.isFinite(created) && created <= Math.max(snapshotWatermark, evictionWatermark);
+				remember({ ...newNotif, read_at: readAt });
+				if (known) return;
+				update((state) => ({
+					...state,
+					notifications: [{ ...newNotif, read_at: readAt }, ...state.notifications].slice(0, 10),
+					unreadCount:
+						state.unreadCount +
+						(readAt || replay || (Number.isFinite(created) && created + 15 * 60_000 <= Date.now())
+							? 0
+							: 1)
+				}));
+				const expiresAt = created + 15 * 60_000;
+				if (!readAt && !replay && expiresAt > Date.now()) {
+					void presentLive(newNotif, expiresAt, () => ownsEventSource(source, generation));
+				}
 			} catch (error) {
 				console.error('Failed to parse SSE message', error);
 			}
@@ -382,8 +485,52 @@ function createNotificationStore() {
 		};
 	}
 
+	async function presentLive(
+		notification: Notification,
+		expiresAt: number,
+		isCurrent: () => boolean
+	) {
+		if (typeof document === 'undefined' || document.hidden || !document.hasFocus()) return;
+		try {
+			const browserState = await readBrowserState();
+			if (browserState.identity !== deviceIdentity()) return;
+			if (
+				!(await claimPresentation(`${deviceIdentity()}:${notification.id}`, expiresAt)) ||
+				!isCurrent() ||
+				document.hidden ||
+				!document.hasFocus()
+			)
+				return;
+			toast.success(notification.title, {
+				description: notification.message,
+				duration: 5000,
+				action: {
+					label: 'ดู',
+					onClick: () => {
+						if (notification.link) window.location.href = notification.link;
+					}
+				}
+			});
+		} catch (error) {
+			console.error('Failed to coordinate notification presentation', error);
+		}
+	}
+
 	function initSSE() {
 		if (typeof EventSource === 'undefined') return;
+		stopIdentityListener ??= watchIdentityChanges(() => {
+			void readBrowserState()
+				.then((state) => {
+					if (state.identity === deviceIdentity() || !shouldMaintainSSE) return;
+					seen.clear();
+					seenCreated.clear();
+					set({ notifications: [], unreadCount: 0, loading: false });
+					void recoverAfterSessionSignal(sseGeneration);
+				})
+				.catch((error) => console.error('Failed to reconcile notification identity', error));
+		});
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator)
+			navigator.serviceWorker.addEventListener('message', foregroundPush);
 		shouldMaintainSSE = true;
 		idle.start();
 		if (idle.paused || recoveryInFlight?.generation === sseGeneration) return;
@@ -396,6 +543,10 @@ function createNotificationStore() {
 
 	function closeSSE() {
 		dataGeneration++;
+		stopIdentityListener?.();
+		stopIdentityListener = null;
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator)
+			navigator.serviceWorker.removeEventListener('message', foregroundPush);
 		idle.stop();
 		needsReconcile = false;
 		shouldMaintainSSE = false;
@@ -403,14 +554,36 @@ function createNotificationStore() {
 		clearReconnectTimer();
 		closeEventSource();
 		reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+		seen.clear();
+		seenCreated.clear();
+		snapshotWatermark = 0;
+		evictionWatermark = 0;
+		set({ notifications: [], unreadCount: 0, loading: false });
+	}
+
+	// This singleton follows authoritative identity changes even when the bell is not mounted.
+	if (typeof window !== 'undefined') {
+		authStore.subscribe((state) => {
+			if (state.isAuthenticated || (!state.isLoading && !state.isUnavailable)) {
+				if (!state.isAuthenticated && identity === null) {
+					bindingIntent = crypto.randomUUID();
+					identityReady = beginBinding(null, bindingIntent)
+						.then(() => closeDeviceNotifications())
+						.catch((error) => console.error('Failed to clear notification identity', error));
+				} else bindIdentity();
+			}
+		});
 	}
 
 	return {
 		subscribe,
+		bindIdentity,
 
 		async fetchNotifications(limit = 10, isCurrent: () => boolean = () => true) {
 			const generation = dataGeneration;
-			const ownsRequest = () => generation === dataGeneration && isCurrent();
+			const version = signalVersion;
+			const ownsRequest = () =>
+				generation === dataGeneration && version === signalVersion && isCurrent();
 			update((s) => ({ ...s, loading: true }));
 			try {
 				const response = await apiClient.get<ListNotificationsResponse>(
@@ -419,8 +592,17 @@ function createNotificationStore() {
 
 				if (!ownsRequest()) return false;
 				if (response.success && response.data) {
+					const items = response.data.items.map((item) => ({
+						...item,
+						read_at: item.read_at ?? seen.get(item.id) ?? null
+					}));
+					for (const item of items) {
+						remember(item);
+						const created = Date.parse(item.created_at);
+						if (Number.isFinite(created)) snapshotWatermark = Math.max(snapshotWatermark, created);
+					}
 					set({
-						notifications: response.data.items,
+						notifications: items,
 						unreadCount: response.data.unread_count,
 						loading: false
 					});
@@ -440,143 +622,258 @@ function createNotificationStore() {
 		closeSSE,
 
 		async markAsRead(id: string) {
+			const generation = dataGeneration;
 			try {
-				// Optimistic update
-				update((s) => {
-					const notifs = s.notifications.map((n) =>
-						n.id === id ? { ...n, read_at: new Date().toISOString() } : n
-					);
-					const unread = notifs.filter((n) => !n.read_at).length;
-					return { ...s, notifications: notifs, unreadCount: unread };
-				});
-
 				await apiClient.post<Record<string, never>>(`/api/notifications/${id}/read`);
-			} catch (err) {
-				console.error('Failed to mark as read', err);
+				if (generation !== dataGeneration) return;
+				signalVersion++;
+				update((state) => {
+					const unread =
+						(seen.has(id) && !seen.get(id)) ||
+						state.notifications.some((item) => item.id === id && !item.read_at);
+					const readAt = new Date().toISOString();
+					seen.set(id, readAt);
+					return {
+						...state,
+						notifications: state.notifications.map((item) =>
+							item.id === id ? { ...item, read_at: readAt } : item
+						),
+						unreadCount: Math.max(0, state.unreadCount - (unread ? 1 : 0))
+					};
+				});
+			} catch (error) {
+				console.error('Failed to mark as read', error);
 			}
 		},
 
 		async markAllAsRead() {
+			const generation = dataGeneration;
+			const version = signalVersion;
 			try {
-				// Optimistic update
-				update((s) => {
-					const notifs = s.notifications.map((n) => ({ ...n, read_at: new Date().toISOString() }));
-					return { ...s, notifications: notifs, unreadCount: 0 };
-				});
-
 				await apiClient.post<Record<string, never>>('/api/notifications/read-all');
-
+				if (generation !== dataGeneration) return;
+				if (version !== signalVersion) {
+					await notificationStore.fetchNotifications();
+					return;
+				}
+				signalVersion++;
+				const readAt = new Date().toISOString();
+				for (const id of seen.keys()) seen.set(id, readAt);
+				update((state) => ({
+					...state,
+					notifications: state.notifications.map((item) => ({ ...item, read_at: readAt })),
+					unreadCount: 0
+				}));
 				toast.success('อ่านทั้งหมดแล้ว');
-			} catch (err) {
-				console.error('Failed to mark all as read', err);
+			} catch (error) {
+				console.error('Failed to mark all as read', error);
+			}
+		},
+
+		async prepareLogout() {
+			const previous = deviceIdentity();
+			const generation = ++pushGeneration;
+			closeSSE();
+			if (!previous) return;
+			try {
+				await identityReady;
+				const binding = await clearBinding(previous);
+				await closeDeviceNotifications();
+				if (binding) {
+					try {
+						await unregisterPushDevice(binding.id, binding.version);
+					} catch (error) {
+						console.error('Failed to revoke notification device during logout', error);
+					}
+				}
+				if (generation !== pushGeneration) return;
+				if (isPushMessagingSupported()) {
+					const registration = await getPushRegistration();
+					if (generation !== pushGeneration) return;
+					await (await registration.pushManager.getSubscription())?.unsubscribe();
+				}
+			} catch (error) {
+				console.error('Failed to clear local notification device', error);
 			}
 		},
 
 		async unsubscribe() {
-			try {
-				const registration = await navigator.serviceWorker.ready;
-				const subscription = await registration.pushManager.getSubscription();
-				if (subscription) {
-					await subscription.unsubscribe();
-					console.log('Unsubscribed from push');
-				}
-				return true;
-			} catch (err) {
-				console.error('Failed to unsubscribe', err);
-				return false;
+			await this.prepareLogout();
+			return true;
+		},
+		async revokePushDevice(device: PushDevice) {
+			const generation = pushGeneration;
+			await unregisterPushDevice(device.id, device.version);
+			if (generation !== pushGeneration) return;
+			const state = await readBrowserState();
+			if (
+				state.binding &&
+				state.binding.id === device.id &&
+				state.binding.version === device.version
+			) {
+				pushGeneration++;
+				await clearBinding(state.identity!, state.intent);
+				await closeDeviceNotifications();
+				const registration = await getPushRegistration();
+				await (await registration.pushManager.getSubscription())?.unsubscribe();
 			}
 		},
-
-		async subscribeToPush(force = false) {
-			return this.enablePushFromUserAction(force);
-		},
-
 		async syncExistingPushSubscription() {
-			if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-				console.warn('Push messaging is not supported');
+			bindIdentity();
+			if (!identity || !isPushMessagingSupported() || Notification.permission !== 'granted')
 				return false;
-			}
-
+			const generation = pushGeneration;
 			try {
+				await identityReady;
+				const config = await getPushConfig();
+				if (
+					!config.available ||
+					!config.public_key ||
+					!config.key_id ||
+					generation !== pushGeneration
+				)
+					return false;
 				const registration = await getPushRegistration();
 				const subscription = await registration.pushManager.getSubscription();
-				if (!subscription) return false;
-
-				await syncPushSubscription(subscription);
-
-				console.log('✅ Existing Push Notification Synced to Backend');
-				return true;
-			} catch (err) {
-				console.error('Failed to sync existing push subscription', err);
+				if (!subscription || !subscriptionKeyMatches(subscription, config.public_key)) return false;
+				return await syncPushSubscription(subscription, config, generation);
+			} catch (error) {
+				console.error('Failed to sync existing push subscription', error);
 				return false;
 			}
 		},
-
 		async enablePushFromUserAction(force = false) {
-			if (!isPushMessagingSupported()) {
-				console.warn('Push messaging is not supported');
-				return false;
-			}
-			if (!PUBLIC_VAPID_KEY) {
-				console.warn('VAPID public key is not configured');
-				return false;
-			}
-
+			bindIdentity();
+			if (!identity || !isPushMessagingSupported()) return false;
+			// Request permission within the user's action, before asynchronous configuration reads.
+			const permission =
+				Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+			if (permission !== 'granted') return false;
+			const generation = pushGeneration;
 			try {
+				await identityReady;
+				const config = await getPushConfig();
+				if (
+					!config.available ||
+					!config.public_key ||
+					!config.key_id ||
+					generation !== pushGeneration
+				)
+					return false;
 				const registration = await getPushRegistration();
 				let subscription = await registration.pushManager.getSubscription();
-
-				if (force && subscription) {
+				if (subscription && (force || !subscriptionKeyMatches(subscription, config.public_key))) {
+					if (generation !== pushGeneration) return false;
 					await subscription.unsubscribe();
 					subscription = null;
 				}
-
-				if (!subscription) {
-					const permission = await Notification.requestPermission();
-					if (permission !== 'granted') {
-						console.warn('Notification permission denied');
-						return false;
-					}
-
+				if (generation !== pushGeneration) return false;
+				if (!subscription)
 					subscription = await registration.pushManager.subscribe({
 						userVisibleOnly: true,
-						applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+						applicationServerKey: urlBase64ToUint8Array(config.public_key)
 					});
-				}
-
-				await syncPushSubscription(subscription);
-
-				console.log('✅ Push Notification Subscribed (Synced to Backend)');
-				return true;
-			} catch (err) {
-				console.error('Failed to subscribe to push', err);
+				return await syncPushSubscription(subscription, config, generation);
+			} catch (error) {
+				console.error('Failed to enable push subscription', error);
 				return false;
 			}
 		},
-
 		async getPushStatus(): Promise<PushNotificationDeviceStatus> {
+			bindIdentity();
+			const generation = pushGeneration;
 			const status: PushNotificationDeviceStatus = {
 				supported: isPushMessagingSupported(),
 				permission: isPushMessagingSupported() ? Notification.permission : 'unsupported',
 				hasSubscription: false,
 				isIOS: isIOSDevice(),
-				isStandalone: isStandalonePWA()
+				isStandalone: isStandalonePWA(),
+				serverAvailable: false,
+				synced: false,
+				currentDeviceId: null,
+				devices: [],
+				config: null,
+				error: null
 			};
-
-			if (!status.supported) return status;
-
 			try {
-				const registration = await getPushRegistration();
-				const subscription = await registration.pushManager.getSubscription();
-				status.hasSubscription = Boolean(subscription);
-				status.permission = Notification.permission;
-			} catch (err) {
-				console.error('Failed to read push notification status', err);
+				await identityReady;
+				const [config, devices, state] = await Promise.all([
+					getPushConfig(),
+					listPushDevices(),
+					readBrowserState()
+				]);
+				if (generation !== pushGeneration) return status;
+				status.config = config;
+				status.serverAvailable = config.available;
+				status.devices = devices;
+				if (status.supported) {
+					const registration = await getPushRegistration();
+					const subscription = await registration.pushManager.getSubscription();
+					if (generation !== pushGeneration) return { ...status, devices: [] };
+					status.hasSubscription = Boolean(subscription);
+					const current = devices.find(
+						(device) => device.installation_id === state.installation_id
+					);
+					status.currentDeviceId = current?.id ?? null;
+					status.synced = Boolean(
+						config.available &&
+						config.public_key &&
+						subscription &&
+						subscriptionKeyMatches(subscription, config.public_key) &&
+						current &&
+						state.binding?.id === current.id &&
+						state.binding.version === current.version &&
+						Date.parse(current.expires_at) > Date.now()
+					);
+				}
+			} catch (error) {
+				console.error('Failed to read push notification status', error);
+				status.error = 'ไม่สามารถตรวจสอบการเชื่อมต่อกับระบบได้';
 			}
-
 			return status;
 		}
 	};
+
+	function subscriptionKeyMatches(subscription: PushSubscription, publicKey: string) {
+		const actual = subscription.options.applicationServerKey;
+		if (!actual) return false;
+		const expected = urlBase64ToUint8Array(publicKey);
+		const bytes = new Uint8Array(actual);
+		return (
+			bytes.length === expected.length && bytes.every((value, index) => value === expected[index])
+		);
+	}
+	async function syncPushSubscription(
+		subscription: PushSubscription,
+		config: PushConfig,
+		generation: number
+	) {
+		const payload = subscriptionPayload(subscription);
+		if (!payload || !identity || !config.key_id || generation !== pushGeneration) return false;
+		const scope = deviceIdentity();
+		if (!scope) return false;
+		const intent = crypto.randomUUID();
+		const state = await beginBinding(scope, intent);
+		if (generation !== pushGeneration) return false;
+		const device = await registerPushDevice({
+			...payload,
+			installation_id: state.installation_id,
+			label: isIOSDevice() ? 'iPhone / iPad' : 'เว็บเบราว์เซอร์',
+			key_id: config.key_id
+		});
+		const binding: DeviceBinding = { ...device, identity: scope, intent };
+		if (generation !== pushGeneration || !(await saveBinding(binding))) {
+			if (generation !== pushGeneration) {
+				try {
+					await unregisterPushDevice(device.id, device.version);
+				} catch (error) {
+					console.error('Failed to revoke superseded device binding', error);
+				}
+			}
+			return false;
+		}
+		return true;
+	}
 }
 
 export const notificationStore = createNotificationStore();

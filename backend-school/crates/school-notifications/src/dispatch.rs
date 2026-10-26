@@ -1,24 +1,28 @@
-//! Transactional notification storage and fenced durable delivery work.
+//! Authoritative transactional inbox acceptance and irreversible presentation consumption.
 use crate::{models::Notification, publisher::NotificationType};
 use chrono::{DateTime, Utc};
 use school_errors::AppError;
 use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 pub const DELIVERY_BATCH_SIZE: i64 = 32;
+pub const ALERT_FRESHNESS_SECONDS: i64 = 900;
+const MAX_ACCEPTANCE_BATCH: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationSource {
     Direct,
     Attendance { source_id: Uuid },
     Process { source_id: Uuid },
+    CalendarReminder { source_id: Uuid },
 }
 #[derive(Clone, Copy)]
 pub enum NotificationSourceKind {
     Direct,
     Attendance,
     Process,
+    CalendarReminder,
 }
 impl NotificationSourceKind {
     fn as_str(self) -> &'static str {
@@ -26,6 +30,7 @@ impl NotificationSourceKind {
             Self::Direct => "direct",
             Self::Attendance => "attendance",
             Self::Process => "process",
+            Self::CalendarReminder => "calendar_reminder",
         }
     }
 }
@@ -35,44 +40,101 @@ impl NotificationSource {
             Self::Direct => ("direct", None),
             Self::Attendance { source_id } => ("attendance", Some(source_id)),
             Self::Process { source_id } => ("process", Some(source_id)),
+            Self::CalendarReminder { source_id } => ("calendar_reminder", Some(source_id)),
+        }
+    }
+    fn decode(kind: &str, id: Option<Uuid>) -> Result<Self, AppError> {
+        match (kind, id) {
+            ("direct", None) => Ok(Self::Direct),
+            ("attendance", Some(source_id)) => Ok(Self::Attendance { source_id }),
+            ("process", Some(source_id)) => Ok(Self::Process { source_id }),
+            ("calendar_reminder", Some(source_id)) => Ok(Self::CalendarReminder { source_id }),
+            _ => Err(integrity("notification_source_unsupported")),
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Presentation {
+    #[default]
+    AlertOnce,
+    InboxOnly,
+}
+impl Presentation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::AlertOnce => "alert_once",
+            Self::InboxOnly => "inbox_only",
         }
     }
 }
 #[derive(Clone, Debug)]
-pub struct QueuedNotification {
+pub struct NewNotification {
     pub id: Uuid,
     pub notification_id: Uuid,
     pub recipient_id: Uuid,
     pub source: NotificationSource,
-    pub dedup_key: Option<String>,
+    pub idempotency_key: String,
+    pub title: String,
+    pub message: String,
+    pub type_: NotificationType,
+    pub link: Option<String>,
+    pub presentation: Presentation,
+}
+/// Message meaning is owned by the producer; receipt and inbox IDs are central defaults.
+#[derive(Clone, Debug)]
+pub struct NotificationContent {
     pub title: String,
     pub message: String,
     pub type_: NotificationType,
     pub link: Option<String>,
 }
-pub struct EnqueueOutcome {
+impl NewNotification {
+    pub fn new(
+        recipient_id: Uuid,
+        source: NotificationSource,
+        idempotency_key: String,
+        content: NotificationContent,
+        presentation: Presentation,
+    ) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            notification_id: Uuid::now_v7(),
+            recipient_id,
+            source,
+            idempotency_key,
+            title: content.title,
+            message: content.message,
+            type_: content.type_,
+            link: content.link,
+            presentation,
+        }
+    }
+}
+pub struct AcceptanceOutcome {
     pub input_id: Uuid,
-    pub queue_id: Uuid,
+    pub receipt_id: Uuid,
     pub notification_id: Uuid,
     pub source: NotificationSource,
     pub inserted: bool,
 }
-#[derive(Clone)]
-pub struct ClaimedNotification {
-    pub notification: QueuedNotification,
-    pub lease_token: Uuid,
-    pub attempts: i32,
+#[derive(Clone, Copy)]
+pub struct PendingPresentation {
+    pub id: Uuid,
+    pub notification_id: Uuid,
+    pub recipient_id: Uuid,
+    pub source: NotificationSource,
+    pub expires_at: DateTime<Utc>,
 }
 #[derive(sqlx::FromRow)]
 pub struct NotificationProgress {
     pub notification_id: Uuid,
-    pub stored_at: Option<DateTime<Utc>>,
-    pub published_at: Option<DateTime<Utc>>,
+    pub inbox_accepted_at: Option<DateTime<Utc>>,
+    /// Terminal presentation (attempted/skipped/expired), never proof of human delivery.
+    pub presentation_consumed_at: Option<DateTime<Utc>>,
 }
 #[async_trait::async_trait]
 pub trait DeliveryEligibilityPort: Send + Sync {
-    /// Validate structural source identity under its guards BEFORE the job lock.
-    /// Recipient activity/relationships were resolved by the producer and are never rechecked here.
+    /// Source guards precede the receipt lock, matching source-owned cancellation order.
     async fn authorize_on_connection(
         &self,
         connection: &mut PgConnection,
@@ -80,240 +142,241 @@ pub trait DeliveryEligibilityPort: Send + Sync {
         recipient_id: Uuid,
     ) -> Result<bool, AppError>;
 }
-#[derive(sqlx::FromRow)]
-struct Job {
-    id: Uuid,
-    notification_id: Uuid,
-    recipient_id: Uuid,
-    source_kind: String,
-    source_id: Option<Uuid>,
-    dedup_key: Option<String>,
-    title: String,
-    message: String,
-    type_: String,
-    link: Option<String>,
-    stored_at: Option<DateTime<Utc>>,
-    lease_token: Option<Uuid>,
-    #[sqlx(default)]
-    attempts: i32,
-}
 #[derive(serde::Serialize)]
-struct InputJob<'a> {
+struct Input<'a> {
     id: Uuid,
     notification_id: Uuid,
     recipient_id: Uuid,
     source_kind: &'static str,
     source_id: Option<Uuid>,
-    dedup_key: &'a Option<String>,
+    idempotency_key: &'a str,
     title: &'a str,
     message: &'a str,
     #[serde(rename = "type")]
     type_: &'static str,
     link: &'a Option<String>,
+    presentation: &'static str,
+}
+#[derive(sqlx::FromRow)]
+struct ResolvedInput {
+    input_id: Uuid,
+    id: Uuid,
+    notification_id: Uuid,
+    recipient_id: Uuid,
+    source_kind: String,
+    source_id: Option<Uuid>,
+    idempotency_key: String,
+    payload_matches: bool,
+    presentation: String,
 }
 fn integrity(code: &'static str) -> AppError {
     AppError::Conflict(code.into())
 }
-impl Job {
-    fn notification(&self) -> Result<QueuedNotification, AppError> {
-        let source = match (self.source_kind.as_str(), self.source_id) {
-            ("direct", None) => NotificationSource::Direct,
-            ("attendance", Some(source_id)) => NotificationSource::Attendance { source_id },
-            ("process", Some(source_id)) => NotificationSource::Process { source_id },
-            _ => return Err(integrity("notification_source_unsupported")),
-        };
-        let type_ = match self.type_.as_str() {
-            "info" => NotificationType::Info,
-            "success" => NotificationType::Success,
-            "warning" => NotificationType::Warning,
-            "error" => NotificationType::Error,
-            _ => return Err(integrity("notification_type_unsupported")),
-        };
-        Ok(QueuedNotification {
-            id: self.id,
-            notification_id: self.notification_id,
-            recipient_id: self.recipient_id,
-            source,
-            dedup_key: self.dedup_key.clone(),
-            title: self.title.clone(),
-            message: self.message.clone(),
-            type_,
-            link: self.link.clone(),
-        })
+/// Same-origin absolute app paths only. No protocol-relative URLs, escapes or control characters.
+pub fn valid_app_link(value: &str) -> bool {
+    value.len() <= 2048
+        && value.starts_with('/')
+        && !value.starts_with("//")
+        && !value.contains('\\')
+        && !value.chars().any(char::is_control)
+        && !value.to_ascii_lowercase().starts_with("/%2f")
+        && !value.to_ascii_lowercase().starts_with("/%5c")
+}
+fn validate(items: &[NewNotification]) -> Result<(), AppError> {
+    if items.len() > MAX_ACCEPTANCE_BATCH {
+        return Err(AppError::BadRequest("notification_batch_too_large".into()));
     }
-}
-fn same_identity(a: &QueuedNotification, b: &QueuedNotification) -> bool {
-    a.id == b.id
-        && a.notification_id == b.notification_id
-        && a.recipient_id == b.recipient_id
-        && a.source == b.source
-        && a.dedup_key == b.dedup_key
-        && a.title == b.title
-        && a.message == b.message
-        && a.type_ == b.type_
-        && a.link == b.link
-}
-struct JobIndex<'a> {
-    by_id: HashMap<Uuid, &'a Job>,
-    by_notification: HashMap<Uuid, &'a Job>,
-    by_business: HashMap<(String, Uuid, String), &'a Job>,
-}
-impl<'a> JobIndex<'a> {
-    fn new(rows: &'a [Job]) -> Self {
-        let mut index = Self {
-            by_id: HashMap::with_capacity(rows.len()),
-            by_notification: HashMap::with_capacity(rows.len()),
-            by_business: HashMap::with_capacity(rows.len()),
-        };
-        for row in rows {
-            index.by_id.insert(row.id, row);
-            index.by_notification.insert(row.notification_id, row);
-            if let Some(key) = &row.dedup_key {
-                index.by_business.insert(
-                    (row.source_kind.clone(), row.recipient_id, key.clone()),
-                    row,
-                );
-            }
+    let mut ids = HashSet::new();
+    let mut notification_ids = HashSet::new();
+    for n in items {
+        if !ids.insert(n.id) || !notification_ids.insert(n.notification_id) {
+            return Err(integrity("notification_duplicate_input_identity"));
         }
-        index
-    }
-    fn resolve(&self, item: &QueuedNotification) -> Result<&'a Job, AppError> {
-        if let Some(row) = self
-            .by_id
-            .get(&item.id)
-            .or_else(|| self.by_notification.get(&item.notification_id))
+        if n.idempotency_key.trim().is_empty()
+            || n.idempotency_key.len() > 512
+            || n.title.chars().count() > 255
+            || n.message.len() > 8192
+            || n.link.as_deref().is_some_and(|s| !valid_app_link(s))
         {
-            // An exact ID collision must never fall back to a business dedup key,
-            // including when queue ID and notification ID refer to different rows.
-            if !same_identity(&row.notification()?, item) {
+            return Err(AppError::BadRequest("notification_payload_invalid".into()));
+        }
+    }
+    Ok(())
+}
+/// Producers have already resolved active users and guardian relationships in this transaction.
+/// Replays return the original receipt/inbox identity without recreating a removed inbox or alert.
+pub async fn create_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    items: &[NewNotification],
+) -> Result<Vec<AcceptanceOutcome>, AppError> {
+    validate(items)?;
+    let mut outcomes = Vec::with_capacity(items.len());
+    for chunk in items.chunks(1000) {
+        let input: Vec<_> = chunk
+            .iter()
+            .map(|n| {
+                let (source_kind, source_id) = n.source.parts();
+                Input {
+                    id: n.id,
+                    notification_id: n.notification_id,
+                    recipient_id: n.recipient_id,
+                    source_kind,
+                    source_id,
+                    idempotency_key: &n.idempotency_key,
+                    title: &n.title,
+                    message: &n.message,
+                    type_: n.type_.as_str(),
+                    link: &n.link,
+                    presentation: n.presentation.as_str(),
+                }
+            })
+            .collect();
+        let inserted:Vec<Uuid>=school_database::DbSession::new(&mut **tx).scalar("notifications.accept.insert_receipts",r#"INSERT INTO notification_receipts(id,notification_id,recipient_id,source_kind,source_id,idempotency_key,payload_hash,presentation,inbox_accepted_at,presentation_consumed_at,presentation_outcome)
+            SELECT id,notification_id,recipient_id,source_kind,source_id,idempotency_key,sha256(convert_to(jsonb_build_array(title,message,type,link)::text,'UTF8')),presentation,now(),CASE WHEN presentation='inbox_only' THEN now() END,CASE WHEN presentation='inbox_only' THEN 'skipped' END
+            FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid,idempotency_key text,title text,message text,type text,link text,presentation text)
+            ON CONFLICT DO NOTHING RETURNING id"#).bind(Json(&input)).fetch_all().await?;
+        let rows:Vec<ResolvedInput>=school_database::DbSession::new(&mut **tx).query_as("notifications.accept.resolve_receipts",r#"SELECT n.id input_id,j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.idempotency_key,j.presentation,
+            j.payload_hash=sha256(convert_to(jsonb_build_array(n.title,n.message,n.type,n.link)::text,'UTF8')) payload_matches
+            FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid,idempotency_key text,title text,message text,type text,link text,presentation text)
+            JOIN notification_receipts j ON j.id=n.id OR j.notification_id=n.notification_id OR (j.source_kind=n.source_kind AND j.recipient_id=n.recipient_id AND j.idempotency_key=n.idempotency_key)
+            ORDER BY j.id FOR UPDATE OF j"#).bind(Json(&input)).fetch_all().await?;
+        let inserted: HashSet<_> = inserted.into_iter().collect();
+        for n in chunk {
+            let matches: Vec<_> = rows.iter().filter(|r| r.input_id == n.id).collect();
+            let [r] = matches.as_slice() else {
+                return Err(integrity("notification_identity_conflict"));
+            };
+            let source = NotificationSource::decode(&r.source_kind, r.source_id)?;
+            if source != n.source
+                || r.recipient_id != n.recipient_id
+                || r.idempotency_key != n.idempotency_key
+                || !r.payload_matches
+                || r.presentation != n.presentation.as_str()
+                || ((r.id == n.id || r.notification_id == n.notification_id)
+                    && (r.id != n.id || r.notification_id != n.notification_id))
+            {
                 return Err(integrity("notification_identity_conflict"));
             }
-            return Ok(row);
+            outcomes.push(AcceptanceOutcome {
+                input_id: n.id,
+                receipt_id: r.id,
+                notification_id: r.notification_id,
+                source,
+                inserted: inserted.contains(&r.id),
+            });
         }
-        item.dedup_key
-            .as_ref()
-            .and_then(|key| {
-                self.by_business.get(&(
-                    item.source.parts().0.into(),
-                    item.recipient_id,
-                    key.clone(),
-                ))
-            })
-            .copied()
-            .ok_or_else(|| integrity("notification_identity_conflict"))
-    }
-}
-pub async fn enqueue_in_transaction(
-    tx: &mut Transaction<'_, Postgres>,
-    items: &[QueuedNotification],
-) -> Result<Vec<EnqueueOutcome>, AppError> {
-    if items.is_empty() {
-        return Ok(vec![]);
-    }
-    let input: Vec<_> = items
-        .iter()
-        .map(|n| {
-            let (source_kind, source_id) = n.source.parts();
-            InputJob {
-                id: n.id,
-                notification_id: n.notification_id,
-                recipient_id: n.recipient_id,
-                source_kind,
-                source_id,
-                dedup_key: &n.dedup_key,
-                title: &n.title,
-                message: &n.message,
-                type_: n.type_.as_str(),
-                link: &n.link,
-            }
-        })
-        .collect();
-    let inserted: Vec<Uuid> = school_database::DbSession::new(&mut **tx).scalar("notifications.src.dispatch.enqueue_in_transaction", r#"INSERT INTO notification_dispatch_jobs(id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type,link)
-        SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type,link FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid,dedup_key text,title text,message text,type text,link text)
-        ON CONFLICT DO NOTHING RETURNING id"#).bind(Json(&input)).fetch_all().await?;
-    let existing: Vec<Job> = school_database::DbSession::new(&mut **tx).query_as("notifications.src.dispatch.enqueue_in_transaction", r#"SELECT DISTINCT j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token
-        FROM notification_dispatch_jobs j JOIN jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,source_kind text,dedup_key text)
-        ON j.id=n.id OR j.notification_id=n.notification_id OR (j.source_kind=n.source_kind AND j.recipient_id=n.recipient_id AND j.dedup_key=n.dedup_key)"#).bind(Json(&input)).fetch_all().await?;
-    let index = JobIndex::new(&existing);
-    let inserted: HashSet<_> = inserted.into_iter().collect();
-    let mut outcomes = Vec::with_capacity(items.len());
-    for item in items {
-        let job = index.resolve(item)?;
-        outcomes.push(EnqueueOutcome {
-            input_id: item.id,
-            queue_id: job.id,
-            notification_id: job.notification_id,
-            source: job.notification()?.source,
-            inserted: inserted.contains(&job.id),
-        });
+        school_database::DbSession::new(&mut **tx).query("notifications.accept.insert_inbox",r#"INSERT INTO notifications(id,user_id,title,message,type,link)
+            SELECT notification_id,recipient_id,title,message,type,link FROM jsonb_to_recordset($1) n(id uuid,notification_id uuid,recipient_id uuid,title text,message text,type text,link text)
+            WHERE id=ANY($2)"#).bind(Json(&input)).bind(inserted.iter().copied().collect::<Vec<_>>()).execute().await?;
+        school_database::DbSession::new(&mut **tx).query("notifications.accept.insert_presentations",r#"INSERT INTO notification_presentations(receipt_id,expires_at)
+            SELECT id,created_at+interval '15 minutes' FROM notification_receipts WHERE id=ANY($1) AND presentation='alert_once'"#).bind(inserted.iter().copied().collect::<Vec<_>>()).execute().await?;
     }
     Ok(outcomes)
 }
-pub async fn store_and_enqueue_in_transaction(
-    tx: &mut Transaction<'_, Postgres>,
-    item: &QueuedNotification,
-) -> Result<Uuid, AppError> {
-    let outcome = enqueue_in_transaction(tx, std::slice::from_ref(item))
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| integrity("notification_enqueue_missing"))?;
-    if outcome.queue_id != item.id {
+pub async fn create(
+    pool: &PgPool,
+    items: &[NewNotification],
+) -> Result<Vec<AcceptanceOutcome>, AppError> {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "notifications.create").await?;
+    let recipients: Vec<_> = items.iter().map(|n| n.recipient_id).collect();
+    let active: i64 = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "notifications.create.active_recipients",
+            "SELECT count(*) FROM users WHERE id=ANY($1) AND status='active'",
+        )
+        .bind(&recipients)
+        .fetch_one()
+        .await?;
+    if usize::try_from(active).ok() != Some(recipients.iter().collect::<HashSet<_>>().len()) {
+        return Err(AppError::BadRequest(
+            "notification_recipient_inactive".into(),
+        ));
+    }
+    let result = create_in_transaction(&mut tx, items).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+/// Bounded candidates only: no claim/lease or transport retry exists. Consumption arbitrates races.
+pub async fn pending(pool: &PgPool) -> Result<Vec<PendingPresentation>, AppError> {
+    let mut c =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.pending").await?;
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: Uuid,
+        notification_id: Uuid,
+        recipient_id: Uuid,
+        source_kind: String,
+        source_id: Option<Uuid>,
+        expires_at: DateTime<Utc>,
+    }
+    let rows:Vec<Row>=school_database::DbSession::new(&mut *c).query_as("notifications.presentation.pending","SELECT r.id,r.notification_id,r.recipient_id,r.source_kind,r.source_id,p.expires_at FROM notification_presentations p JOIN notification_receipts r ON r.id=p.receipt_id ORDER BY r.id LIMIT $1").bind(DELIVERY_BATCH_SIZE).fetch_all().await?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(PendingPresentation {
+                id: r.id,
+                notification_id: r.notification_id,
+                recipient_id: r.recipient_id,
+                source: NotificationSource::decode(&r.source_kind, r.source_id)?,
+                expires_at: r.expires_at,
+            })
+        })
+        .collect()
+}
+/// Irreversible commit BEFORE any SSE/network I/O. An uncertain commit is never a delivery retry.
+pub async fn consume(
+    pool: &PgPool,
+    item: &PendingPresentation,
+    eligibility: &dyn DeliveryEligibilityPort,
+) -> Result<Option<Notification>, AppError> {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "notifications.consume").await?;
+    let allowed = eligibility
+        .authorize_on_connection(&mut tx, &item.source, item.recipient_id)
+        .await?;
+    let locked:Option<(Uuid,Uuid,String,Option<Uuid>,bool)>=school_database::DbSession::new(&mut *tx).query_as("notifications.presentation.lock","SELECT r.notification_id,r.recipient_id,r.source_kind,r.source_id,p.expires_at>now() FROM notification_receipts r JOIN notification_presentations p ON p.receipt_id=r.id WHERE r.id=$1 AND r.presentation_consumed_at IS NULL FOR UPDATE OF r,p").bind(item.id).fetch_optional().await?;
+    let Some((notification_id, recipient, kind, source_id, fresh)) = locked else {
+        tx.commit().await?;
+        return Ok(None);
+    };
+    if notification_id != item.notification_id
+        || recipient != item.recipient_id
+        || NotificationSource::decode(&kind, source_id)? != item.source
+    {
         return Err(integrity("notification_identity_conflict"));
     }
-    // Queue before inbox is also the cancellation lock order.
-    school_database::DbSession::new(&mut **tx)
+    let notification:Option<Notification>=school_database::DbSession::new(&mut *tx).query_as("notifications.presentation.inbox","SELECT n.id,n.title,n.message,n.type type_,n.link,n.read_at,n.created_at FROM notifications n JOIN notification_receipts r ON r.notification_id=n.id WHERE r.id=$1 AND n.user_id=r.recipient_id AND r.payload_hash=sha256(convert_to(jsonb_build_array(n.title,n.message,n.type,n.link)::text,'UTF8')) FOR SHARE OF n").bind(item.id).fetch_optional().await?;
+    let outcome = if !fresh {
+        "expired"
+    } else if !allowed || notification.is_none() {
+        "skipped"
+    } else {
+        "attempted"
+    };
+    school_database::DbSession::new(&mut *tx).query("notifications.presentation.consume","UPDATE notification_receipts SET presentation_consumed_at=now(),presentation_outcome=$2 WHERE id=$1").bind(item.id).bind(outcome).execute().await?;
+    school_database::DbSession::new(&mut *tx)
         .query(
-            "notifications.src.dispatch.store_and_enqueue_in_transaction",
-            "SELECT id FROM notification_dispatch_jobs WHERE id=$1 FOR UPDATE",
+            "notifications.presentation.remove_pending",
+            "DELETE FROM notification_presentations WHERE receipt_id=$1",
         )
         .bind(item.id)
         .execute()
         .await?;
-    insert_inbox(&mut **tx, item).await?;
-    school_database::DbSession::new(&mut **tx)
-        .query(
-            "notifications.src.dispatch.store_and_enqueue_in_transaction",
-            "UPDATE notification_dispatch_jobs SET stored_at=coalesce(stored_at,now()) WHERE id=$1",
-        )
-        .bind(item.id)
-        .execute()
-        .await?;
-    Ok(item.notification_id)
-}
-async fn insert_inbox(
-    connection: &mut PgConnection,
-    item: &QueuedNotification,
-) -> Result<(), AppError> {
-    school_database::DbSession::new(&mut *connection).query("notifications.src.dispatch.insert_inbox", "INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING")
-        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).execute().await?;
-    validate_inbox(connection, item).await
-}
-async fn validate_inbox(
-    connection: &mut PgConnection,
-    item: &QueuedNotification,
-) -> Result<(), AppError> {
-    let matches:bool=school_database::DbSession::new(connection).scalar("notifications.src.dispatch.validate_inbox", "SELECT user_id IS NOT DISTINCT FROM $2 AND title=$3 AND message=$4 AND type=$5 AND link IS NOT DISTINCT FROM $6 FROM notifications WHERE id=$1")
-        .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).fetch_one().await?;
-    if !matches {
-        return Err(integrity("notification_inbox_identity_conflict"));
-    }
-    Ok(())
+    tx.commit().await?;
+    Ok(if outcome == "attempted" {
+        notification
+    } else {
+        None
+    })
 }
 pub async fn progress_on_connection(
     connection: &mut PgConnection,
     ids: &[Uuid],
 ) -> Result<Vec<NotificationProgress>, AppError> {
-    let rows:Vec<NotificationProgress>=school_database::DbSession::new(connection).query_as("notifications.src.dispatch.progress_on_connection", "SELECT notification_id,stored_at,published_at FROM notification_dispatch_jobs WHERE notification_id=ANY($1)").bind(ids).fetch_all().await?;
-    require_complete_progress(ids, &rows)?;
-    Ok(rows)
-}
-fn require_complete_progress(ids: &[Uuid], rows: &[NotificationProgress]) -> Result<(), AppError> {
-    let present: HashSet<_> = rows.iter().map(|row| row.notification_id).collect();
+    let rows:Vec<NotificationProgress>=school_database::DbSession::new(connection).query_as("notifications.progress","SELECT notification_id,inbox_accepted_at,presentation_consumed_at FROM notification_receipts WHERE notification_id=ANY($1)").bind(ids).fetch_all().await?;
+    let present: HashSet<_> = rows.iter().map(|r| r.notification_id).collect();
     if ids.iter().any(|id| !present.contains(id)) {
         return Err(integrity("notification_progress_missing"));
     }
-    Ok(())
+    Ok(rows)
 }
 pub async fn cancel_identified_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
@@ -321,252 +384,59 @@ pub async fn cancel_identified_in_transaction(
     ids: &[Uuid],
     remove_inbox: bool,
 ) -> Result<(), AppError> {
-    let owned:Vec<Uuid>=school_database::DbSession::new(&mut **tx).scalar("notifications.src.dispatch.cancel_identified_in_transaction", "SELECT notification_id FROM notification_dispatch_jobs WHERE source_kind=$1 AND notification_id=ANY($2) ORDER BY id FOR UPDATE")
-        .bind(source.as_str()).bind(ids).fetch_all().await?;
+    let owned:Vec<Uuid>=school_database::DbSession::new(&mut **tx).scalar("notifications.cancel.lock","SELECT notification_id FROM notification_receipts WHERE source_kind=$1 AND notification_id=ANY($2) ORDER BY id FOR UPDATE").bind(source.as_str()).bind(ids).fetch_all().await?;
     if remove_inbox {
         school_database::DbSession::new(&mut **tx)
             .query(
-                "notifications.src.dispatch.cancel_identified_in_transaction",
+                "notifications.cancel.inbox",
                 "DELETE FROM notifications WHERE id=ANY($1)",
             )
             .bind(&owned)
             .execute()
             .await?;
     }
-    school_database::DbSession::new(&mut **tx).query("notifications.src.dispatch.cancel_identified_in_transaction",
-        "DELETE FROM notification_dispatch_jobs WHERE source_kind=$1 AND notification_id=ANY($2)",
-    )
-    .bind(source.as_str())
-    .bind(&owned)
-    .execute()
-    .await?;
-    Ok(())
-}
-pub async fn claim(pool: &PgPool) -> Result<Vec<ClaimedNotification>, AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.claim").await?;
-    let rows:Vec<Job>=school_database::DbSession::new(&mut *connection).query_as("notifications.src.dispatch.claim", r#"WITH due AS (
-        SELECT id FROM notification_dispatch_jobs j WHERE published_at IS NULL AND next_attempt_at<=now()
-        ORDER BY next_attempt_at,id LIMIT $1 FOR UPDATE OF j SKIP LOCKED
-    ) UPDATE notification_dispatch_jobs j SET lease_token=gen_random_uuid(),
-        next_attempt_at=now()+interval '120 seconds',attempts=j.attempts+1 FROM due WHERE j.id=due.id
-        RETURNING j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token,j.attempts"#)
-        .bind(DELIVERY_BATCH_SIZE).fetch_all().await?;
-    rows.into_iter()
-        .filter_map(|j| {
-            j.lease_token.map(|lease_token| {
-                j.notification().map(|notification| ClaimedNotification {
-                    notification,
-                    lease_token,
-                    attempts: j.attempts,
-                })
-            })
-        })
-        .collect()
-}
-pub async fn materialize(
-    pool: &PgPool,
-    claimed: &ClaimedNotification,
-    eligibility: &dyn DeliveryEligibilityPort,
-) -> Result<Option<Notification>, AppError> {
-    let mut tx =
-        school_tenancy::TenantPool::begin_observed(pool, "notifications.materialize").await?;
-    let allowed = eligibility
-        .authorize_on_connection(
-            &mut tx,
-            &claimed.notification.source,
-            claimed.notification.recipient_id,
+    // Exact source-owned reset is the sole operation allowed to release business identities.
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "notifications.cancel.receipts",
+            "DELETE FROM notification_receipts WHERE source_kind=$1 AND notification_id=ANY($2)",
         )
-        .await?;
-    let job:Option<Job>=school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.materialize", "SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
-        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional().await?;
-    let Some(job) = job else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-    if !same_identity(&job.notification()?, &claimed.notification) {
-        return Err(integrity("notification_identity_conflict"));
-    }
-    if !allowed {
-        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute().await?;
-        tx.commit().await?;
-        return Ok(None);
-    }
-    if job.stored_at.is_none() {
-        insert_inbox(&mut tx, &claimed.notification).await?;
-        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize",
-            "UPDATE notification_dispatch_jobs SET stored_at=now() WHERE id=$1 AND lease_token=$2",
-        )
-        .bind(job.id)
-        .bind(claimed.lease_token)
+        .bind(source.as_str())
+        .bind(&owned)
         .execute()
         .await?;
-    }
-    let notification = school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.materialize",
-        "SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1",
-    )
-    .bind(job.notification_id)
-    .fetch_optional()
-    .await?;
-    if notification.is_none() {
-        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.materialize", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute().await?;
-        tracing::warn!(error_code="notification_inbox_missing",notification_id=%job.notification_id,"Previously stored notification is absent");
-    } else {
-        validate_inbox(&mut tx, &claimed.notification).await?;
-    }
-    tx.commit().await?;
-    Ok(notification)
-}
-pub async fn acknowledge(pool: &PgPool, claimed: &ClaimedNotification) -> Result<(), AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.acknowledge")
-            .await?;
-    school_database::DbSession::new(&mut *connection).query("notifications.src.dispatch.acknowledge", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now()")
-        .bind(claimed.notification.id).bind(claimed.lease_token).execute().await?;
     Ok(())
 }
-/// Fence endpoint cleanup and acknowledgment together against a stale claim.
-pub(crate) async fn finish_delivery(
-    pool: &PgPool,
-    claimed: &ClaimedNotification,
-    receipt: crate::publisher::DeliveryReceipt,
-) -> Result<(), AppError> {
-    let mut tx =
-        school_tenancy::TenantPool::begin_observed(pool, "notifications.finish_delivery").await?;
-    let current: Option<Job> = school_database::DbSession::new(&mut *tx).query_as("notifications.src.dispatch.finish_delivery", "SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
-        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional().await?;
-    let Some(current) = current else {
-        tx.commit().await?;
-        return Ok(());
-    };
-    if !same_identity(&current.notification()?, &claimed.notification) {
-        return Err(integrity("notification_identity_conflict"));
-    }
-    let delivery = crate::publisher::NotificationService::complete_delivery_on_connection(
-        &mut tx,
-        claimed.notification.recipient_id,
-        receipt,
-    )
-    .await;
-    if delivery.is_ok() {
-        school_database::DbSession::new(&mut *tx).query("notifications.src.dispatch.finish_delivery", "UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND next_attempt_at>now()")
-            .bind(claimed.notification.id).bind(claimed.lease_token).execute().await?;
-    }
-    tx.commit().await?;
-    delivery.map_err(|_| AppError::ServiceUnavailable("notification_transport_unavailable".into()))
-}
-
 #[derive(Debug, Clone, Copy, sqlx::FromRow)]
 pub struct QueueStatus {
     pub pending: bool,
     pub due: bool,
 }
 pub async fn status(pool: &PgPool) -> Result<QueueStatus, AppError> {
-    let mut connection =
+    let mut c =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.status").await?;
-    Ok(school_database::DbSession::new(&mut *connection).query_as("notifications.src.dispatch.status", "SELECT EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL) pending,EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL AND next_attempt_at<=now()) due").fetch_one().await?)
+    Ok(school_database::DbSession::new(&mut *c).query_as("notifications.presentation.status","SELECT EXISTS(SELECT 1 FROM notification_presentations) pending,EXISTS(SELECT 1 FROM notification_presentations) due").fetch_one().await?)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn job() -> Job {
-        Job {
-            id: Uuid::new_v4(),
-            notification_id: Uuid::new_v4(),
-            recipient_id: Uuid::new_v4(),
-            source_kind: "direct".into(),
-            source_id: None,
-            dedup_key: None,
-            title: "Synthetic".into(),
-            message: "Body".into(),
-            type_: "info".into(),
-            link: None,
-            stored_at: None,
-            lease_token: None,
-            attempts: 0,
+    #[test]
+    fn app_links_reject_external_ambiguous_and_control_paths() {
+        for s in [
+            "https://evil.test",
+            "//evil.test",
+            "/\\evil",
+            "/%2fhost",
+            "/%5chost",
+            "/x\n",
+        ] {
+            assert!(!valid_app_link(s), "{s:?}")
         }
+        assert!(valid_app_link("/student/attendance?term=1"));
     }
     #[test]
-    fn source_and_type_decoding_reject_unknown_or_inconsistent_persisted_policy() {
-        let mut row = job();
-        assert_eq!(
-            row.notification().unwrap().source,
-            NotificationSource::Direct
-        );
-        row.source_kind = "unknown".into();
-        assert!(row.notification().is_err());
-        row.source_kind = "attendance".into();
-        assert!(row.notification().is_err());
-        row.source_id = Some(row.id);
-        assert_eq!(
-            row.notification().unwrap().source,
-            NotificationSource::Attendance { source_id: row.id }
-        );
-        row.source_kind = "direct".into();
-        assert!(row.notification().is_err());
-        row.source_id = None;
-        row.type_ = "private-unregistered-type".into();
-        assert!(row.notification().is_err());
-    }
-    #[test]
-    fn stable_identity_validation_rejects_recipient_payload_and_source_drift() {
-        let original = job().notification().unwrap();
-        let mut changed = original.clone();
-        assert!(same_identity(&original, &changed));
-        changed.recipient_id = Uuid::new_v4();
-        assert!(!same_identity(&original, &changed));
-        changed = original.clone();
-        changed.message = "Different body".into();
-        assert!(!same_identity(&original, &changed));
-        changed = original.clone();
-        changed.source = NotificationSource::Attendance {
-            source_id: changed.id,
-        };
-        assert!(!same_identity(&original, &changed));
-    }
-    #[test]
-    fn progress_requires_every_identity_but_accepts_duplicate_requests() {
-        let id = Uuid::new_v4();
-        let rows = [NotificationProgress {
-            notification_id: id,
-            stored_at: None,
-            published_at: None,
-        }];
-        assert!(require_complete_progress(&[id, id], &rows).is_ok());
-        assert!(
-            matches!(require_complete_progress(&[id,Uuid::new_v4()],&rows),Err(AppError::Conflict(code)) if code=="notification_progress_missing")
-        );
-        assert!(require_complete_progress(&[], &[]).is_ok());
-    }
-    #[test]
-    fn enqueue_lookup_preserves_identity_precedence_first_wins_and_null_key_separation() {
-        let mut first = job();
-        first.dedup_key = Some("arrival-day".into());
-        let second = job();
-        let exact = first.notification().unwrap();
-        let rows = [first, second];
-        let index = JobIndex::new(&rows);
-        assert_eq!(index.resolve(&exact).unwrap().id, rows[0].id);
-        let mut repeated = exact.clone();
-        repeated.id = Uuid::new_v4();
-        repeated.notification_id = Uuid::new_v4();
-        repeated.message = "Later arrival time".into();
-        assert_eq!(
-            index.resolve(&repeated).unwrap().notification_id,
-            rows[0].notification_id
-        );
-        repeated.id = rows[1].id;
-        assert!(index.resolve(&repeated).is_err());
-        let mut split = exact.clone();
-        split.notification_id = rows[1].notification_id;
-        assert!(index.resolve(&split).is_err());
-        let mut no_key = rows[1].notification().unwrap();
-        no_key.id = Uuid::new_v4();
-        no_key.notification_id = Uuid::new_v4();
-        assert!(index.resolve(&no_key).is_err());
-        let mut wrong_recipient = exact.clone();
-        wrong_recipient.recipient_id = Uuid::new_v4();
-        assert!(index.resolve(&wrong_recipient).is_err());
+    fn inconsistent_source_identity_fails_closed() {
+        assert!(NotificationSource::decode("direct", Some(Uuid::new_v4())).is_err());
+        assert!(NotificationSource::decode("future", None).is_err());
     }
 }

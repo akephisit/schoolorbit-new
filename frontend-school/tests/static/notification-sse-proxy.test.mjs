@@ -105,6 +105,10 @@ test('notification stream recovers through authoritative auth before bounded man
 	assert.match(store, /recoveryAction\s*===\s*['"]stop['"][\s\S]*clearReconnectTimer/);
 	assert.doesNotMatch(store, /setTimeout\([\s\S]{0,180}this\.initSSE\(\)/);
 
-	assert.match(bell, /const isAuthenticated = \$derived\(\$authStore\.isAuthenticated\)/);
-	assert.match(bell, /if \(isAuthenticated\)\s*\{[\s\S]*notificationStore\.initSSE\(\)/);
+	assert.match(bell, /const identity = \$derived\(/);
+	assert.match(bell, /\$authStore\.user\.id/);
+	assert.match(bell, /authStore\.sessionEpoch/);
+	assert.match(bell, /notificationStore\.bindIdentity\(\)/);
+	assert.match(store, /function bindIdentity\(\)[\s\S]*currentAuthIdentity\(\)[\s\S]*closeSSE\(\)/);
+	assert.match(bell, /if \(identity\)\s*\{[\s\S]*notificationStore\.initSSE\(\)/);
 });

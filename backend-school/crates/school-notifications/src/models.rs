@@ -38,20 +38,47 @@ pub struct ListNotificationsResponse {
     pub limit: i64,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateNotificationRequest {
-    #[serde(default)]
-    pub user_id: Option<Uuid>,
-    pub title: String,
-    pub message: String,
-    #[serde(rename = "type")]
-    pub type_: String,
-    pub link: Option<String>,
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct PushConfigResponse {
+    pub available: bool,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub public_key: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub key_id: Option<String>,
+    pub max_devices: usize,
+    pub device_expiry_days: i64,
 }
-
+#[derive(Debug, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct PushDevice {
+    pub id: Uuid,
+    pub installation_id: Uuid,
+    pub label: String,
+    pub version: Uuid,
+    pub binding_token: Uuid,
+    pub key_id: String,
+    pub last_confirmed_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct ListPushDevicesResponse {
+    pub items: Vec<PushDevice>,
+}
 #[derive(Debug, Deserialize)]
-pub struct SubscribePushRequest {
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct RegisterPushDeviceRequest {
+    pub installation_id: Uuid,
+    pub label: String,
     pub endpoint: String,
     pub p256dh: String,
     pub auth: String,
+    pub key_id: String,
+}
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature="api-docs", into_params(parameter_in=Query))]
+pub struct UnregisterPushDeviceQuery {
+    pub version: Uuid,
 }

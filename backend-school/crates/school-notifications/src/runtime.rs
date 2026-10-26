@@ -18,7 +18,6 @@ use std::{
 use tokio::sync::broadcast;
 
 const DELIVERY_CONCURRENCY: usize = 4;
-const DELIVERY_ITEM_TIMEOUT: Duration = Duration::from_secs(5);
 const DATABASE_TIMEOUT: Duration = Duration::from_secs(5);
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
 static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
@@ -53,27 +52,20 @@ pub struct NotificationRuntimeState {
 struct BatchDelivery {
     completed: usize,
     failed: usize,
-    timed_out: usize,
 }
-async fn deliver_batch<T, F, Fut, E>(
-    items: Vec<T>,
-    concurrency: usize,
-    timeout: Duration,
-    deliver: F,
-) -> BatchDelivery
+async fn deliver_batch<T, F, Fut, E>(items: Vec<T>, concurrency: usize, deliver: F) -> BatchDelivery
 where
     F: Fn(T) -> Fut,
     Fut: std::future::Future<Output = Result<(), E>>,
 {
     // Unspawned futures cannot outlive the caller's logical TenantPool lease.
     stream::iter(items)
-        .map(|item| tokio::time::timeout(timeout, deliver(item)))
+        .map(deliver)
         .buffer_unordered(concurrency)
         .fold(BatchDelivery::default(), |mut result, item| async move {
             match item {
-                Ok(Ok(())) => result.completed += 1,
-                Ok(Err(_)) => result.failed += 1,
-                Err(_) => result.timed_out += 1,
+                Ok(()) => result.completed += 1,
+                Err(_) => result.failed += 1,
             }
             result
         })
@@ -125,8 +117,7 @@ impl DeliveryTransport<'_> {
             Self::Controlled(transport) => {
                 let result = transport.deliver(prepared.notification.id).await?;
                 Ok(crate::publisher::DeliveryReceipt {
-                    invalid_endpoints: result.invalid_endpoints,
-                    retryable: result.retryable,
+                    invalid_devices: result.invalid_devices,
                 })
             }
         }
@@ -137,8 +128,7 @@ impl DeliveryTransport<'_> {
 pub mod test_support {
     use super::*;
     pub struct DeliveryResult {
-        pub invalid_endpoints: Vec<String>,
-        pub retryable: bool,
+        pub invalid_devices: Vec<(uuid::Uuid, uuid::Uuid)>,
     }
     #[async_trait::async_trait]
     pub trait ControlledTransport: Send + Sync {
@@ -278,91 +268,105 @@ async fn deliver_database_batch(
     turn: Option<&TenantTurn<'_>>,
     transport: DeliveryTransport<'_>,
 ) -> Result<dispatch::QueueStatus, AppError> {
-    let claimed_at = tokio::time::Instant::now();
     let (tenant_id, batch) = database(resolved_phase(
         access,
         tenant,
         None,
         turn,
-        "claim",
-        |id, pool| async move { Ok((id, dispatch::claim(&pool).await?)) },
+        "pending",
+        |id, pool| async move { Ok((id, dispatch::pending(&pool).await?)) },
     ))
     .await?;
-    let outcome = deliver_batch(
-        batch,
-        DELIVERY_CONCURRENCY,
-        DELIVERY_ITEM_TIMEOUT,
-        |claimed| async move {
-            let claimed = &claimed;
-            let prepared = resolved_phase(
-                access,
-                tenant,
-                Some(tenant_id),
-                turn,
-                "prepare",
-                |_, pool| async move {
-                    let Some(notification) =
-                        dispatch::materialize(&pool, &claimed, eligibility).await?
-                    else {
-                        return Ok(None);
-                    };
-                    NotificationService::prepare_stored(
-                        &pool,
-                        claimed.notification.recipient_id,
-                        notification,
-                        claimed.attempts,
-                    )
-                    .await
-                    .map(Some)
-                    .map_err(|_| {
-                        AppError::ServiceUnavailable("notification_subscription_unavailable".into())
-                    })
-                },
-            )
-            .await?;
-            let Some(prepared) = prepared else {
-                return Ok(());
-            };
-            if claimed_at.elapsed() >= Duration::from_secs(115) {
-                return Err(AppError::ServiceUnavailable(
-                    "notification_claim_expired".into(),
-                ));
-            }
-            // Only owned transport DTOs cross this boundary; no pool or permit survives.
-            let publisher = TenantNotificationPublisher::new(tenant, channel);
-            let receipt = transport
-                .deliver(&publisher, claimed.notification.recipient_id, prepared)
+    let outcome = deliver_batch(batch, DELIVERY_CONCURRENCY, |pending| async move {
+        let notification = database(resolved_phase(
+            access,
+            tenant,
+            Some(tenant_id),
+            turn,
+            "consume",
+            |_, pool| async move { dispatch::consume(&pool, &pending, eligibility).await },
+        ))
+        .await?;
+        let Some(notification) = notification else {
+            return Ok::<(), AppError>(());
+        };
+        let publisher = TenantNotificationPublisher::new(tenant, channel);
+        // Consume committed before SSE; Push query/configuration errors cannot suppress SSE.
+        publisher.publish(pending.recipient_id, notification.clone());
+        let prepared = database(resolved_phase(
+            access,
+            tenant,
+            Some(tenant_id),
+            turn,
+            "devices",
+            |_, pool| async move {
+                NotificationService::prepare_stored(
+                    &pool,
+                    pending.recipient_id,
+                    notification,
+                    pending.expires_at,
+                )
                 .await
                 .map_err(|_| {
-                    AppError::ServiceUnavailable("notification_transport_unavailable".into())
-                })?;
-            resolved_phase(
-                access,
-                tenant,
-                Some(tenant_id),
-                turn,
-                "finish",
-                |_, pool| async move { dispatch::finish_delivery(&pool, claimed, receipt).await },
-            )
+                    AppError::ServiceUnavailable("notification_subscription_unavailable".into())
+                })
+            },
+        ))
+        .await;
+        let prepared = match prepared {
+            Ok(prepared) => prepared,
+            Err(_) => {
+                tracing::warn!(
+                    error_code = "notification_push_snapshot_unavailable",
+                    "SSE attempted; Push skipped without replay"
+                );
+                return Ok(());
+            }
+        };
+        // No database pool/admission permit crosses this external I/O boundary.
+        let receipt = transport
+            .deliver(&publisher, pending.recipient_id, prepared)
             .await
-        },
-    )
+            .map_err(|_| {
+                AppError::ServiceUnavailable("notification_transport_unavailable".into())
+            })?;
+        database(resolved_phase(
+            access,
+            tenant,
+            Some(tenant_id),
+            turn,
+            "cleanup",
+            |_, pool| async move {
+                NotificationService::complete_delivery(&pool, pending.recipient_id, receipt)
+                    .await
+                    .map_err(|_| {
+                        AppError::ServiceUnavailable(
+                            "notification_device_cleanup_unavailable".into(),
+                        )
+                    })
+            },
+        ))
+        .await
+    })
     .await;
-    if outcome.failed > 0 || outcome.timed_out > 0 {
+    if outcome.failed > 0 {
         tracing::warn!(
-            error_code = "notification_dispatch_retry",
+            error_code = "notification_presentation_attempt_ended",
             failed = outcome.failed,
-            timed_out = outcome.timed_out,
-            "Notification jobs remain leased for retry"
+            "Consumed presentations will not retry"
         );
     }
+
     database(resolved_phase(
         access,
         tenant,
         Some(tenant_id),
         turn,
         "status",
-        |_, pool| async move { dispatch::status(&pool).await },
+        |_, pool| async move {
+            crate::devices::cleanup(&pool).await?;
+            dispatch::status(&pool).await
+        },
     ))
     .await
 }
@@ -465,40 +469,22 @@ pub async fn start(state: NotificationRuntimeState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{deliver_batch, BatchDelivery};
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    };
+    use super::*;
     #[tokio::test]
-    async fn slow_transport_releases_shared_database_slots_for_other_kinds_and_joins_cancellation()
-    {
+    async fn network_wait_holds_no_database_admission_and_cancellation_joins_items() {
         use school_tenancy::{background::TenantJobKind, PoolManager};
         let turns = PoolManager::new().background_turns();
         let worker_turns = turns.clone();
         let (started, mut observed) = tokio::sync::mpsc::unbounded_channel();
-        let active = Arc::new(AtomicUsize::new(0));
-        let worker_active = active.clone();
-        struct Active(Arc<AtomicUsize>);
-        impl Drop for Active {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let worker = tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let turn = worker_turns
-                .begin("network", TenantJobKind::NotificationDispatch)
+                .begin("slow", TenantJobKind::NotificationDispatch)
                 .unwrap();
-            deliver_batch(vec![0, 1], 2, std::time::Duration::from_millis(200), |_| {
+            deliver_batch(vec![0, 1], 2, |_| {
                 let turn = &turn;
                 let started = &started;
-                let active = worker_active.clone();
                 async move {
-                    super::admitted(Some(turn), || async { Ok(()) })
-                        .await
-                        .unwrap();
-                    active.fetch_add(1, Ordering::SeqCst);
-                    let _active = Active(active);
+                    admitted(Some(turn), || async { Ok(()) }).await.unwrap();
                     started.send(()).unwrap();
                     std::future::pending::<()>().await;
                     Ok::<(), ()>(())
@@ -508,90 +494,19 @@ mod tests {
         });
         observed.recv().await.unwrap();
         observed.recv().await.unwrap();
-        for kind in [
-            TenantJobKind::CalendarReminders,
-            TenantJobKind::AuthRetention,
-            TenantJobKind::AttendanceMaintenance,
-            TenantJobKind::FileReconciliation,
-        ] {
-            assert_eq!(
-                tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    turns.run("healthy", kind, || async { 7 })
-                )
-                .await
-                .unwrap(),
-                Some(7)
-            );
-        }
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                turns.run("other", TenantJobKind::AuthRetention, || async { 7 })
+            )
+            .await
+            .unwrap(),
+            Some(7)
+        );
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
         assert!(turns
-            .begin("network", TenantJobKind::NotificationDispatch)
-            .is_none());
-        assert_eq!(worker.await.unwrap().timed_out, 2);
-        assert_eq!(active.load(Ordering::SeqCst), 0);
-        assert!(turns
-            .begin("network", TenantJobKind::NotificationDispatch)
+            .begin("slow", TenantJobKind::NotificationDispatch)
             .is_some());
-    }
-
-    #[tokio::test]
-    async fn delivery_batch_bounds_concurrency_and_joins_failed_and_timed_out_siblings() {
-        struct Active(Arc<AtomicUsize>);
-        impl Drop for Active {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let active = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-        let completed = Arc::new(AtomicUsize::new(0));
-        let result = deliver_batch(
-            (0..10).collect(),
-            4,
-            std::time::Duration::from_millis(100),
-            |item| {
-                let active = Arc::clone(&active);
-                let peak = Arc::clone(&peak);
-                let completed = Arc::clone(&completed);
-                async move {
-                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    let _active = Active(active);
-                    peak.fetch_max(count, Ordering::SeqCst);
-                    if item == 0 {
-                        std::future::pending::<()>().await;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                    if item == 1 {
-                        return Err(());
-                    }
-                    completed.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                }
-            },
-        )
-        .await;
-        assert_eq!(
-            result,
-            BatchDelivery {
-                completed: 8,
-                failed: 1,
-                timed_out: 1
-            }
-        );
-        assert_eq!(
-            peak.load(Ordering::SeqCst),
-            4,
-            "independent work must overlap up to the bound"
-        );
-        assert_eq!(
-            active.load(Ordering::SeqCst),
-            0,
-            "no delivery may outlive the batch"
-        );
-        assert_eq!(
-            completed.load(Ordering::SeqCst),
-            8,
-            "one failure must not cancel siblings"
-        );
     }
 }

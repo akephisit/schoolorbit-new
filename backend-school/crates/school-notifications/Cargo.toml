@@ -13,6 +13,9 @@ api-docs = [
 
 [dependencies]
 school-database = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+url = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
 futures = { workspace = true }
