@@ -924,6 +924,20 @@ Screenshots use `/workspace/artifacts/staff-timetable-refinement/`.
 
 Subject catalog and facility workspace fixtures exercise compact filters and bounded results, create/detail forms, scoped capabilities, error and pending draft retention, and late-response ownership on mobile/desktop in both themes. Subject version fixtures also check decimal-string payloads and publication revisions; the two subject-version cases in `academic-core-cutover.spec.ts` cover published-history preservation and conflict draft retention with the current overview, Sheet, grade selector and DatePicker.
 
+Catalog grade snapshots use empty request scope as the intent to save all currently active school
+grades. The backend response and stored version contain explicit IDs. From `frontend-school`, run:
+
+```bash
+node --experimental-strip-types --test tests/runtime/catalog-grade-summary.test.ts tests/runtime/catalog-version-draft.test.ts tests/runtime/curriculum-catalog-selection.test.ts
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/catalog-grade-snapshots.spec.ts tests/e2e/academic-catalog-route-loading.spec.ts tests/e2e/subject-catalog-workspace.spec.ts tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium --workers=1
+```
+
+The synthetic browser fixtures cover course and activity creation with all or partial grades, a
+grade added between options loading and save, fixed publication/reopen coverage after another grade
+is added, inactive or unresolved selected IDs, required curriculum-level selection, and corrective
+published versions in both quick-add and full structure pickers while old pins remain unchanged.
+These cases model server normalization; disposable backend fixtures verify actual persistence.
+
 Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
 
 For deployed readonly route acceptance, use the ignored `frontend-school/.env.e2e.local` (mode `0600`) with HTTPS `E2E_BASE_URL`, `E2E_API_URL`, and pairs `E2E_STAFF_USERNAME/PASSWORD`, `E2E_STUDENT_USERNAME/PASSWORD`, `E2E_PARENT_USERNAME/PASSWORD`. The parent account must have a linked child with academic history in the same tenant. Supply values locally, never in a chat, command argument or Git. Node 24 loads this file explicitly; Playwright does not load it automatically.
@@ -1111,6 +1125,8 @@ Central catalog start-only revisions use disposable migration and service fixtur
 ./scripts/test_backend_school.sh catalog_year_independence -- --nocapture --test-threads=2
 ./scripts/test_backend_school.sh subject_revision -- --nocapture --test-threads=2
 ./scripts/test_backend_school.sh curriculum_current_subject -- --nocapture --test-threads=2
+./scripts/test_backend_school.sh catalog_grade_snapshot -- --test-threads=2
+./scripts/test_backend_school.sh --integration catalog_grade_snapshots_migration -- --test-threads=2
 ```
 
 These cases cover fresh schemas without academic years, dates outside or within overlapping
@@ -1636,7 +1652,6 @@ Against a local School frontend, run `E2E_BASE_URL=http://127.0.0.1:4173 npx pla
 
 Before operational use, enroll consenting synthetic/test subjects on the intended HTTPS tenant, pair an operator and webcam, and check single-person capture, lighting, look-alike refusal, present/late cutoff in Asia/Bangkok, manual fallback, private image access for linked guardians, every-guardian delivery, unchanged-save deduplication and correction messages. Test both selected and unselected calendar days. Verify scheduled digests, inbox reconciliation after offline use and business-acceptance retries using dedicated disposable accounts; consumed presentation is not retried; production acceptance remains separate from fixture results.
 
-
 ## Inbox-first notification regressions
 
 Use the canonical disposable runner for current acceptance/consumption, managed tenant phases,
@@ -2027,7 +2042,6 @@ tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser wo
 fixtures cover current-only additions, preserved pins with current-registry outdated badges
 and hidden revision numbers, explicit replacement, legacy duplicate buckets and conflict retention in the editor and read-only tables.
 
-
 Curriculum matrix contracts and default removal use the same owned disposable PostgreSQL runner:
 
 ```bash
@@ -2048,7 +2062,6 @@ current-only admission and unchanged denied access. Run affected copy/options an
 permission cases, Core/HTTP in default and `api-docs` modes, schema/Serde removed-input tests,
 and the existing API generate/check/test commands. These checks never use production data.
 
-
 From `frontend-school`, run the matrix and picker helper cases with the pinned Node 24 runtime:
 
 ```bash
@@ -2064,7 +2077,6 @@ replace deferred live UI acceptance.
 Quick-action cases verify whole-program scope and pinned-revision preservation, dirty closing,
 conflict recovery, keyboard and touch access, and bounded add panels. Overlay recovery cases verify
 background clicks, keyboard controls and matrix/page wheel scrolling after repeated closures.
-
 
 Custom curriculum program order uses owned disposable fixtures:
 
@@ -2165,7 +2177,6 @@ This optional native recipe assumes no target-triple override; OS, architecture,
 libraries must fit the operator host. Verify the approved revision, lockfile and artifact digest
 after transfer. Debug/test builds do not establish release compatibility. The wrapper never starts
 a server or substitutes another migration engine; production rollout uses the prepared main image.
-
 
 ### Owned load cleanup operation
 

@@ -1,3 +1,4 @@
+import { subjectGrade } from './fixtures/subject-catalog';
 import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
@@ -357,7 +358,7 @@ const namedActivityOverview = {
 				hoursPerTerm: '30.00',
 				schedulingMode: 'synchronized',
 				effectiveFrom: '2026-05-01',
-				gradeLevelIds: [],
+				gradeLevelIds: [subjectGrade.id],
 				status: 'published',
 				rowVersion: 1,
 				migrated: false,
@@ -368,12 +369,12 @@ const namedActivityOverview = {
 			},
 			displayState: 'current',
 			draftCount: 0,
-			gradeLevels: [],
+			gradeLevels: [subjectGrade],
 			canManage: true,
 			canDelete: false
 		}
 	],
-	gradeLevelOptions: [],
+	gradeLevelOptions: [subjectGrade],
 	canCreate: true
 } satisfies CatalogActivityOverview;
 
@@ -605,6 +606,9 @@ test('edited activity version hours remain decimal strings and required blanks d
 						const created: ActivityVersion = {
 							...versions[0],
 							...payload,
+							gradeLevelIds: payload.gradeLevelIds.length
+								? payload.gradeLevelIds
+								: [subjectGrade.id],
 							id: 'new-activity-version',
 							versionNo: 2,
 							status: 'draft',

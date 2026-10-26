@@ -1002,3 +1002,53 @@ async fn subject_zero_workload_keeps_negative_missing_and_credit_guards() {
         );
     }
 }
+
+#[tokio::test]
+async fn catalog_grade_snapshot_existing_empty_pins_resave_without_new_admission() {
+    let f = fixture("catalog_grade_snapshot_existing_pins").await;
+    // A sanitized pre-fix published subject retains its immutable empty scope.
+    sqlx::query("DELETE FROM subject_version_grade_levels WHERE subject_id=$1")
+        .bind(f.v1.id).execute(&f.pool).await.unwrap();
+    seed_existing(&f, f.v1.id).await;
+    let activity = catalog::create_activity(&f.pool, CreateCatalogActivityRequest { activity_type: "guidance".into() }).await.unwrap();
+    let activity = catalog::create_activity_version(&f.pool, activity.id, CreateActivityVersionRequest {
+        name: "กิจกรรมประวัติ".into(), description: None, hours_per_week: "1.00".into(),
+        hours_per_term: Some("20.00".into()), scheduling_mode: "synchronized".into(),
+        effective_from: catalog::subject_catalog_today(), term_code: None, grade_level_ids: vec![f.grade],
+    }).await.unwrap();
+    sqlx::query("UPDATE activity_versions SET grade_level_ids='[]',status='published',published_at=now() WHERE id=$1")
+        .bind(activity.id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO curriculum_activity_requirements(id,curriculum_level_id,study_program_id,activity_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'required',2)")
+        .bind(f.level).bind(f.program.id).bind(activity.id).bind(f.grade).bind(f.slot).execute(&f.pool).await.unwrap();
+    let mut event = row(&f, activity.id);
+    event.resource_kind = RequirementResourceKind::Activity;
+    event.display_order = 2;
+    save(&f, vec![row(&f, f.v1.id), event.clone()]).await.unwrap();
+    assert!(catalog::get_subject_version(&f.pool, f.v1.id).await.unwrap().grade_level_ids.is_empty());
+    assert!(catalog::get_activity_version(&f.pool, activity.id).await.unwrap().grade_level_ids.is_empty());
+    let other_grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2").fetch_one(&f.pool).await.unwrap();
+    let mut new_course = row(&f, f.v1.id);
+    new_course.grade_level_id = other_grade;
+    let before = snapshot(&f).await;
+    assert!(save(&f, vec![row(&f, f.v1.id), new_course, event.clone()]).await.is_err());
+    assert_eq!(before, snapshot(&f).await);
+    event.grade_level_id = other_grade;
+    assert!(save(&f, vec![row(&f, f.v1.id), event]).await.is_err());
+    assert_eq!(before, snapshot(&f).await);
+    // Removing a preserved pin never makes it admissible again.
+    save(&f, vec![]).await.unwrap();
+    assert!(save(&f, vec![row(&f, f.v1.id)]).await.is_err());
+}
+
+#[tokio::test]
+async fn catalog_grade_snapshot_existing_nonempty_pin_does_not_bypass_scope() {
+    let f = fixture("catalog_grade_snapshot_nonempty_pin").await;
+    let other_grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2").fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'required',1)")
+        .bind(f.level).bind(f.program.id).bind(f.v1.id).bind(other_grade).bind(f.slot).execute(&f.pool).await.unwrap();
+    let mut invalid = row(&f, f.v1.id);
+    invalid.grade_level_id = other_grade;
+    let before = snapshot(&f).await;
+    assert!(save(&f, vec![invalid]).await.is_err());
+    assert_eq!(before, snapshot(&f).await);
+}
