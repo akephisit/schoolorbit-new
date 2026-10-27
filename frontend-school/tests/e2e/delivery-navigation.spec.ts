@@ -15,6 +15,16 @@ async function expectRequestedContext(page: Page) {
 			url.searchParams.get('academicTermId') === ids.term &&
 			url.searchParams.get('deliveryVersionId') === ids.version
 	);
+	// AcademicContextSwitcher uses Tailwind's lg breakpoint for its desktop controls.
+	if (!(await page.evaluate(() => matchMedia('(min-width: 64rem)').matches))) {
+		const context = page.getByRole('banner').getByRole('button', {
+			name: 'ปีการศึกษาและภาคเรียน 2570 · ภาคเรียนที่ 2',
+			exact: true
+		});
+		await expect(context).toBeVisible();
+		await expect(context).toHaveText('2570 · ภาคเรียนที่ 2');
+		return;
+	}
 	await expect(page.getByRole('combobox', { name: 'เลือกปีการศึกษา', exact: true })).toContainText(
 		'2570'
 	);
@@ -85,13 +95,20 @@ for (const width of [390, 1280]) {
 		await search.fill('ม.1/');
 		await expectRoomContext(page);
 		expect(api.count('/api/academic/delivery/homerooms')).toBe(before);
-		await expect(roomB.locator('tbody tr td:first-child p.font-medium')).toHaveText([
+		const expectedNames = [
 			'คณิตศาสตร์ต้น',
 			'คณิตศาสตร์ปลาย',
 			'คณิตศาสตร์เพิ่มเติม',
 			'ภาษาไทยเก่า',
 			'ชุมนุม'
-		]);
+		];
+		const rows = roomB.locator('tbody tr');
+		await expect(rows).toHaveCount(expectedNames.length);
+		for (const [index, name] of expectedNames.entries()) {
+			await expect(
+				rows.nth(index).getByRole('cell').first().getByText(name, { exact: true })
+			).toBeVisible();
+		}
 		await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
 		const link = roomB.getByRole('link', { name: 'จัดการ คณิตศาสตร์ต้น', exact: true });
 		const href = await link.getAttribute('href');
