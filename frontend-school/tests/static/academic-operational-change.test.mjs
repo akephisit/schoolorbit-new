@@ -38,6 +38,7 @@ test('delivery versions expose immutable source data and permission-gated versio
 	const table = await readProjectFile(
 		'src/lib/components/learning-delivery/DeliveryVersionOverviewTable.svelte'
 	);
+	const presentation = await readProjectFile('src/lib/academic/learning-delivery-presentation.ts');
 
 	assert.match(page, /AcademicChangeSetDialog/);
 	assert.match(page, /{#if canManage[\s\S]*<AcademicChangeSetDialog/);
@@ -50,7 +51,8 @@ test('delivery versions expose immutable source data and permission-gated versio
 	assert.match(page, /const routeResult = data\.changeSetSummaries/);
 	assert.match(page, /const routeResult = data\.selectedChangeSet/);
 	assert.doesNotMatch(page, /applyPageView|data\.pageView/);
-	assert.match(table, /version.snapshot.offerings/);
+	assert.match(table, /filterDeliveryOfferings\(version, filters\)/);
+	assert.match(presentation, /version.snapshot.offerings/);
 	assert.match(table, /deliveryVersionId: version.id/);
 	assert.match(table, /weeklyPeriodTarget/);
 	assert.match(page, /สร้างรุ่นเปิดสอน/);
@@ -151,7 +153,7 @@ test('published teachers stay locked and exceptional changes use the typed chang
 	assert.match(detail, /offering\?\.status === 'cancelled' \|\| offering\?\.status === 'closed'/);
 	assert.match(detail, /canManage={canMutateOffering}/);
 	assert.match(detail, /if \(!canMutateOffering/);
-	assert.match(panel, /changeSet\.status === 'draft' \? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'/);
+	assert.match(panel, /changeSet\.status === 'draft'\s*\?\s*'จัดกลุ่มและครู'\s*:\s*'ดูรายละเอียด'/);
 	assert.match(panel, /AcademicTeacherChangeForm/);
 	assert.match(panel, /TeacherHandoffPanel/);
 	assert.doesNotMatch(panel, /replaceLearningGroupTeachers/);

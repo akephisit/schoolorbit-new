@@ -116,7 +116,11 @@
 							).length}/{item.groups.length} กลุ่ม</Table.Cell
 						>
 						<Table.Cell
-							><Button variant="outline" size="sm" href={detailUrl(item.id)}>รายละเอียด</Button
+							><Button
+								variant="outline"
+								size="sm"
+								href={detailUrl(item.id)}
+								data-sveltekit-preload-data="tap">รายละเอียด</Button
 							></Table.Cell
 						>
 					</Table.Row>

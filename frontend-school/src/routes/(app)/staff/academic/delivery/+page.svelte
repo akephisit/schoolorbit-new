@@ -63,9 +63,8 @@
 	} from '#lib/navigation/learning-delivery.js';
 
 	let { data }: { data: PageData } = $props();
-	const overviewUrl = $derived(page.shallow?.url ?? page.url);
+	const overviewUrl = $derived(new URL((page.shallow?.url ?? page.url).href));
 	const viewState = $derived(readDeliveryOverviewState(overviewUrl));
-	const returnTo = $derived(workspace ? deliveryOverviewReturnHref(overviewUrl, workspace) : '');
 	const academicYearId = $derived(data.context?.academicYearId ?? null);
 	const academicTermId = $derived(data.context?.academicTermId ?? null);
 	const homeroomRequest = new LatestRequest();
@@ -125,6 +124,7 @@
 		};
 	});
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
+	const returnTo = $derived(workspace ? deliveryOverviewReturnHref(overviewUrl, workspace) : '');
 	let overview = $state.raw<DeliveryVersion | null>(null);
 	let revisionOfferings = $state.raw<DeliveryVersion['snapshot']['offerings']>([]);
 	let changeSets = $state.raw<AcademicTermChangeSetSummary[]>([]);
@@ -362,7 +362,7 @@
 		void goto(deliveryOverviewStateHref(overviewUrl, patch), {
 			shallow: true,
 			replace: true,
-			noScroll: true,
+			reset: false,
 			state: page.state
 		});
 	}

@@ -169,6 +169,9 @@ export function navigationWorkspace(): HomeroomDeliveryWorkspace {
 				name: 'แผนคณิตศาสตร์',
 				editionId: navigationIds.curriculum,
 				levelName: 'หลักสูตรมัธยม',
+				curriculumLevelId: navigationIds.curriculum,
+				displayOrder: 1,
+				editionName: 'หลักสูตร 2570',
 				gradeLevelIds: [navigationIds.grade]
 			},
 			curriculumLevelId: navigationIds.curriculum,

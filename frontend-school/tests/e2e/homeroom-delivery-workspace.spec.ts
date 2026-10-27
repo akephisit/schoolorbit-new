@@ -86,6 +86,7 @@ function homeroomWorkspace(
 						code: 'ค21101',
 						name: 'คณิตศาสตร์พื้นฐาน',
 						requirementKind: 'required',
+						subjectType: 'BASIC',
 						offeringId: ids.offering,
 						offeringState: 'draft',
 						groupMode: 'combined',
@@ -309,6 +310,7 @@ async function mockDelivery(
 					academicYearId: ids.year,
 					academicTermId: ids.term,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings: [] }
 				});
 				return;
@@ -780,6 +782,7 @@ async function mockDraftLifecycle(
 			status: 'draft',
 			effectiveFrom: null,
 			referenceDate: '2027-08-01',
+			courseMetadata: [],
 			snapshot: {
 				offerings: [
 					{ id: ids.offering, groups: [{ id: ids.group }] },
@@ -977,6 +980,7 @@ async function mockActivityActivation(
 		);
 		Object.assign(workspace.homerooms[0].items[0], {
 			resourceKind: 'activity',
+			subjectType: null,
 			code: 'CLUB',
 			name: 'ชุมนุม',
 			schedulingMode: 'synchronized',
@@ -1649,6 +1653,7 @@ for (const viewport of [
 					academicTermId: ids.term,
 					sourceVersionId: null,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings: [offering] }
 				})
 			);
@@ -1780,6 +1785,7 @@ for (const viewport of [
 					academicTermId: ids.term,
 					sourceVersionId: null,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings }
 				})
 			);

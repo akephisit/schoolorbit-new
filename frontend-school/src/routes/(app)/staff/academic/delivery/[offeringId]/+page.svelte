@@ -69,7 +69,7 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
-	const detailUrl = $derived(page.shallow?.url ?? page.url);
+	const detailUrl = $derived(new URL((page.shallow?.url ?? page.url).href));
 	const offeringRequest = new LatestRequest();
 	const groupsRequest = new LatestRequest();
 	const versionsRequest = new LatestRequest();
@@ -103,18 +103,19 @@
 			: '/staff/academic/delivery';
 	});
 	$effect(() => {
-		if (!offering || !contextMismatch) return;
+		const currentOffering = offering;
+		if (!currentOffering || !contextMismatch) return;
 		const requestedVersion = detailUrl.searchParams.get('deliveryVersionId');
 		if (requestedVersion && versionsLoading) return;
 		const verified = deliveryVersions.find(
 			(summary) =>
-				summary.id === requestedVersion && summary.academicTermId === offering.academicTermId
+				summary.id === requestedVersion && summary.academicTermId === currentOffering.academicTermId
 		);
 		const repaired = repairedDeliveryOfferingHref(detailUrl, {
-			...offering,
+			...currentOffering,
 			deliveryVersionId: verified?.id
 		});
-		if (repaired) void goto(repaired, { replace: true, noScroll: true, state: page.state });
+		if (repaired) void goto(repaired, { replace: true, reset: false, state: page.state });
 	});
 	let groups = $state.raw<LearningGroup[]>([]);
 	let selectedGroup = $state.raw<LearningGroup | null>(null);
