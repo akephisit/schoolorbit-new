@@ -2321,6 +2321,39 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             .await
             .unwrap();
     assert_eq!(course_group_count, 1);
+    let course = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.id == course_offering_id)
+        .unwrap();
+    let course_finding = publication_preview(&pool, change_set.id)
+        .await
+        .unwrap()
+        .findings
+        .into_iter()
+        .find(|finding| {
+            finding.learning_offering_id == Some(course_offering_id)
+                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+        })
+        .expect("the added course without a primary teacher must expose its readiness finding");
+    let course_group = &course.groups[0];
+    assert_eq!(
+        course_finding.title,
+        format!(
+            "{} — {} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
+            course.code, course.name, course_group.name
+        ),
+    );
+    assert_eq!(course_finding.learning_group_id, Some(course_group.id));
+    assert_eq!(course_finding.resource_id, Some(target.id));
+    assert_eq!(
+        course_finding.route,
+        Some(format!(
+            "/staff/academic/delivery/{course_offering_id}?deliveryVersionId={}",
+            target.id,
+        ))
+    );
 
     let without_course = change_sets::delete_change_item(
         &pool,
@@ -2386,6 +2419,67 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
     let activity_target = target.snapshot.offerings.iter().find(|item| item.kind==LearningOfferingKind::Activity && matches!(&item.catalog,LearningOfferingSnapshot::Activity(activity) if activity.activity_version_id==activity_version_id)).map(|item| item.weekly_period_target);
     assert_eq!(activity_target, Some(2));
     assert_eq!(with_activity.items.len(), 1);
+    let activity = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| {
+            offering.kind == LearningOfferingKind::Activity
+                && matches!(&offering.catalog, LearningOfferingSnapshot::Activity(activity)
+                if activity.activity_version_id == activity_version_id)
+        })
+        .unwrap();
+    let activity_group = groups::create(
+        &pool,
+        context.teacher_id,
+        activity.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มกิจกรรมรอครูหลัก".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let preview = publication_preview(&pool, change_set.id).await.unwrap();
+    let activity_finding = preview
+        .findings
+        .iter()
+        .find(|finding| {
+            finding.learning_offering_id == Some(activity.id)
+                && finding.learning_group_id == Some(activity_group.id)
+                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+        })
+        .expect("the activity without a primary teacher must expose its readiness finding");
+    assert!(!activity_finding.title.contains(&activity.code));
+    assert_eq!(
+        activity_finding.title,
+        format!(
+            "{} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
+            activity.name, activity_group.name
+        ),
+    );
+    assert_eq!(activity_finding.learning_group_id, Some(activity_group.id));
+    assert_eq!(activity_finding.resource_id, Some(target.id));
+    assert_eq!(
+        activity_finding.severity,
+        AcademicChangeFindingSeverity::Blocking
+    );
+    assert_eq!(activity_finding.guidance, "เลือกครูหลักให้กลุ่มเรียนก่อนเผยแพร่");
+    assert_eq!(
+        activity_finding.route,
+        Some(format!(
+            "/staff/academic/delivery/{}?deliveryVersionId={}",
+            activity.id, target.id,
+        ))
+    );
+    let repeated = publication_preview(&pool, change_set.id).await.unwrap();
+    assert_eq!(repeated.preview_hash, preview.preview_hash);
+    assert_eq!(
+        serde_json::to_value(repeated.findings).unwrap(),
+        serde_json::to_value(&preview.findings).unwrap()
+    );
 }
 
 #[tokio::test]

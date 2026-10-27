@@ -405,11 +405,18 @@ test('creating an activity with groups navigates with the created offering conte
 	await dialog.getByRole('combobox', { name: 'ประเภท', exact: true }).click();
 	await page.getByRole('option', { name: 'กิจกรรมพัฒนาผู้เรียน', exact: true }).click();
 	for (const [control, option] of [
-		['เลือกกิจกรรม', 'ชุมนุม'],
+		['เลือกกิจกรรม', 'ชุมนุม (ฉบับ 3)'],
 		['เลือกระดับชั้น', 'มัธยมศึกษาปีที่ 1'],
 		['เลือกแผนการเรียน', 'แผนคณิตศาสตร์']
-	])
-		await choose(page, control, option);
+	]) {
+		await dialog.getByRole('combobox', { name: control, exact: true }).click();
+		const visibleOption = page
+			.getByRole('option')
+			.filter({ has: page.getByText(option, { exact: true }) });
+		await expect(visibleOption).toBeVisible();
+		await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
+		await visibleOption.click();
+	}
 	await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
 	await dialog.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
 	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
@@ -432,9 +439,12 @@ test('creating an activity with groups navigates with the created offering conte
 test('readiness repair links preserve the selected version and all originating view filters', async ({
 	page
 }) => {
-	await mockDeliveryNavigation(page, { manager: true, readiness: true });
+	await mockDeliveryNavigation(page, { manager: true, readiness: 'course' });
 	await page.goto(managerOrigin('offerings', ids.version, true));
 	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await expect(
+		page.getByText('ค21101 — คณิตศาสตร์ต้น: ยังไม่มีกลุ่มเรียน', { exact: true })
+	).toBeVisible();
 	const link = page.getByRole('link', { name: 'ไปแก้ไข', exact: true });
 	await expect(link).toBeVisible();
 	const target = new URL((await link.getAttribute('href'))!, page.url());
@@ -450,4 +460,29 @@ test('readiness repair links preserve the selected version and all originating v
 	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
 	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
 	await expectManagerOrigin(page, 'offerings', true);
+});
+
+test('activity readiness uses the producer name without technical codes and restores activity filters after repair', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page, { manager: true, readiness: 'activity' });
+	await page.goto(managerOrigin('offerings'));
+	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
+	await expectRequestedContext(page);
+	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
+	const link = page.getByRole('link', { name: 'ไปแก้ไข', exact: true });
+	const target = new URL((await link.getAttribute('href'))!, page.url());
+	expect(target.pathname).toBe(`/staff/academic/delivery/${offerings.club}`);
+	expect(target.searchParams.get('academicYearId')).toBe(ids.year);
+	expect(target.searchParams.get('academicTermId')).toBe(ids.term);
+	expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
+	await link.click();
+	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'ชุมนุม', level: 1, exact: true })).toBeVisible();
+	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
+	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+	await expectManagerOrigin(page, 'offerings');
+	await expect(page.getByTestId('delivery-offerings-ready').locator('tbody tr')).toHaveCount(1);
+	expect(api.writes).toEqual([]);
 });

@@ -5,7 +5,9 @@ import type {
 	HomeroomDeliveryWorkspace,
 	LearningOffering,
 	CreateLearningOfferingRequest,
-	AcademicTermChangeSet
+	AcademicTermChangeSet,
+	AcademicChangeFinding,
+	DeliveryManagementOptions
 } from '../../../src/lib/api/learning-delivery.js';
 
 const uuid = (number: number) => `10000000-0000-4000-8000-${String(number).padStart(12, '0')}`;
@@ -249,13 +251,27 @@ export async function mockDeliveryNavigation(
 		manager?: boolean;
 		continuation?: boolean;
 		groupedCreation?: boolean;
-		readiness?: boolean;
+		readiness?: 'course' | 'activity';
 	} = {}
 ) {
 	const reads: URL[] = [];
 	const writes: string[] = [];
 	const creations: CreateLearningOfferingRequest[] = [];
 	let created = false;
+	const findingOffering =
+		options.readiness === 'activity' ? navigationOfferingIds.club : navigationOfferingIds.basic21;
+	const finding: AcademicChangeFinding = {
+		severity: 'blocking',
+		code: 'missing_delivery_group',
+		affectedCount: 1,
+		learningOfferingId: findingOffering,
+		title:
+			options.readiness === 'activity'
+				? 'ชุมนุม: ยังไม่มีกลุ่มเรียน'
+				: 'ค21101 — คณิตศาสตร์ต้น: ยังไม่มีกลุ่มเรียน',
+		guidance: 'จัดกลุ่มก่อนเผยแพร่',
+		route: `/staff/academic/delivery/${findingOffering}?deliveryVersionId=${navigationIds.version}`
+	};
 	const changeSet: AcademicTermChangeSet = {
 		id: navigationIds.changeSet,
 		academicYearId: navigationIds.year,
@@ -437,17 +453,7 @@ export async function mockDeliveryNavigation(
 						targetTimetableEntries: 0,
 						teacherAssignments: 0
 					},
-					findings: [
-						{
-							severity: 'blocking',
-							code: 'missing_delivery_group',
-							affectedCount: 1,
-							learningOfferingId: navigationOfferingIds.basic21,
-							title: 'ยังไม่มีกลุ่มเรียน',
-							guidance: 'จัดกลุ่มก่อนเผยแพร่',
-							route: `/staff/academic/delivery/${navigationOfferingIds.basic21}?deliveryVersionId=${navigationIds.version}`
-						}
-					]
+					findings: [finding]
 				});
 			if (path === '/api/academic/delivery/management-options')
 				return reply(route, {
@@ -463,11 +469,14 @@ export async function mockDeliveryNavigation(
 						{
 							id: navigationOfferingIds.club,
 							kind: 'activity',
-							label: 'ชุมนุม',
+							code: 'ACT-TECHNICAL-CLUB',
+							label: 'ACT-TECHNICAL-CLUB — ชุมนุม (ฉบับ 3)',
 							name: 'ชุมนุม',
-							schedulingMode: 'synchronized'
+							versionNo: 3,
+							schedulingMode: 'synchronized',
+							standardPeriodsPerWeek: null
 						}
-					]
+					] satisfies DeliveryManagementOptions['catalogVersions']
 				});
 			if (path === '/api/academic/offerings' && request.method() === 'POST') {
 				creations.push(request.postDataJSON());

@@ -54,7 +54,7 @@
 			.filter((item) => item.kind === draft.kind)
 			.map((item) => ({
 				id: item.id,
-				label: item.label,
+				label: item.kind === 'activity' ? `${item.name} (ฉบับ ${item.versionNo})` : item.label,
 				description: item.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'
 			}))
 	);
