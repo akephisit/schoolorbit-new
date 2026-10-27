@@ -287,7 +287,8 @@ pub struct CurrentActivityRevision {
     pub version_no: i32,
 }
 
-/// Read-time current metadata only; this does not restrict activity addition eligibility.
+/// Current published metadata; callers making write decisions hold stable-activity locks until
+/// their transaction commits. Read-only metadata consumers need no catalog locks.
 pub async fn current_activity_revisions_on_connection(
     connection: &mut sqlx::PgConnection,
     activity_ids: &[Uuid],

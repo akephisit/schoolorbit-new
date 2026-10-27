@@ -1663,3 +1663,385 @@ async fn curriculum_current_activity_preserves_draft_history_and_copied_pins() {
     assert_eq!(saved.requirements[0].catalog_version_id, old.id);
     assert!(saved.requirements[0].has_newer_current_version);
 }
+
+#[tokio::test]
+async fn curriculum_current_activity_options_admit_only_provider_current_and_keep_metadata() {
+    let f = fixture("curriculum_current_activity_admission").await;
+    let today = catalog::subject_catalog_today();
+    let activity = stable_activity(&f).await;
+    let old = activity_revision(&f, activity, "กิจกรรมเดิม", today, VersionStatus::Published).await;
+    let current =
+        activity_revision(&f, activity, "กิจกรรมปัจจุบัน", today, VersionStatus::Published).await;
+    let draft = activity_revision(&f, activity, "ร่างกิจกรรม", today, VersionStatus::Draft).await;
+    let earlier = activity_revision(
+        &f,
+        activity,
+        "เลขสูงแต่เริ่มก่อน",
+        today.pred_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    let future = activity_revision(
+        &f,
+        activity,
+        "กิจกรรมอนาคต",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    let unavailable = stable_activity(&f).await;
+    let future_only = activity_revision(
+        &f,
+        unavailable,
+        "ยังไม่มีฉบับปัจจุบัน",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    let unavailable_draft =
+        activity_revision(&f, unavailable, "ร่างที่เริ่มแล้ว", today, VersionStatus::Draft).await;
+    let archived = activity_revision(
+        &f,
+        unavailable,
+        "ฉบับเก็บถาวร",
+        today,
+        VersionStatus::Archived,
+    )
+    .await;
+    let filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let options = workspaces::curriculum_management_options(&f.pool, f.level, &filter)
+        .await
+        .unwrap();
+    for version in [&old, &current, &earlier, &future, &future_only] {
+        let option = options
+            .catalog_versions
+            .iter()
+            .find(|option| option.id == version.id)
+            .unwrap();
+        assert_eq!(option.resource_kind, RequirementResourceKind::Activity);
+        assert_eq!(option.catalog_id, version.activity_id);
+        assert_eq!(option.name, version.name);
+        assert_eq!(option.version_no, version.version_no);
+        assert_eq!(option.grade_level_ids, vec![f.grade]);
+        assert_eq!(
+            option.selectable_for_new_requirement,
+            version.id == current.id
+        );
+    }
+    for version in [&draft, &unavailable_draft, &archived] {
+        assert!(!options
+            .catalog_versions
+            .iter()
+            .any(|option| option.id == version.id));
+    }
+    let before = activity_persistence_snapshot(&f).await;
+    // A caller cannot bypass eligibility by submitting a hidden, wrong-kind or unknown ID.
+    for version in [
+        old.id,
+        earlier.id,
+        future.id,
+        future_only.id,
+        draft.id,
+        unavailable_draft.id,
+        archived.id,
+        f.v1.id,
+        Uuid::new_v4(),
+    ] {
+        assert!(matches!(
+            save(&f, vec![activity_row(&f, version)]).await,
+            Err(school_errors::AppError::Conflict(_))
+        ));
+        assert_eq!(before, activity_persistence_snapshot(&f).await);
+    }
+    let admitted = save(&f, vec![row(&f, f.v1.id), activity_row(&f, current.id)])
+        .await
+        .unwrap();
+    assert_eq!(admitted.requirements.len(), 2);
+    assert!(admitted
+        .requirements
+        .iter()
+        .all(|item| !item.has_newer_current_version));
+    let other_grade: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    let mut unsupported = activity_row(&f, current.id);
+    unsupported.grade_level_id = other_grade;
+    let before = activity_persistence_snapshot(&f).await;
+    assert!(matches!(
+        save(&f, vec![unsupported]).await,
+        Err(school_errors::AppError::ValidationError(_))
+    ));
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+    assert!(matches!(
+        workspaces::curriculum_management_options(
+            &f.pool,
+            f.level,
+            &AcademicResourceListFilter::default()
+        )
+        .await,
+        Err(school_errors::AppError::Forbidden(_))
+    ));
+    let request = ReplaceCurriculumStructureRequest {
+        draft_id: resource_draft_id(&f.pool, f.program.id).await,
+        requirements: vec![activity_row(&f, current.id)],
+        row_version: f.program.row_version,
+    };
+    assert!(matches!(
+        curriculum_structure::replace_program_structure(&f.pool, Uuid::new_v4(), request.clone())
+            .await,
+        Err(school_errors::AppError::NotFound(_))
+    ));
+    let other_tenant =
+        school_test_db::create_named_test_pool("curriculum_current_activity_other_tenant").await;
+    apply_migrations_through(&other_tenant, 135).await.unwrap();
+    assert!(matches!(
+        curriculum_structure::replace_program_structure(&other_tenant, f.program.id, request).await,
+        Err(school_errors::AppError::NotFound(_))
+    ));
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+}
+
+#[tokio::test]
+async fn curriculum_current_activity_preserves_copied_legacy_buckets_and_requires_replacement() {
+    let mut f = fixture("curriculum_current_activity_legacy").await;
+    let today = catalog::subject_catalog_today();
+    let activity = stable_activity(&f).await;
+    let old = activity_revision(&f, activity, "กิจกรรมเก่า", today, VersionStatus::Published).await;
+    save(&f, vec![activity_row(&f, old.id)]).await.unwrap();
+    let current =
+        activity_revision(&f, activity, "กิจกรรมปัจจุบัน", today, VersionStatus::Published).await;
+    let future = activity_revision(
+        &f,
+        activity,
+        "กิจกรรมอนาคตที่เคยเพิ่มได้",
+        today.succ_opt().unwrap(),
+        VersionStatus::Published,
+    )
+    .await;
+    // Pre-policy duplicate bucket: every published activity revision used to be admissible.
+    seed_existing_activity(&f, future.id).await;
+    let saved = save(
+        &f,
+        vec![activity_row(&f, old.id), activity_row(&f, future.id)],
+    )
+    .await
+    .unwrap();
+    publish_level_fixture(
+        &f.pool,
+        f.level,
+        PublishVersionRequest {
+            row_version: saved.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let destination = curriculum::create(
+        &f.pool,
+        CreateCurriculumRequest {
+            name: "สำเนากิจกรรมประวัติ".into(),
+            revision_year: 2570,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let level = curriculum::create_level(
+        &f.pool,
+        destination.id,
+        CreateCurriculumLevelRequest {
+            draft_id: destination.draft_id.unwrap(),
+            name_th: "สำเนา".into(),
+            grade_level_ids: vec![f.grade],
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let source = curriculum::get_program(&f.pool, f.program.id)
+        .await
+        .unwrap();
+    let copied = curriculum::copy_program(
+        &f.pool,
+        level.id,
+        CopyStudyProgramRequest {
+            draft_id: destination.draft_id.unwrap(),
+            source_program_id: source.id,
+            source_row_version: source.row_version,
+            destination_row_version: level.row_version,
+            name_th: None,
+        },
+    )
+    .await
+    .unwrap();
+    f.edition = destination.id;
+    f.level = level.id;
+    f.program = copied;
+    let workspace = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    assert_eq!(workspace.requirements.len(), 2);
+    for version in [&old, &future] {
+        let pin = workspace
+            .requirements
+            .iter()
+            .find(|item| item.catalog_version_id == version.id)
+            .unwrap();
+        assert_eq!(pin.catalog_id, activity);
+        assert_eq!(pin.name, version.name);
+        assert_eq!(pin.version_no, version.version_no);
+        assert_eq!(pin.has_newer_current_version, version.id == old.id);
+    }
+    f.slot = workspace.requirements[0].term_slot_id;
+    let mut retained = activity_row(&f, old.id);
+    retained.display_order = 7;
+    retained.requirement_kind = RequirementKind::Elective;
+    let saved = save(&f, vec![retained.clone(), activity_row(&f, future.id)])
+        .await
+        .unwrap();
+    assert_eq!(saved.requirements.len(), 2);
+    let before = activity_persistence_snapshot(&f).await;
+    let duplicate = save(
+        &f,
+        vec![
+            retained.clone(),
+            activity_row(&f, future.id),
+            activity_row(&f, current.id),
+        ],
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(duplicate, school_errors::AppError::Conflict(message) if message.contains("กิจกรรม") && message.contains("ลบรายการเดิม"))
+    );
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+    let other_grade: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=2")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    for version in [old.id, future.id] {
+        for (grade, slot) in [(other_grade, f.slot), (f.grade, saved.term_slots[1].id)] {
+            let mut introduced = activity_row(&f, version);
+            introduced.grade_level_id = grade;
+            introduced.term_slot_id = slot;
+            assert!(matches!(
+                save(
+                    &f,
+                    vec![retained.clone(), activity_row(&f, future.id), introduced]
+                )
+                .await,
+                Err(school_errors::AppError::Conflict(_))
+            ));
+            assert_eq!(before, activity_persistence_snapshot(&f).await);
+        }
+    }
+    // Reducing an existing duplicate bucket preserves the exact remaining pin.
+    let reduced = save(&f, vec![activity_row(&f, future.id)]).await.unwrap();
+    assert_eq!(reduced.requirements.len(), 1);
+    assert_eq!(reduced.requirements[0].catalog_version_id, future.id);
+    save(&f, vec![]).await.unwrap();
+    let empty = activity_persistence_snapshot(&f).await;
+    for version in [old.id, future.id] {
+        assert!(matches!(
+            save(&f, vec![activity_row(&f, version)]).await,
+            Err(school_errors::AppError::Conflict(_))
+        ));
+        assert_eq!(empty, activity_persistence_snapshot(&f).await);
+    }
+    let replaced = save(&f, vec![activity_row(&f, current.id)]).await.unwrap();
+    assert_eq!(replaced.requirements[0].catalog_version_id, current.id);
+    let newer = activity_revision(
+        &f,
+        activity,
+        "กิจกรรมฉบับใหม่ล่าสุด",
+        today,
+        VersionStatus::Published,
+    )
+    .await;
+    let before = activity_persistence_snapshot(&f).await;
+    assert!(matches!(
+        save(
+            &f,
+            vec![activity_row(&f, current.id), activity_row(&f, newer.id)]
+        )
+        .await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+    let replaced = save(&f, vec![activity_row(&f, newer.id)]).await.unwrap();
+    assert_eq!(replaced.requirements.len(), 1);
+    assert_eq!(replaced.requirements[0].catalog_version_id, newer.id);
+    assert!(!replaced.requirements[0].has_newer_current_version);
+}
+
+#[tokio::test]
+async fn curriculum_current_activity_save_waits_for_publication_lock_and_rolls_back_stale_selection(
+) {
+    let f = fixture("curriculum_current_activity_race").await;
+    let today = catalog::subject_catalog_today();
+    let activity = stable_activity(&f).await;
+    let old = activity_revision(
+        &f,
+        activity,
+        "ตัวเลือกก่อนเผยแพร่",
+        today,
+        VersionStatus::Published,
+    )
+    .await;
+    let draft =
+        activity_revision(&f, activity, "ตัวเลือกหลังเผยแพร่", today, VersionStatus::Draft).await;
+    let options = workspaces::curriculum_management_options(
+        &f.pool,
+        f.level,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        options
+            .catalog_versions
+            .iter()
+            .find(|item| item.id == old.id)
+            .unwrap()
+            .selectable_for_new_requirement
+    );
+    let before = activity_persistence_snapshot(&f).await;
+    let mut publisher = f.pool.begin().await.unwrap();
+    catalog::lock_activities_for_revision_selection(&mut publisher, &[activity])
+        .await
+        .unwrap();
+    let save_future = save(&f, vec![row(&f, f.v1.id), activity_row(&f, old.id)]);
+    tokio::pin!(save_future);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut save_future)
+            .await
+            .is_err(),
+        "save must await the stable activity lock used by publication"
+    );
+    sqlx::query("UPDATE activity_versions SET status='published',published_at=now(),row_version=row_version+1 WHERE id=$1").bind(draft.id).execute(&mut *publisher).await.unwrap();
+    publisher.commit().await.unwrap();
+    assert!(matches!(
+        save_future.await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    let after = activity_persistence_snapshot(&f).await;
+    assert_eq!(before["program"], after["program"]);
+    assert_eq!(before["requirements"], after["requirements"]);
+    assert_eq!(before["publications"], after["publications"]);
+    let course_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM curriculum_course_requirements WHERE study_program_id=$1",
+    )
+    .bind(f.program.id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(course_count, 0);
+}

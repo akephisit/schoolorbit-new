@@ -116,7 +116,8 @@ export function curriculumCatalogFixture(
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
 			versionNo: 1,
-			effectiveFrom: '2027-05-01'
+			effectiveFrom: '2025-05-01',
+			selectableForNewRequirement: false
 		},
 		{
 			...current,
@@ -128,12 +129,18 @@ export function curriculumCatalogFixture(
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
 			versionNo: 2,
-			effectiveFrom: '2027-06-01'
+			effectiveFrom: '2026-05-01'
 		}
 	];
+	const currentActivity = catalog.find((item) => item.id === 'activity-v2')!;
+	catalog.push({
+		...currentActivity,
+		id: 'activity-v3',
+		versionNo: 3,
+		effectiveFrom: '2027-05-01',
+		selectableForNewRequirement: false
+	});
 	if (options.pinnedActivity) {
-		for (const version of catalog.filter((item) => item.resourceKind === 'activity'))
-			version.effectiveFrom = version.versionNo === 1 ? '2025-05-01' : '2026-05-01';
 		const activity = catalog.find((item) => item.id === 'activity-v1')!;
 		workspace.requirements.push({
 			...original,
@@ -152,6 +159,11 @@ export function curriculumCatalogFixture(
 			displayOrder: 2
 		});
 	}
+	if (options.omitOldOption)
+		catalog.splice(
+			catalog.findIndex((item) => item.id === 'activity-v1'),
+			1
+		);
 	if (options.longCatalog)
 		for (let index = 0; index < 18; index++)
 			catalog.push({
