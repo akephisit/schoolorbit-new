@@ -13,6 +13,7 @@
 		visibleCurriculumPreparationProposals,
 		type SynchronizedActivityPreparationTarget
 	} from '#lib/academic/synchronized-activity-delivery.js';
+	import { curriculumPreparationOrder } from '#lib/academic/curriculum-preparation-order.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -46,6 +47,8 @@
 		preparationTarget?: SynchronizedActivityPreparationTarget | null;
 		deliveryVersionId?: string | null;
 	} = $props();
+
+	let displayOrder = $derived(curriculumPreparationOrder(options));
 
 	let programPickerOpen = $state(false);
 	let programSearch = $state('');
@@ -152,7 +155,7 @@
 			choice.groups = [
 				{
 					groupKey: randomGroupKey(),
-					name: `${proposal.resourceKind === 'activity' ? proposal.name : proposal.code} · เรียนรวม ${homeroomIds.map(homeroomLabel).join(', ')}`,
+					name: `${proposal.resourceKind === 'activity' ? proposal.name : proposal.code} · เรียนรวม ${displayOrder.homeroomIds(homeroomIds).map(homeroomLabel).join(', ')}`,
 					homeroomIds
 				}
 			];
@@ -160,7 +163,7 @@
 	}
 
 	function addSplitGroup(proposal: CurriculumPreparationProposal) {
-		const homeroomId = proposal.targetHomeroomIds[0];
+		const homeroomId = displayOrder.homeroomIds(proposal.targetHomeroomIds)[0];
 		if (!homeroomId) return;
 		updateChoice(proposal.proposalId, (choice) => {
 			choice.action = 'apply';
@@ -204,7 +207,7 @@
 	}
 
 	function groupRooms(group: CurriculumGroupProposal) {
-		return group.homeroomIds.map(homeroomLabel).join(', ');
+		return displayOrder.homeroomIds(group.homeroomIds).map(homeroomLabel).join(', ');
 	}
 
 	async function buildPreview() {
@@ -481,7 +484,7 @@
 									</div>
 								</div>
 								<div class="mt-2 grid gap-2">
-									{#each choice.groups as group (group.groupKey)}
+									{#each displayOrder.groups(choice.groups) as group (group.groupKey)}
 										<div
 											class="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,0.8fr)_auto] sm:items-center"
 										>
@@ -517,7 +520,7 @@
 													<Command.Root>
 														<Command.List class="max-h-52">
 															<Command.Group heading="ห้องเป้าหมายจากหลักสูตร">
-																{#each proposal.targetHomeroomIds as homeroomId (homeroomId)}
+																{#each displayOrder.homeroomIds(proposal.targetHomeroomIds) as homeroomId (homeroomId)}
 																	<Command.Item
 																		value={homeroomLabel(homeroomId)}
 																		onSelect={() =>

@@ -1366,6 +1366,152 @@ for (const viewport of [
 	}
 }
 
+test('curriculum preparation orders groups and room controls naturally while preserving canonical choices', async ({
+	page
+}, testInfo) => {
+	await mockDelivery(page, undefined, undefined, { deliveryVersionStatus: 'draft' });
+	const labels = ['ม.2/3', 'ม.2/2', 'ม.2/1', 'ม.1/10', 'ม.1/3', 'ม.1/2', 'ม.1/1'];
+	const rooms = labels.map((name, index) => ({
+		id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+		name,
+		gradeLevelId: name.startsWith('ม.1') ? ids.grade : 'grade2'
+	}));
+	const defaultGroups = rooms.map((room, index) => ({
+		groupKey: `${index}`.padEnd(64, 'a'),
+		name: `ชุมนุม · ${room.name}`,
+		homeroomIds: [room.id]
+	}));
+	const mixed = {
+		groupKey: 'f'.repeat(64),
+		name: 'ชื่อกลุ่มเดิมที่กำหนดเอง',
+		homeroomIds: [rooms[0].id, rooms[6].id]
+	};
+	const groups = [...defaultGroups, mixed];
+	const naturalLabels = [...labels].reverse();
+	const expectedNames = [
+		defaultGroups[6].name,
+		mixed.name,
+		...defaultGroups
+			.slice(0, 6)
+			.reverse()
+			.map((group) => group.name)
+	];
+	const sourceHash = 'b'.repeat(64);
+	await page.route('**/api/academic/delivery/management-options?**', (route) =>
+		fulfill(route, {
+			studyPrograms: [
+				{ id: ids.program, code: 'DEFAULT', name: 'แผนมาตรฐาน', levelName: 'หลักสูตร' }
+			],
+			homerooms: rooms,
+			gradeLevels: [
+				{
+					id: 'grade2',
+					code: 'M2',
+					name: 'ม.2',
+					short_name: 'ม.2',
+					level_order: 302,
+					level_type: 'secondary'
+				},
+				{
+					id: ids.grade,
+					code: 'M1',
+					name: 'ม.1',
+					short_name: 'ม.1',
+					level_order: 301,
+					level_type: 'secondary'
+				}
+			],
+			catalogVersions: [],
+			teachers: [],
+			rooms: [],
+			learningGroups: []
+		})
+	);
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, {
+			curriculumSources: [],
+			sourceHash,
+			proposals: [
+				{
+					proposalId: 'naturally-ordered',
+					resourceKind: 'activity',
+					catalogVersionId: ids.catalog,
+					code: 'CLUB-technical',
+					name: 'ชุมนุม',
+					schedulingMode: 'independent',
+					targetHomeroomIds: rooms.map((room) => room.id),
+					requirementIds: [ids.requirement],
+					requirementKind: 'required',
+					groupingState: 'proposed',
+					offeringAction: 'retain',
+					conflicts: [],
+					defaultGroups: groups
+				}
+			]
+		})
+	);
+	let submitted: Record<string, unknown> | null = null;
+	await page.route('**/api/academic/offerings/apply-from-curriculum', async (route) => {
+		submitted = route.request().postDataJSON();
+		await fulfill(route, 'ทดสอบเก็บชื่อและลำดับเดิม', 400);
+	});
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+	);
+	await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('combobox', { name: 'เลือกแผนการเรียนจากหลักสูตร' }).click();
+	await page.getByRole('option', { name: /แผนมาตรฐาน/ }).click();
+	await page.keyboard.press('Escape');
+	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
+	const inputs = dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' });
+	const inputNames = () =>
+		inputs.evaluateAll((elements) =>
+			elements.map((element) => (element as HTMLInputElement).value)
+		);
+	await expect.poll(inputNames).toEqual(expectedNames);
+	await expect(
+		dialog.getByRole('button', { name: `เลือกห้องสำหรับ ${mixed.name}`, exact: true })
+	).toHaveText('ม.1/1, ม.2/3');
+	await inputs.first().fill('ชื่อใหม่ที่ไม่บอกห้อง');
+	await expect.poll(inputNames).toEqual(['ชื่อใหม่ที่ไม่บอกห้อง', ...expectedNames.slice(1)]);
+	await dialog
+		.getByRole('button', { name: 'เลือกห้องสำหรับ ชื่อใหม่ที่ไม่บอกห้อง', exact: true })
+		.click();
+	await expect(page.getByRole('option')).toHaveText(naturalLabels);
+	await page.getByRole('option').nth(1).click();
+	await page.getByRole('option').nth(0).click();
+	await page.keyboard.press('Escape');
+	await expect
+		.poll(inputNames)
+		.toEqual([
+			mixed.name,
+			defaultGroups[5].name,
+			'ชื่อใหม่ที่ไม่บอกห้อง',
+			...expectedNames.slice(3)
+		]);
+	await dialog.getByRole('button', { name: 'คืนค่าข้อเสนอ' }).click();
+	await expect.poll(inputNames).toEqual(expectedNames);
+	await page.screenshot({ path: testInfo.outputPath('naturally-ordered-preparation-groups.png') });
+	await dialog.getByRole('button', { name: 'เพิ่มกลุ่มแบ่ง' }).click();
+	await expect(inputs.nth(2)).toHaveValue('ชุมนุม · ม.1/1 กลุ่ม 9');
+	await dialog.getByRole('button', { name: 'รวมหลายห้อง' }).click();
+	await expect(inputs).toHaveCount(1);
+	await expect(inputs.first()).toHaveValue(`ชุมนุม · เรียนรวม ${naturalLabels.join(', ')}`);
+	await dialog.getByRole('button', { name: 'เพิ่มกลุ่มแบ่ง' }).click();
+	await expect(inputs.nth(1)).toHaveValue('ชุมนุม · ม.1/1 กลุ่ม 2');
+	await dialog.getByRole('button', { name: 'คืนค่าข้อเสนอ' }).click();
+	await expect.poll(inputNames).toEqual(expectedNames);
+	await dialog.getByRole('button', { name: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว' }).click();
+	await expect
+		.poll(() => submitted)
+		.toMatchObject({
+			sourceHash,
+			choices: [{ proposalId: 'naturally-ordered', action: 'apply', groups }]
+		});
+	await expect(dialog.getByRole('alert')).toHaveText('ทดสอบเก็บชื่อและลำดับเดิม');
+});
+
 test('focused activity preparation hides its code in the heading and missing-proposal error', async ({
 	page
 }) => {
