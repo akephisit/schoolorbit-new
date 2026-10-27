@@ -195,7 +195,12 @@
 	}
 
 	function trackingUpdated(groupId: string, config: LearningGroupRosterTracking) {
-		if (!selectedGroup || selectedGroup.id !== groupId) return;
+		if (
+			!selectedGroup ||
+			selectedGroup.id !== groupId ||
+			config.groupRowVersion < selectedGroup.rowVersion
+		)
+			return;
 		mutationRevision += 1;
 		updateGroupState({ ...selectedGroup, rowVersion: config.groupRowVersion });
 		rosterPreview = null;

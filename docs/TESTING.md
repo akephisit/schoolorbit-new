@@ -877,7 +877,7 @@ tests/static/frontend-layout-components.test.mjs tests/static/documentation-poli
 The Delivery change-summary and bulk group-setup fixtures use the same local production preview:
 
 ```bash
-node --test tests/static/learning-delivery-change-list.test.mjs tests/static/delivery-offering-route-loading.test.mjs tests/static/delivery-draft-lifecycle.test.mjs tests/static/learning-delivery-workspace.test.mjs
+node --test tests/runtime/delivery-bulk-transport.test.mjs tests/static/learning-delivery-change-list.test.mjs tests/static/delivery-offering-route-loading.test.mjs tests/static/delivery-draft-lifecycle.test.mjs tests/static/learning-delivery-workspace.test.mjs
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/homeroom-delivery-workspace.spec.ts tests/e2e/delivery-offering-route-loading.spec.ts --project=chromium --workers=2
 ```
 
@@ -889,7 +889,14 @@ apply request, pending dismissal guards, blocked targets, fresh revisions after 
 fresh opening data after individual edits, preparation retry/cancellation and late options after
 closing. Mobile/desktop light/dark screenshots are saved in each test's output
 directory. Browser interception verifies UI behavior; database atomicity, scope authorization and
-canonical grade/room ordering require the Delivery service fixtures above.
+canonical grade/room ordering require the Delivery service fixtures above. The transport test executes
+the actual API wrapper against separately registered OpenAPI method/path pairs, including refusal
+of a preview POST to the apply path. Tracking cases verify returned modes/dates in individual
+controls, clean Save state, refusal of older reads, retained genuine drafts and explicit conflict
+resolution without an extra read after a returned bulk configuration. A delayed individual-save
+acknowledgment cannot cancel a newer read or lower the next request revision. The touch case uses
+a mobile context with touch enabled and actual locator taps through preview, cancellation and an
+underlying action; viewport-only screenshots remain separate from this modality check.
 
 Physical room-name projections share the existing timetable contracts and display helpers. From
 `frontend-school`, run `npm run generate:api-contracts`, `npm run check:api-contracts` and

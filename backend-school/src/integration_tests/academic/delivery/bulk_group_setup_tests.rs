@@ -247,6 +247,17 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
         );
         assert_eq!(group.status, LearningOfferingStatus::Draft);
         assert_eq!(group.roster_status, RosterStatus::Draft);
+        for assignment in group
+            .teacher_assignments
+            .iter()
+            .filter(|assignment| assignment.teacher_id == selected_teacher)
+        {
+            assert_eq!(
+                assignment.id.get_version_num(),
+                7,
+                "new teacher episodes use UUIDv7 business identities"
+            );
+        }
     }
     let first_after = result.groups.iter().find(|g| g.id == first.id).unwrap();
     assert!(first_after
@@ -298,6 +309,13 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
         bulk_group_setup::apply(&f.pool, f.context.teacher_id, f.offering_id, replace)
             .await
             .unwrap();
+    assert!(replacement
+        .response
+        .groups
+        .iter()
+        .flat_map(|group| &group.teacher_assignments)
+        .filter(|assignment| assignment.teacher_id == selected_teacher)
+        .all(|assignment| assignment.id.get_version_num() == 7));
     let first_after = replacement
         .response
         .groups

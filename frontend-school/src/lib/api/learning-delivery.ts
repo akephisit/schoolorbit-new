@@ -509,7 +509,7 @@ export const previewBulkGroupSetup = (
 ) =>
 	deliveryData(
 		apiClient.post<BulkGroupSetupPreview>(
-			`/api/academic/offerings/${encodeURIComponent(offeringId)}/groups/bulk-setup`,
+			`/api/academic/offerings/${encodeURIComponent(offeringId)}/groups/bulk-setup/preview`,
 			request,
 			options
 		),

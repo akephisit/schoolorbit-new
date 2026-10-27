@@ -1549,6 +1549,259 @@ mod protected_router {
     }
 
     #[tokio::test]
+    async fn bulk_group_setup_http_previews_and_applies_selected_groups_atomically() {
+        use school_academic_core::{
+            models::{
+                CreateCatalogSubjectRequest, CreateSubjectVersionRequest, PublishVersionRequest,
+            },
+            services::catalog,
+        };
+        use school_academic_delivery::{
+            models::CreateAcademicTermChangeSetRequest,
+            services::{change_sets, groups, versions},
+        };
+        use school_academic_http::state::AcademicHttpState;
+
+        static ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
+            school_academic_delivery::services::roster_tracking::RoomRosterTracking;
+        let fixture = ProtectedFixture::new("bulk_group_setup_http_success").await;
+        let user_id = fixture
+            .insert_user(&fixture.tenant_a_pool, "bulk-http-manager", "active")
+            .await;
+        let role: Uuid = sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES('BULK_HTTP_MANAGER','Bulk HTTP manager','staff') RETURNING id")
+            .fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+            .bind(role).bind(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+        sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+            .bind(user_id)
+            .bind(role)
+            .execute(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+        let (session_id, token) = fixture
+            .insert_session(&fixture.tenant_a_pool, user_id, 76, false)
+            .await;
+        let today = Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive();
+        let subject_group_id: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
+            .fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let source = catalog::create_subject(
+            &fixture.tenant_a_pool,
+            CreateCatalogSubjectRequest {
+                code: "BULK-HTTP-SUCCESS".into(),
+                subject_group_id,
+            },
+        )
+        .await
+        .unwrap();
+        let source_version = catalog::create_subject_version(
+            &fixture.tenant_a_pool,
+            source.id,
+            CreateSubjectVersionRequest {
+                name_th: "Synthetic bulk HTTP course".into(),
+                name_en: None,
+                credit: "1.00".into(),
+                hours_per_semester: Some(40),
+                subject_type: "basic".into(),
+                description: None,
+                effective_from: today,
+                term_code: None,
+                periods_per_week: Some(1),
+                grade_level_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        catalog::publish_subject_version(
+            &fixture.tenant_a_pool,
+            source_version.id,
+            PublishVersionRequest {
+                row_version: source_version.row_version,
+            },
+        )
+        .await
+        .unwrap();
+        let offering_id = Uuid::now_v7();
+        let group_ids = vec![Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
+        let term_id = {
+            let mut tx = fixture.tenant_a_pool.begin().await.unwrap();
+            let year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Bulk HTTP success',$1,$2,'planning') RETURNING id")
+                .bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let bell: Uuid = sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id")
+                .bind(year).fetch_one(&mut *tx).await.unwrap();
+            let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id")
+                .bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
+                .bind(offering_id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
+                .bind(offering_id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
+            for (index, id) in group_ids.iter().enumerate() {
+                sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,$5,$6,'draft','draft')")
+                    .bind(id).bind(offering_id).bind(term).bind(year).bind(format!("HTTP-{index}")).bind(format!("HTTP group {index}")).execute(&mut *tx).await.unwrap();
+            }
+            tx.commit().await.unwrap();
+            term
+        };
+        let opening = change_sets::create_change_set(
+            &fixture.tenant_a_pool,
+            user_id,
+            CreateAcademicTermChangeSetRequest {
+                academic_term_id: term_id,
+                reason: "Prepare bulk HTTP draft".into(),
+                idempotency_key: Uuid::now_v7(),
+            },
+        )
+        .await
+        .unwrap();
+        let version =
+            versions::get_version(&fixture.tenant_a_pool, opening.target_delivery_version_id)
+                .await
+                .unwrap();
+        assert!(version
+            .snapshot
+            .offerings
+            .iter()
+            .any(|offering| offering.id == offering_id && offering.groups.len() == 3));
+        let unselected_before = serde_json::to_value(
+            groups::get(&fixture.tenant_a_pool, group_ids[2])
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let narrow = AcademicHttpState {
+            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+            auth_runtime: fixture.runtime.clone(),
+            websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+            placement_rosters: &ROSTERS,
+            result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+        };
+        let app = Router::new()
+            .nest(
+                "/api/academic",
+                school_academic_http::routes::academic_routes().with_state(narrow),
+            )
+            .route_layer(from_fn_with_state(
+                fixture.runtime.clone(),
+                session_middleware,
+            ));
+        let base = format!("/api/academic/offerings/{offering_id}/groups/bulk-setup");
+        let csrf = fixture.csrf(session_id);
+        let payload = serde_json::json!({
+            "deliveryVersionId":version.id,"deliveryVersionRowVersion":version.row_version,
+            "groups":[{"learningGroupId":group_ids[0],"rowVersion":1},{"learningGroupId":group_ids[1],"rowVersion":1}],
+            "primaryTeacher":{"teacherId":user_id,"replaceExistingPrimary":false},"rosterTracking":null,
+        });
+        let make_request = |method: Method, path: &str| {
+            let mut req = request(
+                method,
+                path,
+                Some("https://tenant-a.schoolorbit.test"),
+                Some(&token),
+                Some(&csrf),
+            );
+            req.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            *req.body_mut() = Body::from(payload.to_string());
+            req
+        };
+        async fn facts(pool: &sqlx::PgPool, offering_id: Uuid, version_id: Uuid) -> String {
+            sqlx::query_scalar("SELECT jsonb_build_object('groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=$1),'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t JOIN learning_groups g ON g.id=t.learning_group_id WHERE g.learning_offering_id=$1),'version',(SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$2))::text")
+                .bind(offering_id).bind(version_id).fetch_one(pool).await.unwrap()
+        }
+        let before = facts(&fixture.tenant_a_pool, offering_id, version.id).await;
+        let preview = app
+            .clone()
+            .oneshot(make_request(Method::POST, &format!("{base}/preview")))
+            .await
+            .unwrap();
+        assert_eq!(preview.status(), StatusCode::OK);
+        let preview: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(preview.into_body(), 1_048_576)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(preview["success"], true);
+        assert_eq!(preview["data"]["changedCount"], 2);
+        assert_eq!(preview["data"]["blockedCount"], 0);
+        assert_eq!(preview["data"]["targets"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            facts(&fixture.tenant_a_pool, offering_id, version.id).await,
+            before,
+            "canonical POST preview is read-only"
+        );
+        let wrong_method = app
+            .clone()
+            .oneshot(make_request(Method::POST, &base))
+            .await
+            .unwrap();
+        assert_eq!(
+            wrong_method.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "the mutation base path accepts PUT, not POST preview"
+        );
+        assert_eq!(
+            facts(&fixture.tenant_a_pool, offering_id, version.id).await,
+            before
+        );
+        let applied = app
+            .clone()
+            .oneshot(make_request(Method::PUT, &base))
+            .await
+            .unwrap();
+        assert_eq!(applied.status(), StatusCode::OK);
+        let applied: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(applied.into_body(), 1_048_576)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(applied["success"], true);
+        assert_eq!(applied["data"]["groups"].as_array().unwrap().len(), 2);
+        let completion =
+            school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
+                .await
+                .unwrap();
+        for id in &group_ids[..2] {
+            let authoritative = groups::get(&completion.pool, *id).await.unwrap();
+            assert_eq!(authoritative.row_version, 2);
+            assert_eq!(authoritative.teacher_assignments.len(), 1);
+            assert_eq!(authoritative.teacher_assignments[0].teacher_id, user_id);
+            assert_eq!(authoritative.teacher_assignments[0].id.get_version_num(), 7);
+            assert_eq!(
+                applied["data"]["groups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|group| group["id"] == id.to_string())
+                    .unwrap(),
+                &serde_json::to_value(authoritative).unwrap()
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(groups::get(&completion.pool, group_ids[2]).await.unwrap())
+                .unwrap(),
+            unselected_before
+        );
+        let fresh_version = versions::get_version(&completion.pool, version.id)
+            .await
+            .unwrap();
+        assert!(fresh_version.row_version > version.row_version);
+        assert_eq!(
+            applied["data"]["deliveryVersionRowVersion"],
+            fresh_version.row_version
+        );
+        assert_eq!(
+            fresh_version.status,
+            school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
+        );
+    }
+
+    #[tokio::test]
     async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
         use school_academic_http::state::AcademicHttpState;
 

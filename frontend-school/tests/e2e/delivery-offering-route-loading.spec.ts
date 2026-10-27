@@ -537,6 +537,10 @@ async function mockBulkSetup(
 		optionsGate?: Promise<void>;
 		blocked?: boolean;
 		preparationGate?: Promise<void>;
+		initialTrackingMode?: 'manual' | 'homeroom';
+		trackingGate?: Promise<void>;
+		trackingRefreshGate?: Promise<void>;
+		trackingSaveGate?: Promise<void>;
 	} = {}
 ) {
 	const count = await mockOffering(page, { permissions: ['*'] });
@@ -555,6 +559,24 @@ async function mockBulkSetup(
 			]
 		}
 	];
+	const trackingByGroup = new Map(
+		rows.map((row) => [
+			row.id,
+			{
+				mode: options.initialTrackingMode ?? 'manual',
+				effectiveFrom: options.initialTrackingMode === 'homeroom' ? '2026-10-27' : null,
+				groupRowVersion: row.rowVersion,
+				startsOn: '2026-05-01',
+				endsOn: '2027-04-30'
+			}
+		])
+	);
+	const trackingReads: string[] = [];
+	const trackingSaves: Array<{
+		mode: 'manual' | 'homeroom';
+		effectiveFrom: string | null;
+		rowVersion: number;
+	}> = [];
 	let currentVersion = 1;
 	let groupReads = 0;
 	let failPreparation = false;
@@ -581,6 +603,42 @@ async function mockBulkSetup(
 	});
 	await page.route(`**${paths.groupA}`, (route) => fulfill(route, rows[0]));
 	await page.route(`**${paths.groupB}`, (route) => fulfill(route, rows[1]));
+	await page.route(
+		(url) =>
+			url.pathname.startsWith('/api/academic/learning-groups/') &&
+			url.pathname.endsWith('/roster-tracking'),
+		async (route) => {
+			const id = new URL(route.request().url()).pathname.split('/')[4];
+			const config = trackingByGroup.get(id);
+			if (!config) return route.fallback();
+			if (route.request().method() === 'PUT') {
+				const body = route.request().postDataJSON();
+				trackingSaves.push(body);
+				const updated = {
+					...config,
+					mode: body.mode,
+					effectiveFrom: body.effectiveFrom,
+					groupRowVersion:
+						(rows.find((row) => row.id === id)?.rowVersion ?? config.groupRowVersion) + 1
+				};
+				trackingByGroup.set(id, updated);
+				rows = rows.map((row) =>
+					row.id === id ? { ...row, rowVersion: updated.groupRowVersion } : row
+				);
+				if (options.trackingSaveGate) await options.trackingSaveGate;
+				return fulfill(route, updated);
+			}
+			const snapshot = {
+				...config,
+				groupRowVersion: rows.find((row) => row.id === id)?.rowVersion ?? config.groupRowVersion
+			};
+			trackingReads.push(id);
+			if (options.trackingGate) await options.trackingGate;
+			if (trackingReads.length > 1 && options.trackingRefreshGate)
+				await options.trackingRefreshGate;
+			return fulfill(route, snapshot);
+		}
+	);
 	await page.route(`**${paths.version}`, (route) =>
 		fulfill(route, { ...versionGraph(), rowVersion: currentVersion })
 	);
@@ -601,104 +659,140 @@ async function mockBulkSetup(
 			learningGroups: []
 		});
 	});
-	await page.route(`**${paths.groups}/bulk-setup`, async (route) => {
-		const body = route.request().postDataJSON();
-		if (route.request().method() === 'POST') {
-			previewRequests.push(body);
-			const targets = body.groups.map((target: { learningGroupId: string }) => {
-				const row = rows.find((row) => row.id === target.learningGroupId)!;
-				return {
-					group: row,
-					rosterTracking: {
-						mode: 'manual',
-						effectiveFrom: null,
-						groupRowVersion: row.rowVersion,
-						startsOn: '2026-05-01',
-						endsOn: '2027-04-30'
-					},
-					primaryTeacherAction: !body.primaryTeacher
-						? 'unchanged'
-						: row.id === ids.groupB
-							? body.primaryTeacher.replaceExistingPrimary
-								? 'replace'
-								: 'preserve_existing'
-							: 'set',
-					rosterTrackingChanged: body.rosterTracking?.mode === 'homeroom',
-					blockedReason: options.blocked ? 'กลุ่มนี้ไม่พร้อมแก้ไข' : null
-				};
-			});
-			const changedCount = targets.filter(
-				(target: {
-					primaryTeacherAction: string;
-					rosterTrackingChanged: boolean;
-					blockedReason: string | null;
-				}) =>
-					!target.blockedReason &&
-					(['set', 'replace'].includes(target.primaryTeacherAction) || target.rosterTrackingChanged)
-			).length;
-			return fulfill(route, {
-				deliveryVersionRowVersion: currentVersion,
-				targets,
-				changedCount,
-				skippedCount: options.blocked ? 0 : targets.length - changedCount,
-				blockedCount: options.blocked ? targets.length : 0
-			});
-		}
-		applyRequests.push(body);
-		if (options.applyGate) await options.applyGate;
-		if (options.conflictOnce && applyRequests.length === 1) {
-			currentVersion = 2;
-			rows = rows.map((row) => ({ ...row, rowVersion: 2 }));
-			return void (await route.fulfill({
-				status: 409,
-				contentType: 'application/json',
-				body: JSON.stringify({ success: false, error: 'ข้อมูลเปลี่ยนแล้ว' })
-			}));
-		}
-		rows = rows.map((row) => {
-			if (
-				!body.groups.some(
-					(target: { learningGroupId: string }) => target.learningGroupId === row.id
-				)
-			)
-				return row;
-			const teachers =
-				body.primaryTeacher && (row.id !== ids.groupB || body.primaryTeacher.replaceExistingPrimary)
-					? [
-							...row.teacherAssignments.filter((teacher) => teacher.role !== 'primary'),
-							bulkTeacher(bulkTeacherId, 'primary', 'ครูหลักใหม่')
-						]
-					: row.teacherAssignments;
-			return { ...row, rowVersion: row.rowVersion + 1, teacherAssignments: teachers };
-		});
-		currentVersion += 1;
-		return fulfill(route, {
-			deliveryVersionRowVersion: currentVersion,
-			groups: rows.filter((row) =>
-				body.groups.some((target: { learningGroupId: string }) => target.learningGroupId === row.id)
-			),
-			rosterTracking: rows
-				.filter((row) =>
-					body.groups.some(
+	await page.route(
+		(url) =>
+			url.pathname === `${paths.groups}/bulk-setup` ||
+			url.pathname === `${paths.groups}/bulk-setup/preview`,
+		async (route) => {
+			const pathname = new URL(route.request().url()).pathname;
+			const method = route.request().method();
+			if (!(
+				(method === 'POST' && pathname === `${paths.groups}/bulk-setup/preview`) ||
+				(method === 'PUT' && pathname === `${paths.groups}/bulk-setup`)
+			)) {
+				return void (await route.fulfill({
+					status: 405,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						success: false,
+						error: 'Method not allowed for this bulk setup route'
+					})
+				}));
+			}
+			const body = route.request().postDataJSON();
+			if (route.request().method() === 'POST') {
+				previewRequests.push(body);
+				const targets = body.groups.map((target: { learningGroupId: string }) => {
+					const row = rows.find((row) => row.id === target.learningGroupId)!;
+					return {
+						group: row,
+						rosterTracking: { ...trackingByGroup.get(row.id)!, groupRowVersion: row.rowVersion },
+						primaryTeacherAction: !body.primaryTeacher
+							? 'unchanged'
+							: row.id === ids.groupB
+								? body.primaryTeacher.replaceExistingPrimary
+									? 'replace'
+									: 'preserve_existing'
+								: 'set',
+						rosterTrackingChanged: Boolean(
+							body.rosterTracking &&
+							(body.rosterTracking.mode !== trackingByGroup.get(row.id)?.mode ||
+								body.rosterTracking.effectiveFrom !== trackingByGroup.get(row.id)?.effectiveFrom)
+						),
+						blockedReason: options.blocked ? 'กลุ่มนี้ไม่พร้อมแก้ไข' : null
+					};
+				});
+				const changedCount = targets.filter(
+					(target: {
+						primaryTeacherAction: string;
+						rosterTrackingChanged: boolean;
+						blockedReason: string | null;
+					}) =>
+						!target.blockedReason &&
+						(['set', 'replace'].includes(target.primaryTeacherAction) ||
+							target.rosterTrackingChanged)
+				).length;
+				return fulfill(route, {
+					deliveryVersionRowVersion: currentVersion,
+					targets,
+					changedCount,
+					skippedCount: options.blocked ? 0 : targets.length - changedCount,
+					blockedCount: options.blocked ? targets.length : 0
+				});
+			}
+			applyRequests.push(body);
+			if (options.applyGate) await options.applyGate;
+			if (options.conflictOnce && applyRequests.length === 1) {
+				currentVersion = 2;
+				rows = rows.map((row) => ({ ...row, rowVersion: 2 }));
+				return void (await route.fulfill({
+					status: 409,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'ข้อมูลเปลี่ยนแล้ว' })
+				}));
+			}
+			rows = rows.map((row) => {
+				if (
+					!body.groups.some(
 						(target: { learningGroupId: string }) => target.learningGroupId === row.id
 					)
 				)
-				.map((row) => ({
-					learningGroupId: row.id,
-					tracking: {
-						mode: body.rosterTracking?.mode ?? 'manual',
-						effectiveFrom: body.rosterTracking?.effectiveFrom ?? null,
-						groupRowVersion: row.rowVersion,
-						startsOn: '2026-05-01',
-						endsOn: '2027-04-30'
-					}
-				}))
-		});
-	});
+					return row;
+				const teachers =
+					body.primaryTeacher &&
+					(row.id !== ids.groupB || body.primaryTeacher.replaceExistingPrimary)
+						? [
+								...row.teacherAssignments.filter((teacher) => teacher.role !== 'primary'),
+								bulkTeacher(bulkTeacherId, 'primary', 'ครูหลักใหม่')
+							]
+						: row.teacherAssignments;
+				return { ...row, rowVersion: row.rowVersion + 1, teacherAssignments: teachers };
+			});
+			for (const row of rows) {
+				if (
+					!body.groups.some(
+						(target: { learningGroupId: string }) => target.learningGroupId === row.id
+					)
+				)
+					continue;
+				const previous = trackingByGroup.get(row.id)!;
+				trackingByGroup.set(row.id, {
+					...previous,
+					...(body.rosterTracking ?? {}),
+					groupRowVersion: row.rowVersion
+				});
+			}
+			currentVersion += 1;
+			return fulfill(route, {
+				deliveryVersionRowVersion: currentVersion,
+				groups: rows.filter((row) =>
+					body.groups.some(
+						(target: { learningGroupId: string }) => target.learningGroupId === row.id
+					)
+				),
+				rosterTracking: rows
+					.filter((row) =>
+						body.groups.some(
+							(target: { learningGroupId: string }) => target.learningGroupId === row.id
+						)
+					)
+					.map((row) => ({
+						learningGroupId: row.id,
+						tracking: trackingByGroup.get(row.id)
+					}))
+			});
+		}
+	);
 	return {
 		count,
 		previewRequests,
 		applyRequests,
+		trackingReads,
+		trackingSaves,
+		advanceGroupRevision() {
+			currentVersion += 1;
+			rows[0] = { ...rows[0], rowVersion: rows[0].rowVersion + 1 };
+		},
 		failPreparationOnce() {
 			failPreparation = true;
 		},
@@ -921,6 +1015,18 @@ test('bulk automatic roster configuration requires a date and patches selected t
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId('roster-tracking')).toContainText('ติดตามนักเรียนจากห้องต้นทาง');
+	const panel = page.getByTestId('roster-tracking');
+	await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+		'ติดตามห้องอัตโนมัติ'
+	);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'27 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	expect(fixture.trackingReads).toHaveLength(1);
+	expect(fixture.trackingSaves).toHaveLength(0);
 	expect(fixture.applyRequests).toEqual(fixture.previewRequests);
 	expect(fixture.count(`${paths.groupA}/roster`)).toBe(0);
 	expect(fixture.count(paths.membershipsA)).toBe(0);
@@ -1015,4 +1121,234 @@ test('a fresh bulk opening resolves the selected group while an older direct rea
 	);
 	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('ม.1/1');
 	await expect(page.getByText('ข้อมูลเก่าที่มาช้า', { exact: true })).toHaveCount(0);
+});
+
+async function applyBulkRosterMode(page: Page, mode: 'manual' | 'homeroom', tomorrow = false) {
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
+	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
+	await dialog
+		.getByRole('radio', {
+			name: mode === 'homeroom' ? 'ติดตามห้องอัตโนมัติ' : 'จัดรายชื่อเอง',
+			exact: true
+		})
+		.check();
+	if (mode === 'homeroom') {
+		await dialog
+			.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
+			.click();
+		const today = page.locator('[data-bits-day][data-today]');
+		if (tomorrow) {
+			await today.focus();
+			await page.keyboard.press('ArrowRight');
+			await page.keyboard.press('Enter');
+		} else await today.click();
+	}
+	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
+	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+}
+
+test('returned bulk manual mode updates individual controls without another tracking read or stale Save', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const fixture = await mockBulkSetup(page, { initialTrackingMode: 'homeroom' });
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+		'ติดตามห้องอัตโนมัติ'
+	);
+	await applyBulkRosterMode(page, 'manual');
+	await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+		'จัดรายชื่อเอง'
+	);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toHaveCount(
+		0
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	expect(fixture.trackingReads).toHaveLength(1);
+	expect(fixture.trackingSaves).toHaveLength(0);
+});
+
+test('a pending old tracking read cannot replace the newer bulk configuration or its controls', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const gate = deferred();
+	const fixture = await mockBulkSetup(page, { trackingGate: gate.promise });
+	await page.goto(url());
+	await expect.poll(() => fixture.trackingReads.length).toBe(1);
+	const panel = page.getByTestId('roster-tracking');
+	try {
+		await applyBulkRosterMode(page, 'homeroom');
+		await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+			'ติดตามห้องอัตโนมัติ'
+		);
+		await expect(
+			panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+		).toBeDisabled();
+	} finally {
+		gate.release();
+	}
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+		'ติดตามห้องอัตโนมัติ'
+	);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'27 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	expect(fixture.trackingReads).toHaveLength(1);
+	expect(fixture.trackingSaves).toHaveLength(0);
+});
+
+test('a changed bulk configuration preserves a genuine individual draft and blocks Save until resolved', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const fixture = await mockBulkSetup(page);
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+	await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'27 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeEnabled();
+	await applyBulkRosterMode(page, 'homeroom', true);
+	expect(fixture.previewRequests[0]).toMatchObject({
+		rosterTracking: { mode: 'homeroom', effectiveFrom: '2026-10-28' }
+	});
+	await expect(panel.getByRole('alert')).toContainText('การแก้ไขของคุณยังอยู่');
+	await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+		'ติดตามห้องอัตโนมัติ'
+	);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'27 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	await panel.getByRole('button', { name: 'ใช้วิธีจัดรายชื่อล่าสุด', exact: true }).click();
+	await expect(panel.getByRole('alert')).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'28 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	expect(fixture.trackingReads).toHaveLength(1);
+	expect(fixture.trackingSaves).toHaveLength(0);
+});
+
+test('a delayed individual save acknowledgment cannot cancel a newer tracking read or regress revisions', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const saveGate = deferred();
+	const refreshGate = deferred();
+	const fixture = await mockBulkSetup(page, {
+		trackingSaveGate: saveGate.promise,
+		trackingRefreshGate: refreshGate.promise
+	});
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+	await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+	await panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true }).click();
+	await expect.poll(() => fixture.trackingSaves.length).toBe(1);
+	fixture.advanceGroupRevision();
+	try {
+		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+		await expect(dialog).toContainText('เลือก 0/2 กลุ่ม');
+		await expect.poll(() => fixture.trackingReads.length).toBe(2);
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		const oldSaveResponse = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === `${paths.groupA}/roster-tracking` &&
+				response.request().method() === 'PUT'
+		);
+		saveGate.release();
+		await (await oldSaveResponse).finished();
+		await expect(panel.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toHaveCount(0);
+		const newReadResponse = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === `${paths.groupA}/roster-tracking` &&
+				response.request().method() === 'GET'
+		);
+		refreshGate.release();
+		await (await newReadResponse).finished();
+		await expect(panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true })).toHaveText(
+			'ติดตามห้องอัตโนมัติ'
+		);
+		await expect(
+			panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+		).toBeDisabled();
+		await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+		await page.getByRole('option', { name: 'จัดรายชื่อเอง', exact: true }).click();
+		await panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true }).click();
+		await expect.poll(() => fixture.trackingSaves.length).toBe(2);
+		expect(fixture.trackingSaves[1].rowVersion).toBe(3);
+		await expect(panel.getByRole('status')).toContainText('บันทึกวิธีจัดรายชื่อแล้ว');
+		await expect(panel.getByRole('alert')).toHaveCount(0);
+	} finally {
+		saveGate.release();
+		refreshGate.release();
+	}
+});
+
+test('bulk dialog completes preview and releases underlying actions with real touch input', async ({
+	browser,
+	baseURL
+}, testInfo) => {
+	const context = await browser.newContext({
+		baseURL,
+		hasTouch: true,
+		isMobile: true,
+		viewport: { width: 390, height: 844 },
+		serviceWorkers: 'block'
+	});
+	try {
+		const page = await context.newPage();
+		const fixture = await mockBulkSetup(page);
+		await page.goto(url());
+		expect(await page.evaluate(() => navigator.maxTouchPoints)).toBeGreaterThan(0);
+		expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).tap();
+		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+		await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).tap();
+		await dialog.getByRole('checkbox', { name: 'กำหนดครูหลัก', exact: true }).tap();
+		await dialog
+			.getByRole('combobox', { name: 'เลือกครูหลักสำหรับกลุ่มเป้าหมาย', exact: true })
+			.tap();
+		await page.getByRole('option', { name: 'ครูหลักใหม่', exact: true }).tap();
+		await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).tap();
+		await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText('เปลี่ยน 1');
+		await page.screenshot({ path: testInfo.outputPath('bulk-touch-preview.png') });
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).tap();
+		await expect(dialog).toHaveCount(0);
+		await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).tap();
+		await expect(
+			page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/1', exact: true })
+		).toBeVisible();
+		expect(fixture.previewRequests).toHaveLength(1);
+		expect(fixture.applyRequests).toHaveLength(0);
+	} finally {
+		await context.close();
+	}
 });

@@ -150,7 +150,8 @@ async fn build_preview(
         } else {
             None
         };
-        let primary_teacher_action = teacher_action(&group, request.primary_teacher.as_ref());
+        let primary_teacher_action =
+            teacher_action(&group.teacher_assignments, request.primary_teacher.as_ref());
         if let Some(teacher) = &request.primary_teacher {
             if matches!(
                 primary_teacher_action,
@@ -199,14 +200,13 @@ async fn build_preview(
 }
 
 fn teacher_action(
-    group: &LearningGroup,
+    assignments: &[LearningGroupTeacherAssignment],
     input: Option<&BulkGroupSetupPrimaryTeacher>,
 ) -> BulkGroupSetupTeacherAction {
     let Some(input) = input else {
         return BulkGroupSetupTeacherAction::Unchanged;
     };
-    let primaries: Vec<_> = group
-        .teacher_assignments
+    let primaries: Vec<_> = assignments
         .iter()
         .filter(|assignment| assignment.role == LearningTeacherRole::Primary)
         .collect();
@@ -331,7 +331,7 @@ pub async fn apply(
             // Only draft primary assignments are replaced; other roles retain episode identities.
             DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "DELETE FROM learning_group_teachers WHERE learning_group_id=ANY($1) AND role='primary'")
                 .bind(&teacher_changed).execute().await?;
-            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_by,updated_by) SELECT gen_random_uuid(),g.id,g.academic_term_id,g.academic_year_id,$2,'primary',$3,$4,$4 FROM learning_groups g WHERE g.id=ANY($1)")
+            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_by,updated_by) SELECT uuidv7(),g.id,g.academic_term_id,g.academic_year_id,$2,'primary',$3,$4,$4 FROM learning_groups g WHERE g.id=ANY($1)")
                 .bind(&teacher_changed).bind(teacher.teacher_id).bind(starts_on).bind(actor).execute().await?;
             super::invalidate_group_academic_confirmations(&mut tx, &teacher_changed).await?;
         }
@@ -384,4 +384,114 @@ pub async fn apply(
     };
     tx.commit().await?;
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request() -> BulkGroupSetupRequest {
+        BulkGroupSetupRequest {
+            delivery_version_id: Uuid::now_v7(),
+            delivery_version_row_version: 1,
+            groups: vec![BulkGroupSetupTarget {
+                learning_group_id: Uuid::now_v7(),
+                row_version: 1,
+            }],
+            primary_teacher: Some(BulkGroupSetupPrimaryTeacher {
+                teacher_id: Uuid::now_v7(),
+                replace_existing_primary: false,
+            }),
+            roster_tracking: None,
+        }
+    }
+
+    #[test]
+    fn request_validation_refuses_empty_missing_operation_stale_shapes_and_duplicates() {
+        for case in 0..7 {
+            let mut input = request();
+            match case {
+                0 => input.groups.clear(),
+                1 => input.primary_teacher = None,
+                2 => input.delivery_version_row_version = 0,
+                3 => input.delivery_version_row_version = -1,
+                4 => input.groups[0].row_version = 0,
+                5 => input.groups[0].row_version = -1,
+                _ => input.groups.push(input.groups[0].clone()),
+            }
+            assert!(
+                matches!(validate_request(&input), Err(AppError::ValidationError(_))),
+                "invalid request case {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn request_validation_accepts_500_targets_and_rejects_501() {
+        let mut input = request();
+        input.groups = (1..=500)
+            .map(|id| BulkGroupSetupTarget {
+                learning_group_id: Uuid::from_u128(id),
+                row_version: 1,
+            })
+            .collect();
+        assert!(validate_request(&input).is_ok());
+        input.groups.push(BulkGroupSetupTarget {
+            learning_group_id: Uuid::from_u128(501),
+            row_version: 1,
+        });
+        assert!(matches!(
+            validate_request(&input),
+            Err(AppError::ValidationError(_))
+        ));
+    }
+
+    fn assignment(teacher_id: Uuid, role: LearningTeacherRole) -> LearningGroupTeacherAssignment {
+        LearningGroupTeacherAssignment {
+            id: Uuid::now_v7(),
+            teacher_id,
+            display_name: "Synthetic teacher".into(),
+            role,
+            starts_on: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            ends_on: None,
+            row_version: 1,
+        }
+    }
+
+    #[test]
+    fn teacher_actions_fill_missing_preserve_defaults_and_replace_explicitly() {
+        let selected = Uuid::now_v7();
+        let other = Uuid::now_v7();
+        let mut input = BulkGroupSetupPrimaryTeacher {
+            teacher_id: selected,
+            replace_existing_primary: false,
+        };
+        let secondary_only = vec![assignment(other, LearningTeacherRole::Secondary)];
+        assert_eq!(
+            teacher_action(&secondary_only, None),
+            BulkGroupSetupTeacherAction::Unchanged
+        );
+        assert_eq!(
+            teacher_action(&secondary_only, Some(&input)),
+            BulkGroupSetupTeacherAction::Set
+        );
+        let existing = vec![
+            assignment(other, LearningTeacherRole::Primary),
+            assignment(selected, LearningTeacherRole::Assistant),
+        ];
+        assert_eq!(
+            teacher_action(&existing, Some(&input)),
+            BulkGroupSetupTeacherAction::PreserveExisting
+        );
+        let same = vec![assignment(selected, LearningTeacherRole::Primary)];
+        assert_eq!(
+            teacher_action(&same, Some(&input)),
+            BulkGroupSetupTeacherAction::Unchanged
+        );
+        input.replace_existing_primary = true;
+        assert_eq!(
+            teacher_action(&existing, Some(&input)),
+            BulkGroupSetupTeacherAction::Replace
+        );
+    }
 }
