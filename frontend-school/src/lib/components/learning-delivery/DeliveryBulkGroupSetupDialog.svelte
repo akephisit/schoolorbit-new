@@ -485,6 +485,7 @@
 										ariaLabel="วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย"
 										bind:value={effectiveFrom}
 										disabled={busy}
+										required
 									/>
 								</div>{/if}
 						</div>

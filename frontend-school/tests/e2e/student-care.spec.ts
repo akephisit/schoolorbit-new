@@ -334,6 +334,57 @@ test('visit completion requires factual record and retains the completed mobile 
 	expect(api.visits[0].status).toBe('completed');
 	expect(api.visits[0].visitedDate).toBeTruthy();
 });
+
+test('optional visit date clears explicitly and required status retains repeated date selections', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const api = await mockStudentCare(page);
+	await page.goto(carePath(`/visits/${careVisitId}/edit`));
+	const date = page.getByRole('button', { name: 'วันที่เยี่ยมจริง', exact: true });
+	const clear = date.locator('..').getByRole('button', { name: 'ล้างวันที่', exact: true });
+	await expect(date).toHaveAttribute('aria-required', 'false');
+	await date.click();
+	await page.locator('[data-bits-day][data-today]').click();
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(clear).toBeVisible();
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').click();
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').focus();
+	await page.keyboard.press('Enter');
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
+	await page.getByRole('option', { name: 'เยี่ยมแล้ว', exact: true }).click();
+	await expect(date).toHaveAttribute('aria-required', 'true');
+	await expect(clear).toHaveCount(0);
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').click();
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').focus();
+	await page.keyboard.press('Enter');
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
+	await page.getByRole('option', { name: 'วางแผน', exact: true }).click();
+	await expect(date).toHaveAttribute('aria-required', 'false');
+	await clear.click();
+	await expect(date).toContainText('เลือกวันที่');
+	await expect(clear).toHaveCount(0);
+	await page.getByRole('button', { name: 'บันทึกเยี่ยมบ้าน', exact: true }).click();
+	await expect(page.getByText('บันทึกเยี่ยมบ้านแล้ว', { exact: true })).toBeVisible();
+	expect(api.visits).toHaveLength(1);
+	expect(api.visits[0]).toMatchObject({
+		status: 'planned',
+		visitedDate: null,
+		plannedDate: '2026-10-17'
+	});
+});
 test('late draft completion cannot update a disposed response page', async ({ page }) => {
 	const api = await mockStudentCare(page, {
 		holdDraft: true,
