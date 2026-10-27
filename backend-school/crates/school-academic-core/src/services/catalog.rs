@@ -287,7 +287,8 @@ pub struct CurrentActivityRevision {
     pub version_no: i32,
 }
 
-/// Read-time current metadata only; this does not restrict activity addition eligibility.
+/// Current published metadata; callers making write decisions hold stable-activity locks until
+/// their transaction commits. Read-only metadata consumers need no catalog locks.
 pub async fn current_activity_revisions_on_connection(
     connection: &mut sqlx::PgConnection,
     activity_ids: &[Uuid],
@@ -366,6 +367,25 @@ pub async fn lock_subjects_for_revision_selection(
             "SELECT id FROM subjects WHERE id=ANY($1) ORDER BY id FOR UPDATE",
         )
         .bind(subject_ids)
+        .fetch_all()
+        .await?;
+    Ok(())
+}
+
+/// Match activity revision commands; callers lock subjects first, then activities in UUID order.
+pub async fn lock_activities_for_revision_selection(
+    transaction: &mut Transaction<'_, Postgres>,
+    activity_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if activity_ids.is_empty() {
+        return Ok(());
+    }
+    DbSession::new(&mut **transaction)
+        .scalar::<Uuid>(
+            "academic_core.services.catalog.lock_activities_for_revision_selection",
+            "SELECT id FROM activities WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(activity_ids)
         .fetch_all()
         .await?;
     Ok(())

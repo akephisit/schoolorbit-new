@@ -347,7 +347,7 @@ pub async fn replace_program_structure(
         ));
     }
 
-    validate_new_subject_requirements(&mut transaction, program_id, &request.requirements).await?;
+    validate_new_catalog_requirements(&mut transaction, program_id, &request.requirements).await?;
 
     validate_requirement_ownership(
         &mut transaction,
@@ -650,79 +650,133 @@ fn validate_requirement_inputs(
     Ok(())
 }
 
-async fn validate_new_subject_requirements(
+async fn validate_new_catalog_requirements(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     program_id: Uuid,
     requirements: &[CurriculumStructureRequirementInput],
 ) -> Result<(), AppError> {
-    let existing = DbSession::new(&mut **transaction).query_as::<(Uuid,Uuid,Uuid)>("academic_core.services.curriculum_structure.validate_new_subject_requirements",
-        "SELECT subject_version_id,grade_level_id,term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$1",
-    ).bind(program_id).fetch_all().await?.into_iter().collect::<HashSet<_>>();
-    let courses = requirements
-        .iter()
-        .filter(|item| item.resource_kind == RequirementResourceKind::Course)
-        .collect::<Vec<_>>();
-    let mut version_ids = existing
-        .iter()
-        .map(|key| key.0)
-        .chain(courses.iter().map(|item| item.catalog_version_id))
-        .collect::<Vec<_>>();
-    version_ids.sort_unstable();
-    version_ids.dedup();
-    let subjects = DbSession::new(&mut **transaction)
-        .query_as::<(Uuid, Uuid)>(
-            "academic_core.services.curriculum_structure.validate_new_subject_requirements",
-            "SELECT id,subject_id FROM subject_versions WHERE id=ANY($1)",
-        )
-        .bind(&version_ids)
-        .fetch_all()
-        .await?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
-    let subject_ids = subjects.values().copied().collect::<Vec<_>>();
-    super::catalog::lock_subjects_for_revision_selection(transaction, &subject_ids).await?;
-    // Read the current decision after acquiring the same stable locks used by publication.
-    let current =
-        super::catalog::current_subject_version_ids_on_connection(&mut **transaction, &subject_ids)
-            .await?;
-    let mut buckets = HashMap::<(Uuid, Uuid, Uuid), (usize, bool)>::new();
-    for requirement in courses {
-        let subject_id = subjects
-            .get(&requirement.catalog_version_id)
-            .ok_or_else(subject_selection_conflict)?;
-        let preserved = existing.contains(&(
-            requirement.catalog_version_id,
-            requirement.grade_level_id,
-            requirement.term_slot_id,
-        ));
-        if !preserved && current.get(subject_id) != Some(&requirement.catalog_version_id) {
-            return Err(subject_selection_conflict());
+    // Keep a consistent cross-kind lock order; each provider lock sorts stable UUIDs.
+    for kind in [
+        RequirementResourceKind::Course,
+        RequirementResourceKind::Activity,
+    ] {
+        let (existing_sql, versions_sql) = match kind {
+            RequirementResourceKind::Course => (
+                "SELECT subject_version_id,grade_level_id,term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$1",
+                "SELECT id,subject_id FROM subject_versions WHERE id=ANY($1)",
+            ),
+            RequirementResourceKind::Activity => (
+                "SELECT activity_version_id,grade_level_id,term_slot_id FROM curriculum_activity_requirements WHERE study_program_id=$1",
+                "SELECT id,activity_id FROM activity_versions WHERE id=ANY($1)",
+            ),
+        };
+        let existing = DbSession::new(&mut **transaction)
+            .query_as::<(Uuid, Uuid, Uuid)>(
+                "academic_core.services.curriculum_structure.validate_new_catalog_requirements",
+                existing_sql,
+            )
+            .bind(program_id)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let selected = requirements
+            .iter()
+            .filter(|item| item.resource_kind == kind)
+            .collect::<Vec<_>>();
+        let mut version_ids = existing
+            .iter()
+            .map(|key| key.0)
+            .chain(selected.iter().map(|item| item.catalog_version_id))
+            .collect::<Vec<_>>();
+        version_ids.sort_unstable();
+        version_ids.dedup();
+        if version_ids.is_empty() {
+            continue;
         }
-        let bucket = buckets
-            .entry((
-                *subject_id,
+        let catalogs = DbSession::new(&mut **transaction)
+            .query_as::<(Uuid, Uuid)>(
+                "academic_core.services.curriculum_structure.validate_new_catalog_requirements",
+                versions_sql,
+            )
+            .bind(&version_ids)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        let catalog_ids = catalogs.values().copied().collect::<Vec<_>>();
+        let current = match kind {
+            RequirementResourceKind::Course => {
+                super::catalog::lock_subjects_for_revision_selection(transaction, &catalog_ids)
+                    .await?;
+                super::catalog::current_subject_version_ids_on_connection(
+                    &mut **transaction,
+                    &catalog_ids,
+                )
+                .await?
+            }
+            RequirementResourceKind::Activity => {
+                super::catalog::lock_activities_for_revision_selection(transaction, &catalog_ids)
+                    .await?;
+                super::catalog::current_activity_revisions_on_connection(
+                    &mut **transaction,
+                    &catalog_ids,
+                )
+                .await?
+                .into_iter()
+                .map(|(id, revision)| (id, revision.id))
+                .collect()
+            }
+        };
+        // Read current selection only after taking the same stable locks used by publication.
+        let mut buckets = HashMap::<(Uuid, Uuid, Uuid), (usize, bool)>::new();
+        for requirement in selected {
+            let catalog_id = catalogs
+                .get(&requirement.catalog_version_id)
+                .ok_or_else(|| catalog_selection_conflict(kind))?;
+            let preserved = existing.contains(&(
+                requirement.catalog_version_id,
                 requirement.grade_level_id,
                 requirement.term_slot_id,
-            ))
-            .or_default();
-        bucket.0 += 1;
-        bucket.1 |= !preserved;
-    }
-    if buckets
-        .values()
-        .any(|(count, has_new)| *count > 1 && *has_new)
-    {
-        return Err(AppError::Conflict(
-            "มีรายวิชาเดียวกันซ้ำในชั้นและภาคเรียนนี้ กรุณาลบรายการเดิมก่อนเพิ่มเวอร์ชันใหม่".into(),
-        ));
+            ));
+            if !preserved && current.get(catalog_id) != Some(&requirement.catalog_version_id) {
+                return Err(catalog_selection_conflict(kind));
+            }
+            let bucket = buckets
+                .entry((
+                    *catalog_id,
+                    requirement.grade_level_id,
+                    requirement.term_slot_id,
+                ))
+                .or_default();
+            bucket.0 += 1;
+            bucket.1 |= !preserved;
+        }
+        if buckets
+            .values()
+            .any(|(count, has_new)| *count > 1 && *has_new)
+        {
+            let resource = catalog_requirement_name(kind);
+            return Err(AppError::Conflict(format!(
+                "มี{resource}เดียวกันซ้ำในชั้นและภาคเรียนนี้ กรุณาลบรายการเดิมก่อนเพิ่มเวอร์ชันใหม่"
+            )));
+        }
     }
     Ok(())
 }
 
-fn subject_selection_conflict() -> AppError {
-    AppError::Conflict(
-        "เวอร์ชันรายวิชาเปลี่ยนหรือยังไม่มีเวอร์ชันที่ใช้ได้ในวันนี้ กรุณาโหลดตัวเลือกใหม่และเลือกเวอร์ชันปัจจุบัน".into(),
-    )
+fn catalog_requirement_name(kind: RequirementResourceKind) -> &'static str {
+    match kind {
+        RequirementResourceKind::Course => "รายวิชา",
+        RequirementResourceKind::Activity => "กิจกรรม",
+    }
+}
+
+fn catalog_selection_conflict(kind: RequirementResourceKind) -> AppError {
+    let resource = catalog_requirement_name(kind);
+    AppError::Conflict(format!(
+        "เวอร์ชัน{resource}เปลี่ยนหรือยังไม่มีเวอร์ชันที่ใช้ได้ในวันนี้ กรุณาโหลดตัวเลือกใหม่และเลือกเวอร์ชันปัจจุบัน"
+    ))
 }
 
 async fn validate_requirement_ownership(

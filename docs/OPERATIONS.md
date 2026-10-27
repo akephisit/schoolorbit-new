@@ -667,12 +667,12 @@ bounded findings on a protected copy; repair forward with a matching release. Pr
 require the retired columns and must not be restored against schema 138. Never retarget dates,
 rewrite academic years, delete catalog/history rows or alter SQLx history to force success.
 
-Curriculum additions use the catalog provider's current published subject revision on
-Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
+Curriculum course and activity additions use the catalog provider's current published revision
+of the same resource kind and stable identity on Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
 under normal maintenance. Existing curriculum rows, published snapshots, copied programs
 and actual delivery references retain their version IDs; no migration or automatic upgrade
 is part of this rule. Refresh stale options after a conflict and explicitly replace an old
-row when a new revision is wanted. Historical duplicate subject buckets may be retained or
+row when a new revision is wanted. Historical duplicate subject or activity buckets may be retained or
 reduced, but a new tuple cannot introduce another version into a duplicate bucket.
 
 After migration 131, pre-revision School writers are prohibited: they do not enforce semantic
@@ -842,7 +842,7 @@ There are four public workflow entry points:
 | [pipeline.yml](../.github/workflows/pipeline.yml)       | PR scope/base planning; main or manual preparation and production release |
 | [merge.yml](../.github/workflows/merge.yml)             | Serialize trusted team PR integration after `Pipeline gate`               |
 | [operations.yml](../.github/workflows/operations.yml)   | Explicit deployed smoke, diagnostics, benchmarks and tenant provisioning  |
-| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention and serialized public API certificate renewal                 |
+| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention and serialized public API certificate renewal      |
 
 The callable [prepare.yml](../.github/workflows/prepare.yml) and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
 are callable component implementations, with no separate push or manual writers.
@@ -2381,7 +2381,6 @@ On failure retain maintenance and repair forward through the existing release pr
 require an explicit staff choice and save; opening or reporting never writes user criteria.
 
 Pre-135 School binaries cannot maintain or restore criteria semantics, and the compiled migration-history gate prohibits their use after migration 135. Keep a compatible 135-or-later writer and repair forward; never restore an older binary after this migration.
-
 
 ## Reviewed owned load fixture cleanup
 

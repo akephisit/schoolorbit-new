@@ -59,7 +59,6 @@ function duplicateRequirements(
 			requirement.termSlotId !== context.termSlotId
 		)
 			return false;
-		if (option.resourceKind === 'activity') return requirement.catalogVersionId === option.id;
 		return (
 			stagedRequirementMetadata(requirement, options, originals)?.catalogId === option.catalogId
 		);
@@ -74,19 +73,6 @@ export function hasExistingCatalogRequirement(
 	originals: CurriculumStructureRequirement[]
 ): boolean {
 	return duplicateRequirements(option, context, requirements, options, originals).length > 0;
-}
-
-export function hasExistingCourseRequirement(
-	option: CurriculumCatalogOption,
-	context: CurriculumSelectionContext,
-	requirements: StagedCurriculumRequirement[],
-	options: CurriculumCatalogOption[],
-	originals: CurriculumStructureRequirement[]
-): boolean {
-	return (
-		option.resourceKind === 'course' &&
-		hasExistingCatalogRequirement(option, context, requirements, options, originals)
-	);
 }
 
 // This guards local selection changes; the save endpoint remains authoritative for freshness.

@@ -200,41 +200,97 @@ test('stale-save 409 preserves chosen v2 and never retries or upgrades it', asyn
 	expect(state.errors).toEqual([]);
 });
 
-test('activity revisions remain selectable with the existing exact-version duplicate policy', async ({
+test('activity picker hides old and future versions, blocks the pinned stable activity and permits explicit replacement across contexts', async ({
 	page
 }) => {
-	const fixture = curriculumCatalogFixture({ empty: true });
+	const fixture = curriculumCatalogFixture({ pinnedActivity: 'outdated', omitOldOption: true });
 	const state = await installCurriculumCatalog(page, fixture);
 	await openCurriculumEditor(page);
-	for (const version of [1, 2]) {
-		await picker(page)
-			.getByRole('checkbox', {
-				name:
-					version === 1
-						? /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/
-						: /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 มิ.ย. 2570/
-			})
-			.check();
+	const activityChoice = () =>
+		picker(page).getByRole('checkbox', { name: /^เลือก กิจกรรมชุมนุม ·/ });
+	const activityRows = () =>
+		editor(page)
+			.getByRole('region', { name: 'รายการในหลักสูตร' })
+			.getByRole('row')
+			.filter({ hasText: 'กิจกรรมชุมนุม' });
+	await expect(activityChoice()).toHaveCount(1);
+	await expect(
+		picker(page).getByRole('checkbox', { name: /กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2568/ })
+	).toHaveCount(0);
+	await expect(
+		picker(page).getByRole('checkbox', { name: /กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/ })
+	).toHaveCount(0);
+	await expect(activityChoice()).toBeDisabled();
+	await expect(picker(page)).toContainText('มีกิจกรรมนี้แล้ว');
+	await expect(activityRows().getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
+	for (const [field, value] of [
+		['ระดับชั้น', 'มัธยมศึกษาปีที่ 2'],
+		['ภาคเรียน', 'ภาคเรียนที่ 2']
+	] as const) {
+		await selectContext(page, field, value);
+		await expect(activityChoice()).toBeEnabled();
+		await activityChoice().check();
 		await picker(page)
 			.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
 			.click();
+		await expect(activityChoice()).toBeDisabled();
 	}
-	const table = editor(page).getByRole('region', { name: 'รายการในหลักสูตร' });
-	await expect(table.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' })).toHaveCount(2);
-	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
-	await expect(table).not.toContainText(/\bv\d+\b/);
-	await expect(table).not.toContainText('A01');
+	await selectContext(page, 'ระดับชั้น', 'มัธยมศึกษาปีที่ 1');
+	await selectContext(page, 'ภาคเรียน', 'ภาคเรียนที่ 1');
+	await activityRows().getByRole('button', { name: 'นำรายการออก', exact: true }).click();
+	await expect(activityChoice()).toBeEnabled();
+	await activityChoice().check();
 	await picker(page)
-		.getByRole('checkbox', { name: /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/ })
+		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
+		.click();
+	await expect(activityRows()).toHaveCount(1);
+	await expect(activityRows().getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
+	await expect(editor(page)).toBeHidden();
+	expect(state.writes).toHaveLength(1);
+	expect(state.writes[0].body).toMatchObject({
+		requirements: [
+			{ catalogVersionId: ids.catalogVersion },
+			{
+				catalogVersionId: 'activity-v2',
+				gradeLevelId: fixture.workspace.gradeLevels[1].id,
+				termSlotId: fixture.workspace.termSlots[0].id
+			},
+			{
+				catalogVersionId: 'activity-v2',
+				gradeLevelId: fixture.workspace.gradeLevels[1].id,
+				termSlotId: fixture.workspace.termSlots[1].id
+			},
+			{
+				catalogVersionId: 'activity-v2',
+				gradeLevelId: ids.grade,
+				termSlotId: fixture.workspace.termSlots[0].id
+			}
+		]
+	});
+	expect(state.errors).toEqual([]);
+	expect(state.unexpected).toEqual([]);
+});
+
+test('activity stale-save conflict retains the selected current pin in the full editor', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture({ empty: true });
+	const state = await installCurriculumCatalog(page, fixture, { failSaveOnce: true });
+	await openCurriculumEditor(page);
+	await picker(page)
+		.getByRole('checkbox', { name: /^เลือก กิจกรรมชุมนุม ·/ })
 		.check();
 	await picker(page)
 		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
 		.click();
-	await expect(table.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' })).toHaveCount(2);
-	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
-	await expect(table).not.toContainText(/\bv\d+\b/);
-	await expect(table).not.toContainText('A01');
-	expect(state.writes).toEqual([]);
+	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
+	await expect(editor(page).getByRole('alert')).toContainText('ไม่ใช่รุ่นปัจจุบันแล้ว');
+	await expect(editor(page).getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' })).toHaveCount(1);
+	expect(state.writes).toHaveLength(1);
+	expect(state.writes[0].body).toMatchObject({
+		requirements: [{ catalogVersionId: 'activity-v2', resourceKind: 'activity' }]
+	});
 	expect(state.errors).toEqual([]);
 });
 
@@ -377,7 +433,15 @@ for (const width of [1440, 390])
 			const activityBadge = activity.getByRole('button', { name: 'เก่า', exact: true });
 			await expect(activityBadge).toBeVisible();
 			await expect(activityBadge.locator('[data-slot="badge"]')).toHaveClass(/text-warning/);
-			if (width === 390) await page.keyboard.press('Escape');
+			if (width === 390) {
+				await page.keyboard.press('Escape');
+				await expect(
+					page.getByRole('tooltip', {
+						name: 'มีรายวิชารุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน',
+						exact: true
+					})
+				).toBeHidden();
+			}
 			await activityBadge.scrollIntoViewIfNeeded();
 			if (width === 390) await activityBadge.tap();
 			else await activityBadge.focus();

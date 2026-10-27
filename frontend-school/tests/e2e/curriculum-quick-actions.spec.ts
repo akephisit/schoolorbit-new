@@ -400,7 +400,15 @@ test.describe('touch and panel layouts', () => {
 				);
 				await expect(
 					sheet(page, 'กิจกรรม').getByRole('checkbox', { name: /^เลือก กิจกรรมชุมนุม / })
-				).toHaveCount(2);
+				).toHaveCount(1);
+				await expect(
+					sheet(page, 'กิจกรรม').getByRole('checkbox', {
+						name: 'เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2569',
+						exact: true
+					})
+				).toBeVisible();
+				await expect(sheet(page, 'กิจกรรม')).not.toContainText('ตั้งแต่ 1 พ.ค. 2568');
+				await expect(sheet(page, 'กิจกรรม')).not.toContainText('ตั้งแต่ 1 พ.ค. 2570');
 				await expect(sheet(page, 'กิจกรรม')).not.toContainText('ค21101');
 				await closeClean(page, sheet(page, 'กิจกรรม'));
 				await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
@@ -515,4 +523,67 @@ test('late registry options cannot reopen a cancelled panel or restore a selecti
 	await closeClean(page, sheet(page));
 	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
+});
+
+test('quick activity add hides old/future options and requires removing a pinned old activity before replacement', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture({ pinnedActivity: 'outdated', omitOldOption: true });
+	const state = await installCurriculumCatalog(page, fixture);
+	await page.goto(curriculumCatalogPath);
+	const target = () => contextTarget(page, fixture, { section: 'student_development' });
+	const choice = () =>
+		sheet(page, 'กิจกรรม').getByRole('checkbox', { name: /^เลือก กิจกรรมชุมนุม ·/ });
+	await add(page, target(), 'กิจกรรม');
+	await expect(choice()).toHaveCount(1);
+	await expect(choice()).toBeDisabled();
+	await expect(sheet(page, 'กิจกรรม')).not.toContainText('ตั้งแต่ 1 พ.ค. 2568');
+	await expect(sheet(page, 'กิจกรรม')).not.toContainText('ตั้งแต่ 1 พ.ค. 2570');
+	await closeClean(page, sheet(page, 'กิจกรรม'));
+	await menu(page, requirement(page, 'pinned-activity'));
+	await page.getByRole('menuitem', { name: 'นำรายการนี้ออก…', exact: true }).click();
+	await page
+		.getByRole('alertdialog', { name: 'นำรายการออก', exact: true })
+		.getByRole('button', { name: 'นำออกจากร่างนี้', exact: true })
+		.click();
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
+	await add(page, target(), 'กิจกรรม');
+	await expect(choice()).toBeEnabled();
+	await choice().check();
+	await sheet(page, 'กิจกรรม')
+		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
+		.click();
+	await expect(sheet(page, 'กิจกรรม')).toBeHidden();
+	expect(state.writes).toHaveLength(2);
+	expect(body(state, 1).requirements).toEqual([
+		expect.objectContaining({ catalogVersionId: ids.catalogVersion, resourceKind: 'course' }),
+		expect.objectContaining({ catalogVersionId: 'activity-v2', resourceKind: 'activity' })
+	]);
+	expect(state.errors).toEqual([]);
+	expect(state.unexpected).toEqual([]);
+});
+
+test('quick activity stale-save retains its selected current version without retry or upgrade', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture({ empty: true });
+	const state = await installCurriculumCatalog(page, fixture, { failSaveOnce: true });
+	await page.goto(curriculumCatalogPath);
+	await add(page, contextTarget(page, fixture, { header: true }), 'กิจกรรม');
+	const activity = sheet(page, 'กิจกรรม').getByRole('checkbox', { name: /^เลือก กิจกรรมชุมนุม ·/ });
+	await activity.check();
+	await sheet(page, 'กิจกรรม')
+		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
+		.click();
+	await expect(sheet(page, 'กิจกรรม')).toContainText('ไม่ใช่รุ่นปัจจุบันแล้ว');
+	await expect(activity).toBeChecked();
+	await expect(
+		sheet(page, 'กิจกรรม').getByRole('button', { name: /เพิ่ม 1 รายการ/ })
+	).toBeDisabled();
+	expect(state.writes).toHaveLength(1);
+	expect(body(state).requirements).toEqual([
+		expect.objectContaining({ catalogVersionId: 'activity-v2', resourceKind: 'activity' })
+	]);
+	expect(state.errors).toEqual([]);
+	expect(state.unexpected).toEqual([]);
 });

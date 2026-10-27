@@ -2034,8 +2034,9 @@ without expiry. Database cases exercise old/current option metadata, no future/d
 unchanged existing and copied version IDs, current-registry outdated warnings for both courses
 and activities (including historical publication reads), and no warnings from future/draft-only
 revisions, other stable identities, or a higher future pin. Activity cases also cover archived
-versions, current pins, latest eligible start-date ordering and unchanged old/future activity
-admission. Subject cases retain explicit replacement, grandfathered duplicate buckets and atomic
+versions, current pins, latest eligible start-date ordering and current-only activity additions. Old/future versions remain
+metadata for existing pins; stable activity duplicate checks preserve grandfathered tuples and
+refuse stale additions under the stable-activity lock. Subject cases retain explicit replacement, grandfathered duplicate buckets and atomic
 stale-publication rejection under stable-subject locks.
 Run affected curriculum structure/copy and curriculum permission cases alongside them.
 Regenerate and check/test API contracts after DTO changes; compile affected Core/HTTP
@@ -2043,12 +2044,16 @@ consumers both with default features and `api-docs`. These fixtures never use te
 From `frontend-school`, run `node --experimental-strip-types --test
 tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser workflow
 `tests/e2e/curriculum-catalog-revisions.spec.ts` against an owned local preview. The
-fixtures cover current-only course additions, preserved course/activity pins with server-owned
+fixtures cover current-only course/activity additions, preserved course/activity pins with server-owned
 outdated badges and resource-specific keyboard/touch tooltips, hidden revision numbers, explicit
 replacement, legacy duplicate buckets and conflict retention. Activity cases verify true/false
 warning propagation through the editor, comparison and document tabs, read-only publication
 history, requirement-kind saves and copied programs, plus mobile/desktop light/dark layouts.
-Published activity versions remain selectable under the existing exact-version duplicate policy.
+Both full and quick activity pickers hide ineligible old/future choices, block another version of
+the same stable activity in a program/grade/term until explicit removal, and retain chosen current
+pins after stale-save conflicts. Existing old/future pins and grandfathered duplicates remain
+viewable and editable. Run `tests/e2e/curriculum-quick-actions.spec.ts` alongside the catalog spec
+for the direct add/remove workflow.
 
 Curriculum matrix contracts and default removal use the same owned disposable PostgreSQL runner:
 

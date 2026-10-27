@@ -13,7 +13,7 @@
 	import {
 		groupStagedRequirements,
 		appendSelectedCatalogRequirements,
-		hasExistingCourseRequirement,
+		hasExistingCatalogRequirement,
 		selectableCatalogOption,
 		type StagedCurriculumRequirement
 	} from '#lib/academic-core/curriculum-catalog-selection.js';
@@ -392,7 +392,7 @@
 	let catalogChoices = $derived(
 		filteredCatalog.map((option) => ({
 			option,
-			hasExistingCourse: hasExistingCourseRequirement(
+			hasExistingCatalog: hasExistingCatalogRequirement(
 				option,
 				selectionContext,
 				stagedRequirements,
@@ -706,13 +706,13 @@
 							</Select.Content>
 						</Select.Root>
 						<div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-1">
-							{#each catalogChoices as { option, hasExistingCourse } (option.id)}
+							{#each catalogChoices as { option, hasExistingCatalog } (option.id)}
 								<label
 									class="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted/60"
 								>
 									<Checkbox
 										aria-label={`เลือก ${option.resourceKind === 'course' ? option.code + ' ' : ''}${option.name} · ${formatEffectiveFrom(option.effectiveFrom)}`}
-										disabled={hasExistingCourse || !selectionReady || saving}
+										disabled={hasExistingCatalog || !selectionReady || saving}
 										checked={selectedCatalogIds.includes(option.id)}
 										onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 									/>
@@ -724,8 +724,10 @@
 										<span class="block text-xs text-muted-foreground"
 											>{formatEffectiveFrom(option.effectiveFrom)}</span
 										>
-										{#if hasExistingCourse}<span class="block text-xs text-muted-foreground"
-												>มีรายวิชานี้แล้ว</span
+										{#if hasExistingCatalog}<span class="block text-xs text-muted-foreground"
+												>{option.resourceKind === 'activity'
+													? 'มีกิจกรรมนี้แล้ว'
+													: 'มีรายวิชานี้แล้ว'}</span
 											>{/if}
 									</span>
 								</label>
