@@ -44,7 +44,7 @@ test('room order uses grade metadata then natural Thai names without mutating ca
 		...options,
 		homerooms: options.homerooms.map((room) => ({
 			...room,
-			name: room.id === 'a' ? 'ห้อง 1' : room.name
+			name: room.id === 'a' ? 'ก ห้อง 1' : room.name
 		}))
 	};
 	assert.deepEqual(curriculumPreparationOrder(renamed).homeroomIds(input), ['d', 'c', 'b', 'a']);
