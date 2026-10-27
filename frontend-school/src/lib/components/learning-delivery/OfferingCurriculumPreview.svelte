@@ -152,7 +152,7 @@
 			choice.groups = [
 				{
 					groupKey: randomGroupKey(),
-					name: `${proposal.code} · เรียนรวม ${homeroomIds.map(homeroomLabel).join(', ')}`,
+					name: `${proposal.resourceKind === 'activity' ? proposal.name : proposal.code} · เรียนรวม ${homeroomIds.map(homeroomLabel).join(', ')}`,
 					homeroomIds
 				}
 			];
@@ -168,7 +168,7 @@
 				...choice.groups,
 				{
 					groupKey: randomGroupKey(),
-					name: `${proposal.code} · ${homeroomLabel(homeroomId)} กลุ่ม ${choice.groups.length + 1}`,
+					name: `${proposal.resourceKind === 'activity' ? proposal.name : proposal.code} · ${homeroomLabel(homeroomId)} กลุ่ม ${choice.groups.length + 1}`,
 					homeroomIds: [homeroomId]
 				}
 			];
@@ -223,7 +223,7 @@
 			if (preparationTarget && focusedProposals.length !== 1) {
 				preview = null;
 				choices = [];
-				errorMessage = `ไม่พบ ${preparationTarget.code} · ${preparationTarget.name} ในโครงสร้างของห้องเป้าหมาย`;
+				errorMessage = `ไม่พบ ${preparationTarget.name} ในโครงสร้างของห้องเป้าหมาย`;
 				return;
 			}
 			preview = result;
@@ -277,7 +277,7 @@
 			<div>
 				<h3 class="font-medium">
 					{preparationTarget
-						? `เปิดใช้งาน ${preparationTarget.code} · ${preparationTarget.name}`
+						? `เปิดใช้งาน ${preparationTarget.name}`
 						: 'เตรียมรายการเปิดสอนและกลุ่มจากหลักสูตร'}
 				</h3>
 				<p class="mt-1 text-sm text-muted-foreground">
@@ -397,7 +397,11 @@
 									<Badge variant={proposal.offeringAction === 'create' ? 'default' : 'secondary'}
 										>{proposal.offeringAction === 'create' ? 'สร้างรายการ' : 'ใช้รายการเดิม'}</Badge
 									>
-									<p class="font-medium">{proposal.code} · {proposal.name}</p>
+									<p class="font-medium">
+										{proposal.resourceKind === 'activity'
+											? proposal.name
+											: `${proposal.code} · ${proposal.name}`}
+									</p>
 								</div>
 								<p class="mt-1 text-xs text-muted-foreground">
 									เป้าหมาย {proposal.targetHomeroomIds.length} ห้อง · ข้อกำหนด {proposal

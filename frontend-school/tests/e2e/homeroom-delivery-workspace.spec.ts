@@ -1079,7 +1079,7 @@ for (const count of [0, 1, 2]) {
 				.first()
 				.click();
 		}
-		await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม CLUB/ })).toBeVisible();
+		await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม ชุมนุม/ })).toBeVisible();
 		await expect(page.getByRole('dialog', { name: 'สร้างรุ่นเปิดสอน', exact: true })).toHaveCount(
 			0
 		);
@@ -1102,7 +1102,7 @@ test('a failed published activation lookup preserves intent and retries', async 
 	await expect(page.getByRole('alert')).toContainText('เครือข่ายขัดข้อง');
 	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(1);
-	await expect(page.getByRole('dialog')).toContainText('เพิ่มกิจกรรม CLUB');
+	await expect(page.getByRole('dialog')).toContainText('เพิ่มกิจกรรม ชุมนุม');
 });
 
 for (const grouped of [false, true]) {
@@ -1188,7 +1188,7 @@ for (const size of ['mobile', 'desktop'] as const)
 			await add.focus();
 			await page.keyboard.press('Enter');
 			await expect(page.getByRole('dialog')).toHaveCount(1);
-			await expect(page.getByRole('dialog')).toContainText('เพิ่มกิจกรรม CLUB');
+			await expect(page.getByRole('dialog')).toContainText('เพิ่มกิจกรรม ชุมนุม');
 			await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 			await expect(page.getByRole('dialog')).toContainText('เปิดแบบกลาง');
 			await page.screenshot({ path: `test-results/central-${size}-${theme}.png` });
@@ -1255,6 +1255,182 @@ test('read-only activity viewer has no creation actions or lazy management reque
 	expect(managementReads).toBe(0);
 });
 
+for (const viewport of [
+	{ width: 1440, height: 900 },
+	{ width: 390, height: 844 }
+]) {
+	for (const dark of [false, true]) {
+		test(`curriculum preparation hides activity codes and retains course codes at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize(viewport);
+			await mockDelivery(page, undefined, undefined, { deliveryVersionStatus: 'draft' });
+			const resources = [
+				{ resourceKind: 'activity', code: 'ACT-a123456789ab', name: 'กิจกรรมเพื่อสังคม' },
+				{ resourceKind: 'activity', code: 'CLUB-b123456789ab', name: 'ชุมนุม' },
+				{ resourceKind: 'activity', code: 'GUIDANCE-c123456789ab', name: 'แนะแนว' },
+				{ resourceKind: 'course', code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน' }
+			];
+			await page.route('**/api/academic/delivery/management-options?**', (route) =>
+				fulfill(route, {
+					studyPrograms: [
+						{ id: ids.program, code: 'DEFAULT', name: 'แผนมาตรฐาน', levelName: 'หลักสูตร' }
+					],
+					homerooms: [
+						{ id: ids.homeroom, name: 'ม.1/1', gradeLevelId: ids.grade },
+						{ id: ids.otherHomeroom, name: 'ม.1/2', gradeLevelId: ids.grade }
+					],
+					catalogVersions: [],
+					gradeLevels: [],
+					teachers: [],
+					rooms: [],
+					learningGroups: []
+				})
+			);
+			await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+				fulfill(route, {
+					curriculumSources: [],
+					sourceHash: 'a'.repeat(64),
+					proposals: resources.map((resource, index) => ({
+						...resource,
+						proposalId: `proposal-${index}`,
+						catalogVersionId: ids.catalog,
+						schedulingMode: 'independent',
+						targetHomeroomIds: [ids.homeroom, ids.otherHomeroom],
+						requirementIds: [ids.requirement],
+						requirementKind: 'required',
+						groupingState: 'proposed',
+						offeringAction: 'create',
+						conflicts: [],
+						defaultGroups: [ids.homeroom, ids.otherHomeroom].map((homeroomId, room) => ({
+							groupKey: `${index}${room}`.padEnd(64, 'a'),
+							homeroomIds: [homeroomId],
+							name: `${resource.resourceKind === 'activity' ? resource.name : resource.code} · ม.1/${room + 1}`
+						}))
+					}))
+				})
+			);
+			let saves = 0;
+			page.on('request', (request) => {
+				if (request.url().includes('/apply-from-curriculum')) saves++;
+			});
+			await page.goto(
+				`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+			);
+			if (dark) await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+			await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+			const dialog = page.getByRole('dialog');
+			await dialog.getByRole('combobox', { name: 'เลือกแผนการเรียนจากหลักสูตร' }).click();
+			await page.getByRole('option', { name: /แผนมาตรฐาน/ }).click();
+			await page.keyboard.press('Escape');
+			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
+			for (const resource of resources) {
+				const prefix = resource.resourceKind === 'activity' ? resource.name : resource.code;
+				const label =
+					resource.resourceKind === 'activity'
+						? resource.name
+						: `${resource.code} · ${resource.name}`;
+				const card = dialog
+					.locator('.space-y-3.p-4')
+					.filter({ has: page.getByText(label, { exact: true }) });
+				await expect(card).toHaveCount(1);
+				const groups = card.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' });
+				await expect(groups).toHaveCount(2);
+				await expect(groups.nth(0)).toHaveValue(`${prefix} · ม.1/1`);
+				await expect(groups.nth(1)).toHaveValue(`${prefix} · ม.1/2`);
+				await card.getByRole('button', { name: 'รวมหลายห้อง' }).click();
+				await expect(groups).toHaveCount(1);
+				await expect(groups.first()).toHaveValue(`${prefix} · เรียนรวม ม.1/1, ม.1/2`);
+				await card.getByRole('button', { name: 'เพิ่มกลุ่มแบ่ง' }).click();
+				await expect(groups.nth(1)).toHaveValue(`${prefix} · ม.1/1 กลุ่ม 2`);
+				const customName = `${resource.code} ชื่อที่ผู้ใช้กำหนด`;
+				await groups.first().fill(customName);
+				await card.getByRole('button', { name: 'เพิ่มกลุ่มแบ่ง' }).click();
+				await expect(groups.first()).toHaveValue(customName);
+				await card.getByRole('button', { name: 'คืนค่าข้อเสนอ' }).click();
+				await expect(groups).toHaveCount(2);
+				await expect(groups.first()).toHaveValue(`${prefix} · ม.1/1`);
+			}
+			await expect(dialog).not.toContainText(
+				/ACT-a123456789ab|CLUB-b123456789ab|GUIDANCE-c123456789ab/
+			);
+			for (const input of await dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' }).all()) {
+				expect(await input.inputValue()).not.toMatch(
+					/ACT-a123456789ab|CLUB-b123456789ab|GUIDANCE-c123456789ab/
+				);
+			}
+			await dialog.getByText('กิจกรรมเพื่อสังคม', { exact: true }).scrollIntoViewIfNeeded();
+			await page.screenshot({ path: testInfo.outputPath('activity-curriculum-preview.png') });
+			expect(saves).toBe(0);
+		});
+	}
+}
+
+test('focused activity preparation hides its code in the heading and missing-proposal error', async ({
+	page
+}) => {
+	await mockActivityActivation(page, 1);
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, { curriculumSources: [], sourceHash: 'a'.repeat(64), proposals: [] })
+	);
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
+	);
+	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'เพิ่มกิจกรรม ชุมนุม', exact: true });
+	await expect(
+		dialog.getByRole('heading', { name: 'เปิดใช้งาน ชุมนุม', exact: true })
+	).toBeVisible();
+	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('ไม่พบ ชุมนุม ในโครงสร้างของห้องเป้าหมาย');
+	await expect(dialog).not.toContainText('CLUB');
+});
+
+test('activity preparation preserves server-owned existing group names on restore', async ({
+	page
+}) => {
+	await mockActivityActivation(page, 1);
+	const existingName = 'CLUB-legacy · กลุ่มชื่อเดิม';
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, {
+			curriculumSources: [],
+			sourceHash: 'a'.repeat(64),
+			proposals: [
+				{
+					proposalId: 'central-club',
+					resourceKind: 'activity',
+					catalogVersionId: ids.catalog,
+					schedulingMode: 'synchronized',
+					code: 'CLUB',
+					name: 'ชุมนุม',
+					targetHomeroomIds: [ids.homeroom],
+					requirementIds: [ids.requirement],
+					requirementKind: 'required',
+					groupingState: 'proposed',
+					offeringAction: 'retain',
+					conflicts: [],
+					defaultGroups: [
+						{ groupKey: 'a'.repeat(64), name: existingName, homeroomIds: [ids.homeroom] }
+					]
+				}
+			]
+		})
+	);
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
+	);
+	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
+	await dialog.getByRole('button', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
+	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();
+	const group = dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' });
+	await expect(group).toHaveValue(existingName);
+	await group.fill('ชื่อที่แก้ไข');
+	await dialog.getByRole('button', { name: 'คืนค่าข้อเสนอ' }).click();
+	await expect(group).toHaveValue(existingName);
+});
+
 test('curriculum synchronized activation can explicitly create its reviewed homeroom groups', async ({
 	page
 }) => {
@@ -1263,7 +1439,7 @@ test('curriculum synchronized activation can explicitly create its reviewed home
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
 	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
-	await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม CLUB/ })).toBeVisible();
+	await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม ชุมนุม/ })).toBeVisible();
 	await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await page.getByRole('button', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
 	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();
