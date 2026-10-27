@@ -1006,6 +1006,20 @@ test('bulk automatic roster configuration defaults to Bangkok today and patches 
 		dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
 	).toContainText('27 ต.ค. 2569');
 	await expect(dialog).toContainText('สมาชิกใหม่เริ่มนับจากวันที่นี้');
+	const date = dialog.getByRole('button', {
+		name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย',
+		exact: true
+	});
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').click();
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await date.click();
+	await page.locator('[data-bits-day][data-selected]').focus();
+	await page.keyboard.press('Enter');
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeEnabled();
 	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
 	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
 		'เปลี่ยนเป็นติดตามห้องอัตโนมัติ'
@@ -1514,7 +1528,9 @@ for (const width of [390, 1280]) {
 			await page.setViewportSize({ width, height: 900 });
 			const fixture = await mockWeeklyPeriods(page);
 			await page.goto(url());
-			if (dark) await page.evaluate(() => document.documentElement.classList.add('dark'));
+			if (dark) await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+			if (dark) await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+			else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
 			const card = page.getByTestId('delivery-versions-ready');
 			await expect(card).toContainText('เลือกวันเริ่มใช้ตอนเผยแพร่');
 			await expect(card).not.toContainText('null');
@@ -1525,9 +1541,11 @@ for (const width of [390, 1280]) {
 			await page.keyboard.press('Enter');
 			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
 			await expect(dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })).toHaveValue('2');
+			await expect(dialog).toHaveCSS('opacity', '1');
 			expect(fixture.writes).toHaveLength(0);
 			await page.screenshot({
-				path: testInfo.outputPath(`offering-periods-${width}-${dark ? 'dark' : 'light'}.png`)
+				path: testInfo.outputPath(`offering-periods-${width}-${dark ? 'dark' : 'light'}.png`),
+				animations: 'disabled'
 			});
 			const bounds = await dialog.boundingBox();
 			expect(bounds!.x).toBeGreaterThanOrEqual(0);

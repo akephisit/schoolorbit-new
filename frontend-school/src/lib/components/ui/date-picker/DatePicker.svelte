@@ -108,6 +108,7 @@
 				value={dateValue}
 				onValueChange={handleValueChange}
 				type="single"
+				preventDeselect
 				initialFocus
 				locale="th-TH"
 				captionLayout="dropdown"
