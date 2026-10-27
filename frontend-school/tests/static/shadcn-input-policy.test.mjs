@@ -52,7 +52,10 @@ test('DatePicker exposes accessible migration props and safe clear behavior', as
 	for (const prop of ['disabled', 'required', 'clearable', 'ariaLabel']) {
 		assert.match(datePicker, new RegExp(`\\b${prop}\\b`));
 	}
-	assert.match(datePicker, /clearable\s*&&\s*value\s*&&\s*!disabled/);
+	assert.match(datePicker, /const canClear\s*=\s*\$derived\(clearable\s*\?\?\s*!required\)/);
+	assert.doesNotMatch(datePicker, /\bclearable\s*=\s*false/);
+	assert.match(datePicker, /canClear\s*&&\s*value\s*&&\s*!disabled/);
+	assert.match(datePicker, /\bpreventDeselect\b/);
 });
 
 test('academic editors keep controlled shadcn Select values', async () => {

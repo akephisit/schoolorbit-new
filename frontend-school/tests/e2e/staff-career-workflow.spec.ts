@@ -282,6 +282,59 @@ test('a stale correction keeps draft and reason until explicit reconciliation', 
 	expect(api.mutations).toBe(2);
 	expect(api.api.count('/api/auth/me')).toBe(1);
 });
+
+test('career date picker retains repeated selections and clears only with the explicit control', async ({
+	page
+}) => {
+	const api = await setup(page);
+	await page.goto(staffPath());
+	await region(page)
+		.getByRole('button', { name: 'แก้ไขประวัติ วิทยฐานะ ชำนาญการ', exact: true })
+		.click();
+	const dialog = page.getByRole('dialog');
+	const effectiveDate = dialog.getByRole('button', { name: 'วันที่มีผล', exact: true });
+	await expect(effectiveDate).toContainText('29 ก.พ. 2567');
+	await effectiveDate.click();
+	await page.locator('[data-bits-day][data-selected]').click();
+	await expect(effectiveDate).toContainText('29 ก.พ. 2567');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await effectiveDate.click();
+	await page.locator('[data-bits-day][data-selected]').focus();
+	await page.keyboard.press('Enter');
+	await expect(effectiveDate).toContainText('29 ก.พ. 2567');
+	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
+	await effectiveDate.click();
+	await page.locator('[data-bits-day][data-selected]').focus();
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Enter');
+	await expect(effectiveDate).toContainText('1 มี.ค. 2567');
+	await effectiveDate
+		.locator('..')
+		.getByRole('button', { name: 'ล้างวันที่', exact: true })
+		.click();
+	await expect(effectiveDate).toContainText('ยังไม่ระบุวันที่');
+	await expect(
+		effectiveDate.locator('..').getByRole('button', { name: 'ล้างวันที่', exact: true })
+	).toHaveCount(0);
+	await expect(dialog.getByRole('button', { name: 'วันที่ออกคำสั่ง', exact: true })).toContainText(
+		'5 มี.ค. 2567'
+	);
+	await dialog
+		.getByLabel('เหตุผลการแก้ไข', { exact: true })
+		.fill('เว้นวันที่มีผลไว้เพื่อตรวจสอบเอกสาร');
+	const saved = page.waitForRequest(
+		(request) =>
+			request.method() === 'PATCH' &&
+			new URL(request.url()).pathname === `/api/staff/${firstStaff}/career-history/${id(91)}`
+	);
+	await dialog.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
+	expect((await saved).postDataJSON().entry).toMatchObject({
+		effectiveDate: null,
+		orderDate: '2024-03-05'
+	});
+	await expect(dialog).toHaveCount(0);
+	expect(api.mutations).toBe(1);
+});
 test('empty history uses an empty state and own profile respects exact history capabilities', async ({
 	page
 }, testInfo) => {
@@ -425,17 +478,17 @@ test('a lost append response with a changed kind preserves draft instead of reco
 	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('1/2563');
 	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
 	await expect(dialog).toContainText('คำตอบขาดหาย');
-	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true }).click();
 	await page.getByRole('option', { name: 'ประเภทบุคลากร', exact: true }).click();
 	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('2/2563');
 	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
 	await expect(dialog).toContainText('ข้อมูลเปลี่ยนไปแล้ว');
 	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();
 	await expect(dialog).toContainText('รายการนี้บันทึกเป็นวิทยฐานะแล้ว');
-	await expect(dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true })).toBeEnabled();
+	await expect(dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true })).toBeEnabled();
 	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('2/2563');
 	await expect(dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true }).click();
 	await page.getByRole('option', { name: 'วิทยฐานะ', exact: true }).click();
 	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('1/2563');
 	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();

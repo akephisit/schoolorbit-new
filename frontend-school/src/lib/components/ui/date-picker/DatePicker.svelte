@@ -26,13 +26,14 @@
 		class: className = '',
 		disabled = false,
 		required = false,
-		clearable = false,
+		clearable,
 		ariaLabel = 'เลือกวันที่',
 		onValueChange
 	}: Props = $props();
 
 	let open = $state(false);
 	let dateValue = $derived<DateValue | undefined>(safeParseDate(value));
+	const canClear = $derived(clearable ?? !required);
 
 	function safeParseDate(rawValue: string | undefined): DateValue | undefined {
 		if (!rawValue || !/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return undefined;
@@ -108,6 +109,7 @@
 				value={dateValue}
 				onValueChange={handleValueChange}
 				type="single"
+				preventDeselect
 				initialFocus
 				locale="th-TH"
 				captionLayout="dropdown"
@@ -115,7 +117,7 @@
 			/>
 		</Popover.Content>
 	</Popover.Root>
-	{#if clearable && value && !disabled}
+	{#if canClear && value && !disabled}
 		<Button
 			type="button"
 			variant="ghost"

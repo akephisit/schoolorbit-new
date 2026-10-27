@@ -14,6 +14,7 @@
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
+	import { defaultRosterTrackingDate } from '#lib/academic/learning-delivery-page.js';
 
 	let {
 		group,
@@ -174,13 +175,7 @@
 	function changeMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';
 		if (mode === 'homeroom' && !effectiveFrom && tracking) {
-			const today = new Intl.DateTimeFormat('en-CA', {
-				timeZone: 'Asia/Bangkok',
-				year: 'numeric',
-				month: '2-digit',
-				day: '2-digit'
-			}).format(new Date());
-			effectiveFrom = today > tracking.startsOn ? today : tracking.startsOn;
+			effectiveFrom = defaultRosterTrackingDate(tracking.startsOn);
 		}
 		saved = '';
 	}
@@ -280,14 +275,15 @@
 					>บันทึกวิธีจัดรายชื่อ</LoadingButton
 				>
 			</form>
-			<p class="mt-3 text-xs text-muted-foreground">
-				การเปิดติดตามจะเพิ่มนักเรียนที่ขาดจากห้องต้นทาง โดยเก็บประวัติและคะแนนเดิมไว้
-				เริ่มติดตามได้ตั้งแต่วันนี้ ภายใน {formatCalendarDate(tracking.startsOn)} – {formatCalendarDate(
-					tracking.endsOn
-				)}{group.rosterStatus !== 'published'
-					? ' และเริ่มปรับรายชื่ออัตโนมัติหลังเผยแพร่รายชื่อกลุ่ม'
-					: ''}
-			</p>
+			{#if mode === 'homeroom'}<p class="mt-3 text-xs text-muted-foreground">
+					สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
+					โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
+					เริ่มติดตามได้ตั้งแต่วันนี้ ภายใน {formatCalendarDate(tracking.startsOn)} – {formatCalendarDate(
+						tracking.endsOn
+					)}{group.rosterStatus !== 'published'
+						? ' และเริ่มปรับรายชื่ออัตโนมัติหลังเผยแพร่รายชื่อกลุ่ม'
+						: ''}
+				</p>{/if}
 			{#if !group.homeroomIds.length}<p class="mt-2 text-sm text-muted-foreground">
 					กำหนดห้องต้นทางในกลุ่มเรียนก่อนเปิดติดตามอัตโนมัติ
 				</p>{/if}

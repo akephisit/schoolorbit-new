@@ -1,7 +1,8 @@
 import type {
 	AcademicTermChangeSet,
 	AcademicTermChangeSetSummary,
-	DeliveryVersionSummary
+	DeliveryVersionSummary,
+	UpsertAcademicTermChangeItemRequest
 } from '#lib/api/learning-delivery.js';
 
 export const LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY = 'schoolorbit:learning-delivery-homerooms';
@@ -10,6 +11,48 @@ export const LEARNING_DELIVERY_CHANGE_SET_DETAIL_DEPENDENCY =
 	'schoolorbit:learning-delivery-change-set-detail';
 
 export type LearningDeliveryRefreshScope = 'local' | 'homerooms';
+
+export function currentDeliveryDate(now = new Date()): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Bangkok',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(now);
+}
+
+export function defaultRosterTrackingDate(startsOn?: string | null, now = new Date()): string {
+	const today = currentDeliveryDate(now);
+	return startsOn && startsOn > today ? startsOn : today;
+}
+
+export function deliveryVersionEffectiveLabel(effectiveFrom: string | null): string {
+	return effectiveFrom ? `เริ่มใช้ ${effectiveFrom}` : 'เลือกวันเริ่มใช้ตอนเผยแพร่';
+}
+
+export function weeklyPeriodAdjustmentRequest(
+	changeSet: Pick<AcademicTermChangeSet, 'status' | 'rowVersion' | 'items'>,
+	offering: { id: string; kind: 'course' | 'activity' },
+	weeklyPeriodTarget: number
+): Extract<UpsertAcademicTermChangeItemRequest, { action: 'adjust_weekly_period_target' }> | null {
+	if (
+		changeSet.status !== 'draft' ||
+		!Number.isInteger(weeklyPeriodTarget) ||
+		weeklyPeriodTarget < (offering.kind === 'course' ? 0 : 1)
+	)
+		return null;
+	const existing = changeSet.items.find(
+		(item) =>
+			item.actionKind === 'adjust_weekly_period_target' && item.learningOfferingId === offering.id
+	);
+	return {
+		action: 'adjust_weekly_period_target',
+		changeSetRowVersion: changeSet.rowVersion,
+		itemRowVersion: existing?.rowVersion ?? null,
+		learningOfferingId: offering.id,
+		weeklyPeriodTarget
+	};
+}
 
 export type LearningDeliveryRouteContext = {
 	academicYearId: string;
