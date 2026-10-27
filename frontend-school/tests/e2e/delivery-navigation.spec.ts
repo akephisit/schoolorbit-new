@@ -465,8 +465,58 @@ test('readiness repair links preserve the selected version and all originating v
 test('activity readiness uses the producer name without technical codes and restores activity filters after repair', async ({
 	page
 }) => {
+	await page.clock.setFixedTime(new Date('2027-05-01T05:00:00Z'));
 	const api = await mockDeliveryNavigation(page, { manager: true, readiness: 'activity' });
 	await page.goto(managerOrigin('offerings'));
+	await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
+	const changeGroups = page.getByTestId('delivery-change-offering');
+	await expect(changeGroups).toHaveCount(2);
+	for (const [groupLabel, rowTitle] of [
+		['ชุมนุม', 'เปลี่ยน ชุมนุม'],
+		['ค21101 · คณิตศาสตร์ต้น', 'เปลี่ยน ค21101 — คณิตศาสตร์ต้น']
+	]) {
+		const group = changeGroups.filter({ has: page.getByText(groupLabel, { exact: true }) });
+		await group.getByRole('button', { name: /ดูรายละเอียด/ }).click();
+		await expect(group.getByText(rowTitle, { exact: true })).toBeVisible();
+	}
+	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
+	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
+	await expect(page.getByText('ผลตรวจเบื้องต้น', { exact: false })).toBeVisible();
+	await page.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true }).click();
+	const publication = page.getByRole('dialog', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true });
+	await publication.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true }).click();
+	await page.getByRole('button', { name: 'วันจันทร์ที่ 3 พฤษภาคม 2570', exact: true }).click();
+	await expect(
+		publication.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true })
+	).toHaveText('3 พ.ค. 2570');
+	await publication
+		.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก', exact: true })
+		.click();
+	const datedChanges = publication.locator('[aria-label="การเปลี่ยนแปลงตามวันเริ่มใช้"]');
+	await expect(
+		datedChanges.getByText(
+			'ชุมนุม · รายการเปิดสอน: เปิดสอน 2 คาบ/สัปดาห์ → เปิดสอน 3 คาบ/สัปดาห์',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(
+		datedChanges.getByText(
+			'ค21101 — คณิตศาสตร์ต้น · รายการเปิดสอน: เปิดสอน 2 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(publication.getByText('ผลตรวจเบื้องต้น', { exact: false })).toHaveCount(0);
+	await expect(
+		publication.getByRole('button', { name: 'ยืนยันเผยแพร่', exact: true })
+	).toBeDisabled();
+	expect(
+		api.reads
+			.filter((url) => url.pathname === `/api/academic/term-change-sets/${ids.changeSet}/preview`)
+			.map((url) => url.searchParams.get('effectiveFrom'))
+	).toEqual([null, '2027-05-03']);
+	await expect(publication).not.toContainText('ACT-TECHNICAL');
+	await publication.getByRole('button', { name: 'กลับไปแก้ไข', exact: true }).click();
 	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
 	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
 	await expectRequestedContext(page);

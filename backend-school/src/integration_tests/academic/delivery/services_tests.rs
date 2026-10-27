@@ -2245,6 +2245,8 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
 
 #[tokio::test]
 async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly() {
+    use school_academic_delivery::models::versions::{DeliveryChangeKind, DeliveryVersionChange};
+
     let pool = prepare_delivery_runtime_fixture("academic_change_set_add_items").await;
     let context = operational_change_runtime_context(&pool).await;
     let change_set = create_runtime_change_set(
@@ -2327,9 +2329,23 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
         .iter()
         .find(|offering| offering.id == course_offering_id)
         .unwrap();
-    let course_finding = publication_preview(&pool, change_set.id)
-        .await
-        .unwrap()
+    let course_preview = publication_preview(&pool, change_set.id).await.unwrap();
+    assert_eq!(
+        course_preview
+            .changes
+            .iter()
+            .find(|change| change.resource_id == course_offering_id),
+        Some(&DeliveryVersionChange {
+            kind: DeliveryChangeKind::Added,
+            learning_offering_id: course_offering_id,
+            resource_id: course_offering_id,
+            label: format!("{} — {}", course.code, course.name),
+            field: "รายการเปิดสอน".into(),
+            before: None,
+            after: Some(format!("เปิดสอน {} คาบ/สัปดาห์", course.weekly_period_target)),
+        })
+    );
+    let course_finding = course_preview
         .findings
         .into_iter()
         .find(|finding| {
@@ -2442,7 +2458,56 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
     )
     .await
     .unwrap();
+    let target_before_preview =
+        school_academic_delivery::services::versions::get_version(&pool, target.id)
+            .await
+            .unwrap();
+    let target_bytes_before_preview = serde_json::to_vec(&target_before_preview).unwrap();
     let preview = publication_preview(&pool, change_set.id).await.unwrap();
+    let activity_changes: Vec<_> = preview
+        .changes
+        .iter()
+        .filter(|change| change.learning_offering_id == activity.id)
+        .cloned()
+        .collect();
+    let mut expected_activity_changes = vec![DeliveryVersionChange {
+        kind: DeliveryChangeKind::Added,
+        learning_offering_id: activity.id,
+        resource_id: activity.id,
+        label: activity.name.clone(),
+        field: "รายการเปิดสอน".into(),
+        before: None,
+        after: Some("เปิดสอน 2 คาบ/สัปดาห์".into()),
+    }];
+    let mut activity_groups = activity
+        .groups
+        .iter()
+        .map(|group| (group.id, group.name.as_str()))
+        .collect::<Vec<_>>();
+    activity_groups.push((activity_group.id, activity_group.name.as_str()));
+    activity_groups.sort_by_key(|(id, _)| *id);
+    expected_activity_changes.extend(activity_groups.into_iter().map(|(id, name)| {
+        DeliveryVersionChange {
+            kind: DeliveryChangeKind::Added,
+            learning_offering_id: activity.id,
+            resource_id: id,
+            label: format!("{} · {}", activity.name, name),
+            field: "กลุ่มเรียน".into(),
+            before: None,
+            after: Some(name.into()),
+        }
+    }));
+    assert_eq!(activity_changes, expected_activity_changes);
+    assert!(activity_changes
+        .iter()
+        .all(|change| !change.label.contains(&activity.code) && !change.label.contains("ACT-")));
+    assert_eq!(
+        with_activity
+            .changes
+            .iter()
+            .find(|change| change.resource_id == activity.id),
+        activity_changes.first()
+    );
     let activity_finding = preview
         .findings
         .iter()
@@ -2476,9 +2541,18 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
     );
     let repeated = publication_preview(&pool, change_set.id).await.unwrap();
     assert_eq!(repeated.preview_hash, preview.preview_hash);
+    assert_eq!(repeated.changes, preview.changes);
     assert_eq!(
         serde_json::to_value(repeated.findings).unwrap(),
         serde_json::to_value(&preview.findings).unwrap()
+    );
+    let target_after_preview =
+        school_academic_delivery::services::versions::get_version(&pool, target.id)
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::to_vec(&target_after_preview).unwrap(),
+        target_bytes_before_preview
     );
 }
 

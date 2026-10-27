@@ -6,6 +6,7 @@ import type {
 	LearningOffering,
 	CreateLearningOfferingRequest,
 	AcademicTermChangeSet,
+	AcademicTermChangeSetPreview,
 	AcademicChangeFinding,
 	DeliveryManagementOptions
 } from '../../../src/lib/api/learning-delivery.js';
@@ -283,8 +284,31 @@ export async function mockDeliveryNavigation(
 		referenceDate: '2027-05-01',
 		reason: 'ตรวจบริบทการนำทาง',
 		items: [],
-		changes: [],
-		offeringLabels: [],
+		changes: [
+			{
+				kind: 'changed',
+				learningOfferingId: navigationOfferingIds.club,
+				resourceId: navigationOfferingIds.club,
+				label: 'ชุมนุม',
+				field: 'รายการเปิดสอน',
+				before: 'เปิดสอน 2 คาบ/สัปดาห์',
+				after: 'เปิดสอน 3 คาบ/สัปดาห์'
+			},
+			{
+				kind: 'changed',
+				learningOfferingId: navigationOfferingIds.basic21,
+				resourceId: navigationOfferingIds.basic21,
+				label: 'ค21101 — คณิตศาสตร์ต้น',
+				field: 'รายการเปิดสอน',
+				before: 'เปิดสอน 2 คาบ/สัปดาห์',
+				after: 'เปิดสอน 4 คาบ/สัปดาห์'
+			}
+		],
+		offeringLabels: definitions
+			.filter((item) =>
+				[navigationOfferingIds.club, navigationOfferingIds.basic21].includes(item.id)
+			)
+			.map(({ id, code, name }) => ({ id, code, name })),
 		createdBy: navigationIds.actor,
 		createdAt: '2027-04-01T00:00:00Z',
 		updatedAt: '2027-04-01T00:00:00Z'
@@ -429,10 +453,10 @@ export async function mockDeliveryNavigation(
 					changeSetRowVersion: 1,
 					targetDeliveryVersionId: navigationIds.version,
 					targetDeliveryVersionRowVersion: 1,
-					effectiveFrom: '2027-05-01',
-					preliminary: true,
+					effectiveFrom: url.searchParams.get('effectiveFrom') ?? changeSet.referenceDate,
+					preliminary: !url.searchParams.has('effectiveFrom'),
 					previewHash: 'a'.repeat(64),
-					changes: [],
+					changes: changeSet.changes,
 					impactCounts: {
 						activityEvaluations: 0,
 						courseAssessmentPhases: 0,
@@ -454,7 +478,7 @@ export async function mockDeliveryNavigation(
 						teacherAssignments: 0
 					},
 					findings: [finding]
-				});
+				} satisfies AcademicTermChangeSetPreview);
 			if (path === '/api/academic/delivery/management-options')
 				return reply(route, {
 					academicYearId: navigationIds.year,
