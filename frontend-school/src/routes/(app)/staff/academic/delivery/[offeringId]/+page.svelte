@@ -18,6 +18,7 @@
 		replaceLearningGroupTeachers,
 		updateLearningGroup,
 		type CreateLearningGroupRequest,
+		type BulkGroupSetupResponse,
 		type DeliveryManagementOptions,
 		type LearningGroup,
 		type LearningOffering,
@@ -40,6 +41,7 @@
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
+	import DeliveryBulkGroupSetupDialog from '#lib/components/learning-delivery/DeliveryBulkGroupSetupDialog.svelte';
 	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
 	import DatedRosterMemberships from '#lib/components/learning-delivery/DatedRosterMemberships.svelte';
 	import RosterPreviewPanel from '#lib/components/learning-delivery/RosterPreviewPanel.svelte';
@@ -193,7 +195,12 @@
 	}
 
 	function trackingUpdated(groupId: string, config: LearningGroupRosterTracking) {
-		if (!selectedGroup || selectedGroup.id !== groupId) return;
+		if (
+			!selectedGroup ||
+			selectedGroup.id !== groupId ||
+			config.groupRowVersion < selectedGroup.rowVersion
+		)
+			return;
 		mutationRevision += 1;
 		updateGroupState({ ...selectedGroup, rowVersion: config.groupRowVersion });
 		rosterPreview = null;
@@ -250,11 +257,17 @@
 	async function retryGroups() {
 		const id = offeringId;
 		const { revision, signal } = groupsRequest.begin();
+		const initialMutationRevision = mutationRevision;
 		groupsLoading = true;
 		groupsError = '';
 		try {
 			const loaded = await listLearningGroups(id, { signal });
-			if (!groupsRequest.isCurrent(revision) || offeringId !== id) return;
+			if (
+				!groupsRequest.isCurrent(revision) ||
+				offeringId !== id ||
+				mutationRevision !== initialMutationRevision
+			)
+				return;
 			groups = loaded;
 			hasGroups = true;
 			const requested = page.url.searchParams.get('groupId');
@@ -391,10 +404,58 @@
 		const created = await createLearningGroup(ownerId, request);
 		if (offeringId !== ownerId) return;
 		mutationRevision += 1;
-		groups = [...groups, created].sort((left, right) =>
-			left.code.localeCompare(right.code, 'th-TH', { numeric: true })
-		);
+		groups = [...groups, created];
+		void retryGroups();
 		navigateToGroup(created);
+	}
+
+	function bulkSetupApplied(response: BulkGroupSetupResponse) {
+		mutationRevision += 1;
+		const updated = new Map(response.groups.map((group) => [group.id, group]));
+		groups = groups.map((group) => updated.get(group.id) ?? group);
+		if (selectedGroup && updated.has(selectedGroup.id)) {
+			selectedGroup = updated.get(selectedGroup.id) ?? selectedGroup;
+			const config = response.rosterTracking.find(
+				(item) => item.learningGroupId === selectedGroup?.id
+			);
+			if (config) rosterTracking = config.tracking;
+			editorVisible = false;
+			rosterPreview = null;
+			rosterStale = true;
+		}
+		if (deliveryVersion)
+			deliveryVersion = { ...deliveryVersion, rowVersion: response.deliveryVersionRowVersion };
+	}
+
+	async function reloadBulkSetup(signal?: AbortSignal) {
+		if (!deliveryVersion || !canMutateOffering) throw new Error('ร่างนี้ไม่พร้อมแก้ไข');
+		const ownerId = offeringId;
+		const versionId = deliveryVersion.id;
+		const initialMutationRevision = mutationRevision;
+		const [loadedGroups, loadedVersion] = await Promise.all([
+			listLearningGroups(ownerId, { signal }),
+			getDeliveryVersion(versionId, { signal })
+		]);
+		if (
+			ownerId !== offeringId ||
+			deliveryVersion?.id !== versionId ||
+			mutationRevision !== initialMutationRevision
+		)
+			throw new Error('รายการเปิดสอนเปลี่ยนแล้ว กรุณาโหลดกลุ่มล่าสุดอีกครั้ง');
+		mutationRevision += 1;
+		groups = loadedGroups;
+		deliveryVersion = loadedVersion;
+		const currentSelectedId = page.url.searchParams.get('groupId') ?? selectedGroup?.id;
+		const refreshedSelection = loadedGroups.find((group) => group.id === currentSelectedId);
+		if (refreshedSelection) {
+			selectionRevision += 1;
+			groupRequest.abort();
+			selectedGroup = refreshedSelection;
+			groupLoading = false;
+			groupError = '';
+		}
+		rosterPreview = null;
+		rosterStale = true;
 	}
 
 	async function saveGroup(request: UpdateLearningGroupRequest) {
@@ -402,6 +463,7 @@
 		const updated = await updateLearningGroup(selectedGroup.id, request);
 		mutationRevision += 1;
 		updateGroupState(updated);
+		void retryGroups();
 	}
 
 	async function replaceTeachers(request: ReplaceLearningGroupTeachersRequest) {
@@ -421,6 +483,7 @@
 		mutationRevision += 1;
 		updateGroupState(updated);
 		rosterStale = rosterPreview !== null;
+		void retryGroups();
 	}
 
 	async function refreshRoster() {
@@ -670,7 +733,11 @@
 			onaction={retryVersions}
 		/>
 	{:else if deliveryVersion?.status === 'published'}
-		<DeliveryVersionOfferingView version={deliveryVersion} {offeringId} />
+		<DeliveryVersionOfferingView
+			version={deliveryVersion}
+			{offeringId}
+			orderedGroupIds={groups.map((group) => group.id)}
+		/>
 		<section class="space-y-4 rounded-xl border bg-card p-4" data-testid="delivery-version-roster">
 			<div>
 				<h2 class="font-semibold">รายชื่อนักเรียนและประวัติสมาชิก</h2>
@@ -908,6 +975,24 @@
 				/>
 			{:else if hasGroups}
 				<div class="relative" aria-busy={groupsLoading} data-testid="delivery-groups-ready">
+					{#if canMutateOffering && offering && deliveryVersion}
+						<div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+							{#if editorVisible}<p class="text-xs text-muted-foreground">
+									ปิดตัวแก้ไขกลุ่มก่อนตั้งค่าหลายกลุ่ม
+								</p>{/if}
+							{#key `${offering.id}:${deliveryVersion.id}`}
+								<DeliveryBulkGroupSetupDialog
+									{offering}
+									version={deliveryVersion}
+									{groups}
+									canManage={canMutateOffering && !editorVisible}
+									onRequestManagementOptions={requestManagementOptions}
+									onApplied={bulkSetupApplied}
+									onReload={reloadBulkSetup}
+								/>
+							{/key}
+						</div>
+					{/if}
 					<LearningGroupList
 						{groups}
 						selectedGroupId={selectedGroup?.id}
@@ -977,9 +1062,17 @@
 							</div>
 							{#if canMutateOffering}
 								<div class="flex flex-wrap gap-2">
-									<Button variant="outline" onclick={showEditor} disabled={optionsLoading}>
+									<Button
+										variant="outline"
+										onclick={() => (editorVisible ? (editorVisible = false) : showEditor())}
+										disabled={optionsLoading}
+									>
 										<Pencil class="size-4" />
-										{optionsLoading ? 'กำลังโหลด' : 'จัดการกลุ่ม'}
+										{optionsLoading
+											? 'กำลังโหลด'
+											: editorVisible
+												? 'ยกเลิกการแก้ไขกลุ่ม'
+												: 'จัดการกลุ่ม'}
 									</Button>
 									{#if selectedGroup.rosterStatus !== 'published'}
 										<Button

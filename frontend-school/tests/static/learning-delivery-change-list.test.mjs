@@ -22,6 +22,7 @@ const teacherItem = (id, learningGroupId) => ({
 	id,
 	learningGroupId,
 	actionKind: 'stop_group_teacher',
+	learningGroupLabel: 'กลุ่มทดสอบ',
 	teacherLabel: 'ชื่อซ้ำ',
 	rowVersion: 7
 });
@@ -76,4 +77,63 @@ test('commands without differences remain accessible and direct edits gain no de
 		]
 	);
 	assert.deepEqual(buildLearningDeliveryChangeRows([], []), []);
+});
+
+test('offering groups use stable ownership, retain unanchored teacher commands and search every child', async () => {
+	const { groupLearningDeliveryChanges, filterLearningDeliveryChanges } =
+		await import('../../src/lib/academic/learning-delivery-change-list.ts');
+	const rows = buildLearningDeliveryChangeRows(
+		[diff('group-a'), { ...diff('other'), learningOfferingId: 'other' }],
+		[
+			teacherItem('known', 'group-a'),
+			teacherItem('orphan', 'unknown'),
+			teacherItem('snapshot', 'group-b')
+		]
+	);
+	const groups = groupLearningDeliveryChanges(
+		rows,
+		[
+			{ id: 'offering', code: 'ค1', name: 'คณิตศาสตร์' },
+			{ id: 'other', code: 'ค2', name: 'คณิตศาสตร์' }
+		],
+		[
+			{
+				id: 'offering',
+				code: 'ค1',
+				name: 'คณิตศาสตร์',
+				kind: 'course',
+				groups: [{ id: 'group-b' }]
+			}
+		]
+	);
+	assert.equal(groups.length, 3);
+	assert.deepEqual(
+		groups.find((group) => group.id === 'offering').rows.map((row) => row.resourceId),
+		['group-a', 'group-b']
+	);
+	assert.equal(
+		groups.find((group) => group.id === 'teacher-commands').rows[0].items[0].id,
+		'orphan'
+	);
+	assert.equal(
+		filterLearningDeliveryChanges(groups, 'ชื่อซ้ำ').flatMap((group) => group.rows).length,
+		rows.length
+	);
+	assert.equal(filterLearningDeliveryChanges(groups, 'ค1')[0].rows.length, 2);
+	assert.deepEqual(filterLearningDeliveryChanges(groups, 'ไม่มีคำนี้'), []);
+});
+
+test('bounded pages retain every resource and clamp after deletion without modifying source', async () => {
+	const { deliveryChangePage } =
+		await import('../../src/lib/academic/learning-delivery-change-list.ts');
+	const items = Array.from({ length: 101 }, (_, index) => index);
+	const pages = Array.from({ length: 13 }, (_, index) => deliveryChangePage(items, index));
+	assert.ok(pages.every((page) => page.items.length <= 8));
+	assert.deepEqual(
+		pages.flatMap((page) => page.items),
+		items
+	);
+	assert.deepEqual(deliveryChangePage([1], 12), { items: [1], page: 0, pageCount: 1, total: 1 });
+	assert.deepEqual(deliveryChangePage([], 1).items, []);
+	assert.equal(items.length, 101);
 });

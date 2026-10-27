@@ -239,11 +239,11 @@
 				<form class="space-y-4" onsubmit={createManual}>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div class="space-y-2">
-							<Label>ประเภท</Label><Select.Root
+							<Label for="offering-create-kind">ประเภท</Label><Select.Root
 								type="single"
 								bind:value={draft.kind}
 								onValueChange={() => (draft.catalogVersionId = '')}
-								><Select.Trigger class="w-full"
+								><Select.Trigger id="offering-create-kind" class="w-full"
 									>{draft.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'}</Select.Trigger
 								><Select.Content
 									><Select.Item value="course">รายวิชา</Select.Item><Select.Item value="activity"

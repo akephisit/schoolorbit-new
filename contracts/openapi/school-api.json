@@ -6098,6 +6098,96 @@
         ],
         "type": "object"
       },
+      "ApiResponse_BulkGroupSetupPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "blockedCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "changedCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "deliveryVersionRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "skippedCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "targets": {
+                "items": {
+                  "$ref": "#/components/schemas/BulkGroupSetupPreviewTarget"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "deliveryVersionRowVersion",
+              "targets",
+              "changedCount",
+              "skippedCount",
+              "blockedCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BulkGroupSetupResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "deliveryVersionRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "groups": {
+                "items": {
+                  "$ref": "#/components/schemas/LearningGroup"
+                },
+                "type": "array"
+              },
+              "rosterTracking": {
+                "items": {
+                  "$ref": "#/components/schemas/BulkGroupSetupRosterTracking"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "deliveryVersionRowVersion",
+              "groups",
+              "rosterTracking"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CalendarEvent": {
         "properties": {
           "data": {
@@ -33588,6 +33678,219 @@
         "required": [
           "locked",
           "skipped"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupPreview": {
+        "properties": {
+          "blockedCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "changedCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deliveryVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skippedCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/BulkGroupSetupPreviewTarget"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "deliveryVersionRowVersion",
+          "targets",
+          "changedCount",
+          "skippedCount",
+          "blockedCount"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupPreviewTarget": {
+        "properties": {
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group": {
+            "$ref": "#/components/schemas/LearningGroup"
+          },
+          "primaryTeacherAction": {
+            "$ref": "#/components/schemas/BulkGroupSetupTeacherAction"
+          },
+          "rosterTracking": {
+            "$ref": "#/components/schemas/LearningGroupRosterTracking"
+          },
+          "rosterTrackingChanged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group",
+          "rosterTracking",
+          "primaryTeacherAction",
+          "rosterTrackingChanged"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupPrimaryTeacher": {
+        "additionalProperties": false,
+        "properties": {
+          "replaceExistingPrimary": {
+            "type": "boolean"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teacherId"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupRequest": {
+        "additionalProperties": false,
+        "description": "Explicit, optimistic target list for one atomic offering setup.",
+        "properties": {
+          "deliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "deliveryVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/BulkGroupSetupTarget"
+            },
+            "type": "array"
+          },
+          "primaryTeacher": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BulkGroupSetupPrimaryTeacher"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rosterTracking": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BulkGroupSetupTrackingInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deliveryVersionId",
+          "deliveryVersionRowVersion",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupResponse": {
+        "properties": {
+          "deliveryVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/LearningGroup"
+            },
+            "type": "array"
+          },
+          "rosterTracking": {
+            "items": {
+              "$ref": "#/components/schemas/BulkGroupSetupRosterTracking"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "deliveryVersionRowVersion",
+          "groups",
+          "rosterTracking"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupRosterTracking": {
+        "properties": {
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tracking": {
+            "$ref": "#/components/schemas/LearningGroupRosterTracking"
+          }
+        },
+        "required": [
+          "learningGroupId",
+          "tracking"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learningGroupId",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "BulkGroupSetupTeacherAction": {
+        "enum": [
+          "unchanged",
+          "set",
+          "replace",
+          "preserve_existing"
+        ],
+        "type": "string"
+      },
+      "BulkGroupSetupTrackingInput": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RosterTrackingMode"
+          }
+        },
+        "required": [
+          "mode"
         ],
         "type": "object"
       },
@@ -85473,6 +85776,190 @@
               }
             },
             "description": "Learning group conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/offerings/{id}/groups/bulk-setup": {
+      "put": {
+        "operationId": "applyBulkLearningGroupSetup",
+        "parameters": [
+          {
+            "description": "Learning offering ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkGroupSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BulkGroupSetupResponse"
+                }
+              }
+            },
+            "description": "Atomic setup saved without publishing or rebuilding student rosters"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid target scope or configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering, version or group missing"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale draft, blocked target or no changes; no group saved"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/offerings/{id}/groups/bulk-setup/preview": {
+      "post": {
+        "operationId": "previewBulkLearningGroupSetup",
+        "parameters": [
+          {
+            "description": "Learning offering ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkGroupSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BulkGroupSetupPreview"
+                }
+              }
+            },
+            "description": "Read-only preview of the explicitly selected draft groups"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid target scope or configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering, version or group missing"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale draft or closed academic context"
           }
         },
         "tags": [

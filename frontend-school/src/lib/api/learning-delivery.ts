@@ -498,3 +498,28 @@ export const updateLearningGroupRosterTracking = (
 		),
 		'บันทึกวิธีจัดรายชื่อไม่สำเร็จ'
 	);
+
+export type BulkGroupSetupRequest = Schemas['BulkGroupSetupRequest'];
+export type BulkGroupSetupPreview = Schemas['BulkGroupSetupPreview'];
+export type BulkGroupSetupResponse = Schemas['BulkGroupSetupResponse'];
+export const previewBulkGroupSetup = (
+	offeringId: string,
+	request: BulkGroupSetupRequest,
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.post<BulkGroupSetupPreview>(
+			`/api/academic/offerings/${encodeURIComponent(offeringId)}/groups/bulk-setup/preview`,
+			request,
+			options
+		),
+		'ตรวจการตั้งค่าหลายกลุ่มไม่สำเร็จ'
+	);
+export const applyBulkGroupSetup = (offeringId: string, request: BulkGroupSetupRequest) =>
+	deliveryData(
+		apiClient.put<BulkGroupSetupResponse>(
+			`/api/academic/offerings/${encodeURIComponent(offeringId)}/groups/bulk-setup`,
+			request
+		),
+		'บันทึกการตั้งค่าหลายกลุ่มไม่สำเร็จ'
+	);
