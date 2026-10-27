@@ -14,6 +14,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
+	import { defaultRosterTrackingDate } from '#lib/academic/learning-delivery-page.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -28,6 +29,7 @@
 		offering,
 		version,
 		groups,
+		trackingStartsOn = null,
 		canManage,
 		onRequestManagementOptions,
 		onApplied,
@@ -36,6 +38,7 @@
 		offering: LearningOffering;
 		version: DeliveryVersion;
 		groups: LearningGroup[];
+		trackingStartsOn?: string | null;
 		canManage: boolean;
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onApplied: (response: BulkGroupSetupResponse) => void;
@@ -144,7 +147,7 @@
 		replaceExistingPrimary = false;
 		rosterEnabled = false;
 		mode = 'manual';
-		effectiveFrom = undefined;
+		effectiveFrom = initialTrackingDate();
 		search = '';
 		groupPage = 0;
 		preview = null;
@@ -192,6 +195,17 @@
 		selectedIds = checked
 			? [...selectedIds, id]
 			: selectedIds.filter((selected) => selected !== id);
+	}
+	function initialTrackingDate(): string {
+		const startsOn =
+			trackingStartsOn && (!offering.startsOn || trackingStartsOn > offering.startsOn)
+				? trackingStartsOn
+				: offering.startsOn;
+		return defaultRosterTrackingDate(startsOn);
+	}
+	function changeRosterMode(value: string) {
+		mode = value === 'homeroom' ? 'homeroom' : 'manual';
+		if (mode === 'homeroom' && !effectiveFrom) effectiveFrom = initialTrackingDate();
 	}
 	function fail(error: unknown, fallback: string) {
 		if (error instanceof ApiClientError && error.status === 409) {
@@ -448,7 +462,7 @@
 								</p>
 								<RadioGroup.Root
 									value={mode}
-									onValueChange={(value) => (mode = value === 'homeroom' ? 'homeroom' : 'manual')}
+									onValueChange={changeRosterMode}
 									disabled={busy}
 									aria-labelledby="bulk-roster-mode-label"
 									class="space-y-2"
@@ -477,6 +491,11 @@
 						<p class="text-xs text-muted-foreground">
 							ใช้ห้องต้นทางที่แต่ละกลุ่มกำหนดไว้ การตั้งค่านี้ไม่มีผลกับกลุ่มที่เพิ่มในภายหลัง
 						</p>
+						{#if mode === 'homeroom'}<p class="text-xs text-muted-foreground">
+								สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
+								โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
+								ตรวจการตั้งค่าเพื่อยืนยันว่าวันที่อยู่ในช่วงเปิดสอนของทุกกลุ่มที่เลือก
+							</p>{/if}
 					{/if}
 				</section>
 				{#if previewCurrent && preview}

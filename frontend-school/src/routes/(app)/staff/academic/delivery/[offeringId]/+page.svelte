@@ -34,7 +34,10 @@
 		type DeliveryVersion,
 		type DeliveryVersionSummary
 	} from '#lib/api/learning-delivery.js';
-	import { selectDeliveryVersion } from '#lib/academic/learning-delivery-page.js';
+	import {
+		selectDeliveryVersion,
+		deliveryVersionEffectiveLabel
+	} from '#lib/academic/learning-delivery-page.js';
 	import DeliveryVersionOfferingView from '#lib/components/learning-delivery/DeliveryVersionOfferingView.svelte';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -42,6 +45,7 @@
 	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
 	import DeliveryBulkGroupSetupDialog from '#lib/components/learning-delivery/DeliveryBulkGroupSetupDialog.svelte';
+	import OfferingWeeklyPeriodDialog from '#lib/components/learning-delivery/OfferingWeeklyPeriodDialog.svelte';
 	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
 	import DatedRosterMemberships from '#lib/components/learning-delivery/DatedRosterMemberships.svelte';
 	import RosterPreviewPanel from '#lib/components/learning-delivery/RosterPreviewPanel.svelte';
@@ -154,7 +158,7 @@
 				: version.status === 'published'
 					? 'เผยแพร่แล้ว'
 					: 'ยกเลิกแล้ว';
-		return `${status} · เริ่ม ${version.effectiveFrom}`;
+		return `${status} · ${deliveryVersionEffectiveLabel(version.effectiveFrom)}`;
 	}
 
 	function deliveryDetailUrl(url: URL): `staff/academic/delivery/${string}?${string}` {
@@ -425,6 +429,35 @@
 		}
 		if (deliveryVersion)
 			deliveryVersion = { ...deliveryVersion, rowVersion: response.deliveryVersionRowVersion };
+	}
+
+	function weeklyPeriodsUpdated(updated: DeliveryVersion) {
+		if (
+			updated.id !== deliveryVersion?.id ||
+			updated.rowVersion < deliveryVersion.rowVersion ||
+			!updated.snapshot.offerings.some((item) => item.id === offeringId)
+		)
+			return;
+		mutationRevision += 1;
+		versionsRequest.abort();
+		versionsLoading = false;
+		versionsError = '';
+		deliveryVersion = updated;
+		deliveryVersions = deliveryVersions.map((summary) =>
+			summary.id === updated.id
+				? {
+						...summary,
+						rowVersion: updated.rowVersion,
+						updatedAt: updated.updatedAt,
+						status: updated.status,
+						effectiveFrom: updated.effectiveFrom,
+						effectiveUntil: updated.effectiveUntil
+					}
+				: summary
+		);
+		selectedDeliveryVersionSummary =
+			deliveryVersions.find((summary) => summary.id === updated.id) ??
+			selectedDeliveryVersionSummary;
 	}
 
 	async function reloadBulkSetup(signal?: AbortSignal) {
@@ -930,9 +963,22 @@
 									</p>
 									<p class="mt-0.5 text-xs text-muted-foreground">
 										{selectedDeliveryVersionSummary
-											? `รุ่นเปิดสอนเริ่มใช้ ${selectedDeliveryVersionSummary.effectiveFrom} · ${selectedDeliveryVersionSummary.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'}`
+											? `${selectedDeliveryVersionSummary.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'} · ${deliveryVersionEffectiveLabel(selectedDeliveryVersionSummary.effectiveFrom)}`
 											: 'ยังไม่มีรุ่นเปิดสอนที่ใช้อ้างอิง'}
 									</p>
+									{#if canMutateOffering && deliveryVersion && selectedTimetableTarget && selectedDeliveryVersionSummary?.changeSetId}
+										<div class="mt-3">
+											{#key `${offering.id}:${deliveryVersion.id}`}
+												<OfferingWeeklyPeriodDialog
+													version={deliveryVersion}
+													changeSetId={selectedDeliveryVersionSummary.changeSetId}
+													{offeringId}
+													canManage={canMutateOffering}
+													onUpdated={weeklyPeriodsUpdated}
+												/>
+											{/key}
+										</div>
+									{/if}
 									{#if versionsError}<div
 											role="alert"
 											class="mt-2 flex items-center gap-2 text-xs text-destructive"
@@ -985,6 +1031,7 @@
 									{offering}
 									version={deliveryVersion}
 									{groups}
+									trackingStartsOn={rosterTracking?.startsOn}
 									canManage={canMutateOffering && !editorVisible}
 									onRequestManagementOptions={requestManagementOptions}
 									onApplied={bulkSetupApplied}
