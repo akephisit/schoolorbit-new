@@ -2058,6 +2058,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/offerings/{id}/groups/bulk-setup': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['applyBulkLearningGroupSetup'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/offerings/{id}/groups/bulk-setup/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewBulkLearningGroupSetup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/offerings/{id}/publish': {
 		parameters: {
 			query?: never;
@@ -10218,6 +10250,28 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_BulkGroupSetupPreview: {
+			data: {
+				blockedCount: number;
+				changedCount: number;
+				/** Format: int64 */
+				deliveryVersionRowVersion: number;
+				skippedCount: number;
+				targets: components['schemas']['BulkGroupSetupPreviewTarget'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BulkGroupSetupResponse: {
+			data: {
+				/** Format: int64 */
+				deliveryVersionRowVersion: number;
+				groups: components['schemas']['LearningGroup'][];
+				rosterTracking: components['schemas']['BulkGroupSetupRosterTracking'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CalendarEvent: {
 			data: {
 				allDay: boolean;
@@ -17682,6 +17736,60 @@ export interface components {
 		BulkActivityResultLockOutcome: {
 			locked: components['schemas']['ActivityResultLock'][];
 			skipped: components['schemas']['GroupResultReadiness'][];
+		};
+		BulkGroupSetupPreview: {
+			blockedCount: number;
+			changedCount: number;
+			/** Format: int64 */
+			deliveryVersionRowVersion: number;
+			skippedCount: number;
+			targets: components['schemas']['BulkGroupSetupPreviewTarget'][];
+		};
+		BulkGroupSetupPreviewTarget: {
+			blockedReason?: string | null;
+			group: components['schemas']['LearningGroup'];
+			primaryTeacherAction: components['schemas']['BulkGroupSetupTeacherAction'];
+			rosterTracking: components['schemas']['LearningGroupRosterTracking'];
+			rosterTrackingChanged: boolean;
+		};
+		BulkGroupSetupPrimaryTeacher: {
+			replaceExistingPrimary?: boolean;
+			/** Format: uuid */
+			teacherId: string;
+		};
+		/** @description Explicit, optimistic target list for one atomic offering setup. */
+		BulkGroupSetupRequest: {
+			/** Format: uuid */
+			deliveryVersionId: string;
+			/** Format: int64 */
+			deliveryVersionRowVersion: number;
+			groups: components['schemas']['BulkGroupSetupTarget'][];
+			primaryTeacher?: components['schemas']['BulkGroupSetupPrimaryTeacher'] | null;
+			rosterTracking?: components['schemas']['BulkGroupSetupTrackingInput'] | null;
+		};
+		BulkGroupSetupResponse: {
+			/** Format: int64 */
+			deliveryVersionRowVersion: number;
+			groups: components['schemas']['LearningGroup'][];
+			rosterTracking: components['schemas']['BulkGroupSetupRosterTracking'][];
+		};
+		BulkGroupSetupRosterTracking: {
+			/** Format: uuid */
+			learningGroupId: string;
+			tracking: components['schemas']['LearningGroupRosterTracking'];
+		};
+		BulkGroupSetupTarget: {
+			/** Format: uuid */
+			learningGroupId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		/** @enum {string} */
+		BulkGroupSetupTeacherAction: 'unchanged' | 'set' | 'replace' | 'preserve_existing';
+		BulkGroupSetupTrackingInput: {
+			/** Format: date */
+			effectiveFrom?: string | null;
+			mode: components['schemas']['RosterTrackingMode'];
 		};
 		CalculatePromotionRunInput: {
 			/** Format: uuid */
@@ -38905,6 +39013,150 @@ export interface operations {
 				};
 			};
 			/** @description Learning group conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	applyBulkLearningGroupSetup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BulkGroupSetupRequest'];
+			};
+		};
+		responses: {
+			/** @description Atomic setup saved without publishing or rebuilding student rosters */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BulkGroupSetupResponse'];
+				};
+			};
+			/** @description Invalid target scope or configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering, version or group missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale draft, blocked target or no changes; no group saved */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewBulkLearningGroupSetup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning offering ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BulkGroupSetupRequest'];
+			};
+		};
+		responses: {
+			/** @description Read-only preview of the explicitly selected draft groups */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BulkGroupSetupPreview'];
+				};
+			};
+			/** @description Invalid target scope or configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering, version or group missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale draft or closed academic context */
 			409: {
 				headers: {
 					[name: string]: unknown;

@@ -1724,6 +1724,105 @@ mod protected_router {
             .unwrap();
             (subject, activity)
         };
+        // A real offering scope ensures denied bulk requests reach resource policy,
+        // rather than merely returning a missing-resource response.
+        let bulk_offering = {
+            use school_academic_core::{
+                models::{CreateCatalogSubjectRequest, CreateSubjectVersionRequest},
+                services::catalog,
+            };
+            let tenant =
+                school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
+                    .await
+                    .unwrap();
+            let today = Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive();
+            let source = catalog::create_subject(
+                &tenant.pool,
+                CreateCatalogSubjectRequest {
+                    code: "BULK-HTTP-BOUNDARY".into(),
+                    subject_group_id,
+                },
+            )
+            .await
+            .unwrap();
+            let source_version = catalog::create_subject_version(
+                &tenant.pool,
+                source.id,
+                CreateSubjectVersionRequest {
+                    name_th: "Synthetic bulk boundary".into(),
+                    name_en: None,
+                    credit: "1.00".into(),
+                    hours_per_semester: Some(40),
+                    subject_type: "basic".into(),
+                    description: None,
+                    effective_from: today,
+                    term_code: None,
+                    periods_per_week: Some(1),
+                    grade_level_ids: vec![],
+                },
+            )
+            .await
+            .unwrap();
+            let mut tx = tenant.pool.begin().await.unwrap();
+            let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2987,'Bulk HTTP',$1,$2,'planning') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id").bind(year).fetch_one(&mut *tx).await.unwrap();
+            let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
+                .bind(id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
+                .bind(id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
+            tx.commit().await.unwrap();
+            id
+        };
+        for (method, path) in [
+            (
+                Method::POST,
+                format!("/api/academic/offerings/{bulk_offering}/groups/bulk-setup/preview"),
+            ),
+            (
+                Method::PUT,
+                format!("/api/academic/offerings/{bulk_offering}/groups/bulk-setup"),
+            ),
+        ] {
+            for (request_origin, request_token, request_csrf, expected) in [
+                (origin, None, None, StatusCode::UNAUTHORIZED),
+                (origin, Some(&token), None, StatusCode::FORBIDDEN),
+                (
+                    "https://tenant-b.schoolorbit.test",
+                    Some(&token),
+                    Some(csrf.as_str()),
+                    StatusCode::UNAUTHORIZED,
+                ),
+                (
+                    origin,
+                    Some(&token),
+                    Some(csrf.as_str()),
+                    StatusCode::FORBIDDEN,
+                ),
+            ] {
+                let mut req = request(
+                    method.clone(),
+                    &path,
+                    Some(request_origin),
+                    request_token,
+                    request_csrf,
+                );
+                req.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                *req.body_mut()=Body::from(serde_json::json!({"deliveryVersionId":Uuid::new_v4(),"deliveryVersionRowVersion":1,"groups":[{"learningGroupId":Uuid::new_v4(),"rowVersion":1}],"primaryTeacher":{"teacherId":user_id,"replaceExistingPrimary":false},"rosterTracking":null}).to_string());
+                let response = app.clone().oneshot(req).await.unwrap();
+                assert_eq!(
+                    response.status(),
+                    expected,
+                    "bulk setup boundary {method} {path} {request_origin}"
+                );
+            }
+        }
         let catalog_paths = [
             format!("/api/academic/catalog/subjects/{}", subject.id),
             format!("/api/academic/catalog/activities/{}", activity.id),

@@ -43,6 +43,7 @@
 	} = $props();
 
 	let open = $state(false);
+	let trigger = $state<HTMLButtonElement | null>(null);
 	let targets = $state.raw<LearningGroup[]>([]);
 	let versionRowVersion = $state(0);
 	let selectedIds = $state<string[]>([]);
@@ -262,8 +263,12 @@
 	});
 </script>
 
-<Button variant="outline" size="sm" onclick={show} disabled={!canManage || groups.length === 0}
-	>ตั้งค่าหลายกลุ่ม</Button
+<Button
+	bind:ref={trigger}
+	variant="outline"
+	size="sm"
+	onclick={show}
+	disabled={!canManage || groups.length === 0}>ตั้งค่าหลายกลุ่ม</Button
 >
 <Dialog.Root {open} onOpenChange={changeOpen}>
 	<Dialog.Content
@@ -271,6 +276,10 @@
 		showCloseButton={!busy}
 		escapeKeydownBehavior={busy ? 'ignore' : 'close'}
 		interactOutsideBehavior={busy ? 'ignore' : 'close'}
+		onCloseAutoFocus={(event) => {
+			event.preventDefault();
+			if (!disposed && trigger?.isConnected) trigger.focus();
+		}}
 	>
 		<Dialog.Header>
 			<Dialog.Title>ตั้งค่าหลายกลุ่ม · {offering.nameSnapshot}</Dialog.Title>
@@ -412,6 +421,7 @@
 						{#if mode === 'homeroom'}<div class="space-y-2">
 								<Label for="bulk-roster-date">วันที่เริ่มติดตาม</Label><DatePicker
 									id="bulk-roster-date"
+									ariaLabel="วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย"
 									bind:value={effectiveFrom}
 									disabled={busy}
 								/>

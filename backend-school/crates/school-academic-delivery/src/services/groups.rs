@@ -58,7 +58,7 @@ const GROUP_ROOM_ORDER_JOIN: &str = r#"
         JOIN homerooms room ON room.id = coverage.homeroom_id
         JOIN grade_levels grade ON grade.id = room.grade_level_id
         WHERE coverage.learning_group_id = learning_group.id
-        ORDER BY level_order NULLS LAST, natural_room COLLATE "C" NULLS LAST,
+        ORDER BY level_order NULLS LAST, natural_room NULLS LAST,
                  lower(room.name) COLLATE "C", room.id
         LIMIT 1
     ) room_order ON TRUE

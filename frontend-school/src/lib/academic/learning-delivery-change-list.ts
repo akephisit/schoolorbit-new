@@ -76,7 +76,7 @@ export function groupLearningDeliveryChanges(
 						: offeringId
 							? (row.changes.find((change) => change.resourceId === offeringId)?.label ??
 								'รายการเปิดสอนที่ยังไม่มีชื่อ')
-							: 'คำสั่งครูที่ยังไม่ได้เชื่อมกับรายการเปิดสอน',
+							: 'รายการปรับครูอื่น ๆ',
 				rows: []
 			};
 			groups.set(id, group);

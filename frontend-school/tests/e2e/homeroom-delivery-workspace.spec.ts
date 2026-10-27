@@ -3,6 +3,15 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
+async function expandChangeDetails(page: Page) {
+	const trigger = page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true });
+	if (await trigger.isVisible()) await trigger.click();
+	for (const offering of await page.getByTestId('delivery-change-offering').all()) {
+		const button = offering.getByRole('button', { name: /ดูรายละเอียด/ }).first();
+		if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+	}
+}
+
 const ids = {
 	year: '10000000-0000-4000-8000-000000000001',
 	term: '20000000-0000-4000-8000-000000000001',
@@ -838,6 +847,7 @@ for (const viewport of [
 		}, viewport.dark);
 		await mockDraftLifecycle(page, { failPreview: true });
 		await expect(page.locator('html')).toHaveClass(viewport.dark ? /dark/ : /^(?!.*dark).*$/);
+		await expandChangeDetails(page);
 		await expect(
 			page.getByText('รายการเปิดสอน: เปิดสอน 3 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์', {
 				exact: true
@@ -1893,7 +1903,7 @@ for (const viewport of [
 	for (const dark of [false, true]) {
 		test(`single delivery change list deletes the matching command at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
 			page
-		}) => {
+		}, testInfo) => {
 			await page.setViewportSize(viewport);
 			await mockDelivery(page);
 			const itemId = '84000000-0000-4000-8000-000000000001';
@@ -1955,6 +1965,11 @@ for (const viewport of [
 				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
 				await expect(page.locator('html')).toHaveClass(/dark/);
 			}
+			await expect(
+				page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true })
+			).toBeVisible();
+			await page.screenshot({ path: testInfo.outputPath('change-summary-collapsed.png') });
+			await expandChangeDetails(page);
 			const list = page.getByLabel('ความเปลี่ยนแปลงจากรุ่นต้นทาง');
 			await expect(list.locator(':scope > div')).toHaveCount(2);
 			await expect(page.getByText('รายการคำสั่งที่บันทึกไว้', { exact: true })).toHaveCount(0);
@@ -1962,10 +1977,10 @@ for (const viewport of [
 			await expect(card).toContainText('เปิดสอน 1 คาบ/สัปดาห์ → เปิดสอน 0 คาบ/สัปดาห์');
 			const remove = card.getByRole('button', { name: /^ลบ ปรับจำนวนคาบต่อสัปดาห์/ });
 			await expect(remove).toBeVisible();
-			await expect(list.getByRole('button')).toHaveCount(1);
+			await expect(list.getByRole('button', { name: /^ลบ / })).toHaveCount(1);
 			await card.scrollIntoViewIfNeeded();
 			await page.screenshot({
-				path: `/tmp/delivery-change-list-${viewport.width}-${dark ? 'dark' : 'light'}.png`,
+				path: testInfo.outputPath('change-summary-expanded.png'),
 				fullPage: true
 			});
 			const bounds = await remove.boundingBox();
@@ -2057,6 +2072,10 @@ test('teacher commands share one change card and stale deletion retries only the
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 	);
+	await expect(
+		page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true })
+	).toBeVisible();
+	await expandChangeDetails(page);
 	const list = page.getByLabel('ความเปลี่ยนแปลงจากรุ่นต้นทาง');
 	await expect(list.locator(':scope > div')).toHaveCount(1);
 	const stop = list.getByRole('button', { name: /^ลบ หยุดความรับผิดชอบของครู/ });
@@ -2070,7 +2089,71 @@ test('teacher commands share one change card and stale deletion retries only the
 	await expect(stop).toBeEnabled();
 	await stop.click();
 	await expect(stop).toHaveCount(0);
+	await expandChangeDetails(page);
 	await expect(add).toBeVisible();
 	await expect(list.locator(':scope > div')).toHaveCount(1);
 	await expect(list).toContainText('เพิ่มครูในกลุ่มเรียน');
+});
+
+test('large delivery changes stay collapsed and bound offering, resource and difference pages', async ({
+	page
+}, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockDelivery(page);
+	const labels = Array.from({ length: 20 }, (_, index) => ({
+		id: `offering-${index}`,
+		code: `ว${index + 1}`,
+		name: `วิชาทดสอบ ${index + 1}`
+	}));
+	const changes = labels.flatMap((offering, offeringIndex) =>
+		Array.from({ length: offeringIndex === 0 ? 101 : 1 }, (_, groupIndex) => ({
+			resourceId: `${offering.id}-group-${groupIndex}`,
+			learningOfferingId: offering.id,
+			label: `กลุ่ม ${groupIndex + 1}`,
+			field: 'ครูผู้สอน',
+			kind: 'changed',
+			before: 'ครูเดิม',
+			after: groupIndex === 100 ? 'ครูค้นหาเจอ' : 'ครูใหม่'
+		}))
+	);
+	changes.push(
+		...Array.from({ length: 20 }, (_, index) => ({
+			...changes[0],
+			field: `รายละเอียด ${index + 1}`,
+			after: index === 19 ? 'คำค้นท้ายรายละเอียด' : 'ข้อมูลใหม่'
+		}))
+	);
+	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+		fulfill(route, { ...changeSetDetail(), offeringLabels: labels, changes, items: [] })
+	);
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+	);
+	await expect(page.getByTestId('delivery-change-summary')).toContainText(
+		'20 กลุ่มรายการ · 120 รายการย่อย'
+	);
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
+	const first = page.getByTestId('delivery-change-offering').first();
+	await first.getByRole('button', { name: /ดูรายละเอียด/ }).click();
+	await expect(first.getByText(/ครูผู้สอน:/)).toHaveCount(8);
+	await expect(first.getByRole('button', { name: 'รายละเอียดถัดไป', exact: true })).toHaveCount(1);
+	await first.getByRole('button', { name: 'รายละเอียดถัดไป', exact: true }).click();
+	await expect(first.getByText(/รายละเอียด /)).toHaveCount(8);
+	await page.getByLabel('ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู', { exact: true }).fill('ครูค้นหาเจอ');
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(1);
+	await expect(first).toContainText('ครูค้นหาเจอ');
+	await page
+		.getByLabel('ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู', { exact: true })
+		.fill('คำค้นท้ายรายละเอียด');
+	await expect(first).toContainText('คำค้นท้ายรายละเอียด');
+	await page.screenshot({ path: testInfo.outputPath('bounded-change-summary-mobile.png') });
+	await page.getByLabel('ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู', { exact: true }).fill('');
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
+	await page.getByRole('button', { name: 'รายการถัดไป', exact: true }).click();
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
+	await page.getByRole('button', { name: 'รายการถัดไป', exact: true }).click();
+	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(4);
 });

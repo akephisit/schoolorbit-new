@@ -474,8 +474,7 @@
 					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3"
 				>
 					<p class="text-sm text-muted-foreground" data-testid="delivery-change-summary">
-						{changeSet.changes.length} ความแตกต่าง · {changeRows.length} รายการที่เกี่ยวข้อง · {changeSet
-							.items.length} คำสั่งที่บันทึก
+						{groupedChanges.length} กลุ่มรายการ · {changeRows.length} รายการย่อย
 					</p>
 					<Collapsible.Trigger>
 						{#snippet child({ props })}<Button variant="outline" size="sm" {...props}

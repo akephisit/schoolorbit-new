@@ -874,6 +874,22 @@ APIs establish browser behavior, not database authorization or production accept
 focused source guards with `node --test tests/static/facility-region-loading.test.mjs
 tests/static/frontend-layout-components.test.mjs tests/static/documentation-policy.test.mjs`.
 
+The Delivery change-summary and bulk group-setup fixtures use the same local production preview:
+
+```bash
+node --test tests/static/learning-delivery-change-list.test.mjs tests/static/delivery-offering-route-loading.test.mjs tests/static/delivery-draft-lifecycle.test.mjs tests/static/learning-delivery-workspace.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/homeroom-delivery-workspace.spec.ts tests/e2e/delivery-offering-route-loading.spec.ts --project=chromium --workers=2
+```
+
+These synthetic browser fixtures cover a collapsed summary with bounded offering, resource and
+individual-difference pages, full-content search, stable command deletion and retained readiness.
+Bulk setup covers explicit targets, skipping existing primary teachers by default, explicit
+replacement while retaining co-teachers, roster mode selection, authoritative previews, one atomic
+apply request, pending dismissal guards, blocked targets, fresh revisions after a conflict and
+late options after closing. Mobile/desktop light/dark screenshots are saved in each test's output
+directory. Browser interception verifies UI behavior; database atomicity, scope authorization and
+canonical grade/room ordering require the Delivery service fixtures above.
+
 Physical room-name projections share the existing timetable contracts and display helpers. From
 `frontend-school`, run `npm run generate:api-contracts`, `npm run check:api-contracts` and
 `npm run test:api-contracts`, followed by:
