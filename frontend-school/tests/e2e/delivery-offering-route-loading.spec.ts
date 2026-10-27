@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { AcademicTermChangeSet } from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -541,6 +542,7 @@ async function mockBulkSetup(
 		trackingGate?: Promise<void>;
 		trackingRefreshGate?: Promise<void>;
 		trackingSaveGate?: Promise<void>;
+		trackingStartsOn?: string;
 	} = {}
 ) {
 	const count = await mockOffering(page, { permissions: ['*'] });
@@ -566,7 +568,7 @@ async function mockBulkSetup(
 				mode: options.initialTrackingMode ?? 'manual',
 				effectiveFrom: options.initialTrackingMode === 'homeroom' ? '2026-10-27' : null,
 				groupRowVersion: row.rowVersion,
-				startsOn: '2026-05-01',
+				startsOn: options.trackingStartsOn ?? '2026-05-01',
 				endsOn: '2027-04-30'
 			}
 		])
@@ -988,10 +990,10 @@ test('bulk preview blocks unsafe targets and a late options response cannot reop
 	expect(fixture.applyRequests).toHaveLength(0);
 });
 
-test('bulk automatic roster configuration requires a date and patches selected tracking without rebuilding members', async ({
+test('bulk automatic roster configuration defaults to Bangkok today and patches selected tracking without rebuilding members', async ({
 	page
 }) => {
-	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	await page.clock.setFixedTime(new Date('2026-10-26T18:00:00Z'));
 	const fixture = await mockBulkSetup(page);
 	await page.goto(url());
 	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
@@ -999,11 +1001,11 @@ test('bulk automatic roster configuration requires a date and patches selected t
 	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
 	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
 	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
-	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeDisabled();
-	await dialog
-		.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
-		.click();
-	await page.locator('[data-bits-day][data-today]').click();
+	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeEnabled();
+	await expect(
+		dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
+	).toContainText('27 ต.ค. 2569');
+	await expect(dialog).toContainText('สมาชิกใหม่เริ่มนับจากวันที่นี้');
 	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
 	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
 		'เปลี่ยนเป็นติดตามห้องอัตโนมัติ'
@@ -1351,4 +1353,428 @@ test('bulk dialog completes preview and releases underlying actions with real to
 	} finally {
 		await context.close();
 	}
+});
+
+const periodChangeSetId = '60000000-0000-4000-8000-000000000201';
+const periodChangeSetPath = `/api/academic/term-change-sets/${periodChangeSetId}`;
+
+async function mockWeeklyPeriods(
+	page: Page,
+	options: {
+		permissions?: string[];
+		published?: boolean;
+		conflictOnce?: boolean;
+		failSaveOnce?: boolean;
+		failRefreshOnce?: boolean;
+		saveGate?: Promise<void>;
+		readGate?: Promise<void>;
+	} = {}
+) {
+	const count = await mockOffering(page, {
+		permissions: options.permissions ?? ['*'],
+		published: options.published
+	});
+	let graph = {
+		...versionGraph(options.published),
+		effectiveFrom: options.published ? '2026-05-01' : null,
+		referenceDate: '2026-05-01'
+	};
+	const timestamp = '2026-10-27T00:00:00Z';
+	const item = {
+		id: '70000000-0000-4000-8000-000000000201',
+		actionKind: 'adjust_weekly_period_target' as const,
+		learningOfferingId: ids.offering,
+		weeklyPeriodTarget: 2,
+		rowVersion: 5,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+		createdBy: ids.year
+	};
+	let changeSet: AcademicTermChangeSet = {
+		id: periodChangeSetId,
+		academicYearId: ids.year,
+		academicTermId: ids.term,
+		status: 'draft',
+		reason: 'ปรับจำนวนคาบ',
+		effectiveFrom: null,
+		referenceDate: '2026-05-01',
+		targetDeliveryVersionId: ids.version,
+		rowVersion: 7,
+		changes: [],
+		offeringLabels: [],
+		createdAt: timestamp,
+		updatedAt: timestamp,
+		createdBy: ids.year,
+		items: [
+			{ ...item, id: 'unrelated-item', learningOfferingId: 'other-offering', rowVersion: 19 },
+			item
+		]
+	};
+	const reads: string[] = [];
+	const writes: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
+	let failSave = options.failSaveOnce ?? false;
+	let conflict = options.conflictOnce ?? false;
+	let failRefresh = options.failRefreshOnce ?? false;
+	let saved = false;
+	await page.route(`**${paths.versions}*`, (route) =>
+		fulfill(route, [
+			{
+				...version(options.published),
+				changeSetId: periodChangeSetId,
+				effectiveFrom: graph.effectiveFrom
+			}
+		])
+	);
+	await page.route(`**${paths.version}`, async (route) => {
+		reads.push(paths.version);
+		if (saved && failRefresh) {
+			failRefresh = false;
+			await route.fulfill({
+				status: 503,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: false, error: 'โหลดรุ่นล่าสุดไม่สำเร็จ' })
+			});
+			return;
+		}
+		await fulfill(route, graph);
+	});
+	await page.route(`**${periodChangeSetPath}`, async (route) => {
+		expect(route.request().method()).toBe('GET');
+		reads.push(periodChangeSetPath);
+		if (options.readGate) await options.readGate;
+		await fulfill(route, changeSet);
+	});
+	await page.route(`**${periodChangeSetPath}/items`, async (route) => {
+		const body = route.request().postDataJSON();
+		writes.push({
+			method: route.request().method(),
+			path: new URL(route.request().url()).pathname,
+			body
+		});
+		if (options.saveGate) await options.saveGate;
+		if (conflict || failSave) {
+			const status = conflict ? 409 : 503;
+			if (conflict) {
+				changeSet = {
+					...changeSet,
+					rowVersion: 8,
+					items: changeSet.items.map((row) =>
+						row.id === item.id ? { ...row, rowVersion: 6 } : row
+					)
+				};
+			}
+			conflict = false;
+			failSave = false;
+			await route.fulfill({
+				status,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: false,
+					error: status === 409 ? 'แบบร่างถูกแก้ไขจากที่อื่น' : 'บันทึกยังไม่สำเร็จ'
+				})
+			});
+			return;
+		}
+		expect(route.request().method()).toBe('PUT');
+		expect(body.action).toBe('adjust_weekly_period_target');
+		expect(body.changeSetRowVersion).toBe(changeSet.rowVersion);
+		const existing = changeSet.items.find((row) => row.id === item.id)!;
+		expect(body.itemRowVersion).toBe(existing.rowVersion);
+		expect(body.learningOfferingId).toBe(ids.offering);
+		changeSet = {
+			...changeSet,
+			rowVersion: changeSet.rowVersion + 1,
+			items: changeSet.items.map((row) =>
+				row.id === item.id
+					? { ...item, rowVersion: row.rowVersion + 1, weeklyPeriodTarget: body.weeklyPeriodTarget }
+					: row
+			)
+		};
+		graph = {
+			...graph,
+			rowVersion: graph.rowVersion + 1,
+			snapshot: {
+				offerings: graph.snapshot.offerings.map((row) => ({
+					...row,
+					weeklyPeriodTarget: body.weeklyPeriodTarget
+				}))
+			}
+		};
+		saved = true;
+		await fulfill(route, changeSet);
+	});
+	return { count, reads, writes, changeSet: () => changeSet };
+}
+
+for (const width of [390, 1280]) {
+	for (const dark of [false, true]) {
+		test(`offering period dialog edits the selected draft and restores focus and native scrolling at ${width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width, height: 900 });
+			const fixture = await mockWeeklyPeriods(page);
+			await page.goto(url());
+			if (dark) await page.evaluate(() => document.documentElement.classList.add('dark'));
+			const card = page.getByTestId('delivery-versions-ready');
+			await expect(card).toContainText('เลือกวันเริ่มใช้ตอนเผยแพร่');
+			await expect(card).not.toContainText('null');
+			await expect(page.getByTestId('delivery-version-selector')).not.toContainText('null');
+			expect(fixture.reads.filter((path) => path === periodChangeSetPath)).toHaveLength(0);
+			const trigger = card.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
+			await trigger.focus();
+			await page.keyboard.press('Enter');
+			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+			await expect(dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })).toHaveValue('2');
+			expect(fixture.writes).toHaveLength(0);
+			await page.screenshot({
+				path: testInfo.outputPath(`offering-periods-${width}-${dark ? 'dark' : 'light'}.png`)
+			});
+			const bounds = await dialog.boundingBox();
+			expect(bounds!.x).toBeGreaterThanOrEqual(0);
+			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+			expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(900);
+			await page.keyboard.press('Escape');
+			await expect(dialog).toHaveCount(0);
+			await expect(trigger).toBeFocused();
+			const main = page.locator('main');
+			await main.evaluate((element) => {
+				element.scrollTop = 0;
+			});
+			await page.mouse.move(width - 20, 500);
+			await page.mouse.wheel(0, 500);
+			await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+			await trigger.click();
+			await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('0');
+			await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+			await expect(dialog).toHaveCount(0);
+			await expect(card).toContainText('0 คาบ/สัปดาห์');
+			await expect(trigger).toBeFocused();
+			expect(fixture.writes).toEqual([
+				{
+					method: 'PUT',
+					path: `${periodChangeSetPath}/items`,
+					body: {
+						action: 'adjust_weekly_period_target',
+						changeSetRowVersion: 7,
+						itemRowVersion: 5,
+						learningOfferingId: ids.offering,
+						weeklyPeriodTarget: 0
+					}
+				}
+			]);
+			expect(fixture.changeSet().items[0].rowVersion).toBe(19);
+			expect(fixture.count(paths.offering)).toBe(1);
+			expect(fixture.count(paths.groups)).toBe(1);
+			await trigger.click();
+			await expect(dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })).toHaveValue('0');
+			await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('4');
+			await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+			await expect(card).toContainText('4 คาบ/สัปดาห์');
+			expect(fixture.writes[1].body).toMatchObject({
+				changeSetRowVersion: 8,
+				itemRowVersion: 6,
+				weeklyPeriodTarget: 4
+			});
+		});
+	}
+}
+
+for (const conflict of [false, true]) {
+	test(`offering period ${conflict ? 'conflict' : 'network failure'} retains input and saves only after explicit retry`, async ({
+		page
+	}) => {
+		const fixture = await mockWeeklyPeriods(page, {
+			conflictOnce: conflict,
+			failSaveOnce: !conflict
+		});
+		await page.goto(url());
+		await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+		const input = dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true });
+		await input.fill('6');
+		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+		await expect(dialog.getByRole('alert')).toBeVisible();
+		await expect(input).toHaveValue('6');
+		expect(fixture.writes).toHaveLength(1);
+		if (conflict) {
+			await expect(
+				dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })
+			).toBeDisabled();
+			await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดก่อนบันทึก', exact: true }).click();
+			await expect(dialog.getByRole('alert')).toHaveCount(0);
+			await expect(input).toHaveValue('6');
+		}
+		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+		await expect(dialog).toHaveCount(0);
+		await expect(page.getByTestId('delivery-versions-ready')).toContainText('6 คาบ/สัปดาห์');
+		expect(fixture.writes[1].body).toMatchObject({
+			changeSetRowVersion: conflict ? 8 : 7,
+			itemRowVersion: conflict ? 6 : 5,
+			weeklyPeriodTarget: 6
+		});
+	});
+}
+
+test('a saved period change with a failed refresh retries only the read', async ({ page }) => {
+	const fixture = await mockWeeklyPeriods(page, { failRefreshOnce: true });
+	await page.goto(url());
+	await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+	await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('3');
+	await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+	await expect(dialog.getByRole('status')).toContainText('บันทึกจำนวนคาบแล้ว');
+	await expect(dialog.getByRole('alert')).toContainText('โหลดรุ่นล่าสุดไม่สำเร็จ');
+	await expect(dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'โหลดจำนวนคาบที่บันทึกแล้ว', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByTestId('delivery-versions-ready')).toContainText('3 คาบ/สัปดาห์');
+	expect(fixture.writes).toHaveLength(1);
+});
+
+test('cancelling a pending period read prevents late responses from reopening the dialog', async ({
+	page
+}) => {
+	const gate = deferred();
+	const fixture = await mockWeeklyPeriods(page, { readGate: gate.promise });
+	await page.goto(url());
+	const trigger = page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
+	try {
+		await trigger.click();
+		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+		await expect
+			.poll(() => fixture.reads.filter((path) => path === periodChangeSetPath).length)
+			.toBe(1);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		await expect(dialog).toHaveCount(0);
+		await expect(trigger).toBeFocused();
+	} finally {
+		gate.release();
+	}
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(fixture.writes).toHaveLength(0);
+	await trigger.click();
+	await expect(
+		page.getByRole('dialog').getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })
+	).toHaveValue('2');
+});
+
+test('pending period save prevents dismissal and duplicate writes', async ({ page }) => {
+	const gate = deferred();
+	const fixture = await mockWeeklyPeriods(page, { saveGate: gate.promise });
+	try {
+		await page.goto(url());
+		await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+		await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('3');
+		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+		await expect(dialog.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeVisible();
+		expect(fixture.writes).toHaveLength(1);
+	} finally {
+		gate.release();
+	}
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+for (const published of [false, true]) {
+	test(`period editing stays hidden for ${published ? 'published snapshots' : 'read-only users'}`, async ({
+		page
+	}) => {
+		const fixture = await mockWeeklyPeriods(page, {
+			published,
+			permissions: published ? ['*'] : ['learning_offering.read.school']
+		});
+		await page.goto(url());
+		await expect(
+			page.getByTestId(published ? 'delivery-version-offering' : 'delivery-offering-ready')
+		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true })).toHaveCount(0);
+		expect(fixture.reads.filter((path) => path === periodChangeSetPath)).toHaveLength(0);
+		expect(fixture.writes).toHaveLength(0);
+	});
+}
+
+test('bulk tracking dates retain custom choices through mode flips and refresh each fresh opening', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const fixture = await mockBulkSetup(page, { conflictOnce: true });
+	await page.goto(url());
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
+	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
+	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
+	const date = dialog.getByRole('button', {
+		name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย',
+		exact: true
+	});
+	await expect(date).toContainText('27 ต.ค. 2569');
+	await date.click();
+	await page.locator('[data-bits-day][data-today]').focus();
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Enter');
+	await expect(date).toContainText('28 ต.ค. 2569');
+	await dialog.getByRole('radio', { name: 'จัดรายชื่อเอง', exact: true }).check();
+	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
+	await expect(date).toContainText('28 ต.ค. 2569');
+	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
+	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toBeVisible();
+	await dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	await expect(date).toContainText('28 ต.ค. 2569');
+	expect(fixture.previewRequests[0].rosterTracking?.effectiveFrom).toBe('2026-10-28');
+	await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	await page.clock.setFixedTime(new Date('2026-10-29T05:00:00Z'));
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
+	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
+	await expect(date).toContainText('29 ต.ค. 2569');
+});
+
+test('single and bulk tracking defaults respect the already-loaded future teaching start', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	await mockBulkSetup(page, { trackingStartsOn: '2026-11-01' });
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+	await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'1 พ.ย. 2569'
+	);
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
+	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
+	await expect(
+		dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
+	).toContainText('1 พ.ย. 2569');
+});
+
+test('rendering an existing past tracking date preserves the saved configuration', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+	const writes: string[] = [];
+	page.on('request', (request) => {
+		if (request.method() !== 'GET') writes.push(request.url());
+	});
+	await mockOffering(page, { permissions: ['*'], trackingMode: 'homeroom' });
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
+		'9 ต.ค. 2569'
+	);
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeDisabled();
+	await expect(panel).toContainText('สมาชิกใหม่เริ่มนับจากวันที่นี้');
+	await expect(panel).toContainText('กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง');
+	expect(writes).toEqual([]);
 });

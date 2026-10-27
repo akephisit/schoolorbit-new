@@ -34,7 +34,7 @@ export function weeklyPeriodAdjustmentRequest(
 	changeSet: Pick<AcademicTermChangeSet, 'status' | 'rowVersion' | 'items'>,
 	offering: { id: string; kind: 'course' | 'activity' },
 	weeklyPeriodTarget: number
-): UpsertAcademicTermChangeItemRequest | null {
+): Extract<UpsertAcademicTermChangeItemRequest, { action: 'adjust_weekly_period_target' }> | null {
 	if (
 		changeSet.status !== 'draft' ||
 		!Number.isInteger(weeklyPeriodTarget) ||
