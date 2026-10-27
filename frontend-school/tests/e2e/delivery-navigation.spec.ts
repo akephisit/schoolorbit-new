@@ -336,3 +336,118 @@ test('touch users can filter offerings and return from detail with their group s
 		await context.close();
 	}
 });
+
+function managerOrigin(
+	view: 'homerooms' | 'offerings',
+	versionId = ids.version,
+	course = false
+): string {
+	const url = new URL(navigationOverviewPath(), 'https://schoolorbit.invalid');
+	url.searchParams.set('deliveryVersionId', versionId);
+	url.searchParams.set('view', view);
+	url.searchParams.set('homeroomSearch', 'ม.1/2');
+	url.searchParams.set('readiness', 'attention');
+	url.searchParams.set('expandedRooms', ids.roomB);
+	url.searchParams.set('offeringSearch', course ? 'ค21' : 'ชุมนุม');
+	url.searchParams.set('kind', course ? 'course' : 'activity');
+	if (course) url.searchParams.set('subjectGroupId', ids.math);
+	return url.pathname + url.search;
+}
+
+async function expectManagerOrigin(page: Page, view: 'homerooms' | 'offerings', course = false) {
+	await expectRequestedContext(page);
+	await expect(
+		page.getByRole('tab', {
+			name: view === 'homerooms' ? 'มุมมองรายห้อง' : 'มุมมองรายวิชา/กิจกรรม',
+			exact: true
+		})
+	).toHaveAttribute('aria-selected', 'true');
+	const current = new URL(page.url());
+	expect(current.searchParams.get('homeroomSearch')).toBe('ม.1/2');
+	expect(current.searchParams.get('readiness')).toBe('attention');
+	expect(current.searchParams.get('expandedRooms')).toBe(ids.roomB);
+	expect(current.searchParams.get('offeringSearch')).toBe(course ? 'ค21' : 'ชุมนุม');
+	expect(current.searchParams.get('kind')).toBe(course ? 'course' : 'activity');
+	if (course) expect(current.searchParams.get('subjectGroupId')).toBe(ids.math);
+}
+
+test('continuing an already-open activity in a draft preserves the originating filters and expanded room', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page, { manager: true, continuation: true });
+	await page.goto(managerOrigin('homerooms', ids.sourceVersion));
+	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
+	await expectRequestedContext(page);
+	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	expect(api.count(`/api/academic/offerings/${offerings.club}`)).toBe(1);
+	const back = page.getByRole('link', { name: 'กลับภาพรวม', exact: true });
+	const destination = new URL((await back.getAttribute('href'))!, page.url());
+	expect(destination.searchParams.get('expandedRooms')).toBe(ids.roomB);
+	await back.click();
+	await expectManagerOrigin(page, 'homerooms');
+	await expect(
+		page
+			.locator('details')
+			.filter({ has: page.getByRole('heading', { name: 'ม.1/2', exact: true }) })
+	).toHaveAttribute('open', '');
+	expect(api.writes).toEqual([]);
+});
+
+test('creating an activity with groups navigates with the created offering context and restores the originating offering view', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page, { manager: true, groupedCreation: true });
+	await page.goto(managerOrigin('offerings'));
+	await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+	await page.getByRole('button', { name: /เพิ่มรายการเอง/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('combobox', { name: 'ประเภท', exact: true }).click();
+	await page.getByRole('option', { name: 'กิจกรรมพัฒนาผู้เรียน', exact: true }).click();
+	for (const [control, option] of [
+		['เลือกกิจกรรม', 'ชุมนุม'],
+		['เลือกระดับชั้น', 'มัธยมศึกษาปีที่ 1'],
+		['เลือกแผนการเรียน', 'แผนคณิตศาสตร์']
+	])
+		await choose(page, control, option);
+	await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
+	await dialog.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
+	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
+	await expectRequestedContext(page);
+	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	expect(api.count(`/api/academic/offerings/${offerings.club}`)).toBe(1);
+	expect(api.creations).toHaveLength(1);
+	expect(api.creations[0]).toMatchObject({
+		kind: 'activity',
+		academicTermId: ids.term,
+		activityVersionId: offerings.club,
+		createHomeroomGroups: true
+	});
+	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+	await expectManagerOrigin(page, 'offerings');
+	await expect(page.getByTestId('delivery-offerings-ready').locator('tbody tr')).toHaveCount(1);
+	await expect(page.getByTestId('delivery-offerings-ready')).toContainText('ชุมนุม');
+});
+
+test('readiness repair links preserve the selected version and all originating view filters', async ({
+	page
+}) => {
+	await mockDeliveryNavigation(page, { manager: true, readiness: true });
+	await page.goto(managerOrigin('offerings', ids.version, true));
+	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	const link = page.getByRole('link', { name: 'ไปแก้ไข', exact: true });
+	await expect(link).toBeVisible();
+	const target = new URL((await link.getAttribute('href'))!, page.url());
+	expect(target.searchParams.get('academicYearId')).toBe(ids.year);
+	expect(target.searchParams.get('academicTermId')).toBe(ids.term);
+	expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
+	const origin = new URL(target.searchParams.get('returnTo')!, page.url());
+	expect(origin.searchParams.get('subjectGroupId')).toBe(ids.math);
+	expect(origin.searchParams.get('offeringSearch')).toBe('ค21');
+	expect(origin.searchParams.get('expandedRooms')).toBe(ids.roomB);
+	await link.click();
+	await expectRequestedContext(page);
+	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+	await expectManagerOrigin(page, 'offerings', true);
+});

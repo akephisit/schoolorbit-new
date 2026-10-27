@@ -739,7 +739,7 @@
 		{/if}
 
 		{#key `${changeSet.id}:${readinessRevision}`}
-			<AcademicChangeReadiness {changeSet} {canManage} {onChanged} {onDeleted} />
+			<AcademicChangeReadiness {changeSet} {canManage} {returnTo} {onChanged} {onDeleted} />
 		{/key}
 	</div>
 </section>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	deliveryOfferingHref,
+	deliveryFindingHref,
 	deliveryOverviewHref,
 	deliveryOverviewReturnHref,
 	deliveryOverviewStateHref,
@@ -106,4 +107,28 @@ test('legacy or stale context repair preserves only a verified version and a mat
 	assert.equal(corrected.searchParams.get('deliveryVersionId'), null);
 	assert.equal(corrected.searchParams.get('returnTo'), null);
 	assert.equal(repairedDeliveryOfferingHref(corrected, context), null);
+});
+
+test('readiness offering links add academic and origin context while retaining the finding target version', () => {
+	const returnTo = overview.pathname + overview.search;
+	const target = new URL(
+		deliveryFindingHref(
+			'/staff/academic/delivery/offering?deliveryVersionId=target-version&groupId=group',
+			'offering',
+			context,
+			returnTo
+		),
+		origin
+	);
+	assert.equal(target.searchParams.get('academicYearId'), context.academicYearId);
+	assert.equal(target.searchParams.get('academicTermId'), context.academicTermId);
+	assert.equal(target.searchParams.get('deliveryVersionId'), 'target-version');
+	assert.equal(target.searchParams.get('groupId'), 'group');
+	assert.equal(target.searchParams.get('returnTo'), returnTo);
+	for (const route of [
+		'/staff/academic/timetable?version=table',
+		'/staff/academic/delivery/other?deliveryVersionId=version',
+		'https://outside.invalid/staff/academic/delivery/offering'
+	])
+		assert.equal(deliveryFindingHref(route, 'offering', context, returnTo), route);
 });

@@ -58,6 +58,7 @@
 	import {
 		deliveryOverviewStateHref,
 		deliveryOverviewReturnHref,
+		deliveryOfferingHref,
 		readDeliveryOverviewState,
 		type DeliveryOverviewState
 	} from '#lib/navigation/learning-delivery.js';
@@ -409,7 +410,11 @@
 				);
 			if (existing?.offeringId) {
 				await goto(
-					resolve(`staff/academic/delivery/${existing.offeringId}?deliveryVersionId=${versionId}`)
+					deliveryOfferingHref(
+						existing.offeringId,
+						selected,
+						deliveryOverviewReturnHref(overviewUrl, selected)
+					)
 				);
 			} else {
 				const target = buildSynchronizedActivityPreparationTarget(
@@ -654,6 +659,7 @@
 					bind:this={offeringDialog}
 					showTrigger={workspace?.deliveryVersionStatus === 'draft'}
 					{academicTermId}
+					{returnTo}
 					onCreated={addCreated}
 					onApplied={() => refreshDeliveryRegions(true)}
 					defaultDeliveryVersionId={workspace?.deliveryVersionStatus === 'draft'

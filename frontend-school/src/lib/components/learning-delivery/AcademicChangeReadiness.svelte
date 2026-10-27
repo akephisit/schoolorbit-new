@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
+	import { deliveryFindingHref } from '#lib/navigation/learning-delivery.js';
 	import {
 		deleteDeliveryVersion,
 		getDeliveryVersion,
@@ -32,11 +33,13 @@
 	let {
 		changeSet,
 		canManage,
+		returnTo = '',
 		onChanged,
 		onDeleted
 	}: {
 		changeSet: AcademicTermChangeSet;
 		canManage: boolean;
+		returnTo?: string;
 		onChanged: (
 			changeSet: AcademicTermChangeSet,
 			scope?: LearningDeliveryRefreshScope
@@ -226,8 +229,20 @@
 						<CircleAlert class="size-4 shrink-0" />{finding.title}
 					</p>
 					<p class="mt-1 text-sm text-muted-foreground">{finding.guidance}</p>
-					{#if finding.route}<Button href={finding.route} variant="link" size="sm"
-							>ไปแก้ไข <ExternalLink class="size-3" /></Button
+					{#if finding.route}<Button
+							href={deliveryFindingHref(
+								finding.route,
+								finding.learningOfferingId,
+								{
+									academicYearId: changeSet.academicYearId,
+									academicTermId: changeSet.academicTermId,
+									deliveryVersionId: changeSet.targetDeliveryVersionId
+								},
+								returnTo
+							)}
+							data-sveltekit-preload-data="tap"
+							variant="link"
+							size="sm">ไปแก้ไข <ExternalLink class="size-3" /></Button
 						>{/if}
 				</div>
 			{:else}<p class="flex items-center gap-2 text-sm">

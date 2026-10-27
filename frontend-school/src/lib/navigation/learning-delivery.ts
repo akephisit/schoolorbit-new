@@ -124,6 +124,41 @@ export function deliveryOfferingHref(
 	return `${overviewPath}/${encodeURIComponent(offeringId)}?${query}`;
 }
 
+export function deliveryFindingHref(
+	route: string,
+	offeringId: string | null | undefined,
+	context: DeliveryAcademicContext,
+	returnTo: string
+): string {
+	if (!offeringId || !route.startsWith('/') || route.startsWith('//')) return route;
+	let target: URL;
+	try {
+		target = new URL(route, navigationOrigin);
+	} catch {
+		return route;
+	}
+	if (
+		target.origin !== navigationOrigin ||
+		target.pathname !== `${overviewPath}/${encodeURIComponent(offeringId)}` ||
+		target.hash
+	)
+		return route;
+	const contextual = new URL(
+		deliveryOfferingHref(
+			offeringId,
+			{
+				...context,
+				deliveryVersionId: target.searchParams.get('deliveryVersionId') || context.deliveryVersionId
+			},
+			returnTo
+		),
+		navigationOrigin
+	);
+	const groupId = target.searchParams.get('groupId');
+	if (groupId) contextual.searchParams.set('groupId', groupId);
+	return contextual.pathname + contextual.search;
+}
+
 export function repairedDeliveryOfferingHref(
 	url: URL,
 	context: DeliveryAcademicContext

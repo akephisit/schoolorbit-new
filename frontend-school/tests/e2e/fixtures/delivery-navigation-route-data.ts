@@ -3,7 +3,9 @@ import type {
 	DeliveryVersion,
 	DeliveryVersionSummary,
 	HomeroomDeliveryWorkspace,
-	LearningOffering
+	LearningOffering,
+	CreateLearningOfferingRequest,
+	AcademicTermChangeSet
 } from '../../../src/lib/api/learning-delivery.js';
 
 const uuid = (number: number) => `10000000-0000-4000-8000-${String(number).padStart(12, '0')}`;
@@ -20,7 +22,9 @@ export const navigationIds = {
 	curriculum: uuid(10),
 	math: uuid(11),
 	thai: uuid(12),
-	actor: uuid(13)
+	actor: uuid(13),
+	sourceVersion: uuid(14),
+	changeSet: uuid(15)
 };
 const definitions = [
 	{
@@ -239,9 +243,89 @@ export function navigationSummary(): DeliveryVersionSummary {
 export const navigationOverviewPath = () =>
 	`/staff/academic/delivery?academicYearId=${navigationIds.year}&academicTermId=${navigationIds.term}&deliveryVersionId=${navigationIds.version}`;
 
-export async function mockDeliveryNavigation(page: Page) {
+export async function mockDeliveryNavigation(
+	page: Page,
+	options: {
+		manager?: boolean;
+		continuation?: boolean;
+		groupedCreation?: boolean;
+		readiness?: boolean;
+	} = {}
+) {
 	const reads: URL[] = [];
 	const writes: string[] = [];
+	const creations: CreateLearningOfferingRequest[] = [];
+	let created = false;
+	const changeSet: AcademicTermChangeSet = {
+		id: navigationIds.changeSet,
+		academicYearId: navigationIds.year,
+		academicTermId: navigationIds.term,
+		targetDeliveryVersionId: navigationIds.version,
+		status: 'draft',
+		rowVersion: 1,
+		effectiveFrom: null,
+		referenceDate: '2027-05-01',
+		reason: 'ตรวจบริบทการนำทาง',
+		items: [],
+		changes: [],
+		offeringLabels: [],
+		createdBy: navigationIds.actor,
+		createdAt: '2027-04-01T00:00:00Z',
+		updatedAt: '2027-04-01T00:00:00Z'
+	};
+	function offeringResource(id: string): LearningOffering {
+		const item = navigationVersion().snapshot.offerings.find((offering) => offering.id === id)!;
+		return {
+			id: item.id,
+			academicYearId: navigationIds.year,
+			academicTermId: navigationIds.term,
+			kind: item.kind,
+			codeSnapshot: item.code,
+			nameSnapshot: item.name,
+			status: created ? 'draft' : 'published',
+			rowVersion: 1,
+			startsOn: '2027-05-01',
+			endsOn: null,
+			stopReason: null,
+			targets: [],
+			snapshot: item.catalog,
+			migrated: false,
+			owningOrganizationUnitId: item.owningOrganizationUnitId,
+			createdAt: '2027-04-01T00:00:00Z',
+			updatedAt: '2027-04-01T00:00:00Z'
+		};
+	}
+	function versionResource(id: string): DeliveryVersion {
+		const version = navigationVersion();
+		if ((options.groupedCreation && !created) || id === navigationIds.sourceVersion)
+			version.snapshot.offerings = version.snapshot.offerings.filter(
+				(item) => item.id !== navigationOfferingIds.club
+			);
+		return id === navigationIds.sourceVersion
+			? { ...version, id, status: 'published', effectiveFrom: '2027-05-01' }
+			: { ...version, sourceVersionId: options.continuation ? navigationIds.sourceVersion : null };
+	}
+	function workspaceResource(id: string | null): HomeroomDeliveryWorkspace {
+		const workspace = navigationWorkspace();
+		if (id === navigationIds.sourceVersion) {
+			workspace.deliveryVersionId = id;
+			workspace.deliveryVersionStatus = 'published';
+			workspace.deliveryVersionEffectiveFrom = '2027-05-01';
+		}
+		if ((options.groupedCreation && !created) || id === navigationIds.sourceVersion) {
+			for (const room of workspace.homerooms) {
+				const activity = room.items.find((item) => item.offeringId === navigationOfferingIds.club)!;
+				Object.assign(activity, {
+					offeringId: null,
+					offeringState: 'missing',
+					groupMode: 'missing',
+					teacherState: 'missing_primary',
+					alignmentStates: ['curriculum_requirement_not_offered']
+				});
+			}
+		}
+		return workspace;
+	}
 	async function reply(route: Route, data: unknown) {
 		await route.fulfill({ json: { success: true, data } });
 	}
@@ -262,7 +346,7 @@ export async function mockDeliveryNavigation(page: Page) {
 					displayName: 'ทดสอบ การเปิดสอน',
 					userType: 'staff',
 					status: 'ACTIVE',
-					permissions: ['learning_offering.read.school']
+					permissions: options.manager ? ['*'] : ['learning_offering.read.school']
 				});
 			if (path === '/api/menu/user') return reply(route, { groups: [] });
 			if (path === '/api/academic/context/options')
@@ -294,36 +378,105 @@ export async function mockDeliveryNavigation(page: Page) {
 						}
 					]
 				});
-			if (path === '/api/academic/delivery-versions') return reply(route, [navigationSummary()]);
-			if (path === `/api/academic/delivery-versions/${navigationIds.version}`)
-				return reply(route, navigationVersion());
-			if (path === '/api/academic/delivery/homerooms') return reply(route, navigationWorkspace());
-			if (path === '/api/academic/term-change-sets') return reply(route, []);
-			if (/\/offerings\/[^/]+\/groups$/.test(path)) return reply(route, []);
-			if (/\/offerings\/[^/]+$/.test(path)) {
-				const item = navigationVersion().snapshot.offerings.find(
-					(offering) => offering.id === path.split('/').at(-1)
-				)!;
-				const offering: LearningOffering = {
-					id: item.id,
+			if (path === '/api/academic/delivery-versions')
+				return reply(route, [
+					...(options.continuation
+						? [
+								{
+									...navigationSummary(),
+									id: navigationIds.sourceVersion,
+									status: 'published',
+									effectiveFrom: '2027-05-01'
+								}
+							]
+						: []),
+					{
+						...navigationSummary(),
+						sourceVersionId: options.continuation ? navigationIds.sourceVersion : null,
+						changeSetId: options.readiness ? navigationIds.changeSet : null
+					}
+				]);
+			if (
+				path === `/api/academic/delivery-versions/${navigationIds.version}` ||
+				path === `/api/academic/delivery-versions/${navigationIds.sourceVersion}`
+			)
+				return reply(route, versionResource(path.split('/').at(-1)!));
+			if (path === '/api/academic/delivery/homerooms')
+				return reply(route, workspaceResource(url.searchParams.get('deliveryVersionId')));
+			if (path === '/api/academic/term-change-sets')
+				return reply(route, options.readiness ? [changeSet] : []);
+			if (path === `/api/academic/term-change-sets/${navigationIds.changeSet}`)
+				return reply(route, changeSet);
+			if (path === `/api/academic/term-change-sets/${navigationIds.changeSet}/preview`)
+				return reply(route, {
+					changeSetId: navigationIds.changeSet,
+					changeSetRowVersion: 1,
+					targetDeliveryVersionId: navigationIds.version,
+					targetDeliveryVersionRowVersion: 1,
+					effectiveFrom: '2027-05-01',
+					preliminary: true,
+					previewHash: 'a'.repeat(64),
+					changes: [],
+					impactCounts: {
+						activityEvaluations: 0,
+						courseAssessmentPhases: 0,
+						courseAssessmentPlans: 0,
+						examScheduleItems: 0,
+						groups: 0,
+						homerooms: 0,
+						learnerEvaluations: 0,
+						learningGroupScoreItems: 0,
+						membershipIntervals: 0,
+						officialResultLocks: 0,
+						officialResults: 0,
+						resultConfirmations: 0,
+						resultCorrections: 0,
+						resultSelections: 0,
+						studentScores: 0,
+						supervisionObservations: 0,
+						targetTimetableEntries: 0,
+						teacherAssignments: 0
+					},
+					findings: [
+						{
+							severity: 'blocking',
+							code: 'missing_delivery_group',
+							affectedCount: 1,
+							learningOfferingId: navigationOfferingIds.basic21,
+							title: 'ยังไม่มีกลุ่มเรียน',
+							guidance: 'จัดกลุ่มก่อนเผยแพร่',
+							route: `/staff/academic/delivery/${navigationOfferingIds.basic21}?deliveryVersionId=${navigationIds.version}`
+						}
+					]
+				});
+			if (path === '/api/academic/delivery/management-options')
+				return reply(route, {
 					academicYearId: navigationIds.year,
 					academicTermId: navigationIds.term,
-					kind: item.kind,
-					codeSnapshot: item.code,
-					nameSnapshot: item.name,
-					status: 'published',
-					rowVersion: 1,
-					startsOn: '2027-05-01',
-					endsOn: null,
-					stopReason: null,
-					targets: [],
-					snapshot: item.catalog,
-					migrated: false,
-					owningOrganizationUnitId: item.owningOrganizationUnitId,
-					createdAt: '2027-04-01T00:00:00Z',
-					updatedAt: '2027-04-01T00:00:00Z'
-				};
-				return reply(route, offering);
+					studyPrograms: [navigationWorkspace().homerooms[0].studyProgram],
+					gradeLevels: [navigationWorkspace().homerooms[0].gradeLevel],
+					homerooms: navigationWorkspace().homerooms.map((room) => room.homeroom),
+					learningGroups: [],
+					teachers: [],
+					rooms: [],
+					catalogVersions: [
+						{
+							id: navigationOfferingIds.club,
+							kind: 'activity',
+							label: 'ชุมนุม',
+							name: 'ชุมนุม',
+							schedulingMode: 'synchronized'
+						}
+					]
+				});
+			if (path === '/api/academic/offerings' && request.method() === 'POST') {
+				creations.push(request.postDataJSON());
+				created = true;
+				return reply(route, offeringResource(navigationOfferingIds.club));
+			}
+			if (/\/offerings\/[^/]+\/groups$/.test(path)) return reply(route, []);
+			if (/\/offerings\/[^/]+$/.test(path)) {
+				return reply(route, offeringResource(path.split('/').at(-1)!));
 			}
 			return reply(route, {});
 		}
@@ -331,6 +484,7 @@ export async function mockDeliveryNavigation(page: Page) {
 	return {
 		reads,
 		writes,
+		creations,
 		count: (path: string) => reads.filter((url) => url.pathname === path).length
 	};
 }

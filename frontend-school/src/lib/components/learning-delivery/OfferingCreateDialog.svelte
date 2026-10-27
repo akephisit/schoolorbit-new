@@ -7,7 +7,7 @@
 	} from '#lib/api/learning-delivery.js';
 	import type { SynchronizedActivityPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -22,12 +22,14 @@
 		onCreated,
 		onApplied,
 		defaultDeliveryVersionId = null,
+		returnTo = '',
 		showTrigger = true
 	}: {
 		academicTermId: string;
 		onCreated: (item: LearningOfferingOverviewItem) => void;
 		onApplied: () => Promise<void>;
 		defaultDeliveryVersionId?: string | null;
+		returnTo?: string;
 		showTrigger?: boolean;
 	} = $props();
 
@@ -153,11 +155,7 @@
 			draft = { ...draft, catalogVersionId: '' };
 			open = false;
 			if (draft.kind === 'activity' && activityOpeningMode === 'groups')
-				await goto(
-					resolve(
-						`staff/academic/delivery/${offering.id}?deliveryVersionId=${deliveryVersionId ?? ''}`
-					)
-				);
+				await goto(deliveryOfferingHref(offering.id, { ...offering, deliveryVersionId }, returnTo));
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรายการเปิดสอนไม่สำเร็จ';
 		} finally {
