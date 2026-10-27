@@ -55,8 +55,17 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
+	import {
+		deliveryOverviewStateHref,
+		deliveryOverviewReturnHref,
+		readDeliveryOverviewState,
+		type DeliveryOverviewState
+	} from '#lib/navigation/learning-delivery.js';
 
 	let { data }: { data: PageData } = $props();
+	const overviewUrl = $derived(page.shallow?.url ?? page.url);
+	const viewState = $derived(readDeliveryOverviewState(overviewUrl));
+	const returnTo = $derived(workspace ? deliveryOverviewReturnHref(overviewUrl, workspace) : '');
 	const academicYearId = $derived(data.context?.academicYearId ?? null);
 	const academicTermId = $derived(data.context?.academicTermId ?? null);
 	const homeroomRequest = new LatestRequest();
@@ -89,7 +98,7 @@
 		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${version.effectiveFrom ? formatDate(version.effectiveFrom) : 'เลือกวันตอนเผยแพร่'} · ${version.offeringCount} รายการ`;
 	}
 	function selectDeliveryVersion(id: string): void {
-		const url = new URL(page.url.href);
+		const url = new URL(overviewUrl);
 		url.searchParams.set('deliveryVersionId', id);
 		url.searchParams.delete('changeSetId');
 		void goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
@@ -130,7 +139,7 @@
 	let changeSetSummaryError = $state('');
 	let changeSetError = $state('');
 	let errorMessage = $state('');
-	let viewMode = $state<'homerooms' | 'offerings'>('homerooms');
+	const viewMode = $derived(viewState.view);
 	let offeringDialog = $state<{
 		openCurriculumPreparation: (
 			target: SynchronizedActivityPreparationTarget,
@@ -158,9 +167,6 @@
 			}
 		});
 	});
-	let initialKind = $derived<'all' | 'activity'>(
-		page.url.searchParams.get('kind') === 'activity' ? 'activity' : 'all'
-	);
 	let canManage = $derived(
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
@@ -195,7 +201,7 @@
 	}
 
 	function updateSelectedChangeSetUrl(id: string) {
-		const url = new URL(page.url.href);
+		const url = new URL(overviewUrl);
 
 		if (id) {
 			url.searchParams.set('changeSetId', id);
@@ -213,7 +219,7 @@
 		changeSets = loaded;
 		const selected = selectAcademicTermChangeSetSummary(
 			loaded,
-			page.url.searchParams.get('changeSetId')?.trim() || selectedChangeSetId
+			overviewUrl.searchParams.get('changeSetId')?.trim() || selectedChangeSetId
 		);
 		selectedChangeSetId = selected?.id ?? '';
 		if (!selected) activeChangeSet = null;
@@ -227,7 +233,7 @@
 		homeroomError = '';
 		try {
 			const result = await getHomeroomDeliveryWorkspace(academicYearId, academicTermId, {
-				deliveryVersionId: page.url.searchParams.get('deliveryVersionId') ?? undefined,
+				deliveryVersionId: overviewUrl.searchParams.get('deliveryVersionId') ?? undefined,
 				signal
 			});
 			if (homeroomRequest.isCurrent(revision)) workspace = result;
@@ -296,7 +302,7 @@
 	async function handleDraftDeleted(sourceVersionId: string | null) {
 		activeChangeSet = null;
 		selectedChangeSetId = '';
-		const url = new URL(page.url.href);
+		const url = new URL(overviewUrl);
 		url.searchParams.delete('changeSetId');
 		if (sourceVersionId) url.searchParams.set('deliveryVersionId', sourceVersionId);
 		else url.searchParams.delete('deliveryVersionId');
@@ -347,9 +353,18 @@
 	}
 
 	function changeViewMode(value: string) {
-		viewMode = value === 'offerings' ? 'offerings' : 'homerooms';
-		if (viewMode === 'offerings' && academicTermId && !overview && !overviewLoading)
+		const view = value === 'offerings' ? 'offerings' : 'homerooms';
+		updateViewState({ view });
+		if (view === 'offerings' && academicTermId && !overview && !overviewLoading)
 			void loadOverview(academicTermId);
+	}
+	function updateViewState(patch: Partial<DeliveryOverviewState>) {
+		void goto(deliveryOverviewStateHref(overviewUrl, patch), {
+			shallow: true,
+			replace: true,
+			noScroll: true,
+			state: page.state
+		});
 	}
 
 	function addCreated(_item: LearningOfferingOverviewItem) {
@@ -368,7 +383,7 @@
 		try {
 			let selected = workspace;
 			if (selected?.deliveryVersionId !== versionId) {
-				const url = new URL(page.url.href);
+				const url = new URL(overviewUrl);
 				url.searchParams.set('deliveryVersionId', versionId);
 				url.searchParams.delete('changeSetId');
 				await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
@@ -622,8 +637,7 @@
 			revisionOfferings = [];
 			overviewLoading = false;
 			errorMessage = '';
-			if (!termId) viewMode = 'homerooms';
-			else if (selectedVersionId && viewMode === 'offerings') void loadOverview(termId);
+			if (termId && selectedVersionId && viewMode === 'offerings') void loadOverview(termId);
 		});
 		return () => overviewRequest.abort();
 	});
@@ -761,7 +775,8 @@
 								offerings={revisionOfferings}
 								{canManage}
 								ensureOfferings={ensureOverview}
-								initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
+								initialTeacherChangeItemId={overviewUrl.searchParams.get('teacherChangeItemId') ??
+									''}
 								onChanged={updateChangeSet}
 								onDeleted={handleDraftDeleted}
 							/>
@@ -808,6 +823,9 @@
 								{workspace}
 								{canManage}
 								{activationBusy}
+								filters={viewState}
+								{returnTo}
+								onFiltersChange={updateViewState}
 								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
 							/>
 						{/if}
@@ -847,7 +865,12 @@
 										{items.length} รายการ
 									</p>
 								</div>
-								{#if overview}<DeliveryVersionOverviewTable version={overview} {initialKind} />{/if}
+								{#if overview}<DeliveryVersionOverviewTable
+										version={overview}
+										filters={viewState}
+										{returnTo}
+										onFiltersChange={updateViewState}
+									/>{/if}
 							</section>
 						{/if}
 					</section>

@@ -1,50 +1,87 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import type { DeliveryVersion } from '#lib/api/learning-delivery.js';
+	import {
+		deliveryOfferingHref,
+		type DeliveryOverviewState
+	} from '#lib/navigation/learning-delivery.js';
+	import {
+		deliveryOfferingLabel,
+		deliverySubjectGroupOptions,
+		filterDeliveryOfferings
+	} from '#lib/academic/learning-delivery-presentation.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	let {
 		version,
-		initialKind = 'all'
-	}: { version: DeliveryVersion; initialKind?: 'all' | 'activity' } = $props();
-	let search = $state('');
-	let kind = $derived<'all' | 'course' | 'activity'>(initialKind);
-	const items = $derived(
-		version.snapshot.offerings.filter(
-			(item) =>
-				(kind === 'all' || item.kind === kind) &&
-				`${item.code} ${item.name}`
-					.toLocaleLowerCase('th-TH')
-					.includes(search.trim().toLocaleLowerCase('th-TH'))
-		)
-	);
+		filters,
+		returnTo,
+		onFiltersChange
+	}: {
+		version: DeliveryVersion;
+		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
+		returnTo: string;
+		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
+	} = $props();
+	const groups = $derived(deliverySubjectGroupOptions(version));
+	const items = $derived(filterDeliveryOfferings(version, filters));
 	function detailUrl(id: string) {
-		const query = new URLSearchParams({
-			academicYearId: version.academicYearId,
-			academicTermId: version.academicTermId,
-			deliveryVersionId: version.id
-		});
-		return resolve(`staff/academic/delivery/${id}?${query}`);
+		return deliveryOfferingHref(
+			id,
+			{
+				academicYearId: version.academicYearId,
+				academicTermId: version.academicTermId,
+				deliveryVersionId: version.id
+			},
+			returnTo
+		);
 	}
 </script>
 
-<div class="flex flex-col gap-3 border-b p-4 sm:flex-row">
+<div class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
 	<Input
-		bind:value={search}
+		value={filters.offeringSearch}
+		oninput={(event) => onFiltersChange({ offeringSearch: event.currentTarget.value })}
 		aria-label="ค้นหารายการเปิดสอน"
 		placeholder="ค้นหารหัสหรือชื่อรายวิชาและกิจกรรม"
 	/>
-	<Select.Root type="single" bind:value={kind}>
+	<Select.Root
+		type="single"
+		value={filters.kind}
+		onValueChange={(kind) => {
+			if (kind === 'all' || kind === 'course' || kind === 'activity') onFiltersChange({ kind });
+		}}
+	>
 		<Select.Trigger class="w-full sm:w-48" aria-label="กรองประเภทรายการเปิดสอน"
-			>{kind === 'all' ? 'ทุกประเภท' : kind === 'course' ? 'รายวิชา' : 'กิจกรรม'}</Select.Trigger
+			>{filters.kind === 'all'
+				? 'ทุกประเภท'
+				: filters.kind === 'course'
+					? 'รายวิชา'
+					: 'กิจกรรม'}</Select.Trigger
 		>
 		<Select.Content
 			><Select.Item value="all">ทุกประเภท</Select.Item><Select.Item value="course"
 				>รายวิชา</Select.Item
 			><Select.Item value="activity">กิจกรรม</Select.Item></Select.Content
 		>
+	</Select.Root>
+	<Select.Root
+		type="single"
+		value={filters.subjectGroupId}
+		onValueChange={(subjectGroupId) => onFiltersChange({ subjectGroupId })}
+	>
+		<Select.Trigger class="w-full sm:w-56" aria-label="กรองกลุ่มสาระรายการเปิดสอน">
+			{filters.subjectGroupId === 'all'
+				? 'ทุกกลุ่มสาระ'
+				: (groups.find((group) => group.id === filters.subjectGroupId)?.name ??
+					'ไม่พบกลุ่มสาระที่เลือกในรุ่นนี้')}
+		</Select.Trigger>
+		<Select.Content>
+			<Select.Item value="all">ทุกกลุ่มสาระ</Select.Item>
+			{#each groups as group (group.id)}<Select.Item value={group.id}>{group.name}</Select.Item
+				>{/each}
+		</Select.Content>
 	</Select.Root>
 </div>
 {#if items.length === 0}
@@ -65,7 +102,7 @@
 				{#each items as item (item.id)}
 					<Table.Row>
 						<Table.Cell
-							><p class="font-medium">{item.code} · {item.name}</p>
+							><p class="font-medium">{deliveryOfferingLabel(item)}</p>
 							<p class="text-xs text-muted-foreground">
 								{item.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
 							</p></Table.Cell

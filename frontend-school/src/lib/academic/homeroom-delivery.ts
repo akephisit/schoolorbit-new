@@ -1,4 +1,30 @@
+import type { HomeroomDeliveryItem } from '#lib/api/learning-delivery.js';
+
 export type HomeroomReadinessFilter = 'all' | 'ready' | 'attention';
+
+type HomeroomItemOrder = Pick<
+	HomeroomDeliveryItem,
+	'resourceKind' | 'subjectType' | 'code' | 'name' | 'requirementId'
+>;
+
+export function sortHomeroomDeliveryItems<T extends HomeroomItemOrder>(items: readonly T[]): T[] {
+	const order = new Intl.Collator('th-TH', { numeric: true });
+	const rank = (item: HomeroomItemOrder) =>
+		item.resourceKind === 'activity'
+			? 3
+			: item.subjectType === 'BASIC'
+				? 0
+				: item.subjectType === 'ADDITIONAL'
+					? 1
+					: 2;
+	return [...items].sort(
+		(left, right) =>
+			rank(left) - rank(right) ||
+			(left.resourceKind === 'course' ? order.compare(left.code, right.code) : 0) ||
+			order.compare(left.name, right.name) ||
+			left.requirementId.localeCompare(right.requirementId)
+	);
+}
 
 type DeliveryRoomShape = {
 	homeroom: { name: string };

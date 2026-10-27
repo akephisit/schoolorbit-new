@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DeliveryVersion } from '#lib/api/learning-delivery.js';
+	import { deliveryOfferingLabel } from '#lib/academic/learning-delivery-presentation.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	let {
@@ -24,7 +25,7 @@
 	>
 		<div class="flex flex-wrap items-start justify-between gap-3">
 			<div>
-				<h2 class="text-lg font-semibold">{offering.code} · {offering.name}</h2>
+				<h2 class="text-lg font-semibold">{deliveryOfferingLabel(offering)}</h2>
 				<p class="mt-1 text-sm text-muted-foreground">
 					รุ่นเปิดสอนเริ่มใช้ {version.effectiveFrom}{version.effectiveUntil
 						? ` ถึง ${version.effectiveUntil}`

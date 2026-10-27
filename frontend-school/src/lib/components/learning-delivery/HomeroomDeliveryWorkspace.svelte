@@ -7,9 +7,13 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import {
 		filterHomeroomDeliveryRooms,
-		summarizeHomeroomDelivery,
-		type HomeroomReadinessFilter
+		sortHomeroomDeliveryItems,
+		summarizeHomeroomDelivery
 	} from '#lib/academic/homeroom-delivery.js';
+	import {
+		deliveryOfferingHref,
+		type DeliveryOverviewState
+	} from '#lib/navigation/learning-delivery.js';
 	import { isPendingSynchronizedActivity } from '#lib/academic/synchronized-activity-delivery.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -30,17 +34,38 @@
 		workspace,
 		canManage = false,
 		activationBusy = false,
+		filters,
+		returnTo,
+		onFiltersChange,
 		onPrepareSynchronizedActivity
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
 		activationBusy?: boolean;
+		filters: Pick<DeliveryOverviewState, 'homeroomSearch' | 'readiness' | 'expandedRooms'>;
+		returnTo: string;
+		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
 		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
 	} = $props();
-	let search = $state('');
-	let readiness = $state<HomeroomReadinessFilter>('all');
 	let summary = $derived(summarizeHomeroomDelivery(workspace.homerooms));
-	let rooms = $derived(filterHomeroomDeliveryRooms(workspace.homerooms, search, readiness));
+	let rooms = $derived(
+		filterHomeroomDeliveryRooms(workspace.homerooms, filters.homeroomSearch, filters.readiness).map(
+			(room) => ({ ...room, items: sortHomeroomDeliveryItems(room.items) })
+		)
+	);
+	function roomIsOpen(id: string, index: number): boolean {
+		return filters.expandedRooms === null ? index === 0 : filters.expandedRooms.includes(id);
+	}
+	function toggleRoom(id: string, index: number, open: boolean) {
+		if (open === roomIsOpen(id, index)) return;
+		const expanded = filters.expandedRooms ?? (rooms[0] ? [rooms[0].homeroom.id] : []);
+		onFiltersChange({
+			expandedRooms: open ? [...new Set([...expanded, id])] : expanded.filter((item) => item !== id)
+		});
+	}
+	function offeringHref(id: string): string {
+		return deliveryOfferingHref(id, workspace, returnTo);
+	}
 
 	const offeringLabels = {
 		missing: 'ยังไม่เปิดสอน',
@@ -156,16 +181,25 @@
 							class="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
 						/>
 						<Input
-							bind:value={search}
+							value={filters.homeroomSearch}
+							oninput={(event) => onFiltersChange({ homeroomSearch: event.currentTarget.value })}
 							class="ps-9"
+							aria-label="ค้นหาห้อง ระดับชั้น หรือแผนการเรียน"
 							placeholder="ค้นหาห้อง ระดับชั้น หรือแผนการเรียน"
 						/>
 					</div>
-					<Select.Root type="single" bind:value={readiness}>
+					<Select.Root
+						type="single"
+						value={filters.readiness}
+						onValueChange={(readiness) => {
+							if (readiness === 'all' || readiness === 'ready' || readiness === 'attention')
+								onFiltersChange({ readiness });
+						}}
+					>
 						<Select.Trigger class="w-full" aria-label="กรองความพร้อมของห้อง">
-							{readiness === 'all'
+							{filters.readiness === 'all'
 								? 'ทุกห้อง'
-								: readiness === 'ready'
+								: filters.readiness === 'ready'
 									? 'พร้อมตามโครงสร้าง'
 									: 'ต้องตรวจเพิ่มเติม'}
 						</Select.Trigger>
@@ -184,7 +218,11 @@
 		{:else}
 			<div class="divide-y">
 				{#each rooms as room, index (room.homeroom.id)}
-					<details class="group" open={index === 0}>
+					<details
+						class="group"
+						open={roomIsOpen(room.homeroom.id, index)}
+						ontoggle={(event) => toggleRoom(room.homeroom.id, index, event.currentTarget.open)}
+					>
 						<summary
 							class="flex cursor-pointer list-none flex-col gap-3 p-4 transition-colors hover:bg-muted/25 sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden"
 						>
@@ -274,9 +312,11 @@
 																<BookOpenCheck class="size-4" />
 															</div>
 															<div>
-																<p class="text-xs font-semibold text-primary tabular-nums">
-																	{item.code}
-																</p>
+																{#if item.resourceKind === 'course'}<p
+																		class="text-xs font-semibold text-primary tabular-nums"
+																	>
+																		{item.code}
+																	</p>{/if}
 																<p class="font-medium">{item.name}</p>
 																<p class="text-xs text-muted-foreground">
 																	{item.resourceKind === 'course'
@@ -335,7 +375,7 @@
 														{#if item.offeringId}
 															<div class="flex items-center justify-end gap-1">
 																<Button
-																	href={`/staff/academic/delivery/${item.offeringId}?deliveryVersionId=${workspace.deliveryVersionId ?? ''}`}
+																	href={offeringHref(item.offeringId)}
 																	data-sveltekit-preload-data="tap"
 																	size="icon"
 																	variant="ghost"
@@ -385,11 +425,11 @@
 											<div class="rounded-xl border border-sky-500/25 bg-background p-3">
 												<div class="flex items-start justify-between gap-3">
 													<div>
-														<p
-															class="text-xs font-semibold text-sky-700 dark:text-sky-300 tabular-nums"
-														>
-															{item.code}
-														</p>
+														{#if item.resourceKind === 'course'}<p
+																class="text-xs font-semibold text-sky-700 dark:text-sky-300 tabular-nums"
+															>
+																{item.code}
+															</p>{/if}
 														<p class="font-medium">{item.name}</p>
 														<div class="mt-2 flex flex-wrap gap-1.5">
 															{#each item.alignmentStates as state (state)}
@@ -400,7 +440,7 @@
 														</div>
 													</div>
 													<Button
-														href={`/staff/academic/delivery/${item.offeringId}?deliveryVersionId=${workspace.deliveryVersionId ?? ''}`}
+														href={offeringHref(item.offeringId)}
 														data-sveltekit-preload-data="tap"
 														size="icon"
 														variant="ghost"
@@ -437,7 +477,11 @@
 			<div class="mt-3 grid gap-2 md:grid-cols-2">
 				{#each workspace.unlinked as item (`${item.offeringId}-${item.groupId ?? 'offering'}`)}
 					<div class="rounded-lg border bg-background p-3">
-						<p class="text-xs font-semibold text-primary tabular-nums">{item.code}</p>
+						{#if item.resourceKind === 'course'}<p
+								class="text-xs font-semibold text-primary tabular-nums"
+							>
+								{item.code}
+							</p>{/if}
 						<p class="font-medium">{item.name}</p>
 						<p class="mt-1 text-xs text-muted-foreground">{item.reason}</p>
 					</div>

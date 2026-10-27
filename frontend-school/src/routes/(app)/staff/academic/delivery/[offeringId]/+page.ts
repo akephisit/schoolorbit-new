@@ -14,6 +14,8 @@ import {
 import { selectDeliveryVersion } from '#lib/academic/learning-delivery-page.js';
 import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { redirect } from '@sveltejs/kit';
+import { repairedDeliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,
@@ -23,7 +25,7 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ fetch, params, url }) => {
+export const load: PageLoad = async ({ fetch, params, url }) => {
 	const offeringId = params.offeringId;
 	const requestedGroupId = url.searchParams.get('groupId')?.trim() || null;
 	const offering = captureRouteLoad(
@@ -89,6 +91,21 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 					)
 				: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>)
 	);
+	if (!url.searchParams.get('academicYearId') || !url.searchParams.get('academicTermId')) {
+		const identity = await offering;
+		if (identity.ok) {
+			const versionId = url.searchParams.get('deliveryVersionId');
+			const summaries = versionId ? await versions : null;
+			const verified = summaries?.ok
+				? summaries.data.find((summary) => summary.id === versionId)
+				: null;
+			const repaired = repairedDeliveryOfferingHref(url, {
+				...identity.data,
+				deliveryVersionId: verified?.id
+			});
+			if (repaired) redirect(307, repaired);
+		}
+	}
 	return {
 		rosterTracking,
 		title: 'รายละเอียดรายการเปิดสอน',
