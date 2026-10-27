@@ -180,7 +180,7 @@
 		<Dialog.Header>
 			<Dialog.Title>
 				{preparationTarget
-					? `เพิ่มกิจกรรม ${preparationTarget.code} · ${preparationTarget.name}`
+					? `เพิ่มกิจกรรม ${preparationTarget.name}`
 					: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
 			</Dialog.Title>
 			<Dialog.Description

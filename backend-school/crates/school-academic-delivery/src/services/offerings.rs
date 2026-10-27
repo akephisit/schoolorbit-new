@@ -1822,6 +1822,19 @@ fn generated_group_key(proposal_id: &str, homeroom_ids: &[Uuid]) -> Result<Strin
     stable_hash(&(proposal_id, normalized_ids))
 }
 
+fn generated_group_name(
+    kind: LearningOfferingKind,
+    code: &str,
+    name: &str,
+    homeroom_name: &str,
+) -> String {
+    let label = match kind {
+        LearningOfferingKind::Course => code,
+        LearningOfferingKind::Activity => name,
+    };
+    format!("{label} · {homeroom_name}")
+}
+
 fn offering_kind_order(kind: LearningOfferingKind) -> u8 {
     match kind {
         LearningOfferingKind::Course => 1,
@@ -1998,7 +2011,12 @@ async fn build_curriculum_preview_for_term(
                 {
                     proposal.default_groups.push(CurriculumGroupProposal {
                         group_key,
-                        name: format!("{} · {}", proposal.code, homeroom.name),
+                        name: generated_group_name(
+                            proposal.resource_kind,
+                            &proposal.code,
+                            &proposal.name,
+                            &homeroom.name,
+                        ),
                         homeroom_ids: vec![homeroom.id],
                     });
                 }
@@ -2341,6 +2359,27 @@ async fn insert_homeroom_targets(
 #[cfg(test)]
 mod preparation_choice_tests {
     use super::*;
+
+    #[test]
+    fn generated_activity_group_uses_the_activity_name() {
+        assert_eq!(
+            generated_group_name(LearningOfferingKind::Activity, "ACT-0001", "ชุมนุม", "ม.1/1"),
+            "ชุมนุม · ม.1/1"
+        );
+    }
+
+    #[test]
+    fn generated_course_group_keeps_the_course_code() {
+        assert_eq!(
+            generated_group_name(
+                LearningOfferingKind::Course,
+                "ค21101",
+                "คณิตศาสตร์พื้นฐาน",
+                "ม.1/1"
+            ),
+            "ค21101 · ม.1/1"
+        );
+    }
 
     #[test]
     fn automatic_preparation_defers_central_groups_without_sending_unapplied_alternatives() {
