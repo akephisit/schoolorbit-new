@@ -90,7 +90,7 @@ test('round creation pins selected version and assignment names reviewers explic
 	await expect(page).toHaveURL(new RegExp(`/rounds/${careRoundId}`));
 	expect(api.rounds[0].instrumentVersionIds).toEqual([careVersionId]);
 	await page.getByRole('link', { name: 'มอบหมายผู้ตอบ', exact: true }).click();
-	await page.getByRole('button', { name: 'รุ่นแบบประเมิน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'รุ่นแบบประเมิน', exact: true }).click();
 	await page.getByRole('option', { name: /แบบทดสอบสมมติ/ }).click();
 	await page.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ }).check();
 	await page.getByRole('checkbox', { name: 'ครูผู้รับผิดชอบ', exact: true }).check();
@@ -204,7 +204,7 @@ test('case event history loads older pages and preserves latest note, referral a
 	await page.goto(carePath(`/cases/${careCaseId}`));
 	await page.getByRole('button', { name: 'โหลดประวัติก่อนหน้า', exact: true }).click();
 	await expect(page.getByText('บันทึกสมมติ 0', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'ประเภทการดำเนินการ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ประเภทการดำเนินการ', exact: true }).click();
 	await page.getByRole('option', { name: 'ส่งต่อ', exact: true }).click();
 	await page
 		.getByLabel('รายละเอียดการดำเนินการ *', { exact: true })
@@ -212,7 +212,7 @@ test('case event history loads older pages and preserves latest note, referral a
 	await page.getByRole('button', { name: 'บันทึกการดำเนินการ', exact: true }).click();
 	await expect(page.getByText('ส่งต่อสมมติให้ผู้รับผิดชอบ', { exact: true })).toBeVisible();
 	await expect(page.getByText('บันทึกสมมติ 0', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'ประเภทการดำเนินการ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ประเภทการดำเนินการ', exact: true }).click();
 	await page.getByRole('option', { name: 'ปิดการดูแล', exact: true }).click();
 	await page
 		.getByLabel('รายละเอียดการดำเนินการ *', { exact: true })
@@ -299,7 +299,7 @@ test('visit completion requires factual record and retains the completed mobile 
 	const api = await mockStudentCare(page);
 	await page.setViewportSize({ width: 375, height: 812 });
 	await page.goto(carePath(`/visits/${careVisitId}/edit`));
-	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
 	await page.getByRole('option', { name: 'เยี่ยมแล้ว', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'วันที่เยี่ยมจริง', exact: true })).toHaveAttribute(
 		'aria-required',
@@ -357,7 +357,7 @@ test('optional visit date clears explicitly and required status retains repeated
 	await page.keyboard.press('Enter');
 	await expect(date).toContainText('27 ต.ค. 2569');
 	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
-	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
 	await page.getByRole('option', { name: 'เยี่ยมแล้ว', exact: true }).click();
 	await expect(date).toHaveAttribute('aria-required', 'true');
 	await expect(clear).toHaveCount(0);
@@ -370,7 +370,7 @@ test('optional visit date clears explicitly and required status retains repeated
 	await page.keyboard.press('Enter');
 	await expect(date).toContainText('27 ต.ค. 2569');
 	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
-	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
 	await page.getByRole('option', { name: 'วางแผน', exact: true }).click();
 	await expect(date).toHaveAttribute('aria-required', 'false');
 	await clear.click();
@@ -430,7 +430,7 @@ test('school manager can assign a subject teacher who is not the dated advisor',
 }) => {
 	const api = await mockStudentCare(page, { respondent: 'teacher' });
 	await page.goto(carePath(`/rounds/${careRoundId}/assign`));
-	await page.getByRole('button', { name: 'รุ่นแบบประเมิน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'รุ่นแบบประเมิน', exact: true }).click();
 	await page.getByRole('option', { name: /แบบทดสอบสมมติ/ }).click();
 	await page.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ }).check();
 	await page
@@ -476,21 +476,21 @@ test('round transitions offer only close then cancel and leave cancelled rounds 
 }) => {
 	const api = await mockStudentCare(page);
 	await page.goto(carePath(`/rounds/${careRoundId}`));
-	await page.getByRole('button', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true }).click();
 	await expect(page.getByRole('option', { name: 'เปิดรับคำตอบ', exact: true })).toHaveCount(0);
 	await page.getByRole('option', { name: 'ปิดรับคำตอบ', exact: true }).click();
 	await page.getByRole('button', { name: 'เปลี่ยนสถานะรอบ', exact: true }).click();
 	await page.getByRole('button', { name: 'ยืนยันเปลี่ยนสถานะรอบ', exact: true }).click();
 	await expect(page.getByRole('link', { name: 'มอบหมายผู้ตอบ', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true }).click();
 	await expect(page.getByRole('option', { name: 'เปิดรับคำตอบ', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('option', { name: 'ปิดรับคำตอบ', exact: true })).toHaveCount(0);
 	await page.getByRole('option', { name: 'ยกเลิก', exact: true }).click();
 	await page.getByRole('button', { name: 'เปลี่ยนสถานะรอบ', exact: true }).click();
 	await page.getByRole('button', { name: 'ยืนยันเปลี่ยนสถานะรอบ', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true })).toHaveCount(
-		0
-	);
+	await expect(
+		page.getByRole('combobox', { name: 'เปลี่ยนสถานะรอบเป็น', exact: true })
+	).toHaveCount(0);
 	expect(api.roundChanges.map((change) => change.status)).toEqual(['closed', 'cancelled']);
 });
 test('student preview links to complete paginated assessment history beyond fifty entries', async ({

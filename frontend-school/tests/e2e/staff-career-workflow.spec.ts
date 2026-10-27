@@ -323,7 +323,9 @@ test('career date picker retains repeated selections and clears only with the ex
 		.getByLabel('เหตุผลการแก้ไข', { exact: true })
 		.fill('เว้นวันที่มีผลไว้เพื่อตรวจสอบเอกสาร');
 	const saved = page.waitForRequest(
-		(request) => request.method() === 'PUT' && request.url().includes('/career-history/')
+		(request) =>
+			request.method() === 'PATCH' &&
+			new URL(request.url()).pathname === `/api/staff/${firstStaff}/career-history/${id(91)}`
 	);
 	await dialog.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
 	expect((await saved).postDataJSON().entry).toMatchObject({
@@ -476,17 +478,17 @@ test('a lost append response with a changed kind preserves draft instead of reco
 	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('1/2563');
 	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
 	await expect(dialog).toContainText('คำตอบขาดหาย');
-	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true }).click();
 	await page.getByRole('option', { name: 'ประเภทบุคลากร', exact: true }).click();
 	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('2/2563');
 	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
 	await expect(dialog).toContainText('ข้อมูลเปลี่ยนไปแล้ว');
 	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();
 	await expect(dialog).toContainText('รายการนี้บันทึกเป็นวิทยฐานะแล้ว');
-	await expect(dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true })).toBeEnabled();
+	await expect(dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true })).toBeEnabled();
 	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('2/2563');
 	await expect(dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'ประเภทข้อมูล', exact: true }).click();
 	await page.getByRole('option', { name: 'วิทยฐานะ', exact: true }).click();
 	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('1/2563');
 	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();
