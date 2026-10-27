@@ -102,6 +102,7 @@ struct ExpectedDeliveryRow {
     code: String,
     name: String,
     requirement_kind: RequirementKind,
+    subject_type: Option<String>,
     standard_periods_per_week: Option<i32>,
     scheduling_mode: Option<ActivitySchedulingMode>,
 }
@@ -420,6 +421,7 @@ async fn load_workspace_expected_rows(
                   subject.code,
                   version.name_th AS name,
                   requirement.requirement_kind,
+                  version.type AS subject_type,
                   version.periods_per_week AS standard_periods_per_week,
                   NULL::text AS scheduling_mode,
                   requirement.display_order
@@ -444,6 +446,7 @@ async fn load_workspace_expected_rows(
                   activity.code,
                   version.name,
                   requirement.requirement_kind,
+                  NULL::text AS subject_type,
                   NULL::integer AS standard_periods_per_week,
                   version.scheduling_mode,
                   requirement.display_order
@@ -737,6 +740,7 @@ async fn finish_homeroom_delivery_workspace(
                 code: expected.code,
                 name: expected.name,
                 requirement_kind: expected.requirement_kind,
+                subject_type: expected.subject_type,
                 standard_periods_per_week: expected.standard_periods_per_week,
                 weekly_period_target: applicable_offering
                     .and_then(|offering| offering.weekly_period_target),
@@ -836,6 +840,7 @@ async fn finish_homeroom_delivery_workspace(
             {
                 unlinked.push(UnlinkedDeliveryItem {
                     offering_id: offering.offering_id,
+                    resource_kind: offering.resource_kind,
                     group_id: Some(group.id),
                     code: group.code.clone(),
                     name: group.name.clone(),
@@ -852,6 +857,7 @@ async fn finish_homeroom_delivery_workspace(
         {
             unlinked.push(UnlinkedDeliveryItem {
                 offering_id: offering.offering_id,
+                resource_kind: offering.resource_kind,
                 group_id: None,
                 code: offering.code.clone(),
                 name: offering.name.clone(),

@@ -774,6 +774,7 @@
 								changeSet={activeChangeSet}
 								offerings={revisionOfferings}
 								{canManage}
+								{returnTo}
 								ensureOfferings={ensureOverview}
 								initialTeacherChangeItemId={overviewUrl.searchParams.get('teacherChangeItemId') ??
 									''}

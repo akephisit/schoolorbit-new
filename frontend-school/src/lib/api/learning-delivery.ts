@@ -9,7 +9,7 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 
-export type DeliveryVersion = Schemas['DeliveryVersion'];
+export type DeliveryVersion = Schemas['DeliveryVersionDetails'];
 export type DeliveryVersionSummary = Schemas['DeliveryVersionSummary'];
 export const listDeliveryVersions = (academicTermId: string, options: ApiRequestOptions = {}) =>
 	deliveryData(

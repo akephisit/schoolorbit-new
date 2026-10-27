@@ -95,6 +95,25 @@ pub struct DeliveryVersion {
     pub snapshot: DeliverySnapshot,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryVersionDetails {
+    #[serde(flatten)]
+    pub version: DeliveryVersion,
+    /// Current registry groups for visible, pinned course versions; outside publication facts.
+    pub course_metadata: Vec<DeliveryVersionCourseMetadata>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryVersionCourseMetadata {
+    pub subject_version_id: Uuid,
+    pub subject_group_id: Uuid,
+    pub subject_group_name: String,
+}
+
 #[derive(Clone, Debug, Serialize, sqlx::FromRow)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]

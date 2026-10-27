@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use crate::models::versions::{
     DeliveryReadinessCode, DeliveryReadinessFinding, DeliverySnapshot, DeliveryVersion,
-    DeliveryVersionStatus, DeliveryVersionSummary,
+    DeliveryVersionCourseMetadata, DeliveryVersionDetails, DeliveryVersionStatus,
+    DeliveryVersionSummary,
 };
 use crate::models::{LearningOfferingKind, LearningOfferingSnapshot, LearningTeacherRole};
 
@@ -197,6 +198,55 @@ pub async fn visible_version_on_connection(
             != AcademicResourceAccess::None
     });
     Ok(version)
+}
+
+pub async fn visible_version_details(
+    pool: &PgPool,
+    id: Uuid,
+    access: &AcademicResourceListFilter,
+) -> Result<DeliveryVersionDetails, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.visible_version_details",
+    )
+    .await?;
+    visible_version_details_on_connection(&mut connection, id, access).await
+}
+
+pub async fn visible_version_details_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    access: &AcademicResourceListFilter,
+) -> Result<DeliveryVersionDetails, AppError> {
+    let version = visible_version_on_connection(connection, id, access).await?;
+    let subject_version_ids = version
+        .snapshot
+        .offerings
+        .iter()
+        .filter_map(|offering| match &offering.catalog {
+            LearningOfferingSnapshot::Course(course) => Some(course.subject_version_id),
+            LearningOfferingSnapshot::Activity(_) => None,
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let course_metadata =
+        school_academic_core::services::catalog::subject_groups_for_versions_on_connection(
+            connection,
+            &subject_version_ids,
+        )
+        .await?
+        .into_iter()
+        .map(|metadata| DeliveryVersionCourseMetadata {
+            subject_version_id: metadata.subject_version_id,
+            subject_group_id: metadata.subject_group_id,
+            subject_group_name: metadata.name,
+        })
+        .collect();
+    Ok(DeliveryVersionDetails {
+        version,
+        course_metadata,
+    })
 }
 
 /// Timetable owns placements and consumes this provider-owned immutable source.

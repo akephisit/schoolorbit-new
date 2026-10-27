@@ -9852,102 +9852,29 @@
         ],
         "type": "object"
       },
-      "ApiResponse_DeliveryVersion": {
+      "ApiResponse_DeliveryVersionDetails": {
         "properties": {
           "data": {
-            "properties": {
-              "academicTermId": {
-                "format": "uuid",
-                "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryVersion"
               },
-              "academicYearId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "createdAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "createdBy": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "effectiveFrom": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "effectiveUntil": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "publishedAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "publishedBy": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "referenceDate": {
-                "format": "date",
-                "type": "string"
-              },
-              "rowVersion": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "snapshot": {
-                "$ref": "#/components/schemas/DeliverySnapshot"
-              },
-              "sourceVersionId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "status": {
-                "$ref": "#/components/schemas/DeliveryVersionStatus"
-              },
-              "updatedAt": {
-                "format": "date-time",
-                "type": "string"
+              {
+                "properties": {
+                  "courseMetadata": {
+                    "description": "Current registry groups for visible, pinned course versions; outside publication facts.",
+                    "items": {
+                      "$ref": "#/components/schemas/DeliveryVersionCourseMetadata"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "courseMetadata"
+                ],
+                "type": "object"
               }
-            },
-            "required": [
-              "id",
-              "academicTermId",
-              "academicYearId",
-              "sourceVersionId",
-              "effectiveFrom",
-              "referenceDate",
-              "effectiveUntil",
-              "status",
-              "rowVersion",
-              "createdAt",
-              "updatedAt",
-              "snapshot"
-            ],
-            "type": "object"
+            ]
           },
           "message": {
             "type": "string"
@@ -44736,6 +44663,49 @@
         ],
         "type": "object"
       },
+      "DeliveryVersionCourseMetadata": {
+        "properties": {
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectGroupName": {
+            "type": "string"
+          },
+          "subjectVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectVersionId",
+          "subjectGroupId",
+          "subjectGroupName"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionDetails": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeliveryVersion"
+          },
+          {
+            "properties": {
+              "courseMetadata": {
+                "description": "Current registry groups for visible, pinned course versions; outside publication facts.",
+                "items": {
+                  "$ref": "#/components/schemas/DeliveryVersionCourseMetadata"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "courseMetadata"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "DeliveryVersionGroup": {
         "additionalProperties": false,
         "properties": {
@@ -48587,6 +48557,12 @@
               "null"
             ]
           },
+          "subjectType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "teacherState": {
             "$ref": "#/components/schemas/HomeroomTeacherState"
           },
@@ -48605,6 +48581,7 @@
           "code",
           "name",
           "requirementKind",
+          "subjectType",
           "weeklyPeriodTarget",
           "schedulingMode",
           "offeringState",
@@ -68482,10 +68459,14 @@
           },
           "reason": {
             "type": "string"
+          },
+          "resourceKind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
           }
         },
         "required": [
           "offeringId",
+          "resourceKind",
           "code",
           "name",
           "reason"
@@ -76792,11 +76773,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryVersion"
+                  "$ref": "#/components/schemas/ApiResponse_DeliveryVersionDetails"
                 }
               }
             },
-            "description": "Immutable opening graph scoped to visible resources"
+            "description": "Visible immutable opening graph with current catalog display metadata"
           },
           "401": {
             "content": {

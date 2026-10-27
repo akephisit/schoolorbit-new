@@ -1098,6 +1098,7 @@ pub struct DeliveryPrerequisite {
 #[serde(rename_all = "camelCase")]
 pub struct UnlinkedDeliveryItem {
     pub offering_id: Uuid,
+    pub resource_kind: LearningOfferingKind,
     pub group_id: Option<Uuid>,
     pub code: String,
     pub name: String,
@@ -1129,6 +1130,8 @@ pub struct HomeroomDeliveryItem {
     pub code: String,
     pub name: String,
     pub requirement_kind: RequirementKind,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub subject_type: Option<String>,
     pub standard_periods_per_week: Option<i32>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub weekly_period_target: Option<i32>,
