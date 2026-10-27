@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { DeliveryManagementOptions } from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -86,6 +87,7 @@ function homeroomWorkspace(
 						code: 'ค21101',
 						name: 'คณิตศาสตร์พื้นฐาน',
 						requirementKind: 'required',
+						subjectType: 'BASIC',
 						offeringId: ids.offering,
 						offeringState: 'draft',
 						groupMode: 'combined',
@@ -309,6 +311,7 @@ async function mockDelivery(
 					academicYearId: ids.year,
 					academicTermId: ids.term,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings: [] }
 				});
 				return;
@@ -780,6 +783,7 @@ async function mockDraftLifecycle(
 			status: 'draft',
 			effectiveFrom: null,
 			referenceDate: '2027-08-01',
+			courseMetadata: [],
 			snapshot: {
 				offerings: [
 					{ id: ids.offering, groups: [{ id: ids.group }] },
@@ -977,6 +981,7 @@ async function mockActivityActivation(
 		);
 		Object.assign(workspace.homerooms[0].items[0], {
 			resourceKind: 'activity',
+			subjectType: null,
 			code: 'CLUB',
 			name: 'ชุมนุม',
 			schedulingMode: 'synchronized',
@@ -1015,10 +1020,14 @@ async function mockActivityActivation(
 				{
 					id: ids.catalog,
 					kind: 'activity',
-					label: 'CLUB · ชุมนุม',
-					schedulingMode: 'synchronized'
+					code: 'CLUB',
+					label: 'CLUB — ชุมนุม (ฉบับ 3)',
+					name: 'ชุมนุม',
+					versionNo: 3,
+					schedulingMode: 'synchronized',
+					standardPeriodsPerWeek: null
 				}
-			],
+			] satisfies DeliveryManagementOptions['catalogVersions'],
 			learningGroups: [],
 			teachers: [],
 			rooms: []
@@ -1150,12 +1159,17 @@ for (const grouped of [false, true]) {
 		await page.getByRole('dialog').getByRole('combobox', { name: 'ประเภท', exact: true }).click();
 		await page.getByRole('option', { name: 'กิจกรรมพัฒนาผู้เรียน', exact: true }).click();
 		for (const [label, option] of [
-			['เลือกกิจกรรม', 'CLUB · ชุมนุม'],
+			['เลือกกิจกรรม', 'ชุมนุม (ฉบับ 3)'],
 			['เลือกระดับชั้น', 'ม.1'],
 			['เลือกแผนการเรียน', 'แผนมาตรฐาน']
 		]) {
 			await page.getByRole('combobox', { name: label, exact: true }).click();
-			await page.getByRole('option', { name: new RegExp(option) }).click();
+			const visibleOption = page
+				.getByRole('option')
+				.filter({ has: page.getByText(option, { exact: true }) });
+			await expect(visibleOption).toBeVisible();
+			await expect(page.locator('body')).not.toContainText('CLUB');
+			await visibleOption.click();
 		}
 		await expect(page.getByLabel('รูปแบบการเปิด')).toContainText('เปิดแบบกลาง');
 		if (grouped) {
@@ -1649,6 +1663,7 @@ for (const viewport of [
 					academicTermId: ids.term,
 					sourceVersionId: null,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings: [offering] }
 				})
 			);
@@ -1780,6 +1795,7 @@ for (const viewport of [
 					academicTermId: ids.term,
 					sourceVersionId: null,
 					status: 'draft',
+					courseMetadata: [],
 					snapshot: { offerings }
 				})
 			);

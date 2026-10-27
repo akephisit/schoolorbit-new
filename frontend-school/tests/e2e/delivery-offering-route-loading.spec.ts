@@ -104,6 +104,7 @@ function versionGraph(published = false) {
 		publishedBy: null,
 		publishedAt: null,
 		createdAt: '2026-05-01T00:00:00Z',
+		courseMetadata: [],
 		snapshot: {
 			offerings: [
 				{

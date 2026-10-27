@@ -2245,6 +2245,8 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
 
 #[tokio::test]
 async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly() {
+    use school_academic_delivery::models::versions::{DeliveryChangeKind, DeliveryVersionChange};
+
     let pool = prepare_delivery_runtime_fixture("academic_change_set_add_items").await;
     let context = operational_change_runtime_context(&pool).await;
     let change_set = create_runtime_change_set(
@@ -2321,6 +2323,53 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             .await
             .unwrap();
     assert_eq!(course_group_count, 1);
+    let course = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.id == course_offering_id)
+        .unwrap();
+    let course_preview = publication_preview(&pool, change_set.id).await.unwrap();
+    assert_eq!(
+        course_preview
+            .changes
+            .iter()
+            .find(|change| change.resource_id == course_offering_id),
+        Some(&DeliveryVersionChange {
+            kind: DeliveryChangeKind::Added,
+            learning_offering_id: course_offering_id,
+            resource_id: course_offering_id,
+            label: format!("{} — {}", course.code, course.name),
+            field: "รายการเปิดสอน".into(),
+            before: None,
+            after: Some(format!("เปิดสอน {} คาบ/สัปดาห์", course.weekly_period_target)),
+        })
+    );
+    let course_finding = course_preview
+        .findings
+        .into_iter()
+        .find(|finding| {
+            finding.learning_offering_id == Some(course_offering_id)
+                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+        })
+        .expect("the added course without a primary teacher must expose its readiness finding");
+    let course_group = &course.groups[0];
+    assert_eq!(
+        course_finding.title,
+        format!(
+            "{} — {} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
+            course.code, course.name, course_group.name
+        ),
+    );
+    assert_eq!(course_finding.learning_group_id, Some(course_group.id));
+    assert_eq!(course_finding.resource_id, Some(target.id));
+    assert_eq!(
+        course_finding.route,
+        Some(format!(
+            "/staff/academic/delivery/{course_offering_id}?deliveryVersionId={}",
+            target.id,
+        ))
+    );
 
     let without_course = change_sets::delete_change_item(
         &pool,
@@ -2386,6 +2435,125 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
     let activity_target = target.snapshot.offerings.iter().find(|item| item.kind==LearningOfferingKind::Activity && matches!(&item.catalog,LearningOfferingSnapshot::Activity(activity) if activity.activity_version_id==activity_version_id)).map(|item| item.weekly_period_target);
     assert_eq!(activity_target, Some(2));
     assert_eq!(with_activity.items.len(), 1);
+    let activity = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| {
+            offering.kind == LearningOfferingKind::Activity
+                && matches!(&offering.catalog, LearningOfferingSnapshot::Activity(activity)
+                if activity.activity_version_id == activity_version_id)
+        })
+        .unwrap();
+    let activity_group = groups::create(
+        &pool,
+        context.teacher_id,
+        activity.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มกิจกรรมรอครูหลัก".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let target_before_preview =
+        school_academic_delivery::services::versions::get_version(&pool, target.id)
+            .await
+            .unwrap();
+    let target_bytes_before_preview = serde_json::to_vec(&target_before_preview).unwrap();
+    let preview = publication_preview(&pool, change_set.id).await.unwrap();
+    let activity_changes: Vec<_> = preview
+        .changes
+        .iter()
+        .filter(|change| change.learning_offering_id == activity.id)
+        .cloned()
+        .collect();
+    let mut expected_activity_changes = vec![DeliveryVersionChange {
+        kind: DeliveryChangeKind::Added,
+        learning_offering_id: activity.id,
+        resource_id: activity.id,
+        label: activity.name.clone(),
+        field: "รายการเปิดสอน".into(),
+        before: None,
+        after: Some("เปิดสอน 2 คาบ/สัปดาห์".into()),
+    }];
+    let mut activity_groups = activity
+        .groups
+        .iter()
+        .map(|group| (group.id, group.name.as_str()))
+        .collect::<Vec<_>>();
+    activity_groups.push((activity_group.id, activity_group.name.as_str()));
+    activity_groups.sort_by_key(|(id, _)| *id);
+    expected_activity_changes.extend(activity_groups.into_iter().map(|(id, name)| {
+        DeliveryVersionChange {
+            kind: DeliveryChangeKind::Added,
+            learning_offering_id: activity.id,
+            resource_id: id,
+            label: format!("{} · {}", activity.name, name),
+            field: "กลุ่มเรียน".into(),
+            before: None,
+            after: Some(name.into()),
+        }
+    }));
+    assert_eq!(activity_changes, expected_activity_changes);
+    assert!(activity_changes
+        .iter()
+        .all(|change| !change.label.contains(&activity.code) && !change.label.contains("ACT-")));
+    assert_eq!(
+        with_activity
+            .changes
+            .iter()
+            .find(|change| change.resource_id == activity.id),
+        activity_changes.first()
+    );
+    let activity_finding = preview
+        .findings
+        .iter()
+        .find(|finding| {
+            finding.learning_offering_id == Some(activity.id)
+                && finding.learning_group_id == Some(activity_group.id)
+                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
+        })
+        .expect("the activity without a primary teacher must expose its readiness finding");
+    assert!(!activity_finding.title.contains(&activity.code));
+    assert_eq!(
+        activity_finding.title,
+        format!(
+            "{} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
+            activity.name, activity_group.name
+        ),
+    );
+    assert_eq!(activity_finding.learning_group_id, Some(activity_group.id));
+    assert_eq!(activity_finding.resource_id, Some(target.id));
+    assert_eq!(
+        activity_finding.severity,
+        AcademicChangeFindingSeverity::Blocking
+    );
+    assert_eq!(activity_finding.guidance, "เลือกครูหลักให้กลุ่มเรียนก่อนเผยแพร่");
+    assert_eq!(
+        activity_finding.route,
+        Some(format!(
+            "/staff/academic/delivery/{}?deliveryVersionId={}",
+            activity.id, target.id,
+        ))
+    );
+    let repeated = publication_preview(&pool, change_set.id).await.unwrap();
+    assert_eq!(repeated.preview_hash, preview.preview_hash);
+    assert_eq!(repeated.changes, preview.changes);
+    assert_eq!(
+        serde_json::to_value(repeated.findings).unwrap(),
+        serde_json::to_value(&preview.findings).unwrap()
+    );
+    let target_after_preview =
+        school_academic_delivery::services::versions::get_version(&pool, target.id)
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::to_vec(&target_after_preview).unwrap(),
+        target_bytes_before_preview
+    );
 }
 
 #[tokio::test]
@@ -5059,6 +5227,14 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
     let context = planning_runtime_context(&pool).await;
+    let opening = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        0,
+        "activity-registration:opening",
+    )
+    .await;
     sqlx::query(
         "UPDATE academic_terms SET planned_end_date = NULL, closed_on = NULL WHERE id = $1",
     )
@@ -5080,9 +5256,10 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
     .fetch_one(&pool)
     .await
     .unwrap();
-    let offering = offerings::create(
+    let offering = offerings::create_for_delivery(
         &pool,
         context.teacher_id,
+        Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
@@ -5123,6 +5300,27 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
     )
     .await
     .unwrap();
+    let unlinked_workspace = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        context.year_id,
+        context.term_id,
+        None,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let unlinked_activity = unlinked_workspace
+        .unlinked
+        .iter()
+        .find(|item| item.group_id == Some(first_group.id))
+        .expect("an activity group without homerooms must retain its resource kind");
+    assert_eq!(
+        unlinked_activity.resource_kind,
+        LearningOfferingKind::Activity
+    );
     let first_group = groups::replace_teachers(
         &pool,
         context.teacher_id,
@@ -5474,6 +5672,297 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
 }
 
 #[tokio::test]
+async fn delivery_version_course_metadata_uses_visible_pinned_versions_without_changing_snapshot() {
+    use school_academic_delivery::services::versions;
+
+    let pool = prepare_delivery_runtime_fixture("delivery_course_metadata_visibility").await;
+    let version_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_delivery_versions WHERE status='published' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(snapshot->'offerings') offering
+            WHERE offering->>'kind'='course') ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let stored_before: serde_json::Value = sqlx::query_scalar(
+        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
+    )
+    .bind(version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let business_version = versions::get_version(&pool, version_id).await.unwrap();
+    // Keep the original business serializer's exact field set and order: lifecycle
+    // source evidence hashes these bytes, independently of HTTP presentation.
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct OriginalBusinessVersion<'a> {
+        id: Uuid,
+        academic_term_id: Uuid,
+        academic_year_id: Uuid,
+        source_version_id: Option<Uuid>,
+        effective_from: Option<NaiveDate>,
+        reference_date: NaiveDate,
+        effective_until: Option<NaiveDate>,
+        status: school_academic_delivery::models::versions::DeliveryVersionStatus,
+        row_version: i64,
+        created_by: Option<Uuid>,
+        published_by: Option<Uuid>,
+        published_at: Option<chrono::DateTime<Utc>>,
+        created_at: chrono::DateTime<Utc>,
+        updated_at: chrono::DateTime<Utc>,
+        snapshot: &'a school_academic_delivery::models::versions::DeliverySnapshot,
+    }
+    let original_bytes = serde_json::to_vec(&OriginalBusinessVersion {
+        id: business_version.id,
+        academic_term_id: business_version.academic_term_id,
+        academic_year_id: business_version.academic_year_id,
+        source_version_id: business_version.source_version_id,
+        effective_from: business_version.effective_from,
+        reference_date: business_version.reference_date,
+        effective_until: business_version.effective_until,
+        status: business_version.status,
+        row_version: business_version.row_version,
+        created_by: business_version.created_by,
+        published_by: business_version.published_by,
+        published_at: business_version.published_at,
+        created_at: business_version.created_at,
+        updated_at: business_version.updated_at,
+        snapshot: &business_version.snapshot,
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_vec(&business_version).unwrap(),
+        original_bytes
+    );
+    assert!(serde_json::to_value(&business_version)
+        .unwrap()
+        .get("courseMetadata")
+        .is_none());
+    use sha2::{Digest, Sha256};
+    let original_hash = hex::encode(Sha256::digest(&original_bytes));
+    let mut tx = pool.begin().await.unwrap();
+    let evidence_before =
+        versions::published_source_evidence(&mut tx, version_id, business_version.academic_term_id)
+            .await
+            .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(evidence_before, original_hash);
+    let unrestricted = versions::visible_version_details(
+        &pool,
+        version_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let first_course = unrestricted
+        .version
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.kind == LearningOfferingKind::Course)
+        .unwrap();
+    assert!(!unrestricted.course_metadata.is_empty());
+    let scoped = versions::visible_version_details(
+        &pool,
+        version_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![first_course.owning_organization_unit_id],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let pinned_ids = scoped
+        .version
+        .snapshot
+        .offerings
+        .iter()
+        .filter_map(|offering| match &offering.catalog {
+            LearningOfferingSnapshot::Course(course) => Some(course.subject_version_id),
+            LearningOfferingSnapshot::Activity(_) => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let metadata_ids = scoped
+        .course_metadata
+        .iter()
+        .map(|metadata| metadata.subject_version_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(metadata_ids, pinned_ids);
+    assert_eq!(metadata_ids.len(), scoped.course_metadata.len());
+    for metadata in &scoped.course_metadata {
+        let expected: (Uuid, String) = sqlx::query_as(
+            "SELECT subject.subject_group_id, subject_group.name_th
+             FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id
+             JOIN subject_groups subject_group ON subject_group.id=subject.subject_group_id
+             WHERE version.id=$1",
+        )
+        .bind(metadata.subject_version_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(metadata.subject_group_id, expected.0);
+        assert_eq!(metadata.subject_group_name, expected.1);
+    }
+    let denied = versions::visible_version_details(
+        &pool,
+        version_id,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(denied.version.snapshot.offerings.is_empty());
+    assert!(denied.course_metadata.is_empty());
+    let wire = serde_json::to_value(&scoped).unwrap();
+    assert!(wire["courseMetadata"].is_array());
+    assert_eq!(wire["id"], serde_json::json!(version_id));
+    assert!(wire.get("version").is_none());
+    assert!(wire["snapshot"].get("courseMetadata").is_none());
+    let mut tx = pool.begin().await.unwrap();
+    let evidence_after =
+        versions::published_source_evidence(&mut tx, version_id, business_version.academic_term_id)
+            .await
+            .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(evidence_before, evidence_after);
+    let stored_after: serde_json::Value = sqlx::query_scalar(
+        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
+    )
+    .bind(version_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored_before, stored_after);
+}
+
+#[tokio::test]
+async fn homeroom_delivery_classification_is_pinned_and_independent_of_requirement_kind() {
+    let pool = create_named_test_pool("homeroom_delivery_catalog_classification").await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    // Classifications are fixture input before the append-only catalog is created.
+    sqlx::query("UPDATE subjects SET type='ADDITIONAL' WHERE code='SCI-CORE'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE subjects SET type='LEGACY-UNKNOWN' WHERE id='20000000-0000-0000-0000-000000000024'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 138).await.unwrap();
+    let context = planning_runtime_context(&pool).await;
+    let edition_id: Uuid = sqlx::query_scalar(
+        "SELECT level.edition_id FROM study_programs program
+         JOIN curriculum_levels level ON level.id=program.curriculum_level_id WHERE program.id=$1",
+    )
+    .bind(context.study_program_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let edition = school_academic_core::services::curriculum::get(&pool, edition_id)
+        .await
+        .unwrap();
+    school_academic_core::services::curriculum_publications::open_draft(
+        &pool,
+        edition_id,
+        school_academic_core::models::OpenCurriculumDraftRequest {
+            row_version: edition.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE curriculum_course_requirements requirement SET requirement_kind='elective'
+         FROM subject_versions version WHERE version.id=requirement.subject_version_id
+         AND version.type='BASIC' AND requirement.study_program_id=$1",
+    )
+    .bind(context.study_program_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Historical fixture rows retain pinned classifications independently of required study.
+    for classification in ["ADDITIONAL", "LEGACY-UNKNOWN"] {
+        sqlx::query(
+        "INSERT INTO curriculum_course_requirements
+         (id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)
+         SELECT gen_random_uuid(),source.curriculum_level_id,source.study_program_id,version.id,
+                source.grade_level_id,source.term_slot_id,'required',100
+         FROM curriculum_course_requirements source CROSS JOIN subject_versions version
+         JOIN academic_terms term ON term.id=$3
+         JOIN curriculum_term_slots slot ON slot.id=source.term_slot_id
+         WHERE source.study_program_id=$1 AND source.grade_level_id=$2 AND version.type=$4
+           AND slot.term_type=term.term_type AND slot.type_occurrence=(SELECT count(*)
+               FROM academic_terms sibling WHERE sibling.academic_year_id=term.academic_year_id
+                 AND sibling.term_type=term.term_type AND sibling.sequence_no<=term.sequence_no)
+           AND NOT EXISTS (SELECT 1 FROM curriculum_course_requirements existing
+               WHERE existing.study_program_id=source.study_program_id
+                 AND existing.grade_level_id=source.grade_level_id
+                 AND existing.term_slot_id=source.term_slot_id AND existing.subject_version_id=version.id)
+         ORDER BY source.id,version.id LIMIT 1",
+    )
+    .bind(context.study_program_id)
+    .bind(context.grade_level_id)
+    .bind(context.term_id)
+    .bind(classification)
+    .execute(&pool)
+    .await
+    .unwrap();
+    }
+    sqlx::query(
+        "SELECT capture_curriculum_publication($1,$2,'Classification presentation fixture')",
+    )
+    .bind(edition_id)
+    .bind(context.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let workspace = workspaces::homeroom_delivery_workspace_for_version(
+        &pool,
+        context.year_id,
+        context.term_id,
+        None,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let items = &workspace
+        .homerooms
+        .iter()
+        .find(|room| room.homeroom.id == context.homeroom_id)
+        .unwrap()
+        .items;
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("BASIC")
+            && item.requirement_kind == school_academic_core::models::RequirementKind::Elective));
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("ADDITIONAL")
+            && item.requirement_kind == school_academic_core::models::RequirementKind::Required));
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("LEGACY-UNKNOWN")));
+    assert!(items
+        .iter()
+        .any(|item| item.resource_kind == LearningOfferingKind::Activity));
+    assert!(items
+        .iter()
+        .filter(|item| item.resource_kind == LearningOfferingKind::Activity)
+        .all(|item| item.subject_type.is_none()));
+}
+
+#[tokio::test]
 async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverage() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_homeroom_workspace").await;
     let context = planning_runtime_context(&pool).await;
@@ -5580,9 +6069,12 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
             item.standard_periods_per_week
                 .is_some_and(|value| value > 0)
                 && item.scheduling_mode.is_none()
+                && item.subject_type.is_some()
         }
         LearningOfferingKind::Activity => {
-            item.standard_periods_per_week.is_none() && item.scheduling_mode.is_some()
+            item.standard_periods_per_week.is_none()
+                && item.scheduling_mode.is_some()
+                && item.subject_type.is_none()
         }
     }));
     let offering_id = room

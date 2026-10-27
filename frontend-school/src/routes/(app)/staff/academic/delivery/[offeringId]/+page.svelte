@@ -55,6 +55,10 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import {
+		deliveryReturnHref,
+		repairedDeliveryOfferingHref
+	} from '#lib/navigation/learning-delivery.js';
+	import {
 		ArrowLeft,
 		ArrowRight,
 		BookOpenCheck,
@@ -65,6 +69,7 @@
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	const detailUrl = $derived(new URL((page.shallow?.url ?? page.url).href));
 	const offeringRequest = new LatestRequest();
 	const groupsRequest = new LatestRequest();
 	const versionsRequest = new LatestRequest();
@@ -81,6 +86,37 @@
 	const offeringId = $derived(data.offeringId);
 
 	let offering = $state.raw<LearningOffering | null>(null);
+	const contextMismatch = $derived(
+		offering !== null &&
+			(detailUrl.searchParams.get('academicYearId') !== offering.academicYearId ||
+				detailUrl.searchParams.get('academicTermId') !== offering.academicTermId)
+	);
+	const returnHref = $derived.by(() => {
+		const academicYearId = offering?.academicYearId ?? detailUrl.searchParams.get('academicYearId');
+		const academicTermId = offering?.academicTermId ?? detailUrl.searchParams.get('academicTermId');
+		return academicYearId && academicTermId
+			? deliveryReturnHref(detailUrl, {
+					academicYearId,
+					academicTermId,
+					deliveryVersionId: deliveryVersion?.id
+				})
+			: '/staff/academic/delivery';
+	});
+	$effect(() => {
+		const currentOffering = offering;
+		if (!currentOffering || !contextMismatch) return;
+		const requestedVersion = detailUrl.searchParams.get('deliveryVersionId');
+		if (requestedVersion && versionsLoading) return;
+		const verified = deliveryVersions.find(
+			(summary) =>
+				summary.id === requestedVersion && summary.academicTermId === currentOffering.academicTermId
+		);
+		const repaired = repairedDeliveryOfferingHref(detailUrl, {
+			...currentOffering,
+			deliveryVersionId: verified?.id
+		});
+		if (repaired) void goto(repaired, { replace: true, reset: false, state: page.state });
+	});
 	let groups = $state.raw<LearningGroup[]>([]);
 	let selectedGroup = $state.raw<LearningGroup | null>(null);
 	let deliveryVersions = $state<DeliveryVersionSummary[]>([]);
@@ -147,7 +183,7 @@
 	): DeliveryVersionSummary | null {
 		return selectDeliveryVersion(
 			loadedVersions,
-			page.url.searchParams.get('deliveryVersionId') ?? undefined
+			detailUrl.searchParams.get('deliveryVersionId') ?? undefined
 		);
 	}
 
@@ -170,7 +206,7 @@
 		if (!version) return;
 		selectedDeliveryVersionSummary = version;
 		deliveryVersionSelectValue = version.id;
-		const nextUrl = new URL(page.url.href);
+		const nextUrl = new URL(detailUrl);
 		nextUrl.searchParams.set('deliveryVersionId', version.id);
 		goto(resolve(deliveryDetailUrl(nextUrl)), { replaceState: true, state: page.state });
 	}
@@ -228,7 +264,7 @@
 		groupLoading = false;
 		groupError = '';
 		resetSelectedWorkspace();
-		const nextUrl = new URL(page.url.href);
+		const nextUrl = new URL(detailUrl);
 		nextUrl.searchParams.set('groupId', group.id);
 		const destination = resolve(deliveryDetailUrl(nextUrl));
 
@@ -274,7 +310,7 @@
 				return;
 			groups = loaded;
 			hasGroups = true;
-			const requested = page.url.searchParams.get('groupId');
+			const requested = detailUrl.searchParams.get('groupId');
 			if (!requested && loaded[0]) navigateToGroup(loaded[0], true);
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -478,7 +514,7 @@
 		mutationRevision += 1;
 		groups = loadedGroups;
 		deliveryVersion = loadedVersion;
-		const currentSelectedId = page.url.searchParams.get('groupId') ?? selectedGroup?.id;
+		const currentSelectedId = detailUrl.searchParams.get('groupId') ?? selectedGroup?.id;
 		const refreshedSelection = loadedGroups.find((group) => group.id === currentSelectedId);
 		if (refreshedSelection) {
 			selectionRevision += 1;
@@ -670,7 +706,7 @@
 						selectedGroup = result.data;
 						routeSelectedGroupId = result.data.id;
 						if (!requestedGroupId) {
-							const nextUrl = new URL(page.url.href);
+							const nextUrl = new URL(detailUrl);
 							nextUrl.searchParams.set('groupId', result.data.id);
 							goto(resolve(deliveryDetailUrl(nextUrl)), {
 								shallow: true,
@@ -693,7 +729,7 @@
 	});
 
 	$effect.pre(() => {
-		const requestedGroupId = page.url.searchParams.get('groupId');
+		const requestedGroupId = detailUrl.searchParams.get('groupId');
 		if (!requestedGroupId) return;
 		const selectedId = untrack(() => selectedGroup?.id);
 		const initialRouteGroupId = data.requestedGroupId;
@@ -722,117 +758,474 @@
 </script>
 
 <PageShell
-	title={selectedDeliveryOffering?.name ?? offering?.nameSnapshot ?? 'รายละเอียดรายการเปิดสอน'}
+	title={contextMismatch
+		? 'รายละเอียดรายการเปิดสอน'
+		: (selectedDeliveryOffering?.name ?? offering?.nameSnapshot ?? 'รายละเอียดรายการเปิดสอน')}
 	description="จัดกลุ่มเรียน ครู ห้อง และรายชื่อนักเรียนของรายการนี้ โดยข้อมูลทั้งหมดอยู่ในภาคเรียนเดียวกัน"
 >
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
-			<Button href="/staff/academic/delivery" variant="outline">
+			<Button href={returnHref} variant="outline">
 				<ArrowLeft class="size-4" /> กลับภาพรวม
 			</Button>
 		</div>
 	{/snippet}
 
-	{#if deliveryVersions.length > 0}
-		<section class="rounded-xl border bg-card p-3 sm:p-4" data-testid="delivery-version-selector">
-			<label for="delivery-detail-version" class="mb-2 block text-sm font-medium">รุ่นเปิดสอน</label
-			>
-			<Select.Root
-				type="single"
-				bind:value={deliveryVersionSelectValue}
-				onValueChange={selectOpeningVersion}
-			>
-				<Select.Trigger id="delivery-detail-version" class="w-full" aria-label="เลือกรุ่นเปิดสอน">
-					{selectedDeliveryVersionSummary
-						? deliveryVersionLabel(selectedDeliveryVersionSummary)
-						: 'เลือกรุ่นเปิดสอน'}
-				</Select.Trigger>
-				<Select.Content
-					>{#each deliveryVersions as version (version.id)}
-						<Select.Item value={version.id}>{deliveryVersionLabel(version)}</Select.Item>
-					{/each}</Select.Content
+	{#if contextMismatch}<PageSkeleton variant="detail" />{:else}
+		{#if deliveryVersions.length > 0}
+			<section class="rounded-xl border bg-card p-3 sm:p-4" data-testid="delivery-version-selector">
+				<label for="delivery-detail-version" class="mb-2 block text-sm font-medium"
+					>รุ่นเปิดสอน</label
 				>
-			</Select.Root>
-		</section>
-	{/if}
-	{#if versionsLoading && !deliveryVersion}
-		<PageSkeleton variant="cards" rows={2} />
-	{:else if versionsError && !deliveryVersion}
-		<PageState
-			variant="error"
-			title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
-			description={versionsError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={retryVersions}
-		/>
-	{:else if deliveryVersion?.status === 'published'}
-		<DeliveryVersionOfferingView
-			version={deliveryVersion}
-			{offeringId}
-			orderedGroupIds={groups.map((group) => group.id)}
-		/>
-		<section class="space-y-4 rounded-xl border bg-card p-4" data-testid="delivery-version-roster">
-			<div>
-				<h2 class="font-semibold">รายชื่อนักเรียนและประวัติสมาชิก</h2>
-				<p class="mt-1 text-sm text-muted-foreground">
-					รายชื่อจัดการแยกจากรุ่นเปิดสอน เลือกกลุ่มเพื่อดูประวัติหรือเตรียมรายชื่อ
-				</p>
-			</div>
-			{#if groupsLoading && !hasGroups}<PageSkeleton variant="cards" rows={2} />
-			{:else if groupsError}<PageState
-					variant="error"
-					title="โหลดกลุ่มสำหรับดูรายชื่อไม่สำเร็จ"
-					description={groupsError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={retryGroups}
-				/>
-			{:else}
-				<div class="flex flex-wrap gap-2">
-					{#each publishedRosterGroups as group (group.id)}
-						<Button
-							variant={publishedRosterGroup?.id === group.id ? 'secondary' : 'outline'}
-							onclick={() => navigateToGroup(group)}
-						>
-							{selectedDeliveryOffering?.groups.find((source) => source.id === group.id)?.name ??
-								group.name}
-						</Button>
-					{/each}
+				<Select.Root
+					type="single"
+					bind:value={deliveryVersionSelectValue}
+					onValueChange={selectOpeningVersion}
+				>
+					<Select.Trigger id="delivery-detail-version" class="w-full" aria-label="เลือกรุ่นเปิดสอน">
+						{selectedDeliveryVersionSummary
+							? deliveryVersionLabel(selectedDeliveryVersionSummary)
+							: 'เลือกรุ่นเปิดสอน'}
+					</Select.Trigger>
+					<Select.Content
+						>{#each deliveryVersions as version (version.id)}
+							<Select.Item value={version.id}>{deliveryVersionLabel(version)}</Select.Item>
+						{/each}</Select.Content
+					>
+				</Select.Root>
+			</section>
+		{/if}
+		{#if versionsLoading && !deliveryVersion}
+			<PageSkeleton variant="cards" rows={2} />
+		{:else if versionsError && !deliveryVersion}
+			<PageState
+				variant="error"
+				title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
+				description={versionsError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={retryVersions}
+			/>
+		{:else if deliveryVersion?.status === 'published'}
+			<DeliveryVersionOfferingView
+				version={deliveryVersion}
+				{offeringId}
+				orderedGroupIds={groups.map((group) => group.id)}
+			/>
+			<section
+				class="space-y-4 rounded-xl border bg-card p-4"
+				data-testid="delivery-version-roster"
+			>
+				<div>
+					<h2 class="font-semibold">รายชื่อนักเรียนและประวัติสมาชิก</h2>
+					<p class="mt-1 text-sm text-muted-foreground">
+						รายชื่อจัดการแยกจากรุ่นเปิดสอน เลือกกลุ่มเพื่อดูประวัติหรือเตรียมรายชื่อ
+					</p>
 				</div>
-				{#if groupLoading}<PageSkeleton variant="cards" rows={1} />
-				{:else if groupError}<PageState
+				{#if groupsLoading && !hasGroups}<PageSkeleton variant="cards" rows={2} />
+				{:else if groupsError}<PageState
 						variant="error"
-						title="โหลดประวัติกลุ่มไม่สำเร็จ"
+						title="โหลดกลุ่มสำหรับดูรายชื่อไม่สำเร็จ"
+						description={groupsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={retryGroups}
+					/>
+				{:else}
+					<div class="flex flex-wrap gap-2">
+						{#each publishedRosterGroups as group (group.id)}
+							<Button
+								variant={publishedRosterGroup?.id === group.id ? 'secondary' : 'outline'}
+								onclick={() => navigateToGroup(group)}
+							>
+								{selectedDeliveryOffering?.groups.find((source) => source.id === group.id)?.name ??
+									group.name}
+							</Button>
+						{/each}
+					</div>
+					{#if groupLoading}<PageSkeleton variant="cards" rows={1} />
+					{:else if groupError}<PageState
+							variant="error"
+							title="โหลดประวัติกลุ่มไม่สำเร็จ"
+							description={groupError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => loadSelectedGroup(detailUrl.searchParams.get('groupId') ?? '')}
+						/>
+					{:else if publishedRosterGroup}
+						{#key publishedRosterGroup.id}<RosterTrackingPanel
+								group={publishedRosterGroup}
+								canManage={canManageRoster}
+								bind:tracking={rosterTracking}
+								initialTracking={routeSelectedGroupId === publishedRosterGroup.id
+									? data.rosterTracking
+									: null}
+								onUpdated={trackingUpdated}
+							/>{/key}
+						{#if publishedRosterGroup.rosterStatus === 'published'}
+							{#key publishedRosterGroup.id}<DatedRosterMemberships
+									group={publishedRosterGroup}
+									canManage={canManageRoster && rosterTracking?.mode === 'manual'}
+									onGroupChanged={refreshSelectedGroupAfterMembership}
+									initialMemberships={routeSelectedGroupId === publishedRosterGroup.id
+										? data.memberships
+										: null}
+								/>{/key}
+						{:else}
+							{#if canManageRoster}<Button
+									onclick={showRoster}
+									disabled={optionsLoading || publishedRosterGroup.homeroomIds.length === 0}
+									>ตรวจรายชื่อนักเรียน</Button
+								>{/if}
+							{#if rosterVisible}<RosterPreviewPanel
+									group={publishedRosterGroup}
+									preview={rosterPreview}
+									loading={rosterLoading}
+									stale={rosterStale}
+									canManage={canManageRoster}
+									onRefresh={refreshRoster}
+									onApply={applyRoster}
+									onPublish={publishRoster}
+								/>{/if}
+						{/if}
+					{/if}
+				{/if}
+				{#if actionError}<p role="alert" class="text-sm text-destructive">{actionError}</p>{/if}
+			</section>
+		{:else}
+			<div class="space-y-5">
+				{#if offeringLoading && !offering}
+					<PageSkeleton variant="cards" rows={2} />
+				{:else if offeringError && !offering}
+					<PageState
+						variant="error"
+						title="โหลดรายละเอียดรายการเปิดสอนไม่สำเร็จ"
+						description={offeringError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={retryOffering}
+					/>
+				{/if}
+				{#if offering}
+					<section
+						class="relative overflow-hidden rounded-2xl border bg-card shadow-sm"
+						aria-busy={offeringLoading}
+						data-testid="delivery-offering-ready"
+					>
+						{#if offeringError}<div
+								role="alert"
+								class="mx-5 mt-4 flex items-center gap-2 text-sm text-destructive"
+							>
+								<span>{offeringError}</span><Button
+									size="sm"
+									variant="outline"
+									onclick={retryOffering}>ลองอีกครั้ง</Button
+								>
+							</div>{/if}
+						<div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+							<div class="flex min-w-0 items-start gap-4">
+								<div class="rounded-2xl bg-primary/10 p-3 text-primary">
+									<BookOpenCheck class="size-6" />
+								</div>
+								<div class="min-w-0">
+									<div class="flex flex-wrap items-center gap-2">
+										<Badge variant={offering.kind === 'course' ? 'default' : 'secondary'}>
+											{offeringKindLabel(offering.kind)}
+										</Badge>
+										<Badge variant="outline">{offeringStatusLabel(offering.status)}</Badge>
+									</div>
+									<h2 class="mt-3 text-xl font-semibold tracking-tight">{offering.nameSnapshot}</h2>
+									{#if offering.kind === 'course'}<p
+											class="mt-1 text-sm text-muted-foreground tabular-nums"
+										>
+											{offering.codeSnapshot}
+										</p>{/if}
+								</div>
+							</div>
+							<div class="grid grid-cols-3 gap-2 text-center">
+								<div class="rounded-xl bg-muted/60 px-4 py-3">
+									<p class="text-lg font-semibold">{hasGroups ? groups.length : '…'}</p>
+									<p class="text-xs text-muted-foreground">กลุ่มเรียน</p>
+								</div>
+								<div class="rounded-xl bg-muted/60 px-4 py-3">
+									<p class="text-lg font-semibold">
+										{hasGroups
+											? groups.reduce((sum, group) => sum + group.teacherAssignments.length, 0)
+											: '…'}
+									</p>
+									<p class="text-xs text-muted-foreground">ครูที่มอบหมาย</p>
+								</div>
+								<div class="rounded-xl bg-muted/60 px-4 py-3">
+									<p class="text-lg font-semibold">
+										{hasGroups
+											? groups.filter((group) => group.rosterStatus === 'published').length
+											: '…'}
+									</p>
+									<p class="text-xs text-muted-foreground">รายชื่อพร้อมใช้</p>
+								</div>
+							</div>
+						</div>
+						<div class="border-t border-primary/15 bg-primary/[0.045] px-5 py-4">
+							<div
+								class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.35fr)] sm:items-center"
+							>
+								<div class="rounded-xl border border-primary/15 bg-background/80 px-4 py-3">
+									<p class="text-xs font-medium text-muted-foreground">
+										{courseSnapshot ? 'ตามหลักสูตร' : 'ตามทะเบียนกิจกรรม'}
+									</p>
+									{#if courseSnapshot}
+										<p class="mt-1 text-lg font-semibold tabular-nums text-foreground">
+											{courseSnapshot.standardPeriodsPerWeek} คาบ/สัปดาห์
+										</p>
+										<p class="mt-0.5 text-xs text-muted-foreground">ค่ามาตรฐานของรหัสวิชา</p>
+									{:else}
+										<p class="mt-1 text-sm font-medium text-foreground">
+											กิจกรรมไม่มีค่าคาบมาตรฐาน
+										</p>
+										<p class="mt-0.5 text-xs text-muted-foreground">
+											ใช้เป้าหมายของรุ่นเปิดสอนโดยตรง
+										</p>
+									{/if}
+								</div>
+								<div class="hidden text-primary sm:block" aria-hidden="true">
+									<ArrowRight class="size-5" />
+								</div>
+								<div
+									class="relative rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm"
+									aria-busy={versionsLoading}
+									data-testid={hasVersions ? 'delivery-versions-ready' : undefined}
+								>
+									<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
+									{#if versionsLoading && !hasVersions}
+										<PageSkeleton variant="cards" rows={1} />
+									{:else if versionsError && !hasVersions}
+										<PageState
+											variant="error"
+											title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
+											description={versionsError}
+											actionLabel="ลองอีกครั้ง"
+											onaction={retryVersions}
+										/>
+									{:else}
+										<p class="mt-1 text-lg font-semibold tabular-nums text-primary">
+											{selectedTimetableTarget
+												? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
+												: 'ยังไม่กำหนด'}
+										</p>
+										<p class="mt-0.5 text-xs text-muted-foreground">
+											{selectedDeliveryVersionSummary
+												? `${selectedDeliveryVersionSummary.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'} · ${deliveryVersionEffectiveLabel(selectedDeliveryVersionSummary.effectiveFrom)}`
+												: 'ยังไม่มีรุ่นเปิดสอนที่ใช้อ้างอิง'}
+										</p>
+										{#if canMutateOffering && deliveryVersion && selectedTimetableTarget && selectedDeliveryVersionSummary?.changeSetId}
+											<div class="mt-3">
+												{#key `${offering.id}:${deliveryVersion.id}`}
+													<OfferingWeeklyPeriodDialog
+														version={deliveryVersion}
+														changeSetId={selectedDeliveryVersionSummary.changeSetId}
+														{offeringId}
+														canManage={canMutateOffering}
+														onUpdated={weeklyPeriodsUpdated}
+													/>
+												{/key}
+											</div>
+										{/if}
+										{#if versionsError}<div
+												role="alert"
+												class="mt-2 flex items-center gap-2 text-xs text-destructive"
+											>
+												<span>{versionsError}</span><Button
+													size="sm"
+													variant="outline"
+													onclick={retryVersions}>ลองอีกครั้ง</Button
+												>
+											</div>{/if}
+									{/if}
+								</div>
+							</div>
+						</div>
+					</section>
+
+					{#if offeringIsReadOnly}
+						<section class="rounded-xl border bg-muted/30 px-4 py-3 text-sm">
+							<p class="font-medium">
+								{offering.status === 'cancelled'
+									? 'รายการเปิดสอนนี้ยกเลิกแล้ว'
+									: 'รายการเปิดสอนนี้ปิดแล้ว'}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								เปิดดูข้อมูลและประวัติได้ แต่ไม่สามารถเพิ่มหรือแก้ไขกลุ่ม ครู ห้อง
+								และรายชื่อนักเรียน
+							</p>
+						</section>
+					{/if}
+				{/if}
+
+				{#if groupsLoading && !hasGroups}
+					<PageSkeleton variant="cards" rows={3} />
+				{:else if groupsError && !hasGroups}
+					<PageState
+						variant="error"
+						title="โหลดรายการกลุ่มเรียนไม่สำเร็จ"
+						description={groupsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={retryGroups}
+					/>
+				{:else if hasGroups}
+					<div class="relative" aria-busy={groupsLoading} data-testid="delivery-groups-ready">
+						{#if canMutateOffering && offering && deliveryVersion}
+							<div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+								{#if editorVisible}<p class="text-xs text-muted-foreground">
+										ปิดตัวแก้ไขกลุ่มก่อนตั้งค่าหลายกลุ่ม
+									</p>{/if}
+								{#key `${offering.id}:${deliveryVersion.id}`}
+									<DeliveryBulkGroupSetupDialog
+										{offering}
+										version={deliveryVersion}
+										{groups}
+										trackingStartsOn={rosterTracking?.startsOn}
+										canManage={canMutateOffering && !editorVisible}
+										onRequestManagementOptions={requestManagementOptions}
+										onApplied={bulkSetupApplied}
+										onReload={reloadBulkSetup}
+									/>
+								{/key}
+							</div>
+						{/if}
+						<LearningGroupList
+							{groups}
+							selectedGroupId={selectedGroup?.id}
+							canManage={canMutateOffering}
+							onSelect={navigateToGroup}
+							onRequestManagementOptions={requestManagementOptions}
+							onCreate={createGroup}
+						/>
+						{#if groupsError}<div
+								role="alert"
+								class="mt-2 flex items-center gap-2 text-sm text-destructive"
+							>
+								<span>{groupsError}</span><Button size="sm" variant="outline" onclick={retryGroups}
+									>ลองอีกครั้ง</Button
+								>
+							</div>{/if}
+					</div>
+				{/if}
+
+				{#if groupLoading && !selectedGroup}
+					<PageSkeleton variant="cards" rows={3} />
+				{:else if groupError && !selectedGroup}
+					<PageState
+						variant="error"
+						title="โหลดกลุ่มเรียนไม่สำเร็จ"
 						description={groupError}
 						actionLabel="ลองอีกครั้ง"
-						onaction={() => loadSelectedGroup(page.url.searchParams.get('groupId') ?? '')}
+						onaction={() =>
+							loadSelectedGroup(detailUrl.searchParams.get('groupId') ?? groups[0]?.id ?? '')}
 					/>
-				{:else if publishedRosterGroup}
-					{#key publishedRosterGroup.id}<RosterTrackingPanel
-							group={publishedRosterGroup}
-							canManage={canManageRoster}
-							bind:tracking={rosterTracking}
-							initialTracking={routeSelectedGroupId === publishedRosterGroup.id
-								? data.rosterTracking
-								: null}
-							onUpdated={trackingUpdated}
-						/>{/key}
-					{#if publishedRosterGroup.rosterStatus === 'published'}
-						{#key publishedRosterGroup.id}<DatedRosterMemberships
-								group={publishedRosterGroup}
-								canManage={canManageRoster && rosterTracking?.mode === 'manual'}
-								onGroupChanged={refreshSelectedGroupAfterMembership}
-								initialMemberships={routeSelectedGroupId === publishedRosterGroup.id
-									? data.memberships
+				{:else if selectedGroup}
+					<div
+						class="relative space-y-4"
+						aria-busy={groupLoading}
+						data-testid="delivery-selected-group-ready"
+					>
+						{#if groupError}<div
+								role="alert"
+								class="flex items-center gap-2 text-sm text-destructive"
+							>
+								<span>{groupError}</span><Button
+									size="sm"
+									variant="outline"
+									onclick={() => loadSelectedGroup(selectedGroup!.id)}>ลองอีกครั้ง</Button
+								>
+							</div>{/if}
+						<section class="rounded-2xl border bg-card p-4 shadow-sm">
+							<div class="flex flex-wrap items-center justify-between gap-4">
+								<div class="flex min-w-0 items-center gap-3">
+									<div class="rounded-xl bg-primary/10 p-2.5 text-primary">
+										<UsersRound class="size-5" />
+									</div>
+									<div class="min-w-0">
+										<div class="flex flex-wrap items-center gap-2">
+											<h2 class="truncate font-semibold">{selectedGroup.name}</h2>
+											{#if selectedGroup.teachersLocked}
+												<Badge variant="outline">ครูผู้สอนถูกล็อกแล้ว</Badge>
+											{/if}
+										</div>
+										<p class="text-sm text-muted-foreground">
+											{selectedGroup.code} · ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
+											{selectedGroup.homeroomIds.length} ห้อง · รายชื่อ {rosterStatusLabel(
+												selectedGroup.rosterStatus
+											)}
+										</p>
+									</div>
+								</div>
+								{#if canMutateOffering}
+									<div class="flex flex-wrap gap-2">
+										<Button
+											variant="outline"
+											onclick={() => (editorVisible ? (editorVisible = false) : showEditor())}
+											disabled={optionsLoading}
+										>
+											<Pencil class="size-4" />
+											{optionsLoading
+												? 'กำลังโหลด'
+												: editorVisible
+													? 'ยกเลิกการแก้ไขกลุ่ม'
+													: 'จัดการกลุ่ม'}
+										</Button>
+										{#if selectedGroup.rosterStatus !== 'published'}
+											<Button
+												onclick={showRoster}
+												disabled={optionsLoading || selectedGroup.homeroomIds.length === 0}
+											>
+												<ClipboardList class="size-4" /> ตรวจรายชื่อนักเรียน
+											</Button>
+										{/if}
+									</div>
+								{/if}
+							</div>
+							{#if selectedGroup.homeroomIds.length === 0}
+								<p
+									class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+								>
+									กำหนดห้องต้นทางก่อน จึงจะสร้างตัวอย่างรายชื่อนักเรียนได้
+								</p>
+							{/if}
+						</section>
+
+						{#key selectedGroup.id}<RosterTrackingPanel
+								group={selectedGroup}
+								canManage={canManageRoster}
+								bind:tracking={rosterTracking}
+								initialTracking={routeSelectedGroupId === selectedGroup.id
+									? data.rosterTracking
 									: null}
+								onUpdated={trackingUpdated}
 							/>{/key}
-					{:else}
-						{#if canManageRoster}<Button
-								onclick={showRoster}
-								disabled={optionsLoading || publishedRosterGroup.homeroomIds.length === 0}
-								>ตรวจรายชื่อนักเรียน</Button
-							>{/if}
-						{#if rosterVisible}<RosterPreviewPanel
-								group={publishedRosterGroup}
+
+						{#if editorVisible && managementOptions}
+							{#key `${selectedGroup.id}:${selectedGroup.rowVersion}`}
+								<LearningGroupEditor
+									group={selectedGroup}
+									{managementOptions}
+									canManage={canMutateOffering}
+									onSaveGroup={saveGroup}
+									onReplaceTeachers={replaceTeachers}
+									onReplaceHomerooms={replaceHomerooms}
+								/>
+							{/key}
+						{/if}
+
+						{#if selectedGroup.rosterStatus === 'published'}
+							{#key selectedGroup.id}
+								<DatedRosterMemberships
+									group={selectedGroup}
+									canManage={canManageRoster && rosterTracking?.mode === 'manual'}
+									onGroupChanged={refreshSelectedGroupAfterMembership}
+									initialMemberships={routeSelectedGroupId === selectedGroup.id
+										? data.memberships
+										: null}
+								/>
+							{/key}
+						{:else if rosterVisible}
+							<RosterPreviewPanel
+								group={selectedGroup}
 								preview={rosterPreview}
 								loading={rosterLoading}
 								stale={rosterStale}
@@ -840,370 +1233,26 @@
 								onRefresh={refreshRoster}
 								onApply={applyRoster}
 								onPublish={publishRoster}
-							/>{/if}
-					{/if}
-				{/if}
-			{/if}
-			{#if actionError}<p role="alert" class="text-sm text-destructive">{actionError}</p>{/if}
-		</section>
-	{:else}
-		<div class="space-y-5">
-			{#if offeringLoading && !offering}
-				<PageSkeleton variant="cards" rows={2} />
-			{:else if offeringError && !offering}
-				<PageState
-					variant="error"
-					title="โหลดรายละเอียดรายการเปิดสอนไม่สำเร็จ"
-					description={offeringError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={retryOffering}
-				/>
-			{/if}
-			{#if offering}
-				<section
-					class="relative overflow-hidden rounded-2xl border bg-card shadow-sm"
-					aria-busy={offeringLoading}
-					data-testid="delivery-offering-ready"
-				>
-					{#if offeringError}<div
-							role="alert"
-							class="mx-5 mt-4 flex items-center gap-2 text-sm text-destructive"
-						>
-							<span>{offeringError}</span><Button
-								size="sm"
-								variant="outline"
-								onclick={retryOffering}>ลองอีกครั้ง</Button
-							>
-						</div>{/if}
-					<div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-						<div class="flex min-w-0 items-start gap-4">
-							<div class="rounded-2xl bg-primary/10 p-3 text-primary">
-								<BookOpenCheck class="size-6" />
-							</div>
-							<div class="min-w-0">
-								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant={offering.kind === 'course' ? 'default' : 'secondary'}>
-										{offeringKindLabel(offering.kind)}
-									</Badge>
-									<Badge variant="outline">{offeringStatusLabel(offering.status)}</Badge>
-								</div>
-								<h2 class="mt-3 text-xl font-semibold tracking-tight">{offering.nameSnapshot}</h2>
-								<p class="mt-1 text-sm text-muted-foreground tabular-nums">
-									{offering.codeSnapshot}
-								</p>
-							</div>
-						</div>
-						<div class="grid grid-cols-3 gap-2 text-center">
-							<div class="rounded-xl bg-muted/60 px-4 py-3">
-								<p class="text-lg font-semibold">{hasGroups ? groups.length : '…'}</p>
-								<p class="text-xs text-muted-foreground">กลุ่มเรียน</p>
-							</div>
-							<div class="rounded-xl bg-muted/60 px-4 py-3">
-								<p class="text-lg font-semibold">
-									{hasGroups
-										? groups.reduce((sum, group) => sum + group.teacherAssignments.length, 0)
-										: '…'}
-								</p>
-								<p class="text-xs text-muted-foreground">ครูที่มอบหมาย</p>
-							</div>
-							<div class="rounded-xl bg-muted/60 px-4 py-3">
-								<p class="text-lg font-semibold">
-									{hasGroups
-										? groups.filter((group) => group.rosterStatus === 'published').length
-										: '…'}
-								</p>
-								<p class="text-xs text-muted-foreground">รายชื่อพร้อมใช้</p>
-							</div>
-						</div>
-					</div>
-					<div class="border-t border-primary/15 bg-primary/[0.045] px-5 py-4">
-						<div
-							class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.35fr)] sm:items-center"
-						>
-							<div class="rounded-xl border border-primary/15 bg-background/80 px-4 py-3">
-								<p class="text-xs font-medium text-muted-foreground">
-									{courseSnapshot ? 'ตามหลักสูตร' : 'ตามทะเบียนกิจกรรม'}
-								</p>
-								{#if courseSnapshot}
-									<p class="mt-1 text-lg font-semibold tabular-nums text-foreground">
-										{courseSnapshot.standardPeriodsPerWeek} คาบ/สัปดาห์
-									</p>
-									<p class="mt-0.5 text-xs text-muted-foreground">ค่ามาตรฐานของรหัสวิชา</p>
-								{:else}
-									<p class="mt-1 text-sm font-medium text-foreground">กิจกรรมไม่มีค่าคาบมาตรฐาน</p>
-									<p class="mt-0.5 text-xs text-muted-foreground">
-										ใช้เป้าหมายของรุ่นเปิดสอนโดยตรง
-									</p>
-								{/if}
-							</div>
-							<div class="hidden text-primary sm:block" aria-hidden="true">
-								<ArrowRight class="size-5" />
-							</div>
-							<div
-								class="relative rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm"
-								aria-busy={versionsLoading}
-								data-testid={hasVersions ? 'delivery-versions-ready' : undefined}
-							>
-								<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
-								{#if versionsLoading && !hasVersions}
-									<PageSkeleton variant="cards" rows={1} />
-								{:else if versionsError && !hasVersions}
-									<PageState
-										variant="error"
-										title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
-										description={versionsError}
-										actionLabel="ลองอีกครั้ง"
-										onaction={retryVersions}
-									/>
-								{:else}
-									<p class="mt-1 text-lg font-semibold tabular-nums text-primary">
-										{selectedTimetableTarget
-											? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
-											: 'ยังไม่กำหนด'}
-									</p>
-									<p class="mt-0.5 text-xs text-muted-foreground">
-										{selectedDeliveryVersionSummary
-											? `${selectedDeliveryVersionSummary.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'} · ${deliveryVersionEffectiveLabel(selectedDeliveryVersionSummary.effectiveFrom)}`
-											: 'ยังไม่มีรุ่นเปิดสอนที่ใช้อ้างอิง'}
-									</p>
-									{#if canMutateOffering && deliveryVersion && selectedTimetableTarget && selectedDeliveryVersionSummary?.changeSetId}
-										<div class="mt-3">
-											{#key `${offering.id}:${deliveryVersion.id}`}
-												<OfferingWeeklyPeriodDialog
-													version={deliveryVersion}
-													changeSetId={selectedDeliveryVersionSummary.changeSetId}
-													{offeringId}
-													canManage={canMutateOffering}
-													onUpdated={weeklyPeriodsUpdated}
-												/>
-											{/key}
-										</div>
-									{/if}
-									{#if versionsError}<div
-											role="alert"
-											class="mt-2 flex items-center gap-2 text-xs text-destructive"
-										>
-											<span>{versionsError}</span><Button
-												size="sm"
-												variant="outline"
-												onclick={retryVersions}>ลองอีกครั้ง</Button
-											>
-										</div>{/if}
-								{/if}
-							</div>
-						</div>
-					</div>
-				</section>
-
-				{#if offeringIsReadOnly}
-					<section class="rounded-xl border bg-muted/30 px-4 py-3 text-sm">
-						<p class="font-medium">
-							{offering.status === 'cancelled'
-								? 'รายการเปิดสอนนี้ยกเลิกแล้ว'
-								: 'รายการเปิดสอนนี้ปิดแล้ว'}
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							เปิดดูข้อมูลและประวัติได้ แต่ไม่สามารถเพิ่มหรือแก้ไขกลุ่ม ครู ห้อง และรายชื่อนักเรียน
-						</p>
-					</section>
-				{/if}
-			{/if}
-
-			{#if groupsLoading && !hasGroups}
-				<PageSkeleton variant="cards" rows={3} />
-			{:else if groupsError && !hasGroups}
-				<PageState
-					variant="error"
-					title="โหลดรายการกลุ่มเรียนไม่สำเร็จ"
-					description={groupsError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={retryGroups}
-				/>
-			{:else if hasGroups}
-				<div class="relative" aria-busy={groupsLoading} data-testid="delivery-groups-ready">
-					{#if canMutateOffering && offering && deliveryVersion}
-						<div class="mb-3 flex flex-wrap items-center justify-end gap-2">
-							{#if editorVisible}<p class="text-xs text-muted-foreground">
-									ปิดตัวแก้ไขกลุ่มก่อนตั้งค่าหลายกลุ่ม
-								</p>{/if}
-							{#key `${offering.id}:${deliveryVersion.id}`}
-								<DeliveryBulkGroupSetupDialog
-									{offering}
-									version={deliveryVersion}
-									{groups}
-									trackingStartsOn={rosterTracking?.startsOn}
-									canManage={canMutateOffering && !editorVisible}
-									onRequestManagementOptions={requestManagementOptions}
-									onApplied={bulkSetupApplied}
-									onReload={reloadBulkSetup}
-								/>
-							{/key}
-						</div>
-					{/if}
-					<LearningGroupList
-						{groups}
-						selectedGroupId={selectedGroup?.id}
-						canManage={canMutateOffering}
-						onSelect={navigateToGroup}
-						onRequestManagementOptions={requestManagementOptions}
-						onCreate={createGroup}
-					/>
-					{#if groupsError}<div
-							role="alert"
-							class="mt-2 flex items-center gap-2 text-sm text-destructive"
-						>
-							<span>{groupsError}</span><Button size="sm" variant="outline" onclick={retryGroups}
-								>ลองอีกครั้ง</Button
-							>
-						</div>{/if}
-				</div>
-			{/if}
-
-			{#if groupLoading && !selectedGroup}
-				<PageSkeleton variant="cards" rows={3} />
-			{:else if groupError && !selectedGroup}
-				<PageState
-					variant="error"
-					title="โหลดกลุ่มเรียนไม่สำเร็จ"
-					description={groupError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={() =>
-						loadSelectedGroup(page.url.searchParams.get('groupId') ?? groups[0]?.id ?? '')}
-				/>
-			{:else if selectedGroup}
-				<div
-					class="relative space-y-4"
-					aria-busy={groupLoading}
-					data-testid="delivery-selected-group-ready"
-				>
-					{#if groupError}<div
-							role="alert"
-							class="flex items-center gap-2 text-sm text-destructive"
-						>
-							<span>{groupError}</span><Button
-								size="sm"
-								variant="outline"
-								onclick={() => loadSelectedGroup(selectedGroup!.id)}>ลองอีกครั้ง</Button
-							>
-						</div>{/if}
-					<section class="rounded-2xl border bg-card p-4 shadow-sm">
-						<div class="flex flex-wrap items-center justify-between gap-4">
-							<div class="flex min-w-0 items-center gap-3">
-								<div class="rounded-xl bg-primary/10 p-2.5 text-primary">
-									<UsersRound class="size-5" />
-								</div>
-								<div class="min-w-0">
-									<div class="flex flex-wrap items-center gap-2">
-										<h2 class="truncate font-semibold">{selectedGroup.name}</h2>
-										{#if selectedGroup.teachersLocked}
-											<Badge variant="outline">ครูผู้สอนถูกล็อกแล้ว</Badge>
-										{/if}
-									</div>
-									<p class="text-sm text-muted-foreground">
-										{selectedGroup.code} · ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
-										{selectedGroup.homeroomIds.length} ห้อง · รายชื่อ {rosterStatusLabel(
-											selectedGroup.rosterStatus
-										)}
-									</p>
-								</div>
-							</div>
-							{#if canMutateOffering}
-								<div class="flex flex-wrap gap-2">
-									<Button
-										variant="outline"
-										onclick={() => (editorVisible ? (editorVisible = false) : showEditor())}
-										disabled={optionsLoading}
-									>
-										<Pencil class="size-4" />
-										{optionsLoading
-											? 'กำลังโหลด'
-											: editorVisible
-												? 'ยกเลิกการแก้ไขกลุ่ม'
-												: 'จัดการกลุ่ม'}
-									</Button>
-									{#if selectedGroup.rosterStatus !== 'published'}
-										<Button
-											onclick={showRoster}
-											disabled={optionsLoading || selectedGroup.homeroomIds.length === 0}
-										>
-											<ClipboardList class="size-4" /> ตรวจรายชื่อนักเรียน
-										</Button>
-									{/if}
-								</div>
-							{/if}
-						</div>
-						{#if selectedGroup.homeroomIds.length === 0}
-							<p
-								class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-							>
-								กำหนดห้องต้นทางก่อน จึงจะสร้างตัวอย่างรายชื่อนักเรียนได้
-							</p>
+							/>
 						{/if}
+					</div>
+				{:else if hasGroups}
+					<section
+						class="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground"
+					>
+						เพิ่มหรือเลือกกลุ่มเรียนเพื่อจัดครู ห้อง และรายชื่อนักเรียน
 					</section>
+				{/if}
 
-					{#key selectedGroup.id}<RosterTrackingPanel
-							group={selectedGroup}
-							canManage={canManageRoster}
-							bind:tracking={rosterTracking}
-							initialTracking={routeSelectedGroupId === selectedGroup.id
-								? data.rosterTracking
-								: null}
-							onUpdated={trackingUpdated}
-						/>{/key}
-
-					{#if editorVisible && managementOptions}
-						{#key `${selectedGroup.id}:${selectedGroup.rowVersion}`}
-							<LearningGroupEditor
-								group={selectedGroup}
-								{managementOptions}
-								canManage={canMutateOffering}
-								onSaveGroup={saveGroup}
-								onReplaceTeachers={replaceTeachers}
-								onReplaceHomerooms={replaceHomerooms}
-							/>
-						{/key}
-					{/if}
-
-					{#if selectedGroup.rosterStatus === 'published'}
-						{#key selectedGroup.id}
-							<DatedRosterMemberships
-								group={selectedGroup}
-								canManage={canManageRoster && rosterTracking?.mode === 'manual'}
-								onGroupChanged={refreshSelectedGroupAfterMembership}
-								initialMemberships={routeSelectedGroupId === selectedGroup.id
-									? data.memberships
-									: null}
-							/>
-						{/key}
-					{:else if rosterVisible}
-						<RosterPreviewPanel
-							group={selectedGroup}
-							preview={rosterPreview}
-							loading={rosterLoading}
-							stale={rosterStale}
-							canManage={canManageRoster}
-							onRefresh={refreshRoster}
-							onApply={applyRoster}
-							onPublish={publishRoster}
-						/>
-					{/if}
-				</div>
-			{:else if hasGroups}
-				<section
-					class="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground"
-				>
-					เพิ่มหรือเลือกกลุ่มเรียนเพื่อจัดครู ห้อง และรายชื่อนักเรียน
-				</section>
-			{/if}
-
-			{#if actionError}
-				<p
-					role="alert"
-					class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-				>
-					{actionError}
-				</p>
-			{/if}
-		</div>
+				{#if actionError}
+					<p
+						role="alert"
+						class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+					>
+						{actionError}
+					</p>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </PageShell>

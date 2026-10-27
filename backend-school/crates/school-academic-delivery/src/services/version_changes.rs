@@ -1,6 +1,6 @@
 use crate::models::{
     versions::{DeliveryChangeKind, DeliverySnapshot, DeliveryVersionChange},
-    LearningTeacherRole,
+    LearningOfferingKind, LearningTeacherRole,
 };
 use school_database::DbSession;
 use school_errors::AppError;
@@ -62,7 +62,10 @@ pub fn compare(
         let Some(o) = b.or(a) else {
             continue;
         };
-        let label = format!("{} — {}", o.code, o.name);
+        let label = match o.kind {
+            LearningOfferingKind::Course => format!("{} — {}", o.code, o.name),
+            LearningOfferingKind::Activity => o.name.clone(),
+        };
         push(
             id,
             id,
@@ -336,8 +339,9 @@ mod tests {
         DeliveryVersionGroup, DeliveryVersionOffering, DeliveryVersionTeacher,
     };
     use crate::models::{
-        CourseOfferingSnapshot, LearningOfferingKind, LearningOfferingSnapshot,
-        LearningOfferingTarget, OfferingTargetKind,
+        ActivityAttendanceRequirement, ActivityOfferingSnapshot, ActivityPassCriteria,
+        ActivityRegistrationType, ActivitySchedulingMode, CourseOfferingSnapshot,
+        LearningOfferingSnapshot, LearningOfferingTarget, OfferingTargetKind,
     };
     fn graph() -> DeliverySnapshot {
         DeliverySnapshot {
@@ -384,6 +388,136 @@ mod tests {
                     }],
                 }],
             }],
+        }
+    }
+
+    fn activity_graph() -> DeliverySnapshot {
+        let mut snapshot = graph();
+        let offering = &mut snapshot.offerings[0];
+        offering.kind = LearningOfferingKind::Activity;
+        offering.code = "ACT-001".into();
+        offering.name = "ชุมนุมวิทยาศาสตร์".into();
+        offering.groups.clear();
+        offering.catalog = LearningOfferingSnapshot::Activity(ActivityOfferingSnapshot {
+            activity_version_id: Uuid::from_u128(3),
+            activity_id: Uuid::from_u128(4),
+            curriculum_activity_requirement_id: None,
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode: ActivitySchedulingMode::Synchronized,
+            hours: "40".into(),
+            capacity: None,
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        });
+        snapshot
+    }
+
+    fn assert_offering_change(
+        before: &DeliverySnapshot,
+        after: &DeliverySnapshot,
+        kind: DeliveryChangeKind,
+        label: &str,
+        before_value: Option<&str>,
+        after_value: Option<&str>,
+    ) {
+        assert_eq!(
+            compare(before, after, &BTreeMap::new()),
+            vec![DeliveryVersionChange {
+                kind,
+                learning_offering_id: Uuid::from_u128(1),
+                resource_id: Uuid::from_u128(1),
+                label: label.into(),
+                field: "รายการเปิดสอน".into(),
+                before: before_value.map(str::to_owned),
+                after: after_value.map(str::to_owned),
+            }]
+        );
+    }
+
+    #[test]
+    fn added_activity_label_uses_only_its_name() {
+        assert_offering_change(
+            &DeliverySnapshot { offerings: vec![] },
+            &activity_graph(),
+            DeliveryChangeKind::Added,
+            "ชุมนุมวิทยาศาสตร์",
+            None,
+            Some("เปิดสอน 3 คาบ/สัปดาห์"),
+        );
+    }
+
+    #[test]
+    fn removed_activity_label_uses_only_its_name() {
+        assert_offering_change(
+            &activity_graph(),
+            &DeliverySnapshot { offerings: vec![] },
+            DeliveryChangeKind::Removed,
+            "ชุมนุมวิทยาศาสตร์",
+            Some("เปิดสอน 3 คาบ/สัปดาห์"),
+            None,
+        );
+    }
+
+    #[test]
+    fn changed_activity_label_uses_only_its_name() {
+        let before = activity_graph();
+        let mut after = before.clone();
+        after.offerings[0].weekly_period_target = 4;
+        assert_offering_change(
+            &before,
+            &after,
+            DeliveryChangeKind::Changed,
+            "ชุมนุมวิทยาศาสตร์",
+            Some("เปิดสอน 3 คาบ/สัปดาห์"),
+            Some("เปิดสอน 4 คาบ/สัปดาห์"),
+        );
+    }
+
+    #[test]
+    fn course_changes_keep_code_and_name_labels() {
+        let empty = DeliverySnapshot { offerings: vec![] };
+        let mut before = graph();
+        before.offerings[0].groups.clear();
+        let mut after = before.clone();
+        after.offerings[0].weekly_period_target = 4;
+        for (before, after, kind, old_value, new_value) in [
+            (
+                &empty,
+                &before,
+                DeliveryChangeKind::Added,
+                None,
+                Some("เปิดสอน 3 คาบ/สัปดาห์"),
+            ),
+            (
+                &before,
+                &empty,
+                DeliveryChangeKind::Removed,
+                Some("เปิดสอน 3 คาบ/สัปดาห์"),
+                None,
+            ),
+            (
+                &before,
+                &after,
+                DeliveryChangeKind::Changed,
+                Some("เปิดสอน 3 คาบ/สัปดาห์"),
+                Some("เปิดสอน 4 คาบ/สัปดาห์"),
+            ),
+        ] {
+            assert_offering_change(
+                before,
+                after,
+                kind,
+                "ค11101 — คณิตศาสตร์",
+                old_value,
+                new_value,
+            );
         }
     }
     #[test]

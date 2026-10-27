@@ -44,6 +44,7 @@ test('offering, groups, versions, and selected group start as independent route 
 test('heavy offering detail links preload on tap instead of hover', async () => {
 	for (const [filename, expected] of [
 		['HomeroomDeliveryWorkspace.svelte', 2],
+		['DeliveryVersionOverviewTable.svelte', 1],
 		['OfferingOverviewTable.svelte', 2],
 		['AcademicChangeSetPanel.svelte', 1]
 	]) {
@@ -51,10 +52,18 @@ test('heavy offering detail links preload on tap instead of hover', async () => 
 			path.resolve(import.meta.dirname, '../../src/lib/components/learning-delivery', filename),
 			'utf8'
 		);
-		const links = [...source.matchAll(/href=\{`\/staff\/academic\/delivery\/\$\{[^}]+\}[^`]*`\}/g)];
+		const linkPattern =
+			filename === 'HomeroomDeliveryWorkspace.svelte'
+				? /href=\{offeringHref\(item\.offeringId\)\}/g
+				: filename === 'DeliveryVersionOverviewTable.svelte'
+					? /href=\{detailUrl\(item\.id\)\}/g
+					: filename === 'AcademicChangeSetPanel.svelte'
+						? /href=\{deliveryOfferingHref\([\s\S]*?\)\}/g
+						: /href=\{`\/staff\/academic\/delivery\/\$\{[^}]+\}[^`]*`\}/g;
+		const links = [...source.matchAll(linkPattern)];
 		const tapLinks = [
 			...source.matchAll(
-				/href=\{`\/staff\/academic\/delivery\/\$\{[^}]+\}[^`]*`\}[\s\S]{0,200}data-sveltekit-preload-data="tap"/g
+				new RegExp(`${linkPattern.source}[\\s\\S]{0,200}data-sveltekit-preload-data="tap"`, 'g')
 			)
 		];
 		assert.equal(links.length, expected, filename);

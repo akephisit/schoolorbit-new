@@ -11234,36 +11234,10 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_DeliveryVersion: {
-			data: {
-				/** Format: uuid */
-				academicTermId: string;
-				/** Format: uuid */
-				academicYearId: string;
-				/** Format: date-time */
-				createdAt: string;
-				/** Format: uuid */
-				createdBy?: string | null;
-				/** Format: date */
-				effectiveFrom: string | null;
-				/** Format: date */
-				effectiveUntil: string | null;
-				/** Format: uuid */
-				id: string;
-				/** Format: date-time */
-				publishedAt?: string | null;
-				/** Format: uuid */
-				publishedBy?: string | null;
-				/** Format: date */
-				referenceDate: string;
-				/** Format: int64 */
-				rowVersion: number;
-				snapshot: components['schemas']['DeliverySnapshot'];
-				/** Format: uuid */
-				sourceVersionId: string | null;
-				status: components['schemas']['DeliveryVersionStatus'];
-				/** Format: date-time */
-				updatedAt: string;
+		ApiResponse_DeliveryVersionDetails: {
+			data: components['schemas']['DeliveryVersion'] & {
+				/** @description Current registry groups for visible, pinned course versions; outside publication facts. */
+				courseMetadata: components['schemas']['DeliveryVersionCourseMetadata'][];
 			};
 			message?: string;
 			success: boolean;
@@ -20708,6 +20682,17 @@ export interface components {
 			/** Format: uuid */
 			resourceId: string;
 		};
+		DeliveryVersionCourseMetadata: {
+			/** Format: uuid */
+			subjectGroupId: string;
+			subjectGroupName: string;
+			/** Format: uuid */
+			subjectVersionId: string;
+		};
+		DeliveryVersionDetails: components['schemas']['DeliveryVersion'] & {
+			/** @description Current registry groups for visible, pinned course versions; outside publication facts. */
+			courseMetadata: components['schemas']['DeliveryVersionCourseMetadata'][];
+		};
 		DeliveryVersionGroup: {
 			/** Format: int32 */
 			capacity?: number | null;
@@ -21833,6 +21818,7 @@ export interface components {
 			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			/** Format: int32 */
 			standardPeriodsPerWeek?: number | null;
+			subjectType: string | null;
 			teacherState: components['schemas']['HomeroomTeacherState'];
 			/** Format: int32 */
 			weeklyPeriodTarget: number | null;
@@ -27348,6 +27334,7 @@ export interface components {
 			/** Format: uuid */
 			offeringId: string;
 			reason: string;
+			resourceKind: components['schemas']['LearningOfferingKind'];
 		};
 		UpdateAcademicTermChangeSetRequest: {
 			reason: string;
@@ -32222,13 +32209,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Immutable opening graph scoped to visible resources */
+			/** @description Visible immutable opening graph with current catalog display metadata */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_DeliveryVersion'];
+					'application/json': components['schemas']['ApiResponse_DeliveryVersionDetails'];
 				};
 			};
 			/** @description Authentication required */

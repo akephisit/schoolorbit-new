@@ -1087,12 +1087,12 @@ async fn build_preview_in_transaction(
                 let group = finding
                     .learning_group_id
                     .and_then(|id| offering.groups.iter().find(|g| g.id == id));
-                finding.title = format!(
-                    "{} — {}{}: {}",
-                    offering.code,
-                    offering.name,
-                    group.map_or(String::new(), |g| format!(" · {}", g.name)),
-                    finding.title
+                finding.title = readiness_finding_title(
+                    offering.kind,
+                    &offering.code,
+                    &offering.name,
+                    group.map(|group| group.name.as_str()),
+                    &finding.title,
                 );
                 finding.route = Some(format!(
                     "/staff/academic/delivery/{offering_id}?deliveryVersionId={target_id}"
@@ -1280,6 +1280,21 @@ async fn load_stop_impact_counts(
         exam_schedule_items: row.get("exam_schedule_items"),
         supervision_observations: row.get("supervision_observations"),
     })
+}
+
+fn readiness_finding_title(
+    kind: LearningOfferingKind,
+    code: &str,
+    name: &str,
+    group_name: Option<&str>,
+    title: &str,
+) -> String {
+    let offering = match kind {
+        LearningOfferingKind::Course => format!("{code} — {name}"),
+        LearningOfferingKind::Activity => name.to_string(),
+    };
+    let group = group_name.map_or(String::new(), |name| format!(" · {name}"));
+    format!("{offering}{group}: {title}")
 }
 
 fn change_finding(
@@ -3231,4 +3246,36 @@ fn required_change_item_label(
 
 fn bangkok_today() -> NaiveDate {
     (Utc::now() + chrono::Duration::hours(7)).date_naive()
+}
+
+#[cfg(test)]
+mod finding_title_tests {
+    use super::*;
+
+    #[test]
+    fn readiness_finding_titles_keep_course_codes_and_hide_activity_codes() {
+        for (kind, group, expected) in [
+            (
+                LearningOfferingKind::Course,
+                None,
+                "CODE-101 — ชื่อรายการ: ยังไม่มีครูหลัก",
+            ),
+            (
+                LearningOfferingKind::Course,
+                Some("กลุ่มทดสอบ"),
+                "CODE-101 — ชื่อรายการ · กลุ่มทดสอบ: ยังไม่มีครูหลัก",
+            ),
+            (LearningOfferingKind::Activity, None, "ชื่อรายการ: ยังไม่มีครูหลัก"),
+            (
+                LearningOfferingKind::Activity,
+                Some("กลุ่มทดสอบ"),
+                "ชื่อรายการ · กลุ่มทดสอบ: ยังไม่มีครูหลัก",
+            ),
+        ] {
+            assert_eq!(
+                readiness_finding_title(kind, "CODE-101", "ชื่อรายการ", group, "ยังไม่มีครูหลัก"),
+                expected,
+            );
+        }
+    }
 }

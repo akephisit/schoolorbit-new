@@ -7,6 +7,8 @@
 		deliveryChangePage
 	} from '#lib/academic/learning-delivery-change-list.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { deliveryOfferingLabel } from '#lib/academic/learning-delivery-presentation.js';
+	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
@@ -52,6 +54,7 @@
 		changeSet,
 		offerings,
 		canManage,
+		returnTo = '',
 		initialTeacherChangeItemId = '',
 		onChanged,
 		onDeleted,
@@ -60,6 +63,7 @@
 		changeSet: AcademicTermChangeSet;
 		offerings: DeliveryVersion['snapshot']['offerings'];
 		canManage: boolean;
+		returnTo?: string;
 		initialTeacherChangeItemId?: string;
 		onChanged: (
 			changeSet: AcademicTermChangeSet,
@@ -257,11 +261,12 @@
 			return `${item.learningGroupLabel} · ${item.teacherLabel}${role}`;
 		}
 		const offering = changeSet.offeringLabels.find((entry) => entry.id === item.learningOfferingId);
+		const snapshotOffering = offerings.find((entry) => entry.id === item.learningOfferingId);
 		const periods =
 			item.actionKind === 'add_offering' || item.actionKind === 'adjust_weekly_period_target'
 				? ` · ${item.weeklyPeriodTarget} คาบ/สัปดาห์`
 				: '';
-		return `${offering ? `${offering.code} — ${offering.name}` : 'ชื่อรายการไม่พร้อม กรุณาโหลดล่าสุด'}${periods}`;
+		return `${snapshotOffering ? deliveryOfferingLabel(snapshotOffering) : (offering?.name ?? 'ชื่อรายการไม่พร้อม กรุณาโหลดล่าสุด')}${periods}`;
 	}
 
 	async function teacherItemSaved(updated: AcademicTermChangeSet) {
@@ -565,7 +570,15 @@
 															{#each entries.items.flatMap( (entry) => (entry.kind === 'item' ? [entry.item] : []) ) as item (item.id)}
 																{#if item.actionKind === 'add_offering'}
 																	<Button
-																		href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
+																		href={deliveryOfferingHref(
+																			item.learningOfferingId,
+																			{
+																				academicYearId: changeSet.academicYearId,
+																				academicTermId: changeSet.academicTermId,
+																				deliveryVersionId: changeSet.targetDeliveryVersionId
+																			},
+																			returnTo
+																		)}
 																		data-sveltekit-preload-data="tap"
 																		size="sm"
 																		variant="ghost"
@@ -726,7 +739,7 @@
 		{/if}
 
 		{#key `${changeSet.id}:${readinessRevision}`}
-			<AcademicChangeReadiness {changeSet} {canManage} {onChanged} {onDeleted} />
+			<AcademicChangeReadiness {changeSet} {canManage} {returnTo} {onChanged} {onDeleted} />
 		{/key}
 	</div>
 </section>

@@ -72,7 +72,7 @@ export function groupLearningDeliveryChanges(
 						? offering.name
 						: `${offering.code} · ${offering.name}`
 					: label
-						? `${label.code} · ${label.name}`
+						? label.name
 						: offeringId
 							? (row.changes.find((change) => change.resourceId === offeringId)?.label ??
 								'รายการเปิดสอนที่ยังไม่มีชื่อ')

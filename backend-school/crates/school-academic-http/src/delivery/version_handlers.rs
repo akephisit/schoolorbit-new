@@ -9,7 +9,7 @@ use crate::policies::learning_offering_access_policy::{self, OfferingAction};
 use crate::state::AcademicHttpState;
 use school_academic_delivery::models::versions::DeliveryVersionQuery;
 #[cfg(feature = "api-docs")]
-use school_academic_delivery::models::versions::{DeliveryVersion, DeliveryVersionSummary};
+use school_academic_delivery::models::versions::{DeliveryVersionDetails, DeliveryVersionSummary};
 use school_academic_delivery::services::versions;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -47,7 +47,7 @@ pub async fn list_versions(
     get, path="/api/academic/delivery-versions/{id}", operation_id="getDeliveryVersion", tag="academic",
     params(("id"=Uuid,Path,description="Opening version ID")),
     responses(
-        (status=200,description="Immutable opening graph scoped to visible resources",body=ApiResponse<DeliveryVersion>),
+        (status=200,description="Visible immutable opening graph with current catalog display metadata",body=ApiResponse<DeliveryVersionDetails>),
         (status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Opening read permission denied",body=ApiErrorResponse),
         (status=404,description="Opening version not found",body=ApiErrorResponse)
@@ -65,7 +65,7 @@ pub async fn get_version(
         OfferingAction::Read,
     )
     .await?;
-    let data = versions::visible_version(&context.tenant.pool, id, &access).await?;
+    let data = versions::visible_version_details(&context.tenant.pool, id, &access).await?;
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
