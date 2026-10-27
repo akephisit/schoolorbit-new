@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
 	groupStagedRequirements,
 	appendSelectedCatalogRequirements,
-	hasExistingCourseRequirement,
+	hasExistingCatalogRequirement,
 	selectableCatalogOption,
 	type CurriculumCatalogOption,
 	type StagedCurriculumRequirement
@@ -91,7 +91,7 @@ test('add selection rechecks server eligibility and never substitutes an old or 
 
 test('pinned requirement identity blocks a newer revision even when its old option is unavailable', () => {
 	assert.deepEqual(
-		hasExistingCourseRequirement(current, context, [existing], [current], [pinned]),
+		hasExistingCatalogRequirement(current, context, [existing], [current], [pinned]),
 		true
 	);
 	assert.deepEqual(
@@ -133,7 +133,7 @@ test('program, grade and term contexts remain independent and additions cannot s
 		'required'
 	);
 	assert.equal(result.length, 1);
-	assert.deepEqual(hasExistingCourseRequirement(current, context, result, [current], []), true);
+	assert.deepEqual(hasExistingCatalogRequirement(current, context, result, [current], []), true);
 });
 
 test('explicit removal permits replacement while legacy revision duplicates remain untouched', () => {
@@ -154,26 +154,107 @@ test('explicit removal permits replacement while legacy revision duplicates rema
 	assert.deepEqual(result, legacy);
 });
 
-test('activity revision selection retains its exact-version policy and never collides with a course', () => {
-	const activity = {
-		...current,
+test('activity additions use current eligibility and stable identity while preserving pinned duplicates and kind boundaries', () => {
+	const activity = { ...current, id: 'activity-v2', resourceKind: 'activity' as const };
+	const oldActivity = {
+		...activity,
 		id: 'activity-v1',
-		resourceKind: 'activity' as const,
-		selectableForNewRequirement: true
+		versionNo: 1,
+		selectableForNewRequirement: false
 	};
-	const second = { ...activity, id: 'activity-v2', versionNo: 2 };
-	assert.equal(selectableCatalogOption(activity), true);
-	const result = appendSelectedCatalogRequirements(
-		[existing],
-		[activity.id, second.id, activity.id],
-		context,
-		[current, activity, second],
-		[pinned],
-		'required'
+	const future = {
+		...activity,
+		id: 'activity-v3',
+		versionNo: 3,
+		selectableForNewRequirement: false
+	};
+	const original = {
+		...pinned,
+		resourceKind: 'activity' as const,
+		catalogVersionId: oldActivity.id
+	};
+	const staged = {
+		...existing,
+		resourceKind: 'activity' as const,
+		catalogVersionId: oldActivity.id
+	};
+	assert.equal(selectableCatalogOption(oldActivity), false);
+	assert.equal(selectableCatalogOption(future), false);
+	assert.deepEqual(
+		appendSelectedCatalogRequirements(
+			[],
+			[oldActivity.id, future.id, activity.id],
+			context,
+			[oldActivity, activity, future],
+			[],
+			'required'
+		).map((row) => row.catalogVersionId),
+		[activity.id]
+	);
+	assert.equal(
+		hasExistingCatalogRequirement(activity, context, [staged], [activity], [original]),
+		true
 	);
 	assert.deepEqual(
-		result.map((item) => item.catalogVersionId),
-		[old.id, activity.id, second.id]
+		appendSelectedCatalogRequirements(
+			[staged],
+			[activity.id],
+			context,
+			[activity],
+			[original],
+			'required'
+		),
+		[staged]
+	);
+	for (const changed of [
+		{ studyProgramId: 'other' },
+		{ gradeLevelId: 'grade-2' },
+		{ termSlotId: 'other' }
+	])
+		assert.equal(
+			appendSelectedCatalogRequirements(
+				[staged],
+				[activity.id],
+				{ ...context, ...changed },
+				[activity],
+				[original],
+				'required'
+			).length,
+			2
+		);
+	const legacy = [staged, { ...staged, catalogVersionId: activity.id, displayOrder: 2 }];
+	assert.deepEqual(
+		appendSelectedCatalogRequirements(
+			legacy,
+			[activity.id],
+			context,
+			[activity],
+			[original],
+			'required'
+		),
+		legacy
+	);
+	assert.equal(
+		appendSelectedCatalogRequirements(
+			[],
+			[activity.id],
+			context,
+			[activity],
+			[original],
+			'required'
+		)[0].catalogVersionId,
+		activity.id
+	);
+	assert.equal(
+		appendSelectedCatalogRequirements(
+			[existing],
+			[activity.id],
+			context,
+			[activity],
+			[pinned],
+			'required'
+		).length,
+		2
 	);
 });
 

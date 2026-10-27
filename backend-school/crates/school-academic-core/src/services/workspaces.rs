@@ -216,12 +216,25 @@ pub async fn curriculum_management_options_on_connection(
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let current =
+    let current_subjects =
         super::catalog::current_subject_version_ids_on_connection(connection, &subject_ids).await?;
+    let activity_ids = catalog_versions
+        .iter()
+        .filter(|option| option.resource_kind == RequirementResourceKind::Activity)
+        .map(|option| option.catalog_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current_activities =
+        super::catalog::current_activity_revisions_on_connection(connection, &activity_ids).await?;
     for option in &mut catalog_versions {
-        option.selectable_for_new_requirement = option.resource_kind
-            == RequirementResourceKind::Activity
-            || current.get(&option.catalog_id) == Some(&option.id);
+        let current_id = match option.resource_kind {
+            RequirementResourceKind::Course => current_subjects.get(&option.catalog_id).copied(),
+            RequirementResourceKind::Activity => current_activities
+                .get(&option.catalog_id)
+                .map(|revision| revision.id),
+        };
+        option.selectable_for_new_requirement = current_id == Some(option.id);
     }
     ensure_workspace_size(
         catalog_versions.len(),

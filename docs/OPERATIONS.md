@@ -667,12 +667,12 @@ bounded findings on a protected copy; repair forward with a matching release. Pr
 require the retired columns and must not be restored against schema 138. Never retarget dates,
 rewrite academic years, delete catalog/history rows or alter SQLx history to force success.
 
-Curriculum additions use the catalog provider's current published subject revision on
-Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
+Curriculum course and activity additions use the catalog provider's current published revision
+of the same resource kind and stable identity on Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
 under normal maintenance. Existing curriculum rows, published snapshots, copied programs
 and actual delivery references retain their version IDs; no migration or automatic upgrade
 is part of this rule. Refresh stale options after a conflict and explicitly replace an old
-row when a new revision is wanted. Historical duplicate subject buckets may be retained or
+row when a new revision is wanted. Historical duplicate subject or activity buckets may be retained or
 reduced, but a new tuple cannot introduce another version into a duplicate bucket.
 
 After migration 131, pre-revision School writers are prohibited: they do not enforce semantic

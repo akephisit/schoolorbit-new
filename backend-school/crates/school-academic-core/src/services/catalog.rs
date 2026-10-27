@@ -371,6 +371,25 @@ pub async fn lock_subjects_for_revision_selection(
     Ok(())
 }
 
+/// Match activity revision commands; callers lock subjects first, then activities in UUID order.
+pub async fn lock_activities_for_revision_selection(
+    transaction: &mut Transaction<'_, Postgres>,
+    activity_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if activity_ids.is_empty() {
+        return Ok(());
+    }
+    DbSession::new(&mut **transaction)
+        .scalar::<Uuid>(
+            "academic_core.services.catalog.lock_activities_for_revision_selection",
+            "SELECT id FROM activities WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(activity_ids)
+        .fetch_all()
+        .await?;
+    Ok(())
+}
+
 pub fn owner_allowed(filter: &AcademicResourceListFilter, owner: Option<Uuid>) -> bool {
     filter.includes_school_owned
         || owner.is_some_and(|owner_id| filter.allowed_organization_unit_ids().contains(&owner_id))

@@ -418,7 +418,7 @@ async fn curriculum_current_subject_grandfathers_duplicate_buckets_and_future_ex
 }
 
 #[tokio::test]
-async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep_eligibility() {
+async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_require_current() {
     let mut f = fixture("curriculum_current_subject_copy").await;
     save(&f, vec![row(&f, f.v1.id)]).await.unwrap();
     let edition = curriculum::get(&f.pool, f.edition).await.unwrap();
@@ -583,9 +583,17 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
         option.section,
         school_academic_core::models::CurriculumDocumentSection::StudentDevelopment
     );
-    assert!(option.selectable_for_new_requirement);
+    assert!(!option.selectable_for_new_requirement);
     let mut activity_row = row(&f, activity_version.id);
     activity_row.resource_kind = RequirementResourceKind::Activity;
+    let before = activity_persistence_snapshot(&f).await;
+    assert!(matches!(
+        save(&f, vec![row(&f, f.v1.id), activity_row.clone()]).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    assert_eq!(before, activity_persistence_snapshot(&f).await);
+    // Pre-policy future pin remains editable; the new admission policy cannot create it.
+    seed_existing_activity(&f, activity_version.id).await;
     let workspace = save(&f, vec![row(&f, f.v1.id), activity_row])
         .await
         .unwrap();
@@ -1252,6 +1260,14 @@ async fn stable_activity(f: &Fixture) -> Uuid {
     .id
 }
 
+// Sanitized rows admitted by the former all-published activity policy. This fixture helper
+// must not be used to demonstrate new-row eligibility under current-only admission.
+async fn seed_existing_activity(f: &Fixture, version: Uuid) {
+    sqlx::query("INSERT INTO curriculum_activity_requirements(id,curriculum_level_id,study_program_id,activity_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,'required',1)")
+        .bind(f.level).bind(f.program.id).bind(version).bind(f.grade).bind(f.slot)
+        .execute(&f.pool).await.unwrap();
+}
+
 async fn activity_persistence_snapshot(f: &Fixture) -> Value {
     sqlx::query_scalar(
         "SELECT jsonb_build_object(
@@ -1297,7 +1313,7 @@ async fn curriculum_current_activity_warns_only_for_same_stable_current_revision
         .all(|r| !r.has_newer_current_version));
     let current =
         activity_revision(&f, activity, "กิจกรรมใหม่", today, VersionStatus::Published).await;
-    // Both published activity revisions remain selectable, including in the same grade/term.
+    // All published metadata remains available, but only current is selectable for a new tuple.
     let options = workspaces::curriculum_management_options(
         &f.pool,
         f.level,
@@ -1309,21 +1325,24 @@ async fn curriculum_current_activity_warns_only_for_same_stable_current_revision
     .await
     .unwrap();
     for version in [&old, &current] {
-        assert!(
+        assert_eq!(
             options
                 .catalog_versions
                 .iter()
                 .find(|option| option.id == version.id)
                 .unwrap()
-                .selectable_for_new_requirement
+                .selectable_for_new_requirement,
+            version.id == current.id,
         );
     }
+    let mut current_row = activity_row(&f, current.id);
+    current_row.term_slot_id = initial.term_slots[1].id;
     let saved = save(
         &f,
         vec![
             row(&f, f.v1.id),
             activity_row(&f, old.id),
-            activity_row(&f, current.id),
+            current_row,
             activity_row(&f, independent.id),
         ],
     )
@@ -1423,7 +1442,17 @@ async fn curriculum_current_activity_selection_excludes_unavailable_and_prioriti
                 .is_empty()
         );
     }
-    // Future and old published activity options still use the existing addition policy.
+    // Controlled predecessor-shaped pins preserve warning coverage without admitting new old/future tuples.
+    save(&f, vec![activity_row(&f, v1.id)]).await.unwrap();
+    for version in [&future, &earlier, &future_only] {
+        let before = activity_persistence_snapshot(&f).await;
+        assert!(matches!(
+            save(&f, vec![activity_row(&f, version.id)]).await,
+            Err(school_errors::AppError::Conflict(_))
+        ));
+        assert_eq!(before, activity_persistence_snapshot(&f).await);
+        seed_existing_activity(&f, version.id).await;
+    }
     let saved = save(
         &f,
         vec![
@@ -1466,12 +1495,16 @@ async fn curriculum_current_activity_selection_excludes_unavailable_and_prioriti
                 .unwrap();
         assert_eq!(selected[&activity].id, highest_same_day.id);
     }
+    // This same-day legacy duplicate existed before current-only activity admission.
+    seed_existing_activity(&f, same_day.id).await;
+    let mut current_row = activity_row(&f, highest_same_day.id);
+    current_row.term_slot_id = saved.term_slots[1].id;
     let saved = save(
         &f,
         vec![
             activity_row(&f, v1.id),
             activity_row(&f, same_day.id),
-            activity_row(&f, highest_same_day.id),
+            current_row,
             activity_row(&f, future_only.id),
         ],
     )
