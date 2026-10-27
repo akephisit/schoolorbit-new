@@ -7233,3 +7233,6 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
     assert_eq!(course.credit, "1.00");
     assert!(course.curriculum_course_requirement_id.is_some());
 }
+
+#[path = "bulk_group_setup_tests.rs"]
+mod bulk_group_setup_tests;

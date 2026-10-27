@@ -38,6 +38,35 @@ const QUALIFIED_GROUP_COLUMNS: &str = r#"
     learning_group.created_at, learning_group.updated_at
 "#;
 
+// Multiple-room groups use their first academic room as an ordering anchor.
+// Numeric tokens compare by significant digit count then digits, without casts
+// or locale configuration. Persisted snapshots keep their existing order.
+const GROUP_ROOM_ORDER_JOIN: &str = r#"
+    LEFT JOIN LATERAL (
+        SELECT room.id AS homeroom_id,
+               (CASE grade.level_type WHEN 'kindergarten' THEN 100 WHEN 'primary' THEN 200
+                    WHEN 'secondary' THEN 300 ELSE 400 END + grade.year) AS level_order,
+               (SELECT array_agg(
+                   CASE WHEN token[1] ~ '^[0-9]+$'
+                       THEN '0' || lpad(length(ltrim(token[1], '0'))::text, 3, '0')
+                                || ltrim(token[1], '0')
+                       ELSE '1' || lower(token[1]) END COLLATE "C" ORDER BY ordinal)
+                FROM regexp_matches(COALESCE(NULLIF(room.room_number, ''), room.name),
+                     '[0-9]+|[^0-9]+', 'g') WITH ORDINALITY AS tokens(token, ordinal)
+               ) AS natural_room
+        FROM learning_group_homerooms coverage
+        JOIN homerooms room ON room.id = coverage.homeroom_id
+        JOIN grade_levels grade ON grade.id = room.grade_level_id
+        WHERE coverage.learning_group_id = learning_group.id
+        ORDER BY level_order NULLS LAST, natural_room COLLATE "C" NULLS LAST,
+                 lower(room.name) COLLATE "C", room.id
+        LIMIT 1
+    ) room_order ON TRUE
+"#;
+const GROUP_ROOM_ORDER: &str = r#"room_order.homeroom_id IS NULL,
+    room_order.level_order NULLS LAST, room_order.natural_room COLLATE "C" NULLS LAST,
+    lower(learning_group.name) COLLATE "C", learning_group.id"#;
+
 #[derive(Debug, sqlx::FromRow)]
 struct GroupLockRow {
     id: Uuid,
@@ -206,8 +235,9 @@ pub async fn list_on_connection(
     offering_id: Uuid,
 ) -> Result<Vec<LearningGroup>, AppError> {
     let sql = format!(
-        "SELECT {GROUP_COLUMNS} FROM learning_groups WHERE learning_offering_id = $1 \
-         ORDER BY code, id LIMIT 500"
+        "SELECT {QUALIFIED_GROUP_COLUMNS} FROM learning_groups learning_group \
+         {GROUP_ROOM_ORDER_JOIN} WHERE learning_group.learning_offering_id = $1 \
+         ORDER BY {GROUP_ROOM_ORDER} LIMIT 500"
     );
     let rows: Vec<LearningGroupRow> = DbSession::new(connection)
         .query_as(
@@ -215,6 +245,26 @@ pub async fn list_on_connection(
             sqlx::AssertSqlSafe(sql),
         )
         .bind(offering_id)
+        .fetch_all()
+        .await?;
+    hydrate_many(connection, rows).await
+}
+
+/// Batch hydration preserves the authoritative academic-room list order.
+pub(super) async fn get_many_on_connection(
+    connection: &mut sqlx::PgConnection,
+    ids: &[Uuid],
+) -> Result<Vec<LearningGroup>, AppError> {
+    let sql = format!(
+        "SELECT {QUALIFIED_GROUP_COLUMNS} FROM learning_groups learning_group \
+        {GROUP_ROOM_ORDER_JOIN} WHERE learning_group.id=ANY($1) ORDER BY {GROUP_ROOM_ORDER}"
+    );
+    let rows = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.groups.get_many_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(ids)
         .fetch_all()
         .await?;
     hydrate_many(connection, rows).await
@@ -243,6 +293,7 @@ pub async fn list_for_term_on_connection(
         "SELECT {QUALIFIED_GROUP_COLUMNS} \
          FROM learning_groups learning_group \
          JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id \
+         {GROUP_ROOM_ORDER_JOIN} \
          WHERE learning_group.academic_term_id = $1 \
            AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR EXISTS (\
                SELECT 1 FROM learning_groups assigned_group \
@@ -251,7 +302,7 @@ pub async fn list_for_term_on_connection(
                WHERE assigned_group.learning_offering_id = offering.id \
                  AND teacher.teacher_id = $4\
            )) \
-         ORDER BY learning_group.code, learning_group.id \
+         ORDER BY {GROUP_ROOM_ORDER} \
          LIMIT $5"
     );
     let rows: Vec<LearningGroupRow> = DbSession::new(connection)

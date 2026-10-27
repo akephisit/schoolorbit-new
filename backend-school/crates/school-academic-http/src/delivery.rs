@@ -1,3 +1,4 @@
+pub mod bulk_group_setup_handlers;
 pub mod handlers;
 pub mod version_handlers;
 
@@ -43,6 +44,14 @@ pub fn routes() -> Router<AcademicHttpState> {
         .route(
             "/offerings/{id}/groups",
             get(handlers::list_groups).post(handlers::create_group),
+        )
+        .route(
+            "/offerings/{id}/groups/bulk-setup/preview",
+            post(bulk_group_setup_handlers::preview_bulk_group_setup),
+        )
+        .route(
+            "/offerings/{id}/groups/bulk-setup",
+            put(bulk_group_setup_handlers::apply_bulk_group_setup),
         )
         .route("/learning-groups", get(handlers::list_groups_for_term))
         .route(

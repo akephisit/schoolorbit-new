@@ -5,6 +5,7 @@ use school_academic_core::ports::PlacementRosterPort;
 use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct RoomRosterTracking;
@@ -20,13 +21,41 @@ impl PlacementRosterPort for RoomRosterTracking {
     }
 }
 
-const TRACKING_SELECT: &str = r#"SELECT COALESCE(config.mode,'manual') AS mode, config.effective_from,
+const TRACKING_COLUMNS: &str = r#"COALESCE(config.mode,'manual') AS mode, config.effective_from,
     g.row_version AS group_row_version, GREATEST(t.start_date,o.starts_on) AS starts_on,
-    LEAST(COALESCE(t.closed_on,t.planned_end_date,y.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,y.end_date))) AS ends_on
-    FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
+    LEAST(COALESCE(t.closed_on,t.planned_end_date,y.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,y.end_date))) AS ends_on"#;
+const TRACKING_FROM: &str = r#"FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
     JOIN learning_offerings o ON o.id=g.learning_offering_id
     JOIN academic_years y ON y.id=g.academic_year_id
-    LEFT JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id WHERE g.id=$1"#;
+    LEFT JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id"#;
+
+#[derive(sqlx::FromRow)]
+struct TrackingRow {
+    learning_group_id: Uuid,
+    #[sqlx(flatten)]
+    tracking: LearningGroupRosterTracking,
+}
+
+pub(super) async fn get_many_on_connection(
+    connection: &mut sqlx::PgConnection,
+    ids: &[Uuid],
+) -> Result<HashMap<Uuid, LearningGroupRosterTracking>, AppError> {
+    let sql = format!(
+        "SELECT g.id AS learning_group_id,{TRACKING_COLUMNS} {TRACKING_FROM} WHERE g.id=ANY($1)"
+    );
+    let rows: Vec<TrackingRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.roster_tracking.get_many_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(ids)
+        .fetch_all()
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.learning_group_id, row.tracking))
+        .collect())
+}
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningGroupRosterTracking, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -44,7 +73,9 @@ pub async fn get_on_connection(
     DbSession::new(connection)
         .query_as(
             "academic_delivery.services.roster_tracking.get_on_connection",
-            TRACKING_SELECT,
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {TRACKING_COLUMNS} {TRACKING_FROM} WHERE g.id=$1"
+            )),
         )
         .bind(id)
         .fetch_optional()
@@ -70,6 +101,105 @@ fn validate(
             "เลือกวันเริ่มติดตามตั้งแต่วันนี้ ภายในช่วงเปิดสอนของกลุ่ม".into(),
         )),
     }
+}
+
+/// Shared authoritative validation for tracking policy changes. This never rebuilds memberships.
+pub(super) async fn validate_configuration(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    offering: Uuid,
+    mode: RosterTrackingMode,
+    effective_from: Option<NaiveDate>,
+) -> Result<(), AppError> {
+    let contexts = get_many_on_connection(connection, &[id]).await?;
+    if contexts.is_empty() {
+        return Err(AppError::NotFound("ไม่พบกลุ่มเรียน".into()));
+    }
+    let conflicts =
+        configuration_conflicts(connection, offering, &contexts, mode, effective_from).await?;
+    if let Some(error) = conflicts.into_values().next() {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Evaluate the same date/source/member policy for a bounded set without per-group queries.
+pub(super) async fn configuration_conflicts(
+    connection: &mut sqlx::PgConnection,
+    offering: Uuid,
+    contexts: &HashMap<Uuid, LearningGroupRosterTracking>,
+    mode: RosterTrackingMode,
+    effective_from: Option<NaiveDate>,
+) -> Result<HashMap<Uuid, AppError>, AppError> {
+    let today: NaiveDate = DbSession::new(connection)
+        .scalar(
+            "academic_delivery.services.roster_tracking.configuration_conflicts",
+            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
+        )
+        .fetch_one()
+        .await?;
+    let mut conflicts = HashMap::new();
+    for (id, context) in contexts {
+        if let Err(AppError::ValidationError(reason)) = validate(
+            mode,
+            effective_from,
+            context.starts_on,
+            context.ends_on,
+            today,
+        ) {
+            conflicts.insert(*id, AppError::ValidationError(reason));
+        }
+    }
+    if mode == RosterTrackingMode::Homeroom {
+        let ids: Vec<Uuid> = contexts.keys().copied().collect();
+        let rows: Vec<(Uuid, bool, bool)> = DbSession::new(connection).query_as("academic_delivery.services.roster_tracking.configuration_conflicts", r#"
+            SELECT g.id,
+                EXISTS(SELECT 1 FROM learning_group_homerooms WHERE learning_group_id=g.id)
+                AND NOT EXISTS(SELECT 1 FROM activity_offering_details WHERE learning_offering_id=$2 AND registration_type='self') AS valid_source,
+                EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active'
+                    AND NOT EXISTS(SELECT 1 FROM homeroom_placements p
+                        JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=g.id
+                        JOIN student_academic_years sy ON sy.id=p.student_academic_year_id AND sy.status IN ('active','planned')
+                        JOIN academic_years y ON y.id=sy.academic_year_id
+                        JOIN users u ON u.id=sy.student_id AND u.status='active'
+                        WHERE p.student_academic_year_id=m.student_academic_year_id
+                            AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
+                            AND p.end_date IS NULL AND p.start_date<=LEAST(COALESCE(t.closed_on,t.planned_end_date,ay.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,ay.end_date))))) AS extra_members
+            FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
+            JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
+            WHERE g.id=ANY($1) AND o.id=$2
+        "#).bind(&ids).bind(offering).fetch_all().await?;
+        for (id, valid_source, extra_members) in rows {
+            if !valid_source {
+                conflicts.insert(
+                    id,
+                    AppError::ValidationError(
+                        "กำหนดห้องต้นทางก่อน และใช้จัดรายชื่อเองสำหรับกิจกรรมสมัครด้วยตนเอง".into(),
+                    ),
+                );
+            } else if extra_members {
+                conflicts.insert(
+                    id,
+                    AppError::Conflict(
+                        "รายชื่อปัจจุบันไม่ตรงกับนักเรียนที่พร้อมเรียนในห้องต้นทาง กรุณาตรวจรายชื่อก่อนเปิดติดตามอัตโนมัติ"
+                            .into(),
+                    ),
+                );
+            }
+        }
+    }
+    Ok(conflicts)
+}
+
+pub(super) async fn save_configurations(
+    connection: &mut sqlx::PgConnection,
+    ids: &[Uuid],
+    mode: RosterTrackingMode,
+    effective_from: Option<NaiveDate>,
+) -> Result<(), AppError> {
+    DbSession::new(connection).query("academic_delivery.services.roster_tracking.save_configurations", "INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) SELECT id,$2,$3 FROM unnest($1::uuid[]) id ON CONFLICT(learning_group_id) DO UPDATE SET mode=EXCLUDED.mode,effective_from=EXCLUDED.effective_from")
+        .bind(ids).bind(mode).bind(effective_from).execute().await?;
+    Ok(())
 }
 
 pub async fn update(
@@ -112,54 +242,8 @@ pub async fn update(
             "กลุ่มเรียนเปลี่ยนแล้วหรือปิดใช้งาน กรุณาโหลดใหม่".into(),
         ));
     }
-    let context: LearningGroupRosterTracking = DbSession::new(&mut *tx)
-        .query_as(
-            "academic_delivery.services.roster_tracking.update",
-            TRACKING_SELECT,
-        )
-        .bind(id)
-        .fetch_one()
-        .await?;
-    let today: NaiveDate = DbSession::new(&mut *tx)
-        .scalar(
-            "academic_delivery.services.roster_tracking.update",
-            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
-        )
-        .fetch_one()
-        .await?;
-    validate(
-        request.mode,
-        request.effective_from,
-        context.starts_on,
-        context.ends_on,
-        today,
-    )?;
-    if request.mode == RosterTrackingMode::Homeroom {
-        let valid: bool=DbSession::new(&mut *tx).scalar("academic_delivery.services.roster_tracking.update", r#"SELECT EXISTS(SELECT 1 FROM learning_group_homerooms WHERE learning_group_id=$1)
-            AND NOT EXISTS(SELECT 1 FROM activity_offering_details WHERE learning_offering_id=$2 AND registration_type='self_registration')"#)
-            .bind(id).bind(offering).fetch_one().await?;
-        if !valid {
-            return Err(AppError::ValidationError(
-                "กำหนดห้องต้นทางก่อน และใช้จัดรายชื่อเองสำหรับกิจกรรมสมัครด้วยตนเอง".into(),
-            ));
-        }
-        let extra: bool=DbSession::new(&mut *tx).scalar("academic_delivery.services.roster_tracking.update", r#"SELECT EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=$1 AND m.membership_status='active'
-            AND NOT EXISTS(SELECT 1 FROM homeroom_placements p
-                JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=$1
-                JOIN student_academic_years sy ON sy.id=p.student_academic_year_id AND sy.status IN ('active','planned')
-                JOIN academic_years y ON y.id=sy.academic_year_id
-                JOIN users u ON u.id=sy.student_id AND u.status='active'
-                WHERE p.student_academic_year_id=m.student_academic_year_id
-                    AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND p.start_date<=$2))"#)
-            .bind(id).bind(context.ends_on).fetch_one().await?;
-        if extra {
-            return Err(AppError::Conflict(
-                "รายชื่อปัจจุบันไม่ตรงกับนักเรียนที่พร้อมเรียนในห้องต้นทาง กรุณาตรวจรายชื่อก่อนเปิดติดตามอัตโนมัติ".into(),
-            ));
-        }
-    }
-    DbSession::new(&mut *tx).query("academic_delivery.services.roster_tracking.update", "INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) VALUES($1,$2,$3) ON CONFLICT(learning_group_id) DO UPDATE SET mode=EXCLUDED.mode,effective_from=EXCLUDED.effective_from")
-        .bind(id).bind(request.mode).bind(request.effective_from).execute().await?;
+    validate_configuration(&mut tx, id, offering, request.mode, request.effective_from).await?;
+    save_configurations(&mut tx, &[id], request.mode, request.effective_from).await?;
     if request.mode == RosterTrackingMode::Homeroom && roster == "published" {
         sync_group(&mut tx, actor, id, None).await?;
     }

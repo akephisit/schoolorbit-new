@@ -2,8 +2,18 @@
 	import type { DeliveryVersion } from '#lib/api/learning-delivery.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	let { version, offeringId }: { version: DeliveryVersion; offeringId: string } = $props();
+	let {
+		version,
+		offeringId,
+		orderedGroupIds = []
+	}: { version: DeliveryVersion; offeringId: string; orderedGroupIds?: string[] } = $props();
 	const offering = $derived(version.snapshot.offerings.find((item) => item.id === offeringId));
+	const orderedGroups = $derived.by(() => {
+		const rank = new Map(orderedGroupIds.map((id, index) => [id, index]));
+		return [...(offering?.groups ?? [])].sort(
+			(left, right) => (rank.get(left.id) ?? Infinity) - (rank.get(right.id) ?? Infinity)
+		);
+	});
 	const roleNames = { primary: 'ครูหลัก', secondary: 'ครูร่วม', assistant: 'ครูผู้ช่วย' };
 </script>
 
@@ -33,7 +43,7 @@
 			ให้สร้างรุ่นเปิดสอนใหม่จากหน้าภาพรวม
 		</p>
 		<div class="grid gap-3 md:grid-cols-2">
-			{#each offering.groups as group (group.id)}
+			{#each orderedGroups as group (group.id)}
 				<article class="rounded-lg border p-4">
 					<h3 class="font-medium">{group.code} · {group.name}</h3>
 					{#if group.description}<p class="mt-1 text-sm text-muted-foreground">

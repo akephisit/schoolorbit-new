@@ -706,6 +706,8 @@ use utoipa::OpenApi;
         school_academic_http::delivery::handlers::publish_offering,
         school_academic_http::delivery::handlers::list_groups_for_term,
         school_academic_http::delivery::handlers::list_groups,
+        school_academic_http::delivery::bulk_group_setup_handlers::preview_bulk_group_setup,
+        school_academic_http::delivery::bulk_group_setup_handlers::apply_bulk_group_setup,
         school_academic_http::delivery::handlers::create_group,
         school_academic_http::delivery::handlers::get_group,
         school_academic_http::delivery::handlers::update_group,

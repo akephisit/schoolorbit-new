@@ -1609,3 +1609,89 @@ pub struct UpdateRosterTrackingRequest {
     pub effective_from: Option<NaiveDate>,
     pub row_version: i64,
 }
+
+/// Explicit, optimistic target list for one atomic offering setup.
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkGroupSetupRequest {
+    pub delivery_version_id: Uuid,
+    pub delivery_version_row_version: i64,
+    pub groups: Vec<BulkGroupSetupTarget>,
+    pub primary_teacher: Option<BulkGroupSetupPrimaryTeacher>,
+    pub roster_tracking: Option<BulkGroupSetupTrackingInput>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkGroupSetupTarget {
+    pub learning_group_id: Uuid,
+    pub row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkGroupSetupPrimaryTeacher {
+    pub teacher_id: Uuid,
+    #[serde(default)]
+    pub replace_existing_primary: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BulkGroupSetupTrackingInput {
+    pub mode: RosterTrackingMode,
+    pub effective_from: Option<NaiveDate>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BulkGroupSetupTeacherAction {
+    Unchanged,
+    Set,
+    Replace,
+    PreserveExisting,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGroupSetupPreviewTarget {
+    pub group: LearningGroup,
+    pub roster_tracking: LearningGroupRosterTracking,
+    pub primary_teacher_action: BulkGroupSetupTeacherAction,
+    pub roster_tracking_changed: bool,
+    pub blocked_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGroupSetupPreview {
+    pub delivery_version_row_version: i64,
+    pub targets: Vec<BulkGroupSetupPreviewTarget>,
+    pub changed_count: usize,
+    pub skipped_count: usize,
+    pub blocked_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGroupSetupRosterTracking {
+    pub learning_group_id: Uuid,
+    pub tracking: LearningGroupRosterTracking,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BulkGroupSetupResponse {
+    pub delivery_version_row_version: i64,
+    pub groups: Vec<LearningGroup>,
+    pub roster_tracking: Vec<BulkGroupSetupRosterTracking>,
+}
