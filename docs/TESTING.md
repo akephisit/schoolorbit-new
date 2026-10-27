@@ -886,7 +886,8 @@ individual-difference pages, full-content search, stable command deletion and re
 Bulk setup covers explicit targets, skipping existing primary teachers by default, explicit
 replacement while retaining co-teachers, roster mode selection, authoritative previews, one atomic
 apply request, pending dismissal guards, blocked targets, fresh revisions after a conflict and
-late options after closing. Mobile/desktop light/dark screenshots are saved in each test's output
+fresh opening data after individual edits, preparation retry/cancellation and late options after
+closing. Mobile/desktop light/dark screenshots are saved in each test's output
 directory. Browser interception verifies UI behavior; database atomicity, scope authorization and
 canonical grade/room ordering require the Delivery service fixtures above.
 

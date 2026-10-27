@@ -1147,7 +1147,7 @@ for (const grouped of [false, true]) {
 		);
 		await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
 		await page.getByRole('button', { name: /เพิ่มรายการเอง/ }).click();
-		await page.getByRole('dialog').getByRole('button', { name: 'รายวิชา', exact: true }).click();
+		await page.getByRole('dialog').getByRole('combobox', { name: 'ประเภท', exact: true }).click();
 		await page.getByRole('option', { name: 'กิจกรรมพัฒนาผู้เรียน', exact: true }).click();
 		for (const [label, option] of [
 			['เลือกกิจกรรม', 'CLUB · ชุมนุม'],
@@ -1578,7 +1578,7 @@ test('activity preparation preserves server-owned existing group names on restor
 	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
-	await dialog.getByRole('button', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
 	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();
 	const group = dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' });
 	await expect(group).toHaveValue(existingName);
@@ -1597,7 +1597,7 @@ test('curriculum synchronized activation can explicitly create its reviewed home
 	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
 	await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม ชุมนุม/ })).toBeVisible();
 	await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
-	await page.getByRole('button', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
+	await page.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
 	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();
 	await page.getByRole('button', { name: 'เปิดใช้งานกิจกรรม', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -1686,7 +1686,7 @@ for (const viewport of [
 			const dialog = page.getByRole('dialog', { name: 'เพิ่ม/ปรับรายการสอน', exact: true });
 			await expect(dialog).toBeVisible();
 			await expect(dialog.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeVisible();
-			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
 			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
 			await page.getByRole('combobox').filter({ hasText: 'เลือกรายวิชาหรือกิจกรรม' }).click();
 			await page.getByRole('option', { name: /ค21101/ }).click();
@@ -1858,7 +1858,7 @@ for (const viewport of [
 				path: `/tmp/delivery-dialog-add-${viewport.width}-${dark ? 'dark' : 'light'}.png`
 			});
 			await formBody.evaluate((element) => (element.scrollTop = 0));
-			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
 			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
 			const picker = page.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม', exact: true });
 			await picker.click();
@@ -1882,7 +1882,7 @@ for (const viewport of [
 			await page.getByRole('option', { name: /รักการอ่าน/ }).click();
 			await expect(picker).toHaveText('รักการอ่าน');
 			await expect(page.getByLabel('คาบที่จัดจริงต่อสัปดาห์')).toHaveAttribute('min', '1');
-			await page.getByRole('button', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
+			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
 			await page.getByRole('option', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true }).click();
 			const activityPicker = page.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true });
 			await activityPicker.click();

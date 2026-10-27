@@ -71,6 +71,7 @@
 
 	let changeRows = $derived(buildLearningDeliveryChangeRows(changeSet.changes, changeSet.items));
 	let detailsOpen = $state(false);
+	let openChangeGroupIds = $state<string[]>([]);
 	let changeSearch = $state('');
 	let changePage = $state(0);
 	let rowPages = $state<Record<string, number>>({});
@@ -424,7 +425,7 @@
 	<header class="border-b border-amber-500/20 bg-amber-500/7 p-4 sm:p-5">
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="flex min-w-0 items-start gap-3">
-				<div class="rounded-xl bg-amber-500/15 p-2.5 text-amber-800">
+				<div class="rounded-xl bg-amber-500/15 p-2.5 text-amber-800 dark:text-amber-300">
 					<CalendarClock class="size-5" />
 				</div>
 				<div class="min-w-0">
@@ -443,7 +444,9 @@
 			</div>
 			<div class="shrink-0 rounded-xl border bg-background px-4 py-2 text-end">
 				<p class="text-xs text-muted-foreground">หลังเผยแพร่ เริ่มมีผล</p>
-				<p class="font-medium text-amber-900">{formatDate(changeSet.effectiveFrom)}</p>
+				<p class="font-medium text-amber-900 dark:text-amber-300">
+					{formatDate(changeSet.effectiveFrom)}
+				</p>
 			</div>
 		</div>
 	</header>
@@ -485,186 +488,202 @@
 					</Collapsible.Trigger>
 				</div>
 				<Collapsible.Content class="mt-3 space-y-3">
-					<Label for="delivery-change-search">ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู</Label>
-					<Input
-						id="delivery-change-search"
-						value={changeSearch}
-						oninput={(event) => searchChanges(event.currentTarget.value)}
-						placeholder="ค้นหารายการเปลี่ยนแปลง..."
-					/>
-					<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
-						{#each visibleChanges.items as group (group.id)}
-							<Collapsible.Root class="rounded-xl border" data-testid="delivery-change-offering">
-								<Collapsible.Trigger>
-									{#snippet child({ props })}<Button
-											variant="ghost"
-											class="h-auto w-full justify-between gap-3 p-3 text-start whitespace-normal"
-											{...props}
-										>
-											<span class="min-w-0 break-words">{group.label}</span><span
-												class="shrink-0 text-xs text-muted-foreground"
-												>{group.rows.length} รายการ · ดูรายละเอียด</span
+					{#if detailsOpen}
+						<Label for="delivery-change-search">ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู</Label>
+						<Input
+							id="delivery-change-search"
+							value={changeSearch}
+							oninput={(event) => searchChanges(event.currentTarget.value)}
+							placeholder="ค้นหารายการเปลี่ยนแปลง..."
+						/>
+						<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
+							{#each visibleChanges.items as group (group.id)}
+								<Collapsible.Root
+									class="rounded-xl border"
+									data-testid="delivery-change-offering"
+									open={openChangeGroupIds.includes(group.id)}
+									onOpenChange={(open) =>
+										(openChangeGroupIds = open
+											? [...openChangeGroupIds, group.id]
+											: openChangeGroupIds.filter((id) => id !== group.id))}
+								>
+									<Collapsible.Trigger>
+										{#snippet child({ props })}<Button
+												variant="ghost"
+												class="h-auto w-full justify-between gap-3 p-3 text-start whitespace-normal"
+												{...props}
 											>
-										</Button>{/snippet}
-								</Collapsible.Trigger>
-								<Collapsible.Content class="space-y-3 border-t p-3">
-									{@const rows = deliveryChangePage(group.rows, rowPages[group.id] ?? 0)}
-									{#each rows.items as row (row.resourceId)}
-										{@const firstChange = row.changes[0]}
-										{@const entries = deliveryChangePage(
-											[
-												...row.changes.map((change) => ({ kind: 'change' as const, change })),
-												...row.items.map((item) => ({ kind: 'item' as const, item }))
-											],
-											entryPages[row.resourceId] ?? 0
-										)}
-										<div class="rounded-xl border p-3">
-											<div class="flex flex-wrap items-start justify-between gap-2">
-												<div class="min-w-0 flex-1 space-y-1">
-													{#if firstChange}
-														<p class="font-medium">
-															{firstChange.kind === 'added'
-																? 'เพิ่ม'
-																: firstChange.kind === 'removed'
-																	? 'หยุด'
-																	: 'เปลี่ยน'}
-															{firstChange.label}
-														</p>
+												<span class="min-w-0 break-words">{group.label}</span><span
+													class="shrink-0 text-xs text-muted-foreground"
+													>{group.rows.length} รายการ · ดูรายละเอียด</span
+												>
+											</Button>{/snippet}
+									</Collapsible.Trigger>
+									<Collapsible.Content class="space-y-3 border-t p-3">
+										{#if openChangeGroupIds.includes(group.id)}
+											{@const rows = deliveryChangePage(group.rows, rowPages[group.id] ?? 0)}
+											{#each rows.items as row (row.resourceId)}
+												{@const firstChange = row.changes[0]}
+												{@const entries = deliveryChangePage(
+													[
+														...row.changes.map((change) => ({ kind: 'change' as const, change })),
+														...row.items.map((item) => ({ kind: 'item' as const, item }))
+													],
+													entryPages[row.resourceId] ?? 0
+												)}
+												<div class="rounded-xl border p-3">
+													<div class="flex flex-wrap items-start justify-between gap-2">
+														<div class="min-w-0 flex-1 space-y-1">
+															{#if firstChange}
+																<p class="font-medium">
+																	{firstChange.kind === 'added'
+																		? 'เพิ่ม'
+																		: firstChange.kind === 'removed'
+																			? 'หยุด'
+																			: 'เปลี่ยน'}
+																	{firstChange.label}
+																</p>
+															{/if}
+															{#each entries.items as entry, index (`${entry.kind}:${index}`)}
+																{#if entry.kind === 'change'}
+																	<p class="text-sm break-words text-muted-foreground">
+																		{#if entry.change.label !== firstChange?.label}{entry.change
+																				.label} ·
+																		{/if}
+																		{entry.change.field}: {entry.change.before ?? 'ยังไม่มี'} → {entry
+																			.change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
+																	</p>
+																{:else}
+																	<p class="text-sm font-medium">{itemTitle(entry.item)}</p>
+																	<p class="text-sm break-words text-muted-foreground">
+																		{itemDescription(entry.item)}
+																	</p>
+																{/if}
+															{/each}
+														</div>
+														<div class="flex max-w-full flex-wrap items-center gap-1">
+															{#each entries.items.flatMap( (entry) => (entry.kind === 'item' ? [entry.item] : []) ) as item (item.id)}
+																{#if item.actionKind === 'add_offering'}
+																	<Button
+																		href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
+																		data-sveltekit-preload-data="tap"
+																		size="sm"
+																		variant="ghost"
+																	>
+																		{changeSet.status === 'draft'
+																			? 'จัดกลุ่มและครู'
+																			: 'ดูรายละเอียด'}
+																		<ExternalLink class="size-3.5" />
+																	</Button>
+																{/if}
+																{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
+																	<Button
+																		size="sm"
+																		variant="ghost"
+																		onclick={() => showHandoff(item.id)}
+																	>
+																		จัดการคาบที่ได้รับผลกระทบ
+																		<ExternalLink class="size-3.5" />
+																	</Button>
+																{/if}
+																{#if canManage && changeSet.status === 'draft'}
+																	<Button
+																		size={row.items.length > 1 ? 'sm' : 'icon'}
+																		variant="ghost"
+																		disabled={deletingItemId !== ''}
+																		onclick={() => removeItem(item.id, item.rowVersion)}
+																		aria-label={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+																		title={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+																	>
+																		<Trash2 class="size-4 shrink-0" />
+																		{#if row.items.length > 1}
+																			<span class="text-wrap text-left">
+																				{itemTitle(item)}{'teacherLabel' in item
+																					? ` · ${item.teacherLabel}`
+																					: ''}
+																			</span>
+																		{/if}
+																	</Button>
+																{/if}
+															{/each}
+														</div>
+													</div>
+													{#if entries.pageCount > 1}
+														<div
+															class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+															aria-label="หน้ารายละเอียดการเปลี่ยนแปลง"
+														>
+															<Button
+																size="sm"
+																variant="outline"
+																disabled={entries.page === 0}
+																onclick={() => (entryPages[row.resourceId] = entries.page - 1)}
+																>รายละเอียดก่อนหน้า</Button
+															>
+															<span>{entries.page + 1}/{entries.pageCount}</span>
+															<Button
+																size="sm"
+																variant="outline"
+																disabled={entries.page + 1 === entries.pageCount}
+																onclick={() => (entryPages[row.resourceId] = entries.page + 1)}
+																>รายละเอียดถัดไป</Button
+															>
+														</div>
 													{/if}
-													{#each entries.items as entry, index (`${entry.kind}:${index}`)}
-														{#if entry.kind === 'change'}
-															<p class="text-sm break-words text-muted-foreground">
-																{#if entry.change.label !== firstChange?.label}{entry.change.label} ·
-																{/if}
-																{entry.change.field}: {entry.change.before ?? 'ยังไม่มี'} → {entry
-																	.change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
-															</p>
-														{:else}
-															<p class="text-sm font-medium">{itemTitle(entry.item)}</p>
-															<p class="text-sm break-words text-muted-foreground">
-																{itemDescription(entry.item)}
-															</p>
-														{/if}
-													{/each}
 												</div>
-												<div class="flex max-w-full flex-wrap items-center gap-1">
-													{#each entries.items.flatMap( (entry) => (entry.kind === 'item' ? [entry.item] : []) ) as item (item.id)}
-														{#if item.actionKind === 'add_offering'}
-															<Button
-																href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
-																data-sveltekit-preload-data="tap"
-																size="sm"
-																variant="ghost"
-															>
-																{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
-																<ExternalLink class="size-3.5" />
-															</Button>
-														{/if}
-														{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
-															<Button
-																size="sm"
-																variant="ghost"
-																onclick={() => showHandoff(item.id)}
-															>
-																จัดการคาบที่ได้รับผลกระทบ
-																<ExternalLink class="size-3.5" />
-															</Button>
-														{/if}
-														{#if canManage && changeSet.status === 'draft'}
-															<Button
-																size={row.items.length > 1 ? 'sm' : 'icon'}
-																variant="ghost"
-																disabled={deletingItemId !== ''}
-																onclick={() => removeItem(item.id, item.rowVersion)}
-																aria-label={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
-																title={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
-															>
-																<Trash2 class="size-4 shrink-0" />
-																{#if row.items.length > 1}
-																	<span class="text-wrap text-left">
-																		{itemTitle(item)}{'teacherLabel' in item
-																			? ` · ${item.teacherLabel}`
-																			: ''}
-																	</span>
-																{/if}
-															</Button>
-														{/if}
-													{/each}
-												</div>
-											</div>
-											{#if entries.pageCount > 1}
+											{/each}
+											{#if rows.pageCount > 1}
 												<div
-													class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-													aria-label="หน้ารายละเอียดการเปลี่ยนแปลง"
+													class="flex flex-wrap items-center justify-end gap-2 text-sm"
+													aria-label={`หน้ากลุ่ม ${group.label}`}
 												>
 													<Button
 														size="sm"
 														variant="outline"
-														disabled={entries.page === 0}
-														onclick={() => (entryPages[row.resourceId] = entries.page - 1)}
-														>รายละเอียดก่อนหน้า</Button
-													>
-													<span>{entries.page + 1}/{entries.pageCount}</span>
-													<Button
+														disabled={rows.page === 0}
+														onclick={() => (rowPages[group.id] = rows.page - 1)}
+														>กลุ่มก่อนหน้า</Button
+													><span>{rows.page + 1}/{rows.pageCount}</span><Button
 														size="sm"
 														variant="outline"
-														disabled={entries.page + 1 === entries.pageCount}
-														onclick={() => (entryPages[row.resourceId] = entries.page + 1)}
-														>รายละเอียดถัดไป</Button
+														disabled={rows.page + 1 === rows.pageCount}
+														onclick={() => (rowPages[group.id] = rows.page + 1)}>กลุ่มถัดไป</Button
 													>
 												</div>
 											{/if}
-										</div>
-									{/each}
-									{#if rows.pageCount > 1}
-										<div
-											class="flex flex-wrap items-center justify-end gap-2 text-sm"
-											aria-label={`หน้ากลุ่ม ${group.label}`}
-										>
-											<Button
-												size="sm"
-												variant="outline"
-												disabled={rows.page === 0}
-												onclick={() => (rowPages[group.id] = rows.page - 1)}>กลุ่มก่อนหน้า</Button
-											><span>{rows.page + 1}/{rows.pageCount}</span><Button
-												size="sm"
-												variant="outline"
-												disabled={rows.page + 1 === rows.pageCount}
-												onclick={() => (rowPages[group.id] = rows.page + 1)}>กลุ่มถัดไป</Button
-											>
-										</div>
-									{/if}
-								</Collapsible.Content>
-							</Collapsible.Root>
-						{:else}
-							<p
-								class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
-							>
-								{changeSearch
-									? 'ไม่พบรายการที่ตรงกับการค้นหา'
-									: 'ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู'}
-							</p>
-						{/each}
-					</div>
-					{#if visibleChanges.pageCount > 1}
-						<div
-							class="flex flex-wrap items-center justify-end gap-2 text-sm"
-							aria-label="หน้ารายการเปิดสอนที่เปลี่ยน"
-						>
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={visibleChanges.page === 0}
-								onclick={() => (changePage = visibleChanges.page - 1)}>รายการก่อนหน้า</Button
-							><span
-								>{visibleChanges.page + 1}/{visibleChanges.pageCount} · {visibleChanges.total} รายการ</span
-							><Button
-								size="sm"
-								variant="outline"
-								disabled={visibleChanges.page + 1 === visibleChanges.pageCount}
-								onclick={() => (changePage = visibleChanges.page + 1)}>รายการถัดไป</Button
-							>
+										{/if}
+									</Collapsible.Content>
+								</Collapsible.Root>
+							{:else}
+								<p
+									class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+								>
+									{changeSearch
+										? 'ไม่พบรายการที่ตรงกับการค้นหา'
+										: 'ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู'}
+								</p>
+							{/each}
 						</div>
+						{#if visibleChanges.pageCount > 1}
+							<div
+								class="flex flex-wrap items-center justify-end gap-2 text-sm"
+								aria-label="หน้ารายการเปิดสอนที่เปลี่ยน"
+							>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={visibleChanges.page === 0}
+									onclick={() => (changePage = visibleChanges.page - 1)}>รายการก่อนหน้า</Button
+								><span
+									>{visibleChanges.page + 1}/{visibleChanges.pageCount} · {visibleChanges.total} รายการ</span
+								><Button
+									size="sm"
+									variant="outline"
+									disabled={visibleChanges.page + 1 === visibleChanges.pageCount}
+									onclick={() => (changePage = visibleChanges.page + 1)}>รายการถัดไป</Button
+								>
+							</div>
+						{/if}
 					{/if}
 				</Collapsible.Content>
 			</Collapsible.Root>
@@ -734,13 +753,13 @@
 				<div class="min-h-0 flex-1 overflow-y-auto">
 					<fieldset disabled={savingItem} class="min-w-0 space-y-4">
 						<div class="space-y-2">
-							<Label>ประเภทการเปลี่ยนแปลง</Label>
+							<Label for="delivery-change-action">ประเภทการเปลี่ยนแปลง</Label>
 							<Select.Root
 								type="single"
 								value={action}
 								onValueChange={(value) => resetItemForm(value as ChangeAction)}
 							>
-								<Select.Trigger class="w-full">
+								<Select.Trigger id="delivery-change-action" class="w-full">
 									{action === 'add_course'
 										? 'เพิ่มรายวิชา'
 										: action === 'add_activity'

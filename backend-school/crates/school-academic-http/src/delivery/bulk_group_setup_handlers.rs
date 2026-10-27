@@ -73,22 +73,15 @@ pub async fn apply_bulk_group_setup(
         OfferingAction::Manage,
     )
     .await?;
-    let result =
+    let outcome =
         bulk_group_setup::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
-    let descriptors = school_academic_delivery::services::offerings::signal_descriptors(
-        &context.tenant.pool,
-        &[id],
-    )
-    .await?;
-    for descriptor in descriptors {
-        state.websocket_manager.broadcast_learning_delivery_changed(
-            session.tenant.subdomain.clone(),
-            context.actor.user_id,
-            descriptor.academic_term_id,
-            id,
-            None,
-            descriptor.row_version,
-        );
-    }
-    Ok(Json(ApiResponse::ok(result)).into_response())
+    state.websocket_manager.broadcast_learning_delivery_changed(
+        session.tenant.subdomain.clone(),
+        context.actor.user_id,
+        outcome.signal.academic_term_id,
+        outcome.signal.learning_offering_id,
+        None,
+        outcome.signal.row_version,
+    );
+    Ok(Json(ApiResponse::ok(outcome.response)).into_response())
 }

@@ -5,8 +5,15 @@ use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::{groups, roster_tracking, versions};
+use super::{groups, offerings::LearningOfferingSignalDescriptor, roster_tracking, versions};
 use crate::models::{versions::DeliveryVersionStatus, *};
+
+/// Internal command result; the HTTP envelope serializes only `response`.
+/// Signal evidence is captured under the same offering lock as the accepted setup.
+pub struct BulkGroupSetupOutcome {
+    pub response: BulkGroupSetupResponse,
+    pub signal: LearningOfferingSignalDescriptor,
+}
 
 fn validate_request(request: &BulkGroupSetupRequest) -> Result<(), AppError> {
     super::validate_row_version(request.delivery_version_row_version)?;
@@ -226,7 +233,7 @@ pub async fn apply(
     actor: Uuid,
     offering_id: Uuid,
     request: BulkGroupSetupRequest,
-) -> Result<BulkGroupSetupResponse, AppError> {
+) -> Result<BulkGroupSetupOutcome, AppError> {
     validate_request(&request)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -244,8 +251,8 @@ pub async fn apply(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".into()))?;
     super::require_writable_term(&mut tx, term_id, true).await?;
-    let starts_on: chrono::NaiveDate = DbSession::new(&mut *tx).scalar("academic_delivery.services.bulk_group_setup.apply", "SELECT starts_on FROM learning_offerings WHERE id=$1 AND status IN ('draft','published') FOR UPDATE")
-        .bind(offering_id).fetch_optional().await?.ok_or_else(|| AppError::Conflict("รายการเปิดสอนไม่พร้อมแก้ไข".into()))?;
+    let (starts_on, offering_term_id, offering_row_version): (chrono::NaiveDate, Uuid, i64) = DbSession::new(&mut *tx).query_as("academic_delivery.services.bulk_group_setup.apply", "SELECT starts_on,academic_term_id,row_version FROM learning_offerings WHERE id=$1 AND academic_term_id=$2 AND status IN ('draft','published') FOR UPDATE")
+        .bind(offering_id).bind(term_id).fetch_optional().await?.ok_or_else(|| AppError::Conflict("รายการเปิดสอนไม่พร้อมแก้ไข".into()))?;
     // Verify scope before acquiring any requested group/version locks, then recheck revisions under those locks.
     let scope_version =
         versions::get_version_on_connection(&mut tx, request.delivery_version_id).await?;
@@ -363,10 +370,18 @@ pub async fn apply(
                 .ok_or_else(|| AppError::NotFound("ไม่พบการตั้งค่ารายชื่อของกลุ่มเรียน".into()))?,
         });
     }
+    let outcome = BulkGroupSetupOutcome {
+        response: BulkGroupSetupResponse {
+            delivery_version_row_version,
+            groups: fresh_groups,
+            roster_tracking: tracking,
+        },
+        signal: LearningOfferingSignalDescriptor {
+            learning_offering_id: offering_id,
+            academic_term_id: offering_term_id,
+            row_version: offering_row_version,
+        },
+    };
     tx.commit().await?;
-    Ok(BulkGroupSetupResponse {
-        delivery_version_row_version,
-        groups: fresh_groups,
-        roster_tracking: tracking,
-    })
+    Ok(outcome)
 }

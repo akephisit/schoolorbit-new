@@ -14,7 +14,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
-	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -39,10 +39,12 @@
 		canManage: boolean;
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onApplied: (response: BulkGroupSetupResponse) => void;
-		onReload: () => Promise<void>;
+		onReload: (signal?: AbortSignal) => Promise<void>;
 	} = $props();
 
 	let open = $state(false);
+	let preparing = $state(false);
+	let preparationError = $state('');
 	let trigger = $state<HTMLButtonElement | null>(null);
 	let targets = $state.raw<LearningGroup[]>([]);
 	let versionRowVersion = $state(0);
@@ -68,6 +70,7 @@
 	let session = 0;
 	let disposed = false;
 	const previewRequest = new LatestRequest();
+	const preparationRequest = new LatestRequest();
 	const busy = $derived(previewing || saving || reloading);
 	const context = $derived(`${offering.id}:${version.id}`);
 	const filteredGroups = $derived(
@@ -125,14 +128,16 @@
 		if (!value) {
 			session += 1;
 			previewRequest.abort();
+			preparationRequest.abort();
+			preparing = false;
 		}
 	}
 	async function show() {
-		if (!canManage || busy) return;
+		if (!canManage || busy || preparing) return;
 		const token = ++session;
 		const owner = context;
-		targets = [...groups];
-		versionRowVersion = version.rowVersion;
+		targets = [];
+		versionRowVersion = 0;
 		selectedIds = [];
 		teacherEnabled = false;
 		teacherId = '';
@@ -148,7 +153,25 @@
 		errorMessage = '';
 		open = true;
 		options = null;
-		await loadOptions(token, owner);
+		await prepare(token, owner);
+	}
+	async function prepare(token = session, owner = context) {
+		const ticket = preparationRequest.begin();
+		preparing = true;
+		preparationError = '';
+		try {
+			await onReload(ticket.signal);
+			await tick();
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
+			targets = [...groups];
+			versionRowVersion = version.rowVersion;
+			void loadOptions(token, owner);
+		} catch (error) {
+			if (!isAbortError(error) && current(token, owner))
+				preparationError = error instanceof Error ? error.message : 'เตรียมกลุ่มล่าสุดไม่สำเร็จ';
+		} finally {
+			if (current(token, owner)) preparing = false;
+		}
 	}
 	async function loadOptions(token = session, owner = context) {
 		optionsLoading = true;
@@ -254,12 +277,14 @@
 			open = false;
 			session += 1;
 			previewRequest.abort();
+			preparationRequest.abort();
 		}
 	});
 	onDestroy(() => {
 		disposed = true;
 		session += 1;
 		previewRequest.abort();
+		preparationRequest.abort();
 	});
 </script>
 
@@ -289,203 +314,228 @@
 			>
 		</Dialog.Header>
 		<div class="min-h-0 space-y-5 overflow-y-auto px-1 py-2" data-testid="delivery-bulk-setup-body">
-			<section class="space-y-3">
-				<div class="flex flex-wrap items-center justify-between gap-2">
-					<h3 class="font-medium">
-						กลุ่มเป้าหมาย · เลือก {selectedIds.length}/{targets.length} กลุ่ม
-					</h3>
-					<div class="flex flex-wrap gap-2">
-						<Button
-							size="sm"
-							variant="ghost"
-							disabled={busy}
-							onclick={() => (selectedIds = eligibleGroups.map((group) => group.id))}
-							>เลือกทุกกลุ่มที่แก้ไขได้ในรายการนี้ ({eligibleGroups.length})</Button
-						><Button size="sm" variant="ghost" disabled={busy} onclick={() => (selectedIds = [])}
-							>ล้างที่เลือก</Button
-						>
-					</div>
-				</div>
-				<Label for="bulk-group-search">ค้นหากลุ่มเป้าหมาย</Label><Input
-					id="bulk-group-search"
-					value={search}
-					oninput={(event) => {
-						search = event.currentTarget.value;
-						groupPage = 0;
-					}}
-					disabled={busy}
+			{#if preparing}<PageSkeleton variant="form" />
+			{:else if preparationError}<PageState
+					variant="error"
+					title="เตรียมกลุ่มล่าสุดไม่สำเร็จ"
+					description={preparationError}
+					actionLabel="ลองเตรียมกลุ่มอีกครั้ง"
+					onaction={() => prepare()}
 				/>
-				<div class="divide-y rounded-lg border">
-					{#each visibleGroups.items as group (group.id)}
-						<div class="flex items-start gap-3 p-3">
-							<Checkbox
-								id={`bulk-group-${group.id}`}
-								checked={selectedIds.includes(group.id)}
-								onCheckedChange={(checked) => toggleGroup(group.id, checked)}
-								disabled={busy || !eligible(group)}
-							/><Label
-								for={`bulk-group-${group.id}`}
-								class="min-w-0 flex-1 flex-col items-start gap-1 leading-normal"
-								><span class="break-words">{group.name}</span><span
-									class="text-xs font-normal text-muted-foreground"
-									>{eligible(group)
-										? `ครู ${group.teacherAssignments.length} คน · ห้องต้นทาง ${group.homeroomIds.length} ห้อง`
-										: 'กลุ่มนี้แก้ไขไม่ได้'}</span
-								></Label
-							>
-						</div>
-					{:else}<p class="p-4 text-sm text-muted-foreground">ไม่พบกลุ่มที่ตรงกับการค้นหา</p>{/each}
-				</div>
-				{#if visibleGroups.pageCount > 1}<div class="flex items-center justify-end gap-2 text-sm">
-						<Button
-							size="sm"
-							variant="outline"
-							disabled={busy || visibleGroups.page === 0}
-							onclick={() => (groupPage = visibleGroups.page - 1)}>กลุ่มก่อนหน้า</Button
-						><span>{visibleGroups.page + 1}/{visibleGroups.pageCount}</span><Button
-							size="sm"
-							variant="outline"
-							disabled={busy || visibleGroups.page + 1 === visibleGroups.pageCount}
-							onclick={() => (groupPage = visibleGroups.page + 1)}>กลุ่มถัดไป</Button
-						>
-					</div>{/if}
-			</section>
-			<section class="space-y-3 rounded-lg border p-3">
-				<div class="flex items-center gap-2">
-					<Checkbox id="bulk-teacher-enabled" bind:checked={teacherEnabled} disabled={busy} /><Label
-						for="bulk-teacher-enabled">กำหนดครูหลัก</Label
-					>
-				</div>
-				{#if teacherEnabled}
-					{#if optionsLoading}<p class="text-sm text-muted-foreground">
-							กำลังโหลดตัวเลือกครู
-						</p>{:else if options}<DeliveryOptionCombobox
-							bind:value={teacherId}
-							options={options.teachers.map((teacher) => ({ id: teacher.id, label: teacher.name }))}
-							placeholder="เลือกครูหลักสำหรับกลุ่มเป้าหมาย"
-							searchPlaceholder="ค้นหาครูหลัก..."
-							disabled={busy}
-						/>{:else}<Button
-							size="sm"
-							variant="outline"
-							onclick={() => loadOptions()}
-							disabled={busy}>ลองโหลดตัวเลือกครูอีกครั้ง</Button
-						>{/if}
-					<div class="flex items-start gap-2">
-						<Checkbox
-							id="bulk-replace-primary"
-							bind:checked={replaceExistingPrimary}
-							disabled={busy}
-						/><Label for="bulk-replace-primary" class="leading-normal"
-							>แทนครูหลักเดิมในกลุ่มที่เลือกด้วย</Label
-						>
-					</div>
-					<p class="text-xs text-muted-foreground">
-						{replaceExistingPrimary
-							? 'ครูหลักเดิมจะถูกแทนที่ตามผลตรวจด้านล่าง'
-							: 'ค่าเริ่มต้น: ข้ามกลุ่มที่มีครูหลักแล้ว'} ครูร่วมและผู้ช่วยสอนคงเดิม
-					</p>
-				{/if}
-			</section>
-			<section class="space-y-3 rounded-lg border p-3">
-				<div class="flex items-center gap-2">
-					<Checkbox id="bulk-roster-enabled" bind:checked={rosterEnabled} disabled={busy} /><Label
-						for="bulk-roster-enabled">กำหนดวิธีจัดรายชื่อ</Label
-					>
-				</div>
-				{#if rosterEnabled}
-					<div class="grid gap-3 sm:grid-cols-2">
-						<div class="space-y-2">
-							<p id="bulk-roster-mode-label" class="text-sm font-medium">
-								วิธีจัดรายชื่อสำหรับกลุ่มเป้าหมาย
-							</p>
-							<RadioGroup.Root
-								value={mode}
-								onValueChange={(value) => (mode = value === 'homeroom' ? 'homeroom' : 'manual')}
+			{:else}
+				<section class="space-y-3">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<h3 class="font-medium">
+							กลุ่มเป้าหมาย · เลือก {selectedIds.length}/{targets.length} กลุ่ม
+						</h3>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								size="sm"
+								variant="ghost"
 								disabled={busy}
-								aria-labelledby="bulk-roster-mode-label"
-								class="space-y-2"
+								onclick={() => (selectedIds = eligibleGroups.map((group) => group.id))}
+								>เลือกกลุ่มที่แก้ไขได้ {eligibleGroups.length} กลุ่ม (ทุกหน้า)</Button
+							><Button size="sm" variant="ghost" disabled={busy} onclick={() => (selectedIds = [])}
+								>ล้างที่เลือก</Button
 							>
-								<div class="flex items-center gap-2">
-									<RadioGroup.Item id="bulk-roster-manual" value="manual" /><Label
-										for="bulk-roster-manual">จัดรายชื่อเอง</Label
-									>
-								</div>
-								<div class="flex items-center gap-2">
-									<RadioGroup.Item id="bulk-roster-homeroom" value="homeroom" /><Label
-										for="bulk-roster-homeroom">ติดตามห้องอัตโนมัติ</Label
-									>
-								</div>
-							</RadioGroup.Root>
 						</div>
-						{#if mode === 'homeroom'}<div class="space-y-2">
-								<Label for="bulk-roster-date">วันที่เริ่มติดตาม</Label><DatePicker
-									id="bulk-roster-date"
-									ariaLabel="วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย"
-									bind:value={effectiveFrom}
-									disabled={busy}
-								/>
-							</div>{/if}
 					</div>
-					<p class="text-xs text-muted-foreground">
-						ใช้ห้องต้นทางที่แต่ละกลุ่มกำหนดไว้ การตั้งค่านี้ไม่มีผลกับกลุ่มที่เพิ่มในภายหลัง
-					</p>
-				{/if}
-			</section>
-			{#if previewCurrent && preview}
-				<section class="space-y-3" data-testid="delivery-bulk-preview">
-					<h3 class="font-medium">
-						ผลตรวจ: เปลี่ยน {preview.changedCount} · ข้าม {preview.skippedCount} · ติดข้อจำกัด {preview.blockedCount}
-						กลุ่ม
-					</h3>
-					{#each visiblePreview.items as target (target.group.id)}<article
-							class="space-y-1 rounded-lg border p-3 text-sm"
-						>
-							<h4 class="font-medium">{target.group.name}</h4>
-							<p class="text-muted-foreground">
-								ครูหลักปัจจุบัน: {target.group.teacherAssignments
-									.filter((teacher) => teacher.role === 'primary')
-									.map((teacher) => teacher.displayName)
-									.join(', ') || 'ยังไม่กำหนด'}
-							</p>
-							<p class="text-muted-foreground">
-								วิธีจัดรายชื่อปัจจุบัน: {target.rosterTracking.mode === 'homeroom'
-									? `ติดตามห้องอัตโนมัติ เริ่ม ${target.rosterTracking.effectiveFrom ?? target.rosterTracking.startsOn}`
-									: 'จัดรายชื่อเอง'}
-							</p>
-							<p class="text-muted-foreground">
-								{teacherEnabled ? teacherActions[target.primaryTeacherAction] : 'ครูคงเดิม'} · {target.rosterTrackingChanged
-									? `เปลี่ยนเป็น${mode === 'homeroom' ? 'ติดตามห้องอัตโนมัติ' : 'จัดรายชื่อเอง'}`
-									: 'วิธีจัดรายชื่อคงเดิม'}
-							</p>
-							{#if target.blockedReason}<p class="text-destructive">{target.blockedReason}</p>{/if}
-						</article>{/each}
-					{#if visiblePreview.pageCount > 1}<div
-							class="flex items-center justify-end gap-2 text-sm"
-						>
+					{#if targets.length === 500}<p class="text-sm text-muted-foreground">
+							แสดงสูงสุด 500 กลุ่ม การตั้งค่ามีผลเฉพาะกลุ่มที่เลือกในรายการนี้
+						</p>{/if}
+					<Label for="bulk-group-search">ค้นหากลุ่มเป้าหมาย</Label><Input
+						id="bulk-group-search"
+						value={search}
+						oninput={(event) => {
+							search = event.currentTarget.value;
+							groupPage = 0;
+						}}
+						disabled={busy}
+					/>
+					<div class="divide-y rounded-lg border">
+						{#each visibleGroups.items as group (group.id)}
+							<div class="flex items-start gap-3 p-3">
+								<Checkbox
+									id={`bulk-group-${group.id}`}
+									checked={selectedIds.includes(group.id)}
+									onCheckedChange={(checked) => toggleGroup(group.id, checked)}
+									disabled={busy || !eligible(group)}
+								/><Label
+									for={`bulk-group-${group.id}`}
+									class="min-w-0 flex-1 flex-col items-start gap-1 leading-normal"
+									><span class="break-words">{group.name}</span><span
+										class="text-xs font-normal text-muted-foreground"
+										>{eligible(group)
+											? `ครู ${group.teacherAssignments.length} คน · ห้องต้นทาง ${group.homeroomIds.length} ห้อง`
+											: 'กลุ่มนี้แก้ไขไม่ได้'}</span
+									></Label
+								>
+							</div>
+						{:else}<p class="p-4 text-sm text-muted-foreground">
+								ไม่พบกลุ่มที่ตรงกับการค้นหา
+							</p>{/each}
+					</div>
+					{#if visibleGroups.pageCount > 1}<div class="flex items-center justify-end gap-2 text-sm">
 							<Button
 								size="sm"
 								variant="outline"
-								disabled={busy || visiblePreview.page === 0}
-								onclick={() => (previewPage = visiblePreview.page - 1)}>ผลก่อนหน้า</Button
-							><span>{visiblePreview.page + 1}/{visiblePreview.pageCount}</span><Button
+								disabled={busy || visibleGroups.page === 0}
+								onclick={() => (groupPage = visibleGroups.page - 1)}>กลุ่มก่อนหน้า</Button
+							><span>{visibleGroups.page + 1}/{visibleGroups.pageCount}</span><Button
 								size="sm"
 								variant="outline"
-								disabled={busy || visiblePreview.page + 1 === visiblePreview.pageCount}
-								onclick={() => (previewPage = visiblePreview.page + 1)}>ผลถัดไป</Button
+								disabled={busy || visibleGroups.page + 1 === visibleGroups.pageCount}
+								onclick={() => (groupPage = visibleGroups.page + 1)}>กลุ่มถัดไป</Button
 							>
 						</div>{/if}
+					<p class="text-xs text-muted-foreground">
+						กลุ่มที่ใช้ร่วมกันจะอัปเดตในทุกร่างที่อ้างอิงกลุ่มนั้น
+					</p>
 				</section>
-			{:else if preview}<p class="text-sm text-muted-foreground">
-					การเลือกเปลี่ยนแล้ว กรุณาตรวจผลอีกครั้ง
-				</p>{/if}
-			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-			{#if needsReload}<LoadingButton
-					variant="outline"
-					loading={reloading}
-					loadingLabel="กำลังโหลดกลุ่มล่าสุด"
-					onclick={reload}>โหลดกลุ่มล่าสุด</LoadingButton
-				>{/if}
+				<section class="space-y-3 rounded-lg border p-3">
+					<div class="flex items-center gap-2">
+						<Checkbox
+							id="bulk-teacher-enabled"
+							bind:checked={teacherEnabled}
+							disabled={busy}
+						/><Label for="bulk-teacher-enabled">กำหนดครูหลัก</Label>
+					</div>
+					{#if teacherEnabled}
+						{#if optionsLoading}<p class="text-sm text-muted-foreground">
+								กำลังโหลดตัวเลือกครู
+							</p>{:else if options}<DeliveryOptionCombobox
+								bind:value={teacherId}
+								options={options.teachers.map((teacher) => ({
+									id: teacher.id,
+									label: teacher.name
+								}))}
+								placeholder="เลือกครูหลักสำหรับกลุ่มเป้าหมาย"
+								searchPlaceholder="ค้นหาครูหลัก..."
+								disabled={busy}
+							/>{:else}<Button
+								size="sm"
+								variant="outline"
+								onclick={() => loadOptions()}
+								disabled={busy}>ลองโหลดตัวเลือกครูอีกครั้ง</Button
+							>{/if}
+						<div class="flex items-start gap-2">
+							<Checkbox
+								id="bulk-replace-primary"
+								bind:checked={replaceExistingPrimary}
+								disabled={busy}
+							/><Label for="bulk-replace-primary" class="leading-normal"
+								>แทนครูหลักเดิมในกลุ่มที่เลือกด้วย</Label
+							>
+						</div>
+						<p class="text-xs text-muted-foreground">
+							{replaceExistingPrimary
+								? 'ครูหลักเดิมจะถูกแทนที่ตามผลตรวจด้านล่าง'
+								: 'ค่าเริ่มต้น: ข้ามกลุ่มที่มีครูหลักแล้ว'} ครูร่วมและผู้ช่วยสอนคงเดิม
+						</p>
+					{/if}
+				</section>
+				<section class="space-y-3 rounded-lg border p-3">
+					<div class="flex items-center gap-2">
+						<Checkbox id="bulk-roster-enabled" bind:checked={rosterEnabled} disabled={busy} /><Label
+							for="bulk-roster-enabled">กำหนดวิธีจัดรายชื่อ</Label
+						>
+					</div>
+					{#if rosterEnabled}
+						<div class="grid gap-3 sm:grid-cols-2">
+							<div class="space-y-2">
+								<p id="bulk-roster-mode-label" class="text-sm font-medium">
+									วิธีจัดรายชื่อสำหรับกลุ่มเป้าหมาย
+								</p>
+								<RadioGroup.Root
+									value={mode}
+									onValueChange={(value) => (mode = value === 'homeroom' ? 'homeroom' : 'manual')}
+									disabled={busy}
+									aria-labelledby="bulk-roster-mode-label"
+									class="space-y-2"
+								>
+									<div class="flex items-center gap-2">
+										<RadioGroup.Item id="bulk-roster-manual" value="manual" /><Label
+											for="bulk-roster-manual">จัดรายชื่อเอง</Label
+										>
+									</div>
+									<div class="flex items-center gap-2">
+										<RadioGroup.Item id="bulk-roster-homeroom" value="homeroom" /><Label
+											for="bulk-roster-homeroom">ติดตามห้องอัตโนมัติ</Label
+										>
+									</div>
+								</RadioGroup.Root>
+							</div>
+							{#if mode === 'homeroom'}<div class="space-y-2">
+									<Label for="bulk-roster-date">วันที่เริ่มติดตาม</Label><DatePicker
+										id="bulk-roster-date"
+										ariaLabel="วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย"
+										bind:value={effectiveFrom}
+										disabled={busy}
+									/>
+								</div>{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">
+							ใช้ห้องต้นทางที่แต่ละกลุ่มกำหนดไว้ การตั้งค่านี้ไม่มีผลกับกลุ่มที่เพิ่มในภายหลัง
+						</p>
+					{/if}
+				</section>
+				{#if previewCurrent && preview}
+					<section class="space-y-3" data-testid="delivery-bulk-preview">
+						<h3 class="font-medium">
+							ผลตรวจ: เปลี่ยน {preview.changedCount} · ข้าม {preview.skippedCount} · ติดข้อจำกัด {preview.blockedCount}
+							กลุ่ม
+						</h3>
+						{#each visiblePreview.items as target (target.group.id)}<article
+								class="space-y-1 rounded-lg border p-3 text-sm"
+							>
+								<h4 class="font-medium">{target.group.name}</h4>
+								<p class="text-muted-foreground">
+									ครูหลักปัจจุบัน: {target.group.teacherAssignments
+										.filter((teacher) => teacher.role === 'primary')
+										.map((teacher) => teacher.displayName)
+										.join(', ') || 'ยังไม่กำหนด'}
+								</p>
+								<p class="text-muted-foreground">
+									วิธีจัดรายชื่อปัจจุบัน: {target.rosterTracking.mode === 'homeroom'
+										? `ติดตามห้องอัตโนมัติ เริ่ม ${target.rosterTracking.effectiveFrom ?? target.rosterTracking.startsOn}`
+										: 'จัดรายชื่อเอง'}
+								</p>
+								<p class="text-muted-foreground">
+									{teacherEnabled ? teacherActions[target.primaryTeacherAction] : 'ครูคงเดิม'} · {target.rosterTrackingChanged
+										? `เปลี่ยนเป็น${mode === 'homeroom' ? 'ติดตามห้องอัตโนมัติ' : 'จัดรายชื่อเอง'}`
+										: 'วิธีจัดรายชื่อคงเดิม'}
+								</p>
+								{#if target.blockedReason}<p class="text-destructive">
+										{target.blockedReason}
+									</p>{/if}
+							</article>{/each}
+						{#if visiblePreview.pageCount > 1}<div
+								class="flex items-center justify-end gap-2 text-sm"
+							>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={busy || visiblePreview.page === 0}
+									onclick={() => (previewPage = visiblePreview.page - 1)}>ผลก่อนหน้า</Button
+								><span>{visiblePreview.page + 1}/{visiblePreview.pageCount}</span><Button
+									size="sm"
+									variant="outline"
+									disabled={busy || visiblePreview.page + 1 === visiblePreview.pageCount}
+									onclick={() => (previewPage = visiblePreview.page + 1)}>ผลถัดไป</Button
+								>
+							</div>{/if}
+					</section>
+				{:else if preview}<p class="text-sm text-muted-foreground">
+						การเลือกเปลี่ยนแล้ว กรุณาตรวจผลอีกครั้ง
+					</p>{/if}
+				{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+				{#if needsReload}<LoadingButton
+						variant="outline"
+						loading={reloading}
+						loadingLabel="กำลังโหลดกลุ่มล่าสุด"
+						onclick={reload}>โหลดกลุ่มล่าสุด</LoadingButton
+					>{/if}
+			{/if}
 		</div>
 		<Dialog.Footer class="flex-wrap"
 			><Button variant="outline" disabled={busy} onclick={() => changeOpen(false)}>ยกเลิก</Button
@@ -493,7 +543,12 @@
 				variant="outline"
 				loading={previewing}
 				loadingLabel="กำลังตรวจ"
-				disabled={saving || reloading || !valid || needsReload}
+				disabled={saving ||
+					reloading ||
+					preparing ||
+					Boolean(preparationError) ||
+					!valid ||
+					needsReload}
 				onclick={check}>ตรวจการตั้งค่า</LoadingButton
 			><LoadingButton
 				loading={saving}

@@ -422,14 +422,14 @@
 			deliveryVersion = { ...deliveryVersion, rowVersion: response.deliveryVersionRowVersion };
 	}
 
-	async function reloadBulkSetup() {
+	async function reloadBulkSetup(signal?: AbortSignal) {
 		if (!deliveryVersion || !canMutateOffering) throw new Error('ร่างนี้ไม่พร้อมแก้ไข');
 		const ownerId = offeringId;
 		const versionId = deliveryVersion.id;
 		const initialMutationRevision = mutationRevision;
 		const [loadedGroups, loadedVersion] = await Promise.all([
-			listLearningGroups(ownerId),
-			getDeliveryVersion(versionId)
+			listLearningGroups(ownerId, { signal }),
+			getDeliveryVersion(versionId, { signal })
 		]);
 		if (
 			ownerId !== offeringId ||
@@ -440,8 +440,15 @@
 		mutationRevision += 1;
 		groups = loadedGroups;
 		deliveryVersion = loadedVersion;
-		if (selectedGroup)
-			selectedGroup = loadedGroups.find((group) => group.id === selectedGroup?.id) ?? null;
+		const currentSelectedId = page.url.searchParams.get('groupId') ?? selectedGroup?.id;
+		const refreshedSelection = loadedGroups.find((group) => group.id === currentSelectedId);
+		if (refreshedSelection) {
+			selectionRevision += 1;
+			groupRequest.abort();
+			selectedGroup = refreshedSelection;
+			groupLoading = false;
+			groupError = '';
+		}
 		rosterPreview = null;
 		rosterStale = true;
 	}

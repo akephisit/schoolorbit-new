@@ -536,6 +536,7 @@ async function mockBulkSetup(
 		conflictOnce?: boolean;
 		optionsGate?: Promise<void>;
 		blocked?: boolean;
+		preparationGate?: Promise<void>;
 	} = {}
 ) {
 	const count = await mockOffering(page, { permissions: ['*'] });
@@ -555,6 +556,8 @@ async function mockBulkSetup(
 		}
 	];
 	let currentVersion = 1;
+	let groupReads = 0;
+	let failPreparation = false;
 	const previewRequests: Array<{
 		groups: Array<{ learningGroupId: string; rowVersion: number }>;
 		primaryTeacher?: { teacherId: string; replaceExistingPrimary: boolean };
@@ -563,7 +566,19 @@ async function mockBulkSetup(
 		deliveryVersionRowVersion: number;
 	}> = [];
 	const applyRequests: typeof previewRequests = [];
-	await page.route(`**${paths.groups}`, (route) => fulfill(route, rows));
+	await page.route(`**${paths.groups}`, async (route) => {
+		groupReads += 1;
+		if (failPreparation) {
+			failPreparation = false;
+			return void (await route.fulfill({
+				status: 503,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: false, error: 'เตรียมข้อมูลไม่สำเร็จ' })
+			}));
+		}
+		if (groupReads > 1 && options.preparationGate) await options.preparationGate;
+		return fulfill(route, rows);
+	});
 	await page.route(`**${paths.groupA}`, (route) => fulfill(route, rows[0]));
 	await page.route(`**${paths.groupB}`, (route) => fulfill(route, rows[1]));
 	await page.route(`**${paths.version}`, (route) =>
@@ -680,7 +695,19 @@ async function mockBulkSetup(
 				}))
 		});
 	});
-	return { count, previewRequests, applyRequests };
+	return {
+		count,
+		previewRequests,
+		applyRequests,
+		failPreparationOnce() {
+			failPreparation = true;
+		},
+		renameGroup(name: string) {
+			currentVersion += 1;
+			rows[0] = { ...rows[0], name, rowVersion: rows[0].rowVersion + 1 };
+			return rows[0];
+		}
+	};
 }
 async function chooseBulkTeacher(page: Page) {
 	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
@@ -708,7 +735,11 @@ for (const width of [1440, 390]) {
 			await expect(
 				dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })
 			).toBeDisabled();
-			await dialog.getByRole('button', { name: /เลือกทุกกลุ่มที่แก้ไขได้ในรายการนี้/ }).click();
+			await dialog.getByLabel('ค้นหากลุ่มเป้าหมาย', { exact: true }).fill('ม.1/1');
+			await dialog
+				.getByRole('button', { name: 'เลือกกลุ่มที่แก้ไขได้ 2 กลุ่ม (ทุกหน้า)', exact: true })
+				.click();
+			await dialog.getByLabel('ค้นหากลุ่มเป้าหมาย', { exact: true }).fill('');
 			await expect(dialog).toContainText('เลือก 2/2 กลุ่ม');
 			await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
 			await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
@@ -749,10 +780,12 @@ for (const width of [1440, 390]) {
 			await expect(
 				page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true })
 			).toBeFocused();
-			await page.evaluate(() => window.scrollTo(0, 0));
+			await page.getByRole('main').evaluate((element) => (element.scrollTop = 0));
 			await page.mouse.move(width - 20, 500);
 			await page.mouse.wheel(0, 300);
-			await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+			await expect
+				.poll(() => page.getByRole('main').evaluate((element) => element.scrollTop))
+				.toBeGreaterThan(0);
 			expect(fixture.applyRequests).toEqual(fixture.previewRequests);
 			await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 			const reopened = await chooseBulkTeacher(page);
@@ -891,4 +924,95 @@ test('bulk automatic roster configuration requires a date and patches selected t
 	expect(fixture.applyRequests).toEqual(fixture.previewRequests);
 	expect(fixture.count(`${paths.groupA}/roster`)).toBe(0);
 	expect(fixture.count(paths.membershipsA)).toBe(0);
+});
+
+test('opening bulk setup reads the fresh offering frame after a successful individual group save', async ({
+	page
+}) => {
+	const fixture = await mockBulkSetup(page);
+	await page.route(`**${paths.groupA}`, async (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		return fulfill(route, fixture.renameGroup(route.request().postDataJSON().name));
+	});
+	await page.goto(url());
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.count(paths.management)).toBe(0);
+	await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+	await page
+		.getByRole('textbox', { name: 'ชื่อกลุ่ม', exact: true })
+		.fill('ม.1/1 ชื่อที่บันทึกใหม่');
+	await page.getByRole('button', { name: 'บันทึกข้อมูลกลุ่ม', exact: true }).click();
+	await expect(
+		page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/1 ชื่อที่บันทึกใหม่', exact: true })
+	).toBeVisible();
+	await page.getByRole('button', { name: 'ยกเลิกการแก้ไขกลุ่ม', exact: true }).click();
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = await chooseBulkTeacher(page);
+	await dialog.getByRole('checkbox', { name: /ม.1\/1 ชื่อที่บันทึกใหม่/ }).check();
+	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
+	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
+	expect(fixture.previewRequests).toHaveLength(1);
+	expect(fixture.previewRequests[0]).toMatchObject({
+		deliveryVersionRowVersion: 2,
+		groups: [{ learningGroupId: ids.groupA, rowVersion: 2 }]
+	});
+	await expect(dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true })).toHaveCount(0);
+	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
+});
+
+test('bulk opening preparation has a focused retry and can be cancelled while its read is pending', async ({
+	page
+}) => {
+	const gate = deferred();
+	const fixture = await mockBulkSetup(page, { preparationGate: gate.promise });
+	await page.goto(url());
+	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
+	fixture.failPreparationOnce();
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+	await expect(dialog).toContainText('เตรียมข้อมูลไม่สำเร็จ');
+	await dialog.getByRole('button', { name: 'ลองเตรียมกลุ่มอีกครั้ง', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeDisabled();
+	await expect(dialog.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeEnabled();
+	await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	gate.release();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true })).toBeFocused();
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	await expect(dialog).toContainText('เลือก 0/2 กลุ่ม');
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests).toHaveLength(0);
+});
+
+test('a fresh bulk opening resolves the selected group while an older direct read is pending', async ({
+	page
+}) => {
+	const gate = deferred();
+	await mockBulkSetup(page);
+	await page.route(`**${paths.groupA}`, async (route) => {
+		await gate.promise;
+		await fulfill(route, { ...group(ids.groupA), name: 'ข้อมูลเก่าที่มาช้า' });
+	});
+	await page.goto(url());
+	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
+	await expect(page.getByTestId('delivery-selected-group-ready')).toHaveCount(0);
+	try {
+		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+		await expect(dialog).toContainText('เลือก 0/2 กลุ่ม');
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('ม.1/1');
+		await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
+	} finally {
+		gate.release();
+	}
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('ม.1/1');
+	await expect(page.getByText('ข้อมูลเก่าที่มาช้า', { exact: true })).toHaveCount(0);
 });

@@ -216,6 +216,23 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
         bulk_group_setup::apply(&f.pool, f.context.teacher_id, f.offering_id, input.clone())
             .await
             .unwrap();
+    let authoritative_signal: (Uuid, Uuid, i64) = sqlx::query_as(
+        "SELECT id,academic_term_id,row_version FROM learning_offerings WHERE id=$1",
+    )
+    .bind(f.offering_id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            result.signal.learning_offering_id,
+            result.signal.academic_term_id,
+            result.signal.row_version
+        ),
+        authoritative_signal,
+        "the accepted command carries the actual offering identity and revision",
+    );
+    let result = result.response;
     assert!(result.delivery_version_row_version > input.delivery_version_row_version);
     for group in &result.groups {
         assert_eq!(
@@ -282,6 +299,7 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
             .await
             .unwrap();
     let first_after = replacement
+        .response
         .groups
         .iter()
         .find(|g| g.id == first.id)
