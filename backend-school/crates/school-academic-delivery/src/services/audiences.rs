@@ -41,7 +41,7 @@ async fn source_constraints(
     connection: &mut PgConnection,
     versions: &[Uuid],
     offerings: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, AudienceConstraint>, AppError> {
+) -> Result<std::collections::HashMap<(Uuid, Uuid), AudienceConstraint>, AppError> {
     if versions.is_empty() || offerings.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
@@ -52,7 +52,7 @@ async fn source_constraints(
     for source in sources {
         for id in source.scoped_offerings {
             result.insert(
-                id,
+                (source.id, id),
                 AudienceConstraint {
                     delivery_version_id: source.id,
                     offering: source
@@ -81,29 +81,67 @@ pub async fn pinned_constraints_on_connection(
     if count != unique.len() as i64 {
         return Err(AppError::Conflict("รุ่นเปิดสอนไม่ตรงกับรายการที่อ้างอิง".into()));
     }
-    source_constraints(connection, &[version], offerings).await
+    Ok(source_constraints(connection, &[version], offerings)
+        .await?
+        .into_iter()
+        .map(|((_, id), constraint)| (id, constraint))
+        .collect())
 }
 pub async fn dated_constraints_on_connection(
     connection: &mut PgConnection,
     offerings: &[Uuid],
     date: NaiveDate,
 ) -> Result<std::collections::HashMap<Uuid, AudienceConstraint>, AppError> {
-    if offerings.is_empty() {
-        return Ok(std::collections::HashMap::new());
-    }
-    let rows:Vec<(Uuid,Option<Uuid>)>=DbSession::new(&mut *connection).query_as("academic_delivery.services.audiences.dated_constraints_on_connection", "SELECT o.id,selected.id FROM learning_offerings o LEFT JOIN LATERAL(SELECT v.id FROM academic_delivery_versions v WHERE v.academic_term_id=o.academic_term_id AND v.status='published' AND v.effective_from<=$2 ORDER BY v.effective_from DESC,v.id DESC LIMIT 1) selected ON true WHERE o.id=ANY($1) ORDER BY o.id")
-        .bind(offerings).bind(date).fetch_all().await?;
-    let unique: std::collections::HashSet<_> = offerings.iter().collect();
-    if rows.len() != unique.len() {
-        return Err(AppError::Conflict("ไม่พบรายการเปิดสอนที่ใช้ตรวจขอบเขต".into()));
-    }
-    let versions: Vec<_> = rows
-        .into_iter()
-        .filter_map(|(_, version)| version)
+    Ok(dated_constraints_for_dates(connection, offerings, &[date])
+        .await?
+        .remove(&date)
+        .unwrap_or_default())
+}
+
+async fn dated_constraints_for_dates(
+    connection: &mut PgConnection,
+    offerings: &[Uuid],
+    dates: &[NaiveDate],
+) -> Result<
+    std::collections::HashMap<NaiveDate, std::collections::HashMap<Uuid, AudienceConstraint>>,
+    AppError,
+> {
+    let dates: Vec<_> = dates
+        .iter()
+        .copied()
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    source_constraints(connection, &versions, offerings).await
+    let mut result: std::collections::HashMap<_, std::collections::HashMap<_, _>> = dates
+        .iter()
+        .map(|date| (*date, std::collections::HashMap::new()))
+        .collect();
+    if dates.is_empty() || offerings.is_empty() {
+        return Ok(result);
+    }
+    let rows:Vec<(Uuid,NaiveDate,Option<Uuid>)>=DbSession::new(&mut *connection).query_as("academic_delivery.services.audiences.dated_constraints_for_dates", "SELECT o.id,requested.day,selected.id FROM learning_offerings o CROSS JOIN unnest($2::date[]) requested(day) LEFT JOIN LATERAL(SELECT v.id FROM academic_delivery_versions v WHERE v.academic_term_id=o.academic_term_id AND v.status='published' AND v.effective_from<=requested.day ORDER BY v.effective_from DESC,v.id DESC LIMIT 1) selected ON true WHERE o.id=ANY($1) ORDER BY requested.day,o.id")
+        .bind(offerings).bind(&dates).fetch_all().await?;
+    let unique: std::collections::HashSet<_> = offerings.iter().collect();
+    if rows.len() != unique.len() * dates.len() {
+        return Err(AppError::Conflict("ไม่พบรายการเปิดสอนที่ใช้ตรวจขอบเขต".into()));
+    }
+    let versions: Vec<_> = rows
+        .iter()
+        .filter_map(|(_, _, version)| *version)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    // One decoded graph per distinct source, reused across every requested date.
+    let sources = source_constraints(connection, &versions, offerings).await?;
+    for (offering, date, version) in rows {
+        if let Some(constraint) = version.and_then(|version| sources.get(&(version, offering))) {
+            result
+                .entry(date)
+                .or_default()
+                .insert(offering, constraint.clone());
+        }
+    }
+    Ok(result)
 }
 pub async fn pinned_constraint_on_connection(
     connection: &mut PgConnection,
@@ -167,13 +205,38 @@ pub async fn dated_group_constraints_on_connection(
     groups: &[Uuid],
     date: NaiveDate,
 ) -> Result<GroupAudienceConstraints, AppError> {
+    Ok(
+        dated_group_constraints_for_dates_on_connection(connection, groups, &[date])
+            .await?
+            .remove(&date)
+            .unwrap_or_default(),
+    )
+}
+
+/// Resolve requested dates together so future join dates never reload the same source graph.
+pub async fn dated_group_constraints_for_dates_on_connection(
+    connection: &mut PgConnection,
+    groups: &[Uuid],
+    dates: &[NaiveDate],
+) -> Result<std::collections::HashMap<NaiveDate, GroupAudienceConstraints>, AppError> {
+    if dates.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
     let offering_by_group = group_offerings(connection, groups).await?;
     let offerings: Vec<_> = offering_by_group.values().copied().collect();
-    let constraints = dated_constraints_on_connection(connection, &offerings, date).await?;
-    Ok(GroupAudienceConstraints {
-        offering_by_group,
-        constraints,
-    })
+    Ok(dated_constraints_for_dates(connection, &offerings, dates)
+        .await?
+        .into_iter()
+        .map(|(date, constraints)| {
+            (
+                date,
+                GroupAudienceConstraints {
+                    offering_by_group: offering_by_group.clone(),
+                    constraints,
+                },
+            )
+        })
+        .collect())
 }
 pub async fn pinned_group_constraints_on_connection(
     connection: &mut PgConnection,
@@ -264,8 +327,103 @@ pub(super) async fn clear_omitted_group_commands(
     tx: &mut Transaction<'_, Postgres>,
     revision: Uuid,
     offering: Uuid,
-) -> Result<(), AppError> {
-    DbSession::new(&mut **tx).query("academic_delivery.services.audiences.clear_omitted_group_commands", "DELETE FROM academic_term_change_items item USING learning_groups g WHERE item.change_set_id=$1 AND item.learning_group_id=g.id AND g.learning_offering_id=$2 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(academic_delivery_revision_snapshot($1)->'offerings') o CROSS JOIN jsonb_array_elements(o->'groups') entry WHERE (entry->>'id')::uuid=g.id)")
+) -> Result<u64, AppError> {
+    let result=DbSession::new(&mut **tx).query("academic_delivery.services.audiences.clear_omitted_group_commands", "DELETE FROM academic_term_change_items item USING learning_groups g WHERE item.change_set_id=$1 AND item.learning_group_id=g.id AND g.learning_offering_id=$2 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(academic_delivery_revision_snapshot($1)->'offerings') o CROSS JOIN jsonb_array_elements(o->'groups') entry WHERE (entry->>'id')::uuid=g.id)")
         .bind(revision).bind(offering).execute().await?;
-    Ok(())
+    Ok(result.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        versions::DeliveryVersionGroup, CourseOfferingSnapshot, LearningOfferingKind,
+        LearningOfferingSnapshot,
+    };
+
+    fn offering(group: Uuid, room: Uuid) -> DeliveryVersionOffering {
+        DeliveryVersionOffering {
+            curriculum_sources: vec![],
+            id: Uuid::new_v4(),
+            kind: LearningOfferingKind::Course,
+            code: "TEST".into(),
+            name: "scope".into(),
+            owning_organization_unit_id: Uuid::new_v4(),
+            source_requirement_kind: None,
+            source_requirement_id: None,
+            weekly_period_target: 1,
+            catalog: LearningOfferingSnapshot::Course(CourseOfferingSnapshot {
+                subject_version_id: Uuid::new_v4(),
+                subject_id: Uuid::new_v4(),
+                curriculum_course_requirement_id: None,
+                credit: "1.00".into(),
+                hours: Some("40.00".into()),
+                standard_periods_per_week: 1,
+                assessment_total_score: "100.00".into(),
+            }),
+            targets: vec![],
+            homeroom_ids: vec![room],
+            groups: vec![DeliveryVersionGroup {
+                id: group,
+                code: "G".into(),
+                name: "retained".into(),
+                description: None,
+                capacity: None,
+                homeroom_ids: vec![room],
+                preferred_room_ids: vec![],
+                teachers: vec![],
+            }],
+        }
+    }
+
+    #[test]
+    fn explicit_empty_denies_even_known_group_and_room() {
+        let constraint = AudienceConstraint {
+            delivery_version_id: Uuid::new_v4(),
+            offering: None,
+        };
+        assert!(!constraint.allows_group(Uuid::new_v4()));
+        assert!(!constraint.allows_homeroom(Uuid::new_v4(), Some(Uuid::new_v4())));
+    }
+    #[test]
+    fn retained_group_requires_frozen_offering_and_group_coverage() {
+        let group = Uuid::new_v4();
+        let room = Uuid::new_v4();
+        let outside = Uuid::new_v4();
+        let mut constraint = AudienceConstraint {
+            delivery_version_id: Uuid::new_v4(),
+            offering: Some(offering(group, room)),
+        };
+        assert!(constraint.allows_group(group));
+        assert!(constraint.allows_homeroom(group, Some(room)));
+        assert!(!constraint.allows_homeroom(group, Some(outside)));
+        assert!(!constraint.allows_homeroom(group, None));
+        assert!(!constraint.allows_homeroom(Uuid::new_v4(), Some(room)));
+        if let Some(offering) = constraint.offering.as_mut() {
+            offering.groups[0].homeroom_ids.clear();
+        }
+        assert!(
+            constraint.allows_homeroom(group, Some(room)),
+            "manual unscoped group still uses frozen offering audience"
+        );
+        assert!(!constraint.allows_homeroom(group, Some(outside)));
+    }
+    #[test]
+    fn batch_absence_and_explicit_empty_are_distinct() {
+        let group = Uuid::new_v4();
+        let offering = Uuid::new_v4();
+        let mut batch = GroupAudienceConstraints::default();
+        batch.offering_by_group.insert(group, offering);
+        assert!(batch.constraint_for_group(group).is_none());
+        batch.constraints.insert(
+            offering,
+            AudienceConstraint {
+                delivery_version_id: Uuid::new_v4(),
+                offering: None,
+            },
+        );
+        assert!(batch
+            .constraint_for_group(group)
+            .is_some_and(|constraint| !constraint.allows_group(group)));
+    }
 }

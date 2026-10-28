@@ -168,7 +168,7 @@ async fn remove_resource(
     if group_id.is_some_and(|group| !affected_groups.contains(&group)) {
         return Err(AppError::Conflict("ข้อมูลกลุ่มเรียนเปลี่ยนไป กรุณาโหลดใหม่".into()));
     }
-    let removed_commands = if homeroom_id.is_some() {
+    let mut removed_commands = if homeroom_id.is_some() {
         0
     } else {
         DbSession::new(&mut *tx)
@@ -206,8 +206,9 @@ async fn remove_resource(
         &allowed_rooms,
     )
     .await?;
-    super::super::audiences::clear_omitted_group_commands(&mut tx, change_set_id, offering_id)
-        .await?;
+    removed_commands +=
+        super::super::audiences::clear_omitted_group_commands(&mut tx, change_set_id, offering_id)
+            .await?;
     let (offering_status, downstream_count) =
         offering_deletion_evidence(&mut tx, offering_id).await?;
     let mut deleted_offering = false;

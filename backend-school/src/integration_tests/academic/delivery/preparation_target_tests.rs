@@ -18,6 +18,10 @@ struct PreparationFixture {
 }
 
 async fn fixture(name: &str, generated: bool) -> PreparationFixture {
+    fixture_with_programs(name, generated, false).await
+}
+
+async fn fixture_with_programs(name: &str, generated: bool, include_b: bool) -> PreparationFixture {
     let pool = prepare_delivery_runtime_fixture(name).await;
     let mut context = planning_runtime_context(&pool).await;
     let version = zero_workload_subject(&pool, &context).await;
@@ -113,9 +117,14 @@ async fn fixture(name: &str, generated: bool) -> PreparationFixture {
     if generated {
         let preview = offerings::preview_from_curriculum(
             &pool,
-            PreviewCurriculumOfferingsRequest { delivery_version_id: None,
+            PreviewCurriculumOfferingsRequest {
+                delivery_version_id: Some(initial_revision.target_delivery_version_id),
                 academic_term_id: context.term_id,
-                study_program_ids: vec![context.study_program_id],
+                study_program_ids: if include_b {
+                    programs.clone()
+                } else {
+                    vec![context.study_program_id]
+                },
             },
         )
         .await
@@ -125,7 +134,11 @@ async fn fixture(name: &str, generated: bool) -> PreparationFixture {
             context.teacher_id,
             ApplyCurriculumOfferingsRequest {
                 academic_term_id: context.term_id,
-                study_program_ids: vec![context.study_program_id],
+                study_program_ids: if include_b {
+                    programs.clone()
+                } else {
+                    vec![context.study_program_id]
+                },
                 delivery_version_id: Some(initial_revision.target_delivery_version_id),
                 source_hash: preview.source_hash.clone(),
                 choices: default_preparation_choices(&preview),
@@ -201,7 +214,8 @@ async fn fixture(name: &str, generated: bool) -> PreparationFixture {
 async fn preview(f: &PreparationFixture, program: Uuid) -> CurriculumOfferingPreview {
     offerings::preview_from_curriculum(
         &f.pool,
-        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
+        PreviewCurriculumOfferingsRequest {
+            delivery_version_id: None,
             academic_term_id: f.context.term_id,
             study_program_ids: vec![program],
         },
@@ -490,4 +504,134 @@ async fn preparation_late_publication_rejects_a_previous_draft_extension_preview
     .await;
     assert!(matches!(result, Err(AppError::Conflict(_))));
     assert_eq!(before, facts(&f).await);
+}
+
+#[tokio::test]
+async fn delivery_room_scope_reopen_reviews_current_rooms_and_retains_valid_generated_identity() {
+    let mut f = fixture_with_programs("room_scope_reopen", true, true).await;
+    let initial = versions::get_version(&f.pool, f.initial_revision.target_delivery_version_id)
+        .await
+        .unwrap();
+    let opened = initial
+        .snapshot
+        .offerings
+        .iter()
+        .find(|o| o.id == f.offering_id)
+        .unwrap();
+    let retained = opened
+        .groups
+        .iter()
+        .find(|g| g.homeroom_ids.contains(&f.room_b))
+        .unwrap()
+        .clone();
+    // Both groups need their own existing teacher configuration before publication.
+    for selected in &opened.groups {
+        let group = groups::get(&f.pool, selected.id).await.unwrap();
+        groups::replace_teachers(
+            &f.pool,
+            f.context.teacher_id,
+            group.id,
+            ReplaceLearningGroupTeachersRequest {
+                row_version: group.row_version,
+                teachers: vec![TeacherAssignmentInput {
+                    teacher_id: f.context.teacher_id,
+                    role: LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    publish(&f).await;
+    super::room_scope_tests::seed_retained_grade(&f.pool, &f.context, retained.id).await;
+    f.initial_revision = create_runtime_change_set(
+        &f.pool,
+        f.context.teacher_id,
+        f.context.term_id,
+        2,
+        "scope-reopen-selected",
+    )
+    .await;
+    let before_history = super::room_scope_tests::retained_grade_facts(&f.pool, retained.id).await;
+    let before=sqlx::query_scalar::<_,Value>("SELECT jsonb_build_object('group',(SELECT to_jsonb(g) FROM learning_groups g WHERE id=$1),'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_teachers t WHERE learning_group_id=$1))").bind(retained.id).fetch_one(&f.pool).await.unwrap();
+    let target = versions::get_version(&f.pool, f.initial_revision.target_delivery_version_id)
+        .await
+        .unwrap();
+    let current = change_sets::get_change_set(&f.pool, f.initial_revision.id)
+        .await
+        .unwrap();
+    change_sets::remove_draft_offering(
+        &f.pool,
+        f.context.teacher_id,
+        current.id,
+        f.offering_id,
+        school_academic_delivery::models::RemoveDeliveryDraftResourceRequest {
+            change_set_row_version: current.row_version,
+            target_delivery_version_row_version: target.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let preview = offerings::preview_from_curriculum(
+        &f.pool,
+        PreviewCurriculumOfferingsRequest {
+            academic_term_id: f.context.term_id,
+            study_program_ids: vec![f.program_b],
+            delivery_version_id: Some(target.id),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(proposal(&preview).target_homeroom_ids, vec![f.room_b]);
+    assert!(
+        proposal(&preview).conflicts.is_empty(),
+        "{:?}",
+        proposal(&preview).conflicts
+    );
+    let mut apply = request(&f, f.program_b, &preview, PreparationAction::Apply);
+    apply.delivery_version_id = Some(target.id);
+    let applied = offerings::apply_from_curriculum(&f.pool, f.context.teacher_id, apply.clone())
+        .await
+        .unwrap();
+    assert_eq!(applied.offering_ids, vec![f.offering_id]);
+    assert_eq!(applied.group_ids, vec![retained.id]);
+    let after = versions::get_version(&f.pool, target.id).await.unwrap();
+    let scoped = after
+        .snapshot
+        .offerings
+        .iter()
+        .find(|o| o.id == f.offering_id)
+        .unwrap();
+    assert_eq!(scoped.homeroom_ids, vec![f.room_b]);
+    assert_eq!(scoped.groups.len(), 1);
+    assert_eq!(scoped.groups[0].id, retained.id);
+    let after_facts=sqlx::query_scalar::<_,Value>("SELECT jsonb_build_object('group',(SELECT to_jsonb(g) FROM learning_groups g WHERE id=$1),'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_teachers t WHERE learning_group_id=$1))").bind(retained.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(before, after_facts);
+    assert_eq!(
+        before_history,
+        super::room_scope_tests::retained_grade_facts(&f.pool, retained.id).await
+    );
+    let replay_facts = facts(&f).await;
+    let replay = offerings::apply_from_curriculum(&f.pool, f.context.teacher_id, apply)
+        .await
+        .unwrap();
+    assert_eq!(replay.offering_ids, applied.offering_ids);
+    assert_eq!(replay.group_ids, applied.group_ids);
+    assert_eq!(
+        replay_facts,
+        facts(&f).await,
+        "same receipt must not reopen obsolete rooms or mutate counters"
+    );
+    let stale = offerings::apply_from_curriculum(
+        &f.pool,
+        f.context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            idempotency_key: Uuid::new_v4(),
+            ..request(&f, f.program_b, &preview, PreparationAction::Apply)
+        },
+    )
+    .await
+    .expect_err("unscoped apply cannot consume selected-revision preview hash");
+    assert!(matches!(stale, AppError::Conflict(_)));
+    assert_eq!(replay_facts, facts(&f).await);
 }

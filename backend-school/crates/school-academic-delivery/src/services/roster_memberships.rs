@@ -160,6 +160,22 @@ pub async fn add_membership(
         ));
     }
     validate_membership_date(&group, request.joined_at)?;
+    let constraint = super::audiences::dated_constraint_on_connection(
+        &mut transaction,
+        group.learning_offering_id,
+        request.joined_at,
+    )
+    .await?;
+    // Managers may deliberately add outside the pupil's own room, but only to
+    // a group retained by the published source effective on the joining date.
+    if constraint
+        .as_ref()
+        .is_some_and(|scope| !scope.allows_group(group_id))
+    {
+        return Err(AppError::Forbidden(
+            "กลุ่มเรียนไม่ได้เปิดรับนักเรียนในวันที่เลือก".into(),
+        ));
+    }
 
     let overlaps: bool = DbSession::new(&mut *transaction)
         .scalar(

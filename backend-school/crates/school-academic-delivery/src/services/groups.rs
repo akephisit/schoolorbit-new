@@ -1385,6 +1385,36 @@ async fn roster_source(
         .fetch_all()
         .await?;
     homeroom_ids.sort_unstable();
+    let today: chrono::NaiveDate = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.groups.roster_source",
+            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
+        )
+        .fetch_one()
+        .await?;
+    let constraint = super::audiences::dated_constraint_on_connection(
+        &mut **transaction,
+        group.learning_offering_id,
+        today,
+    )
+    .await?;
+    if constraint
+        .as_ref()
+        .is_some_and(|scope| !scope.allows_group(group.id))
+    {
+        return Err(AppError::Conflict(
+            "กลุ่มเรียนไม่ได้อยู่ในขอบเขตเปิดสอนที่มีผลแล้ว".into(),
+        ));
+    }
+    let allowed_rooms: Vec<_> = homeroom_ids
+        .iter()
+        .copied()
+        .filter(|room| {
+            constraint
+                .as_ref()
+                .is_none_or(|scope| scope.allows_homeroom(group.id, Some(*room)))
+        })
+        .collect();
     let mut candidates: Vec<RosterSourceStudent> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.groups.roster_source",
@@ -1400,10 +1430,17 @@ async fn roster_source(
              AND student_year.status IN ('planned', 'active')
              AND placement.status = 'current'
              AND placement.end_date IS NULL
+             AND (coverage.homeroom_id=ANY($3) OR EXISTS (
+                 SELECT 1 FROM learning_group_students member
+                 WHERE member.learning_group_id=$1
+                   AND member.student_academic_year_id=student_year.id
+                   AND member.membership_status='active'
+             ))
            ORDER BY student_academic_year_id, student_id"#,
         )
         .bind(group.id)
         .bind(group.academic_year_id)
+        .bind(&allowed_rooms)
         .fetch_all()
         .await?;
     candidates.sort();
@@ -1426,7 +1463,7 @@ async fn roster_source(
         LearningOfferingKind::Course => None,
         LearningOfferingKind::Activity => registration_type,
     };
-    let hash = stable_hash(&RosterSourceHashInput {
+    let registry_hash = stable_hash(&RosterSourceHashInput {
         learning_group_id: group.id,
         academic_term_id: group.academic_term_id,
         academic_year_id: group.academic_year_id,
@@ -1434,6 +1471,10 @@ async fn roster_source(
         homeroom_ids: &homeroom_ids,
         candidates: &candidates,
     })?;
+    let hash = match &constraint {
+        None => registry_hash,
+        Some(scope) => stable_hash(&(registry_hash, scope.delivery_version_id, &scope.offering))?,
+    };
     Ok(RosterSource {
         hash,
         candidates,

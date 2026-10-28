@@ -72,6 +72,12 @@ pub async fn list_registration_options_on_connection(
            SELECT offering.id AS learning_offering_id,
                   offering.academic_term_id,
                   offering.academic_year_id,
+                  learner.homeroom_id,
+                  GREATEST(selected_term.start_date, LEAST(
+                      (now() AT TIME ZONE 'Asia/Bangkok')::date,
+                      COALESCE(selected_term.closed_on, selected_term.planned_end_date,
+                          (SELECT end_date FROM academic_years WHERE id=selected_term.academic_year_id))
+                  )) AS registration_date,
                   offering.code_snapshot AS offering_code,
                   offering.name_snapshot AS offering_name,
                   activity.activity_type,
@@ -163,9 +169,32 @@ pub async fn list_registration_options_on_connection(
         .fetch_all()
         .await?;
 
+    let offering_ids = rows
+        .iter()
+        .map(|row| row.learning_offering_id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let constraints = match rows.first() {
+        Some(row) => {
+            super::audiences::dated_constraints_on_connection(
+                connection,
+                &offering_ids,
+                row.registration_date,
+            )
+            .await?
+        }
+        None => HashMap::new(),
+    };
     let mut offerings = Vec::<StudentActivityOfferingOption>::new();
     let mut offering_indexes = HashMap::<Uuid, usize>::new();
     for row in rows {
+        let audience_allowed = constraints
+            .get(&row.learning_offering_id)
+            .is_none_or(|scope| scope.allows_homeroom(row.learning_group_id, row.homeroom_id));
+        if !audience_allowed && !row.enrolled {
+            continue;
+        }
         let offering_index = match offering_indexes.get(&row.learning_offering_id) {
             Some(index) => *index,
             None => {
@@ -197,7 +226,7 @@ pub async fn list_registration_options_on_connection(
             member_count: row.member_count,
             teacher_names: row.teacher_names,
             enrolled: row.enrolled,
-            registration_open: row.registration_open,
+            registration_open: row.registration_open && audience_allowed,
         });
     }
     Ok(offerings)
@@ -395,6 +424,8 @@ pub async fn unenroll(
 
 #[derive(Debug, sqlx::FromRow)]
 struct StudentActivityRegistrationRow {
+    homeroom_id: Option<Uuid>,
+    registration_date: chrono::NaiveDate,
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -601,7 +632,16 @@ async fn require_eligible_student(
         .bind(learner.homeroom_id)
         .fetch_one()
         .await?;
-    if !target_allowed || !coverage_allowed {
+    let constraint = super::audiences::dated_constraint_on_connection(
+        &mut **transaction,
+        context.learning_offering_id,
+        registration_date(term),
+    )
+    .await?;
+    let audience_allowed = constraint
+        .as_ref()
+        .is_none_or(|scope| scope.allows_homeroom(context.learning_group_id, learner.homeroom_id));
+    if !target_allowed || !coverage_allowed || !audience_allowed {
         return Err(AppError::Forbidden(
             "กิจกรรมนี้ไม่ได้เปิดสำหรับระดับชั้น แผนการเรียน หรือห้องเรียนของนักเรียน".to_string(),
         ));
@@ -611,6 +651,7 @@ async fn require_eligible_student(
 
 fn registration_date(term: &TermContext) -> chrono::NaiveDate {
     Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(7 * 60 * 60).expect("Bangkok offset"))
         .date_naive()
         .max(term.start_date)
         .min(term.date_upper_bound())
