@@ -455,7 +455,9 @@ for (const failure of ['network', 'conflict'] as const) {
 		}
 		await expect(editor(page).getByRole('alert')).toBeVisible();
 		if (failure === 'conflict')
-			await expect(editor(page).getByRole('alert')).toHaveText('กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่');
+			await expect(editor(page).getByRole('alert')).toHaveText(
+				'กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่ กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+			);
 		await expect(editor(page)).toContainText('ครูสมชาย ทดสอบ');
 		expect(fixture.stored().teacherAssignments).toEqual(readAssignments([openingTeacher], 3));
 		expect(fixture.stored().rowVersion).toBe(failure === 'conflict' ? 4 : 3);
@@ -467,7 +469,9 @@ for (const failure of ['network', 'conflict'] as const) {
 		};
 		expect(fixture.teacherRequests).toEqual([expected, expected]);
 		if (failure === 'conflict') {
-			await expect(editor(page).getByRole('alert')).toHaveText('รุ่นข้อมูลกลุ่มไม่ตรงกัน');
+			await expect(editor(page).getByRole('alert')).toHaveText(
+				'รุ่นข้อมูลกลุ่มไม่ตรงกัน กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+			);
 			await expect(editor(page)).toContainText('ครูสมชาย ทดสอบ');
 			expect(fixture.stored().rowVersion).toBe(4);
 			expect(fixture.stored().teacherAssignments).toEqual(readAssignments([openingTeacher], 3));
