@@ -273,6 +273,12 @@ async fn scoped_results(
         .await
         .unwrap();
     }
+    let initial_source = versions::get_version(&pool, revision.target_delivery_version_id)
+        .await
+        .unwrap();
+    for intended in std::iter::once(omitted).chain(omitted_activity) {
+        assert!(initial_source.snapshot.offerings.iter().flat_map(|offering|&offering.groups).any(|group|group.id==intended),"fixture prerequisite: every intended removed group must exist in the canonical selected source before removal: {intended}");
+    }
     for group in std::iter::once(omitted).chain(omitted_activity) {
         let current = change_sets::get_change_set(&pool, revision.id)
             .await

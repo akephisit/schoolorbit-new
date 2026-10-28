@@ -272,7 +272,10 @@ async fn fixture_with_obligation_groups(
     let unused_activity = if include_activity {
         let source:Uuid=sqlx::query_scalar("SELECT g.id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.academic_term_id=$1 AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused activity group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(source).execute(&pool).await.unwrap();
+        // The original imported activity group can be late-created yet admitted by
+        // exact dated placements. This unused clone has no such evidence, so seed
+        // its own creation at the earliest legitimate publication visibility cutoff.
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,g.learning_offering_id,g.academic_term_id,g.academic_year_id,$1::text,'Unused activity group','draft','draft',LEAST(g.created_at,COALESCE((SELECT min(GREATEST(v.published_at,v.effective_from::timestamp AT TIME ZONE 'Asia/Bangkok')) FROM academic_timetable_versions v WHERE v.academic_term_id=g.academic_term_id AND v.status='published'),g.created_at)),g.updated_at FROM learning_groups g WHERE g.id=$2").bind(id).bind(source).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(source).execute(&pool).await.unwrap();
         Some(id)
     } else {

@@ -27,6 +27,64 @@ async fn scoped_fixture(
     scoped_fixture_with_catalog(name, false).await.0
 }
 
+// Only the real empty-subject regression needs a distinct historical subject.
+// Seed after Phase B reconciliation, before 052 creates canonical legacy targets;
+// 087 then captures the graph normally. Existing runtime fixtures stay unchanged.
+async fn seed_unused_subject_predecessor(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
+    use school_test_db::cutover_test_support::{
+        record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture, CutoverFixture,
+    };
+    apply_migrations_through(pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_migrations_through(pool, 44).await.unwrap();
+    record_passing_phase_a_reconciliation_marker(pool)
+        .await
+        .unwrap();
+    apply_migrations_through(pool, 51).await.unwrap();
+    let base:Uuid=sqlx::query_scalar("SELECT g.id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1")
+        .fetch_one(pool).await.unwrap();
+    let subject = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    let offering = Uuid::new_v4();
+    let group = Uuid::new_v4();
+    let code = format!("LU-{:016x}", subject.as_u128() as u64);
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO subjects SELECT (jsonb_populate_record(NULL::subjects,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'code',$2::text,'identity_key',lower($2::text)))).* FROM subjects source JOIN course_offering_details d ON d.subject_id=source.id JOIN learning_groups g ON g.learning_offering_id=d.learning_offering_id WHERE g.id=$3")
+        .bind(subject).bind(&code).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO subject_versions SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'subject_id',$2::uuid,'code',$3::text,'version_no',1,'effective_until',NULL,'migration_provenance','{}'::jsonb))).* FROM subject_versions source JOIN course_offering_details d ON d.subject_version_id=source.id JOIN learning_groups g ON g.learning_offering_id=d.learning_offering_id WHERE g.id=$4")
+        .bind(version).bind(subject).bind(&code).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO subject_version_grade_levels(subject_id,grade_level_id,created_at) SELECT $1,link.grade_level_id,link.created_at FROM subject_version_grade_levels link JOIN course_offering_details d ON d.subject_version_id=link.subject_id JOIN learning_groups g ON g.learning_offering_id=d.learning_offering_id WHERE g.id=$2")
+        .bind(version).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings SELECT (jsonb_populate_record(NULL::learning_offerings,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'code_snapshot',$2::text,'name_snapshot','Unused historical learner subject','source_requirement_kind',NULL,'source_requirement_id',NULL,'status','draft','published_at',NULL,'publish_idempotency_key',NULL,'migration_provenance','{}'::jsonb))).* FROM learning_offerings source JOIN learning_groups g ON g.learning_offering_id=source.id WHERE g.id=$3")
+        .bind(offering).bind(&code).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details SELECT (jsonb_populate_record(NULL::course_offering_details,to_jsonb(source)||jsonb_build_object('learning_offering_id',$1::uuid,'subject_version_id',$2::uuid,'subject_id',$3::uuid,'curriculum_course_requirement_id',NULL,'migration_provenance','{}'::jsonb))).* FROM course_offering_details source JOIN learning_groups g ON g.learning_offering_id=source.learning_offering_id WHERE g.id=$4")
+        .bind(offering).bind(version).bind(subject).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_offering_targets SELECT (jsonb_populate_record(NULL::learning_offering_targets,to_jsonb(source)||jsonb_build_object('id',gen_random_uuid(),'learning_offering_id',$1::uuid,'migration_provenance','{}'::jsonb))).* FROM learning_offering_targets source JOIN learning_groups g ON g.learning_offering_id=source.learning_offering_id WHERE g.id=$2")
+        .bind(offering).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups SELECT (jsonb_populate_record(NULL::learning_groups,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'learning_offering_id',$2::uuid,'code',$3::text,'name','Unused historical learner group','status','draft','roster_status','draft','roster_published_at',NULL,'roster_source_hash',NULL,'roster_publish_idempotency_key',NULL,'migration_provenance','{}'::jsonb))).* FROM learning_groups source WHERE source.id=$4")
+        .bind(group).bind(offering).bind(&code).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_homerooms SELECT (jsonb_populate_record(NULL::learning_group_homerooms,to_jsonb(source)||jsonb_build_object('id',gen_random_uuid(),'learning_group_id',$1::uuid,'migration_provenance','{}'::jsonb))).* FROM learning_group_homerooms source WHERE source.learning_group_id=$2")
+        .bind(group).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers SELECT (jsonb_populate_record(NULL::learning_group_teachers,to_jsonb(source)||jsonb_build_object('id',gen_random_uuid(),'learning_group_id',$1::uuid,'migration_provenance','{}'::jsonb))).* FROM learning_group_teachers source WHERE source.learning_group_id=$2 AND source.role='primary' ORDER BY source.id LIMIT 1")
+        .bind(group).bind(base).execute(&mut *tx).await.unwrap();
+    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=$1")
+        .bind(group)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE learning_offerings SET status='published',published_at=created_at WHERE id=$1",
+    )
+    .bind(offering)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    (subject, version, offering, group)
+}
+
 async fn scoped_fixture_with_catalog(
     name: &str,
     seed_catalog: bool,
@@ -39,10 +97,15 @@ async fn scoped_fixture_with_catalog(
         Uuid,
         Uuid,
     ),
-    Option<(Uuid, Uuid)>,
+    Option<(Uuid, Uuid, Uuid, Uuid)>,
 ) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
-    seed_release_two_predecessor(&pool).await.unwrap();
+    let catalog = if seed_catalog {
+        Some(seed_unused_subject_predecessor(&pool).await)
+    } else {
+        seed_release_two_predecessor(&pool).await.unwrap();
+        None
+    };
     apply_migrations_through(&pool, 61).await.unwrap();
     let (year,term,group,subject,teacher):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,d.subject_id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     let unused = Uuid::new_v4();
@@ -50,22 +113,6 @@ async fn scoped_fixture_with_catalog(
         .bind(unused).bind(group).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1")
         .bind(unused).bind(group).execute(&pool).await.unwrap();
-    let catalog = if seed_catalog {
-        let subject_id = Uuid::new_v4();
-        let version_id = Uuid::new_v4();
-        let code = format!("LU-{:016x}", subject_id.as_u128() as u64);
-        let mut tx = pool.begin().await.unwrap();
-        sqlx::query("INSERT INTO subjects SELECT (jsonb_populate_record(NULL::subjects,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'code',$2::text,'identity_key',lower($2::text)))).* FROM subjects source WHERE source.id=$3")
-            .bind(subject_id).bind(&code).bind(subject).execute(&mut *tx).await.unwrap();
-        sqlx::query("INSERT INTO subject_versions SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'subject_id',$2::uuid,'code',$3::text,'version_no',1,'effective_until',NULL,'migration_provenance','{}'::jsonb))).* FROM subject_versions source JOIN course_offering_details detail ON detail.subject_version_id=source.id JOIN learning_groups g ON g.learning_offering_id=detail.learning_offering_id WHERE g.id=$4")
-            .bind(version_id).bind(subject_id).bind(&code).bind(group).execute(&mut *tx).await.unwrap();
-        sqlx::query("INSERT INTO subject_version_grade_levels(subject_id,grade_level_id,created_at) SELECT $1,link.grade_level_id,link.created_at FROM subject_version_grade_levels link JOIN course_offering_details detail ON detail.subject_version_id=link.subject_id JOIN learning_groups g ON g.learning_offering_id=detail.learning_offering_id WHERE g.id=$2")
-            .bind(version_id).bind(group).execute(&mut *tx).await.unwrap();
-        tx.commit().await.unwrap();
-        Some((subject_id, version_id))
-    } else {
-        None
-    };
     apply_migrations_through(&pool, 144).await.unwrap();
     let today: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
         .fetch_one(&pool)
@@ -481,136 +528,37 @@ async fn learner_current_obligation_zero_result_and_unknown_lock_snapshots_retai
 
 #[tokio::test]
 async fn learner_current_obligation_real_all_omitted_subject_refuses_without_lazy_writes() {
-    use school_academic_delivery::services::{groups as delivery_groups, offerings};
-    let ((pool, actor, ctx, base_group, _, _), catalog) =
+    let ((pool, actor, ctx, _, _, _), catalog) =
         scoped_fixture_with_catalog("learner_current_obligation_real_empty", true).await;
-    let (subject, subject_version_id) = catalog.unwrap();
-    let revision = change_sets::create_change_set(
-        &pool,
-        actor.user_id,
-        dm::CreateAcademicTermChangeSetRequest {
-            academic_term_id: ctx.academic_term_id,
-            reason: "Isolated unused learner subject".into(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let (room,grade,program):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT h.id,h.grade_level_id,h.study_program_id FROM homerooms h JOIN learning_group_homerooms coverage ON coverage.homeroom_id=h.id WHERE coverage.learning_group_id=$1 ORDER BY h.id LIMIT 1")
-        .bind(base_group).fetch_one(&pool).await.unwrap();
-    let offering = offerings::create(
-        &pool,
-        actor.user_id,
-        Some(revision.target_delivery_version_id),
-        dm::CreateLearningOfferingRequest::Course(dm::CreateCourseOfferingRequest {
-            academic_term_id: ctx.academic_term_id,
-            subject_version_id,
-            curriculum_course_requirement_id: None,
-            assessment_total_score: "100.00".into(),
-            targets: vec![dm::OfferingTargetInput {
-                target_kind: dm::OfferingTargetKind::Homeroom,
-                homeroom_id: Some(room),
-                grade_level_id: grade,
-                study_program_id: program,
-            }],
-        }),
-    )
-    .await
-    .unwrap();
-    let group = delivery_groups::create(
-        &pool,
-        actor.user_id,
-        offering.id,
-        dm::CreateLearningGroupRequest {
-            name: "Never-used learner group".into(),
-            description: None,
-            capacity: None,
-            preferred_room_ids: vec![],
-        },
-    )
-    .await
-    .unwrap();
-    let group = delivery_groups::replace_homerooms(
-        &pool,
-        actor.user_id,
-        group.id,
-        dm::ReplaceLearningGroupHomeroomsRequest {
-            row_version: group.row_version,
-            homeroom_ids: vec![room],
-        },
-    )
-    .await
-    .unwrap();
-    let group = delivery_groups::replace_teachers(
-        &pool,
-        actor.user_id,
-        group.id,
-        dm::ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![dm::TeacherAssignmentInput {
-                teacher_id: actor.user_id,
-                role: dm::LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await
-    .unwrap();
-    let current = change_sets::get_change_set(&pool, revision.id)
-        .await
-        .unwrap();
-    let target = versions::get_version(&pool, current.target_delivery_version_id)
-        .await
-        .unwrap();
-    change_sets::remove_draft_group(
-        &pool,
-        actor.user_id,
-        current.id,
-        group.id,
-        dm::RemoveDeliveryDraftResourceRequest {
-            change_set_row_version: current.row_version,
-            target_delivery_version_row_version: target.row_version,
-        },
-    )
-    .await
-    .unwrap();
-    let preview =
-        change_sets::preview_change_set_at(&pool, current.id, Some(current.reference_date))
+    let (subject, _, offering, group) = catalog.unwrap();
+    let source:Uuid=sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    let published = versions::get_version(&pool, source).await.unwrap();
+    assert!(published.snapshot.offerings.iter().any(|entry|entry.id==offering && entry.groups.iter().any(|entry|entry.id==group)),
+        "normal052/087 migrations must establish this unused group in the published baseline before removal");
+    let published_bytes: Value =
+        sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1")
+            .bind(source)
+            .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(
-        !preview
-            .findings
-            .iter()
-            .any(|f| f.severity == dm::AcademicChangeFindingSeverity::Blocking),
-        "{:?}",
-        preview.findings
+    omit(&pool, &actor, &ctx, &[group], false).await;
+    let published_after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1")
+            .bind(source)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        published_bytes, published_after,
+        "current omission must keep its prior published baseline exact"
     );
-    change_sets::publish_change_set(
-        &pool,
-        actor.user_id,
-        current.id,
-        dm::PublishAcademicTermChangeSetRequest {
-            effective_from: preview.effective_from,
-            row_version: preview.change_set_row_version,
-            target_delivery_version_row_version: preview.target_delivery_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: preview
-                .findings
-                .iter()
-                .filter(|f| f.severity == dm::AcademicChangeFindingSeverity::Warning)
-                .map(|f| f.code)
-                .collect(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
     let mut connection = pool.acquire().await.unwrap();
     let day:NaiveDate=sqlx::query_scalar("SELECT LEAST(GREATEST((now() AT TIME ZONE 'Asia/Bangkok')::date,t.start_date),COALESCE(t.closed_on,t.planned_end_date,y.end_date)) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1")
         .bind(ctx.academic_term_id).fetch_one(&mut *connection).await.unwrap();
     let scope = school_academic_delivery::services::audiences::dated_constraint_on_connection(
         &mut connection,
-        offering.id,
+        offering,
         day,
     )
     .await
@@ -626,7 +574,7 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
             ctx.academic_term_id,
             ctx.academic_year_id,
             day,
-            &[group.id]
+            &[group]
         )
         .await
         .unwrap()

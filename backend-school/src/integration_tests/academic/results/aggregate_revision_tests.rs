@@ -581,8 +581,8 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
                 domain,
                 &lc,
             )
-                .await
-                .unwrap();
+            .await
+            .unwrap();
             assert!(lock.lock.is_some(), "{:?}", lock.blockers);
         }
     }
