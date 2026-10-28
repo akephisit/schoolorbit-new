@@ -465,7 +465,7 @@
 							{/if}
 						</div>
 
-						{#each proposal.conflicts as conflict (conflict.code)}
+						{#each proposal.conflicts as conflict (JSON.stringify( [conflict.code, conflict.offeringId ?? null, conflict.groupId ?? null] ))}
 							<div
 								class="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3 text-sm"
 							>

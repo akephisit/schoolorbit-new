@@ -1538,6 +1538,103 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 	}
 });
 
+test('inline curriculum preparation retains repeated conflict categories for distinct manual groups', async ({
+	page
+}, testInfo) => {
+	const fixture = await mockSharedComparison(page, { manager: true });
+	const name = 'เคมีเพิ่มเติม',
+		code = 'ว30246';
+	const groupIds = ['f0000000-0000-4000-8000-000000000001', 'f0000000-0000-4000-8000-000000000002'];
+	fixture.old.name = name;
+	fixture.old.code = code;
+	if (fixture.old.catalog.kind === 'course')
+		fixture.old.catalog.subjectVersionId = comparisonCatalog;
+	fixture.old.groups = fixture.workspace.homerooms.map((room, index) => ({
+		id: groupIds[index],
+		code: `MANUAL-${index + 1}`,
+		name: `กลุ่มที่จัดเอง ${index + 1}`,
+		description: null,
+		capacity: null,
+		homeroomIds: [room.homeroom.id],
+		preferredRoomIds: [],
+		teachers: []
+	}));
+	for (const room of fixture.workspace.homerooms) {
+		room.items[0].name = name;
+		room.items[0].code = code;
+		room.extraOfferings = [];
+	}
+	fixture.workspace.unlinked = [];
+	const message = `รายการ ${code} มีกลุ่มที่จัดเองครอบคลุมห้องเป้าหมายอยู่แล้ว ระบบจะไม่แก้กลุ่มนี้`;
+	const conflicts = groupIds.map((groupId) => ({
+		code: 'manual_group_overlap',
+		message,
+		offeringId: fixture.old.id,
+		groupId
+	}));
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, {
+			academicTermId: navIds.term,
+			curriculumSources: [],
+			sourceHash: 'c'.repeat(64),
+			proposals: [
+				{
+					proposalId: 'd'.repeat(64),
+					resourceKind: 'course',
+					catalogVersionId: comparisonCatalog,
+					code,
+					name,
+					schedulingMode: null,
+					groupingState: 'conflict',
+					offeringAction: 'retain',
+					existingOfferingId: fixture.old.id,
+					conflicts,
+					targetHomeroomIds: fixture.workspace.homerooms.map((room) => room.homeroom.id),
+					requirementIds: fixture.workspace.homerooms.flatMap((room) =>
+						room.items.map((item) => item.requirementId)
+					),
+					defaultGroups: fixture.workspace.homerooms.map((room, index) => ({
+						groupKey: String(index + 1).repeat(64),
+						name: room.homeroom.name,
+						homeroomIds: [room.homeroom.id]
+					}))
+				}
+			]
+		} satisfies CurriculumOfferingPreview)
+	);
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	try {
+		const target = new URL(fixture.origin, 'http://schoolorbit.test');
+		target.searchParams.set('offeringSearch', code);
+		await page.goto(target.pathname + target.search);
+		const missing = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+		await missing.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: `เปิดรายวิชา ${name}`, exact: true });
+		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+		await expect(dialog.getByText(message, { exact: true })).toHaveCount(2);
+		await expect(
+			dialog.getByRole('combobox', { name: `วิธีเตรียม ${name}`, exact: true })
+		).toHaveText('เปิดสอน รอจัดกลุ่ม');
+		await expect(
+			dialog.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
+		).toBeEnabled();
+		expect(errors).toEqual([]);
+		expect(
+			fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+		).toHaveLength(0);
+		await page.screenshot({
+			path: testInfo.outputPath('repeated-manual-conflicts.png'),
+			animations: 'disabled'
+		});
+	} finally {
+		await testInfo.attach('browser-page-errors', {
+			body: JSON.stringify(errors),
+			contentType: 'application/json'
+		});
+	}
+});
+
 test('a focused offering-level provider conflict blocks save without offering apply or defer controls', async ({
 	page
 }) => {
