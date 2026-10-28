@@ -1952,8 +1952,8 @@ for (const viewport of [
 			const activity = page.getByRole('dialog', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true });
 			await activity.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true }).click();
 			await expect(page.getByRole('option')).toHaveText([
-				/^ชุมนุม \(ฉบับ 1\)/,
-				/^รักการอ่าน \(ฉบับ 1\)/
+				'ชุมนุม (ฉบับ 1) กิจกรรม',
+				'รักการอ่าน (ฉบับ 1) กิจกรรม'
 			]);
 			await expect(page.getByRole('option')).not.toContainText(['CLUB-', 'OTHER-']);
 			const search = page.getByPlaceholder('ค้นหารหัสหรือชื่อ...');
