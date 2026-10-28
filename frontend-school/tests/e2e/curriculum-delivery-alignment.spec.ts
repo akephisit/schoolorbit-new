@@ -2274,10 +2274,10 @@ for (const width of [390, 1280])
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 				width
 			);
-			await page.screenshot({
+			await summary.scrollIntoViewIfNeeded();
+			await summary.screenshot({
 				path: testInfo.outputPath('collapsed-room-statuses.png'),
-				animations: 'disabled',
-				fullPage: true
+				animations: 'disabled'
 			});
 			expect(
 				fixture.academicReads.filter(
@@ -2331,11 +2331,64 @@ for (const width of [390, 1280])
 			const extra = offeringRegion.getByRole('row').filter({ hasText: 'แนะแนว' });
 			await expect(extra).toContainText('เปิดสอนเพิ่มเติมนอกหลักสูตร');
 			await expect(extra).toContainText('ครูหลักครบใน 1 กลุ่ม');
-			await page.screenshot({
+			await course.getByRole('cell').first().scrollIntoViewIfNeeded();
+			await offeringRegion.screenshot({
 				path: testInfo.outputPath('offering-review-statuses.png'),
-				animations: 'disabled',
-				fullPage: true
+				animations: 'disabled'
 			});
+			if (width === 390) {
+				const scroller = offeringRegion.locator('[data-slot="table-container"]');
+				const initialScroll = await scroller.evaluate((element) => ({
+					left: element.scrollLeft,
+					width: element.clientWidth,
+					contentWidth: element.scrollWidth
+				}));
+				expect(initialScroll.contentWidth).toBeGreaterThan(initialScroll.width);
+				const statusCell = course.getByRole('cell').nth(1);
+				await statusCell.scrollIntoViewIfNeeded();
+				await statusCell.screenshot({
+					path: testInfo.outputPath('mobile-offering-status-cell.png'),
+					animations: 'disabled'
+				});
+				const warning = statusCell.getByText('ยังไม่มีครูหลัก 1 กลุ่ม', { exact: true });
+				await warning.scrollIntoViewIfNeeded();
+				const statusScroll = await scroller.evaluate((element) => element.scrollLeft);
+				const scrollerBounds = (await scroller.boundingBox())!;
+				const warningBounds = (await warning.boundingBox())!;
+				expect(warningBounds.x).toBeGreaterThanOrEqual(scrollerBounds.x);
+				expect(warningBounds.x + warningBounds.width).toBeLessThanOrEqual(
+					scrollerBounds.x + scrollerBounds.width
+				);
+				const action = course.getByRole('link', { name: 'รายละเอียด', exact: true });
+				await action.scrollIntoViewIfNeeded();
+				await expect
+					.poll(() => scroller.evaluate((element) => element.scrollLeft))
+					.toBeGreaterThan(initialScroll.left);
+				const actionBounds = (await action.boundingBox())!;
+				expect(actionBounds.x).toBeGreaterThanOrEqual(scrollerBounds.x);
+				expect(actionBounds.x + actionBounds.width).toBeLessThanOrEqual(
+					scrollerBounds.x + scrollerBounds.width
+				);
+				await scroller.screenshot({
+					path: testInfo.outputPath('mobile-offering-table-actions.png'),
+					animations: 'disabled'
+				});
+				await testInfo.attach('mobile-offering-scroll-metrics', {
+					body: JSON.stringify({
+						offering: 'คณิตศาสตร์ต้น',
+						initial: initialScroll,
+						statusScroll,
+						actionScroll: await scroller.evaluate((element) => element.scrollLeft),
+						warningBounds,
+						actionBounds,
+						scrollerBounds
+					}),
+					contentType: 'application/json'
+				});
+			}
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+				width
+			);
 			expect(
 				fixture.academicReads.filter((path) => path.includes('management-options'))
 			).toHaveLength(0);
