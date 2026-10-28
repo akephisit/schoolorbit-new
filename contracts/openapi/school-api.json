@@ -67592,6 +67592,12 @@
           },
           "status": {
             "type": "string"
+          },
+          "subjectType": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -67602,6 +67608,7 @@
           "status",
           "rosterStatus",
           "offeringKind",
+          "subjectType",
           "offeringCode",
           "offeringName",
           "homeroomIds",

@@ -5170,6 +5170,9 @@ mod tests {
         ] {
             assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
         }
+        let learning_group = &schemas["TimetableBlockWorkspaceLearningGroup"];
+        assert!(required(learning_group).contains(&"subjectType"));
+        assert!(contains_null(&learning_group["properties"]["subjectType"]));
         for field in [
             "version",
             "bellPeriods",

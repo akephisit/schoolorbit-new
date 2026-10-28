@@ -27123,6 +27123,7 @@ export interface components {
 			preferredRoomIds: string[];
 			rosterStatus: string;
 			status: string;
+			subjectType: string | null;
 		};
 		TimetableBlockWorkspaceRoom: {
 			code: string | null;
