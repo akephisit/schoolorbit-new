@@ -5,6 +5,34 @@ use school_academic_delivery::{
 };
 
 #[tokio::test]
+async fn results_current_obligation_readiness_accepts_open_term_end() {
+    let (pool, actor, context, group, _) =
+        fixture_with_unused_group("results_obligation_open_term_end", false).await;
+    sqlx::query("UPDATE academic_terms SET planned_end_date=NULL,closed_on=NULL WHERE id=$1")
+        .bind(context.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let queue = readiness(&pool, &actor, &context).await.unwrap();
+    assert!(queue
+        .courses
+        .iter()
+        .flat_map(|subject| &subject.groups)
+        .any(|candidate| candidate.learning_group_id == group && candidate.assigned));
+
+    let mismatched = ResultContext {
+        academic_year_id: Uuid::new_v4(),
+        academic_term_id: context.academic_term_id,
+    };
+    assert!(matches!(
+        readiness(&pool, &actor, &mismatched).await,
+        Err(AppError::ValidationError(message))
+            if message == "Academic term does not belong to selected year"
+    ));
+}
+
+#[tokio::test]
 async fn results_current_obligation_omitted_unused_group_does_not_block_ready_course() {
     let (pool, actor, ctx, group, unused) =
         fixture_with_unused_group("results_current_obligation_unused", true).await;
