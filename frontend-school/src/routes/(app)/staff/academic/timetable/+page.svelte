@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { timetablePlacementColorKey } from '#lib/academic/timetable/lesson-color.js';
 	import TimetablePdfDialog from '#lib/components/academic/timetable/TimetablePdfDialog.svelte';
 	import type { GeneratePdfOptions } from '#lib/utils/pdf.js';
 	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
@@ -780,10 +781,15 @@
 	function placementPreview(dayOfWeek: string, periodId: string): TimetablePlacementCard | null {
 		if (!controller?.dragSource || previewCellKey !== cellKey(dayOfWeek, periodId)) return null;
 		const { source, candidate } = controller.dragSource;
+		const colorKey = timetablePlacementColorKey(
+			source,
+			source.kind === 'existing_block' ? controller.board.blocksById.get(source.blockId) : undefined
+		);
 		if (source.kind === 'existing_block') {
 			const block = controller.board.blocksById.get(source.blockId);
 			if (!block) return null;
 			return {
+				colorKey,
 				code: block.blockKind === 'course' ? block.offeringCode : null,
 				title: block.offeringName ?? block.title ?? 'รายการตารางสอน'
 			};
@@ -794,6 +800,7 @@
 			);
 			if (!demand) return null;
 			return {
+				colorKey,
 				code: candidate.blockKind === 'course' ? demand.offeringCode : null,
 				title: demand.offeringName
 			};
@@ -801,7 +808,7 @@
 		const demand = controller.workspace.synchronizedDemands.find(
 			(item) => item.learningOfferingId === source.learningOfferingId
 		);
-		return demand ? { code: null, title: demand.offeringName } : null;
+		return demand ? { colorKey, code: null, title: demand.offeringName } : null;
 	}
 
 	function targetBlock(dayOfWeek: string, periodId: string): TimetableBlock | null {
