@@ -835,14 +835,14 @@ async function mockDraftLifecycle(
 	return { published: () => publication, deleted: () => deleted };
 }
 for (const viewport of [
-	{ name: 'desktop-light', width: 1440, height: 950, dark: false },
+	{ name: 'desktop-light', width: 1280, height: 950, dark: false },
 	{ name: 'mobile-dark', width: 390, height: 844, dark: true },
-	{ name: 'desktop-dark', width: 1440, height: 950, dark: true },
+	{ name: 'desktop-dark', width: 1280, height: 950, dark: true },
 	{ name: 'mobile-light', width: 390, height: 844, dark: false }
 ]) {
 	test(`readiness renders repeated findings and named differences: ${viewport.name}`, async ({
 		page
-	}) => {
+	}, testInfo) => {
 		const errors: string[] = [];
 		page.on('pageerror', (e) => errors.push(e.message));
 		await page.setViewportSize(viewport);
@@ -851,6 +851,8 @@ for (const viewport of [
 		}, viewport.dark);
 		await mockDraftLifecycle(page, { failPreview: true });
 		await expect(page.locator('html')).toHaveClass(viewport.dark ? /dark/ : /^(?!.*dark).*$/);
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath(`compact-overview-${viewport.name}.png`) });
 		await expandChangeDetails(page);
 		await expect(
 			page.getByText('รายการเปิดสอน: เปิดสอน 3 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์', {
@@ -859,6 +861,7 @@ for (const viewport of [
 		).toBeVisible();
 
 		await expect(page.getByText(`${ids.offering} · 4 คาบ/สัปดาห์`)).toHaveCount(0);
+		await page.screenshot({ path: testInfo.outputPath(`changes-dialog-${viewport.name}.png`) });
 		await page.getByRole('button', { name: 'ปิดรายละเอียด', exact: true }).click();
 		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
 		await expect(page.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
@@ -871,8 +874,7 @@ for (const viewport of [
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
 		await page.screenshot({
-			path: `test-results/delivery-readiness-${viewport.name}.png`,
-			fullPage: true
+			path: testInfo.outputPath(`readiness-dialog-${viewport.name}.png`)
 		});
 	});
 }

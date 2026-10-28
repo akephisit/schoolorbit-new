@@ -340,9 +340,9 @@
 		</div>
 		<div class="grid gap-4 lg:grid-cols-2">
 			<div class="space-y-2">
-				<Label>วิธีจัดครูให้คาบที่เลือก</Label>
+				<Label for="handoff-mode">วิธีจัดครูให้คาบที่เลือก</Label>
 				<Select.Root type="single" value={mode} onValueChange={setMode}>
-					<Select.Trigger class="w-full">{modeLabel(mode)}</Select.Trigger>
+					<Select.Trigger id="handoff-mode" class="w-full">{modeLabel(mode)}</Select.Trigger>
 					<Select.Content>
 						<Select.Item value="assign_one">ครูคนเดียวทุกคาบที่เลือก</Select.Item>
 						<Select.Item value="assign_coteachers">ครูหลายคนสอนร่วมกัน</Select.Item>

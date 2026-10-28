@@ -498,8 +498,12 @@
 		const created = await createLearningGroup(ownerId, request);
 		if (offeringId !== ownerId || deliveryVersion?.id !== versionId) return;
 		mutationRevision++;
-		groups = [...groups, created];
-		pendingCreatedGroup = { group: created, versionId };
+		const existing = groups.find((group) => group.id === created.id);
+		const accepted = existing && existing.rowVersion > created.rowVersion ? existing : created;
+		groups = existing
+			? groups.map((group) => (group.id === created.id ? accepted : group))
+			: [...groups, accepted];
+		pendingCreatedGroup = { group: accepted, versionId };
 		await reconcileCreatedGroup();
 	}
 

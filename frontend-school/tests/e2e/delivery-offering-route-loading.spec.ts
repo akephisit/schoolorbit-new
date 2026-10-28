@@ -822,7 +822,7 @@ async function chooseBulkTeacher(page: Page) {
 	return dialog;
 }
 
-for (const width of [1440, 390]) {
+for (const width of [1280, 390]) {
 	for (const dark of [false, true]) {
 		test(`bulk setup saves explicit scope in one step, skips existing primary and preserves co-teachers at ${width}px ${dark ? 'dark' : 'light'}`, async ({
 			page
@@ -851,7 +851,7 @@ for (const width of [1440, 390]) {
 				dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 			).toBeEnabled();
 			await page.screenshot({
-				path: testInfo.outputPath(`bulk-preview-${width}-${dark ? 'dark' : 'light'}.png`)
+				path: testInfo.outputPath(`bulk-direct-save-${width}-${dark ? 'dark' : 'light'}.png`)
 			});
 			const bounds = await dialog.boundingBox();
 			expect(bounds!.x).toBeGreaterThanOrEqual(0);

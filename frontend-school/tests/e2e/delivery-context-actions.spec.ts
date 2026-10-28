@@ -15,6 +15,7 @@ import {
 } from './fixtures/delivery-navigation-route-data';
 
 test.use({ serviceWorkers: 'block' });
+const createdGroupId = 'a0000000-0000-4000-8000-000000000004';
 const groupIds = [
 	'a0000000-0000-4000-8000-000000000001',
 	'a0000000-0000-4000-8000-000000000002',
@@ -37,6 +38,7 @@ async function mockContextActions(
 		saveGate?: Promise<void>;
 		reader?: boolean;
 		published?: boolean;
+		createAckGate?: Promise<void>;
 	} = {}
 ) {
 	await mockDeliveryNavigation(page, { manager: !options.reader, readiness: 'course' });
@@ -171,13 +173,14 @@ async function mockContextActions(
 					writes.push({ path, method, body });
 					const created: LearningGroup = {
 						...registry[0],
-						id: groupIds[2],
+						id: createdGroupId,
+						code: 'PREP-GROUP-4',
 						name: body.name,
 						status: 'draft',
 						teachersLocked: false,
 						homeroomIds: []
 					};
-					registry.splice(2, 1, created);
+					registry.push(created);
 					graph.snapshot.offerings
 						.find((item) => item.id === offeringId)!
 						.groups.push({
@@ -191,6 +194,7 @@ async function mockContextActions(
 						});
 					graph.rowVersion++;
 					lastMutation = true;
+					await options.createAckGate;
 					return reply(route, created);
 				}
 				return reply(route, registry);
@@ -279,7 +283,7 @@ for (const mode of ['independent', 'synchronized'] as const)
 		for (const dark of [false, true]) {
 			test(`${mode} activity groups can be removed individually, added later, and the activity removed at ${width}px ${dark ? 'dark' : 'light'}`, async ({
 				page
-			}) => {
+			}, testInfo) => {
 				await page.setViewportSize({ width, height: 844 });
 				const fixture = await mockContextActions(page, mode);
 				await page.goto(fixture.detail);
@@ -303,6 +307,12 @@ for (const mode of ['independent', 'synchronized'] as const)
 					}
 					if (mode === 'synchronized')
 						await expect(confirmation).toContainText('กิจกรรมคาบพร้อมกัน');
+					if (name === 'กลุ่มร่วมสองห้อง')
+						await page.screenshot({
+							path: testInfo.outputPath(
+								`group-delete-${mode}-${width}-${dark ? 'dark' : 'light'}.png`
+							)
+						});
 					await confirmation
 						.getByRole('button', { name: 'ยืนยันลบกลุ่มจากรุ่นนี้', exact: true })
 						.click();
@@ -332,6 +342,11 @@ for (const mode of ['independent', 'synchronized'] as const)
 				await page.getByRole('button', { name: 'ลบจากรุ่นนี้ · ชุมนุม', exact: true }).click();
 				const remove = page.getByRole('alertdialog', { name: 'ลบจากรุ่นนี้', exact: true });
 				await expect(remove).toContainText('พร้อมทุกกลุ่มเรียน 1 กลุ่ม');
+				await page.screenshot({
+					path: testInfo.outputPath(
+						`offering-delete-${mode}-${width}-${dark ? 'dark' : 'light'}.png`
+					)
+				});
 				await remove.getByRole('button', { name: 'ยืนยันลบจากรุ่นนี้', exact: true }).click();
 				await expect(page).toHaveURL(new URL(fixture.origin, page.url()).href);
 				await expect(page.getByTestId('delivery-offerings-ready')).not.toContainText('ชุมนุม');
@@ -521,7 +536,7 @@ test('nearby add actions filter pinned basic and additional types and load optio
 test('touch removal cancellation restores the underlying detail and scroll controls', async ({
 	browser,
 	baseURL
-}) => {
+}, testInfo) => {
 	const context = await browser.newContext({
 		baseURL,
 		hasTouch: true,
@@ -533,6 +548,50 @@ test('touch removal cancellation restores the underlying detail and scroll contr
 		const page = await context.newPage();
 		const fixture = await mockContextActions(page, 'independent');
 		await page.goto(fixture.detail);
+		await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
+		const main = page.getByRole('main');
+		const touch = await context.newCDPSession(page);
+		const metrics = () =>
+			main.evaluate((element) => ({
+				scrollTop: element.scrollTop,
+				scrollHeight: element.scrollHeight,
+				clientHeight: element.clientHeight,
+				mainOverflow: getComputedStyle(element).overflowY,
+				bodyOverflow: getComputedStyle(document.body).overflow,
+				bodyPointerEvents: getComputedStyle(document.body).pointerEvents
+			}));
+		async function swipeUp() {
+			const bounds = await main.boundingBox();
+			expect(bounds).not.toBeNull();
+			const x = Math.round(bounds!.x + bounds!.width * 0.8),
+				startY = Math.round(Math.min(720, bounds!.y + bounds!.height - 90));
+			await touch.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: [{ x, y: startY, id: 1 }]
+			});
+			for (let step = 1; step <= 10; step++) {
+				await touch.send('Input.dispatchTouchEvent', {
+					type: 'touchMove',
+					touchPoints: [{ x, y: startY - step * 36, id: 1 }]
+				});
+				await page.evaluate(
+					() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+				);
+			}
+			await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		}
+		await main.evaluate((element) => {
+			element.scrollTop = 0;
+		});
+		const before = await metrics();
+		await testInfo.attach('native-touch-scroll-before', {
+			body: JSON.stringify(before),
+			contentType: 'application/json'
+		});
+		expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+		await swipeUp();
+		await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		const beforeGesture = await metrics();
 		const trigger = page.getByRole('button', {
 			name: 'ลบกลุ่มจากรุ่นนี้ · กลุ่มร่วมสองห้อง',
 			exact: true
@@ -549,13 +608,24 @@ test('touch removal cancellation restores the underlying detail and scroll contr
 		const create = page.getByRole('dialog', { name: 'เพิ่มกลุ่มเรียน', exact: true });
 		await expect(create).toBeVisible();
 		await create.getByRole('button', { name: 'ยกเลิก', exact: true }).tap();
-		const main = page.getByRole('main');
 		await main.evaluate((element) => {
 			element.scrollTop = 0;
 		});
-		await page.mouse.move(370, 600);
-		await page.mouse.wheel(0, 500);
+		await expect
+			.poll(async () => {
+				const state = await metrics();
+				return [state.bodyOverflow, state.bodyPointerEvents, state.mainOverflow];
+			})
+			.toEqual([before.bodyOverflow, before.bodyPointerEvents, before.mainOverflow]);
+		const afterClose = await metrics();
+		expect(afterClose.scrollHeight).toBeGreaterThan(afterClose.clientHeight);
+		await swipeUp();
 		await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		const afterGesture = await metrics();
+		await testInfo.attach('native-touch-scroll-metrics', {
+			body: JSON.stringify({ before, beforeGesture, afterClose, afterGesture }),
+			contentType: 'application/json'
+		});
 		expect(fixture.writes).toHaveLength(0);
 	} finally {
 		await context.close();
@@ -740,4 +810,83 @@ test('scoped teacher changes preserve a conflict draft and retry only the read a
 	await dialog.getByRole('button', { name: 'แสดงครูที่บันทึกแล้ว', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	expect(writes).toHaveLength(2);
+});
+
+test('a fresh group observed by an in-flight list read before its create acknowledgment renders only once', async ({
+	page
+}) => {
+	const createAck = deferredTeacherResponse(),
+		listRead = deferredTeacherResponse();
+	const fixture = await mockContextActions(page, 'course', { createAckGate: createAck.promise });
+	let listReads = 0;
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.route(`**/api/academic/offerings/${fixture.offeringId}/groups`, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		listReads++;
+		if (listReads === 2) await listRead.promise;
+		return reply(route, fixture.management.learningGroups);
+	});
+	await page.route(`**/api/academic/learning-groups/${groupIds[0]}`, (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		const group = fixture.management.learningGroups[0];
+		group.name = route.request().postDataJSON().name;
+		group.rowVersion++;
+		return reply(route, group);
+	});
+	try {
+		await page.goto(fixture.detail);
+		await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+		await page
+			.getByRole('textbox', { name: 'ชื่อกลุ่ม', exact: true })
+			.fill('ชื่อกลุ่มที่แก้ไขแล้ว');
+		await page.getByRole('button', { name: 'บันทึกข้อมูลกลุ่ม', exact: true }).click();
+		await expect.poll(() => listReads).toBe(2);
+		await page.getByRole('button', { name: 'ยกเลิกการแก้ไขกลุ่ม', exact: true }).click();
+		await page.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
+		const create = page.getByRole('dialog', { name: 'เพิ่มกลุ่มเรียน', exact: true });
+		await create.getByLabel('ชื่อกลุ่ม', { exact: true }).fill('กลุ่มใหม่ที่อ่านพบก่อนตอบรับ');
+		await create.getByRole('button', { name: 'สร้างกลุ่มเรียน', exact: true }).click();
+		await expect
+			.poll(() => fixture.writes.filter((write) => write.method === 'POST').length)
+			.toBe(1);
+		const createdIndex = fixture.management.learningGroups.findIndex(
+			(group) => group.id === createdGroupId
+		);
+		fixture.management.learningGroups[createdIndex] = {
+			...fixture.management.learningGroups[createdIndex],
+			name: 'กลุ่มใหม่จากข้อมูลล่าสุด',
+			rowVersion: 2
+		};
+		fixture
+			.graph()
+			.snapshot.offerings.find((item) => item.id === fixture.offeringId)!
+			.groups.find((group) => group.id === createdGroupId)!.name = 'กลุ่มใหม่จากข้อมูลล่าสุด';
+		const observed = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'GET' &&
+				new URL(response.url()).pathname === `/api/academic/offerings/${fixture.offeringId}/groups`
+		);
+		listRead.release();
+		await (await observed).finished();
+		await expect(create.getByRole('button', { name: 'กำลังสร้าง', exact: true })).toBeDisabled();
+		createAck.release();
+		await expect(create).toHaveCount(0);
+		await expect(
+			page.getByRole('button', {
+				name: 'ลบกลุ่มจากรุ่นนี้ · กลุ่มใหม่จากข้อมูลล่าสุด',
+				exact: true
+			})
+		).toHaveCount(1);
+		await expect(page.getByText('กลุ่มที่ไม่อยู่ในรุ่น', { exact: true })).toHaveCount(0);
+		await expect(page).toHaveURL(new RegExp(`groupId=${createdGroupId}`));
+		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText(
+			'กลุ่มใหม่จากข้อมูลล่าสุด'
+		);
+		expect(errors).toEqual([]);
+		expect(fixture.writes.filter((write) => write.method === 'POST')).toHaveLength(1);
+	} finally {
+		createAck.release();
+		listRead.release();
+	}
 });

@@ -501,7 +501,10 @@ test('activity readiness uses the producer name without technical codes and rest
 	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
 	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
 	await expect(page.getByText('ผลตรวจเบื้องต้น', { exact: false })).toBeVisible();
-	await page.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'ตรวจผลกระทบและความพร้อม', exact: true })
+		.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true })
+		.click();
 	const publication = page.getByRole('dialog', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true });
 	await publication.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true }).click();
 	await page.getByRole('button', { name: 'วันจันทร์ที่ 3 พฤษภาคม 2570', exact: true }).click();

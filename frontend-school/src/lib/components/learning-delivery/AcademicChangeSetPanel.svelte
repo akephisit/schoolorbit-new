@@ -209,7 +209,7 @@
 
 <section
 	class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
-	aria-label="การจัดการรุ่นเปิดสอน"
+	aria-label="สรุปรุ่นเปิดสอน"
 >
 	<div class="min-w-0">
 		<div class="flex flex-wrap items-center gap-2">
