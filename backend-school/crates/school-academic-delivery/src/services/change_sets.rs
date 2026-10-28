@@ -1,3 +1,6 @@
+mod draft_removal;
+pub use draft_removal::{remove_draft_group, remove_draft_offering};
+
 use school_database::DbSession;
 use std::collections::{BTreeSet, HashMap};
 
@@ -401,14 +404,11 @@ pub async fn publish_change_set(
         .collect::<Vec<_>>();
 
     if !add_offering_ids.is_empty() {
-        let added_group_ids: Vec<Uuid> = DbSession::new(&mut *transaction)
-            .scalar(
-                "academic_delivery.services.change_sets.publish_change_set",
-                "SELECT id FROM learning_groups WHERE learning_offering_id = ANY($1) ORDER BY id",
-            )
-            .bind(&add_offering_ids)
-            .fetch_all()
-            .await?;
+        let added_group_ids = target_graph
+            .offerings
+            .iter()
+            .flat_map(|offering| offering.groups.iter().map(|group| group.id))
+            .collect::<Vec<_>>();
         if !added_group_ids.is_empty() {
             DbSession::new(&mut *transaction).query("academic_delivery.services.change_sets.publish_change_set",
                 r#"UPDATE learning_groups SET status='published',row_version=row_version+1,updated_at=now()
@@ -1861,7 +1861,13 @@ pub async fn upsert_change_item(
             teacher_role,
             ..
         } => {
-            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_teacher_change_group(
+                &mut transaction,
+                &term,
+                row.target_delivery_version_id,
+                learning_group_id,
+            )
+            .await?;
             require_active_staff(&mut transaction, teacher_id).await?;
             let overlapping_episode_id: Option<Uuid> = DbSession::new(&mut *transaction)
                 .scalar(
@@ -1961,7 +1967,13 @@ pub async fn upsert_change_item(
             teacher_role,
             ..
         } => {
-            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_teacher_change_group(
+                &mut transaction,
+                &term,
+                row.target_delivery_version_id,
+                learning_group_id,
+            )
+            .await?;
             require_active_staff(&mut transaction, teacher_id).await?;
             require_effective_teacher_episode(
                 &mut transaction,
@@ -2038,7 +2050,13 @@ pub async fn upsert_change_item(
             teacher_id,
             ..
         } => {
-            require_teacher_change_group(&mut transaction, &term, learning_group_id).await?;
+            require_teacher_change_group(
+                &mut transaction,
+                &term,
+                row.target_delivery_version_id,
+                learning_group_id,
+            )
+            .await?;
             require_effective_teacher_episode(
                 &mut transaction,
                 &term,
@@ -2172,34 +2190,50 @@ pub async fn delete_change_item(
                 .bind(offering_id)
                 .fetch_one()
                 .await?;
-            if is_draft {
-                require_unpublished_only_delete(&mut transaction, offering_id).await?;
-            }
+            let target_id =
+                required_version_id(row.target_delivery_version_id, "ไม่พบรุ่นเปิดสอนแบบร่าง")?;
+            // Removing an additive command also removes its pending resource commands.
+            // Keep shared registry rows and prevent projection from implicitly restoring them.
             DbSession::new(&mut *transaction)
                 .query(
                     "academic_delivery.services.change_sets.delete_change_item",
-                    "DELETE FROM academic_term_change_items WHERE id = $1",
+                    "DELETE FROM academic_term_change_items WHERE change_set_id=$1
+                 AND (learning_offering_id=$2 OR learning_group_id IN(
+                    SELECT id FROM learning_groups WHERE learning_offering_id=$2))",
                 )
-                .bind(item.id)
+                .bind(change_set_id)
+                .bind(offering_id)
                 .execute()
-                .await?;
-            if is_draft {
+                .await
+                .map_err(deletion_error)?;
+            DbSession::new(&mut *transaction).query(
+                "academic_delivery.services.change_sets.delete_change_item",
+                "UPDATE academic_term_change_sets SET excluded_offering_ids=array_append(excluded_offering_ids,$2)
+                 WHERE id=$1 AND NOT ($2=ANY(excluded_offering_ids))",
+            ).bind(change_set_id).bind(offering_id).execute().await?;
+            if is_draft
+                && draft_removal::offering_is_exclusive(&mut transaction, offering_id, target_id)
+                    .await?
+            {
+                require_unpublished_only_delete(&mut transaction, offering_id).await?;
                 DbSession::new(&mut *transaction)
                     .query(
                         "academic_delivery.services.change_sets.delete_change_item",
-                        "DELETE FROM learning_groups WHERE learning_offering_id = $1",
+                        "DELETE FROM learning_groups WHERE learning_offering_id=$1",
                     )
                     .bind(offering_id)
                     .execute()
-                    .await?;
+                    .await
+                    .map_err(deletion_error)?;
                 DbSession::new(&mut *transaction)
                     .query(
                         "academic_delivery.services.change_sets.delete_change_item",
-                        "DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'",
+                        "DELETE FROM learning_offerings WHERE id=$1 AND status='draft'",
                     )
                     .bind(offering_id)
                     .execute()
-                    .await?;
+                    .await
+                    .map_err(deletion_error)?;
             }
         }
         AcademicTermChangeActionKind::StopOffering
@@ -2437,8 +2471,28 @@ async fn insert_teacher_change_item(
 async fn require_teacher_change_group(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
+    version_id: Option<Uuid>,
     learning_group_id: Uuid,
 ) -> Result<(), AppError> {
+    let version_id = required_version_id(version_id, "ไม่พบรุ่นเปิดสอนแบบร่าง")?;
+    let included: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.change_sets.require_teacher_change_group",
+            "SELECT EXISTS(SELECT 1 FROM academic_delivery_versions version,
+            jsonb_array_elements(version.snapshot->'offerings') offering,
+            jsonb_array_elements(offering->'groups') entry
+            WHERE version.id=$1 AND version.status='draft'
+                AND (entry->>'id')::uuid=$2)",
+        )
+        .bind(version_id)
+        .bind(learning_group_id)
+        .fetch_one()
+        .await?;
+    if !included {
+        return Err(AppError::Conflict(
+            "กลุ่มเรียนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่างที่เลือก".into(),
+        ));
+    }
     let context: Option<(Uuid, Uuid, String)> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.change_sets.require_teacher_change_group",
@@ -2764,8 +2818,24 @@ async fn require_unpublished_only_delete(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<(), AppError> {
-    let (status, downstream_count): (LearningOfferingStatus, i64) =
-        DbSession::new(&mut **transaction)
+    let (status, downstream_count) = offering_deletion_evidence(transaction, offering_id).await?;
+    if !matches!(
+        status,
+        LearningOfferingStatus::Draft | LearningOfferingStatus::Cancelled
+    ) || downstream_count != 0
+    {
+        return Err(AppError::Conflict(
+            "ลบถาวรได้เฉพาะรายการฉบับร่างที่ยังไม่มีตาราง แผนคะแนน ผลการเรียน หรือข้อมูลปลายทาง".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn offering_deletion_evidence(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+) -> Result<(LearningOfferingStatus, i64), AppError> {
+    DbSession::new(&mut **transaction)
             .query_as(
                 "academic_delivery.services.change_sets.require_unpublished_only_delete",
                 r#"SELECT offering.status,
@@ -2835,6 +2905,21 @@ async fn require_unpublished_only_delete(
                     ))
                 + (SELECT count(*) FROM academic_exam_schedule_items item
                     WHERE item.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM attendance_sessions session
+                    WHERE session.offering_id = offering.id OR session.learning_group_id IN (
+                        SELECT id FROM learning_groups WHERE learning_offering_id = offering.id))
+                + (SELECT count(*) FROM learning_group_students member
+                    JOIN learning_groups g ON g.id=member.learning_group_id
+                    WHERE g.learning_offering_id=offering.id)
+                + (SELECT count(*) FROM learning_delivery_apply_runs run
+                    WHERE offering.id=ANY(run.offering_ids) OR EXISTS(
+                        SELECT 1 FROM learning_groups g WHERE g.learning_offering_id=offering.id
+                        AND g.id=ANY(run.group_ids)))
+                + (SELECT count(*) FROM academic_term_preparation_runs run,
+                    jsonb_array_elements(run.outcome) outcome
+                    WHERE outcome->'targetIds' @> jsonb_build_array(offering.id::text)
+                        OR EXISTS(SELECT 1 FROM learning_groups g WHERE g.learning_offering_id=offering.id
+                            AND outcome->'targetIds' @> jsonb_build_array(g.id::text)))
                 + (SELECT count(*) FROM supervision_observations observation
                     JOIN learning_groups learning_group
                       ON learning_group.id = observation.learning_group_id
@@ -2846,17 +2931,7 @@ async fn require_unpublished_only_delete(
             .bind(offering_id)
             .fetch_optional()
             .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))?;
-    if !matches!(
-        status,
-        LearningOfferingStatus::Draft | LearningOfferingStatus::Cancelled
-    ) || downstream_count != 0
-    {
-        return Err(AppError::Conflict(
-            "ลบถาวรได้เฉพาะรายการฉบับร่างที่ยังไม่มีตาราง แผนคะแนน ผลการเรียน หรือข้อมูลปลายทาง".to_string(),
-        ));
-    }
-    Ok(())
+            .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))
 }
 
 fn validate_weekly_period_target(kind: LearningOfferingKind, value: i32) -> Result<(), AppError> {

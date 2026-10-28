@@ -11,7 +11,7 @@
 	import {
 		buildFocusedCurriculumPreparationChoices,
 		visibleCurriculumPreparationProposals,
-		type SynchronizedActivityPreparationTarget
+		type CurriculumPreparationTarget
 	} from '#lib/academic/synchronized-activity-delivery.js';
 	import { curriculumPreparationOrder } from '#lib/academic/curriculum-preparation-order.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -44,7 +44,7 @@
 		academicTermId: string;
 		options: DeliveryManagementOptions;
 		onApplied: () => Promise<void> | void;
-		preparationTarget?: SynchronizedActivityPreparationTarget | null;
+		preparationTarget?: CurriculumPreparationTarget | null;
 		deliveryVersionId?: string | null;
 	} = $props();
 
@@ -93,6 +93,7 @@
 		return preview.proposals.some((proposal) => {
 			const choice = choices.find((item) => item.proposalId === proposal.proposalId);
 			if (!choice) return true;
+			if (proposal.offeringAction === 'conflict' && choice.action !== 'skip') return true;
 			if (choice.action === 'apply' && proposal.conflicts.length > 0) return true;
 			if (choice.action === 'apply' && choice.groups.length === 0) return true;
 			return choice.groups.some((group) => !group.name.trim() || group.homeroomIds.length === 0);
@@ -285,13 +286,19 @@
 				</h3>
 				<p class="mt-1 text-sm text-muted-foreground">
 					{preparationTarget
-						? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
+						? preparationTarget.schedulingMode === 'synchronized'
+							? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
+							: `ตรวจข้อกำหนดและกลุ่มเรียนของ ${preparationTarget.homeroomCount} ห้องก่อนบันทึกในแบบร่าง`
 						: 'กิจกรรมพร้อมกันเริ่มจากเปิดแบบกลาง และเลือกเปิดพร้อมจัดกลุ่มได้ รายวิชาบังคับเสนอหนึ่งกลุ่มต่อห้อง'}
 				</p>
 			</div>
 		</div>
 	</div>
 
+	{#if preparationTarget}<p class="text-sm text-muted-foreground">
+			รายการใหม่ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ
+			ให้ตรวจการตั้งค่าก่อนบันทึกในแบบร่าง
+		</p>{/if}
 	<div class="grid gap-4 sm:grid-cols-2">
 		<div class="space-y-2">
 			<Label>{preparationTarget ? 'ขอบเขตจากหลักสูตร' : 'แผนการเรียน'}</Label>
@@ -299,7 +306,7 @@
 				<div class="rounded-md border bg-muted/25 px-3 py-2 text-sm">
 					<p class="font-medium">{selectedProgramLabel} · {preparationTarget.homeroomCount} ห้อง</p>
 					<p class="mt-0.5 text-xs text-muted-foreground">
-						ระบบเลือกทุกแผนการเรียนที่มีกิจกรรมนี้ไว้แล้ว
+						ระบบเลือกแผนการเรียนที่มีรายการฉบับนี้ไว้แล้ว
 					</p>
 				</div>
 			{:else}
@@ -397,8 +404,17 @@
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 							<div class="min-w-0">
 								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant={proposal.offeringAction === 'create' ? 'default' : 'secondary'}
-										>{proposal.offeringAction === 'create' ? 'สร้างรายการ' : 'ใช้รายการเดิม'}</Badge
+									<Badge
+										variant={proposal.offeringAction === 'conflict'
+											? 'destructive'
+											: proposal.offeringAction === 'create'
+												? 'default'
+												: 'secondary'}
+										>{proposal.offeringAction === 'conflict'
+											? 'ติดข้อจำกัด'
+											: proposal.offeringAction === 'create'
+												? 'สร้างรายการ'
+												: 'ใช้รายการเดิม'}</Badge
 									>
 									<p class="font-medium">
 										{proposal.resourceKind === 'activity'
@@ -418,24 +434,30 @@
 									onValueChange={(value) =>
 										setAction(proposal, value as CurriculumPreparationChoice['action'])}
 								>
-									<Select.Trigger class="w-full sm:w-52" aria-label={`วิธีเตรียม ${proposal.name}`}
-										>{choice.action === 'apply'
-											? 'เปิดสอนและจัดกลุ่ม'
-											: choice.action === 'defer_groups'
-												? proposal.schedulingMode === 'synchronized'
-													? 'เปิดแบบกลาง'
-													: 'เปิดสอน รอจัดกลุ่ม'
-												: 'ข้ามรายการนี้'}</Select.Trigger
+									<Select.Trigger
+										class="w-full sm:w-52"
+										aria-label={`วิธีเตรียม ${proposal.name}`}
+										disabled={proposal.offeringAction === 'conflict' && preparationTarget !== null}
+										>{proposal.offeringAction === 'conflict' && choice.action !== 'skip'
+											? 'ยังเปิดรายการนี้ไม่ได้'
+											: choice.action === 'apply'
+												? 'เปิดสอนและจัดกลุ่ม'
+												: choice.action === 'defer_groups'
+													? proposal.schedulingMode === 'synchronized'
+														? 'เปิดแบบกลาง'
+														: 'เปิดสอน รอจัดกลุ่ม'
+													: 'ข้ามรายการนี้'}</Select.Trigger
 									>
 									<Select.Content>
-										{#if proposal.conflicts.length === 0}<Select.Item value="apply"
-												>เปิดสอนและจัดกลุ่ม</Select.Item
+										{#if proposal.offeringAction !== 'conflict' && proposal.conflicts.length === 0}<Select.Item
+												value="apply">เปิดสอนและจัดกลุ่ม</Select.Item
 											>{/if}
-										<Select.Item value="defer_groups"
-											>{proposal.schedulingMode === 'synchronized'
-												? 'เปิดแบบกลาง'
-												: 'เปิดสอน รอจัดกลุ่ม'}</Select.Item
-										>
+										{#if proposal.offeringAction !== 'conflict'}<Select.Item value="defer_groups"
+												>{proposal.schedulingMode === 'synchronized'
+													? 'เปิดแบบกลาง'
+													: 'เปิดสอน รอจัดกลุ่ม'}</Select.Item
+											>
+										{/if}
 										{#if !preparationTarget}<Select.Item value="skip">ข้ามรายการนี้</Select.Item
 											>{/if}
 									</Select.Content>
@@ -453,7 +475,7 @@
 							</div>
 						{/each}
 
-						{#if choice?.action === 'apply'}
+						{#if proposal.offeringAction !== 'conflict' && choice?.action === 'apply'}
 							<div class="rounded-lg border bg-muted/[0.12] p-3">
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<p class="text-sm font-medium">
@@ -555,7 +577,7 @@
 									{/each}
 								</div>
 							</div>
-						{:else if choice?.action === 'defer_groups'}
+						{:else if proposal.offeringAction !== 'conflict' && choice?.action === 'defer_groups'}
 							<p class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
 								สร้างหรือคงรายการเปิดสอนไว้ก่อน โดยยังไม่เดากลุ่ม ครู นักเรียน ห้องจริง หรือตารางสอน
 							</p>
@@ -572,7 +594,9 @@
 					onclick={applyPreview}
 					><WandSparkles class="size-4" />
 					{preparationTarget
-						? 'เปิดใช้งานกิจกรรม'
+						? preparationTarget.resourceKind === 'activity'
+							? 'เปิดใช้งานกิจกรรม'
+							: 'ยืนยันเปิดรายวิชา'
 						: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว'}</LoadingButton
 				>
 			</div>

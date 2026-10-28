@@ -2,9 +2,7 @@
 	import { onDestroy, tick } from 'svelte';
 	import {
 		applyBulkGroupSetup,
-		previewBulkGroupSetup,
 		type BulkGroupSetupRequest,
-		type BulkGroupSetupPreview,
 		type BulkGroupSetupResponse,
 		type DeliveryManagementOptions,
 		type DeliveryVersion,
@@ -58,23 +56,18 @@
 	let teacherId = $state('');
 	let replaceExistingPrimary = $state(false);
 	let rosterEnabled = $state(false);
-	let mode = $state<'manual' | 'homeroom'>('manual');
+	let mode = $state<'manual' | 'homeroom'>('homeroom');
 	let effectiveFrom = $state<string | undefined>();
 	let search = $state('');
 	let groupPage = $state(0);
-	let previewPage = $state(0);
-	let preview = $state.raw<BulkGroupSetupPreview | null>(null);
-	let previewKey = $state('');
-	let previewing = $state(false);
 	let saving = $state(false);
 	let reloading = $state(false);
 	let needsReload = $state(false);
 	let errorMessage = $state('');
 	let session = 0;
 	let disposed = false;
-	const previewRequest = new LatestRequest();
 	const preparationRequest = new LatestRequest();
-	const busy = $derived(previewing || saving || reloading);
+	const busy = $derived(saving || reloading);
 	const context = $derived(`${offering.id}:${version.id}`);
 	const filteredGroups = $derived(
 		targets.filter((group) =>
@@ -101,24 +94,12 @@
 				}
 			: {})
 	}));
-	const requestKey = $derived(JSON.stringify(request));
-	const previewCurrent = $derived(preview !== null && previewKey === requestKey && !needsReload);
 	const valid = $derived(
 		selectedIds.length > 0 &&
 			(teacherEnabled || rosterEnabled) &&
 			(!teacherEnabled || Boolean(teacherId)) &&
 			(!rosterEnabled || mode === 'manual' || Boolean(effectiveFrom))
 	);
-	const visiblePreview = $derived(
-		deliveryChangePage(previewCurrent ? (preview?.targets ?? []) : [], previewPage)
-	);
-	const teacherActions = {
-		unchanged: 'ครูหลักคงเดิม',
-		set: 'เพิ่มครูหลัก',
-		replace: 'แทนครูหลักเดิม',
-		preserve_existing: 'ข้ามครูหลักที่กำหนดแล้ว'
-	};
-
 	function eligible(group: LearningGroup): boolean {
 		return group.status === 'draft' && group.rosterStatus === 'draft' && !group.teachersLocked;
 	}
@@ -130,7 +111,6 @@
 		open = value;
 		if (!value) {
 			session += 1;
-			previewRequest.abort();
 			preparationRequest.abort();
 			preparing = false;
 		}
@@ -146,12 +126,10 @@
 		teacherId = '';
 		replaceExistingPrimary = false;
 		rosterEnabled = false;
-		mode = 'manual';
+		mode = 'homeroom';
 		effectiveFrom = initialTrackingDate();
 		search = '';
 		groupPage = 0;
-		preview = null;
-		previewKey = '';
 		needsReload = false;
 		errorMessage = '';
 		open = true;
@@ -210,42 +188,11 @@
 	function fail(error: unknown, fallback: string) {
 		if (error instanceof ApiClientError && error.status === 409) {
 			needsReload = true;
-			preview = null;
-			errorMessage = 'ข้อมูลเปลี่ยนจากที่อื่น โหลดกลุ่มล่าสุดแล้วตรวจการตั้งค่าอีกครั้งก่อนบันทึก';
+			errorMessage = `${error.message} โหลดกลุ่มล่าสุดแล้วตรวจรายการที่เลือกก่อนบันทึกอีกครั้ง`;
 		} else errorMessage = error instanceof Error ? error.message : fallback;
 	}
-	async function check() {
-		if (!canManage || busy || !valid || needsReload) return;
-		const token = session,
-			owner = context,
-			submitted = request,
-			key = requestKey;
-		const ticket = previewRequest.begin();
-		previewing = true;
-		errorMessage = '';
-		preview = null;
-		try {
-			const result = await previewBulkGroupSetup(offering.id, submitted, { signal: ticket.signal });
-			if (!current(token, owner) || !previewRequest.isCurrent(ticket.revision)) return;
-			preview = result;
-			previewKey = key;
-			previewPage = 0;
-		} catch (error) {
-			if (!isAbortError(error) && current(token, owner)) fail(error, 'ตรวจการตั้งค่าไม่สำเร็จ');
-		} finally {
-			if (current(token, owner)) previewing = false;
-		}
-	}
 	async function apply() {
-		if (
-			!canManage ||
-			busy ||
-			!previewCurrent ||
-			!preview ||
-			preview.blockedCount > 0 ||
-			preview.changedCount === 0
-		)
-			return;
+		if (!canManage || busy || preparing || preparationError || !valid || needsReload) return;
 		const token = session,
 			owner = context,
 			submitted = request;
@@ -279,7 +226,6 @@
 				targets.some((group) => group.id === id && eligible(group))
 			);
 			needsReload = false;
-			preview = null;
 		} catch (error) {
 			if (current(token, owner)) fail(error, 'โหลดกลุ่มล่าสุดไม่สำเร็จ');
 		} finally {
@@ -290,14 +236,12 @@
 		if (!canManage) {
 			open = false;
 			session += 1;
-			previewRequest.abort();
 			preparationRequest.abort();
 		}
 	});
 	onDestroy(() => {
 		disposed = true;
 		session += 1;
-		previewRequest.abort();
 		preparationRequest.abort();
 	});
 </script>
@@ -323,7 +267,7 @@
 		<Dialog.Header>
 			<Dialog.Title>ตั้งค่าหลายกลุ่ม · {offering.nameSnapshot}</Dialog.Title>
 			<Dialog.Description
-				>เลือกกลุ่มในร่างนี้ กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วตรวจผลก่อนบันทึก
+				>เลือกกลุ่มในร่างนี้ กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วบันทึกให้กลุ่มที่เลือก
 				แก้ข้อยกเว้นในแต่ละกลุ่มได้ภายหลัง</Dialog.Description
 			>
 		</Dialog.Header>
@@ -443,7 +387,7 @@
 						</div>
 						<p class="text-xs text-muted-foreground">
 							{replaceExistingPrimary
-								? 'ครูหลักเดิมจะถูกแทนที่ตามผลตรวจด้านล่าง'
+								? 'ครูหลักเดิมในกลุ่มที่เลือกจะถูกแทนที่'
 								: 'ค่าเริ่มต้น: ข้ามกลุ่มที่มีครูหลักแล้ว'} ครูร่วมและผู้ช่วยสอนคงเดิม
 						</p>
 					{/if}
@@ -495,59 +439,10 @@
 						{#if mode === 'homeroom'}<p class="text-xs text-muted-foreground">
 								สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
 								โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
-								ตรวจการตั้งค่าเพื่อยืนยันว่าวันที่อยู่ในช่วงเปิดสอนของทุกกลุ่มที่เลือก
+								ระบบตรวจว่าวันที่อยู่ในช่วงเปิดสอนของทุกกลุ่มที่เลือกก่อนบันทึก
 							</p>{/if}
 					{/if}
 				</section>
-				{#if previewCurrent && preview}
-					<section class="space-y-3" data-testid="delivery-bulk-preview">
-						<h3 class="font-medium">
-							ผลตรวจ: เปลี่ยน {preview.changedCount} · ข้าม {preview.skippedCount} · ติดข้อจำกัด {preview.blockedCount}
-							กลุ่ม
-						</h3>
-						{#each visiblePreview.items as target (target.group.id)}<article
-								class="space-y-1 rounded-lg border p-3 text-sm"
-							>
-								<h4 class="font-medium">{target.group.name}</h4>
-								<p class="text-muted-foreground">
-									ครูหลักปัจจุบัน: {target.group.teacherAssignments
-										.filter((teacher) => teacher.role === 'primary')
-										.map((teacher) => teacher.displayName)
-										.join(', ') || 'ยังไม่กำหนด'}
-								</p>
-								<p class="text-muted-foreground">
-									วิธีจัดรายชื่อปัจจุบัน: {target.rosterTracking.mode === 'homeroom'
-										? `ติดตามห้องอัตโนมัติ เริ่ม ${target.rosterTracking.effectiveFrom ?? target.rosterTracking.startsOn}`
-										: 'จัดรายชื่อเอง'}
-								</p>
-								<p class="text-muted-foreground">
-									{teacherEnabled ? teacherActions[target.primaryTeacherAction] : 'ครูคงเดิม'} · {target.rosterTrackingChanged
-										? `เปลี่ยนเป็น${mode === 'homeroom' ? 'ติดตามห้องอัตโนมัติ' : 'จัดรายชื่อเอง'}`
-										: 'วิธีจัดรายชื่อคงเดิม'}
-								</p>
-								{#if target.blockedReason}<p class="text-destructive">
-										{target.blockedReason}
-									</p>{/if}
-							</article>{/each}
-						{#if visiblePreview.pageCount > 1}<div
-								class="flex items-center justify-end gap-2 text-sm"
-							>
-								<Button
-									size="sm"
-									variant="outline"
-									disabled={busy || visiblePreview.page === 0}
-									onclick={() => (previewPage = visiblePreview.page - 1)}>ผลก่อนหน้า</Button
-								><span>{visiblePreview.page + 1}/{visiblePreview.pageCount}</span><Button
-									size="sm"
-									variant="outline"
-									disabled={busy || visiblePreview.page + 1 === visiblePreview.pageCount}
-									onclick={() => (previewPage = visiblePreview.page + 1)}>ผลถัดไป</Button
-								>
-							</div>{/if}
-					</section>
-				{:else if preview}<p class="text-sm text-muted-foreground">
-						การเลือกเปลี่ยนแล้ว กรุณาตรวจผลอีกครั้ง
-					</p>{/if}
 				{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 				{#if needsReload}<LoadingButton
 						variant="outline"
@@ -560,25 +455,9 @@
 		<Dialog.Footer class="flex-wrap"
 			><Button variant="outline" disabled={busy} onclick={() => changeOpen(false)}>ยกเลิก</Button
 			><LoadingButton
-				variant="outline"
-				loading={previewing}
-				loadingLabel="กำลังตรวจ"
-				disabled={saving ||
-					reloading ||
-					preparing ||
-					Boolean(preparationError) ||
-					!valid ||
-					needsReload}
-				onclick={check}>ตรวจการตั้งค่า</LoadingButton
-			><LoadingButton
 				loading={saving}
 				loadingLabel="กำลังบันทึก"
-				disabled={previewing ||
-					reloading ||
-					!previewCurrent ||
-					!preview ||
-					preview.blockedCount > 0 ||
-					preview.changedCount === 0}
+				disabled={reloading || preparing || Boolean(preparationError) || !valid || needsReload}
 				onclick={apply}>บันทึกให้กลุ่มที่เลือก</LoadingButton
 			></Dialog.Footer
 		>

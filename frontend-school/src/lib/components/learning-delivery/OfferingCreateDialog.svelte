@@ -1,11 +1,14 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createLearningOffering,
 		getLearningDeliveryManagementOptions,
 		type DeliveryManagementOptions,
 		type LearningOfferingOverviewItem
 	} from '#lib/api/learning-delivery.js';
-	import type { SynchronizedActivityPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
+	import type { CurriculumPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
 	import { goto } from '$app/navigation';
 	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -34,8 +37,12 @@
 	} = $props();
 
 	let open = $state(false);
+	let returnFocus = $state<HTMLElement | null>(null);
 	let mode = $state<'curriculum' | 'manual'>('curriculum');
-	let preparationTarget = $state.raw<SynchronizedActivityPreparationTarget | null>(null);
+	let addKind = $state<DeliveryOfferingAddKind | null>(null);
+	const optionsRequest = new LatestRequest();
+	onDestroy(() => optionsRequest.abort());
+	let preparationTarget = $state.raw<CurriculumPreparationTarget | null>(null);
 	let deliveryVersionId = $state<string | null>(null);
 	let preparationRevision = $state(0);
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
@@ -51,29 +58,62 @@
 	});
 	let catalogOptions = $derived(
 		(options?.catalogVersions ?? [])
-			.filter((item) => item.kind === draft.kind)
+			.filter(
+				(item) =>
+					item.kind === draft.kind &&
+					(!addKind ||
+						addKind === 'activity' ||
+						item.subjectType === (addKind === 'basic' ? 'BASIC' : 'ADDITIONAL'))
+			)
+			.sort((left, right) =>
+				(left.kind === 'course' ? left.code : left.name).localeCompare(
+					right.kind === 'course' ? right.code : right.name,
+					'th-TH',
+					{ numeric: true }
+				)
+			)
 			.map((item) => ({
 				id: item.id,
 				label: item.kind === 'activity' ? `${item.name} (ฉบับ ${item.versionNo})` : item.label,
-				description: item.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'
+				description:
+					item.kind === 'course' && item.standardPeriodsPerWeek != null
+						? `มาตรฐาน ${item.standardPeriodsPerWeek} คาบ/สัปดาห์`
+						: item.kind === 'course'
+							? 'รายวิชา'
+							: 'กิจกรรม'
 			}))
 	);
 
 	async function showDialog(
-		target: SynchronizedActivityPreparationTarget | null,
-		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
+		target: CurriculumPreparationTarget | null,
+		targetDeliveryVersionId: string | null = defaultDeliveryVersionId,
+		requestedKind: DeliveryOfferingAddKind | null = null
 	) {
+		if (!open && document.activeElement instanceof HTMLElement)
+			returnFocus = document.activeElement;
 		preparationTarget = target;
 		deliveryVersionId = targetDeliveryVersionId;
 		preparationRevision += 1;
-		mode = 'curriculum';
+		addKind = requestedKind;
+		mode = requestedKind ? 'manual' : 'curriculum';
+		if (requestedKind)
+			draft = {
+				...draft,
+				kind: requestedKind === 'activity' ? 'activity' : 'course',
+				catalogVersionId: ''
+			};
 		open = true;
 		if (options || optionsLoading) return;
 		optionsLoading = true;
 		errorMessage = '';
+		const ticket = optionsRequest.begin();
 		try {
-			options = await getLearningDeliveryManagementOptions(academicTermId);
+			const loaded = await getLearningDeliveryManagementOptions(academicTermId, {
+				signal: ticket.signal
+			});
+			if (optionsRequest.isCurrent(ticket.revision)) options = loaded;
 		} catch (error) {
+			if (isAbortError(error) || !optionsRequest.isCurrent(ticket.revision)) return;
 			errorMessage =
 				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับเปิดการเรียนไม่สำเร็จ';
 		} finally {
@@ -82,10 +122,14 @@
 	}
 
 	export function openCurriculumPreparation(
-		target: SynchronizedActivityPreparationTarget,
+		target: CurriculumPreparationTarget,
 		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
 	) {
 		return showDialog(target, targetDeliveryVersionId);
+	}
+
+	export function openManual(kind: DeliveryOfferingAddKind) {
+		return showDialog(null, defaultDeliveryVersionId, kind);
 	}
 
 	function selectMode(nextMode: 'curriculum' | 'manual') {
@@ -174,17 +218,42 @@
 	>{/if}
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+	<Dialog.Content
+		class="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl"
+		showCloseButton={!saving}
+		escapeKeydownBehavior={saving ? 'ignore' : 'close'}
+		interactOutsideBehavior={saving ? 'ignore' : 'close'}
+		onCloseAutoFocus={(event) => {
+			event.preventDefault();
+			if (returnFocus?.isConnected) returnFocus.focus();
+		}}
+	>
 		<Dialog.Header>
 			<Dialog.Title>
-				{preparationTarget
-					? `เพิ่มกิจกรรม ${preparationTarget.name}`
-					: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
+				{addKind
+					? addKind === 'basic'
+						? 'เพิ่มวิชาพื้นฐาน'
+						: addKind === 'additional'
+							? 'เพิ่มวิชาเพิ่มเติม'
+							: 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
+					: preparationTarget
+						? preparationTarget.resourceKind === 'activity'
+							? `เพิ่มกิจกรรม ${preparationTarget.name}`
+							: `เปิดรายวิชา ${preparationTarget.name}`
+						: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
 			</Dialog.Title>
 			<Dialog.Description
-				>{preparationTarget
-					? `นำกิจกรรมจากหลักสูตรมาเปิดเป็นรายการกลางสำหรับ ${preparationTarget.homeroomCount} ห้อง`
-					: 'เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง'}</Dialog.Description
+				>{addKind
+					? addKind === 'basic'
+						? 'เพิ่มวิชาพื้นฐาน'
+						: addKind === 'additional'
+							? 'เพิ่มวิชาเพิ่มเติม'
+							: 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
+					: preparationTarget
+						? preparationTarget.schedulingMode === 'synchronized'
+							? `นำกิจกรรมจากหลักสูตรมาเปิดเป็นรายการกลางสำหรับ ${preparationTarget.homeroomCount} ห้อง`
+							: `เตรียมรายการตามหลักสูตรและตรวจกลุ่มสำหรับ ${preparationTarget.homeroomCount} ห้อง`
+						: 'เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง'}</Dialog.Description
 			>
 		</Dialog.Header>
 
@@ -194,7 +263,7 @@
 				<div class="h-44 animate-pulse rounded-xl bg-muted"></div>
 			</div>
 		{:else if options}
-			{#if !preparationTarget}<div
+			{#if !preparationTarget && !addKind}<div
 					class="grid grid-cols-2 gap-2 rounded-xl bg-muted/60 p-1.5"
 					aria-label="วิธีเพิ่มรายการเปิดสอน"
 				>
@@ -235,81 +304,106 @@
 				{/key}
 			{:else}
 				<form class="space-y-4" onsubmit={createManual}>
-					<div class="grid gap-4 sm:grid-cols-2">
-						<div class="space-y-2">
-							<Label for="offering-create-kind">ประเภท</Label><Select.Root
-								type="single"
-								bind:value={draft.kind}
-								onValueChange={() => (draft.catalogVersionId = '')}
-								><Select.Trigger id="offering-create-kind" class="w-full"
-									>{draft.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'}</Select.Trigger
-								><Select.Content
-									><Select.Item value="course">รายวิชา</Select.Item><Select.Item value="activity"
-										>กิจกรรมพัฒนาผู้เรียน</Select.Item
-									></Select.Content
-								></Select.Root
-							>
+					<fieldset disabled={saving} class="space-y-4">
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="space-y-2">
+								<Label for="offering-create-kind">ประเภท</Label>{#if addKind}<p
+										class="py-2 text-sm"
+									>
+										{addKind === 'basic'
+											? 'วิชาพื้นฐาน'
+											: addKind === 'additional'
+												? 'วิชาเพิ่มเติม'
+												: 'กิจกรรมพัฒนาผู้เรียน'}
+									</p>{:else}<Select.Root
+										type="single"
+										bind:value={draft.kind}
+										onValueChange={() => (draft.catalogVersionId = '')}
+										><Select.Trigger id="offering-create-kind" class="w-full"
+											>{draft.kind === 'course'
+												? 'รายวิชา'
+												: 'กิจกรรมพัฒนาผู้เรียน'}</Select.Trigger
+										><Select.Content
+											><Select.Item value="course">รายวิชา</Select.Item><Select.Item
+												value="activity">กิจกรรมพัฒนาผู้เรียน</Select.Item
+											></Select.Content
+										></Select.Root
+									>{/if}
+							</div>
+							<div class="space-y-2">
+								<Label>รายวิชาหรือกิจกรรม</Label><DeliveryOptionCombobox
+									bind:value={draft.catalogVersionId}
+									options={catalogOptions}
+									placeholder={draft.kind === 'course' ? 'เลือกรายวิชา' : 'เลือกกิจกรรม'}
+									searchPlaceholder="ค้นหารหัสหรือชื่อ..."
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label>ระดับชั้น</Label><DeliveryOptionCombobox
+									bind:value={draft.gradeLevelId}
+									options={options.gradeLevels.map((grade) => ({
+										id: grade.id,
+										label: grade.name,
+										description: grade.short_name ?? grade.code
+									}))}
+									placeholder="เลือกระดับชั้น"
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label>แผนการเรียน</Label><DeliveryOptionCombobox
+									bind:value={draft.studyProgramId}
+									options={options.studyPrograms.map((program) => ({
+										id: program.id,
+										label: program.name,
+										description: `${program.levelName} · ${program.code}`
+									}))}
+									placeholder="เลือกแผนการเรียน"
+								/>
+							</div>
 						</div>
-						<div class="space-y-2">
-							<Label>รายวิชาหรือกิจกรรม</Label><DeliveryOptionCombobox
-								bind:value={draft.catalogVersionId}
-								options={catalogOptions}
-								placeholder={draft.kind === 'course' ? 'เลือกรายวิชา' : 'เลือกกิจกรรม'}
-								searchPlaceholder="ค้นหารหัสหรือชื่อ..."
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label>ระดับชั้น</Label><DeliveryOptionCombobox
-								bind:value={draft.gradeLevelId}
-								options={options.gradeLevels.map((grade) => ({
-									id: grade.id,
-									label: grade.name,
-									description: grade.short_name ?? grade.code
-								}))}
-								placeholder="เลือกระดับชั้น"
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label>แผนการเรียน</Label><DeliveryOptionCombobox
-								bind:value={draft.studyProgramId}
-								options={options.studyPrograms.map((program) => ({
-									id: program.id,
-									label: program.name,
-									description: `${program.levelName} · ${program.code}`
-								}))}
-								placeholder="เลือกแผนการเรียน"
-							/>
-						</div>
-					</div>
-					{#if draft.kind === 'activity' && options.catalogVersions.find((item) => item.id === draft.catalogVersionId)?.schedulingMode === 'synchronized'}
-						<div class="space-y-2">
-							<Label for="activity-opening-mode">รูปแบบการเปิด</Label><Select.Root
-								type="single"
-								bind:value={activityOpeningMode}
-								><Select.Trigger id="activity-opening-mode" class="w-full"
-									>{activityOpeningMode === 'central'
-										? 'เปิดแบบกลาง'
-										: 'เปิดพร้อมจัดกลุ่ม'}</Select.Trigger
-								><Select.Content
-									><Select.Item value="central">เปิดแบบกลาง</Select.Item><Select.Item value="groups"
-										>เปิดพร้อมจัดกลุ่ม</Select.Item
-									></Select.Content
-								></Select.Root
-							>
-							<p class="text-xs text-muted-foreground">
-								เปิดแบบกลางจัดคาบร่วมกันได้ทันที เปิดพร้อมจัดกลุ่มสร้างหนึ่งกลุ่มต่อห้องเป้าหมาย
-								แล้วมอบหมายครูก่อนเผยแพร่
-							</p>
-						</div>
-					{/if}
-					<p class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-						ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ และสร้างเป็นฉบับร่าง
-						กิจกรรมกลางจัดกลุ่มและกำหนดครูภายหลังได้
-						ส่วนรายวิชาและกลุ่มที่สร้างแล้วต้องตรวจกลุ่มและครูก่อนเผยแพร่
-					</p>
-					{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+						{#if draft.kind === 'activity' && options.catalogVersions.find((item) => item.id === draft.catalogVersionId)?.schedulingMode === 'synchronized'}
+							<div class="space-y-2">
+								<Label for="activity-opening-mode">รูปแบบการเปิด</Label><Select.Root
+									type="single"
+									bind:value={activityOpeningMode}
+									><Select.Trigger id="activity-opening-mode" class="w-full"
+										>{activityOpeningMode === 'central'
+											? 'เปิดแบบกลาง'
+											: 'เปิดพร้อมจัดกลุ่ม'}</Select.Trigger
+									><Select.Content
+										><Select.Item value="central">เปิดแบบกลาง</Select.Item><Select.Item
+											value="groups">เปิดพร้อมจัดกลุ่ม</Select.Item
+										></Select.Content
+									></Select.Root
+								>
+								<p class="text-xs text-muted-foreground">
+									เปิดแบบกลางจัดคาบร่วมกันได้ทันที เปิดพร้อมจัดกลุ่มสร้างหนึ่งกลุ่มต่อห้องเป้าหมาย
+									แล้วมอบหมายครูก่อนเผยแพร่
+								</p>
+							</div>
+						{/if}
+						{#if draft.kind === 'course' && draft.catalogVersionId}{@const selected =
+								options.catalogVersions.find((item) => item.id === draft.catalogVersionId)}
+							<p class="text-sm text-muted-foreground">
+								ตามหลักสูตร {selected?.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์ · ปรับจำนวนคาบได้ในรายละเอียดหลังเพิ่มรายการ
+							</p>{/if}
+						<p
+							class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+						>
+							ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ และสร้างเป็นฉบับร่าง
+							กิจกรรมกลางจัดกลุ่มและกำหนดครูภายหลังได้
+							ส่วนรายวิชาและกลุ่มที่สร้างแล้วต้องตรวจกลุ่มและครูก่อนเผยแพร่
+						</p>
+						{#if errorMessage}<p role="alert" class="text-sm text-destructive">
+								{errorMessage}
+							</p>{/if}
+					</fieldset>
 					<Dialog.Footer
-						><Button type="button" variant="outline" onclick={() => (open = false)}>ยกเลิก</Button
+						><Button
+							type="button"
+							variant="outline"
+							disabled={saving}
+							onclick={() => (open = false)}>ยกเลิก</Button
 						><LoadingButton
 							type="submit"
 							loading={saving}
@@ -323,7 +417,10 @@
 		{:else}
 			<div class="space-y-3 py-5">
 				<p role="alert" class="text-sm text-destructive">{errorMessage}</p>
-				<Button type="button" variant="outline" onclick={() => showDialog(preparationTarget)}
+				<Button
+					type="button"
+					variant="outline"
+					onclick={() => showDialog(preparationTarget, deliveryVersionId, addKind)}
 					>ลองโหลดอีกครั้ง</Button
 				>
 			</div>

@@ -1,15 +1,24 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type { DeliveryManagementOptions } from '../../src/lib/api/learning-delivery.js';
+import type {
+	DeliveryManagementOptions,
+	DeliveryVersion
+} from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
 async function expandChangeDetails(page: Page) {
-	const trigger = page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true });
-	if (await trigger.isVisible()) await trigger.click();
-	for (const offering of await page.getByTestId('delivery-change-offering').all()) {
+	const dialog = page.getByRole('dialog', { name: 'รายละเอียดการเปลี่ยนแปลง', exact: true });
+	if (!(await dialog.isVisible())) {
+		await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
+	}
+	await expect(dialog).toBeVisible();
+	const offerings = dialog.getByTestId('delivery-change-offering');
+	await expect(offerings.first()).toBeVisible();
+	for (const offering of await offerings.all()) {
 		const button = offering.getByRole('button', { name: /ดูรายละเอียด/ }).first();
 		if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+		await expect(button).toHaveAttribute('aria-expanded', 'true');
 	}
 }
 
@@ -680,6 +689,7 @@ async function mockDraftLifecycle(
 	let publication: Record<string, unknown> | null = null;
 	const detail = {
 		...changeSetDetail(),
+		baseDeliveryVersionId: null,
 		offeringLabels: [
 			{ id: ids.offering, code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน' },
 			{ id: secondOffering, code: 'ว21101', name: 'วิทยาศาสตร์' }
@@ -754,7 +764,13 @@ async function mockDraftLifecycle(
 			}));
 		}
 		if (deleted) return void (await fulfill(route, 'รุ่นนี้ถูกลบแล้ว', 404));
-		return void (await fulfill(route, detail));
+		return void (await fulfill(route, {
+			...detail,
+			status: publication ? 'published' : 'draft',
+			effectiveFrom:
+				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
+			rowVersion: publication ? 2 : 1
+		}));
 	});
 	await page.route(`**/api/academic/delivery-versions/${ids.version}`, async (route) => {
 		if (route.request().method() === 'DELETE') {
@@ -779,18 +795,73 @@ async function mockDraftLifecycle(
 		}
 		return void (await fulfill(route, {
 			id: ids.version,
+			academicYearId: ids.year,
+			academicTermId: ids.term,
+			sourceVersionId: null,
 			rowVersion: 2,
-			status: 'draft',
-			effectiveFrom: null,
+			status: publication ? 'published' : 'draft',
+			effectiveFrom:
+				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
+			effectiveUntil: null,
 			referenceDate: '2027-08-01',
+			createdAt: '2027-07-01T00:00:00Z',
+			updatedAt: '2027-07-01T00:00:00Z',
 			courseMetadata: [],
 			snapshot: {
 				offerings: [
-					{ id: ids.offering, groups: [{ id: ids.group }] },
-					{ id: secondOffering, groups: [] }
+					{
+						id: ids.offering,
+						kind: 'course',
+						code: 'ค21101',
+						name: 'คณิตศาสตร์พื้นฐาน',
+						owningOrganizationUnitId: ids.program,
+						weeklyPeriodTarget: 4,
+						targets: [],
+						homeroomIds: [ids.homeroom],
+						catalog: {
+							kind: 'course',
+							subjectId: ids.catalog,
+							subjectVersionId: ids.catalog,
+							standardPeriodsPerWeek: 3,
+							credit: '1.5',
+							hours: '60',
+							assessmentTotalScore: '100.00'
+						},
+						groups: [
+							{
+								id: ids.group,
+								code: 'PREP-LIFECYCLE-GROUP',
+								name: 'ม.1/1',
+								capacity: null,
+								homeroomIds: [ids.homeroom],
+								preferredRoomIds: [],
+								teachers: []
+							}
+						]
+					},
+					{
+						id: secondOffering,
+						kind: 'course',
+						code: 'ว21101',
+						name: 'วิทยาศาสตร์',
+						owningOrganizationUnitId: ids.program,
+						weeklyPeriodTarget: 3,
+						targets: [],
+						homeroomIds: [],
+						catalog: {
+							kind: 'course',
+							subjectId: secondOffering,
+							subjectVersionId: secondOffering,
+							standardPeriodsPerWeek: 3,
+							credit: '1.5',
+							hours: '60',
+							assessmentTotalScore: '100.00'
+						},
+						groups: []
+					}
 				]
 			}
-		}));
+		} satisfies DeliveryVersion));
 	});
 	await page.route('**/api/academic/term-change-sets?*', (route) =>
 		fulfill(route, deleted ? [] : [changeSetSummary()])
@@ -805,6 +876,9 @@ async function mockDraftLifecycle(
 							...changeSetSummary(),
 							id: ids.version,
 							changeSetId: ids.changeSet,
+							status: publication ? 'published' : 'draft',
+							effectiveFrom:
+								typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
 							rowVersion: 2,
 							sourceVersionId: null,
 							effectiveUntil: null,
@@ -835,14 +909,14 @@ async function mockDraftLifecycle(
 	return { published: () => publication, deleted: () => deleted };
 }
 for (const viewport of [
-	{ name: 'desktop-light', width: 1440, height: 950, dark: false },
+	{ name: 'desktop-light', width: 1280, height: 950, dark: false },
 	{ name: 'mobile-dark', width: 390, height: 844, dark: true },
-	{ name: 'desktop-dark', width: 1440, height: 950, dark: true },
+	{ name: 'desktop-dark', width: 1280, height: 950, dark: true },
 	{ name: 'mobile-light', width: 390, height: 844, dark: false }
 ]) {
 	test(`readiness renders repeated findings and named differences: ${viewport.name}`, async ({
 		page
-	}) => {
+	}, testInfo) => {
 		const errors: string[] = [];
 		page.on('pageerror', (e) => errors.push(e.message));
 		await page.setViewportSize(viewport);
@@ -851,6 +925,8 @@ for (const viewport of [
 		}, viewport.dark);
 		await mockDraftLifecycle(page, { failPreview: true });
 		await expect(page.locator('html')).toHaveClass(viewport.dark ? /dark/ : /^(?!.*dark).*$/);
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath(`compact-overview-${viewport.name}.png`) });
 		await expandChangeDetails(page);
 		await expect(
 			page.getByText('รายการเปิดสอน: เปิดสอน 3 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์', {
@@ -859,9 +935,13 @@ for (const viewport of [
 		).toBeVisible();
 
 		await expect(page.getByText(`${ids.offering} · 4 คาบ/สัปดาห์`)).toHaveCount(0);
+		await page.screenshot({ path: testInfo.outputPath(`changes-dialog-${viewport.name}.png`) });
+		await page.getByRole('button', { name: 'ปิดรายละเอียด', exact: true }).click();
+		await expect(page.getByRole('alert')).toHaveCount(0);
 		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-		await expect(page.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
-		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+		const readiness = page.getByRole('dialog', { name: 'ตรวจผลกระทบและความพร้อม', exact: true });
+		await expect(readiness.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
+		await page.getByRole('button', { name: 'ตรวจความพร้อมอีกครั้ง', exact: true }).click();
 		await expect(page.getByText('ค21101 — คณิตศาสตร์พื้นฐาน: ยังไม่มีกลุ่มเรียน')).toBeVisible();
 		await expect(page.getByText('ว21101 — วิทยาศาสตร์: ยังไม่มีกลุ่มเรียน')).toBeVisible();
 		await expect(page.getByRole('link', { name: 'ไปแก้ไข' })).toHaveCount(2);
@@ -870,8 +950,8 @@ for (const viewport of [
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
 		await page.screenshot({
-			path: `test-results/delivery-readiness-${viewport.name}.png`,
-			fullPage: true
+			animations: 'disabled',
+			path: testInfo.outputPath(`readiness-dialog-${viewport.name}.png`)
 		});
 	});
 }
@@ -887,7 +967,9 @@ test('publication selects a date and resets verification after changing it', asy
 	await expect(dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' })).toBeDisabled();
 	await dialog.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก' }).click();
 	await dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' }).click();
-	await expect(page.getByText(/เผยแพร่แล้ว เริ่มใช้/)).toBeVisible();
+	await expect(page.getByRole('combobox', { name: 'เลือกรุ่นเปิดสอน', exact: true })).toContainText(
+		'เผยแพร่แล้ว'
+	);
 	expect(result.published()?.effectiveFrom).toBe('2027-08-03');
 });
 test('draft deletion reports references and preserves the draft', async ({ page }) => {
@@ -1020,6 +1102,7 @@ async function mockActivityActivation(
 				{
 					id: ids.catalog,
 					kind: 'activity',
+					subjectType: null,
 					code: 'CLUB',
 					label: 'CLUB — ชุมนุม (ฉบับ 3)',
 					name: 'ชุมนุม',
@@ -1675,6 +1758,24 @@ for (const viewport of [
 					teachers: []
 				})
 			);
+
+			await page.route(`**/api/academic/offerings/${ids.offering}`, (route) =>
+				fulfill(route, {
+					id: ids.offering,
+					academicYearId: ids.year,
+					academicTermId: ids.term,
+					kind: 'course',
+					codeSnapshot: offering.code,
+					nameSnapshot: offering.name,
+					status: 'draft',
+					rowVersion: 1,
+					targets: [],
+					snapshot: offering.catalog
+				})
+			);
+			await page.route(`**/api/academic/offerings/${ids.offering}/groups`, (route) =>
+				fulfill(route, [])
+			);
 			let submitted: Record<string, unknown> | null = null;
 			let saveAttempts = 0;
 			let releaseSave!: () => void;
@@ -1687,39 +1788,41 @@ for (const viewport of [
 				await fulfill(route, { ...detail, rowVersion: 2 });
 			});
 			await page.goto(
-				`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+				`/staff/academic/delivery/${ids.offering}?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 			);
 			if (dark) {
 				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
 				await expect(page.locator('html')).toHaveClass(/dark/);
 			}
-			const trigger = page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true });
+			const trigger = page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
 			await trigger.scrollIntoViewIfNeeded();
 			const initialScroll = await page.evaluate(() => window.scrollY);
 			await trigger.focus();
 			await page.keyboard.press('Enter');
-			const dialog = page.getByRole('dialog', { name: 'เพิ่ม/ปรับรายการสอน', exact: true });
+			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
 			await expect(dialog).toBeVisible();
-			await expect(dialog.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeVisible();
-			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
-			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
-			await page.getByRole('combobox').filter({ hasText: 'เลือกรายวิชาหรือกิจกรรม' }).click();
-			await page.getByRole('option', { name: /ค21101/ }).click();
+			await expect(
+				dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })
+			).toBeVisible();
 			const periods = page.getByLabel('คาบที่จัดจริงต่อสัปดาห์');
 			await expect(periods).toHaveValue('4');
 			await expect(periods).toHaveAttribute('min', '0');
-			await expect(page.getByText('4 คาบ/สัปดาห์', { exact: true })).toBeVisible();
+			await expect(dialog.getByText('ตามหลักสูตร 4 คาบ/สัปดาห์', { exact: true })).toBeVisible();
 			await periods.fill('-1');
-			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeDisabled();
+			await expect(
+				page.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })
+			).toBeDisabled();
 			await periods.fill('0.5');
-			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeDisabled();
+			await expect(
+				page.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })
+			).toBeDisabled();
 			await periods.fill('0');
 			await expect(page.getByText(/0 คาบ = เปิดรายวิชา/)).toBeVisible();
-			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeEnabled();
+			await expect(page.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })).toBeEnabled();
 			await page.screenshot({
 				path: `/tmp/zero-periods-${viewport.width}-${dark ? 'dark' : 'light'}.png`
 			});
-			await page.getByRole('button', { name: 'บันทึกรายการ', exact: true }).click();
+			await page.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
 			await expect
 				.poll(() => submitted)
 				.toMatchObject({
@@ -1732,7 +1835,7 @@ for (const viewport of [
 			await page.screenshot({
 				path: `/tmp/delivery-dialog-error-${viewport.width}-${dark ? 'dark' : 'light'}.png`
 			});
-			await dialog.getByRole('button', { name: 'บันทึกรายการ', exact: true }).click();
+			await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
 			await expect.poll(() => saveAttempts).toBe(2);
 			await expect(periods).toBeDisabled();
 			await expect(dialog.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
@@ -1750,9 +1853,7 @@ for (const viewport of [
 			await trigger.click();
 			await expect(dialog).toBeVisible();
 			await expect(dialog.getByRole('alert')).toHaveCount(0);
-			await expect(dialog.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม' })).toHaveText(
-				'เลือกรายวิชาหรือกิจกรรม'
-			);
+			await expect(periods).toHaveValue('4');
 			await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 			await expect(dialog).toHaveCount(0);
 			await expect(trigger).toBeFocused();
@@ -1769,7 +1870,7 @@ for (const viewport of [
 			page
 		}) => {
 			await page.setViewportSize(viewport);
-			await mockDelivery(page);
+			await mockDelivery(page, undefined, undefined, { deliveryVersionStatus: 'draft' });
 			const offerings = [
 				{ code: 'ส33201', name: 'หน้าที่พลเมือง', kind: 'course' },
 				{ code: 'OTHER-cf1520d73a57', name: 'รักการอ่าน', kind: 'activity' },
@@ -1804,6 +1905,7 @@ for (const viewport of [
 					catalogVersions: offerings.map((item) => ({
 						id: item.id,
 						kind: item.kind,
+						subjectType: item.kind === 'course' ? 'BASIC' : null,
 						code: item.code,
 						name: item.name,
 						label: `${item.code} — ${item.name} (ฉบับ 1)`,
@@ -1830,8 +1932,9 @@ for (const viewport of [
 				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
 				await expect(page.locator('html')).toHaveClass(/dark/);
 			}
-			await page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true }).click();
-			await page.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true }).click();
+			await page.getByRole('button', { name: 'เพิ่มวิชาพื้นฐาน', exact: true }).click();
+			const dialog = page.getByRole('dialog', { name: 'เพิ่มวิชาพื้นฐาน', exact: true });
+			await dialog.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true }).click();
 			const courses = [/ส21201/, /ส23201/, /ส32201/, /ส33201/];
 			await expect(page.getByRole('option')).toHaveText(courses);
 			await expect(page.getByRole('option', { name: /ส21201/ })).toContainText(
@@ -1843,71 +1946,31 @@ for (const viewport of [
 			);
 			await page.getByPlaceholder('ค้นหารหัสหรือชื่อ...').fill('ส21201');
 			await expect(page.getByRole('option')).toHaveCount(1);
-			await expect(page.getByRole('option')).toContainText('มาตรฐาน 0 คาบ/สัปดาห์');
 			await page.getByRole('option', { name: /ส21201/ }).click();
-			await expect(page.getByText('0 คาบ/สัปดาห์', { exact: true })).toBeVisible();
-			await expect(page.getByText('เริ่มต้น 0 คาบ/สัปดาห์', { exact: true })).toBeVisible();
-			await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
-			const formBody = page.getByRole('dialog').locator('fieldset').locator('..');
-			if (viewport.height === 600) {
-				await expect
-					.poll(() => formBody.evaluate((element) => element.scrollHeight > element.clientHeight))
-					.toBe(true);
-				await formBody.evaluate((element) => (element.scrollTop = element.scrollHeight));
-				await expect
-					.poll(async () => {
-						const bodyBounds = await formBody.boundingBox();
-						const footerBounds = await page
-							.getByRole('dialog')
-							.locator('[data-slot="dialog-footer"]')
-							.boundingBox();
-						return Boolean(
-							bodyBounds && footerBounds && bodyBounds.y + bodyBounds.height <= footerBounds.y
-						);
-					})
-					.toBe(true);
-			}
 			await expect(
-				page.getByRole('button', { name: 'บันทึกรายการ', exact: true })
-			).toBeInViewport();
-			await page.screenshot({
-				path: `/tmp/delivery-dialog-add-${viewport.width}-${dark ? 'dark' : 'light'}.png`
-			});
-			await formBody.evaluate((element) => (element.scrollTop = 0));
-			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
-			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
-			const picker = page.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม', exact: true });
-			await picker.click();
+				dialog.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true })
+			).toContainText('ส21201');
+			const bounds = await dialog.boundingBox();
+			expect(bounds!.y).toBeGreaterThanOrEqual(0);
+			expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+			await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await page.getByRole('button', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true }).click();
+			const activity = page.getByRole('dialog', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true });
+			await activity.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true }).click();
 			await expect(page.getByRole('option')).toHaveText([
-				...courses,
-				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน\s*$/,
-				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน\s*$/
+				'ชุมนุม (ฉบับ 1) กิจกรรม',
+				'รักการอ่าน (ฉบับ 1) กิจกรรม'
 			]);
+			await expect(page.getByRole('option')).not.toContainText(['CLUB-', 'OTHER-']);
 			const search = page.getByPlaceholder('ค้นหารหัสหรือชื่อ...');
-			await search.fill('หน้าที่');
-			await expect(page.getByRole('option')).toHaveText(courses);
-			await search.fill('กิจกรรม');
-			await expect(page.getByRole('option')).toHaveText([
-				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน\s*$/,
-				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน\s*$/
-			]);
-			await page.screenshot({
-				path: `/tmp/delivery-picker-${viewport.width}-${dark ? 'dark' : 'light'}.png`
-			});
 			await search.fill('รักการอ่าน');
+			await expect(page.getByRole('option')).toHaveCount(1);
 			await page.getByRole('option', { name: /รักการอ่าน/ }).click();
-			await expect(picker).toHaveText('รักการอ่าน');
-			await expect(page.getByLabel('คาบที่จัดจริงต่อสัปดาห์')).toHaveAttribute('min', '1');
-			await page.getByRole('combobox', { name: 'ประเภทการเปลี่ยนแปลง', exact: true }).click();
-			await page.getByRole('option', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true }).click();
-			const activityPicker = page.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true });
-			await activityPicker.click();
-			await expect(page.getByRole('option')).toHaveText([
-				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน · ฉบับ 1\s*$/,
-				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน · ฉบับ 1\s*$/
-			]);
-			await page.getByRole('option', { name: /ชุมนุม/ }).click();
-			await expect(activityPicker).toHaveText('ชุมนุม');
+			await expect(
+				activity.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true })
+			).toContainText('รักการอ่าน');
+			await page.keyboard.press('Escape');
+			await expect(activity).toHaveCount(0);
 		});
 	}
 }
@@ -2145,13 +2208,17 @@ test('large delivery changes stay collapsed and bound offering, resource and dif
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 	);
-	await expect(page.getByTestId('delivery-change-summary')).toContainText(
-		'20 กลุ่มรายการ · 120 รายการย่อย'
-	);
 	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
-	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
+	const details = page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true });
+	await expect(details).toBeVisible();
+	await details.click();
+	const dialog = page.getByRole('dialog', { name: 'รายละเอียดการเปลี่ยนแปลง', exact: true });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByTestId('delivery-change-summary')).toHaveText(
+		'20 กลุ่มรายการ · 120 รายการย่อย'
+	);
+	await expect(dialog.getByTestId('delivery-change-offering')).toHaveCount(8);
 	const first = page.getByTestId('delivery-change-offering').first();
 	await first.getByRole('button', { name: /ดูรายละเอียด/ }).click();
 	await expect(first.getByText(/ครูผู้สอน:/)).toHaveCount(8);

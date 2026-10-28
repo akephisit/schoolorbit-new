@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		buildLearningDeliveryChangeRows,
 		groupLearningDeliveryChanges,
@@ -7,49 +7,33 @@
 		deliveryChangePage
 	} from '#lib/academic/learning-delivery-change-list.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { deliveryOfferingLabel } from '#lib/academic/learning-delivery-presentation.js';
 	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
-	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		deleteAcademicTermChangeItem,
 		getAcademicTermChangeSet,
 		getLearningDeliveryManagementOptions,
-		upsertAcademicTermChangeItem,
 		type AcademicTermChangeSet,
 		type ApplyTeacherHandoffResponse,
 		type DeliveryManagementOptions,
 		type LearningTeacherRole,
-		type DeliveryVersion,
-		type UpsertAcademicTermChangeItemRequest
+		type DeliveryVersion
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
-	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import {
-		ArrowRight,
-		CalendarClock,
-		ExternalLink,
-		Plus,
-		Trash2,
-		UserRoundPlus
-	} from '@lucide/svelte';
+	import { ExternalLink, Trash2 } from '@lucide/svelte';
 	import AcademicChangeReadiness from './AcademicChangeReadiness.svelte';
-	import AcademicTeacherChangeForm from './AcademicTeacherChangeForm.svelte';
-	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 	import TeacherHandoffPanel from './TeacherHandoffPanel.svelte';
-
-	type ChangeAction =
-		'add_course' | 'add_activity' | 'stop_offering' | 'adjust_weekly_period_target';
 	type ChangeItem = AcademicTermChangeSet['items'][number];
 	type StopTeacherItem = Extract<ChangeItem, { actionKind: 'stop_group_teacher' }>;
-
 	let {
 		changeSet,
 		offerings,
@@ -72,7 +56,6 @@
 		onDeleted: (sourceVersionId: string | null) => Promise<void>;
 		ensureOfferings: () => Promise<void>;
 	} = $props();
-
 	let changeRows = $derived(buildLearningDeliveryChangeRows(changeSet.changes, changeSet.items));
 	let detailsOpen = $state(false);
 	let openChangeGroupIds = $state<string[]>([]);
@@ -85,137 +68,54 @@
 	);
 	let filteredChanges = $derived(filterLearningDeliveryChanges(groupedChanges, changeSearch));
 	let visibleChanges = $derived(deliveryChangePage(filteredChanges, changePage));
-	function searchChanges(value: string) {
-		changeSearch = value;
-		changePage = 0;
-		rowPages = {};
-		entryPages = {};
-	}
-
-	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
-	let loadingOptions = $state(false);
-	let savingItem = $state(false);
 	let deletingItemId = $state('');
 	let readinessRevision = $state(0);
-	let itemFormOpen = $state(false);
-	let itemFormTrigger = $state<HTMLButtonElement | null>(null);
-	let teacherFormOpen = $state(false);
-	let handoffItemId = $state('');
-	let action = $state<ChangeAction>('add_course');
-	let catalogVersionId = $state('');
-	let gradeLevelId = $state('');
-	let studyProgramId = $state('');
-	let learningOfferingId = $state('');
-	let weeklyPeriodTarget = $state(1);
 	let errorMessage = $state('');
-	let selectedCatalogVersion = $derived(
-		managementOptions?.catalogVersions.find((item) => item.id === catalogVersionId) ?? null
-	);
-	let selectedOffering = $derived(offerings.find((item) => item.id === learningOfferingId) ?? null);
-	$effect(() => {
-		if (action === 'adjust_weekly_period_target' && selectedOffering) {
-			weeklyPeriodTarget = selectedOffering.weeklyPeriodTarget;
-		}
-	});
-	let catalogOptions = $derived(
-		(managementOptions?.catalogVersions ?? [])
-			.filter((item) => item.kind === (action === 'add_activity' ? 'activity' : 'course'))
-			.sort(compareOfferingOptions)
-			.map((item) => ({
-				id: item.id,
-				label: item.kind === 'activity' ? item.name : item.label,
-				description:
-					item.kind === 'course' && item.standardPeriodsPerWeek != null
-						? `มาตรฐาน ${item.standardPeriodsPerWeek} คาบ/สัปดาห์`
-						: item.kind === 'activity'
-							? `กิจกรรมพัฒนาผู้เรียน · ฉบับ ${item.versionNo}`
-							: undefined
-			}))
-	);
-	let offeringOptions = $derived(
-		offerings
-			.filter(
-				(item) =>
-					!changeSet.items.some(
-						(change) =>
-							change.actionKind === 'add_offering' && change.learningOfferingId === item.id
-					)
-			)
-			.sort(compareOfferingOptions)
-			.map((item) => ({
-				id: item.id,
-				label: item.kind === 'activity' ? item.name : `${item.code} — ${item.name}`,
-				description: item.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'
-			}))
-	);
-
-	function compareOfferingOptions(
-		left: { kind: 'course' | 'activity'; code: string; name: string },
-		right: { kind: 'course' | 'activity'; code: string; name: string }
-	): number {
-		if (left.kind !== right.kind) return left.kind === 'course' ? -1 : 1;
-		const leftLabel = left.kind === 'course' ? left.code : left.name;
-		const rightLabel = right.kind === 'course' ? right.code : right.name;
-		return (
-			leftLabel.localeCompare(rightLabel, 'th-TH', { numeric: true }) ||
-			left.name.localeCompare(right.name, 'th-TH')
-		);
-	}
+	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
+	let loadingOptions = $state(false);
+	let handoffItemId = $state('');
+	let handoffOpen = $state(false);
+	const optionsRequest = new LatestRequest();
 	let activeHandoffItem = $derived(
 		changeSet.items.find(
 			(item): item is StopTeacherItem =>
 				item.id === handoffItemId && item.actionKind === 'stop_group_teacher'
 		) ?? null
 	);
-
+	function searchChanges(value: string) {
+		changeSearch = value;
+		changePage = 0;
+		rowPages = {};
+		entryPages = {};
+	}
 	function formatDate(value: string | null): string {
-		if (!value) return 'เลือกวันเริ่มใช้ตอนเผยแพร่';
-		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
-			new Date(`${value}T00:00:00`)
-		);
+		return value
+			? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
+					new Date(`${value}T00:00:00`)
+				)
+			: 'เลือกวันเริ่มใช้ตอนเผยแพร่';
 	}
-
-	function resetItemForm(nextAction: ChangeAction = action) {
-		action = nextAction;
-		catalogVersionId = '';
-		gradeLevelId = '';
-		studyProgramId = '';
-		learningOfferingId = '';
-		weeklyPeriodTarget = 1;
-		errorMessage = '';
+	async function showChanges() {
+		detailsOpen = true;
+		await ensureOfferings();
 	}
-
-	async function loadManagementOptions(): Promise<boolean> {
-		if (managementOptions) return true;
-		if (loadingOptions) return false;
+	async function loadManagementOptions() {
+		if (managementOptions || loadingOptions) return;
+		const ticket = optionsRequest.begin();
 		loadingOptions = true;
+		errorMessage = '';
 		try {
-			managementOptions = await getLearningDeliveryManagementOptions(changeSet.academicTermId);
-			return true;
+			const loaded = await getLearningDeliveryManagementOptions(changeSet.academicTermId, {
+				signal: ticket.signal
+			});
+			if (optionsRequest.isCurrent(ticket.revision)) managementOptions = loaded;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดตัวเลือกไม่สำเร็จ';
-			return false;
+			if (!isAbortError(error) && optionsRequest.isCurrent(ticket.revision))
+				errorMessage = error instanceof Error ? error.message : 'โหลดตัวเลือกไม่สำเร็จ';
 		} finally {
-			loadingOptions = false;
+			if (optionsRequest.isCurrent(ticket.revision)) loadingOptions = false;
 		}
 	}
-
-	async function showItemForm() {
-		if (!canManage || changeSet.status !== 'draft') return;
-		teacherFormOpen = false;
-		handoffItemId = '';
-		itemFormOpen = true;
-		await Promise.all([loadManagementOptions(), ensureOfferings()]);
-	}
-
-	async function showTeacherForm() {
-		if (!canManage || changeSet.status !== 'draft') return;
-		itemFormOpen = false;
-		handoffItemId = '';
-		teacherFormOpen = true;
-		await loadManagementOptions();
-	}
-
 	async function showHandoff(itemId: string) {
 		if (
 			!canManage ||
@@ -223,16 +123,14 @@
 			!$can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)
 		)
 			return;
-		itemFormOpen = false;
-		teacherFormOpen = false;
-		if (!(await loadManagementOptions())) return;
+		detailsOpen = false;
 		handoffItemId = itemId;
+		handoffOpen = true;
+		await loadManagementOptions();
 	}
-
 	function teacherRoleLabel(role: LearningTeacherRole): string {
 		return role === 'primary' ? 'ครูหลัก' : role === 'secondary' ? 'ครูร่วม' : 'ครูผู้ช่วย';
 	}
-
 	function itemTitle(item: ChangeItem): string {
 		switch (item.actionKind) {
 			case 'add_offering':
@@ -269,140 +167,23 @@
 		return `${snapshotOffering ? deliveryOfferingLabel(snapshotOffering) : (offering?.name ?? 'ชื่อรายการไม่พร้อม กรุณาโหลดล่าสุด')}${periods}`;
 	}
 
-	async function teacherItemSaved(updated: AcademicTermChangeSet) {
-		await onChanged(updated);
-		teacherFormOpen = false;
-		readinessRevision += 1;
-	}
-
-	async function handoffApplied(_result: ApplyTeacherHandoffResponse) {
-		await onChanged(changeSet, 'homerooms');
-		readinessRevision += 1;
-	}
-
-	onMount(() => {
-		handoffItemId = initialTeacherChangeItemId;
-		if (
-			handoffItemId &&
-			changeSet.status === 'published' &&
-			canManage &&
-			$can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)
-		) {
-			void loadManagementOptions();
-		}
-	});
-
 	async function recoverItemConflict(message: string) {
 		readinessRevision += 1;
 		errorMessage = message;
 		try {
-			const current = await getAcademicTermChangeSet(changeSet.id);
-			await onChanged(current);
+			await onChanged(await getAcademicTermChangeSet(changeSet.id));
 		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? `${message} (${error.message})`
-					: `${message} และโหลดข้อมูลล่าสุดไม่สำเร็จ`;
+			errorMessage = error instanceof Error ? `${message} (${error.message})` : message;
 		}
 	}
-
-	function targetInput() {
-		return [
-			{
-				targetKind: 'grade_program' as const,
-				homeroomId: null,
-				gradeLevelId,
-				studyProgramId
-			}
-		];
+	async function handoffApplied(_result: ApplyTeacherHandoffResponse) {
+		await onChanged(changeSet, 'homerooms');
+		readinessRevision += 1;
 	}
-
-	function itemRequest(): UpsertAcademicTermChangeItemRequest | null {
-		if (action === 'stop_offering') {
-			if (!learningOfferingId) return null;
-			return {
-				action,
-				changeSetRowVersion: changeSet.rowVersion,
-				itemRowVersion: null,
-				learningOfferingId
-			};
-		}
-		if (action === 'adjust_weekly_period_target') {
-			if (
-				!selectedOffering ||
-				!Number.isInteger(weeklyPeriodTarget) ||
-				weeklyPeriodTarget < (selectedOffering.kind === 'course' ? 0 : 1)
-			)
-				return null;
-			return {
-				action,
-				changeSetRowVersion: changeSet.rowVersion,
-				itemRowVersion: null,
-				learningOfferingId,
-				weeklyPeriodTarget
-			};
-		}
-		if (!catalogVersionId || !gradeLevelId || !studyProgramId) return null;
-		if (action === 'add_course') {
-			return {
-				action,
-				changeSetRowVersion: changeSet.rowVersion,
-				offering: {
-					academicTermId: changeSet.academicTermId,
-					subjectVersionId: catalogVersionId,
-					curriculumCourseRequirementId: null,
-					assessmentTotalScore: '100.00',
-					targets: targetInput()
-				}
-			};
-		}
-		if (!Number.isInteger(weeklyPeriodTarget) || weeklyPeriodTarget <= 0) return null;
-		return {
-			action,
-			changeSetRowVersion: changeSet.rowVersion,
-			weeklyPeriodTarget,
-			offering: {
-				academicTermId: changeSet.academicTermId,
-				activityVersionId: catalogVersionId,
-				curriculumActivityRequirementId: null,
-				registrationType: 'assigned',
-				schedulingMode: 'synchronized',
-				capacity: null,
-				attendanceRequirement: { minimumPercent: '80.00', requiredSessions: null },
-				passCriteria: {
-					requireAttendance: true,
-					requireTeacherConfirmation: true,
-					outcomes: ['pass', 'fail']
-				},
-				targets: targetInput()
-			}
-		};
-	}
-
-	async function saveItem(event: SubmitEvent) {
-		event.preventDefault();
-		if (!canManage) return;
-		const request = itemRequest();
-		if (!request) return;
-		savingItem = true;
-		errorMessage = '';
-		try {
-			const updated = await upsertAcademicTermChangeItem(changeSet.id, request);
-			await onChanged(updated);
-			itemFormOpen = false;
-			resetItemForm();
-			readinessRevision += 1;
-		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverItemConflict('แบบร่างถูกแก้ไขจากที่อื่น กรุณาตรวจรายการล่าสุดแล้วลองใหม่');
-				return;
-			}
-			errorMessage = error instanceof Error ? error.message : 'บันทึกรายการเปลี่ยนแปลงไม่สำเร็จ';
-		} finally {
-			savingItem = false;
-		}
-	}
-
+	onMount(() => {
+		if (initialTeacherChangeItemId) void showHandoff(initialTeacherChangeItemId);
+	});
+	onDestroy(() => optionsRequest.abort());
 	async function removeItem(itemId: string, itemRowVersion: number) {
 		if (!canManage) return;
 		deletingItemId = itemId;
@@ -426,521 +207,265 @@
 	}
 </script>
 
-<section class="overflow-hidden rounded-2xl border border-amber-500/30 bg-card">
-	<header class="border-b border-amber-500/20 bg-amber-500/7 p-4 sm:p-5">
-		<div class="flex flex-wrap items-start justify-between gap-4">
-			<div class="flex min-w-0 items-start gap-3">
-				<div class="rounded-xl bg-amber-500/15 p-2.5 text-amber-800 dark:text-amber-300">
-					<CalendarClock class="size-5" />
-				</div>
-				<div class="min-w-0">
-					<div class="flex flex-wrap items-center gap-2">
-						<h2 class="font-semibold">รุ่นเปิดสอน</h2>
-						<Badge variant="outline" class="border-amber-500/40 bg-background">
-							{changeSet.status === 'draft'
-								? 'แบบร่าง'
-								: changeSet.status === 'published'
-									? 'เผยแพร่แล้ว'
-									: 'ยกเลิกแล้ว'}
-						</Badge>
-					</div>
-					<p class="mt-1 text-sm text-muted-foreground">{changeSet.reason}</p>
-				</div>
-			</div>
-			<div class="shrink-0 rounded-xl border bg-background px-4 py-2 text-end">
-				<p class="text-xs text-muted-foreground">หลังเผยแพร่ เริ่มมีผล</p>
-				<p class="font-medium text-amber-900 dark:text-amber-300">
-					{formatDate(changeSet.effectiveFrom)}
-				</p>
-			</div>
+<section
+	class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
+	aria-label="สรุปรุ่นเปิดสอน"
+>
+	<div class="min-w-0">
+		<div class="flex flex-wrap items-center gap-2">
+			<Badge variant="outline"
+				>{changeSet.status === 'draft'
+					? 'แบบร่าง'
+					: changeSet.status === 'published'
+						? 'เผยแพร่แล้ว'
+						: 'ยกเลิกแล้ว'}</Badge
+			>
+			<p class="text-sm font-medium">{changeSet.reason}</p>
 		</div>
-	</header>
-
-	<div class="min-w-0 space-y-5 p-4 sm:p-5">
-		<section class="space-y-3">
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<div>
-					<h3 class="font-medium">รายการที่จะเปลี่ยน</h3>
-					<p class="text-xs text-muted-foreground">
-						หลักสูตรไม่เปลี่ยน รายการเหล่านี้มีผลเฉพาะภาคเรียนนี้
-					</p>
-				</div>
-				{#if canManage && changeSet.status === 'draft'}
-					<div class="flex flex-wrap gap-2">
-						<Button bind:ref={itemFormTrigger} size="sm" variant="outline" onclick={showItemForm}>
-							<Plus class="size-4" /> เพิ่ม/ปรับรายการสอน
-						</Button>
-						<Button size="sm" variant="outline" onclick={showTeacherForm}>
-							<UserRoundPlus class="size-4" /> เปลี่ยนครูผู้สอน
-						</Button>
-					</div>
-				{/if}
-			</div>
-
-			<Collapsible.Root bind:open={detailsOpen}>
-				<div
-					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3"
-				>
-					<p class="text-sm text-muted-foreground" data-testid="delivery-change-summary">
-						{groupedChanges.length} กลุ่มรายการ · {changeRows.length} รายการย่อย
-					</p>
-					<Collapsible.Trigger>
-						{#snippet child({ props })}<Button variant="outline" size="sm" {...props}
-								>{detailsOpen
-									? 'ซ่อนรายละเอียดการเปลี่ยนแปลง'
-									: 'ดูรายละเอียดการเปลี่ยนแปลง'}</Button
-							>{/snippet}
-					</Collapsible.Trigger>
-				</div>
-				<Collapsible.Content class="mt-3 space-y-3">
-					{#if detailsOpen}
-						<Label for="delivery-change-search">ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู</Label>
-						<Input
-							id="delivery-change-search"
-							value={changeSearch}
-							oninput={(event) => searchChanges(event.currentTarget.value)}
-							placeholder="ค้นหารายการเปลี่ยนแปลง..."
-						/>
-						<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
-							{#each visibleChanges.items as group (group.id)}
-								<Collapsible.Root
-									class="rounded-xl border"
-									data-testid="delivery-change-offering"
-									open={openChangeGroupIds.includes(group.id)}
-									onOpenChange={(open) =>
-										(openChangeGroupIds = open
-											? [...openChangeGroupIds, group.id]
-											: openChangeGroupIds.filter((id) => id !== group.id))}
+		<p class="mt-1 text-xs text-muted-foreground">{formatDate(changeSet.effectiveFrom)}</p>
+	</div>
+	<div class="flex flex-wrap items-center gap-2">
+		<Button size="sm" variant="outline" onclick={showChanges}>ดูรายละเอียดการเปลี่ยนแปลง</Button>
+		{#key `${changeSet.id}:${readinessRevision}`}<AcademicChangeReadiness
+				{changeSet}
+				{canManage}
+				{returnTo}
+				{onChanged}
+				{onDeleted}
+			/>{/key}
+	</div>
+</section>
+<Dialog.Root bind:open={detailsOpen}>
+	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl">
+		<Dialog.Header class="shrink-0"
+			><Dialog.Title>รายละเอียดการเปลี่ยนแปลง</Dialog.Title><Dialog.Description
+				>{changeSet.reason} · การเปลี่ยนแปลงมีผลเฉพาะรุ่นเปิดสอนนี้</Dialog.Description
+			></Dialog.Header
+		>
+		<div class="min-h-0 space-y-3 overflow-y-auto">
+			<p class="text-sm text-muted-foreground" data-testid="delivery-change-summary">
+				{groupedChanges.length} กลุ่มรายการ · {changeRows.length} รายการย่อย
+			</p>
+			<Label for="delivery-change-search">ค้นหารายวิชา กิจกรรม กลุ่ม หรือครู</Label>
+			<Input
+				id="delivery-change-search"
+				value={changeSearch}
+				oninput={(event) => searchChanges(event.currentTarget.value)}
+				placeholder="ค้นหารายการเปลี่ยนแปลง..."
+			/>
+			<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
+				{#each visibleChanges.items as group (group.id)}
+					<Collapsible.Root
+						class="rounded-xl border"
+						data-testid="delivery-change-offering"
+						open={openChangeGroupIds.includes(group.id)}
+						onOpenChange={(open) =>
+							(openChangeGroupIds = open
+								? [...openChangeGroupIds, group.id]
+								: openChangeGroupIds.filter((id) => id !== group.id))}
+					>
+						<Collapsible.Trigger>
+							{#snippet child({ props })}<Button
+									variant="ghost"
+									class="h-auto w-full justify-between gap-3 p-3 text-start whitespace-normal"
+									{...props}
 								>
-									<Collapsible.Trigger>
-										{#snippet child({ props })}<Button
-												variant="ghost"
-												class="h-auto w-full justify-between gap-3 p-3 text-start whitespace-normal"
-												{...props}
-											>
-												<span class="min-w-0 break-words">{group.label}</span><span
-													class="shrink-0 text-xs text-muted-foreground"
-													>{group.rows.length} รายการ · ดูรายละเอียด</span
-												>
-											</Button>{/snippet}
-									</Collapsible.Trigger>
-									<Collapsible.Content class="space-y-3 border-t p-3">
-										{#if openChangeGroupIds.includes(group.id)}
-											{@const rows = deliveryChangePage(group.rows, rowPages[group.id] ?? 0)}
-											{#each rows.items as row (row.resourceId)}
-												{@const firstChange = row.changes[0]}
-												{@const entries = deliveryChangePage(
-													[
-														...row.changes.map((change) => ({ kind: 'change' as const, change })),
-														...row.items.map((item) => ({ kind: 'item' as const, item }))
-													],
-													entryPages[row.resourceId] ?? 0
-												)}
-												<div class="rounded-xl border p-3">
-													<div class="flex flex-wrap items-start justify-between gap-2">
-														<div class="min-w-0 flex-1 space-y-1">
-															{#if firstChange}
-																<p class="font-medium">
-																	{firstChange.kind === 'added'
-																		? 'เพิ่ม'
-																		: firstChange.kind === 'removed'
-																			? 'หยุด'
-																			: 'เปลี่ยน'}
-																	{firstChange.label}
-																</p>
+									<span class="min-w-0 break-words">{group.label}</span><span
+										class="shrink-0 text-xs text-muted-foreground"
+										>{group.rows.length} รายการ · ดูรายละเอียด</span
+									>
+								</Button>{/snippet}
+						</Collapsible.Trigger>
+						<Collapsible.Content class="space-y-3 border-t p-3">
+							{#if openChangeGroupIds.includes(group.id)}
+								{@const rows = deliveryChangePage(group.rows, rowPages[group.id] ?? 0)}
+								{#each rows.items as row (row.resourceId)}
+									{@const firstChange = row.changes[0]}
+									{@const entries = deliveryChangePage(
+										[
+											...row.changes.map((change) => ({ kind: 'change' as const, change })),
+											...row.items.map((item) => ({ kind: 'item' as const, item }))
+										],
+										entryPages[row.resourceId] ?? 0
+									)}
+									<div class="rounded-xl border p-3">
+										<div class="flex flex-wrap items-start justify-between gap-2">
+											<div class="min-w-0 flex-1 space-y-1">
+												{#if firstChange}
+													<p class="font-medium">
+														{firstChange.kind === 'added'
+															? 'เพิ่ม'
+															: firstChange.kind === 'removed'
+																? 'ลบออกจากรุ่น'
+																: 'เปลี่ยน'}
+														{firstChange.label}
+													</p>
+												{/if}
+												{#each entries.items as entry, index (`${entry.kind}:${index}`)}
+													{#if entry.kind === 'change'}
+														<p class="text-sm break-words text-muted-foreground">
+															{#if entry.change.label !== firstChange?.label}{entry.change.label} ·
 															{/if}
-															{#each entries.items as entry, index (`${entry.kind}:${index}`)}
-																{#if entry.kind === 'change'}
-																	<p class="text-sm break-words text-muted-foreground">
-																		{#if entry.change.label !== firstChange?.label}{entry.change
-																				.label} ·
-																		{/if}
-																		{entry.change.field}: {entry.change.before ?? 'ยังไม่มี'} → {entry
-																			.change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
-																	</p>
-																{:else}
-																	<p class="text-sm font-medium">{itemTitle(entry.item)}</p>
-																	<p class="text-sm break-words text-muted-foreground">
-																		{itemDescription(entry.item)}
-																	</p>
-																{/if}
-															{/each}
-														</div>
-														<div class="flex max-w-full flex-wrap items-center gap-1">
-															{#each entries.items.flatMap( (entry) => (entry.kind === 'item' ? [entry.item] : []) ) as item (item.id)}
-																{#if item.actionKind === 'add_offering'}
-																	<Button
-																		href={deliveryOfferingHref(
-																			item.learningOfferingId,
-																			{
-																				academicYearId: changeSet.academicYearId,
-																				academicTermId: changeSet.academicTermId,
-																				deliveryVersionId: changeSet.targetDeliveryVersionId
-																			},
-																			returnTo
-																		)}
-																		data-sveltekit-preload-data="tap"
-																		size="sm"
-																		variant="ghost"
-																	>
-																		{changeSet.status === 'draft'
-																			? 'จัดกลุ่มและครู'
-																			: 'ดูรายละเอียด'}
-																		<ExternalLink class="size-3.5" />
-																	</Button>
-																{/if}
-																{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
-																	<Button
-																		size="sm"
-																		variant="ghost"
-																		onclick={() => showHandoff(item.id)}
-																	>
-																		จัดการคาบที่ได้รับผลกระทบ
-																		<ExternalLink class="size-3.5" />
-																	</Button>
-																{/if}
-																{#if canManage && changeSet.status === 'draft'}
-																	<Button
-																		size={row.items.length > 1 ? 'sm' : 'icon'}
-																		variant="ghost"
-																		disabled={deletingItemId !== ''}
-																		onclick={() => removeItem(item.id, item.rowVersion)}
-																		aria-label={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
-																		title={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
-																	>
-																		<Trash2 class="size-4 shrink-0" />
-																		{#if row.items.length > 1}
-																			<span class="text-wrap text-left">
-																				{itemTitle(item)}{'teacherLabel' in item
-																					? ` · ${item.teacherLabel}`
-																					: ''}
-																			</span>
-																		{/if}
-																	</Button>
-																{/if}
-															{/each}
-														</div>
-													</div>
-													{#if entries.pageCount > 1}
-														<div
-															class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-															aria-label="หน้ารายละเอียดการเปลี่ยนแปลง"
-														>
-															<Button
-																size="sm"
-																variant="outline"
-																disabled={entries.page === 0}
-																onclick={() => (entryPages[row.resourceId] = entries.page - 1)}
-																>รายละเอียดก่อนหน้า</Button
-															>
-															<span>{entries.page + 1}/{entries.pageCount}</span>
-															<Button
-																size="sm"
-																variant="outline"
-																disabled={entries.page + 1 === entries.pageCount}
-																onclick={() => (entryPages[row.resourceId] = entries.page + 1)}
-																>รายละเอียดถัดไป</Button
-															>
-														</div>
+															{entry.change.field}: {entry.change.before ?? 'ยังไม่มี'} → {entry
+																.change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
+														</p>
+													{:else}
+														<p class="text-sm font-medium">{itemTitle(entry.item)}</p>
+														<p class="text-sm break-words text-muted-foreground">
+															{itemDescription(entry.item)}
+														</p>
 													{/if}
-												</div>
-											{/each}
-											{#if rows.pageCount > 1}
-												<div
-													class="flex flex-wrap items-center justify-end gap-2 text-sm"
-													aria-label={`หน้ากลุ่ม ${group.label}`}
+												{/each}
+											</div>
+											<div class="flex max-w-full flex-wrap items-center gap-1">
+												{#each entries.items.flatMap( (entry) => (entry.kind === 'item' ? [entry.item] : []) ) as item (item.id)}
+													{#if item.actionKind === 'add_offering'}
+														<Button
+															href={deliveryOfferingHref(
+																item.learningOfferingId,
+																{
+																	academicYearId: changeSet.academicYearId,
+																	academicTermId: changeSet.academicTermId,
+																	deliveryVersionId: changeSet.targetDeliveryVersionId
+																},
+																returnTo
+															)}
+															data-sveltekit-preload-data="tap"
+															size="sm"
+															variant="ghost"
+														>
+															{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
+															<ExternalLink class="size-3.5" />
+														</Button>
+													{/if}
+													{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
+														<Button size="sm" variant="ghost" onclick={() => showHandoff(item.id)}>
+															จัดการคาบที่ได้รับผลกระทบ
+															<ExternalLink class="size-3.5" />
+														</Button>
+													{/if}
+													{#if canManage && changeSet.status === 'draft'}
+														<Button
+															size={row.items.length > 1 ? 'sm' : 'icon'}
+															variant="ghost"
+															disabled={deletingItemId !== ''}
+															onclick={() => removeItem(item.id, item.rowVersion)}
+															aria-label={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+															title={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+														>
+															<Trash2 class="size-4 shrink-0" />
+															{#if row.items.length > 1}
+																<span class="text-wrap text-left">
+																	{itemTitle(item)}{'teacherLabel' in item
+																		? ` · ${item.teacherLabel}`
+																		: ''}
+																</span>
+															{/if}
+														</Button>
+													{/if}
+												{/each}
+											</div>
+										</div>
+										{#if entries.pageCount > 1}
+											<div
+												class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+												aria-label="หน้ารายละเอียดการเปลี่ยนแปลง"
+											>
+												<Button
+													size="sm"
+													variant="outline"
+													disabled={entries.page === 0}
+													onclick={() => (entryPages[row.resourceId] = entries.page - 1)}
+													>รายละเอียดก่อนหน้า</Button
 												>
-													<Button
-														size="sm"
-														variant="outline"
-														disabled={rows.page === 0}
-														onclick={() => (rowPages[group.id] = rows.page - 1)}
-														>กลุ่มก่อนหน้า</Button
-													><span>{rows.page + 1}/{rows.pageCount}</span><Button
-														size="sm"
-														variant="outline"
-														disabled={rows.page + 1 === rows.pageCount}
-														onclick={() => (rowPages[group.id] = rows.page + 1)}>กลุ่มถัดไป</Button
-													>
-												</div>
-											{/if}
+												<span>{entries.page + 1}/{entries.pageCount}</span>
+												<Button
+													size="sm"
+													variant="outline"
+													disabled={entries.page + 1 === entries.pageCount}
+													onclick={() => (entryPages[row.resourceId] = entries.page + 1)}
+													>รายละเอียดถัดไป</Button
+												>
+											</div>
 										{/if}
-									</Collapsible.Content>
-								</Collapsible.Root>
-							{:else}
-								<p
-									class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
-								>
-									{changeSearch
-										? 'ไม่พบรายการที่ตรงกับการค้นหา'
-										: 'ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู'}
-								</p>
-							{/each}
-						</div>
-						{#if visibleChanges.pageCount > 1}
-							<div
-								class="flex flex-wrap items-center justify-end gap-2 text-sm"
-								aria-label="หน้ารายการเปิดสอนที่เปลี่ยน"
-							>
-								<Button
-									size="sm"
-									variant="outline"
-									disabled={visibleChanges.page === 0}
-									onclick={() => (changePage = visibleChanges.page - 1)}>รายการก่อนหน้า</Button
-								><span
-									>{visibleChanges.page + 1}/{visibleChanges.pageCount} · {visibleChanges.total} รายการ</span
-								><Button
-									size="sm"
-									variant="outline"
-									disabled={visibleChanges.page + 1 === visibleChanges.pageCount}
-									onclick={() => (changePage = visibleChanges.page + 1)}>รายการถัดไป</Button
-								>
-							</div>
-						{/if}
-					{/if}
-				</Collapsible.Content>
-			</Collapsible.Root>
-		</section>
-
-		{#if teacherFormOpen && canManage && changeSet.status === 'draft'}
-			{#if loadingOptions || !managementOptions}
-				<div class="h-48 animate-pulse rounded-xl bg-muted"></div>
-			{:else}
-				<AcademicTeacherChangeForm
-					{changeSet}
-					{managementOptions}
-					onSaved={teacherItemSaved}
-					onConflict={recoverItemConflict}
-					onCancel={() => (teacherFormOpen = false)}
-				/>
+									</div>
+								{/each}
+								{#if rows.pageCount > 1}
+									<div
+										class="flex flex-wrap items-center justify-end gap-2 text-sm"
+										aria-label={`หน้ากลุ่ม ${group.label}`}
+									>
+										<Button
+											size="sm"
+											variant="outline"
+											disabled={rows.page === 0}
+											onclick={() => (rowPages[group.id] = rows.page - 1)}>กลุ่มก่อนหน้า</Button
+										><span>{rows.page + 1}/{rows.pageCount}</span><Button
+											size="sm"
+											variant="outline"
+											disabled={rows.page + 1 === rows.pageCount}
+											onclick={() => (rowPages[group.id] = rows.page + 1)}>กลุ่มถัดไป</Button
+										>
+									</div>
+								{/if}
+							{/if}
+						</Collapsible.Content>
+					</Collapsible.Root>
+				{:else}
+					<p class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+						{changeSearch
+							? 'ไม่พบรายการที่ตรงกับการค้นหา'
+							: 'ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู'}
+					</p>
+				{/each}
+			</div>
+			{#if visibleChanges.pageCount > 1}
+				<div
+					class="flex flex-wrap items-center justify-end gap-2 text-sm"
+					aria-label="หน้ารายการเปิดสอนที่เปลี่ยน"
+				>
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={visibleChanges.page === 0}
+						onclick={() => (changePage = visibleChanges.page - 1)}>รายการก่อนหน้า</Button
+					><span
+						>{visibleChanges.page + 1}/{visibleChanges.pageCount} · {visibleChanges.total} รายการ</span
+					><Button
+						size="sm"
+						variant="outline"
+						disabled={visibleChanges.page + 1 === visibleChanges.pageCount}
+						onclick={() => (changePage = visibleChanges.page + 1)}>รายการถัดไป</Button
+					>
+				</div>
 			{/if}
-		{/if}
-
-		{#if activeHandoffItem && managementOptions && canManage && changeSet.status === 'published' && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
-			{#key activeHandoffItem.id}
-				<TeacherHandoffPanel
+			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+		</div>
+		<Dialog.Footer class="shrink-0"
+			><Button variant="outline" onclick={() => (detailsOpen = false)}>ปิดรายละเอียด</Button
+			></Dialog.Footer
+		>
+	</Dialog.Content>
+</Dialog.Root>
+<Dialog.Root bind:open={handoffOpen}>
+	<Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
+		<Dialog.Header
+			><Dialog.Title>จัดการคาบที่ได้รับผลกระทบ</Dialog.Title><Dialog.Description
+				>ส่งต่อครูสำหรับรายการเปลี่ยนแปลงที่เผยแพร่แล้ว</Dialog.Description
+			></Dialog.Header
+		>
+		{#if loadingOptions}<p role="status">
+				กำลังโหลดตัวเลือก
+			</p>{:else if activeHandoffItem && managementOptions && canManage && changeSet.status === 'published' && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
+			{#key activeHandoffItem.id}<TeacherHandoffPanel
 					{changeSet}
 					teacherChangeItem={activeHandoffItem}
 					{managementOptions}
 					{onChanged}
 					onApplied={handoffApplied}
-					onClose={() => (handoffItemId = '')}
-				/>
-			{/key}
-		{/if}
-
-		{#if errorMessage && !itemFormOpen}
-			<p
-				role="alert"
-				class="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-			>
-				{errorMessage}
-			</p>
-		{/if}
-
-		{#key `${changeSet.id}:${readinessRevision}`}
-			<AcademicChangeReadiness {changeSet} {canManage} {returnTo} {onChanged} {onDeleted} />
-		{/key}
-	</div>
-</section>
-
-{#if canManage && changeSet.status === 'draft'}
-	<Dialog.Root bind:open={itemFormOpen}>
-		<Dialog.Content
-			class="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-2xl"
-			showCloseButton={!savingItem}
-			escapeKeydownBehavior={savingItem ? 'ignore' : 'close'}
-			interactOutsideBehavior={savingItem ? 'ignore' : 'close'}
-			onCloseAutoFocus={(event) => {
-				event.preventDefault();
-				itemFormTrigger?.focus();
-			}}
-		>
-			<Dialog.Header class="shrink-0">
-				<Dialog.Title>เพิ่ม/ปรับรายการสอน</Dialog.Title>
-				<Dialog.Description
-					>หลักสูตรไม่เปลี่ยน รายการเหล่านี้มีผลเฉพาะภาคเรียนนี้</Dialog.Description
-				>
-			</Dialog.Header>
-			<form class="flex min-h-0 flex-col gap-4" onsubmit={saveItem}>
-				<div class="min-h-0 flex-1 overflow-y-auto">
-					<fieldset disabled={savingItem} class="min-w-0 space-y-4">
-						<div class="space-y-2">
-							<Label for="delivery-change-action">ประเภทการเปลี่ยนแปลง</Label>
-							<Select.Root
-								type="single"
-								value={action}
-								onValueChange={(value) => resetItemForm(value as ChangeAction)}
-							>
-								<Select.Trigger id="delivery-change-action" class="w-full">
-									{action === 'add_course'
-										? 'เพิ่มรายวิชา'
-										: action === 'add_activity'
-											? 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
-											: action === 'stop_offering'
-												? 'หยุดรายการเปิดสอน'
-												: 'ปรับคาบต่อสัปดาห์'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="add_course">เพิ่มรายวิชา</Select.Item>
-									<Select.Item value="add_activity">เพิ่มกิจกรรมพัฒนาผู้เรียน</Select.Item>
-									<Select.Item value="stop_offering">หยุดรายการเปิดสอน</Select.Item>
-									<Select.Item value="adjust_weekly_period_target">ปรับคาบต่อสัปดาห์</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-
-						{#if loadingOptions}
-							<div class="h-28 animate-pulse rounded-xl bg-muted"></div>
-						{:else if action === 'add_course' || action === 'add_activity'}
-							{#if managementOptions}
-								<div class="grid gap-4 sm:grid-cols-2">
-									<div class="space-y-2 sm:col-span-2">
-										<Label>{action === 'add_course' ? 'รายวิชา' : 'กิจกรรม'}</Label>
-										<DeliveryOptionCombobox
-											bind:value={catalogVersionId}
-											options={catalogOptions}
-											placeholder={action === 'add_course' ? 'เลือกรายวิชา' : 'เลือกกิจกรรม'}
-											searchPlaceholder="ค้นหารหัสหรือชื่อ..."
-										/>
-									</div>
-									<div class="space-y-2">
-										<Label>ระดับชั้น</Label>
-										<DeliveryOptionCombobox
-											bind:value={gradeLevelId}
-											options={managementOptions.gradeLevels.map((grade) => ({
-												id: grade.id,
-												label: grade.name,
-												description: grade.short_name ?? grade.code
-											}))}
-											placeholder="เลือกระดับชั้น"
-										/>
-									</div>
-									<div class="space-y-2">
-										<Label>แผนการเรียน</Label>
-										<DeliveryOptionCombobox
-											bind:value={studyProgramId}
-											options={managementOptions.studyPrograms.map((program) => ({
-												id: program.id,
-												label: program.name,
-												description: `${program.levelName} · ${program.code}`
-											}))}
-											placeholder="เลือกแผนการเรียน"
-										/>
-									</div>
-								</div>
-								<p
-									class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
-								>
-									ระบบจะใช้กลุ่มสาระหรือสังกัดกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ
-								</p>
-								{#if action === 'add_course' && selectedCatalogVersion}
-									<div
-										class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center"
-									>
-										<div>
-											<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
-											<p class="font-semibold">
-												{selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
-											</p>
-										</div>
-										<ArrowRight class="hidden size-4 text-primary sm:block" />
-										<div>
-											<p class="text-xs text-muted-foreground">จัดจริงภาคเรียนนี้</p>
-											<p class="font-semibold text-primary">
-												เริ่มต้น {selectedCatalogVersion.standardPeriodsPerWeek ?? '—'} คาบ/สัปดาห์
-											</p>
-											<p class="text-[11px] text-muted-foreground">
-												หากต้องการต่างจากมาตรฐาน ให้เพิ่มรายการ “ปรับคาบ” ต่อจากนี้
-											</p>
-										</div>
-									</div>
-								{:else if action === 'add_activity'}
-									<div class="space-y-2">
-										<Label for="activity-weekly-period-target">คาบที่จัดจริงภาคเรียนนี้</Label>
-										<Input
-											id="activity-weekly-period-target"
-											type="number"
-											min="1"
-											bind:value={weeklyPeriodTarget}
-										/>
-										<p class="text-xs text-muted-foreground">
-											กิจกรรมไม่มีค่าคาบมาตรฐาน จึงต้องกำหนดเป้าหมายก่อนจัดตาราง
-										</p>
-									</div>
-								{/if}
-							{/if}
-						{:else}
-							<div class="space-y-2">
-								<Label>รายการเปิดสอน</Label>
-								<DeliveryOptionCombobox
-									bind:value={learningOfferingId}
-									options={offeringOptions}
-									placeholder="เลือกรายวิชาหรือกิจกรรม"
-									searchPlaceholder="ค้นหารหัสหรือชื่อ..."
-								/>
-							</div>
-							{#if action === 'adjust_weekly_period_target'}
-								<div class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-2">
-									<div>
-										<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
-										<p class="font-semibold">
-											{selectedOffering?.catalog.kind === 'course'
-												? selectedOffering.catalog.standardPeriodsPerWeek
-												: 'ไม่มีค่ามาตรฐาน'}
-											{selectedOffering?.catalog.kind === 'course' ? 'คาบ/สัปดาห์' : ''}
-										</p>
-									</div>
-									<div class="space-y-1">
-										<Label for="adjust-weekly-period-target">คาบที่จัดจริงต่อสัปดาห์</Label>
-										<Input
-											id="adjust-weekly-period-target"
-											type="number"
-											min={selectedOffering?.kind === 'course' ? 0 : 1}
-											step="1"
-											bind:value={weeklyPeriodTarget}
-										/>
-										{#if selectedOffering?.kind === 'course'}
-											<p class="text-xs text-muted-foreground">
-												0 คาบ = เปิดรายวิชาโดยไม่จัดคาบแยกในตารางสอน
-												ใช้กับทุกกลุ่มเรียนของรายวิชานี้ในภาคเรียนนี้
-												โดยหน่วยกิตและคาบตามหลักสูตรยังคงเดิม
-											</p>
-										{/if}
-									</div>
-								</div>
-							{:else if selectedOffering}
-								<p
-									class="rounded-lg border border-rose-500/25 bg-rose-500/5 px-3 py-2 text-sm text-rose-800"
-								>
-									หยุดสอนตามวันเริ่มใช้ที่เลือกตอนเผยแพร่ โดยข้อมูลคะแนน ผลการเรียน
-									และประวัติเดิมยังคงอยู่
-								</p>
-							{/if}
-						{/if}
-
-						{#if errorMessage}<p role="alert" class="text-sm text-destructive">
-								{errorMessage}
-							</p>{/if}
-					</fieldset>
-				</div>
-				<Dialog.Footer class="shrink-0 border-t pt-4">
-					<Button
-						type="button"
-						variant="outline"
-						disabled={savingItem}
-						onclick={() => (itemFormOpen = false)}>ยกเลิก</Button
-					>
-					<LoadingButton
-						type="submit"
-						loading={savingItem}
-						loadingLabel="กำลังบันทึก"
-						disabled={!itemRequest()}
-					>
-						บันทึกรายการ
-					</LoadingButton>
-				</Dialog.Footer>
-			</form>
-		</Dialog.Content>
-	</Dialog.Root>
-{/if}
+					onClose={() => (handoffOpen = false)}
+				/>{/key}
+		{:else if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>
+			<Button variant="outline" onclick={loadManagementOptions}>ลองอีกครั้ง</Button>{/if}
+	</Dialog.Content>
+</Dialog.Root>

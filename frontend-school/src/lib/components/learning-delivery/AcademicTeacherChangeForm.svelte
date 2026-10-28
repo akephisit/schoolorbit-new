@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
 			new Date(`${value}T00:00:00`)
@@ -26,25 +27,39 @@
 		managementOptions,
 		onSaved,
 		onConflict,
-		onCancel
+		onCancel,
+		offeringId,
+		initialGroupId,
+		onSavingChange
 	}: {
 		changeSet: AcademicTermChangeSet;
 		managementOptions: DeliveryManagementOptions;
 		onSaved: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
 		onConflict: (message: string) => void | Promise<void>;
 		onCancel: () => void;
+		offeringId: string;
+		initialGroupId: string;
+		onSavingChange: (saving: boolean) => void;
 	} = $props();
 
+	const sessionCallbacks = untrack(() => ({ onSaved, onConflict, onSavingChange, onCancel }));
+
 	let action = $state<TeacherAction>('add_group_teacher');
-	let learningGroupId = $state('');
+	let learningGroupId = $state(untrack(() => initialGroupId));
 	let learningGroupTeacherId = $state('');
 	let teacherId = $state('');
 	let teacherRole = $state<LearningTeacherRole>('primary');
 	let saving = $state(false);
 	let errorMessage = $state('');
+	let savedChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
 
 	let publishedGroups = $derived(
-		managementOptions.learningGroups.filter((group) => group.status === 'published')
+		managementOptions.learningGroups.filter(
+			(group) =>
+				group.status === 'published' &&
+				group.learningOfferingId === offeringId &&
+				group.id === initialGroupId
+		)
 	);
 	let groupOptions = $derived(
 		publishedGroups.map((group) => ({
@@ -127,7 +142,7 @@
 
 	function resetSelection(nextAction: TeacherAction = action) {
 		action = nextAction;
-		learningGroupId = '';
+		learningGroupId = initialGroupId;
 		learningGroupTeacherId = '';
 		teacherId = '';
 		teacherRole = 'primary';
@@ -186,140 +201,178 @@
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (!request) return;
+		if (!request || savedChangeSet) return;
 		saving = true;
+		sessionCallbacks.onSavingChange(true);
 		errorMessage = '';
 		try {
 			const updated = await upsertAcademicTermChangeItem(changeSet.id, request);
-			await onSaved(updated);
+			savedChangeSet = updated;
+			await sessionCallbacks.onSaved(updated);
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) {
-				await onConflict('ข้อมูลกลุ่มเรียนหรือชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจรายการล่าสุด');
+				await sessionCallbacks.onConflict(
+					'ข้อมูลกลุ่มเรียนหรือชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจรายการล่าสุด'
+				);
 				return;
 			}
 			errorMessage = error instanceof Error ? error.message : 'บันทึกการเปลี่ยนครูไม่สำเร็จ';
 		} finally {
 			saving = false;
+			sessionCallbacks.onSavingChange(false);
+		}
+	}
+	async function showSaved() {
+		if (!savedChangeSet || saving) return;
+		saving = true;
+		sessionCallbacks.onSavingChange(true);
+		errorMessage = '';
+		try {
+			await sessionCallbacks.onSaved(savedChangeSet);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'แสดงครูที่บันทึกแล้วไม่สำเร็จ';
+		} finally {
+			saving = false;
+			sessionCallbacks.onSavingChange(false);
 		}
 	}
 </script>
 
-<form class="space-y-4 rounded-xl border border-sky-500/25 bg-sky-500/[0.035] p-4" onsubmit={save}>
-	<div class="flex items-start justify-between gap-3">
-		<div class="flex min-w-0 items-start gap-3">
-			<div class="rounded-lg bg-sky-500/12 p-2 text-sky-700">
-				<UserRoundPlus class="size-4" />
+<form class="space-y-4" onsubmit={save}>
+	<fieldset disabled={saving} class="space-y-4">
+		<div class="flex items-start justify-between gap-3">
+			<div class="flex min-w-0 items-start gap-3">
+				<div class="rounded-lg bg-sky-500/12 p-2 text-sky-700">
+					<UserRoundPlus class="size-4" />
+				</div>
+				<div>
+					<h3 class="font-medium">เปลี่ยนครูผู้สอนกลางภาค</h3>
+					<p class="text-xs leading-5 text-muted-foreground">
+						บันทึกเป็นแบบร่างก่อน แล้วเลือกวันเริ่มใช้ตอนเผยแพร่ หลังเผยแพร่เท่านั้น
+					</p>
+				</div>
 			</div>
-			<div>
-				<h3 class="font-medium">เปลี่ยนครูผู้สอนกลางภาค</h3>
-				<p class="text-xs leading-5 text-muted-foreground">
-					บันทึกเป็นแบบร่างก่อน แล้วเลือกวันเริ่มใช้ตอนเผยแพร่ หลังเผยแพร่เท่านั้น
-				</p>
-			</div>
-		</div>
-		<Button type="button" size="icon" variant="ghost" onclick={onCancel} aria-label="ปิดแบบฟอร์ม">
-			<X class="size-4" />
-		</Button>
-	</div>
-
-	<div class="grid gap-4 lg:grid-cols-2">
-		<div class="space-y-2">
-			<Label>สิ่งที่ต้องการเปลี่ยน</Label>
-			<Select.Root
-				type="single"
-				value={action}
-				onValueChange={(value) => resetSelection(value as TeacherAction)}
+			<Button
+				type="button"
+				size="icon"
+				variant="ghost"
+				onclick={sessionCallbacks.onCancel}
+				aria-label="ปิดแบบฟอร์ม"
 			>
-				<Select.Trigger class="w-full">{actionLabel(action)}</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="add_group_teacher">เพิ่มครูในกลุ่มเรียน</Select.Item>
-					<Select.Item value="adjust_group_teacher_role">ปรับบทบาทความรับผิดชอบ</Select.Item>
-					<Select.Item value="stop_group_teacher">หยุดความรับผิดชอบของครู</Select.Item>
-				</Select.Content>
-			</Select.Root>
+				<X class="size-4" />
+			</Button>
 		</div>
-		<div class="space-y-2">
-			<Label>กลุ่มเรียน</Label>
-			<DeliveryOptionCombobox
-				bind:value={() => learningGroupId, changeGroup}
-				options={groupOptions}
-				placeholder="ค้นหารหัสหรือชื่อกลุ่มเรียน"
-				searchPlaceholder="ค้นหากลุ่มเรียน..."
-			/>
-		</div>
-	</div>
 
-	{#if learningGroupId}
 		<div class="grid gap-4 lg:grid-cols-2">
-			{#if action === 'add_group_teacher'}
-				<div class="space-y-2">
-					<Label>ครูที่จะเพิ่ม</Label>
-					<DeliveryOptionCombobox
-						bind:value={teacherId}
-						options={teacherOptions}
-						placeholder="ค้นหาชื่อครู"
-						searchPlaceholder="ค้นหาครู..."
-					/>
-				</div>
-			{:else}
-				<div class="space-y-2">
-					<Label>ครูและช่วงความรับผิดชอบเดิม</Label>
-					<DeliveryOptionCombobox
-						bind:value={() => learningGroupTeacherId, changeAssignment}
-						options={assignmentOptions}
-						placeholder="เลือกครูจากช่วงที่ใช้งานอยู่"
-						searchPlaceholder="ค้นหาครู..."
-					/>
-				</div>
-			{/if}
-			{#if action !== 'stop_group_teacher'}
-				<div class="space-y-2">
-					<Label>บทบาทหลังเริ่มใช้</Label>
-					<Select.Root
-						type="single"
-						value={teacherRole}
-						onValueChange={(value) => (teacherRole = value as LearningTeacherRole)}
-					>
-						<Select.Trigger class="w-full">{roleLabel(teacherRole)}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="primary">ครูหลัก</Select.Item>
-							<Select.Item value="secondary">ครูร่วม</Select.Item>
-							<Select.Item value="assistant">ครูผู้ช่วย</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{/if}
-		</div>
-	{/if}
-
-	{#if selectedGroup && (selectedAssignment || (action === 'add_group_teacher' && teacherId))}
-		<div
-			class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
-		>
-			<div class="min-w-0">
-				<p class="text-xs text-muted-foreground">ก่อนวันที่เริ่มใช้</p>
-				<p class="truncate font-medium">
-					{selectedAssignment
-						? `${selectedAssignment.displayName} · ${roleLabel(selectedAssignment.role)}`
-						: 'ข้อมูลครูเดิมยังคงอยู่'}
-				</p>
+			<div class="space-y-2">
+				<Label>สิ่งที่ต้องการเปลี่ยน</Label>
+				<Select.Root
+					type="single"
+					value={action}
+					onValueChange={(value) => resetSelection(value as TeacherAction)}
+				>
+					<Select.Trigger class="w-full">{actionLabel(action)}</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="add_group_teacher">เพิ่มครูในกลุ่มเรียน</Select.Item>
+						<Select.Item value="adjust_group_teacher_role">ปรับบทบาทความรับผิดชอบ</Select.Item>
+						<Select.Item value="stop_group_teacher">หยุดความรับผิดชอบของครู</Select.Item>
+					</Select.Content>
+				</Select.Root>
 			</div>
-			<ArrowRight class="hidden size-4 text-sky-700 sm:block" />
-			<div class="min-w-0">
-				<p class="text-xs text-muted-foreground">หลังเผยแพร่และถึงวันที่เริ่มใช้</p>
-				<p class="truncate font-medium text-sky-800">
-					{action === 'stop_group_teacher'
-						? 'สิ้นสุดความรับผิดชอบ (คาบเรียนต้องส่งต่อแยกต่างหาก)'
-						: `${managementOptions.teachers.find((teacher) => teacher.id === teacherId)?.name ?? selectedAssignment?.displayName ?? 'ครูที่เลือก'} · ${roleLabel(teacherRole)}`}
-				</p>
+			<div class="space-y-2">
+				<Label>กลุ่มเรียน</Label>
+				<DeliveryOptionCombobox
+					bind:value={() => learningGroupId, changeGroup}
+					options={groupOptions}
+					placeholder="ค้นหารหัสหรือชื่อกลุ่มเรียน"
+					searchPlaceholder="ค้นหากลุ่มเรียน..."
+				/>
 			</div>
 		</div>
-	{/if}
 
-	{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+		{#if learningGroupId}
+			<div class="grid gap-4 lg:grid-cols-2">
+				{#if action === 'add_group_teacher'}
+					<div class="space-y-2">
+						<Label>ครูที่จะเพิ่ม</Label>
+						<DeliveryOptionCombobox
+							bind:value={teacherId}
+							options={teacherOptions}
+							placeholder="ค้นหาชื่อครู"
+							searchPlaceholder="ค้นหาครู..."
+						/>
+					</div>
+				{:else}
+					<div class="space-y-2">
+						<Label>ครูและช่วงความรับผิดชอบเดิม</Label>
+						<DeliveryOptionCombobox
+							bind:value={() => learningGroupTeacherId, changeAssignment}
+							options={assignmentOptions}
+							placeholder="เลือกครูจากช่วงที่ใช้งานอยู่"
+							searchPlaceholder="ค้นหาครู..."
+						/>
+					</div>
+				{/if}
+				{#if action !== 'stop_group_teacher'}
+					<div class="space-y-2">
+						<Label>บทบาทหลังเริ่มใช้</Label>
+						<Select.Root
+							type="single"
+							value={teacherRole}
+							onValueChange={(value) => (teacherRole = value as LearningTeacherRole)}
+						>
+							<Select.Trigger class="w-full">{roleLabel(teacherRole)}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="primary">ครูหลัก</Select.Item>
+								<Select.Item value="secondary">ครูร่วม</Select.Item>
+								<Select.Item value="assistant">ครูผู้ช่วย</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if selectedGroup && (selectedAssignment || (action === 'add_group_teacher' && teacherId))}
+			<div
+				class="grid gap-2 rounded-xl border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
+			>
+				<div class="min-w-0">
+					<p class="text-xs text-muted-foreground">ก่อนวันที่เริ่มใช้</p>
+					<p class="truncate font-medium">
+						{selectedAssignment
+							? `${selectedAssignment.displayName} · ${roleLabel(selectedAssignment.role)}`
+							: 'ข้อมูลครูเดิมยังคงอยู่'}
+					</p>
+				</div>
+				<ArrowRight class="hidden size-4 text-sky-700 sm:block" />
+				<div class="min-w-0">
+					<p class="text-xs text-muted-foreground">หลังเผยแพร่และถึงวันที่เริ่มใช้</p>
+					<p class="truncate font-medium text-sky-800">
+						{action === 'stop_group_teacher'
+							? 'สิ้นสุดความรับผิดชอบ (คาบเรียนต้องส่งต่อแยกต่างหาก)'
+							: `${managementOptions.teachers.find((teacher) => teacher.id === teacherId)?.name ?? selectedAssignment?.displayName ?? 'ครูที่เลือก'} · ${roleLabel(teacherRole)}`}
+					</p>
+				</div>
+			</div>
+		{/if}
+
+		{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+	</fieldset>
+	{#if savedChangeSet}<p role="status" class="text-sm">บันทึกการเปลี่ยนครูแล้ว</p>
+		<LoadingButton type="button" variant="outline" loading={saving} onclick={showSaved}
+			>แสดงครูที่บันทึกแล้ว</LoadingButton
+		>{/if}
 	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" onclick={onCancel}>ยกเลิก</Button>
-		<LoadingButton type="submit" loading={saving} loadingLabel="กำลังบันทึก" disabled={!request}>
+		<Button type="button" variant="outline" disabled={saving} onclick={sessionCallbacks.onCancel}
+			>ยกเลิก</Button
+		>
+		<LoadingButton
+			type="submit"
+			loading={saving}
+			loadingLabel="กำลังบันทึก"
+			disabled={!request || savedChangeSet !== null}
+		>
 			บันทึกการเปลี่ยนครู
 		</LoadingButton>
 	</div>

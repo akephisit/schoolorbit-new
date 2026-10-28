@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { untrack, onDestroy } from 'svelte';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import { deliveryFindingHref } from '#lib/navigation/learning-delivery.js';
 	import {
@@ -52,6 +52,7 @@
 	let deleting = $state(false);
 	let preparingDelete = $state(false);
 	let publishOpen = $state(false);
+	let previewOpen = $state(false);
 	let deleteOpen = $state(false);
 	let selectedDate = $state('');
 	let publicationKey = $state('');
@@ -93,6 +94,7 @@
 		clearPreview();
 	}
 	function openPublication() {
+		previewOpen = false;
 		clearPreview();
 		const today = new Intl.DateTimeFormat('en-CA', {
 			timeZone: 'Asia/Bangkok',
@@ -213,6 +215,9 @@
 			deleting = false;
 		}
 	}
+	onDestroy(() => {
+		requestRevision++;
+	});
 </script>
 
 {#snippet result()}
@@ -282,49 +287,69 @@
 		/>{/if}
 {/snippet}
 
-<section class="space-y-4" aria-label="ตรวจและเผยแพร่รุ่นเปิดสอน">
+<div class="flex flex-wrap items-center gap-2" aria-label="ตรวจและเผยแพร่รุ่นเปิดสอน">
 	{#if changeSet.status === 'draft'}
-		<div class="flex flex-wrap items-center justify-between gap-3">
-			<div>
-				<h3 class="font-medium">ตรวจผลกระทบและความพร้อม</h3>
-				<p class="text-xs text-muted-foreground">ผลเบื้องต้นก่อนเลือกวันเริ่มใช้</p>
-			</div>
-			<LoadingButton
-				variant="outline"
-				size="sm"
-				loading={loadingPreview}
-				loadingLabel="กำลังตรวจ"
-				disabled={publishing || deleting}
-				onclick={refreshPreview}><RefreshCw class="size-4" />ตรวจความพร้อม</LoadingButton
-			>
-		</div>
-		{#if !publishOpen}{@render result()}{/if}
-	{:else if changeSet.status === 'published'}<p class="text-sm">
-			เผยแพร่แล้ว เริ่มใช้ {changeSet.effectiveFrom} · ตารางเดิมยังคงข้อมูลของรุ่นที่อ้างอิง
-		</p>{/if}
-	{#if canManage && changeSet.status !== 'published'}
-		<div class="flex flex-wrap gap-2">
-			{#if changeSet.status === 'draft'}<Button
-					onclick={openPublication}
-					disabled={loadingPreview || preparingDelete || deleting}
-					><Send class="size-4" />เผยแพร่รุ่นเปิดสอน</Button
-				>{/if}
-			<LoadingButton
-				variant="destructive"
-				loading={preparingDelete}
-				loadingLabel="กำลังตรวจข้อมูล"
-				disabled={loadingPreview || publishing || deleting}
-				onclick={prepareDeletion}
-				><Trash2 class="size-4" />{changeSet.status === 'draft'
-					? 'ลบแบบร่าง'
-					: 'ลบรุ่นที่ยกเลิก'}</LoadingButton
-			>
-		</div>
+		<Button
+			variant="outline"
+			size="sm"
+			disabled={publishing || deleting}
+			onclick={() => {
+				previewOpen = true;
+				void refreshPreview();
+			}}><RefreshCw class="size-4" />ตรวจความพร้อม</Button
+		>
 	{/if}
-	{#if errorMessage && !publishOpen && !deleteOpen}<p role="alert" class="text-sm text-destructive">
+	{#if canManage && changeSet.status !== 'published'}
+		{#if changeSet.status === 'draft'}<Button
+				size="sm"
+				onclick={openPublication}
+				disabled={loadingPreview || preparingDelete || deleting}
+				><Send class="size-4" />เผยแพร่รุ่นเปิดสอน</Button
+			>{/if}
+		<LoadingButton
+			size="sm"
+			variant="outline"
+			loading={preparingDelete}
+			loadingLabel="กำลังตรวจข้อมูล"
+			disabled={loadingPreview || publishing || deleting}
+			onclick={prepareDeletion}
+			><Trash2 class="size-4" />{changeSet.status === 'draft'
+				? 'ลบแบบร่าง'
+				: 'ลบรุ่นที่ยกเลิก'}</LoadingButton
+		>
+	{/if}
+	{#if errorMessage && !previewOpen && !publishOpen && !deleteOpen}<p
+			role="alert"
+			class="text-sm text-destructive"
+		>
 			{errorMessage}
 		</p>{/if}
-</section>
+</div>
+<Dialog.Root bind:open={previewOpen}>
+	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-2xl">
+		<Dialog.Header class="shrink-0"
+			><Dialog.Title>ตรวจผลกระทบและความพร้อม</Dialog.Title><Dialog.Description
+				>ผลเบื้องต้นก่อนเลือกวันเริ่มใช้ · {changeSet.reason}</Dialog.Description
+			></Dialog.Header
+		>
+		<div class="min-h-0 space-y-4 overflow-y-auto">
+			{@render result()}{#if errorMessage}<p role="alert" class="text-sm text-destructive">
+					{errorMessage}
+				</p>{/if}
+		</div>
+		<Dialog.Footer class="shrink-0"
+			><Button variant="outline" onclick={() => (previewOpen = false)}>ปิดผลตรวจ</Button
+			><LoadingButton
+				variant="outline"
+				loading={loadingPreview}
+				loadingLabel="กำลังตรวจ"
+				onclick={refreshPreview}>ตรวจความพร้อมอีกครั้ง</LoadingButton
+			>{#if canManage}<Button onclick={openPublication} disabled={loadingPreview}
+					>เผยแพร่รุ่นเปิดสอน</Button
+				>{/if}</Dialog.Footer
+		>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={publishOpen}>
 	<Dialog.Content

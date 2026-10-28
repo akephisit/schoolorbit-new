@@ -65,6 +65,7 @@ struct OfferingAggregateRow {
 
 #[derive(Debug, sqlx::FromRow)]
 struct CatalogVersionRow {
+    subject_type: Option<String>,
     id: Uuid,
     scheduling_mode: Option<ActivitySchedulingMode>,
     kind: LearningOfferingKind,
@@ -1314,11 +1315,11 @@ pub async fn delivery_management_options_on_connection(
     let catalog_rows: Vec<CatalogVersionRow> = DbSession::new(connection).query_as("academic_delivery.services.workspaces.delivery_management_options_on_connection",
         r#"
         SELECT option.id, option.kind, option.code, option.name, option.version_no,
-               option.standard_periods_per_week, option.scheduling_mode
+               option.standard_periods_per_week, option.scheduling_mode, option.subject_type
         FROM (
             SELECT version.id, 'course'::text AS kind, subject.code,
                    version.name_th AS name, version.version_no,
-                   version.periods_per_week AS standard_periods_per_week, NULL::text AS scheduling_mode
+                   version.periods_per_week AS standard_periods_per_week, NULL::text AS scheduling_mode, version.type AS subject_type
             FROM subject_versions version
             JOIN subjects subject ON subject.id = version.subject_id
             WHERE version.status = 'published'
@@ -1327,7 +1328,7 @@ pub async fn delivery_management_options_on_connection(
             UNION ALL
             SELECT version.id, 'activity'::text AS kind, activity.code,
                    version.name, version.version_no,
-                   NULL::integer AS standard_periods_per_week, version.scheduling_mode
+                   NULL::integer AS standard_periods_per_week, version.scheduling_mode, NULL::text AS subject_type
             FROM activity_versions version
             JOIN activities activity ON activity.id = version.activity_id
             WHERE version.status = 'published'
@@ -1353,6 +1354,7 @@ pub async fn delivery_management_options_on_connection(
         .into_iter()
         .map(|row| DeliveryCatalogVersionOption {
             id: row.id,
+            subject_type: row.subject_type,
             kind: row.kind,
             scheduling_mode: row.scheduling_mode,
             label: format!("{} — {} (ฉบับ {})", row.code, row.name, row.version_no),

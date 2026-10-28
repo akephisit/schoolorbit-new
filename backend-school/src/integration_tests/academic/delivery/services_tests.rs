@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 138).await.unwrap();
+    apply_migrations_through(&pool, 142).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 138).await.unwrap();
+    apply_migrations_through(&pool, 142).await.unwrap();
     pool
 }
 
@@ -7728,3 +7728,9 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
 
 #[path = "bulk_group_setup_tests.rs"]
 mod bulk_group_setup_tests;
+
+#[path = "draft_removal_tests.rs"]
+mod draft_removal_tests;
+
+#[path = "preparation_target_tests.rs"]
+mod preparation_target_tests;

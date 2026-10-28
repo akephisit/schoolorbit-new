@@ -538,6 +538,7 @@ async function mockBulkSetup(
 		conflictOnce?: boolean;
 		optionsGate?: Promise<void>;
 		blocked?: boolean;
+		onlySkipped?: boolean;
 		preparationGate?: Promise<void>;
 		initialTrackingMode?: 'manual' | 'homeroom';
 		trackingGate?: Promise<void>;
@@ -724,6 +725,19 @@ async function mockBulkSetup(
 				});
 			}
 			applyRequests.push(body);
+			if (options.onlySkipped)
+				return void (await route.fulfill({
+					status: 409,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'ไม่มีกลุ่มเรียนที่ต้องเปลี่ยนการตั้งค่า' })
+				}));
+
+			if (options.blocked)
+				return void (await route.fulfill({
+					status: 409,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'กลุ่มนี้ไม่พร้อมแก้ไข' })
+				}));
 			if (options.applyGate) await options.applyGate;
 			if (options.conflictOnce && applyRequests.length === 1) {
 				currentVersion = 2;
@@ -816,9 +830,9 @@ async function chooseBulkTeacher(page: Page) {
 	return dialog;
 }
 
-for (const width of [1440, 390]) {
+for (const width of [1280, 390]) {
 	for (const dark of [false, true]) {
-		test(`bulk setup previews explicit scope, skips existing primary and preserves co-teachers at ${width}px ${dark ? 'dark' : 'light'}`, async ({
+		test(`bulk setup saves explicit scope in one step, skips existing primary and preserves co-teachers at ${width}px ${dark ? 'dark' : 'light'}`, async ({
 			page
 		}, testInfo) => {
 			await page.setViewportSize({ width, height: 900 });
@@ -830,37 +844,23 @@ for (const width of [1440, 390]) {
 			await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 			const dialog = await chooseBulkTeacher(page);
 			await expect(
-				dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })
+				dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 			).toBeDisabled();
+			await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toHaveCount(
+				0
+			);
 			await dialog.getByLabel('ค้นหากลุ่มเป้าหมาย', { exact: true }).fill('ม.1/1');
 			await dialog
 				.getByRole('button', { name: 'เลือกกลุ่มที่แก้ไขได้ 2 กลุ่ม (ทุกหน้า)', exact: true })
 				.click();
 			await dialog.getByLabel('ค้นหากลุ่มเป้าหมาย', { exact: true }).fill('');
 			await expect(dialog).toContainText('เลือก 2/2 กลุ่ม');
-			await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-			await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
-				'เปลี่ยน 1 · ข้าม 1 · ติดข้อจำกัด 0'
-			);
-			await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
-				'ครูหลักปัจจุบัน: ครูหลักเดิม'
-			);
-			await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
-				'ข้ามครูหลักที่กำหนดแล้ว'
-			);
-			expect(fixture.previewRequests).toEqual([
-				{
-					deliveryVersionId: ids.version,
-					deliveryVersionRowVersion: 1,
-					groups: [
-						{ learningGroupId: ids.groupA, rowVersion: 1 },
-						{ learningGroupId: ids.groupB, rowVersion: 1 }
-					],
-					primaryTeacher: { teacherId: bulkTeacherId, replaceExistingPrimary: false }
-				}
-			]);
+			await expect(
+				dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+			).toBeEnabled();
 			await page.screenshot({
-				path: testInfo.outputPath(`bulk-preview-${width}-${dark ? 'dark' : 'light'}.png`)
+				animations: 'disabled',
+				path: testInfo.outputPath(`bulk-direct-save-${width}-${dark ? 'dark' : 'light'}.png`)
 			});
 			const bounds = await dialog.boundingBox();
 			expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -883,12 +883,24 @@ for (const width of [1440, 390]) {
 			await expect
 				.poll(() => page.getByRole('main').evaluate((element) => element.scrollTop))
 				.toBeGreaterThan(0);
-			expect(fixture.applyRequests).toEqual(fixture.previewRequests);
+			expect(fixture.applyRequests).toEqual([
+				{
+					deliveryVersionId: ids.version,
+					deliveryVersionRowVersion: 1,
+					groups: [
+						{ learningGroupId: ids.groupA, rowVersion: 1 },
+						{ learningGroupId: ids.groupB, rowVersion: 1 }
+					],
+					primaryTeacher: { teacherId: bulkTeacherId, replaceExistingPrimary: false }
+				}
+			]);
+			expect(fixture.previewRequests).toHaveLength(0);
 			await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 			const reopened = await chooseBulkTeacher(page);
 			await reopened.getByRole('checkbox', { name: /ม.1\/1/ }).check();
-			await reopened.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-			await expect(reopened.getByTestId('delivery-bulk-preview')).toContainText('ครูหลักใหม่');
+			await expect(
+				reopened.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+			).toBeEnabled();
 			await reopened.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 			await page.getByRole('button', { name: /ม.1\/2/ }).click();
 			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
@@ -922,14 +934,12 @@ test('bulk explicit replacement and roster mode use one atomic apply and prevent
 		.check();
 	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
 	await dialog.getByRole('radio', { name: 'จัดรายชื่อเอง', exact: true }).check();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText('แทนครูหลักเดิม');
-	expect(fixture.previewRequests[0]).toMatchObject({
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	expect(fixture.applyRequests[0]).toMatchObject({
 		groups: [{ learningGroupId: ids.groupB, rowVersion: 1 }],
 		primaryTeacher: { replaceExistingPrimary: true },
 		rosterTracking: { mode: 'manual', effectiveFrom: null }
 	});
-	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toBeDisabled();
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeVisible();
@@ -947,7 +957,6 @@ test('bulk conflict preserves choices, requires explicit latest read and sends f
 	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 	const dialog = await chooseBulkTeacher(page);
 	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog.getByRole('alert')).toContainText('โหลดกลุ่มล่าสุด');
 	await expect(dialog.getByRole('checkbox', { name: /ม.1\/1/ })).toBeChecked();
@@ -958,7 +967,6 @@ test('bulk conflict preserves choices, requires explicit latest read and sends f
 		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 	).toBeDisabled();
 	await dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true }).click();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	expect(fixture.applyRequests).toHaveLength(2);
@@ -968,7 +976,7 @@ test('bulk conflict preserves choices, requires explicit latest read and sends f
 	});
 });
 
-test('bulk preview blocks unsafe targets and a late options response cannot reopen a closed dialog', async ({
+test('bulk apply rejects unsafe targets atomically and a late options response cannot reopen a closed dialog', async ({
 	page
 }) => {
 	const gate = deferred();
@@ -982,13 +990,52 @@ test('bulk preview blocks unsafe targets and a late options response cannot reop
 	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 	dialog = await chooseBulkTeacher(page);
 	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText('ติดข้อจำกัด 1');
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText('กลุ่มนี้ไม่พร้อมแก้ไข');
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText('กลุ่มนี้ไม่พร้อมแก้ไข');
+	await expect(dialog.getByRole('alert')).toContainText('โหลดกลุ่มล่าสุด');
+	await expect(dialog.getByRole('checkbox', { name: /ม.1\/1/ })).toBeChecked();
 	await expect(
 		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 	).toBeDisabled();
-	expect(fixture.applyRequests).toHaveLength(0);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests).toHaveLength(1);
+});
+
+test('bulk only-skipped group refusal preserves the actual server reason and choices until explicit reload', async ({
+	page
+}) => {
+	const fixture = await mockBulkSetup(page, { onlySkipped: true });
+	await page.goto(url());
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = await chooseBulkTeacher(page);
+	await dialog.getByRole('checkbox', { name: /ม.1\/2/ }).check();
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText('ไม่มีกลุ่มเรียนที่ต้องเปลี่ยนการตั้งค่า');
+	await expect(dialog.getByRole('alert')).toContainText('โหลดกลุ่มล่าสุด');
+	await expect(dialog.getByRole('checkbox', { name: /ม.1\/2/ })).toBeChecked();
+	await expect(
+		dialog.getByRole('combobox', { name: 'เลือกครูหลักสำหรับกลุ่มเป้าหมาย', exact: true })
+	).toContainText('ครูหลักใหม่');
+	await expect(
+		dialog.getByRole('checkbox', { name: 'แทนครูหลักเดิมในกลุ่มที่เลือกด้วย', exact: true })
+	).not.toBeChecked();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeDisabled();
+	expect(fixture.applyRequests).toHaveLength(1);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests[0]).toMatchObject({
+		groups: [{ learningGroupId: ids.groupB, rowVersion: 1 }],
+		primaryTeacher: { replaceExistingPrimary: false }
+	});
+	expect(fixture.applyRequests[0].rosterTracking).toBeUndefined();
+	await dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	await expect(dialog.getByRole('checkbox', { name: /ม.1\/2/ })).toBeChecked();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeEnabled();
+	expect(fixture.applyRequests).toHaveLength(1);
 });
 
 test('bulk automatic roster configuration defaults to Bangkok today and patches selected tracking without rebuilding members', async ({
@@ -1001,8 +1048,12 @@ test('bulk automatic roster configuration defaults to Bangkok today and patches 
 	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
 	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
-	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
-	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeEnabled();
+	await expect(
+		dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true })
+	).toBeChecked();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeEnabled();
 	await expect(
 		dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
 	).toContainText('27 ต.ค. 2569');
@@ -1020,15 +1071,9 @@ test('bulk automatic roster configuration defaults to Bangkok today and patches 
 	await page.keyboard.press('Enter');
 	await expect(date).toContainText('27 ต.ค. 2569');
 	await expect(page.locator('[data-bits-day]')).toHaveCount(0);
-	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeEnabled();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText(
-		'เปลี่ยนเป็นติดตามห้องอัตโนมัติ'
-	);
-	expect(fixture.previewRequests[0]).toMatchObject({
-		rosterTracking: { mode: 'homeroom', effectiveFrom: '2026-10-27' }
-	});
-	expect(fixture.previewRequests[0].primaryTeacher).toBeUndefined();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeEnabled();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId('roster-tracking')).toContainText('ติดตามนักเรียนจากห้องต้นทาง');
@@ -1044,7 +1089,12 @@ test('bulk automatic roster configuration defaults to Bangkok today and patches 
 	).toBeDisabled();
 	expect(fixture.trackingReads).toHaveLength(1);
 	expect(fixture.trackingSaves).toHaveLength(0);
-	expect(fixture.applyRequests).toEqual(fixture.previewRequests);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests).toHaveLength(1);
+	expect(fixture.applyRequests[0]).toMatchObject({
+		rosterTracking: { mode: 'homeroom', effectiveFrom: '2026-10-27' }
+	});
+	expect(fixture.applyRequests[0].primaryTeacher).toBeUndefined();
 	expect(fixture.count(`${paths.groupA}/roster`)).toBe(0);
 	expect(fixture.count(paths.membershipsA)).toBe(0);
 });
@@ -1072,14 +1122,14 @@ test('opening bulk setup reads the fresh offering frame after a successful indiv
 	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 	const dialog = await chooseBulkTeacher(page);
 	await dialog.getByRole('checkbox', { name: /ม.1\/1 ชื่อที่บันทึกใหม่/ }).check();
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
-	expect(fixture.previewRequests).toHaveLength(1);
-	expect(fixture.previewRequests[0]).toMatchObject({
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests).toHaveLength(1);
+	expect(fixture.applyRequests[0]).toMatchObject({
 		deliveryVersionRowVersion: 2,
 		groups: [{ learningGroupId: ids.groupA, rowVersion: 2 }]
 	});
-	await expect(dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true })).toHaveCount(0);
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
 });
 
@@ -1095,7 +1145,9 @@ test('bulk opening preparation has a focused retry and can be cancelled while it
 	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 	await expect(dialog).toContainText('เตรียมข้อมูลไม่สำเร็จ');
 	await dialog.getByRole('button', { name: 'ลองเตรียมกลุ่มอีกครั้ง', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toBeDisabled();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeDisabled();
 	await expect(dialog.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeEnabled();
 	await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	gate.release();
@@ -1162,8 +1214,6 @@ async function applyBulkRosterMode(page: Page, mode: 'manual' | 'homeroom', tomo
 			await page.keyboard.press('Enter');
 		} else await today.click();
 	}
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 }
@@ -1247,7 +1297,7 @@ test('a changed bulk configuration preserves a genuine individual draft and bloc
 		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
 	).toBeEnabled();
 	await applyBulkRosterMode(page, 'homeroom', true);
-	expect(fixture.previewRequests[0]).toMatchObject({
+	expect(fixture.applyRequests[0]).toMatchObject({
 		rosterTracking: { mode: 'homeroom', effectiveFrom: '2026-10-28' }
 	});
 	await expect(panel.getByRole('alert')).toContainText('การแก้ไขของคุณยังอยู่');
@@ -1329,7 +1379,7 @@ test('a delayed individual save acknowledgment cannot cancel a newer tracking re
 	}
 });
 
-test('bulk dialog completes preview and releases underlying actions with real touch input', async ({
+test('bulk dialog offers direct save and releases underlying actions with real touch input', async ({
 	browser,
 	baseURL
 }, testInfo) => {
@@ -1354,8 +1404,12 @@ test('bulk dialog completes preview and releases underlying actions with real to
 			.getByRole('combobox', { name: 'เลือกครูหลักสำหรับกลุ่มเป้าหมาย', exact: true })
 			.tap();
 		await page.getByRole('option', { name: 'ครูหลักใหม่', exact: true }).tap();
-		await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).tap();
-		await expect(dialog.getByTestId('delivery-bulk-preview')).toContainText('เปลี่ยน 1');
+		await expect(
+			dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+		).toBeEnabled();
+		await expect(dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true })).toHaveCount(
+			0
+		);
 		await page.screenshot({ path: testInfo.outputPath('bulk-touch-preview.png') });
 		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).tap();
 		await expect(dialog).toHaveCount(0);
@@ -1363,7 +1417,7 @@ test('bulk dialog completes preview and releases underlying actions with real to
 		await expect(
 			page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/1', exact: true })
 		).toBeVisible();
-		expect(fixture.previewRequests).toHaveLength(1);
+		expect(fixture.previewRequests).toHaveLength(0);
 		expect(fixture.applyRequests).toHaveLength(0);
 	} finally {
 		await context.close();
@@ -1739,14 +1793,12 @@ test('bulk tracking dates retain custom choices through mode flips and refresh e
 	await dialog.getByRole('radio', { name: 'จัดรายชื่อเอง', exact: true }).check();
 	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
 	await expect(date).toContainText('28 ต.ค. 2569');
-	await dialog.getByRole('button', { name: 'ตรวจการตั้งค่า', exact: true }).click();
-	await expect(dialog.getByTestId('delivery-bulk-preview')).toBeVisible();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
 	await expect(dialog.getByRole('alert')).toBeVisible();
 	await dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true }).click();
 	await expect(dialog.getByRole('alert')).toHaveCount(0);
 	await expect(date).toContainText('28 ต.ค. 2569');
-	expect(fixture.previewRequests[0].rosterTracking?.effectiveFrom).toBe('2026-10-28');
+	expect(fixture.applyRequests[0].rosterTracking?.effectiveFrom).toBe('2026-10-28');
 	await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await page.clock.setFixedTime(new Date('2026-10-29T05:00:00Z'));
 	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();

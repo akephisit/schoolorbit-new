@@ -524,6 +524,14 @@ impl UpsertAcademicTermChangeItemRequest {
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoveDeliveryDraftResourceRequest {
+    pub change_set_row_version: i64,
+    pub target_delivery_version_row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteAcademicTermChangeItemRequest {
     pub change_set_row_version: i64,
     pub item_row_version: i64,
@@ -1199,6 +1207,8 @@ pub struct HomeroomDeliveryWorkspace {
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryCatalogVersionOption {
     pub id: Uuid,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub subject_type: Option<String>,
     pub kind: LearningOfferingKind,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub scheduling_mode: Option<ActivitySchedulingMode>,

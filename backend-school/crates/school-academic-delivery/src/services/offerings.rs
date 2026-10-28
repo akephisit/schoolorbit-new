@@ -133,6 +133,29 @@ struct ExistingPreviewOfferingRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct ExistingPreparationOffering {
+    offering_id: Uuid,
+    status: LearningOfferingStatus,
+    covered_homeroom_ids: Vec<Uuid>,
+}
+
+impl ExistingPreparationOffering {
+    fn targets_are_immutable(&self) -> bool {
+        matches!(
+            self.status,
+            LearningOfferingStatus::Published | LearningOfferingStatus::Closed
+        )
+    }
+
+    fn covers(&self, proposal: &CurriculumPreparationProposal) -> bool {
+        proposal
+            .target_homeroom_ids
+            .iter()
+            .all(|id| self.covered_homeroom_ids.contains(id))
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct PreviewHomeroomRow {
     id: Uuid,
     name: String,
@@ -835,6 +858,42 @@ async fn apply_preview_in_transaction(
     preview: &CurriculumOfferingPreview,
     choices: &[CurriculumPreparationChoice],
 ) -> Result<AppliedCurriculumPreview, AppError> {
+    let retained_ids = preview
+        .proposals
+        .iter()
+        .filter_map(|proposal| proposal.existing_offering_id)
+        .collect::<Vec<_>>();
+    let scopes = load_preparation_offering_scopes(transaction, &retained_ids).await?;
+    let mut immutable_target_ids = std::collections::HashSet::new();
+    for proposal in &preview.proposals {
+        let selected = choices
+            .iter()
+            .find(|choice| choice.proposal_id == proposal.proposal_id)
+            .ok_or_else(|| AppError::ValidationError("ตัวเลือกการเตรียมรายการไม่ครบ".into()))?;
+        if selected.action == PreparationAction::Skip {
+            continue;
+        }
+        if proposal.offering_action == CurriculumPreviewAction::Conflict {
+            return Err(AppError::Conflict(format!(
+                "รายการ {} ขัดแย้งกับข้อมูลเปิดสอนเดิม",
+                preparation_label(proposal)
+            )));
+        }
+        if let Some(id) = proposal.existing_offering_id {
+            let existing = scopes.get(&id).ok_or_else(|| {
+                AppError::Conflict("รายการเปิดสอนเดิมเปลี่ยนไป กรุณา preview ใหม่".into())
+            })?;
+            if existing.targets_are_immutable() {
+                if !existing.covers(proposal) {
+                    return Err(AppError::Conflict(format!(
+                        "รายการ {} เผยแพร่หรือปิดแล้ว ไม่สามารถเพิ่มห้องเป้าหมายจากการเตรียมเปิดสอนได้",
+                        preparation_label(proposal)
+                    )));
+                }
+                immutable_target_ids.insert(id);
+            }
+        }
+    }
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
     let mut created_offering_count = 0_usize;
@@ -854,7 +913,7 @@ async fn apply_preview_in_transaction(
         if proposal.offering_action == CurriculumPreviewAction::Conflict {
             return Err(AppError::Conflict(format!(
                 "รายการ {} ขัดแย้งกับข้อมูลเปิดสอนเดิม",
-                proposal.code
+                preparation_label(proposal)
             )));
         }
         if choice.action == PreparationAction::Apply && !proposal.conflicts.is_empty() {
@@ -879,7 +938,11 @@ async fn apply_preview_in_transaction(
             .await?;
             id
         };
-        insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
+        // BEFORE INSERT immutability triggers run even with ON CONFLICT DO NOTHING.
+        // Already-covered published targets must not issue an insert at all.
+        if !immutable_target_ids.contains(&offering_id) {
+            insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
+        }
         offering_ids.push(offering_id);
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {
@@ -1777,6 +1840,13 @@ fn normalized_preparation_choices(
     Ok(values)
 }
 
+fn preparation_label(proposal: &CurriculumPreparationProposal) -> String {
+    match proposal.resource_kind {
+        LearningOfferingKind::Course => format!("{} — {}", proposal.code, proposal.name),
+        LearningOfferingKind::Activity => proposal.name.clone(),
+    }
+}
+
 fn validate_preparation_choices(
     proposals: &[CurriculumPreparationProposal],
     choices: &[CurriculumPreparationChoice],
@@ -1791,12 +1861,15 @@ fn validate_preparation_choices(
             .iter()
             .find(|choice| choice.proposal_id == proposal.proposal_id)
             .ok_or_else(|| {
-                AppError::ValidationError(format!("ไม่พบตัวเลือกสำหรับรายการ {}", proposal.code))
+                AppError::ValidationError(format!(
+                    "ไม่พบตัวเลือกสำหรับรายการ {}",
+                    preparation_label(proposal)
+                ))
             })?;
         if choice.action == PreparationAction::Apply && choice.groups.is_empty() {
             return Err(AppError::ValidationError(format!(
                 "รายการ {} ต้องมีกลุ่ม หรือเลือกไว้จัดกลุ่มภายหลัง",
-                proposal.code
+                preparation_label(proposal)
             )));
         }
         for group in &choice.groups {
@@ -1807,7 +1880,7 @@ fn validate_preparation_choices(
             {
                 return Err(AppError::ValidationError(format!(
                     "กลุ่มของรายการ {} มีห้องที่อยู่นอกเป้าหมายจากหลักสูตร",
-                    proposal.code
+                    preparation_label(proposal)
                 )));
             }
         }
@@ -1955,7 +2028,10 @@ async fn build_curriculum_preview_for_term(
     }
     let existing_offerings =
         load_existing_preview_offerings(transaction, academic_term_id, &rows).await?;
-    let existing_offering_ids = existing_offerings.values().copied().collect::<Vec<_>>();
+    let existing_offering_ids = existing_offerings
+        .values()
+        .map(|offering| offering.offering_id)
+        .collect::<Vec<_>>();
     let existing_groups =
         load_existing_preparation_groups(transaction, &existing_offering_ids).await?;
     let mut proposals = Vec::<CurriculumPreparationProposal>::new();
@@ -1966,7 +2042,9 @@ async fn build_curriculum_preview_for_term(
         let proposal_index = if let Some(index) = proposal_indexes.get(&key) {
             *index
         } else {
-            let existing_offering_id = existing_offerings.get(&key).copied();
+            let existing_offering_id = existing_offerings
+                .get(&key)
+                .map(|offering| offering.offering_id);
             let proposal_id =
                 stable_hash(&(academic_term_id, row.resource_kind, row.catalog_version_id))?;
             let index = proposals.len();
@@ -2080,7 +2158,7 @@ async fn build_curriculum_preview_for_term(
                         code: "manual_group_overlap".to_string(),
                         message: format!(
                             "รายการ {} มีกลุ่มที่จัดเองครอบคลุมห้องเป้าหมายอยู่แล้ว ระบบจะไม่แก้กลุ่มนี้",
-                            proposal.code
+                            preparation_label(proposal)
                         ),
                         offering_id: Some(offering_id),
                         group_id: Some(group.id),
@@ -2095,12 +2173,25 @@ async fn build_curriculum_preview_for_term(
                         code: "generated_group_target_mismatch".to_string(),
                         message: format!(
                             "กลุ่มที่ระบบเคยเตรียมสำหรับ {} ครอบคลุมห้องนอกเป้าหมายหลักสูตร กรุณาตรวจด้วยตนเอง",
-                            proposal.code
+                            preparation_label(proposal)
                         ),
                         offering_id: Some(offering_id),
                         group_id: Some(group.id),
                     });
                 }
+            }
+        }
+        if let Some(existing) =
+            existing_offerings.get(&(proposal.resource_kind, proposal.catalog_version_id))
+        {
+            if existing.targets_are_immutable() && !existing.covers(proposal) {
+                proposal.offering_action = CurriculumPreviewAction::Conflict;
+                proposal.conflicts.push(PreparationConflict {
+                    code: "published_offering_target_extension".into(),
+                    message: format!("รายการ {} เผยแพร่หรือปิดแล้ว และยังไม่ครอบคลุมห้องเป้าหมายที่เลือก ไม่สามารถเพิ่มเป้าหมายจากการเตรียมเปิดสอนได้", preparation_label(proposal)),
+                    offering_id: Some(existing.offering_id),
+                    group_id: None,
+                });
             }
         }
         proposal.grouping_state = if !proposal.conflicts.is_empty() {
@@ -2138,7 +2229,7 @@ async fn load_existing_preview_offerings(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     requirements: &[PreviewRequirementRow],
-) -> Result<HashMap<(LearningOfferingKind, Uuid), Uuid>, AppError> {
+) -> Result<HashMap<(LearningOfferingKind, Uuid), ExistingPreparationOffering>, AppError> {
     let course_version_ids: Vec<Uuid> = requirements
         .iter()
         .filter(|row| row.resource_kind == LearningOfferingKind::Course)
@@ -2176,13 +2267,41 @@ async fn load_existing_preview_offerings(
         .bind(&activity_version_ids)
         .fetch_all()
         .await?;
+    let ids = rows.iter().map(|row| row.offering_id).collect::<Vec<_>>();
+    let mut scopes = load_preparation_offering_scopes(transaction, &ids).await?;
     let mut existing = HashMap::new();
     for row in rows {
-        existing
-            .entry((row.resource_kind, row.catalog_version_id))
-            .or_insert(row.offering_id);
+        if let Some(scope) = scopes.remove(&row.offering_id) {
+            existing
+                .entry((row.resource_kind, row.catalog_version_id))
+                .or_insert(scope);
+        }
     }
     Ok(existing)
+}
+
+/// Reuse the same homeroom-or-grade/program target meaning in preview and locked apply.
+async fn load_preparation_offering_scopes(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_ids: &[Uuid],
+) -> Result<HashMap<Uuid, ExistingPreparationOffering>, AppError> {
+    if offering_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<ExistingPreparationOffering> = DbSession::new(&mut **transaction).query_as(
+        "academic_delivery.services.offerings.load_preparation_offering_scopes",
+        "SELECT offering.id AS offering_id,offering.status,
+            ARRAY(SELECT room.id FROM homerooms room
+                WHERE room.academic_year_id=offering.academic_year_id
+                AND EXISTS(SELECT 1 FROM learning_offering_targets target
+                    WHERE target.learning_offering_id=offering.id AND (
+                        (target.target_kind='homeroom' AND target.homeroom_id=room.id)
+                        OR (target.target_kind='grade_program' AND target.grade_level_id=room.grade_level_id
+                            AND target.study_program_id=room.study_program_id)))
+                ORDER BY room.id) AS covered_homeroom_ids
+         FROM learning_offerings offering WHERE offering.id=ANY($1) ORDER BY offering.id",
+    ).bind(offering_ids).fetch_all().await?;
+    Ok(rows.into_iter().map(|row| (row.offering_id, row)).collect())
 }
 
 async fn load_existing_preparation_groups(
@@ -2379,6 +2498,64 @@ mod preparation_choice_tests {
             ),
             "ค21101 · ม.1/1"
         );
+    }
+
+    fn label_proposal(
+        kind: LearningOfferingKind,
+        code: &str,
+        name: &str,
+    ) -> CurriculumPreparationProposal {
+        CurriculumPreparationProposal {
+            proposal_id: "label-proposal".into(),
+            offering_action: CurriculumPreviewAction::Create,
+            resource_kind: kind,
+            scheduling_mode: None,
+            catalog_version_id: Uuid::new_v4(),
+            requirement_ids: vec![],
+            target_homeroom_ids: vec![],
+            code: code.into(),
+            name: name.into(),
+            credit: None,
+            hours: None,
+            existing_offering_id: None,
+            grouping_state: PreparationGroupingState::Deferred,
+            default_groups: vec![],
+            conflicts: vec![],
+        }
+    }
+
+    #[test]
+    fn preparation_course_label_keeps_real_code_and_name() {
+        let proposal = label_proposal(
+            LearningOfferingKind::Course,
+            "ว30104",
+            "วิทยาศาสตร์โลกและอวกาศ",
+        );
+        assert_eq!(
+            preparation_label(&proposal),
+            "ว30104 — วิทยาศาสตร์โลกและอวกาศ"
+        );
+    }
+
+    #[test]
+    fn preparation_activity_errors_never_expose_technical_codes() {
+        let proposal = label_proposal(
+            LearningOfferingKind::Activity,
+            "ACT-TECHNICAL-001",
+            "ชุมนุมดนตรี",
+        );
+        assert_eq!(preparation_label(&proposal), "ชุมนุมดนตรี");
+        let choice = CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: PreparationAction::Apply,
+            groups: vec![],
+        };
+        let error = validate_preparation_choices(&[proposal], &[choice]).unwrap_err();
+        let AppError::ValidationError(message) = error else {
+            panic!("expected preparation validation")
+        };
+        assert!(message.contains("ชุมนุมดนตรี"));
+        assert!(!message.contains("ACT-"));
     }
 
     #[test]

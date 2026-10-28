@@ -1,5 +1,8 @@
 <script lang="ts">
-	import type { DeliveryVersion } from '#lib/api/learning-delivery.js';
+	import DeliveryAlignmentBadges from './DeliveryAlignmentBadges.svelte';
+	import type { DeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
+	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
+	import type { AcademicTermChangeSet, DeliveryVersion } from '#lib/api/learning-delivery.js';
 	import {
 		deliveryOfferingHref,
 		type DeliveryOverviewState
@@ -17,12 +20,18 @@
 		version,
 		filters,
 		returnTo,
-		onFiltersChange
+		onFiltersChange,
+		draftChangeSetId = null,
+		onDraftResourceRemoved,
+		alignmentFacts = null
 	}: {
 		version: DeliveryVersion;
 		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
 		returnTo: string;
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
+		draftChangeSetId?: string | null;
+		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
+		alignmentFacts?: DeliveryAlignmentFacts | null;
 	} = $props();
 	const groups = $derived(deliverySubjectGroupOptions(version));
 	const items = $derived(filterDeliveryOfferings(version, filters));
@@ -91,11 +100,10 @@
 		<Table.Root>
 			<Table.Header
 				><Table.Row
-					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>คาบ/สัปดาห์</Table.Head><Table.Head
-						>กลุ่มเรียน</Table.Head
-					><Table.Head>ครูหลัก</Table.Head><Table.Head
-						><span class="sr-only">รายละเอียด</span></Table.Head
-					></Table.Row
+					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>เทียบหลักสูตรปัจจุบัน</Table.Head
+					><Table.Head>คาบ/สัปดาห์</Table.Head><Table.Head>กลุ่มเรียน</Table.Head><Table.Head
+						>ครูหลัก</Table.Head
+					><Table.Head><span class="sr-only">รายละเอียด</span></Table.Head></Table.Row
 				></Table.Header
 			>
 			<Table.Body>
@@ -107,6 +115,9 @@
 								{item.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
 							</p></Table.Cell
 						>
+						<Table.Cell class="min-w-52"
+							><DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} /></Table.Cell
+						>
 						<Table.Cell>{item.weeklyPeriodTarget}</Table.Cell><Table.Cell
 							>{item.groups.length}</Table.Cell
 						>
@@ -116,12 +127,22 @@
 							).length}/{item.groups.length} กลุ่ม</Table.Cell
 						>
 						<Table.Cell
-							><Button
-								variant="outline"
-								size="sm"
-								href={detailUrl(item.id)}
-								data-sveltekit-preload-data="tap">รายละเอียด</Button
-							></Table.Cell
+							><div class="flex flex-wrap justify-end gap-1">
+								<Button
+									variant="outline"
+									size="sm"
+									href={detailUrl(item.id)}
+									data-sveltekit-preload-data="tap">รายละเอียด</Button
+								>
+								{#if version.status === 'draft' && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
+										changeSetId={draftChangeSetId}
+										versionId={version.id}
+										offeringId={item.id}
+										label={deliveryOfferingLabel(item)}
+										canManage={true}
+										onRemoved={onDraftResourceRemoved}
+									/>{/if}
+							</div></Table.Cell
 						>
 					</Table.Row>
 				{/each}

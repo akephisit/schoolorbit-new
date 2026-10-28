@@ -45,9 +45,9 @@ function room(id, programId, item) {
 
 test('a missing synchronized activity opens one preparation target across every matching program', () => {
 	assert.equal(
-		typeof deliveryModule.buildSynchronizedActivityPreparationTarget,
+		typeof deliveryModule.buildCurriculumPreparationTarget,
 		'function',
-		'the synchronized activity preparation helper must exist'
+		'the exact-focus curriculum preparation helper must exist'
 	);
 	const workspace = {
 		academicTermId: 'term',
@@ -63,14 +63,15 @@ test('a missing synchronized activity opens one preparation target across every 
 		unlinked: []
 	};
 
-	const target = deliveryModule.buildSynchronizedActivityPreparationTarget(
-		workspace,
-		'club-version'
-	);
+	const target = deliveryModule.buildCurriculumPreparationTarget(workspace, {
+		resourceKind: 'activity',
+		catalogVersionId: 'club-version'
+	});
 
 	assert.deepEqual(target, {
 		resourceKind: 'activity',
 		catalogVersionId: 'club-version',
+		schedulingMode: 'synchronized',
 		code: 'CLUB',
 		name: 'ชุมนุม',
 		studyProgramIds: ['program-a', 'program-b'],
@@ -78,29 +79,20 @@ test('a missing synchronized activity opens one preparation target across every 
 	});
 });
 
-test('independent or already-open activities do not offer the synchronized preparation action', () => {
+test('focused preparation supports independent activities while its synchronized row action stays scoped', () => {
+	const independent = { ...synchronizedItem, schedulingMode: 'independent' };
+	assert.equal(deliveryModule.isPendingSynchronizedActivity(independent), false);
 	assert.equal(
-		typeof deliveryModule.buildSynchronizedActivityPreparationTarget,
-		'function',
-		'the synchronized activity preparation helper must exist'
+		deliveryModule.buildCurriculumPreparationTarget(
+			{ homerooms: [room('ม.1/1', 'program-a', independent)] },
+			{ resourceKind: 'activity', catalogVersionId: 'club-version' }
+		).schedulingMode,
+		'independent'
 	);
 	assert.equal(
-		deliveryModule.buildSynchronizedActivityPreparationTarget(
-			{
-				homerooms: [
-					room('ม.1/1', 'program-a', { ...synchronizedItem, schedulingMode: 'independent' })
-				]
-			},
-			'club-version'
-		),
-		null
-	);
-	assert.equal(
-		deliveryModule.buildSynchronizedActivityPreparationTarget(
-			{
-				homerooms: [room('ม.1/1', 'program-a', { ...synchronizedItem, offeringId: 'offering' })]
-			},
-			'club-version'
+		deliveryModule.buildCurriculumPreparationTarget(
+			{ homerooms: [room('ม.1/1', 'program-a', { ...synchronizedItem, offeringId: 'offering' })] },
+			{ resourceKind: 'activity', catalogVersionId: 'club-version' }
 		),
 		null
 	);
@@ -199,17 +191,88 @@ test('only drafts from the latest published opening are candidates, regardless o
 	const latest = { id: 'new', status: 'published', effectiveFrom: '2026-09-01' };
 	const oldDraft = { id: 'old-draft', status: 'draft', sourceVersionId: old.id };
 	const draft = { id: 'draft', status: 'draft', sourceVersionId: latest.id };
-	assert.deepEqual(deliveryModule.activityDraftCandidates([oldDraft, old, latest, draft]), {
-		source: latest,
-		drafts: [draft]
-	});
-	assert.deepEqual(deliveryModule.activityDraftCandidates([old, latest]), {
+	assert.deepEqual(
+		deliveryModule.deliveryPreparationDraftCandidates([oldDraft, old, latest, draft]),
+		{
+			source: latest,
+			drafts: [draft]
+		}
+	);
+	assert.deepEqual(deliveryModule.deliveryPreparationDraftCandidates([old, latest]), {
 		source: latest,
 		drafts: []
 	});
 	assert.equal(
-		deliveryModule.activityDraftCandidates([old, latest, draft, { ...draft, id: 'other' }]).drafts
-			.length,
+		deliveryModule.deliveryPreparationDraftCandidates([
+			old,
+			latest,
+			draft,
+			{ ...draft, id: 'other' }
+		]).drafts.length,
 		2
 	);
+});
+
+test('focused curriculum preparation supports exact course and independent activity versions without pairing same-code records', () => {
+	const current = {
+		...synchronizedItem,
+		resourceKind: 'course',
+		catalogVersionId: 'new-course-version',
+		schedulingMode: null,
+		code: 'ว30104',
+		name: 'วิทยาศาสตร์'
+	};
+	const previous = {
+		...current,
+		catalogVersionId: 'old-course-version',
+		offeringId: 'old-offering',
+		name: 'วิทยาศาสตร์*'
+	};
+	const workspace = {
+		homerooms: [
+			room('room-a', 'program-a', current),
+			room('room-b', 'program-b', current),
+			room('room-c', 'program-c', previous)
+		]
+	};
+	const target = deliveryModule.buildCurriculumPreparationTarget(workspace, {
+		resourceKind: 'course',
+		catalogVersionId: 'new-course-version'
+	});
+	assert.deepEqual(target.studyProgramIds, ['program-a', 'program-b']);
+	assert.equal(target.homeroomCount, 2);
+	assert.equal(target.schedulingMode, null);
+	assert.equal(
+		deliveryModule.buildCurriculumPreparationTarget(workspace, {
+			resourceKind: 'course',
+			catalogVersionId: 'old-course-version'
+		}),
+		null
+	);
+	const independent = { ...synchronizedItem, schedulingMode: 'independent' };
+	assert.equal(
+		deliveryModule.buildCurriculumPreparationTarget(
+			{ homerooms: [room('room-a', 'program-a', independent)] },
+			{ resourceKind: 'activity', catalogVersionId: 'club-version' }
+		).schedulingMode,
+		'independent'
+	);
+});
+
+test('a partially opened exact version prepares only the still-missing room and program scope', () => {
+	const offered = {
+		...synchronizedItem,
+		resourceKind: 'course',
+		catalogVersionId: 'same-version',
+		schedulingMode: null,
+		offeringId: 'offering-a',
+		offeringState: 'draft'
+	};
+	const pending = { ...offered, offeringId: null, offeringState: 'missing' };
+	const target = deliveryModule.buildCurriculumPreparationTarget(
+		{ homerooms: [room('room-a', 'program-a', offered), room('room-b', 'program-b', pending)] },
+		{ resourceKind: 'course', catalogVersionId: 'same-version' }
+	);
+	assert.deepEqual(target.studyProgramIds, ['program-b']);
+	assert.equal(target.homeroomCount, 1);
 });

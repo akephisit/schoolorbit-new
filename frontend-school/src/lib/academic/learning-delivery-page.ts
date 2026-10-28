@@ -109,3 +109,5 @@ export function selectDeliveryVersion(
 		null
 	);
 }
+
+export type DeliveryOfferingAddKind = 'basic' | 'additional' | 'activity';
