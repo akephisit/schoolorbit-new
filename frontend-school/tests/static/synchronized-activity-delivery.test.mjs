@@ -258,3 +258,21 @@ test('focused curriculum preparation supports exact course and independent activ
 		'independent'
 	);
 });
+
+test('a partially opened exact version prepares only the still-missing room and program scope', () => {
+	const offered = {
+		...synchronizedItem,
+		resourceKind: 'course',
+		catalogVersionId: 'same-version',
+		schedulingMode: null,
+		offeringId: 'offering-a',
+		offeringState: 'draft'
+	};
+	const pending = { ...offered, offeringId: null, offeringState: 'missing' };
+	const target = deliveryModule.buildCurriculumPreparationTarget(
+		{ homerooms: [room('room-a', 'program-a', offered), room('room-b', 'program-b', pending)] },
+		{ resourceKind: 'course', catalogVersionId: 'same-version' }
+	);
+	assert.deepEqual(target.studyProgramIds, ['program-b']);
+	assert.equal(target.homeroomCount, 1);
+});

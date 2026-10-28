@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { untrack, onMount, tick } from 'svelte';
+	import { untrack, onMount, onDestroy, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { registerDeliveryDraftReconcile } from '#lib/academic/delivery-draft-reconcile.js';
 	import { ApiClientError } from '#lib/api/client.js';
@@ -104,6 +104,7 @@
 		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${version.effectiveFrom ? formatDate(version.effectiveFrom) : 'เลือกวันตอนเผยแพร่'} · ${version.offeringCount} รายการ`;
 	}
 	function selectDeliveryVersion(id: string): void {
+		cancelPreparation();
 		const url = new URL(overviewUrl);
 		url.searchParams.set('deliveryVersionId', id);
 		url.searchParams.delete('changeSetId');
@@ -143,12 +144,6 @@
 	const alignmentFacts = $derived(
 		comparisonWorkspace ? buildDeliveryAlignmentFacts(comparisonWorkspace) : null
 	);
-	const alignmentError = $derived(
-		homeroomError ||
-			(workspace && !comparisonWorkspace
-				? 'ข้อมูลเทียบหลักสูตรไม่ตรงกับปี ภาคเรียน หรือรุ่นที่เลือก'
-				: '')
-	);
 	const returnTo = $derived(workspace ? deliveryOverviewReturnHref(overviewUrl, workspace) : '');
 	let overview = $state.raw<DeliveryVersion | null>(null);
 	let revisionOfferings = $state.raw<DeliveryVersion['snapshot']['offerings']>([]);
@@ -161,6 +156,12 @@
 	let changeSetLoading = $state(false);
 	let overviewLoading = $state(false);
 	let homeroomError = $state('');
+	const alignmentError = $derived(
+		homeroomError ||
+			(workspace && !comparisonWorkspace
+				? 'ข้อมูลเทียบหลักสูตรไม่ตรงกับปี ภาคเรียน หรือรุ่นที่เลือก'
+				: '')
+	);
 	let changeSetSummaryError = $state('');
 	let changeSetError = $state('');
 	let errorMessage = $state('');
@@ -173,24 +174,21 @@
 		) => Promise<void>;
 	}>();
 	let deliveryRevisionDialog = $state<{ openDialog: () => void }>();
-	let pendingDeliveryAction = $state.raw<CurriculumPreparationFocus | null>(null);
+	type PreparationOperation = CurriculumPreparationFocus & {
+		revision: number;
+		signal: AbortSignal;
+		context: string;
+		academicYearId: string;
+		academicTermId: string;
+	};
+	const preparationRequest = new LatestRequest();
+	let preparationDisposed = false;
+	let pendingDeliveryAction = $state.raw<PreparationOperation | null>(null);
 	let activationBusy = $state(false);
 	let activationError = $state('');
 	let draftChoices = $state<DeliveryVersionSummary[]>([]);
 	let chooseDraftOpen = $state(false);
 	let sourceNotice = $state('');
-	let activationContext = '';
-	$effect(() => {
-		const context = `${academicYearId}:${academicTermId}`;
-		untrack(() => {
-			if (context !== activationContext) {
-				activationContext = context;
-				pendingDeliveryAction = null;
-				activationError = '';
-				chooseDraftOpen = false;
-			}
-		});
-	});
 	let canManage = $derived(
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
@@ -199,6 +197,43 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
+	const preparationContext = $derived(
+		`${academicYearId}:${academicTermId}:${$authStore.user?.id ?? ''}`
+	);
+	let observedPreparationContext = '';
+	function preparationCurrent(operation: PreparationOperation): boolean {
+		return (
+			!preparationDisposed &&
+			canManage &&
+			pendingDeliveryAction === operation &&
+			operation.context === preparationContext &&
+			preparationRequest.isCurrent(operation.revision)
+		);
+	}
+	function cancelPreparation() {
+		preparationRequest.abort();
+		pendingDeliveryAction = null;
+		activationBusy = false;
+		activationError = '';
+		chooseDraftOpen = false;
+		draftChoices = [];
+		sourceNotice = '';
+	}
+	$effect.pre(() => {
+		const context = preparationContext,
+			allowed = canManage;
+		untrack(() => {
+			if (context !== observedPreparationContext || !allowed) {
+				observedPreparationContext = context;
+				cancelPreparation();
+			}
+		});
+	});
+	onDestroy(() => {
+		preparationDisposed = true;
+		preparationRequest.abort();
+	});
+
 	let items = $derived(overview?.snapshot.offerings ?? []);
 
 	const missingTermPrerequisite: AcademicPrerequisite = {
@@ -398,42 +433,58 @@
 		void refreshDeliveryRegions();
 	}
 
-	async function continuePreparationInDraft(versionId: string) {
-		const pending = pendingDeliveryAction;
-		const context = activationContext;
-		if (!pending || !canManage || !academicYearId || !academicTermId) return;
+	async function continuePreparationInDraft(versionId: string, operation = pendingDeliveryAction) {
+		if (!operation || !preparationCurrent(operation)) return;
 		activationBusy = true;
 		activationError = '';
 		chooseDraftOpen = false;
-		await tick();
 		try {
+			await tick();
+			if (!preparationCurrent(operation)) return;
 			let selected = workspace;
 			if (selected?.deliveryVersionId !== versionId) {
 				const url = new URL(overviewUrl);
 				url.searchParams.set('deliveryVersionId', versionId);
 				url.searchParams.delete('changeSetId');
 				await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
+				if (!preparationCurrent(operation)) return;
 				await tick();
+				if (!preparationCurrent(operation)) return;
 				const result = await data.homerooms;
+				if (!preparationCurrent(operation)) return;
 				if (!result?.ok) throw new Error(result?.error ?? 'โหลดแบบร่างไม่สำเร็จ');
 				selected = result.data;
 			}
-			if (context !== activationContext || !canManage || pending !== pendingDeliveryAction) return;
+			if (!preparationCurrent(operation)) return;
 			if (
 				!selected ||
+				selected.academicYearId !== operation.academicYearId ||
+				selected.academicTermId !== operation.academicTermId ||
 				selected.deliveryVersionStatus !== 'draft' ||
 				selected.deliveryVersionId !== versionId
 			)
 				throw new Error('แบบร่างนี้ไม่พร้อมแก้ไข กรุณาโหลดล่าสุดแล้วลองอีกครั้ง');
-			const existing = selected.homerooms
-				.flatMap((room) => room.items)
-				.find(
-					(item) =>
-						item.catalogVersionId === pending.catalogVersionId &&
-						item.resourceKind === pending.resourceKind &&
-						item.offeringId
-				);
-			if (existing?.offeringId) {
+			const focus = {
+				resourceKind: operation.resourceKind,
+				catalogVersionId: operation.catalogVersionId
+			};
+			const target = buildCurriculumPreparationTarget(selected, focus);
+			if (target) {
+				const dialog = offeringDialog;
+				if (!dialog) throw new Error('หน้าต่างเตรียมรายการยังไม่พร้อม กรุณาลองอีกครั้ง');
+				await dialog.openCurriculumPreparation(target, versionId);
+				if (!preparationCurrent(operation)) return;
+			} else {
+				const existing = selected.homerooms
+					.flatMap((room) => room.items)
+					.find(
+						(item) =>
+							item.catalogVersionId === operation.catalogVersionId &&
+							item.resourceKind === operation.resourceKind &&
+							item.offeringId
+					);
+				if (!existing?.offeringId)
+					throw new Error('ไม่พบรายการฉบับนี้ในหลักสูตรของร่าง กรุณาตรวจรายการอีกครั้ง');
 				await goto(
 					deliveryOfferingHref(
 						existing.offeringId,
@@ -441,59 +492,78 @@
 						deliveryOverviewReturnHref(overviewUrl, selected)
 					)
 				);
-			} else {
-				const target = buildCurriculumPreparationTarget(selected, pending);
-				if (!target || !offeringDialog)
-					throw new Error('ไม่พบรายการฉบับนี้ในหลักสูตรของร่าง กรุณาตรวจรายการอีกครั้ง');
-				await offeringDialog.openCurriculumPreparation(target, versionId);
+				if (!preparationCurrent(operation)) return;
 			}
+			activationBusy = false;
 			pendingDeliveryAction = null;
 			chooseDraftOpen = false;
 		} catch (error) {
-			if (context === activationContext)
-				activationError = error instanceof Error ? error.message : 'เปิดกิจกรรมในร่างไม่สำเร็จ';
+			if (preparationCurrent(operation) && !isAbortError(error))
+				activationError = error instanceof Error ? error.message : 'เตรียมรายการในร่างไม่สำเร็จ';
 		} finally {
-			activationBusy = false;
+			if (preparationCurrent(operation)) activationBusy = false;
 		}
 	}
 
 	async function prepareCurriculumRequirement(focus: CurriculumPreparationFocus) {
-		if (activationBusy || !workspace || !canManage || !academicTermId) return;
-		pendingDeliveryAction = focus;
-		activationError = '';
-		if (workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId) {
-			await continuePreparationInDraft(workspace.deliveryVersionId);
+		if (
+			!workspace ||
+			!canManage ||
+			!academicYearId ||
+			!academicTermId ||
+			(activationBusy && pendingDeliveryAction && preparationCurrent(pendingDeliveryAction))
+		)
 			return;
-		}
-		const context = activationContext;
+		const ticket = preparationRequest.begin();
+		const operation: PreparationOperation = {
+			resourceKind: focus.resourceKind,
+			catalogVersionId: focus.catalogVersionId,
+			...ticket,
+			context: preparationContext,
+			academicYearId,
+			academicTermId
+		};
+		const originVersionId = workspace.deliveryVersionId;
+		pendingDeliveryAction = operation;
 		activationBusy = true;
+		activationError = '';
 		try {
-			const versions = await listDeliveryVersions(academicTermId);
-			if (context !== activationContext || !canManage) return;
+			if (workspace.deliveryVersionStatus === 'draft' && originVersionId) {
+				await continuePreparationInDraft(originVersionId, operation);
+				return;
+			}
+			const versions = await listDeliveryVersions(operation.academicTermId, {
+				signal: operation.signal
+			});
+			if (!preparationCurrent(operation)) return;
 			const { source, drafts } = deliveryPreparationDraftCandidates(versions);
 			if (!source) throw new Error('ไม่พบรุ่นเปิดสอนที่เผยแพร่แล้ว กรุณาสร้างรุ่นเปิดสอนก่อน');
 			deliveryVersions = versions;
 			sourceNotice =
-				workspace.deliveryVersionId !== source.id
+				originVersionId !== source.id
 					? 'กำลังดูรุ่นย้อนหลัง ร่างสำหรับเปิดรายการตามหลักสูตรจะใช้ข้อมูลจากรุ่นเผยแพร่ล่าสุด'
 					: 'เปิดรายการตามหลักสูตรในร่างจากรุ่นเผยแพร่ล่าสุด รุ่นที่เผยแพร่แล้วจะคงข้อมูลเดิม';
 			draftChoices = drafts;
 			if (drafts.length === 1) {
-				if (workspace.deliveryVersionId !== source.id) toast.info(sourceNotice);
-				await continuePreparationInDraft(drafts[0].id);
+				if (originVersionId !== source.id) toast.info(sourceNotice);
+				await continuePreparationInDraft(drafts[0].id, operation);
+				if (!preparationCurrent(operation)) return;
 			} else if (drafts.length > 1) chooseDraftOpen = true;
 			else if (deliveryRevisionDialog) deliveryRevisionDialog.openDialog();
 			else throw new Error('หน้าต่างสร้างร่างยังไม่พร้อม กรุณาลองอีกครั้ง');
 		} catch (error) {
-			if (context === activationContext)
+			if (preparationCurrent(operation) && !isAbortError(error))
 				activationError = error instanceof Error ? error.message : 'ค้นหาแบบร่างไม่สำเร็จ';
 		} finally {
-			activationBusy = false;
+			if (preparationCurrent(operation)) activationBusy = false;
 		}
 	}
 
 	async function handleDeliveryRevisionCreated(created: AcademicTermChangeSet) {
-		if (pendingDeliveryAction) await continuePreparationInDraft(created.targetDeliveryVersionId);
+		const operation = pendingDeliveryAction;
+		if (created.academicTermId !== academicTermId) return;
+		if (operation && preparationCurrent(operation))
+			await continuePreparationInDraft(created.targetDeliveryVersionId, operation);
 		else addChangeSet(created);
 	}
 
@@ -751,7 +821,7 @@
 						showTrigger={false}
 						onCreated={handleDeliveryRevisionCreated}
 						{sourceNotice}
-						onCancelled={() => (pendingDeliveryAction = null)}
+						onCancelled={cancelPreparation}
 					/>
 				{/if}
 			{/key}

@@ -33,7 +33,9 @@ export function buildCurriculumPreparationTarget(
 ): CurriculumPreparationTarget | null {
 	const matches = (item: HomeroomDeliveryItem) =>
 		item.resourceKind === focus.resourceKind && item.catalogVersionId === focus.catalogVersionId;
-	const matchingRooms = workspace.homerooms.filter((room) => room.items.some(matches));
+	const matchingRooms = workspace.homerooms.filter((room) =>
+		room.items.some((item) => matches(item) && !item.offeringId)
+	);
 	const pending = matchingRooms
 		.flatMap((room) => room.items)
 		.find((item) => matches(item) && !item.offeringId);
