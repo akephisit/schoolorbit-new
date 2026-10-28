@@ -54,6 +54,11 @@ async function mockRoomScope(
 		conflictOnce?: boolean;
 		failReadAfterSave?: boolean;
 		saveGate?: Promise<void>;
+		priorExcludedM43?: boolean;
+		failWorkspaceOnce?: boolean;
+		workspaceGate?: Promise<void>;
+		workspaceGateFailure?: boolean;
+		failGroups?: boolean;
 	} = {}
 ) {
 	await mockDeliveryNavigation(page, { manager: !options.reader });
@@ -137,6 +142,7 @@ async function mockRoomScope(
 			studyProgramId: ids.program
 		}));
 		selected.groups = originalOffering.groups.flatMap((group) => {
+			if (options.priorExcludedM43 && group.id === groupIds[1]) return [];
 			const homeroomIds = group.homeroomIds.filter((id) => audience.has(id));
 			return homeroomIds.length ? [{ ...group, homeroomIds }] : [];
 		});
@@ -148,12 +154,17 @@ async function mockRoomScope(
 	published.id = ids.sourceVersion;
 	published.sourceVersionId = null;
 	published.status = 'published';
+	published.snapshot.offerings[0].groups = structuredClone(originalOffering.groups);
 	const originalPublished = structuredClone(published);
 	const baseRoom = navigationWorkspace().homerooms[0];
 	const sourceItem = baseRoom.items.find((item) => item.offeringId === offeringId)!;
-	function workspace() {
+	function workspace(versionId = ids.version) {
+		const source = versionId === ids.sourceVersion ? published : graph;
+		const sourceOffering = source.snapshot.offerings.find((item) => item.id === offeringId);
+		const audience = new Set(sourceOffering?.homeroomIds ?? []);
 		const result = navigationWorkspace();
-		result.deliveryVersionStatus = graph.status;
+		result.deliveryVersionId = versionId;
+		result.deliveryVersionStatus = source.status;
 		result.unlinked = [];
 		result.homerooms = roomIds.map((id, index) => {
 			const room = structuredClone(baseRoom);
@@ -177,7 +188,9 @@ async function mockRoomScope(
 							}
 						]
 					: [];
-			const groups = selected.groups.filter((group) => group.homeroomIds.includes(id));
+			const groups = (sourceOffering?.groups ?? []).filter((group) =>
+				group.homeroomIds.includes(id)
+			);
 			room.items = [
 				{
 					...sourceItem,
@@ -194,7 +207,7 @@ async function mockRoomScope(
 					offeringId: index === 2 && audience.has(id) ? offeringId : null,
 					offeringState:
 						index === 2 && audience.has(id)
-							? options.published
+							? source.status === 'published'
 								? 'published'
 								: 'draft'
 							: 'missing',
@@ -295,6 +308,9 @@ async function mockRoomScope(
 	const writes: { method: string; path: string; body: Record<string, unknown> }[] = [];
 	let failRead = false,
 		conflict = options.conflictOnce ?? false;
+	let failWorkspace = options.failWorkspaceOnce ?? false;
+	const workspaceReads: string[] = [];
+	const initialWorkspaceFinished = deferred();
 	function advance() {
 		graph.rowVersion++;
 		changeSet = { ...changeSet, rowVersion: changeSet.rowVersion + 1 };
@@ -308,11 +324,26 @@ async function mockRoomScope(
 			if (request.method() !== 'GET')
 				writes.push({ method: request.method(), path, body: request.postDataJSON() });
 			if (path === '/api/academic/delivery/homerooms') {
+				const versionId = url.searchParams.get('deliveryVersionId') ?? ids.version;
+				workspaceReads.push(versionId);
+				if (failWorkspace) {
+					failWorkspace = false;
+					return reply(route, 'โหลดชื่อห้องไม่สำเร็จ', 500);
+				}
 				if (failRead) {
 					failRead = false;
 					return reply(route, 'โหลดห้องหลังบันทึกไม่สำเร็จ', 503);
 				}
-				return reply(route, workspace());
+				const response = workspace(versionId);
+				const initial = workspaceReads.length === 1;
+				try {
+					if (initial && options.workspaceGate) await options.workspaceGate;
+					if (initial && options.workspaceGateFailure)
+						return await reply(route, 'คำตอบชื่อห้องเก่าล้มเหลว', 500);
+					return await reply(route, response);
+				} finally {
+					if (initial) initialWorkspaceFinished.release();
+				}
 			}
 			if (path === '/api/academic/delivery/management-options') return reply(route, management);
 			if (path === '/api/academic/delivery-versions')
@@ -425,7 +456,10 @@ async function mockRoomScope(
 				});
 			}
 			if (path === offeringPath) return reply(route, resource);
-			if (path === `${offeringPath}/groups`) return reply(route, registry);
+			if (path === `${offeringPath}/groups`)
+				return options.failGroups
+					? reply(route, 'โหลดรายการกลุ่มไม่สำเร็จ', 500)
+					: reply(route, registry);
 			const group = registry.find((group) => path === `/api/academic/learning-groups/${group.id}`);
 			if (group) return reply(route, group);
 			if (path.endsWith('/roster-tracking'))
@@ -448,6 +482,8 @@ async function mockRoomScope(
 		originalPublished,
 		writes,
 		selected,
+		workspaceReads,
+		initialWorkspaceFinished: initialWorkspaceFinished.promise,
 		removeRoomElsewhere(homeroomId: string) {
 			audience.delete(homeroomId);
 			project();
@@ -738,6 +774,149 @@ test('whole-offering removal is separate and re-add previews only the selected d
 		).toHaveCount(0);
 });
 
+function detailHref() {
+	return `/staff/academic/delivery/${offeringId}?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}&groupId=${groupIds[2]}&returnTo=${encodeURIComponent(overviewHref)}`;
+}
+function audienceRoom(page: Page, name: string) {
+	return page
+		.getByRole('region', { name: 'ห้องที่เปิดสอนในรุ่นนี้', exact: true })
+		.getByRole('listitem')
+		.filter({ has: page.getByRole('heading', { name, exact: true }) });
+}
+async function removeAudienceRoom(page: Page, name: string) {
+	const trigger = audienceRoom(page, name).getByRole('button', {
+		name: `นำออกจากห้องนี้ · ${name} · เคมีเพิ่มเติม`,
+		exact: true
+	});
+	await trigger.focus();
+	await page.keyboard.press('Enter');
+	const scope = page.getByRole('alertdialog', { name: 'นำออกจากห้องนี้', exact: true });
+	await expect(scope).toContainText(`ห้อง “${name}”`);
+	await scope.getByRole('button', { name: 'ยืนยันนำออกจากห้องนี้', exact: true }).click();
+	await expect(scope).toHaveCount(0);
+	await expect(audienceRoom(page, name)).toHaveCount(0);
+}
+
+for (const priorExcludedM43 of [false, true])
+	for (const viewport of [
+		{ width: 1280, dark: false },
+		{ width: 390, dark: true }
+	]) {
+		test(`detail retains every audience room ${priorExcludedM43 ? 'without restoring a previously excluded M4/3 group' : 'and its remaining groups'} at ${viewport.width}px`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width: viewport.width, height: 900 });
+			const fixture = await mockRoomScope(page, false, { priorExcludedM43 });
+			await page.goto(detailHref());
+			if (viewport.dark)
+				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+			const audience = page.getByRole('region', { name: 'ห้องที่เปิดสอนในรุ่นนี้', exact: true });
+			await expect(audience.getByRole('listitem')).toHaveCount(3);
+			await expect(audienceRoom(page, roomNames[1])).toContainText(
+				priorExcludedM43 ? 'ยังไม่มีกลุ่มเรียนสำหรับห้องนี้' : 'มีกลุ่มเรียนสำหรับห้องนี้ 1 กลุ่ม'
+			);
+			await removeAudienceRoom(page, roomNames[0]);
+			await expect(audience.getByRole('listitem')).toHaveCount(2);
+			await expect(audienceRoom(page, roomNames[1])).toContainText(
+				priorExcludedM43 ? 'ยังไม่มีกลุ่มเรียนสำหรับห้องนี้' : 'มีกลุ่มเรียนสำหรับห้องนี้ 1 กลุ่ม'
+			);
+			await expect(audienceRoom(page, roomNames[2])).toContainText(
+				'มีกลุ่มเรียนสำหรับห้องนี้ 1 กลุ่ม'
+			);
+			await expect(audience).not.toContainText(roomIds[1]);
+			expect(fixture.selected.homeroomIds).toEqual(roomIds.slice(1));
+			expect(fixture.selected.groups.map((group) => group.id)).toEqual(
+				priorExcludedM43 ? [groupIds[2]] : groupIds.slice(1)
+			);
+			await expect(
+				page.getByTestId('delivery-groups-ready').getByRole('button', { name: /^กลุ่ม ม.6\/1 ครู/ })
+			).toBeVisible();
+			if (!priorExcludedM43)
+				await expect(
+					page
+						.getByTestId('delivery-groups-ready')
+						.getByRole('button', { name: /^กลุ่ม ม.4\/3 ครู/ })
+				).toBeVisible();
+			await audience.scrollIntoViewIfNeeded();
+			await audience.screenshot({
+				path: testInfo.outputPath('remaining-delivery-audience.png'),
+				animations: 'disabled'
+			});
+			if (priorExcludedM43) {
+				await removeAudienceRoom(page, roomNames[1]);
+				await expect(audience.getByRole('listitem')).toHaveCount(1);
+				expect(fixture.selected.homeroomIds).toEqual([roomIds[2]]);
+				expect(fixture.selected.groups.map((group) => group.id)).toEqual([groupIds[2]]);
+			}
+			expect(fixture.writes.map((write) => write.path)).toEqual(
+				(priorExcludedM43 ? roomIds.slice(0, 2) : roomIds.slice(0, 1)).map(
+					(id) => `${changeSetPath}/offerings/${offeringId}/homerooms/${id}`
+				)
+			);
+			expect(fixture.registry).toEqual(fixture.originalRegistry);
+			expect(fixture.published).toEqual(fixture.originalPublished);
+			expect(fixture.workspaceReads).toEqual([ids.version]);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+		});
+	}
+
+test('audience metadata failure is independent of profile and snapshot coverage survives a failed registry list', async ({
+	page
+}) => {
+	const fixture = await mockRoomScope(page, false, { failWorkspaceOnce: true, failGroups: true });
+	await page.goto(detailHref());
+	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	const audience = page.getByRole('region', { name: 'ห้องที่เปิดสอนในรุ่นนี้', exact: true });
+	await expect(audience.getByRole('alert')).toContainText('โหลดชื่อห้องไม่สำเร็จ');
+	await expect(audience.getByRole('button', { name: /^นำออกจากห้องนี้/ })).toHaveCount(0);
+	await audience.getByRole('button', { name: 'โหลดชื่อห้องอีกครั้ง', exact: true }).click();
+	for (const name of roomNames)
+		await expect(audienceRoom(page, name)).toContainText('มีกลุ่มเรียนสำหรับห้องนี้ 1 กลุ่ม');
+	await expect(audience).not.toContainText('ยังไม่มีกลุ่มเรียนสำหรับห้องนี้');
+	expect(fixture.workspaceReads).toEqual([ids.version, ids.version]);
+	expect(fixture.writes).toEqual([]);
+});
+
+test('a delayed old audience metadata failure cannot replace a newly selected published version', async ({
+	page
+}) => {
+	const gate = deferred();
+	const fixture = await mockRoomScope(page, false, {
+		workspaceGate: gate.promise,
+		workspaceGateFailure: true
+	});
+	try {
+		await page.goto(detailHref());
+		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+		const audience = page.getByRole('region', { name: 'ห้องที่เปิดสอนในรุ่นนี้', exact: true });
+		await expect(audience).toHaveAttribute('aria-busy', 'true');
+		await page.getByRole('combobox', { name: 'เลือกรุ่นเปิดสอน', exact: true }).click();
+		await page.getByRole('option', { name: /^เผยแพร่แล้ว/ }).click();
+		await expect(page).toHaveURL(
+			(url) => url.searchParams.get('deliveryVersionId') === ids.sourceVersion
+		);
+		await expect(audience).toHaveAttribute('aria-busy', 'false');
+		await expect(audience.getByRole('listitem')).toHaveCount(3);
+		gate.release();
+		await fixture.initialWorkspaceFinished;
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		await expect(audience.getByRole('alert')).toHaveCount(0);
+		await expect(audience.getByRole('listitem')).toHaveCount(3);
+		await expect(audience.getByRole('button', { name: /^นำออกจากห้องนี้/ })).toHaveCount(0);
+		expect(fixture.workspaceReads).toEqual([ids.version, ids.sourceVersion]);
+		expect(fixture.writes).toEqual([]);
+	} finally {
+		gate.release();
+	}
+});
+
 for (const condition of ['reader', 'published'] as const)
 	test(`room actions stay hidden for ${condition}`, async ({ page }) => {
 		const fixture = await mockRoomScope(page, true, {
@@ -747,5 +926,9 @@ for (const condition of ['reader', 'published'] as const)
 		await page.goto(overviewHref);
 		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
 		await expect(page.getByRole('button', { name: /^นำออกจากห้องนี้/ })).toHaveCount(0);
+		await page.goto(detailHref());
+		const audience = page.getByRole('region', { name: 'ห้องที่เปิดสอนในรุ่นนี้', exact: true });
+		await expect(audience.getByRole('listitem')).toHaveCount(3);
+		await expect(audience.getByRole('button', { name: /^นำออกจากห้องนี้/ })).toHaveCount(0);
 		expect(fixture.writes).toEqual([]);
 	});

@@ -50,6 +50,15 @@ pub async fn readiness(
     actor: &ActorContext,
     context: &ResultContext,
 ) -> Result<ResultReadiness, AppError> {
+    readiness_at(pool, actor, context, obligations::captured_day()?).await
+}
+
+pub(super) async fn readiness_at(
+    pool: &PgPool,
+    actor: &ActorContext,
+    context: &ResultContext,
+    captured: chrono::NaiveDate,
+) -> Result<ResultReadiness, AppError> {
     let access = access_policy::list_access(pool, actor).await?;
     let allowed_organization_units = access.allowed_organization_unit_ids();
     let mut tx = school_tenancy::TenantPool::begin_observed(
@@ -64,8 +73,29 @@ pub async fn readiness(
         )
         .execute()
         .await?;
-    validate_context(&mut tx, context).await?;
-    // Both queues are bounded set queries. There is no per-group service/query loop.
+    let date = obligations::operation_date(&mut tx, context, captured).await?;
+    // Bound and classify cheap candidate IDs before building expensive readiness snapshots.
+    let candidates:Vec<Uuid>=DbSession::new(&mut *tx).scalar("academic_results.services.readiness.readiness_at",r#"
+        SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id
+        WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+          AND ($3 OR o.owning_organization_unit_id=ANY($4) OR ($5::uuid IS NOT NULL AND EXISTS(
+              SELECT 1 FROM learning_group_teachers teacher JOIN users account ON account.id=teacher.teacher_id AND account.status='active'
+              WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$5 AND teacher.starts_on<=$6
+                AND (teacher.ends_on IS NULL OR teacher.ends_on>=$6))))
+        ORDER BY g.id LIMIT $7
+    "#).bind(context.academic_term_id).bind(context.academic_year_id).bind(access.includes_school_owned)
+        .bind(&allowed_organization_units).bind(access.assigned_actor_id).bind(date)
+        .bind((school_academic_assessment::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT+1) as i64).fetch_all().await?;
+    obligations::require_scan_budget(candidates.len())?;
+    let eligible = current_obligation_group_ids_on_connection(
+        &mut tx,
+        context.academic_term_id,
+        context.academic_year_id,
+        date,
+        &candidates,
+    )
+    .await?;
+    // Both eligible queues remain bounded set queries with their existing normal limits.
     let course_rows: Vec<CourseReadinessRow> = DbSession::new(&mut *tx).query_as("academic_results.services.readiness.readiness",
         r#"WITH active_policy AS (
                SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active'
@@ -74,8 +104,8 @@ pub async fn readiness(
                   g.name AS group_name,o.name_snapshot AS offering_name,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$6
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+                           AND teacher.starts_on<=$7::date
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)) AS assigned,
                   lock.id IS NOT NULL AS locked,
                   (SELECT count(*)=4 AND count(DISTINCT phase.phase_code)=4 AND COALESCE(sum(phase.max_score),0)=d.assessment_total_score
                      FROM course_assessment_plans plan JOIN course_assessment_phases phase ON phase.plan_id=plan.id
@@ -115,8 +145,8 @@ pub async fn readiness(
                    AND COALESCE(result_confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
                          JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                         WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
-                          AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                          AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
+                          AND teacher.starts_on<=$7::date
+                          AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)
                         ORDER BY teacher.id LIMIT 1), false)
                    AND result_confirmation.source_snapshot->'roster'=COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'membershipId',member.id,'studentAcademicYearId',member.student_academic_year_id,'rowVersion',member.row_version)
@@ -141,8 +171,8 @@ pub async fn readiness(
                              AND (snapshot->>'rowVersion')::bigint=current_phase.row_version))) AS result_confirmation_current,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS primary_exists,
+                           AND teacher.starts_on<=$7::date
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)) AS primary_exists,
                   (EXISTS(SELECT 1 FROM active_policy)
                    AND (SELECT count(*)=8 AND min(lower_bound) FILTER (WHERE grade=0)=0
                                AND max(lower_bound)<=d.assessment_total_score
@@ -160,7 +190,7 @@ pub async fn readiness(
            LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
              AND lock.academic_term_id=g.academic_term_id
              AND lock.academic_year_id=g.academic_year_id
-           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' AND g.id=ANY($8)
              AND ($3 OR o.owning_organization_unit_id=ANY($4)
                   OR ($5::uuid IS NOT NULL AND EXISTS(
                       SELECT 1 FROM learning_group_teachers visible_teacher
@@ -168,8 +198,8 @@ pub async fn readiness(
                        AND visible_account.status='active'
                       WHERE visible_teacher.learning_group_id=g.id
                         AND visible_teacher.teacher_id=$5
-                        AND visible_teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))))
+                        AND visible_teacher.starts_on<=$7::date
+                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=$7::date))))
            ORDER BY d.subject_id,g.id LIMIT 5001"#,
     )
     .bind(context.academic_term_id)
@@ -178,6 +208,8 @@ pub async fn readiness(
     .bind(&allowed_organization_units)
     .bind(access.assigned_actor_id)
     .bind(actor.user_id)
+    .bind(date)
+    .bind(&eligible)
     .fetch_all()
     .await?;
     if course_rows.len() > 5000 {
@@ -190,8 +222,8 @@ pub async fn readiness(
                   o.name_snapshot AS offering_name,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$6
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+                           AND teacher.starts_on<=$7::date
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)) AS assigned,
                   lock.id IS NOT NULL AS locked,
                   (SELECT count(*) FROM learning_group_students member WHERE member.learning_group_id=g.id AND member.membership_status='active')
                     =(SELECT count(*) FROM academic_activity_evaluations value JOIN learning_group_students member
@@ -203,8 +235,8 @@ pub async fn readiness(
                    AND COALESCE(confirmation.confirmed_by=(SELECT teacher.teacher_id FROM learning_group_teachers teacher
                          JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                         WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
-                          AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                          AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
+                          AND teacher.starts_on<=$7::date
+                          AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)
                         ORDER BY teacher.id LIMIT 1), false)
                    AND confirmation.source_snapshot->'roster'=COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'membershipId',member.id,'studentAcademicYearId',member.student_academic_year_id,'rowVersion',member.row_version)
@@ -218,14 +250,14 @@ pub async fn readiness(
                          WHERE value.learning_group_id=g.id),'[]'::jsonb)) AS confirmation_current,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.role='primary'
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS primary_exists
+                           AND teacher.starts_on<=$7::date
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=$7::date)) AS primary_exists
            FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='activity'
            JOIN activity_offering_details detail ON detail.learning_offering_id=o.id
            JOIN academic_terms t ON t.id=g.academic_term_id
            LEFT JOIN academic_activity_result_confirmations confirmation ON confirmation.learning_group_id=g.id
            LEFT JOIN academic_activity_result_locks lock ON lock.learning_group_id=g.id
-           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' AND g.id=ANY($8)
              AND ($3 OR o.owning_organization_unit_id=ANY($4)
                   OR ($5::uuid IS NOT NULL AND EXISTS(
                       SELECT 1 FROM learning_group_teachers visible_teacher
@@ -233,8 +265,8 @@ pub async fn readiness(
                        AND visible_account.status='active'
                       WHERE visible_teacher.learning_group_id=g.id
                         AND visible_teacher.teacher_id=$5
-                        AND visible_teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))))
+                        AND visible_teacher.starts_on<=$7::date
+                        AND (visible_teacher.ends_on IS NULL OR visible_teacher.ends_on>=$7::date))))
            ORDER BY o.code_snapshot,g.id LIMIT 5001"#,
     )
     .bind(context.academic_term_id)
@@ -243,6 +275,8 @@ pub async fn readiness(
     .bind(&allowed_organization_units)
     .bind(access.assigned_actor_id)
     .bind(actor.user_id)
+    .bind(date)
+    .bind(&eligible)
     .fetch_all()
     .await?;
     if activity_rows.len() > 5000 {

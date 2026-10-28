@@ -605,7 +605,7 @@ pub async fn preview_from_curriculum(
         "academic_delivery.services.offerings.preview_from_curriculum",
     )
     .await?;
-    let preview = build_curriculum_preview_scoped(
+    let prepared = build_curriculum_preview_scoped(
         &mut transaction,
         request.academic_term_id,
         &program_ids,
@@ -613,7 +613,7 @@ pub async fn preview_from_curriculum(
     )
     .await?;
     transaction.commit().await?;
-    Ok(preview)
+    Ok(prepared.preview)
 }
 
 #[derive(Debug, Clone)]
@@ -789,7 +789,7 @@ pub async fn apply_from_curriculum(
     )
     .await?;
     let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
-    let preview = build_curriculum_preview_scoped(
+    let PreparedCurriculumPreview { preview, context } = build_curriculum_preview_scoped(
         &mut transaction,
         request.academic_term_id,
         &program_ids,
@@ -803,10 +803,6 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let context = match request.delivery_version_id {
-        Some(id) => Some(super::audiences::revision_context(&mut transaction, id, term.id).await?),
-        None => None,
-    };
     let applied = apply_preview_in_transaction(
         &mut transaction,
         &term,
@@ -1975,12 +1971,17 @@ fn offering_kind_order(kind: LearningOfferingKind) -> u8 {
     }
 }
 
+struct PreparedCurriculumPreview {
+    preview: CurriculumOfferingPreview,
+    context: Option<super::audiences::RevisionContext>,
+}
+
 async fn build_curriculum_preview_scoped(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     program_ids: &[Uuid],
     version: Option<Uuid>,
-) -> Result<CurriculumOfferingPreview, AppError> {
+) -> Result<PreparedCurriculumPreview, AppError> {
     let term = require_writable_term(transaction, academic_term_id, false).await?;
     let context = match version {
         Some(id) => {
@@ -1988,7 +1989,7 @@ async fn build_curriculum_preview_scoped(
         }
         None => None,
     };
-    build_curriculum_preview_for_term(
+    let preview = build_curriculum_preview_for_term(
         transaction,
         academic_term_id,
         program_ids,
@@ -1996,7 +1997,8 @@ async fn build_curriculum_preview_scoped(
         true,
         context.as_ref(),
     )
-    .await
+    .await?;
+    Ok(PreparedCurriculumPreview { preview, context })
 }
 fn preparation_rooms(
     context: &super::audiences::RevisionContext,

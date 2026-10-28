@@ -176,6 +176,16 @@ fn native_pool_boundary_exception(file: &Path, function: &str) -> bool {
 fn private_work_entry(file: &Path, function: &str) -> bool {
     let path = file.to_string_lossy().replace('\\', "/");
     let entries: &[(&str, &[&str])] = &[
+        // Current readiness and activity locking own complete observed transactions;
+        // bulk activity requests pass one captured date through these exact work entries.
+        (
+            "school-academic-results/src/services/readiness.rs",
+            &["readiness_at"],
+        ),
+        (
+            "school-academic-results/src/services/locking.rs",
+            &["lock_activity_group_at"],
+        ),
         // Supply detail explicitly owns one repeatable-read/read-only metadata+history snapshot.
         (
             "school-administration/src/supply_catalog/services.rs",
@@ -188,7 +198,7 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
         ),
         (
             "school-academic-assessment/src/learner_evaluation/services.rs",
-            &["begin_subject"],
+            &["begin_subject_with_selection"],
         ),
         // Atomic term/year activation is a domain transaction owner.
         (

@@ -120,7 +120,15 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
             Err(AppError::Conflict(_))
         ));
         assert!(matches!(
-            lock_subject(&pool, &actor, subject, DC, &ctx).await,
+            lock_subject(
+                &pool,
+                &crate::adapters::academic_result_locks::RESULT_LOCKS,
+                &actor,
+                subject,
+                DC,
+                &ctx
+            )
+            .await,
             Err(AppError::Conflict(_))
         ));
         // A domain never opened before closure must not inherit today's school defaults.
@@ -151,7 +159,7 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, EvaluationContext, Uuid, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 61).await.unwrap();
+    apply_migrations_through(&pool, 144).await.unwrap();
     let (year,term,group,subject,teacher):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,d.subject_id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN course_assessment_plans p ON p.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=$1 WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$2)").bind(teacher).bind(group).execute(&pool).await.unwrap();
     let actor = ActorContext {
@@ -322,7 +330,15 @@ async fn learner_coordinator_configuration_remains_editable_while_entry_closed()
         Err(AppError::Forbidden(_))
     ));
     assert!(matches!(
-        lock_subject(&pool, &reader, subject, DC, &ctx).await,
+        lock_subject(
+            &pool,
+            &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            &reader,
+            subject,
+            DC,
+            &ctx
+        )
+        .await,
         Err(AppError::Forbidden(_))
     ));
 }
@@ -646,9 +662,16 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&ws)).await,
         Err(AppError::Forbidden(_))
     ));
-    let outcome = lock_subject(&pool, &actor, subject, DC, &ctx)
-        .await
-        .unwrap();
+    let outcome = lock_subject(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        subject,
+        DC,
+        &ctx,
+    )
+    .await
+    .unwrap();
     assert!(outcome.lock.is_none());
     assert!(outcome
         .blockers
@@ -1047,12 +1070,26 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
     confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&ws))
         .await
         .unwrap();
-    let denied = lock_subject(&pool, &actor, subject, DC, &ctx)
-        .await
-        .unwrap();
+    let denied = lock_subject(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        subject,
+        DC,
+        &ctx,
+    )
+    .await
+    .unwrap();
     assert!(denied.lock.is_none());
     assert!(denied.blockers.iter().any(|b| b.learning_group_id == other));
-    let pending = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let pending = read_lock_readiness(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        &ctx,
+    )
+    .await
+    .unwrap();
     let pending_domain = pending
         .iter()
         .find(|row| row.subject_id == subject && row.domain == DC)
@@ -1098,23 +1135,44 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
             .await
             .unwrap();
     }
-    let ready = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let ready = read_lock_readiness(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        &ctx,
+    )
+    .await
+    .unwrap();
     let ready_domain = ready
         .iter()
         .find(|row| row.subject_id == subject && row.domain == DC)
         .unwrap();
     assert!(ready_domain.ready);
     assert!(!ready_domain.locked);
-    let outcome = lock_subject(&pool, &actor, subject, DC, &ctx)
-        .await
-        .unwrap();
+    let outcome = lock_subject(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        subject,
+        DC,
+        &ctx,
+    )
+    .await
+    .unwrap();
     assert!(
         outcome.blockers.is_empty(),
         "Unexpected blockers: {:?}",
         outcome.blockers
     );
     let locked = outcome.lock.unwrap();
-    let locked_readiness = read_lock_readiness(&pool, &actor, &ctx).await.unwrap();
+    let locked_readiness = read_lock_readiness(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        &ctx,
+    )
+    .await
+    .unwrap();
     let locked_domain = locked_readiness
         .iter()
         .find(|row| row.subject_id == subject && row.domain == DC)
@@ -1230,11 +1288,18 @@ async fn learner_correction_is_append_only_and_updates_effective_summary() {
             .await
             .unwrap();
     }
-    lock_subject(&pool, &actor, subject, DC, &ctx)
-        .await
-        .unwrap()
-        .lock
-        .expect("complete subject domain must lock");
+    lock_subject(
+        &pool,
+        &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        &actor,
+        subject,
+        DC,
+        &ctx,
+    )
+    .await
+    .unwrap()
+    .lock
+    .expect("complete subject domain must lock");
     let (evaluation_id, student, initial_level, initial_version): (Uuid, Uuid, i16, i64) =
         sqlx::query_as(
             "SELECT id,student_academic_year_id,quality_level,row_version FROM subject_term_student_evaluations WHERE subject_id=$1 AND academic_term_id=$2 AND domain='desirable_characteristic' ORDER BY id LIMIT 1",
@@ -1327,7 +1392,14 @@ async fn learner_response_and_initial_lock_serialize() {
     };
     let (lock, write) = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         tokio::join!(
-            lock_subject(&pool, &actor, subject, DC, &ctx),
+            lock_subject(
+                &pool,
+                &crate::adapters::academic_result_locks::RESULT_LOCKS,
+                &actor,
+                subject,
+                DC,
+                &ctx
+            ),
             save_responses(&pool, &actor, group, DC, &ctx, vec![input])
         )
     })
@@ -1504,3 +1576,6 @@ fn learner_endpoint_contract_requires_full_context_and_typed_domains() {
         }
     }
 }
+
+#[path = "current_obligation_tests.rs"]
+mod current_obligation_tests;

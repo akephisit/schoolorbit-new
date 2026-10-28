@@ -144,12 +144,13 @@ pub async fn lock_course_subject(
             "School academic-result lock permission is required".into(),
         ));
     }
+    let captured = obligations::captured_day()?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_results.services.locking.lock_course_subject",
     )
     .await?;
-    validate_context(&mut tx, context).await?;
+    let date = obligations::operation_date(&mut tx, context, captured).await?;
     lifecycle_guard::require_term_write(
         &mut tx,
         context.academic_year_id,
@@ -180,8 +181,10 @@ pub async fn lock_course_subject(
         ));
     }
 
-    let groups: Vec<CourseGroupRow> = DbSession::new(&mut *tx).query_as("academic_results.services.locking.lock_course_subject",
-        r#"SELECT learning_group.id AS learning_group_id,
+    let groups: Vec<CourseGroupRow> = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_results.services.locking.lock_course_subject",
+            r#"SELECT learning_group.id AS learning_group_id,
                   learning_group.learning_offering_id,
                   learning_group.name AS group_name,
                   offering.name_snapshot AS offering_name,
@@ -193,20 +196,38 @@ pub async fn lock_course_subject(
                       JOIN academic_terms term ON term.id=learning_group.academic_term_id
                       WHERE teacher.learning_group_id=learning_group.id
                         AND teacher.teacher_id=$2
-                        AND teacher.starts_on<=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)
-                        AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date))
+                        AND teacher.starts_on<=$3::date
+                        AND (teacher.ends_on IS NULL OR teacher.ends_on>=$3::date)
                   ) AS assigned
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id=learning_group.learning_offering_id
            WHERE learning_group.learning_offering_id=ANY($1)
              AND learning_group.status<>'closed'
-           ORDER BY learning_group.id
+           ORDER BY learning_group.id LIMIT $4
            FOR UPDATE OF learning_group"#,
+        )
+        .bind(&offering_ids)
+        .bind(actor.user_id)
+        .bind(date)
+        .bind((school_academic_assessment::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT + 1) as i64)
+        .fetch_all()
+        .await?;
+    obligations::require_scan_budget(groups.len())?;
+    let candidates: Vec<_> = groups.iter().map(|group| group.learning_group_id).collect();
+    let eligible: std::collections::HashSet<_> = current_obligation_group_ids_on_connection(
+        &mut tx,
+        context.academic_term_id,
+        context.academic_year_id,
+        date,
+        &candidates,
     )
-    .bind(&offering_ids)
-    .bind(actor.user_id)
-    .fetch_all()
-    .await?;
+    .await?
+    .into_iter()
+    .collect();
+    let groups: Vec<_> = groups
+        .into_iter()
+        .filter(|group| eligible.contains(&group.learning_group_id))
+        .collect();
     if groups.is_empty() {
         return Err(AppError::ValidationError(
             "Course subject has no active learning groups to lock".into(),
@@ -254,6 +275,7 @@ pub async fn lock_course_subject(
             actor,
             context,
             group.learning_group_id,
+            date,
         )
         .await?;
         let mut blockers = workspace.blockers.clone();
@@ -515,6 +537,16 @@ pub async fn lock_activity_group(
     context: &ResultContext,
     group_id: Uuid,
 ) -> Result<ActivityResultLockOutcome, AppError> {
+    lock_activity_group_at(pool, actor, context, group_id, obligations::captured_day()?).await
+}
+
+pub(super) async fn lock_activity_group_at(
+    pool: &PgPool,
+    actor: &ActorContext,
+    context: &ResultContext,
+    group_id: Uuid,
+    captured: chrono::NaiveDate,
+) -> Result<ActivityResultLockOutcome, AppError> {
     if !access_policy::can_lock(actor) {
         return Err(AppError::Forbidden(
             "School academic-result lock permission is required".into(),
@@ -525,7 +557,7 @@ pub async fn lock_activity_group(
         "academic_results.services.locking.lock_activity_group",
     )
     .await?;
-    validate_context(&mut tx, context).await?;
+    let date = obligations::operation_date(&mut tx, context, captured).await?;
     lifecycle_guard::require_term_write(
         &mut tx,
         context.academic_year_id,
@@ -561,7 +593,21 @@ pub async fn lock_activity_group(
         .execute()
         .await?;
 
-    let workspace = activities::workspace_for_lock(&mut tx, actor, context, group_id).await?;
+    let eligible = current_obligation_group_ids_on_connection(
+        &mut tx,
+        context.academic_term_id,
+        context.academic_year_id,
+        date,
+        &[group_id],
+    )
+    .await?;
+    if eligible.is_empty() {
+        return Err(AppError::ValidationError(
+            "Activity group is omitted from current delivery and has no established obligation"
+                .into(),
+        ));
+    }
+    let workspace = activities::workspace_for_lock(&mut tx, actor, context, group_id, date).await?;
     let mut blockers = workspace.blockers.clone();
     if workspace.confirmation.is_none() {
         blockers.push(missing_group_confirmation());
@@ -690,7 +736,8 @@ pub async fn lock_all_ready_activities(
             "School academic-result lock permission is required".into(),
         ));
     }
-    let queue = readiness::readiness(pool, actor, context).await?;
+    let captured = obligations::captured_day()?;
+    let queue = readiness::readiness_at(pool, actor, context, captured).await?;
     let mut locked = Vec::new();
     let mut skipped = Vec::new();
     for mut group in queue.activities {
@@ -698,7 +745,8 @@ pub async fn lock_all_ready_activities(
             skipped.push(group);
             continue;
         }
-        let outcome = lock_activity_group(pool, actor, context, group.learning_group_id).await?;
+        let outcome =
+            lock_activity_group_at(pool, actor, context, group.learning_group_id, captured).await?;
         if let Some(lock) = outcome.lock {
             locked.push(lock);
         } else {

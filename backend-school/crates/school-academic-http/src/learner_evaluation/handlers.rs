@@ -92,8 +92,13 @@ pub async fn lock_readiness(
     Query(query): Query<EvaluationContext>,
 ) -> Result<Json<ApiResponse<Vec<LearnerEvaluationSubjectLockReadiness>>>, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let result =
-        services::read_lock_readiness(&context.tenant.pool, &context.actor, &query).await?;
+    let result = services::read_lock_readiness(
+        &context.tenant.pool,
+        state.result_locks,
+        &context.actor,
+        &query,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -352,6 +357,7 @@ pub async fn lock_subject(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let result = services::lock_subject(
         &context.tenant.pool,
+        state.result_locks,
         &context.actor,
         subject_id,
         domain,

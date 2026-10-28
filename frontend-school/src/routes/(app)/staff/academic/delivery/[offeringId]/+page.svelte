@@ -48,6 +48,7 @@
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
 	import DeliveryBulkGroupSetupDialog from '#lib/components/learning-delivery/DeliveryBulkGroupSetupDialog.svelte';
 	import DeliveryDraftResourceRemoval from '#lib/components/learning-delivery/DeliveryDraftResourceRemoval.svelte';
+	import DeliveryOfferingAudience from '#lib/components/learning-delivery/DeliveryOfferingAudience.svelte';
 	import OfferingTeacherChangeDialog from '#lib/components/learning-delivery/OfferingTeacherChangeDialog.svelte';
 	import OfferingWeeklyPeriodDialog from '#lib/components/learning-delivery/OfferingWeeklyPeriodDialog.svelte';
 	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
@@ -963,6 +964,18 @@
 					>
 				</Select.Root>
 			</section>
+		{/if}
+		{#if deliveryVersion && selectedDeliveryOffering && selectedDeliveryVersionSummary?.id === deliveryVersion.id && (!detailUrl.searchParams.get('deliveryVersionId') || detailUrl.searchParams.get('deliveryVersionId') === deliveryVersion.id)}
+			{#key `${offeringId}:${deliveryVersion.id}`}
+				<DeliveryOfferingAudience
+					version={deliveryVersion}
+					offering={selectedDeliveryOffering}
+					initialWorkspace={data.audienceWorkspace}
+					canManage={canMutateOffering}
+					changeSetId={selectedDeliveryVersionSummary?.changeSetId}
+					onRemoved={draftResourceUpdated}
+				/>
+			{/key}
 		{/if}
 		{#if versionsLoading && !deliveryVersion}
 			<PageSkeleton variant="cards" rows={2} />

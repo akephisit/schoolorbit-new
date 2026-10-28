@@ -114,6 +114,18 @@ pub(super) async fn begin_subject<'a>(
     ctx: &EvaluationContext,
     write: bool,
 ) -> Result<(school_tenancy::ObservedTransaction, SubjectScope), AppError> {
+    begin_subject_with_selection(pool, actor, subject, domain, ctx, write, None).await
+}
+
+pub(super) async fn begin_subject_with_selection(
+    pool: &PgPool,
+    actor: &ActorContext,
+    subject: Uuid,
+    domain: LearnerEvaluationDomain,
+    ctx: &EvaluationContext,
+    write: bool,
+    result_locks: Option<&dyn crate::ports::ResultLockPort>,
+) -> Result<(school_tenancy::ObservedTransaction, SubjectScope), AppError> {
     let access = policy::list_access(pool, actor).await?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -132,24 +144,61 @@ pub(super) async fn begin_subject<'a>(
             "Course subject not found in this context".into(),
         ));
     }
-    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.begin_subject",
+    let operation_date = if result_locks.is_some() {
+        let locked_groups: Vec<Uuid> = DbSession::new(&mut *tx).scalar(
+            "academic_assessment.learner_evaluation.services.begin_subject",
+            "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) AND status<>'closed' ORDER BY id LIMIT $2 FOR UPDATE",
+        ).bind(&offerings).bind((crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT+1) as i64).fetch_all().await?;
+        if locked_groups.len() > crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT {
+            return Err(AppError::ValidationError(
+                "Learner evaluation raw group scan exceeds its hard limit".into(),
+            ));
+        }
+        Some(current_obligation_date(&mut tx, ctx).await?)
+    } else {
+        DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.begin_subject",
         "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR UPDATE",
     )
     .bind(&offerings)
     .execute()
     .await?;
+        None
+    };
     // Persisted subject coordination is independent of active group assignments.
     let coordinator:bool=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT EXISTS(SELECT 1 FROM course_assessment_plans WHERE learning_offering_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 AND assessment_coordinator_id=$4)").bind(&offerings).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).fetch_one().await?;
-    let groups:Vec<GroupScope>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.begin_subject", r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$2 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
-        (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id
+    let mut groups:Vec<GroupScope>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.begin_subject", r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
+        EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$2 AND teacher.starts_on<=COALESCE($3::date,LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($3::date,LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)))) AS assigned,
+        (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=COALESCE($3::date,LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)) AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($3::date,LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
-        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).fetch_all().await?;
+        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).bind(operation_date).fetch_all().await?;
     if !groups
         .iter()
         .any(|g| policy::can_read_group(&access, g.owner, g.assigned, coordinator))
     {
         return Err(AppError::Forbidden("Subject access denied".into()));
+    }
+    if let (Some(result_locks), Some(date)) = (result_locks, operation_date) {
+        let candidates = groups
+            .iter()
+            .map(|group| group.group_id)
+            .collect::<Vec<_>>();
+        let retained = result_locks
+            .current_obligation_group_ids(
+                &mut tx,
+                ctx.academic_term_id,
+                ctx.academic_year_id,
+                date,
+                &candidates,
+            )
+            .await?
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        groups.retain(|group| retained.contains(&group.group_id));
+        if groups.is_empty() {
+            return Err(AppError::Conflict(
+                "No current learner evaluation obligations remain for this subject".into(),
+            ));
+        }
     }
     if academic_state.is_writable() {
         configuration::initialize(&mut tx, subject, domain, ctx, &offerings).await?;
@@ -240,4 +289,14 @@ mod tests {
         assert!(check_version(Some(1), None).is_err());
         assert!(check_version(None, None).is_ok());
     }
+}
+
+pub(super) async fn current_obligation_date(
+    tx: &mut Transaction<'_, Postgres>,
+    ctx: &EvaluationContext,
+) -> Result<chrono::NaiveDate, AppError> {
+    DbSession::new(&mut **tx).scalar(
+        "academic_assessment.learner_evaluation.services.current_obligation_date",
+        "SELECT LEAST(GREATEST((now() AT TIME ZONE 'Asia/Bangkok')::date,t.start_date),COALESCE(t.closed_on,t.planned_end_date,y.end_date)) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND t.academic_year_id=$2",
+    ).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_one().await.map_err(Into::into)
 }

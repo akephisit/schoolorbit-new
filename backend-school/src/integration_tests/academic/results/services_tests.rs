@@ -223,10 +223,110 @@ fn results_exact_inclusive_policy_and_teacher_contract() {
     );
 }
 pub(super) async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid) {
+    let (pool, actor, context, group, _) = fixture_with_unused_group(name, false).await;
+    (pool, actor, context, group)
+}
+
+async fn fixture_with_unused_group(
+    name: &str,
+    include_unused: bool,
+) -> (
+    sqlx::PgPool,
+    ActorContext,
+    ResultContext,
+    Uuid,
+    Option<Uuid>,
+) {
+    let (pool, actor, context, group, unused, _) =
+        fixture_with_obligation_groups(name, include_unused, false, false).await;
+    (pool, actor, context, group, unused)
+}
+
+// Activity targets in052 require actual legacy lessons; raw offerings with
+// memberships alone never enter the historical Delivery source. Seed one valid
+// predecessor lesson before052, then let the normal migrations own publication.
+async fn seed_results_activity_predecessor(pool: &sqlx::PgPool) {
+    use school_test_db::cutover_test_support::{
+        record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture, CutoverFixture,
+    };
+    apply_migrations_through(pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_migrations_through(pool, 44).await.unwrap();
+    record_passing_phase_a_reconciliation_marker(pool)
+        .await
+        .unwrap();
+    apply_migrations_through(pool, 51).await.unwrap();
+    let (group,offering,term,room,teacher):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.id,g.learning_offering_id,g.academic_term_id,coverage.homeroom_id,teacher.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_homerooms coverage ON coverage.learning_group_id=g.id JOIN learning_group_teachers teacher ON teacher.learning_group_id=g.id AND teacher.role='primary' JOIN academic_terms term ON term.id=g.academic_term_id WHERE EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id,coverage.homeroom_id,teacher.id LIMIT 1").fetch_one(pool).await.unwrap();
+    let entry = Uuid::new_v4();
+    let inserted=sqlx::query("INSERT INTO academic_timetable_entries SELECT (jsonb_populate_record(NULL::academic_timetable_entries,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'learning_offering_id',$2::uuid,'learning_group_id',$3::uuid,'homeroom_id',$4::uuid,'entry_type','ACTIVITY','day_of_week','TUE','title','Synthetic activity lesson','created_by',$5::uuid,'updated_by',$5::uuid,'migration_provenance','{}'::jsonb))).* FROM academic_timetable_entries source WHERE source.academic_term_id=$6 AND source.entry_type='COURSE' AND source.is_active AND NOT EXISTS(SELECT 1 FROM academic_timetable_entries occupied WHERE occupied.academic_term_id=source.academic_term_id AND occupied.day_of_week='TUE' AND occupied.bell_schedule_period_id=source.bell_schedule_period_id AND occupied.is_active AND (occupied.homeroom_id=$4 OR EXISTS(SELECT 1 FROM timetable_entry_instructors teacher WHERE teacher.entry_id=occupied.id AND teacher.instructor_id=$5))) ORDER BY source.id LIMIT 1")
+        .bind(entry).bind(offering).bind(group).bind(room).bind(teacher).bind(term).execute(pool).await.unwrap();
+    assert_eq!(
+        inserted.rows_affected(),
+        1,
+        "the owned activity predecessor needs an unoccupied Tuesday room/instructor slot"
+    );
+    sqlx::query("INSERT INTO timetable_entry_instructors(id,entry_id,instructor_id,role,created_at) SELECT gen_random_uuid(),id,$2,'primary',created_at FROM academic_timetable_entries WHERE id=$1").bind(entry).bind(teacher).execute(pool).await.unwrap();
+    apply_migrations_through(pool, 59).await.unwrap();
+    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_timetable_version_targets target JOIN academic_timetable_versions version ON version.id=target.timetable_version_id WHERE target.learning_offering_id=$1 AND version.status='published')").bind(offering).fetch_one(pool).await.unwrap();
+    assert!(
+        exists,
+        "052 must derive the activity's baseline target from the legitimate predecessor lesson"
+    );
+}
+
+async fn fixture_with_obligation_groups(
+    name: &str,
+    include_unused: bool,
+    include_activity: bool,
+    published_unused: bool,
+) -> (
+    sqlx::PgPool,
+    ActorContext,
+    ResultContext,
+    Uuid,
+    Option<Uuid>,
+    Option<Uuid>,
+) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
-    seed_release_two_predecessor(&pool).await.unwrap();
+    if include_activity {
+        seed_results_activity_predecessor(&pool).await;
+    } else {
+        seed_release_two_predecessor(&pool).await.unwrap();
+    }
     apply_migrations_through(&pool, 61).await.unwrap();
     let (year,term,group,teacher):(Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let unused = if include_unused {
+        let id = Uuid::new_v4();
+        // Seed a legitimate pre-cutover split group, with no learner obligations.
+        // 087 will capture it canonically; no published graph is edited by the test.
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(group).execute(&pool).await.unwrap();
+        if published_unused {
+            // Complete the new historical draft's children first, then validate
+            // its publication preconditions. Never insert into a published group.
+            let published:Option<Uuid>=sqlx::query_scalar("UPDATE learning_groups g SET status='published' FROM learning_offerings o,academic_terms term WHERE g.id=$1 AND g.status='draft' AND o.id=g.learning_offering_id AND o.status='published' AND term.id=g.academic_term_id AND (SELECT count(*) FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.role='primary' AND teacher.starts_on<=term.start_date AND (teacher.ends_on IS NULL OR teacher.ends_on>=term.start_date))=1 RETURNING g.id").bind(id).fetch_optional(&pool).await.unwrap();
+            assert_eq!(published,Some(id),"historical group publication requires a published parent and complete primary-teacher children");
+        }
+        Some(id)
+    } else {
+        None
+    };
+    let unused_activity = if include_activity {
+        let source:Uuid=sqlx::query_scalar("SELECT g.id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.academic_term_id=$1 AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
+        let id = Uuid::new_v4();
+        // The original imported activity group can be late-created yet admitted by
+        // exact dated placements. This unused clone has no such evidence, so seed
+        // its own creation at the earliest legitimate publication visibility cutoff.
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,g.learning_offering_id,g.academic_term_id,g.academic_year_id,$1::text,'Unused activity group','draft','draft',LEAST(g.created_at,COALESCE((SELECT min(GREATEST(v.published_at,v.effective_from::timestamp AT TIME ZONE 'Asia/Bangkok')) FROM academic_timetable_versions v WHERE v.academic_term_id=g.academic_term_id AND v.status='published'),g.created_at)),g.updated_at FROM learning_groups g WHERE g.id=$2").bind(id).bind(source).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(source).execute(&pool).await.unwrap();
+        Some(id)
+    } else {
+        None
+    };
+    // This is the live-service fixture; dedicated historical migration fixtures stay at 061.
+    apply_migrations_through(&pool, 144).await.unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![
@@ -243,6 +343,8 @@ pub(super) async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultCo
             academic_term_id: term,
         },
         group,
+        unused,
+        unused_activity,
     )
 }
 
@@ -2495,3 +2597,6 @@ fn results_endpoint_contract_requires_exact_context_and_typed_envelopes() {
         }
     }
 }
+
+#[path = "result_obligations_tests.rs"]
+mod result_obligations_tests;
