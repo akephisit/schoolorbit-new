@@ -237,6 +237,24 @@ async fn fixture_with_unused_group(
     Uuid,
     Option<Uuid>,
 ) {
+    let (pool, actor, context, group, unused, _) =
+        fixture_with_obligation_groups(name, include_unused, false, false).await;
+    (pool, actor, context, group, unused)
+}
+
+async fn fixture_with_obligation_groups(
+    name: &str,
+    include_unused: bool,
+    include_activity: bool,
+    published_unused: bool,
+) -> (
+    sqlx::PgPool,
+    ActorContext,
+    ResultContext,
+    Uuid,
+    Option<Uuid>,
+    Option<Uuid>,
+) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
     apply_migrations_through(&pool, 61).await.unwrap();
@@ -245,8 +263,17 @@ async fn fixture_with_unused_group(
         let id = Uuid::new_v4();
         // Seed a legitimate pre-cutover split group, with no learner obligations.
         // 087 will capture it canonically; no published graph is edited by the test.
-        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group',CASE WHEN $3 THEN 'published' ELSE 'draft' END,'draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).bind(published_unused).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(group).execute(&pool).await.unwrap();
+        Some(id)
+    } else {
+        None
+    };
+    let unused_activity = if include_activity {
+        let source:Uuid=sqlx::query_scalar("SELECT g.id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.academic_term_id=$1 AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused activity group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(source).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(source).execute(&pool).await.unwrap();
         Some(id)
     } else {
         None
@@ -270,6 +297,7 @@ async fn fixture_with_unused_group(
         },
         group,
         unused,
+        unused_activity,
     )
 }
 
