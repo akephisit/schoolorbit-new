@@ -1282,7 +1282,7 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
 		await expect.poll(() => oldLookups).toBe(2);
 		await page.getByRole('combobox', { name: 'เลือกภาคเรียน', exact: true }).click();
-		await page.getByRole('option', { name: 'ภาคเรียนที่ 1', exact: true }).click();
+		await page.getByRole('option', { name: /^ภาคเรียนที่ 1(?: กำลังใช้งาน)?$/ }).click();
 		await expect(page).toHaveURL(
 			(url) => url.searchParams.get('academicTermId') === navIds.activeTerm
 		);
@@ -1319,4 +1319,212 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 		oldLookup.release();
 		newOptions.release();
 	}
+});
+
+test('a focused offering-level provider conflict blocks save without offering apply or defer controls', async ({
+	page
+}) => {
+	const fixture = await mockSharedComparison(page, { manager: true });
+	fixture.workspace.homerooms[0].items[0] = {
+		...fixture.workspace.homerooms[0].items[0],
+		offeringId: fixture.old.id,
+		offeringState: 'published',
+		alignmentStates: ['matches_curriculum']
+	};
+	fixture.workspace.homerooms[1].studyProgram = {
+		...fixture.workspace.homerooms[1].studyProgram,
+		id: 'c0000000-0000-4000-8000-000000000051',
+		name: 'แผนที่ยังขาดเป้าหมาย'
+	};
+	fixture.old.name = 'วิทยาศาสตร์';
+	for (const room of fixture.workspace.homerooms) room.extraOfferings = [];
+	fixture.workspace.unlinked = [];
+	if (fixture.old.catalog.kind === 'course')
+		fixture.old.catalog.subjectVersionId = comparisonCatalog;
+	const reason =
+		'รายการ ว30104 เผยแพร่แล้วและยังไม่ครอบคลุมห้องเป้าหมายที่เลือก ไม่สามารถเพิ่มเป้าหมายจากการเตรียมเปิดสอนได้';
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, {
+			academicTermId: navIds.term,
+			sourceHash: 'a'.repeat(64),
+			curriculumSources: [],
+			proposals: [
+				{
+					proposalId: 'published-target-conflict',
+					resourceKind: 'course',
+					catalogVersionId: comparisonCatalog,
+					code: 'ว30104',
+					name: 'วิทยาศาสตร์',
+					schedulingMode: null,
+					groupingState: 'proposed',
+					offeringAction: 'conflict',
+					existingOfferingId: fixture.old.id,
+					conflicts: [
+						{
+							code: 'published_offering_target_extension',
+							message: reason,
+							offeringId: fixture.old.id,
+							groupId: null
+						}
+					],
+					targetHomeroomIds: [navIds.roomB],
+					requirementIds: [fixture.workspace.homerooms[1].items[0].requirementId],
+					defaultGroups: [{ groupKey: 'b'.repeat(64), name: 'ม.1/2', homeroomIds: [navIds.roomB] }]
+				}
+			]
+		} satisfies CurriculumOfferingPreview)
+	);
+	await page.goto(fixture.origin);
+	await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
+	await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
+	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
+	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+	await expect(
+		preparation.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
+	).toBeDisabled();
+	await expect(preparation.getByText(reason, { exact: true })).toBeVisible();
+	await expect(preparation.getByText('ติดข้อจำกัด', { exact: true })).toBeVisible();
+	const action = preparation.getByRole('combobox', { name: 'วิธีเตรียม วิทยาศาสตร์', exact: true });
+	await expect(action).toBeDisabled();
+	await expect(action).toHaveText('ยังเปิดรายการนี้ไม่ได้');
+	await expect(
+		preparation.getByText('สร้างหรือคงรายการเปิดสอนไว้ก่อน', { exact: false })
+	).toHaveCount(0);
+	expect(
+		fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+	).toHaveLength(0);
+	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+	await expect(action).toHaveText('ยังเปิดรายการนี้ไม่ได้');
+	await expect(
+		preparation.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
+	).toBeDisabled();
+	expect(
+		fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+	).toHaveLength(0);
+	const previews = fixture.academicWrites.filter((write) =>
+		write.path.endsWith('/preview-from-curriculum')
+	);
+	expect(previews).toHaveLength(2);
+	for (const preview of previews)
+		expect(preview.body.studyProgramIds).toEqual([fixture.workspace.homerooms[1].studyProgram.id]);
+});
+
+test('batch preparation can explicitly skip an offering conflict while deferring a retainable grouping conflict', async ({
+	page
+}) => {
+	const fixture = await mockSharedComparison(page, { manager: true });
+	const preview: CurriculumOfferingPreview = {
+		academicTermId: navIds.term,
+		sourceHash: 'b'.repeat(64),
+		curriculumSources: [],
+		proposals: [
+			{
+				proposalId: 'offering-conflict',
+				resourceKind: 'course',
+				catalogVersionId: comparisonCatalog,
+				code: 'ว30104',
+				name: 'วิทยาศาสตร์',
+				schedulingMode: null,
+				groupingState: 'proposed',
+				offeringAction: 'conflict',
+				existingOfferingId: fixture.old.id,
+				targetHomeroomIds: [navIds.roomB],
+				requirementIds: [comparisonCatalog],
+				defaultGroups: [],
+				conflicts: [
+					{
+						code: 'published_offering_target_extension',
+						message: 'รายการเผยแพร่แล้ว ไม่สามารถขยายเป้าหมายได้',
+						offeringId: fixture.old.id,
+						groupId: null
+					}
+				]
+			},
+			{
+				proposalId: 'retain-grouping-conflict',
+				resourceKind: 'course',
+				catalogVersionId: 'c0000000-0000-4000-8000-000000000052',
+				code: 'ค20202',
+				name: 'รายวิชาที่คงกลุ่มไว้',
+				schedulingMode: null,
+				groupingState: 'conflict',
+				offeringAction: 'retain',
+				existingOfferingId: navOfferings.additional,
+				targetHomeroomIds: [navIds.roomA],
+				requirementIds: [navOfferings.additional],
+				defaultGroups: [],
+				conflicts: [
+					{
+						code: 'generated_group_target_mismatch',
+						message: 'กลุ่มที่สร้างจากข้อกำหนดเดิมมีห้องต่างจากข้อเสนอ',
+						offeringId: navOfferings.additional,
+						groupId: navIds.roomA
+					}
+				]
+			}
+		]
+	};
+	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
+		fulfill(route, preview)
+	);
+	await page.route('**/api/academic/offerings/apply-from-curriculum', (route) =>
+		fulfill(route, {
+			academicTermId: navIds.term,
+			sourceHash: preview.sourceHash,
+			createdOfferingCount: 0,
+			retainedOfferingCount: 1,
+			createdGroupCount: 0,
+			retainedGroupCount: 0,
+			skippedCount: 1,
+			offeringIds: [navOfferings.additional],
+			groupIds: []
+		})
+	);
+	await page.goto(fixture.origin);
+	await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+	const preparation = page.getByRole('dialog', {
+		name: 'เปิดการเรียนการสอนในภาคเรียนนี้',
+		exact: true
+	});
+	await preparation
+		.getByRole('combobox', { name: 'เลือกแผนการเรียนจากหลักสูตร', exact: true })
+		.click();
+	await page.getByRole('option', { name: /แผนคณิตศาสตร์/ }).click();
+	await page.keyboard.press('Escape');
+	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+	const save = preparation.getByRole('button', {
+		name: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว',
+		exact: true
+	});
+	await expect(save).toBeDisabled();
+	const blocked = preparation.getByRole('combobox', {
+		name: 'วิธีเตรียม วิทยาศาสตร์',
+		exact: true
+	});
+	await expect(blocked).toHaveText('ยังเปิดรายการนี้ไม่ได้');
+	await blocked.click();
+	await expect(page.getByRole('option')).toHaveText(['ข้ามรายการนี้']);
+	await page.getByRole('option', { name: 'ข้ามรายการนี้', exact: true }).click();
+	const retained = preparation.getByRole('combobox', {
+		name: 'วิธีเตรียม รายวิชาที่คงกลุ่มไว้',
+		exact: true
+	});
+	await expect(retained).toHaveText('เปิดสอน รอจัดกลุ่ม');
+	await retained.click();
+	await expect(page.getByRole('option', { name: 'เปิดสอน รอจัดกลุ่ม', exact: true })).toBeVisible();
+	await expect(page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true })).toHaveCount(
+		0
+	);
+	await page.keyboard.press('Escape');
+	await expect(save).toBeEnabled();
+	await save.click();
+	await expect(preparation).toHaveCount(0);
+	const applied = fixture.academicWrites.filter((write) =>
+		write.path.endsWith('/apply-from-curriculum')
+	);
+	expect(applied).toHaveLength(1);
+	expect(applied[0].body.choices).toEqual([
+		{ proposalId: 'offering-conflict', action: 'skip', groups: [] },
+		{ proposalId: 'retain-grouping-conflict', action: 'defer_groups', groups: [] }
+	]);
 });

@@ -93,6 +93,7 @@
 		return preview.proposals.some((proposal) => {
 			const choice = choices.find((item) => item.proposalId === proposal.proposalId);
 			if (!choice) return true;
+			if (proposal.offeringAction === 'conflict' && choice.action !== 'skip') return true;
 			if (choice.action === 'apply' && proposal.conflicts.length > 0) return true;
 			if (choice.action === 'apply' && choice.groups.length === 0) return true;
 			return choice.groups.some((group) => !group.name.trim() || group.homeroomIds.length === 0);
@@ -403,8 +404,17 @@
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 							<div class="min-w-0">
 								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant={proposal.offeringAction === 'create' ? 'default' : 'secondary'}
-										>{proposal.offeringAction === 'create' ? 'สร้างรายการ' : 'ใช้รายการเดิม'}</Badge
+									<Badge
+										variant={proposal.offeringAction === 'conflict'
+											? 'destructive'
+											: proposal.offeringAction === 'create'
+												? 'default'
+												: 'secondary'}
+										>{proposal.offeringAction === 'conflict'
+											? 'ติดข้อจำกัด'
+											: proposal.offeringAction === 'create'
+												? 'สร้างรายการ'
+												: 'ใช้รายการเดิม'}</Badge
 									>
 									<p class="font-medium">
 										{proposal.resourceKind === 'activity'
@@ -424,24 +434,30 @@
 									onValueChange={(value) =>
 										setAction(proposal, value as CurriculumPreparationChoice['action'])}
 								>
-									<Select.Trigger class="w-full sm:w-52" aria-label={`วิธีเตรียม ${proposal.name}`}
-										>{choice.action === 'apply'
-											? 'เปิดสอนและจัดกลุ่ม'
-											: choice.action === 'defer_groups'
-												? proposal.schedulingMode === 'synchronized'
-													? 'เปิดแบบกลาง'
-													: 'เปิดสอน รอจัดกลุ่ม'
-												: 'ข้ามรายการนี้'}</Select.Trigger
+									<Select.Trigger
+										class="w-full sm:w-52"
+										aria-label={`วิธีเตรียม ${proposal.name}`}
+										disabled={proposal.offeringAction === 'conflict' && preparationTarget !== null}
+										>{proposal.offeringAction === 'conflict' && choice.action !== 'skip'
+											? 'ยังเปิดรายการนี้ไม่ได้'
+											: choice.action === 'apply'
+												? 'เปิดสอนและจัดกลุ่ม'
+												: choice.action === 'defer_groups'
+													? proposal.schedulingMode === 'synchronized'
+														? 'เปิดแบบกลาง'
+														: 'เปิดสอน รอจัดกลุ่ม'
+													: 'ข้ามรายการนี้'}</Select.Trigger
 									>
 									<Select.Content>
-										{#if proposal.conflicts.length === 0}<Select.Item value="apply"
-												>เปิดสอนและจัดกลุ่ม</Select.Item
+										{#if proposal.offeringAction !== 'conflict' && proposal.conflicts.length === 0}<Select.Item
+												value="apply">เปิดสอนและจัดกลุ่ม</Select.Item
 											>{/if}
-										<Select.Item value="defer_groups"
-											>{proposal.schedulingMode === 'synchronized'
-												? 'เปิดแบบกลาง'
-												: 'เปิดสอน รอจัดกลุ่ม'}</Select.Item
-										>
+										{#if proposal.offeringAction !== 'conflict'}<Select.Item value="defer_groups"
+												>{proposal.schedulingMode === 'synchronized'
+													? 'เปิดแบบกลาง'
+													: 'เปิดสอน รอจัดกลุ่ม'}</Select.Item
+											>
+										{/if}
 										{#if !preparationTarget}<Select.Item value="skip">ข้ามรายการนี้</Select.Item
 											>{/if}
 									</Select.Content>
@@ -459,7 +475,7 @@
 							</div>
 						{/each}
 
-						{#if choice?.action === 'apply'}
+						{#if proposal.offeringAction !== 'conflict' && choice?.action === 'apply'}
 							<div class="rounded-lg border bg-muted/[0.12] p-3">
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<p class="text-sm font-medium">
@@ -561,7 +577,7 @@
 									{/each}
 								</div>
 							</div>
-						{:else if choice?.action === 'defer_groups'}
+						{:else if proposal.offeringAction !== 'conflict' && choice?.action === 'defer_groups'}
 							<p class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
 								สร้างหรือคงรายการเปิดสอนไว้ก่อน โดยยังไม่เดากลุ่ม ครู นักเรียน ห้องจริง หรือตารางสอน
 							</p>

@@ -7731,3 +7731,6 @@ mod bulk_group_setup_tests;
 
 #[path = "draft_removal_tests.rs"]
 mod draft_removal_tests;
+
+#[path = "preparation_target_tests.rs"]
+mod preparation_target_tests;
