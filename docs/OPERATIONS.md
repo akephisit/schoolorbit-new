@@ -611,17 +611,27 @@ Local source-build topology is defined in [`compose.local.yml`](../compose.local
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 
-## Zero course timetable targets
+## Zero weekly timetable targets
 
 Migration 090 permits nonnegative actual weekly targets in the opening change journal.
 The canonical opening snapshot owns the effective target; no retired catalog column is restored.
-Courses set to zero remain opened with their curriculum, credits, groups, teachers and assessment;
-only standalone timetable demand becomes zero. Activities retain a positive target.
+Courses and activities (independent or synchronized) set to zero remain opened with their
+curriculum workload, credits, groups, teachers, rosters and assessments/results unchanged; only
+recurring weekly timetable demand becomes zero. Zero does not waive activity evaluation or
+attendance requirements. It does not create weekly timetable-derived attendance sessions.
+Opening defaults stay unchanged; select zero explicitly when an activity has no weekly slot.
 Publish the opening revision and explicitly update a timetable draft's opening source before the
 new target applies there. Existing placed lessons and published history are preserved; remove
 zero-target lessons from the draft before publishing it.
 
-The migration expands constraints without rewriting data. Older binaries remain compatible until
+Migration [143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) also fixes
+weekly adjustments to offerings added to the same draft. It repairs only a differing cached weekly
+target backed by that draft's add and adjustment commands, preserving every other captured field
+and array order. Changed draft and parent revision counters advance once; reload a stale editor.
+Published/cancelled revisions, journals, registry data and downstream history remain unchanged.
+This repair never rebuilds a draft graph or restores excluded offerings/groups.
+
+Migration090 expanded constraints without rewriting data. Older binaries remain compatible until
 zero targets are stored in opening revisions. After that point, use a roll-forward fix: older
 validation rejects those revisions. Do not roll back by deleting opening or timetable history.
 

@@ -929,6 +929,22 @@ async fn publication_preview(
 
 #[tokio::test]
 async fn zero_course_periods_preserve_delivery_and_require_removing_existing_lessons() {
+    zero_periods_preserve_delivery_and_require_removing_existing_lessons("course").await;
+}
+
+#[tokio::test]
+async fn zero_independent_activity_periods_preserve_delivery_and_require_removing_existing_lessons()
+{
+    zero_periods_preserve_delivery_and_require_removing_existing_lessons("independent").await;
+}
+
+#[tokio::test]
+async fn zero_synchronized_activity_periods_preserve_delivery_and_require_removing_existing_lessons(
+) {
+    zero_periods_preserve_delivery_and_require_removing_existing_lessons("synchronized").await;
+}
+
+async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mode: &str) {
     use chrono::Duration;
     use school_academic_delivery::models::{
         CreateAcademicTermChangeSetRequest, PublishAcademicTermChangeSetRequest,
@@ -941,8 +957,34 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     use school_academic_timetable::services::{
         timetable_lifecycle, timetable_version_service as tables,
     };
-    let pool = predecessor("zero_course_periods").await;
-    apply_migrations_through(&pool, 96).await.unwrap();
+    let pool = if mode == "course" {
+        predecessor("zero_course_periods").await
+    } else {
+        // Seed historical activity lessons before the immutable canonical graph is created.
+        // The standard predecessor has opened activities, but only placed course lessons.
+        let pool =
+            create_named_test_pool_with_max_connections(&format!("zero_{mode}_periods"), 1).await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        cutover_test_support::seed_academic_cutover_fixture(
+            &pool,
+            cutover_test_support::CutoverFixture::Passing,
+        )
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO academic_timetable_entries(id,day_of_week,period_id,entry_type,classroom_id,academic_semester_id,activity_slot_id,created_by)
+            SELECT gen_random_uuid(),CASE WHEN activity.scheduling_mode='synchronized' THEN 'TUE' ELSE 'WED' END,
+            '12000000-0000-0000-0000-000000000001','ACTIVITY',coverage.classroom_id,slot.semester_id,slot.id,slot.created_by
+            FROM activity_slots slot JOIN activity_catalog activity ON activity.id=slot.activity_catalog_id JOIN activity_slot_classrooms coverage ON coverage.slot_id=slot.id").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO timetable_entry_instructors(id,entry_id,instructor_id,role)
+            SELECT gen_random_uuid(),id,created_by,'primary' FROM academic_timetable_entries WHERE entry_type='ACTIVITY'").execute(&pool).await.unwrap();
+        apply_migrations_through(&pool, 44).await.unwrap();
+        cutover_test_support::record_passing_phase_a_reconciliation_marker(&pool)
+            .await
+            .unwrap();
+        apply_migrations_through(&pool, 85).await.unwrap();
+        pool
+    };
+    apply_migrations_through(&pool, 143).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
@@ -950,6 +992,9 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     let base = versions::get_version(&pool, source.delivery_version_id)
         .await
         .unwrap();
+    let published_table_before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object(
+        'version',to_jsonb(version),'blocks',(SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id))
+        FROM academic_timetable_versions version WHERE id=$1").bind(source_id).fetch_one(&pool).await.unwrap();
     let draft = tables::clone_draft(
         &pool,
         actor,
@@ -962,11 +1007,6 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     )
     .await
     .unwrap();
-    let before: Vec<(Uuid, i64)> =
-        sqlx::query_as("SELECT id,row_version FROM academic_timetable_blocks ORDER BY id")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
     // Exercise an active lifecycle with the preserved historical fixture IDs.
     // Publication dates follow the current clock rather than a stale fixture date.
     let publish_date = std::cmp::max(
@@ -990,22 +1030,52 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     )
     .await
     .unwrap();
-    let group_id: Uuid = sqlx::query_scalar(
-        "SELECT placed.learning_group_id FROM academic_timetable_block_groups placed
-        JOIN academic_timetable_blocks block ON block.id=placed.block_id
-        WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active
-          AND block.block_kind='COURSE' ORDER BY block.id,placed.id LIMIT 1",
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    use school_academic_delivery::models::{ActivitySchedulingMode, LearningOfferingSnapshot};
+    use school_academic_timetable::{
+        models::{timetable_block::*, timetable_publication::*},
+        services::timetable_block_service as blocks,
+    };
+    let placed_course_group: Uuid = sqlx::query_scalar("SELECT placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active AND block.block_kind='COURSE' ORDER BY block.id,placed.id LIMIT 1")
+        .bind(draft.id).fetch_one(&pool).await.unwrap();
     let offering = base
         .snapshot
         .offerings
         .iter()
-        .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
-        .unwrap();
+        .find(|offering| match &offering.catalog {
+            LearningOfferingSnapshot::Course(_) => {
+                mode == "course"
+                    && offering
+                        .groups
+                        .iter()
+                        .any(|group| group.id == placed_course_group)
+            }
+            LearningOfferingSnapshot::Activity(activity) => match activity.scheduling_mode {
+                ActivitySchedulingMode::Independent => mode == "independent",
+                ActivitySchedulingMode::Synchronized => mode == "synchronized",
+            },
+        })
+        .expect("fixture contains both activity modes and a course");
+    let group_id = if mode == "course" {
+        placed_course_group
+    } else {
+        offering.groups[0].id
+    };
+    let before: Vec<(Uuid, i64)> =
+        sqlx::query_as("SELECT id,row_version FROM academic_timetable_blocks ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let preserved: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object(
+        'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_teachers t),
+        'students',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM learning_group_students s),
+        'evaluations',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM academic_activity_evaluations e),
+        'activityResults',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_activity_results r),
+        'courseResults',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_course_results r),
+        'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM attendance_sessions a))").fetch_one(&pool).await.unwrap();
+    assert!(
+        !preserved["evaluations"].as_array().unwrap().is_empty(),
+        "fixture preserves a recorded activity outcome"
+    );
     let rejected = change_sets::upsert_change_item(
         &pool,
         actor,
@@ -1043,6 +1113,12 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         .find(|row| row.id == offering.id)
         .unwrap();
     assert_eq!(zero_offering.weekly_period_target, 0);
+    let mut expected_offering = serde_json::to_value(offering).unwrap();
+    expected_offering["weeklyPeriodTarget"] = serde_json::json!(0);
+    assert_eq!(
+        serde_json::to_value(zero_offering).unwrap(),
+        expected_offering
+    );
     assert_eq!(
         serde_json::to_value(&zero_offering.catalog).unwrap(),
         serde_json::to_value(&offering.catalog).unwrap()
@@ -1123,21 +1199,38 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         .await
         .unwrap()
     );
+    let preserved_after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object(
+        'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_teachers t),
+        'students',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM learning_group_students s),
+        'evaluations',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM academic_activity_evaluations e),
+        'activityResults',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_activity_results r),
+        'courseResults',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_course_results r),
+        'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM attendance_sessions a))").fetch_one(&pool).await.unwrap();
+    assert_eq!(preserved, preserved_after);
     let base_after = versions::get_version(&pool, base.id).await.unwrap();
     assert_eq!(
         serde_json::to_value(&base.snapshot).unwrap(),
-        serde_json::to_value(base_after.snapshot).unwrap()
+        serde_json::to_value(&base_after.snapshot).unwrap()
     );
-
-    use school_academic_timetable::{
-        models::{timetable_block::*, timetable_publication::*},
-        services::timetable_block_service as blocks,
-    };
-    // The historical zero-period/identity assertions above run at migration 096.
-    // Current timetable workspace reads require the staff-name projection from 113.
-    apply_migrations_through(&pool, 113)
+    let published_zero = versions::get_version(&pool, receipt.target_delivery_version_id)
         .await
-        .expect("current timetable workspace requires the staff-name projection");
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&zero_draft.snapshot).unwrap(),
+        serde_json::to_value(&published_zero.snapshot).unwrap()
+    );
+    let zero_start = published_zero.effective_from.unwrap();
+    assert_eq!(
+        base_after.effective_until,
+        Some(zero_start - Duration::days(1))
+    );
+    assert!(versions::contains_date(
+        &base_after,
+        zero_start - Duration::days(1)
+    ));
+    assert!(!versions::contains_date(&base_after, zero_start));
+    assert!(versions::contains_date(&published_zero, zero_start));
+
     let workspace = blocks::get_workspace(
         &pool,
         TimetableBlockWorkspaceQuery {
@@ -1153,15 +1246,26 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     )
     .await
     .unwrap();
-    let demand = workspace
-        .ordinary_demands
-        .iter()
-        .find(|demand| demand.learning_group_id == group_id)
-        .unwrap();
-    assert_eq!(demand.required_periods, 0);
-    assert_eq!(demand.remaining_periods, 0);
+    let scheduled_periods = if mode == "synchronized" {
+        let demand = workspace
+            .synchronized_demands
+            .iter()
+            .find(|demand| demand.learning_offering_id == offering.id)
+            .unwrap();
+        assert_eq!(demand.required_periods, 0);
+        demand.scheduled_periods
+    } else {
+        let demand = workspace
+            .ordinary_demands
+            .iter()
+            .find(|demand| demand.learning_group_id == group_id)
+            .unwrap();
+        assert_eq!(demand.required_periods, 0);
+        assert_eq!(demand.remaining_periods, 0);
+        demand.scheduled_periods
+    };
     assert!(
-        demand.scheduled_periods > 0,
+        scheduled_periods > 0,
         "existing lessons preserved for explicit removal"
     );
     // Positive targets still require an exact count; zero does not bypass the rule.
@@ -1171,11 +1275,12 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         .iter_mut()
         .find(|row| row.id == offering.id)
         .unwrap();
-    positive_offering.weekly_period_target = demand.scheduled_periods;
+    positive_offering.weekly_period_target = scheduled_periods;
     assert!(
         !timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
             .iter()
-            .any(|finding| finding.learning_group_id == Some(group_id)
+            .any(|finding| finding.learning_offering_id == Some(offering.id)
+                && (mode == "synchronized" || finding.learning_group_id == Some(group_id))
                 && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
     );
     positive_source
@@ -1187,7 +1292,8 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     assert!(
         timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
             .iter()
-            .any(|finding| finding.learning_group_id == Some(group_id)
+            .any(|finding| finding.learning_offering_id == Some(offering.id)
+                && (mode == "synchronized" || finding.learning_group_id == Some(group_id))
                 && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
     );
     let block = workspace
@@ -1200,30 +1306,50 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
                 .any(|group| group.learning_group_id == group_id)
         })
         .unwrap();
-    let create_error = blocks::create_ordinary_block(
-        &pool,
-        actor,
-        CreateOrdinaryTimetableBlockRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: source.academic_term_id,
-            learning_group_id: group_id,
-            day_of_week: block.day_of_week.clone(),
-            bell_schedule_period_id: block.bell_schedule_period_id,
-            room_id: None,
-            instructor_ids: offering
-                .groups
-                .iter()
-                .find(|group| group.id == group_id)
-                .unwrap()
-                .teachers
-                .iter()
-                .map(|teacher| teacher.teacher_id)
-                .collect(),
-            note: None,
-        },
-    )
-    .await
-    .unwrap_err();
+    let create_error = if mode == "synchronized" {
+        blocks::create_synchronized_block(
+            &pool,
+            actor,
+            CreateSynchronizedTimetableBlockRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: source.academic_term_id,
+                learning_offering_id: offering.id,
+                day_of_week: block.day_of_week.clone(),
+                bell_schedule_period_id: block.bell_schedule_period_id,
+                intended_homeroom_ids: offering.homeroom_ids.clone(),
+                room_id: None,
+                teacher_ids: offering.groups[0]
+                    .teachers
+                    .iter()
+                    .map(|teacher| teacher.teacher_id)
+                    .collect(),
+                note: None,
+            },
+        )
+        .await
+        .unwrap_err()
+    } else {
+        blocks::create_ordinary_block(
+            &pool,
+            actor,
+            CreateOrdinaryTimetableBlockRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: source.academic_term_id,
+                learning_group_id: group_id,
+                day_of_week: block.day_of_week.clone(),
+                bell_schedule_period_id: block.bell_schedule_period_id,
+                room_id: None,
+                instructor_ids: offering.groups[0]
+                    .teachers
+                    .iter()
+                    .map(|teacher| teacher.teacher_id)
+                    .collect(),
+                note: None,
+            },
+        )
+        .await
+        .unwrap_err()
+    };
     assert!(create_error.to_string().contains("0 คาบ"));
     let preview = timetable_lifecycle::preview(
         &pool,
@@ -1239,7 +1365,33 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         .findings
         .iter()
         .any(|finding| finding.learning_offering_id == Some(offering.id)
-            && finding.message.contains("ถอดคาบเดิม")));
+            && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch));
+    let rejected_publish = timetable_lifecycle::publish(
+        &pool,
+        actor,
+        draft.id,
+        PublishTimetableVersionRequest {
+            row_version: preview.row_version,
+            effective_from: publish_date,
+            preview_hash: preview.preview_hash.clone(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        rejected_publish,
+        school_errors::AppError::ValidationError(_)
+    ));
+    assert_eq!(
+        before,
+        sqlx::query_as::<_, (Uuid, i64)>(
+            "SELECT id,row_version FROM academic_timetable_blocks ORDER BY id"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    );
     for block in workspace.blocks.iter().filter(|block| {
         block.is_active
             && block
@@ -1247,6 +1399,12 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
                 .iter()
                 .any(|group| group.learning_offering_id == offering.id && group.is_active)
     }) {
+        if mode == "synchronized" {
+            blocks::deactivate_block(&pool, actor, block.id, draft.id, block.row_version)
+                .await
+                .unwrap();
+            continue;
+        }
         let target = block
             .groups
             .iter()
@@ -1285,4 +1443,8 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         .iter()
         .any(|finding| finding.learning_offering_id == Some(offering.id)
             && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch));
+    let published_table_after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object(
+        'version',to_jsonb(version),'blocks',(SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id))
+        FROM academic_timetable_versions version WHERE id=$1").bind(source_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(published_table_before, published_table_after);
 }

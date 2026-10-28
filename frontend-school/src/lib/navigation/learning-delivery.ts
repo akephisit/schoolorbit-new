@@ -12,7 +12,8 @@ const overviewParameters = new Set([
 	'subjectGroupId',
 	'homeroomSearch',
 	'readiness',
-	'expandedRooms'
+	'expandedRooms',
+	'missingPage'
 ]);
 
 export type DeliveryAcademicContext = {
@@ -28,13 +29,16 @@ export type DeliveryOverviewState = {
 	homeroomSearch: string;
 	readiness: 'all' | 'ready' | 'attention';
 	expandedRooms: string[] | null;
+	missingPage: number;
 };
 
 export function readDeliveryOverviewState(url: URL): DeliveryOverviewState {
 	const query = url.searchParams;
 	const kind = query.get('kind');
 	const readiness = query.get('readiness');
+	const missingPage = Number(query.get('missingPage'));
 	return {
+		missingPage: Number.isSafeInteger(missingPage) && missingPage > 0 ? missingPage : 0,
 		view: query.get('view') === 'offerings' ? 'offerings' : 'homerooms',
 		kind: kind === 'course' || kind === 'activity' ? kind : 'all',
 		offeringSearch: query.get('offeringSearch') ?? '',
@@ -49,8 +53,14 @@ export function readDeliveryOverviewState(url: URL): DeliveryOverviewState {
 
 export function deliveryOverviewStateHref(url: URL, patch: Partial<DeliveryOverviewState>): string {
 	const query = new URLSearchParams(url.search);
+	if (('kind' in patch || 'offeringSearch' in patch) && !('missingPage' in patch))
+		query.delete('missingPage');
 	for (const [key, value] of Object.entries(patch)) {
-		if (key === 'expandedRooms') {
+		if (key === 'missingPage') {
+			if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+				query.set(key, String(value));
+			else query.delete(key);
+		} else if (key === 'expandedRooms') {
 			if (value === null) query.delete(key);
 			else if (Array.isArray(value)) query.set(key, value.join(','));
 		} else if (value === '' || value === 'all' || (key === 'view' && value === 'homerooms')) {

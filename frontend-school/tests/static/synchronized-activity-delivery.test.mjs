@@ -79,9 +79,8 @@ test('a missing synchronized activity opens one preparation target across every 
 	});
 });
 
-test('focused preparation supports independent activities while its synchronized row action stays scoped', () => {
+test('focused preparation supports independent activities and excludes already opened entries', () => {
 	const independent = { ...synchronizedItem, schedulingMode: 'independent' };
-	assert.equal(deliveryModule.isPendingSynchronizedActivity(independent), false);
 	assert.equal(
 		deliveryModule.buildCurriculumPreparationTarget(
 			{ homerooms: [room('ม.1/1', 'program-a', independent)] },
@@ -99,19 +98,27 @@ test('focused preparation supports independent activities while its synchronized
 });
 
 test('pending opening preparation has no timetable inclusion action', () => {
-	assert.equal(typeof deliveryModule.isPendingSynchronizedActivity, 'function');
-	assert.equal(deliveryModule.isPendingSynchronizedActivity(synchronizedItem), true);
-	assert.equal(
-		deliveryModule.isPendingSynchronizedActivity({ ...synchronizedItem, offeringId: 'offering' }),
-		false
-	);
-	assert.equal(
-		deliveryModule.isPendingSynchronizedActivity({
+	for (const mode of ['course', 'independent', 'synchronized']) {
+		const item = {
 			...synchronizedItem,
-			schedulingMode: 'independent'
-		}),
-		false
-	);
+			resourceKind: mode === 'course' ? 'course' : 'activity',
+			schedulingMode: mode === 'course' ? null : mode
+		};
+		const target = deliveryModule.buildCurriculumPreparationTarget(
+			{ homerooms: [room('ม.1/1', 'program-a', item)] },
+			{ resourceKind: item.resourceKind, catalogVersionId: item.catalogVersionId }
+		);
+		assert.equal(target.resourceKind, item.resourceKind);
+		assert.equal(target.catalogVersionId, item.catalogVersionId);
+		assert.equal(target.homeroomCount, 1);
+		assert.equal(
+			deliveryModule.buildCurriculumPreparationTarget(
+				{ homerooms: [room('ม.1/1', 'program-a', { ...item, offeringId: 'offering' })] },
+				{ resourceKind: item.resourceKind, catalogVersionId: item.catalogVersionId }
+			),
+			null
+		);
+	}
 	assert.equal(
 		deliveryModule.deliveryTimetableAction,
 		undefined,

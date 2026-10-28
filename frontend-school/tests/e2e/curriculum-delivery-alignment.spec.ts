@@ -1015,6 +1015,223 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 		).toBe(true);
 	});
 
+for (const mode of ['course', 'independent', 'synchronized'] as const) {
+	for (const view of ['homerooms', 'offerings'] as const) {
+		test(`inline missing ${mode} in ${view} opens the exact curriculum entry for all missing rooms`, async ({
+			page
+		}, testInfo) => {
+			const mobile = view === 'homerooms' || mode !== 'independent';
+			await page.setViewportSize({ width: mobile ? 390 : 1280, height: 900 });
+			const fixture = await mockSharedComparison(page, {
+				manager: true,
+				kind: mode === 'course' ? 'course' : 'activity',
+				schedulingMode: mode === 'course' ? undefined : mode,
+				failPreview: true
+			});
+			const target = new URL(fixture.origin, 'http://schoolorbit.test');
+			target.searchParams.set('view', view);
+			target.searchParams.set('offeringSearch', mode === 'course' ? 'วิทยาศาสตร์' : 'กิจกรรมใหม่');
+			await page.goto(target.pathname + target.search);
+			if (mobile) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+				await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+			}
+			const origin = page.url();
+			const scope =
+				view === 'homerooms'
+					? page.getByRole('region', { name: 'มุมมองรายห้อง', exact: true })
+					: page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+			const add = scope
+				.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
+				.first();
+			await expect(add).toBeVisible();
+			await add.scrollIntoViewIfNeeded();
+			const pageWidth = await page.evaluate(() => ({
+				viewport: window.innerWidth,
+				content: document.documentElement.scrollWidth
+			}));
+			expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.viewport);
+			const bounds = await add.boundingBox();
+			expect(bounds!.x).toBeGreaterThanOrEqual(0);
+			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(pageWidth.viewport);
+			await page.screenshot({
+				path: testInfo.outputPath('inline-missing-action.png'),
+				animations: 'disabled'
+			});
+			expect(fixture.managementReads).toHaveLength(0);
+			expect(fixture.academicWrites).toHaveLength(0);
+			await add.focus();
+			await page.keyboard.press('Enter');
+			const dialog = page.getByRole('dialog', {
+				name: mode === 'course' ? 'เปิดรายวิชา วิทยาศาสตร์' : 'เพิ่มกิจกรรม กิจกรรมใหม่',
+				exact: true
+			});
+			await expect(dialog).toContainText('การเพิ่มนี้ครอบคลุมทุกห้องที่ยังขาดฉบับนี้ รวม 2 ห้อง');
+			await expect(dialog).toContainText('ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ');
+			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+			await expect(dialog.getByRole('alert')).toHaveText(
+				'ฉบับทะเบียนนี้เริ่มใช้หลังวันเริ่มภาคเรียน กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+			);
+			await expect(dialog).toContainText(mode === 'course' ? 'วิทยาศาสตร์' : 'กิจกรรมใหม่');
+			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+			await page.screenshot({
+				path: testInfo.outputPath('inline-curriculum-preparation.png'),
+				animations: 'disabled'
+			});
+			await dialog
+				.getByRole('button', {
+					name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม',
+					exact: true
+				})
+				.click();
+			await expect(dialog).toHaveCount(0);
+			expect(
+				fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+			).toHaveLength(1);
+			expect(
+				fixture.academicWrites.find((write) => write.path.endsWith('/apply-from-curriculum'))!.body
+			).toMatchObject({
+				academicTermId: navIds.term,
+				studyProgramIds: [navIds.program],
+				deliveryVersionId: navIds.version,
+				choices: [
+					{
+						proposalId: 'missing-current-requirement',
+						action: mode === 'synchronized' ? 'defer_groups' : 'apply'
+					}
+				]
+			});
+			await expect(page).toHaveURL(origin);
+			expect(fixture.version.snapshot.offerings).toContainEqual(fixture.old);
+		});
+	}
+}
+
+test('inline missing requirements paginate in the URL even with no actual offerings and retain independent filters', async ({
+	page
+}) => {
+	const fixture = await mockSharedComparison(page, { manager: true });
+	fixture.version.snapshot.offerings = [];
+	fixture.workspace.unlinked = [];
+	for (const room of fixture.workspace.homerooms) {
+		room.expectedCount = 10;
+		room.extraOfferings = [];
+		const source = room.items[0];
+		room.items = Array.from({ length: 10 }, (_, index) => ({
+			...source,
+			catalogVersionId: `d0000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+			requirementId: `e0000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+			code: `ว301${String(index).padStart(2, '0')}`,
+			name: `รายวิชาที่ยังขาด ${index + 1}`
+		}));
+	}
+	const target = new URL(fixture.origin, 'http://schoolorbit.test');
+	target.searchParams.delete('offeringSearch');
+	target.searchParams.set('missingPage', '1');
+	await page.goto(target.pathname + target.search);
+	const section = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(2);
+	await expect(section).toContainText('รวมทุกกลุ่มสาระ');
+	await expect(section).toContainText('ตัวกรองกลุ่มสาระไม่ใช้กับรายการส่วนนี้');
+	await expect(section).toContainText('รายวิชาที่ยังขาด 10');
+	await page.reload();
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(2);
+	await section.getByRole('button', { name: 'ข้อกำหนดก่อนหน้า', exact: true }).click();
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(8);
+	await expect.poll(() => new URL(page.url()).searchParams.has('missingPage')).toBe(false);
+	await section.getByRole('button', { name: 'ข้อกำหนดถัดไป', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('missingPage')).toBe('1');
+	await section
+		.getByRole('textbox', { name: 'ค้นหารายการเปิดสอน', exact: true })
+		.fill('รายวิชาที่ยังขาด 10');
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(1);
+	await expect.poll(() => new URL(page.url()).searchParams.has('missingPage')).toBe(false);
+	expect(new URL(page.url()).searchParams.get('subjectGroupId')).toBe(navIds.math);
+	await page.getByRole('tab', { name: 'มุมมองรายห้อง', exact: true }).click();
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	await expect(
+		section.getByRole('textbox', { name: 'ค้นหารายการเปิดสอน', exact: true })
+	).toHaveValue('รายวิชาที่ยังขาด 10');
+	await section.getByRole('combobox', { name: 'กรองประเภทรายการเปิดสอน', exact: true }).click();
+	await page.getByRole('option', { name: 'กิจกรรม', exact: true }).click();
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(0);
+	await expect(section).toContainText('ไม่พบข้อกำหนดที่ยังขาดตามตัวกรอง');
+	expect(fixture.managementReads).toHaveLength(0);
+	expect(fixture.academicWrites).toHaveLength(0);
+});
+
+test('inline missing requirements wait for the workspace and distinguish rooms with unmet prerequisites', async ({
+	page
+}) => {
+	const fixture = await mockSharedComparison(page);
+	fixture.workspace.homerooms[0].items = [];
+	fixture.workspace.homerooms[0].blockers = [
+		{
+			code: 'curriculum_not_assigned',
+			message: 'ยังไม่มีโครงสร้างของห้องนี้',
+			recoveryPath: '/staff/academic/curricula'
+		}
+	];
+	const gate = deferred();
+	await page.route('**/api/academic/delivery/homerooms?*', async (route) => {
+		await gate.promise;
+		await route.fallback();
+	});
+	try {
+		const target = new URL(fixture.origin, 'http://schoolorbit.test');
+		target.searchParams.delete('offeringSearch');
+		await page.goto(target.pathname + target.search);
+		const section = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+		await expect(section).toHaveAttribute('aria-busy', 'true');
+		await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(0);
+		await expect(
+			section.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
+		).toHaveCount(0);
+	} finally {
+		gate.release();
+	}
+	const section = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+	await expect(section).toHaveAttribute('aria-busy', 'false');
+	await expect(section).toContainText('มี 1 ห้องที่ยังขาดข้อมูลโครงสร้าง');
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toContainText(
+		'รวม 1 ห้อง'
+	);
+	await expect(section).not.toContainText('ตรงกับหลักสูตร');
+	expect(fixture.managementReads).toHaveLength(0);
+	expect(fixture.academicWrites).toHaveLength(0);
+});
+
+for (const condition of ['reader', 'context', 'failure', 'noVersion'] as const) {
+	test(`inline missing requirements are inspectable without unsafe actions for ${condition}`, async ({
+		page
+	}) => {
+		const fixture = await mockSharedComparison(page, {
+			manager: condition !== 'reader',
+			wrongContext: condition === 'context',
+			failWorkspace: condition === 'failure',
+			noVersion: condition === 'noVersion'
+		});
+		const target = new URL(fixture.origin, 'http://schoolorbit.test');
+		target.searchParams.delete('offeringSearch');
+		await page.goto(target.pathname + target.search);
+		const section = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+		await expect(section).toBeVisible();
+		if (condition === 'context' || condition === 'failure') {
+			await expect(section.getByRole('alert')).toBeVisible();
+			await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(0);
+		} else {
+			await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(1);
+			if (condition === 'noVersion')
+				await expect(section).toContainText('สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ');
+		}
+		await expect(
+			section.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
+		).toHaveCount(0);
+		expect(fixture.managementReads).toHaveLength(0);
+		expect(fixture.academicWrites).toHaveLength(0);
+	});
+}
+
 for (const reason of ['failure', 'context'] as const)
 	test(`comparison source ${reason} stays explicit and retries only its owning workspace`, async ({
 		page

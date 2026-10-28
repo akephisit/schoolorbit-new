@@ -200,7 +200,7 @@
 					<Input
 						id="offering-weekly-period-target"
 						type="number"
-						min={offering.kind === 'course' ? 0 : 1}
+						min="0"
 						step="1"
 						required
 						bind:value={weeklyPeriodTarget}
@@ -208,6 +208,9 @@
 					/>
 					{#if offering.kind === 'course'}<p class="text-xs text-muted-foreground">
 							0 คาบ = เปิดรายวิชาโดยไม่จัดคาบแยกในตารางสอน โดยหน่วยกิตและคาบตามหลักสูตรยังคงเดิม
+						</p>{:else}<p class="text-xs text-muted-foreground">
+							0 คาบ = เปิดกิจกรรมโดยไม่จัดคาบประจำสัปดาห์ในตารางสอน ชั่วโมงตามหลักสูตร กลุ่ม ครู
+							รายชื่อ และผลประเมินยังคงเดิม และยังประเมินผ่าน/ไม่ผ่านตามปกติ
 						</p>{/if}
 				</div>
 			{/if}

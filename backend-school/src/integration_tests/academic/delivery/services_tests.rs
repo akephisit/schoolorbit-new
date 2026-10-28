@@ -7463,7 +7463,7 @@ async fn zero_workload_subject(
 }
 
 #[tokio::test]
-async fn subject_zero_workload_manual_opening_keeps_zero_and_refuses_activity_zero_target() {
+async fn subject_zero_workload_manual_opening_keeps_course_and_activity_zero_targets() {
     use school_academic_core::{models as core_models, services::catalog};
     let pool = prepare_delivery_runtime_fixture("subject_zero_workload_manual").await;
     let context = planning_runtime_context(&pool).await;
@@ -7509,86 +7509,106 @@ async fn subject_zero_workload_manual_opening_keeps_zero_and_refuses_activity_ze
     assert_eq!(course.hours.as_deref(), Some("0.00"));
     assert_eq!(course.credit, "1.00");
 
-    // Legacy activity periods are a separate actual-target input; zero must remain refused.
-    let activity = catalog::create_activity(
-        &pool,
-        core_models::CreateCatalogActivityRequest {
-            activity_type: "guidance".into(),
-        },
-    )
-    .await
-    .unwrap();
-    let activity = catalog::create_activity_version(
-        &pool,
-        activity.id,
-        core_models::CreateActivityVersionRequest {
-            name: "กิจกรรมตรวจข้อจำกัดคาบจริงศูนย์".into(),
-            description: None,
-            hours_per_week: "0.00".into(),
-            hours_per_term: Some("0.00".into()),
-            scheduling_mode: "synchronized".into(),
-            effective_from: version.effective_from,
-            term_code: None,
-            grade_level_ids: vec![context.grade_level_id],
-        },
-    )
-    .await
-    .unwrap();
-    sqlx::query("UPDATE activity_versions SET periods_per_week=0 WHERE id=$1")
-        .bind(activity.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let activity = catalog::publish_activity_version(
-        &pool,
-        activity.id,
-        core_models::PublishVersionRequest {
-            row_version: activity.row_version,
-        },
-    )
-    .await
-    .unwrap();
-    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let refused = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(opening.target_delivery_version_id),
-        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            create_homeroom_groups: false,
-            academic_term_id: context.term_id,
-            activity_version_id: activity.id,
-            curriculum_activity_requirement_id: None,
-            targets: vec![OfferingTargetInput {
-                target_kind: OfferingTargetKind::Homeroom,
-                homeroom_id: Some(context.homeroom_id),
-                grade_level_id: context.grade_level_id,
-                study_program_id: context.study_program_id,
-            }],
-            registration_type: ActivityRegistrationType::Assigned,
-            scheduling_mode: ActivitySchedulingMode::Synchronized,
-            capacity: None,
-            attendance_requirement: ActivityAttendanceRequirement {
-                minimum_percent: None,
-                required_sessions: None,
+    for (catalog_mode, scheduling_mode) in [
+        ("independent", ActivitySchedulingMode::Independent),
+        ("synchronized", ActivitySchedulingMode::Synchronized),
+    ] {
+        // Explicit legacy actual targets may be zero; curriculum hours do not infer that target.
+        let activity = catalog::create_activity(
+            &pool,
+            core_models::CreateCatalogActivityRequest {
+                activity_type: "guidance".into(),
             },
-            pass_criteria: ActivityPassCriteria {
-                require_attendance: false,
-                require_teacher_confirmation: true,
-                outcomes: vec!["pass".into(), "fail".into()],
-            },
-        }),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(refused, AppError::ValidationError(_)));
-    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
-        .fetch_one(&pool)
+        )
         .await
         .unwrap();
-    assert_eq!(before, after);
+        let activity = catalog::create_activity_version(
+            &pool,
+            activity.id,
+            core_models::CreateActivityVersionRequest {
+                name: "กิจกรรมตรวจข้อจำกัดคาบจริงศูนย์".into(),
+                description: None,
+                hours_per_week: "0.00".into(),
+                hours_per_term: Some("0.00".into()),
+                scheduling_mode: catalog_mode.into(),
+                effective_from: version.effective_from,
+                term_code: None,
+                grade_level_ids: vec![context.grade_level_id],
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE activity_versions SET periods_per_week=0 WHERE id=$1")
+            .bind(activity.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let activity = catalog::publish_activity_version(
+            &pool,
+            activity.id,
+            core_models::PublishVersionRequest {
+                row_version: activity.row_version,
+            },
+        )
+        .await
+        .unwrap();
+        let before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let included = offerings::create_for_delivery(
+            &pool,
+            context.teacher_id,
+            Some(opening.target_delivery_version_id),
+            CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+                create_homeroom_groups: false,
+                academic_term_id: context.term_id,
+                activity_version_id: activity.id,
+                curriculum_activity_requirement_id: None,
+                targets: vec![OfferingTargetInput {
+                    target_kind: OfferingTargetKind::Homeroom,
+                    homeroom_id: Some(context.homeroom_id),
+                    grade_level_id: context.grade_level_id,
+                    study_program_id: context.study_program_id,
+                }],
+                registration_type: ActivityRegistrationType::Assigned,
+                scheduling_mode,
+                capacity: None,
+                attendance_requirement: ActivityAttendanceRequirement {
+                    minimum_percent: None,
+                    required_sessions: None,
+                },
+                pass_criteria: ActivityPassCriteria {
+                    require_attendance: false,
+                    require_teacher_confirmation: true,
+                    outcomes: vec!["pass".into(), "fail".into()],
+                },
+            }),
+        )
+        .await
+        .unwrap();
+        let snapshot = school_academic_delivery::services::versions::get_version(
+            &pool,
+            opening.target_delivery_version_id,
+        )
+        .await
+        .unwrap()
+        .snapshot;
+        assert_eq!(
+            snapshot
+                .offerings
+                .iter()
+                .find(|offering| offering.id == included.id)
+                .unwrap()
+                .weekly_period_target,
+            0
+        );
+        let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(before + 1, after);
+    }
 }
 
 #[tokio::test]

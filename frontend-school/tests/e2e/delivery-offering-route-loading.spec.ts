@@ -1430,6 +1430,7 @@ const periodChangeSetPath = `/api/academic/term-change-sets/${periodChangeSetId}
 async function mockWeeklyPeriods(
 	page: Page,
 	options: {
+		activityMode?: 'independent' | 'synchronized';
 		permissions?: string[];
 		published?: boolean;
 		conflictOnce?: boolean;
@@ -1443,17 +1444,83 @@ async function mockWeeklyPeriods(
 		permissions: options.permissions ?? ['*'],
 		published: options.published
 	});
-	let graph = {
-		...versionGraph(options.published),
-		effectiveFrom: options.published ? '2026-05-01' : null,
-		referenceDate: '2026-05-01'
+	const initialGraph = versionGraph(options.published);
+	const teacher = {
+		id: '80000000-0000-4000-8000-000000000201',
+		teacherId: '90000000-0000-4000-8000-000000000202',
+		displayName: 'ครูกิจกรรมที่คงไว้',
+		role: 'primary' as const,
+		startsOn: '2026-05-01',
+		endsOn: null,
+		rowVersion: 3
 	};
+	const activityCatalog = {
+		kind: 'activity' as const,
+		activityId: ids.offering,
+		activityVersionId: ids.offering,
+		hours: '40',
+		registrationType: 'assigned',
+		schedulingMode: options.activityMode ?? 'independent',
+		attendanceRequirement: { minimumPercent: '80' },
+		passCriteria: {
+			requireAttendance: true,
+			requireTeacherConfirmation: true,
+			outcomes: ['pass', 'fail']
+		}
+	};
+	let graph = {
+		...initialGraph,
+		effectiveFrom: options.published ? '2026-05-01' : null,
+		referenceDate: '2026-05-01',
+		snapshot: {
+			offerings: initialGraph.snapshot.offerings.map((row) =>
+				options.activityMode
+					? {
+							...row,
+							kind: 'activity',
+							name: 'กิจกรรมจิตอาสา',
+							weeklyPeriodTarget: 1,
+							catalog: activityCatalog,
+							groups: row.groups.map((source) => ({
+								...source,
+								teachers: [{ ...teacher, assignmentId: teacher.id }]
+							}))
+						}
+					: row
+			)
+		}
+	};
+	if (options.activityMode) {
+		await page.route(`**${paths.offering}`, (route) =>
+			fulfill(route, {
+				...offering(),
+				kind: 'activity',
+				nameSnapshot: 'กิจกรรมจิตอาสา',
+				snapshot: activityCatalog
+			})
+		);
+		const activityGroups = [group(ids.groupA), group(ids.groupB)].map((row) => ({
+			...row,
+			teacherAssignments: [teacher]
+		}));
+		await page.route(`**${paths.groups}`, (route) => fulfill(route, activityGroups));
+		for (const row of activityGroups) {
+			await page.route(`**/api/academic/learning-groups/${row.id}`, (route) => fulfill(route, row));
+		}
+		await page.route(`**${paths.management}*`, (route) =>
+			fulfill(route, {
+				rooms: [],
+				homerooms: [],
+				teachers: [{ id: teacher.teacherId, name: teacher.displayName }]
+			})
+		);
+	}
 	const timestamp = '2026-10-27T00:00:00Z';
 	const item = {
 		id: '70000000-0000-4000-8000-000000000201',
 		actionKind: 'adjust_weekly_period_target' as const,
 		learningOfferingId: ids.offering,
-		weeklyPeriodTarget: 2,
+		weeklyPeriodTarget: options.activityMode ? 1 : 2,
 		rowVersion: 5,
 		createdAt: timestamp,
 		updatedAt: timestamp,
@@ -1572,7 +1639,118 @@ async function mockWeeklyPeriods(
 		saved = true;
 		await fulfill(route, changeSet);
 	});
-	return { count, reads, writes, changeSet: () => changeSet };
+	return { count, reads, writes, changeSet: () => changeSet, graph: () => graph };
+}
+
+for (const mode of ['independent', 'synchronized'] as const) {
+	for (const scenario of [
+		{ width: 1280, dark: false, conflict: false },
+		{ width: 390, dark: true, conflict: true }
+	]) {
+		test(`zero weekly periods keep ${mode} activity open through ${scenario.conflict ? 'conflict' : 'failed save'} at ${scenario.width}px ${scenario.dark ? 'dark' : 'light'}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width: scenario.width, height: 900 });
+			const gate = deferred();
+			const fixture = await mockWeeklyPeriods(page, {
+				activityMode: mode,
+				conflictOnce: scenario.conflict,
+				failSaveOnce: !scenario.conflict,
+				failRefreshOnce: true
+			});
+			const initial = structuredClone(fixture.graph().snapshot.offerings[0]);
+			await page.goto(url());
+			if (scenario.dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+				await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+			}
+			const groups = page.getByTestId('delivery-groups-ready');
+			await expect(groups.getByRole('button', { name: /^กลุ่ม ก ครู / })).toBeVisible();
+			await expect(groups.getByRole('button', { name: /^กลุ่ม ข ครู / })).toBeVisible();
+			const trigger = page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
+			await trigger.focus();
+			await page.keyboard.press('Enter');
+			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
+			const input = dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true });
+			await expect(input).toHaveValue('1');
+			await expect(input).toHaveAttribute('min', '0');
+			await expect(dialog).toContainText('0 คาบ = เปิดกิจกรรมโดยไม่จัดคาบประจำสัปดาห์ในตารางสอน');
+			await expect(dialog).toContainText('ยังประเมินผ่าน/ไม่ผ่านตามปกติ');
+			await input.fill('-1');
+			const save = dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true });
+			await expect(save).toBeDisabled();
+			await input.fill('0.5');
+			await expect(save).toBeDisabled();
+			await input.fill('0');
+			await input.press('Enter');
+			await expect(dialog.getByRole('alert')).toHaveText(
+				scenario.conflict
+					? 'แบบร่างถูกแก้ไขจากที่อื่น กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+					: 'บันทึกยังไม่สำเร็จ'
+			);
+			await expect(input).toHaveValue('0');
+			expect(fixture.writes).toHaveLength(1);
+			expect(fixture.writes[0].body).toEqual({
+				action: 'adjust_weekly_period_target',
+				changeSetRowVersion: 7,
+				itemRowVersion: 5,
+				learningOfferingId: ids.offering,
+				weeklyPeriodTarget: 0
+			});
+			if (scenario.conflict) {
+				await expect(save).toBeDisabled();
+				await dialog
+					.getByRole('button', { name: 'โหลดข้อมูลล่าสุดก่อนบันทึก', exact: true })
+					.click();
+				await expect(dialog.getByRole('alert')).toHaveCount(0);
+				await expect(input).toHaveValue('0');
+				expect(fixture.writes).toHaveLength(1);
+			}
+			await page.route(`**${periodChangeSetPath}/items`, async (route) => {
+				await gate.promise;
+				await route.fallback();
+			});
+			try {
+				await save.click();
+				await expect(
+					dialog.getByRole('button', { name: 'กำลังบันทึก', exact: true })
+				).toBeDisabled();
+				await expect(input).toBeDisabled();
+				await page.keyboard.press('Enter');
+				await page.keyboard.press('Escape');
+				await expect(dialog).toBeVisible();
+				expect(fixture.writes).toHaveLength(1);
+			} finally {
+				gate.release();
+			}
+			await expect(dialog.getByRole('status')).toContainText('บันทึกจำนวนคาบแล้ว');
+			await expect(dialog.getByRole('alert')).toHaveText('โหลดรุ่นล่าสุดไม่สำเร็จ');
+			await expect(input).toHaveValue('0');
+			await expect(save).toBeDisabled();
+			expect(fixture.writes).toHaveLength(2);
+			expect(fixture.writes[1].body).toEqual({
+				action: 'adjust_weekly_period_target',
+				changeSetRowVersion: scenario.conflict ? 8 : 7,
+				itemRowVersion: scenario.conflict ? 6 : 5,
+				learningOfferingId: ids.offering,
+				weeklyPeriodTarget: 0
+			});
+			await dialog.getByRole('button', { name: 'โหลดจำนวนคาบที่บันทึกแล้ว', exact: true }).click();
+			await expect(dialog).toHaveCount(0);
+			await expect(trigger).toBeFocused();
+			await expect(page.getByTestId('delivery-versions-ready')).toContainText('0 คาบ/สัปดาห์');
+			expect(fixture.graph().snapshot.offerings[0]).toEqual({ ...initial, weeklyPeriodTarget: 0 });
+			await expect(groups.getByRole('button', { name: /^กลุ่ม ก ครู / })).toContainText('ครู 1 คน');
+			await expect(groups.getByRole('button', { name: /^กลุ่ม ข ครู / })).toContainText('ครู 1 คน');
+			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+			await expect(page.getByText('ครูกิจกรรมที่คงไว้', { exact: true })).toBeVisible();
+			expect(fixture.writes).toHaveLength(2);
+			await page.screenshot({
+				path: testInfo.outputPath('activity-zero-weekly-periods.png'),
+				animations: 'disabled'
+			});
+		});
+	}
 }
 
 for (const width of [390, 1280]) {

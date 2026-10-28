@@ -275,7 +275,7 @@ pub async fn create_ordinary_block(
         .ok_or_else(|| AppError::ValidationError("กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
     if offering.weekly_period_target == 0 {
         return Err(AppError::ValidationError(
-            "รายวิชานี้ตั้งเป็น 0 คาบต่อสัปดาห์ จึงไม่ต้องจัดคาบแยกในตารางสอน".into(),
+            "รายการเปิดสอนนี้ตั้งเป็น 0 คาบต่อสัปดาห์ จึงไม่ต้องจัดคาบแยกในตารางสอน".into(),
         ));
     }
     let scheduling_mode = match &offering.catalog {
@@ -411,6 +411,11 @@ pub async fn create_synchronized_block(
     {
         return Err(AppError::ValidationError(
             "รายการนี้ไม่ใช่กิจกรรมแบบจัดพร้อมกัน".into(),
+        ));
+    }
+    if offering.weekly_period_target == 0 {
+        return Err(AppError::ValidationError(
+            "รายการเปิดสอนนี้ตั้งเป็น 0 คาบต่อสัปดาห์ จึงไม่ต้องจัดคาบแยกในตารางสอน".into(),
         ));
     }
     let scoped_homeroom_ids = &offering.homeroom_ids;

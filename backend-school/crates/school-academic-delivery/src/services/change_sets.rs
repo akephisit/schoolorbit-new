@@ -1713,7 +1713,7 @@ pub async fn upsert_change_item(
             offering,
             ..
         } => {
-            validate_weekly_period_target(LearningOfferingKind::Activity, weekly_period_target)?;
+            validate_weekly_period_target(weekly_period_target)?;
             if offering.academic_term_id != term.id {
                 return Err(AppError::ValidationError(
                     "รายการเปิดสอนต้องอยู่ในภาคเรียนเดียวกับชุดการเปลี่ยนแปลง".to_string(),
@@ -1802,13 +1802,13 @@ pub async fn upsert_change_item(
                 "หยุดและปรับจำนวนคาบของรายการเดียวกันในชุดเดียวไม่ได้",
             )
             .await?;
-            let kind = require_snapshot_offering(
+            require_snapshot_offering(
                 &mut transaction,
                 row.target_delivery_version_id,
                 learning_offering_id,
             )
             .await?;
-            validate_weekly_period_target(kind, weekly_period_target)?;
+            validate_weekly_period_target(weekly_period_target)?;
             if let Some(existing) = find_change_item(
                 &mut transaction,
                 change_set_id,
@@ -2934,15 +2934,10 @@ async fn offering_deletion_evidence(
             .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))
 }
 
-fn validate_weekly_period_target(kind: LearningOfferingKind, value: i32) -> Result<(), AppError> {
-    if !versions::valid_weekly_period_target(kind, value) {
+fn validate_weekly_period_target(value: i32) -> Result<(), AppError> {
+    if !versions::valid_weekly_period_target(value) {
         Err(AppError::ValidationError(
-            if kind == LearningOfferingKind::Course {
-                "จำนวนคาบที่จัดจริงต่อสัปดาห์ต้องเป็นศูนย์หรือมากกว่า"
-            } else {
-                "จำนวนคาบกิจกรรมต่อสัปดาห์ต้องมากกว่าศูนย์"
-            }
-            .to_string(),
+            "จำนวนคาบที่จัดจริงต่อสัปดาห์ต้องเป็นศูนย์หรือมากกว่า".to_string(),
         ))
     } else {
         Ok(())

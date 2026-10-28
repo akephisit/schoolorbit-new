@@ -389,7 +389,7 @@ pub(super) async fn include_offering(
         refresh_revision_snapshot(tx, revision_id).await?;
         return Ok(());
     }
-    let (kind, target): (LearningOfferingKind, i32) = DbSession::new(&mut **tx).query_as("academic_delivery.services.versions.include_offering", "SELECT offering.kind,COALESCE(subject.periods_per_week,activity.periods_per_week)
+    let target: i32 = DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.include_offering", "SELECT COALESCE(subject.periods_per_week,activity.periods_per_week)
         FROM learning_offerings offering LEFT JOIN course_offering_details course ON course.learning_offering_id=offering.id
         LEFT JOIN subject_versions subject ON subject.id=course.subject_version_id
         LEFT JOIN activity_offering_details detail ON detail.learning_offering_id=offering.id
@@ -398,9 +398,9 @@ pub(super) async fn include_offering(
         AND (offering.starts_on IS NULL OR offering.starts_on<=$4) AND (offering.ends_on IS NULL OR offering.ends_on>=$4)")
         .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional().await?
         .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่ตรงกับรุ่นหรือวันที่ที่เลือก".into()))?;
-    if !valid_weekly_period_target(kind, target) {
+    if !valid_weekly_period_target(target) {
         return Err(AppError::ValidationError(
-            "จำนวนคาบรายวิชาต้องเป็น 0 หรือมากกว่า และจำนวนคาบกิจกรรมต้องมากกว่า 0".into(),
+            "จำนวนคาบที่จัดจริงต่อสัปดาห์ต้องเป็นศูนย์หรือมากกว่า".into(),
         ));
     }
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
@@ -452,8 +452,8 @@ pub fn contains_date(version: &DeliveryVersion, date: NaiveDate) -> bool {
         && version.effective_until.is_none_or(|last| date <= last)
 }
 
-pub(crate) fn valid_weekly_period_target(kind: LearningOfferingKind, value: i32) -> bool {
-    value > 0 || (value == 0 && kind == LearningOfferingKind::Course)
+pub(crate) fn valid_weekly_period_target(value: i32) -> bool {
+    value >= 0
 }
 
 /// This check deliberately has no timetable input: delivery publishes before scheduling.
@@ -472,7 +472,7 @@ pub fn readiness(snapshot: &DeliverySnapshot) -> Vec<DeliveryReadinessFinding> {
         if !offering_ids.insert(offering.id) {
             record(DeliveryReadinessCode::DuplicateOffering, None);
         }
-        if !valid_weekly_period_target(offering.kind, offering.weekly_period_target) {
+        if !valid_weekly_period_target(offering.weekly_period_target) {
             record(DeliveryReadinessCode::InvalidWeeklyTarget, None);
         }
         if !matches!(
@@ -641,6 +641,8 @@ mod tests {
         let mut snapshot = central_snapshot();
         assert!(readiness(&snapshot).is_empty());
         snapshot.offerings[0].weekly_period_target = 0;
+        assert!(readiness(&snapshot).is_empty());
+        snapshot.offerings[0].weekly_period_target = -1;
         snapshot.offerings[0].targets.clear();
         let codes: Vec<_> = readiness(&snapshot)
             .into_iter()
@@ -653,6 +655,50 @@ mod tests {
                 DeliveryReadinessCode::MissingTargets
             ]
         );
+    }
+
+    #[test]
+    fn zero_activity_targets_preserve_requirements_and_reject_negative_in_both_modes() {
+        for mode in [
+            crate::models::ActivitySchedulingMode::Independent,
+            crate::models::ActivitySchedulingMode::Synchronized,
+        ] {
+            let mut snapshot = central_snapshot();
+            snapshot.offerings[0].groups = ready_snapshot().offerings[0].groups.clone();
+            if let LearningOfferingSnapshot::Activity(activity) = &mut snapshot.offerings[0].catalog
+            {
+                activity.scheduling_mode = mode;
+            }
+            let catalog = serde_json::to_value(&snapshot.offerings[0].catalog).unwrap();
+            snapshot.offerings[0].weekly_period_target = 0;
+            assert!(readiness(&snapshot).is_empty());
+            assert_eq!(
+                serde_json::to_value(&snapshot.offerings[0].catalog).unwrap(),
+                catalog
+            );
+            snapshot.offerings[0].weekly_period_target = -1;
+            assert_eq!(
+                readiness(&snapshot)[0].code,
+                DeliveryReadinessCode::InvalidWeeklyTarget
+            );
+            snapshot.offerings[0].weekly_period_target = 0;
+            snapshot.offerings[0].groups[0].teachers.clear();
+            assert_eq!(
+                readiness(&snapshot)[0].code,
+                DeliveryReadinessCode::MissingPrimaryTeacher
+            );
+            snapshot.offerings[0].targets.clear();
+            assert!(readiness(&snapshot)
+                .iter()
+                .any(|finding| finding.code == DeliveryReadinessCode::MissingTargets));
+            snapshot.offerings[0].groups.clear();
+            assert_eq!(
+                readiness(&snapshot)
+                    .iter()
+                    .any(|finding| finding.code == DeliveryReadinessCode::MissingGroups),
+                mode == crate::models::ActivitySchedulingMode::Independent
+            );
+        }
     }
 
     #[test]

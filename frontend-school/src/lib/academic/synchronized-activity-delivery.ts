@@ -19,14 +19,6 @@ export type CurriculumPreparationTarget = CurriculumPreparationFocus & {
 	homeroomCount: number;
 };
 
-export function isPendingSynchronizedActivity(item: HomeroomDeliveryItem): boolean {
-	return (
-		item.resourceKind === 'activity' &&
-		item.schedulingMode === 'synchronized' &&
-		item.offeringId === null
-	);
-}
-
 export function buildCurriculumPreparationTarget(
 	workspace: Pick<HomeroomDeliveryWorkspace, 'homerooms'>,
 	focus: CurriculumPreparationFocus

@@ -37,7 +37,8 @@ test('offering links carry the exact academic context and restore the originatin
 		subjectGroupId: 'math',
 		homeroomSearch: '1/2',
 		readiness: 'attention',
-		expandedRooms: ['room-2', 'room-1']
+		expandedRooms: ['room-2', 'room-1'],
+		missingPage: 0
 	});
 });
 
@@ -131,4 +132,31 @@ test('readiness offering links add academic and origin context while retaining t
 		'https://outside.invalid/staff/academic/delivery/offering'
 	])
 		assert.equal(deliveryFindingHref(route, 'offering', context, returnTo), route);
+});
+
+test('missing requirement pagination persists with return context and resets only for its shared filters', () => {
+	const paged = new URL(deliveryOverviewStateHref(overview, { missingPage: 2 }), origin);
+	assert.equal(readDeliveryOverviewState(paged).missingPage, 2);
+	const detail = new URL(
+		deliveryOfferingHref('offering', context, paged.pathname + paged.search),
+		origin
+	);
+	assert.equal(deliveryReturnHref(detail, context), paged.pathname + paged.search);
+	for (const patch of [{ kind: 'activity' as const }, { offeringSearch: 'ใหม่' }]) {
+		const changed = new URL(deliveryOverviewStateHref(paged, patch), origin);
+		assert.equal(readDeliveryOverviewState(changed).missingPage, 0);
+		assert.equal(changed.searchParams.has('missingPage'), false);
+	}
+	const switched = new URL(
+		deliveryOverviewStateHref(paged, { view: 'homerooms', subjectGroupId: 'other' }),
+		origin
+	);
+	assert.equal(readDeliveryOverviewState(switched).missingPage, 2);
+	for (const value of ['-1', '1.5', 'NaN', 'Infinity', '9007199254740992']) {
+		const invalid = new URL(paged);
+		invalid.searchParams.set('missingPage', value);
+		assert.equal(readDeliveryOverviewState(invalid).missingPage, 0);
+	}
+	const reset = new URL(deliveryOverviewStateHref(paged, { missingPage: 0 }), origin);
+	assert.equal(reset.searchParams.has('missingPage'), false);
 });

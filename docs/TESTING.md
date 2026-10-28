@@ -475,7 +475,8 @@ migration and concurrent writers against disposable PostgreSQL using:
 
 ```bash
 ./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
-./scripts/test_backend_school.sh --integration delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture
+./scripts/test_backend_school.sh --integration delivery_versions zero_ -- --nocapture
+./scripts/test_backend_school.sh activity_zero_targets_http -- added_activity_target_migration subject_zero_workload add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly --nocapture
 ./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture
@@ -484,6 +485,16 @@ migration and concurrent writers against disposable PostgreSQL using:
 ./scripts/test_backend_school.sh --package school-academic-delivery
 ./scripts/test_backend_school.sh --package school-academic-timetable
 ```
+
+The focused `zero_` version cases cover courses plus independent and synchronized activities:
+zero demand preserves catalog, groups, teachers, rosters, evaluations/results and published history;
+existing lessons survive explicit source adoption and must be removed before publication. Both
+ordinary and synchronized creation reject zero-demand placements. The HTTP case verifies zero
+acceptance, negative rejection, management scope and stale revisions. The manual-opening fixture
+also checks explicit zero inclusion; opening defaults are not inferred from curriculum hours.
+The added-target migration case starts with pre143 ignored adjustments, verifies only cached
+weekly scalars and revision counters change, and checks unchanged journals, ordered graphs,
+published receipts/history, stale-request refusal and no-op replay.
 
 The migration fixtures cover stable identities, a delivery graph shared by multiple tables,
 dated A/B/A source chains, independent placement drafts, mixed opening/placement drafts,
