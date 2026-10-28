@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { timetableTraySections } from '#lib/academic/timetable/demand-ordering.js';
+	import type { TimetableBoardView } from '#lib/academic/timetable/board-state.js';
+	import { optionLabel, SUBJECT_TYPE_OPTIONS } from '#lib/academic-core/catalog-presentation.js';
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import {
 		ordinaryLessonColorKey,
@@ -29,6 +32,7 @@
 	};
 
 	let {
+		view,
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
@@ -41,6 +45,7 @@
 		onCancelDrag,
 		onOpenStructural
 	}: {
+		view: TimetableBoardView;
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
@@ -73,6 +78,10 @@
 	const visibleOrdinary = $derived(ordinaryDemands.filter((demand) => demand.remainingPeriods > 0));
 	const visibleSynchronized = $derived(
 		synchronizedDemands.filter((demand) => demand.scheduledPeriods < demand.requiredPeriods)
+	);
+
+	const sections = $derived(
+		timetableTraySections(view, ordinaryDemands, synchronizedDemands, groups, homerooms)
 	);
 
 	function targetNames(homeroomIds: string[]): string {
@@ -187,6 +196,187 @@
 	}
 </script>
 
+{#snippet synchronizedCard(demand: TimetableSynchronizedDemand)}
+	{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
+	<article
+		data-lesson-color={colorKey}
+		style={timetableLessonColorStyle(colorKey)}
+		draggable={!disabled}
+		class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
+		ondragstart={(event) => dragSynchronized(demand, event)}
+		ondragend={onCancelDrag}
+	>
+		<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
+			{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
+		</Badge>
+		<div class="flex items-start pr-12">
+			<button
+				type="button"
+				class="min-w-0 flex-1 text-left"
+				{disabled}
+				onclick={() => {
+					const selection = synchronizedSelection(demand);
+					onChooseDemand(selection.source, selection.candidate);
+				}}
+			>
+				<p class="text-xs font-medium">{demand.offeringName}</p>
+				<Badge variant="outline" class="mt-1 text-[0.65rem]">พร้อมกัน</Badge>
+				<p
+					class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+					data-timetable-demand-targets
+				>
+					{targetNames(demand.intendedHomeroomIds)}
+				</p>
+				<p class="mt-1 text-[0.65rem] text-muted-foreground">
+					พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
+				</p>
+			</button>
+		</div>
+		<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
+			<div class="min-w-0">
+				<TimetableTeacherTargetPicker
+					size="sm"
+					{staff}
+					value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
+					label="ครูที่กันเวลาไว้"
+					showLabel={false}
+					{disabled}
+					onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
+				/>
+			</div>
+			<div class="min-w-0">
+				<TimetableRoomPicker
+					size="sm"
+					{rooms}
+					value={selectedSynchronizedRoomId(demand)}
+					{disabled}
+					onValueChange={(roomId) =>
+						(synchronizedRoomChoices = {
+							...synchronizedRoomChoices,
+							[demand.learningOfferingId]: roomId
+						})}
+				/>
+			</div>
+		</div>
+	</article>
+{/snippet}
+
+{#snippet ordinaryCard(demand: TimetableOrdinaryDemand)}
+	{@const selectedIds = selectedInstructorIds(demand)}
+	{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
+	<article
+		data-lesson-color={colorKey}
+		style={timetableLessonColorStyle(colorKey)}
+		draggable={!disabled && selectedIds.length > 0}
+		class="timetable-lesson-fill relative rounded-lg border p-2"
+		ondragstart={(event) => dragOrdinary(demand, event)}
+		ondragend={onCancelDrag}
+	>
+		<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
+			{demand.remainingPeriods}/{demand.requiredPeriods}
+		</Badge>
+		<div class="flex items-start pr-12">
+			<button
+				type="button"
+				class="min-w-0 flex-1 text-left"
+				disabled={disabled || selectedIds.length === 0}
+				onclick={() => {
+					const selection = ordinarySelection(demand);
+					onChooseDemand(selection.source, selection.candidate);
+				}}
+			>
+				{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
+					<p class="text-[0.65rem] font-semibold">{demand.offeringCode}</p>
+				{/if}
+				<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
+				{#if demand.homeroomIds.length > 0}
+					<p
+						class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+						data-timetable-demand-targets
+					>
+						{targetNames(demand.homeroomIds)}
+					</p>
+				{/if}
+			</button>
+		</div>
+		<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
+			<div class="min-w-0">
+				<Popover.Root>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								type="button"
+								variant="outline"
+								size="sm"
+								class="w-full justify-between text-xs"
+								disabled={disabled || demand.eligibleInstructors.length === 0}
+							>
+								<span class="flex min-w-0 items-center gap-1.5">
+									<UsersRound class="size-3.5" />
+									<span class="truncate">
+										{selectedIds.length > 0 ? `เลือกครู ${selectedIds.length} คน` : 'กรุณาเลือกครู'}
+									</span>
+								</span>
+								<ChevronDown class="size-3.5" />
+							</Button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content class="w-72 p-2" align="start">
+						<p class="px-2 pb-2 text-xs font-medium">ครูที่สอนคาบนี้</p>
+						{#if demand.eligibleInstructors.length === 0}
+							<p class="px-2 py-3 text-xs text-destructive">ยังไม่ได้กำหนดครูในหน้าจัดการเรียน</p>
+						{:else}
+							{#each demand.eligibleInstructors as teacher (teacher.teacherId)}
+								<Button
+									type="button"
+									variant="ghost"
+									class="h-auto w-full justify-start px-2 py-2 text-left"
+									aria-pressed={selectedIds.includes(teacher.teacherId)}
+									onclick={() => toggleInstructor(demand, teacher.teacherId)}
+								>
+									<span
+										class={[
+											'flex size-4 shrink-0 items-center justify-center rounded border',
+											selectedIds.includes(teacher.teacherId) &&
+												'border-primary bg-primary text-primary-foreground'
+										]}
+									>
+										{#if selectedIds.includes(teacher.teacherId)}<Check class="size-3" />{/if}
+									</span>
+									<span>
+										<span class="block text-xs font-medium">{teacher.displayName}</span>
+										<span class="block text-[0.68rem] text-muted-foreground">
+											{teacher.role === 'primary'
+												? 'ครูหลัก'
+												: teacher.role === 'assistant'
+													? 'ครูผู้ช่วย'
+													: 'ครูร่วมสอน'}
+										</span>
+									</span>
+								</Button>
+							{/each}
+						{/if}
+					</Popover.Content>
+				</Popover.Root>
+			</div>
+			<div class="min-w-0">
+				<TimetableRoomPicker
+					size="sm"
+					{rooms}
+					value={selectedOrdinaryRoomId(demand)}
+					{disabled}
+					onValueChange={(roomId) =>
+						(ordinaryRoomChoices = {
+							...ordinaryRoomChoices,
+							[demand.learningGroupId]: roomId
+						})}
+				/>
+			</div>
+		</div>
+	</article>
+{/snippet}
+
 <aside
 	class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background text-xs xl:absolute xl:inset-0"
 	aria-label="คาบที่ยังไม่ได้จัด"
@@ -227,207 +417,30 @@
 			class="min-h-0 max-h-[42rem] space-y-3 overflow-y-auto p-2 xl:max-h-none xl:flex-1"
 			data-timetable-tray-scroll
 		>
-			{#if visibleSynchronized.length > 0}
-				<section class="space-y-2">
-					<div class="flex items-center gap-2 px-1">
-						<div class="h-4 w-1 rounded-full bg-violet-500"></div>
-						<h3 class="text-[0.65rem] font-semibold">กิจกรรมพร้อมกัน</h3>
-					</div>
-					{#each visibleSynchronized as demand (demand.learningOfferingId)}
-						{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
-						<article
-							data-lesson-color={colorKey}
-							style={timetableLessonColorStyle(colorKey)}
-							draggable={!disabled}
-							class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
-							ondragstart={(event) => dragSynchronized(demand, event)}
-							ondragend={onCancelDrag}
-						>
-							<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
-								{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
-							</Badge>
-							<div class="flex items-start pr-12">
-								<button
-									type="button"
-									class="min-w-0 flex-1 text-left"
-									{disabled}
-									onclick={() => {
-										const selection = synchronizedSelection(demand);
-										onChooseDemand(selection.source, selection.candidate);
-									}}
-								>
-									<p class="text-xs font-medium">{demand.offeringName}</p>
-									<p
-										class="mt-1 break-words text-[0.65rem] text-muted-foreground"
-										data-timetable-demand-targets
-									>
-										{targetNames(demand.intendedHomeroomIds)}
-									</p>
-									<p class="mt-1 text-[0.65rem] text-muted-foreground">
-										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
-									</p>
-								</button>
-							</div>
-							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
-								<div class="min-w-0">
-									<TimetableTeacherTargetPicker
-										size="sm"
-										{staff}
-										value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
-										label="ครูที่กันเวลาไว้"
-										showLabel={false}
-										{disabled}
-										onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
-									/>
-								</div>
-								<div class="min-w-0">
-									<TimetableRoomPicker
-										size="sm"
-										{rooms}
-										value={selectedSynchronizedRoomId(demand)}
-										{disabled}
-										onValueChange={(roomId) =>
-											(synchronizedRoomChoices = {
-												...synchronizedRoomChoices,
-												[demand.learningOfferingId]: roomId
-											})}
-									/>
-								</div>
-							</div>
-						</article>
+			{#each sections as section (section.id)}
+				<section class="space-y-3" data-timetable-grade-section={section.id}>
+					{#if section.gradeLabel}<h3 class="px-1 text-xs font-semibold">
+							{section.gradeLabel}
+						</h3>{/if}
+					{#each section.categories as category (category.category)}
+						<section class="space-y-2" data-timetable-demand-category={category.category}>
+							<svelte:element
+								this={section.gradeLabel ? 'h4' : 'h3'}
+								class="px-1 text-[0.65rem] font-semibold text-muted-foreground"
+							>
+								{category.category === 'OTHER'
+									? 'รายวิชาอื่น'
+									: optionLabel(SUBJECT_TYPE_OPTIONS, category.category)}
+							</svelte:element>
+							{#each category.items as item (item.id)}
+								{#if item.kind === 'ordinary'}{@render ordinaryCard(
+										item.demand
+									)}{:else}{@render synchronizedCard(item.demand)}{/if}
+							{/each}
+						</section>
 					{/each}
 				</section>
-			{/if}
-
-			{#if visibleOrdinary.length > 0}
-				<section class="space-y-2">
-					<div class="flex items-center gap-2 px-1">
-						<div class="h-4 w-1 rounded-full bg-primary"></div>
-						<h3 class="text-[0.65rem] font-semibold">รายวิชาและกิจกรรมรายกลุ่ม</h3>
-					</div>
-					{#each visibleOrdinary as demand (demand.learningGroupId)}
-						{@const selectedIds = selectedInstructorIds(demand)}
-						{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
-						<article
-							data-lesson-color={colorKey}
-							style={timetableLessonColorStyle(colorKey)}
-							draggable={!disabled && selectedIds.length > 0}
-							class="timetable-lesson-fill relative rounded-lg border p-2"
-							ondragstart={(event) => dragOrdinary(demand, event)}
-							ondragend={onCancelDrag}
-						>
-							<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
-								{demand.remainingPeriods}/{demand.requiredPeriods}
-							</Badge>
-							<div class="flex items-start pr-12">
-								<button
-									type="button"
-									class="min-w-0 flex-1 text-left"
-									disabled={disabled || selectedIds.length === 0}
-									onclick={() => {
-										const selection = ordinarySelection(demand);
-										onChooseDemand(selection.source, selection.candidate);
-									}}
-								>
-									{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
-										<p class="text-[0.65rem] font-semibold">{demand.offeringCode}</p>
-									{/if}
-									<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
-									{#if demand.homeroomIds.length > 0}
-										<p
-											class="mt-1 break-words text-[0.65rem] text-muted-foreground"
-											data-timetable-demand-targets
-										>
-											{targetNames(demand.homeroomIds)}
-										</p>
-									{/if}
-								</button>
-							</div>
-							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
-								<div class="min-w-0">
-									<Popover.Root>
-										<Popover.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													type="button"
-													variant="outline"
-													size="sm"
-													class="w-full justify-between text-xs"
-													disabled={disabled || demand.eligibleInstructors.length === 0}
-												>
-													<span class="flex min-w-0 items-center gap-1.5">
-														<UsersRound class="size-3.5" />
-														<span class="truncate">
-															{selectedIds.length > 0
-																? `เลือกครู ${selectedIds.length} คน`
-																: 'กรุณาเลือกครู'}
-														</span>
-													</span>
-													<ChevronDown class="size-3.5" />
-												</Button>
-											{/snippet}
-										</Popover.Trigger>
-										<Popover.Content class="w-72 p-2" align="start">
-											<p class="px-2 pb-2 text-xs font-medium">ครูที่สอนคาบนี้</p>
-											{#if demand.eligibleInstructors.length === 0}
-												<p class="px-2 py-3 text-xs text-destructive">
-													ยังไม่ได้กำหนดครูในหน้าจัดการเรียน
-												</p>
-											{:else}
-												{#each demand.eligibleInstructors as teacher (teacher.teacherId)}
-													<Button
-														type="button"
-														variant="ghost"
-														class="h-auto w-full justify-start px-2 py-2 text-left"
-														aria-pressed={selectedIds.includes(teacher.teacherId)}
-														onclick={() => toggleInstructor(demand, teacher.teacherId)}
-													>
-														<span
-															class={[
-																'flex size-4 shrink-0 items-center justify-center rounded border',
-																selectedIds.includes(teacher.teacherId) &&
-																	'border-primary bg-primary text-primary-foreground'
-															]}
-														>
-															{#if selectedIds.includes(teacher.teacherId)}<Check
-																	class="size-3"
-																/>{/if}
-														</span>
-														<span>
-															<span class="block text-xs font-medium">{teacher.displayName}</span>
-															<span class="block text-[0.68rem] text-muted-foreground">
-																{teacher.role === 'primary'
-																	? 'ครูหลัก'
-																	: teacher.role === 'assistant'
-																		? 'ครูผู้ช่วย'
-																		: 'ครูร่วมสอน'}
-															</span>
-														</span>
-													</Button>
-												{/each}
-											{/if}
-										</Popover.Content>
-									</Popover.Root>
-								</div>
-								<div class="min-w-0">
-									<TimetableRoomPicker
-										size="sm"
-										{rooms}
-										value={selectedOrdinaryRoomId(demand)}
-										{disabled}
-										onValueChange={(roomId) =>
-											(ordinaryRoomChoices = {
-												...ordinaryRoomChoices,
-												[demand.learningGroupId]: roomId
-											})}
-									/>
-								</div>
-							</div>
-						</article>
-					{/each}
-				</section>
-			{/if}
+			{/each}
 		</div>
 	{/if}
 </aside>

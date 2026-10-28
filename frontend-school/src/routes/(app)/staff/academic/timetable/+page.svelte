@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+		orderTimetableHomerooms,
+		relatedSynchronizedDemands
+	} from '#lib/academic/timetable/demand-ordering.js';
 	import { timetablePlacementColorKey } from '#lib/academic/timetable/lesson-color.js';
 	import TimetablePdfDialog from '#lib/components/academic/timetable/TimetablePdfDialog.svelte';
 	import type { GeneratePdfOptions } from '#lib/utils/pdf.js';
@@ -384,8 +388,17 @@
 				demand.intendedHomeroomIds.includes(controller?.selectedOwnerId ?? '')
 			);
 		}
+		if (controller.view === 'learning_group') {
+			return relatedSynchronizedDemands(
+				controller.workspace.learningGroups.find(
+					(group) => group.id === controller?.selectedOwnerId
+				),
+				controller.workspace.synchronizedDemands
+			);
+		}
 		return controller.workspace.synchronizedDemands;
 	});
+	const orderedHomerooms = $derived(orderTimetableHomerooms(controller?.workspace.homerooms ?? []));
 
 	function newStructuralForm(): StructuralForm {
 		return {
@@ -2160,7 +2173,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each controller.workspace.homerooms as homeroom (homeroom.id)}
+								{#each orderedHomerooms as homeroom (homeroom.id)}
 									<tr>
 										<th
 											class="sticky left-0 z-10 border-b border-r bg-background px-2 py-2 whitespace-nowrap"
@@ -2208,6 +2221,7 @@
 				>
 					{#if controller.editing}<div class="relative min-h-0">
 							<TimetableUnscheduledTray
+								view={controller.view}
 								ordinaryDemands={visibleOrdinaryDemands}
 								synchronizedDemands={visibleSynchronizedDemands}
 								groups={controller.workspace.learningGroups}
