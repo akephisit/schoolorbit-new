@@ -611,12 +611,15 @@ Local source-build topology is defined in [`compose.local.yml`](../compose.local
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 
-## Zero course timetable targets
+## Zero weekly timetable targets
 
 Migration 090 permits nonnegative actual weekly targets in the opening change journal.
 The canonical opening snapshot owns the effective target; no retired catalog column is restored.
-Courses set to zero remain opened with their curriculum, credits, groups, teachers and assessment;
-only standalone timetable demand becomes zero. Activities retain a positive target.
+Courses and activities (independent or synchronized) set to zero remain opened with their
+curriculum workload, credits, groups, teachers, rosters and assessments/results unchanged; only
+recurring weekly timetable demand becomes zero. Zero does not waive activity evaluation or
+attendance requirements. It does not create weekly timetable-derived attendance sessions.
+Opening defaults stay unchanged; select zero explicitly when an activity has no weekly slot.
 Publish the opening revision and explicitly update a timetable draft's opening source before the
 new target applies there. Existing placed lessons and published history are preserved; remove
 zero-target lessons from the draft before publishing it.

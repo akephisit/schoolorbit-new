@@ -56,20 +56,22 @@ test('period adjustment uses the exact offering item revision and current change
 		weeklyPeriodAdjustmentRequest({ ...changeSet, items: [] }, offering, 4)?.itemRowVersion,
 		null
 	);
-	assert.equal(
-		weeklyPeriodAdjustmentRequest({ ...changeSet, status: 'published' }, offering, 4),
-		null
-	);
-	assert.equal(weeklyPeriodAdjustmentRequest(changeSet, offering, -1), null);
-	assert.equal(weeklyPeriodAdjustmentRequest(changeSet, offering, 1.5), null);
-	assert.equal(weeklyPeriodAdjustmentRequest(changeSet, offering, Number.NaN), null);
-	assert.equal(
-		weeklyPeriodAdjustmentRequest(changeSet, { ...offering, kind: 'activity' }, 0),
-		null
-	);
-	assert.equal(
-		weeklyPeriodAdjustmentRequest(changeSet, { ...offering, kind: 'activity' }, 1)
-			?.weeklyPeriodTarget,
-		1
-	);
+	for (const kind of ['course', 'activity'] as const) {
+		const target = { ...offering, kind };
+		assert.deepEqual(weeklyPeriodAdjustmentRequest(changeSet, target, 0), {
+			action: 'adjust_weekly_period_target',
+			changeSetRowVersion: 12,
+			itemRowVersion: 5,
+			learningOfferingId: offering.id,
+			weeklyPeriodTarget: 0
+		});
+		assert.equal(weeklyPeriodAdjustmentRequest(changeSet, target, 1)?.weeklyPeriodTarget, 1);
+		assert.equal(
+			weeklyPeriodAdjustmentRequest({ ...changeSet, status: 'published' }, target, 0),
+			null
+		);
+		for (const invalid of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+			assert.equal(weeklyPeriodAdjustmentRequest(changeSet, target, invalid), null);
+		}
+	}
 });

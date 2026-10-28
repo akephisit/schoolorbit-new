@@ -38,7 +38,7 @@ export function weeklyPeriodAdjustmentRequest(
 	if (
 		changeSet.status !== 'draft' ||
 		!Number.isInteger(weeklyPeriodTarget) ||
-		weeklyPeriodTarget < (offering.kind === 'course' ? 0 : 1)
+		weeklyPeriodTarget < 0
 	)
 		return null;
 	const existing = changeSet.items.find(
