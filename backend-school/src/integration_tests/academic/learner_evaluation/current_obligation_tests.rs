@@ -203,16 +203,51 @@ async fn learner_current_obligation_ready_retained_rooms_lock_without_unused_omi
         scoped_fixture("learner_current_obligation_ready").await;
     let rooms:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary' WHERE d.subject_id=$1 AND g.academic_term_id=$2 AND g.status<>'closed' AND g.id<>$3 ORDER BY g.id")
         .bind(subject).bind(ctx.academic_term_id).bind(unused).fetch_all(&pool).await.unwrap();
+    let mut populated_original_seen = false;
     for (room, teacher) in rooms {
         let teacher = ActorContext {
             user_id: teacher,
             permissions: actor.permissions.clone(),
         };
-        let ws = fill(&pool, &teacher, &ctx, room, DC, 3).await;
+        let workspace = get_workspace(&pool, &teacher, room, DC, &ctx)
+            .await
+            .unwrap();
+        let active_criteria = workspace
+            .criteria
+            .iter()
+            .filter(|criterion| criterion.lifecycle == "active")
+            .count();
+        eprintln!("learner ready fixture room={room} active_students={} active_criteria={active_criteria}", workspace.students.len());
+        assert!(
+            active_criteria > 0,
+            "retained room {room} must have active criteria, not a vacuously ready fixture"
+        );
+        if room == group {
+            assert!(
+                !workspace.students.is_empty(),
+                "the original retained learner group must keep its populated roster"
+            );
+            populated_original_seen = true;
+        }
+        let ws = if workspace.students.is_empty() {
+            // An included empty room still requires its ordinary confirmation;
+            // saving an empty response batch is rejected by the entry service.
+            workspace
+        } else {
+            assert!(
+                workspace.students.len() * active_criteria <= 500,
+                "retained room {room} exceeds the response fixture's supported batch size"
+            );
+            fill(&pool, &teacher, &ctx, room, DC, 3).await
+        };
         confirm_group(&pool, &teacher, room, DC, &ctx, confirmation(&ws))
             .await
             .unwrap();
     }
+    assert!(
+        populated_original_seen,
+        "the original populated retained group must participate in readiness and locking"
+    );
     let baseline = read_lock_readiness(&pool, result_locks(), &actor, &ctx)
         .await
         .unwrap();
@@ -222,6 +257,27 @@ async fn learner_current_obligation_ready_retained_rooms_lock_without_unused_omi
             .find(|r| r.subject_id == subject && r.domain == DC)
             .unwrap()
             .ready
+    );
+    let baseline_subject = baseline
+        .iter()
+        .find(|row| row.subject_id == subject && row.domain == DC)
+        .unwrap();
+    assert!(
+        baseline_subject
+            .groups
+            .iter()
+            .filter(|room| room.learning_group_id != unused)
+            .all(|room| room.ready),
+        "all retained rooms must genuinely be ready before the scope removal"
+    );
+    assert!(
+        !baseline_subject
+            .groups
+            .iter()
+            .find(|room| room.learning_group_id == unused)
+            .unwrap()
+            .ready,
+        "the unused group must be the original readiness blocker"
     );
     omit(&pool, &actor, &ctx, &[unused], false).await;
     let before = facts(&pool).await;
