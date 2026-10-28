@@ -338,14 +338,7 @@ async fn covered_published(name: &str, grade_program: bool) {
             .await
             .unwrap();
     for action in [PreparationAction::Apply, PreparationAction::DeferGroups] {
-        let preview = preview(&f, f.context.study_program_id).await;
-        assert_eq!(
-            proposal(&preview).offering_action,
-            CurriculumPreviewAction::Retain
-        );
-        assert!(proposal(&preview).conflicts.is_empty());
-        let mut apply = request(&f, f.context.study_program_id, &preview, action);
-        // Reinclude into a separate selected draft without touching the published source.
+        // Preview and apply share the selected draft context; the published source stays immutable.
         let selected = create_runtime_change_set(
             &f.pool,
             f.context.teacher_id,
@@ -354,6 +347,22 @@ async fn covered_published(name: &str, grade_program: bool) {
             &format!("{name}-{action:?}"),
         )
         .await;
+        let preview = offerings::preview_from_curriculum(
+            &f.pool,
+            PreviewCurriculumOfferingsRequest {
+                academic_term_id: f.context.term_id,
+                study_program_ids: vec![f.context.study_program_id],
+                delivery_version_id: Some(selected.target_delivery_version_id),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            proposal(&preview).offering_action,
+            CurriculumPreviewAction::Retain
+        );
+        assert!(proposal(&preview).conflicts.is_empty());
+        let mut apply = request(&f, f.context.study_program_id, &preview, action);
         apply.delivery_version_id = Some(selected.target_delivery_version_id);
         let result = offerings::apply_from_curriculum(&f.pool, f.context.teacher_id, apply)
             .await
