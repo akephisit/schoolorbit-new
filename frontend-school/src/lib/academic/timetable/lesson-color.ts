@@ -1,4 +1,4 @@
-import type { TimetableBlock, TimetableBlockPlacementSource } from '../../api/timetable';
+import type { TimetableBlock, TimetableBlockPlacementSource } from '#lib/api/timetable.js';
 
 export type TimetableLessonColorKey = `group:${string}` | `offering:${string}`;
 
