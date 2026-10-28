@@ -1,10 +1,15 @@
 <script lang="ts">
 	import type { HomeroomDeliveryWorkspace } from '#lib/api/learning-delivery.js';
-	import type { DeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
+	import {
+		deliveryAlignmentLabels,
+		deliveryAlignmentBadgeClass,
+		type DeliveryAlignmentFacts
+	} from '#lib/academic/homeroom-delivery.js';
 	import type { CurriculumPreparationFocus } from '#lib/academic/synchronized-activity-delivery.js';
 	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
 	import type { DeliveryOverviewState } from '#lib/navigation/learning-delivery.js';
 	import { PageSkeleton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -120,8 +125,15 @@
 										{item.resourceKind === 'course' ? `${item.code} · ` : ''}{item.name}
 									</p>
 									<p class="text-xs text-muted-foreground">
-										{item.resourceKind === 'course' ? 'รายวิชา' : 'กิจกรรม'} · ยังไม่เปิดสอนตามหลักสูตร
-									</p></Table.Cell
+										{item.resourceKind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
+									</p>
+									<Badge
+										variant="outline"
+										class={`${deliveryAlignmentBadgeClass('curriculum_requirement_not_offered')} mt-2 max-w-full whitespace-normal`}
+									>
+										{deliveryAlignmentLabels.curriculum_requirement_not_offered} · {item.rooms
+											.length} ห้อง
+									</Badge></Table.Cell
 								>
 								<Table.Cell
 									><p class="text-sm">{item.rooms.map((room) => room.name).join(', ')}</p>

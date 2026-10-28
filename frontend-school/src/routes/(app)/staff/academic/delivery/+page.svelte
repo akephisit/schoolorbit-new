@@ -1057,6 +1057,9 @@
 											: null}
 										onDraftResourceRemoved={draftResourceRemoved}
 										version={overview}
+										comparisonWorkspace={overview.id === comparisonWorkspace?.deliveryVersionId
+											? comparisonWorkspace
+											: null}
 										alignmentFacts={overview.id === comparisonWorkspace?.deliveryVersionId
 											? alignmentFacts
 											: null}

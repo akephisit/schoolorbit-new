@@ -1,8 +1,14 @@
 <script lang="ts">
+	import DeliveryStatusBadges from './DeliveryStatusBadges.svelte';
+	import { deliveryOfferingStatuses } from '#lib/academic/homeroom-delivery.js';
 	import DeliveryAlignmentBadges from './DeliveryAlignmentBadges.svelte';
 	import type { DeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
 	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
-	import type { AcademicTermChangeSet, DeliveryVersion } from '#lib/api/learning-delivery.js';
+	import type {
+		AcademicTermChangeSet,
+		DeliveryVersion,
+		HomeroomDeliveryWorkspace
+	} from '#lib/api/learning-delivery.js';
 	import {
 		deliveryOfferingHref,
 		type DeliveryOverviewState
@@ -23,7 +29,8 @@
 		onFiltersChange,
 		draftChangeSetId = null,
 		onDraftResourceRemoved,
-		alignmentFacts = null
+		alignmentFacts = null,
+		comparisonWorkspace = null
 	}: {
 		version: DeliveryVersion;
 		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
@@ -32,6 +39,7 @@
 		draftChangeSetId?: string | null;
 		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
 		alignmentFacts?: DeliveryAlignmentFacts | null;
+		comparisonWorkspace?: HomeroomDeliveryWorkspace | null;
 	} = $props();
 	const groups = $derived(deliverySubjectGroupOptions(version));
 	const items = $derived(filterDeliveryOfferings(version, filters));
@@ -100,10 +108,11 @@
 		<Table.Root>
 			<Table.Header
 				><Table.Row
-					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>เทียบหลักสูตรปัจจุบัน</Table.Head
-					><Table.Head>คาบ/สัปดาห์</Table.Head><Table.Head>กลุ่มเรียน</Table.Head><Table.Head
-						>ครูหลัก</Table.Head
-					><Table.Head><span class="sr-only">รายละเอียด</span></Table.Head></Table.Row
+					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>สถานะการเปิดสอน</Table.Head><Table.Head
+						>คาบ/สัปดาห์</Table.Head
+					><Table.Head>กลุ่มเรียน</Table.Head><Table.Head>ครูหลัก</Table.Head><Table.Head
+						><span class="sr-only">รายละเอียด</span></Table.Head
+					></Table.Row
 				></Table.Header
 			>
 			<Table.Body>
@@ -116,15 +125,20 @@
 							</p></Table.Cell
 						>
 						<Table.Cell class="min-w-52"
-							><DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} /></Table.Cell
+							><DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} />
+							<div class="mt-2">
+								<DeliveryStatusBadges
+									statuses={deliveryOfferingStatuses(item, comparisonWorkspace)}
+								/>
+							</div></Table.Cell
 						>
 						<Table.Cell>{item.weeklyPeriodTarget}</Table.Cell><Table.Cell
 							>{item.groups.length}</Table.Cell
 						>
 						<Table.Cell
-							>{item.groups.filter((group) =>
-								group.teachers.some((teacher) => teacher.role === 'primary')
-							).length}/{item.groups.length} กลุ่ม</Table.Cell
+							>{#if item.groups.length}{item.groups.filter((group) =>
+									group.teachers.some((teacher) => teacher.role === 'primary')
+								).length}/{item.groups.length} กลุ่ม{:else}ยังไม่มีกลุ่ม{/if}</Table.Cell
 						>
 						<Table.Cell
 							><div class="flex flex-wrap justify-end gap-1">
