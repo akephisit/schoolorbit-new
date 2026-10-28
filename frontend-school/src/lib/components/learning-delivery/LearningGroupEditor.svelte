@@ -43,7 +43,7 @@
 		}))
 	);
 	let teachers = $state<TeacherAssignment[]>(
-		untrack(() => group.teacherAssignments.map((item) => ({ ...item })))
+		untrack(() => group.teacherAssignments.map(({ teacherId, role }) => ({ teacherId, role })))
 	);
 	let homeroomIds = $state<string[]>(untrack(() => [...group.homeroomIds]));
 	let selectedRoomId = $state('');
