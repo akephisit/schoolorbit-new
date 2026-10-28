@@ -112,8 +112,9 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 
 ### Agent roles and coordination
 
-The primary agent is the Senior/Coordinator: it reads, analyzes and diagnoses, owns technical
-direction, agreed contracts, task assignments, Git/integration and final acceptance within the
+The primary agent is the current host session; subagents are children created through its actual
+delegation tools. The primary agent acts as Senior/Coordinator: it reads, analyzes and diagnoses,
+owns technical direction, agreed contracts, task assignments, Git/integration and final acceptance within the
 user's scope. Every implementation task, however small, uses a separate delegated writer,
 a separate read-only Reviewer and a separate QA/Verifier, neither of whom wrote the candidate.
 This includes text, documentation, workflow and test edits. The Senior does not write tracked
@@ -133,14 +134,22 @@ parallel, but dependent implementation waits for the agreed contract or provider
 Use the existing task/plan state to record assignments, dependencies and blocked/completed
 status. The Senior can advance independent analysis and coordination while writers work.
 
+Use optional specialists at the decision they inform, within the phase/concurrency budget below:
+Explorer investigates before ownership assignment and task splitting when the root cause or owner
+is unclear. Data/Migration assesses the timeline, preservation and recovery before schema,
+migration, backfill, deletion or data-ownership decisions. Pipeline participates during planning
+for build, deployment, proxy, secrets or CI work and returns for applicable final verification.
+Inspect their outputs before dependent decisions and implementation proceed; these roles are not
+an additional mandatory roster for every task.
+
 | Role | Responsibility | Preferred model when available | Reasoning |
 | --- | --- | --- | --- |
 | Senior/Coordinator | Architecture, scope, shared contracts, assignment, integration, final evidence and authorized delivery | Current primary session model | High when configurable |
-| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium; high for auth, contracts or complex state |
-| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High |
+| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium by default; high for auth, contracts or complex state; xhigh for particularly complex interacting state, async or realtime races, or unresolved reasoning difficulty |
+| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High by default; xhigh for complex transaction, concurrency, idempotency, migration preservation or cross-domain architecture reasoning |
 | Rules/Security Reviewer | Independent read-only review of correctness, rules, permissions, secrets, tenant boundaries and the complete integrated diff | `gpt-6.1-sol` | High |
-| QA/Verifier | Run affected owned checks and reproduce failures; report commands, candidate tree, environment and results without editing source | `gpt-6-luna` | Low; diagnosis and fixes return to the implementation owner |
-| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6-luna` | Low; escalate architectural uncertainty to `gpt-6.1-sol`/medium |
+| QA/Verifier | Independently assess requirements and acceptance criteria, select coverage and run affected owned checks; report commands, candidate tree, environment and results without editing source | `gpt-6-luna`; `gpt-6.1-sol` for complex validation | Low for predefined check execution; medium for selecting/analyzing coverage; high on `gpt-6.1-sol` for complex authentication, authorization/tenant isolation, security, transactions or data migration validation |
+| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6-luna`; `gpt-6.1-sol` for architectural uncertainty | Low for file/call-site lookup; medium for multi-layer flow tracing; architectural investigation escalates to `gpt-6.1-sol`/medium |
 | Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | `gpt-6.1-sol` | High |
 | Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | `gpt-6.1-sol` | High |
 
@@ -149,15 +158,30 @@ These are role defaults, not a claim that every host offers these models. For th
 A skill cannot change its own model; retain the current primary model and never spawn a second
 Coordinator merely to simulate changing it. Explicit user model choices override these defaults.
 
-Select profiles from the host's currently offered models and supported reasoning values. Pass the
-chosen model and reasoning through actual agent-spawn controls; mentioning a model in a prompt or
-`agents/openai.yaml` does not configure it. When overrides require fresh context, start the child
-without inherited history and supply the bounded assignment explicitly. Record the requested
-configuration and any host-confirmed configuration or fallback in task state; do not claim an
-unconfirmed setting was applied. If a profile is unavailable, use a suitable offered alternative or
-inherit the primary configuration and report the limitation once. Escalate reasoning or reassign
-to a more capable offered model when uncertainty, risk or failed diagnosis warrants it; update the
-assignment and revalidate affected evidence rather than repeatedly guessing at a lower setting.
+For Frontend and Backend, xhigh is optional within supported host settings. The Senior may select
+it upfront when evidence establishes the complexity above; a failed attempt at high is not required.
+The Senior may also escalate during work with concrete uncertainty and bounded task context.
+File count alone is not a criterion, and higher reasoning does not replace evidence or required checks.
+
+Select profiles from the host's currently offered models and supported reasoning values. Create
+subagents and pass the chosen model/reasoning through actual spawn controls, such as Codex's
+`spawn_agent` when available. A new chat/thread is not a substitute for a subagent; role text and
+`agents/openai.yaml` cannot create or configure agents. When overrides require fresh context,
+start the child without inherited history and supply the bounded assignment explicitly. Record the requested
+configuration, actual tool-reported settings and any fallback in task state; do not claim an
+unconfirmed setting was applied or describe tool acceptance as independent provider/runtime
+attestation. If a profile is unavailable, use a suitable offered alternative or inherit the primary
+configuration and report the limitation once.
+
+Bound escalation to the cause of uncertainty: investigate missing evidence at the authoritative
+files, call sites or observed behavior; route environment/access failures to Pipeline when useful,
+respecting the user's authorization and credential boundaries. Higher reasoning cannot supply
+missing evidence or access. For reasoning/architecture difficulty, raise supported reasoning or
+reassign to a more capable offered model when uncertainty, risk or stalled diagnosis warrants it.
+Update the bounded assignment and revalidate affected evidence; do not repeat blind guesses.
+QA selects and assesses coverage against requirements and acceptance criteria independently of
+the writer's test list. QA reports failures to the Senior; diagnosis and fixes return to the
+implementation owner, with separate Reviewer and QA acceptance preserved.
 
 - Default parallel work to 2–4 active agents including the Coordinator, at most two implementation
   writers, and the host's lower concurrency limit. Use phases rather than opening the whole roster:

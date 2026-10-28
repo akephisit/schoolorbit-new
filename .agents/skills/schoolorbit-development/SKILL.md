@@ -29,16 +29,22 @@ another Coordinator. Explanation-only requests do not start implementation or PR
    The Senior reads/analyzes/diagnoses and owns Git; separate writers make every implementation
    edit, including text, documentation, workflow, tests and repairs. Preserve read-only scope,
    explicit newer user instructions and higher-priority host requirements.
-4. Select each needed role's model/reasoning profile from `.rules` and pass it through the host's
-   actual agent-spawn controls. Use fresh bounded context when model overrides require it, and
-   record requested settings and any confirmed settings or fallback. Retain the primary session's
+4. Distinguish the current primary session from children created with actual host subagent tools,
+   such as Codex's `spawn_agent` when available; a new chat/thread does not replace a subagent.
+   Select each needed role's model/reasoning profile from `.rules` and pass it through supported
+   spawn controls. Use fresh bounded context when model overrides require it, and
+   record requested settings, actual tool-reported settings and any fallback without claiming
+   independent provider/runtime attestation. Retain the primary session's
    model for the Senior; this skill cannot change it. If subagents are unavailable, report the
    concrete blocker; never simulate independent identities inline.
-   Do not assume a custom agent configuration file creates agents or is loaded in Codex Cloud.
+   Role text and `agents/openai.yaml` cannot create or configure agents; do not assume a custom
+   configuration file is loaded in Codex Cloud.
 
 ## Split and schedule work
 
-1. Identify independently useful outcomes and their completion criteria, then record each task's
+1. Apply optional specialist timing in `.rules` → `Agent roles and coordination` before the
+   dependent ownership, design or implementation decisions; inspect their outputs before proceeding.
+   Identify independently useful outcomes and their completion criteria, then record each task's
    owner, allowed paths, prerequisites and status in the existing plan/chat state. Every
    implementation uses a delegated writer plus separate Reviewer and QA agents under `.rules`,
    however small. Scale model effort and checks to impact; trivial text needs no pointless tests.
@@ -61,7 +67,8 @@ another Coordinator. Explanation-only requests do not start implementation or PR
    prerequisite output. Keep spawning and reassignment with the Coordinator.
 5. Once every writer finishes and the Senior reconciles the changes, freeze the complete candidate
    and switch to the independent Reviewer and QA/Verifier phase. Keep the shared source unchanged.
-   The Reviewer checks correctness and rules; QA runs the selected checks. Both report to the
+   The Reviewer checks correctness and rules; QA independently assesses requirements, acceptance
+   criteria and coverage, then runs the selected checks. Both report to the
    Senior, who assigns defects to the owning writer and repeats affected review/checks. The Senior
    accepts the result only after reconciling both reports under
    `.rules` → `Reports, failure recovery and completion`.
@@ -89,7 +96,7 @@ For every child, provide this assignment in the tool message:
 
 ```text
 Role and outcome:
-Requested model/reasoning profile and host-confirmed settings or fallback:
+Requested model/reasoning profile, actual tool-reported settings and any fallback:
 Repository/shared checkout and branch, or isolated worktree with its reason:
 Base commit and tree:
 Allowed paths and read-only or writer status:
@@ -131,8 +138,9 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    and delegate separate Rules/Security review and QA concurrently when independent. Assign one heavy
    Cargo owner, reuse the compatible target sequentially, and use isolated database fixtures under
    `.rules`. No per-agent Rust target or dependency copy is needed for the shared-checkout team.
-3. The Verifier selects checks under `.rules` section 11 and uses the matching owning runners or
-   focused recipes in [testing](../../../docs/TESTING.md). Record the affected scope and rationale;
+3. The Verifier independently assesses requirements and acceptance criteria rather than relying on
+   the writer's test list, selects checks under `.rules` section 11 and uses the matching owning
+   runners or focused recipes in [testing](../../../docs/TESTING.md). Record the affected scope and rationale;
    automatic application-wide verification is not a prerequisite for every edit. Reuse valid
    scoped evidence under section 1. Report exact commands, tested tree/environment, failures,
    cancelled checks and unrun required checks.
@@ -145,7 +153,8 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    preserve equivalent-or-stronger coverage for legitimate test corrections.
    Report actionable findings with file/line evidence, severity and required correction.
 5. Send failures and blocking findings to the Senior for diagnosis/fix assignment to the writer.
-   The Senior escalates/reassigns when needed and never takes over file edits; QA never fixes source.
+   The Senior applies the bounded evidence, environment/access and reasoning escalation policy in
+   `.rules` → `Agent roles and coordination` and never takes over file edits; QA never fixes source.
    Reviewer and QA acceptance remain separate.
    Follow the repair loop in `.rules` → `Reports, failure recovery and completion`; investigate
    pre-existing failures rather than treating them as an automatic stopping condition. After any
