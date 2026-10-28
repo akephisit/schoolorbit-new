@@ -380,6 +380,11 @@ pub(super) async fn include_offering(
         WHERE version.id=$1 AND version.status='draft' AND revision.status='draft' FOR UPDATE OF version,revision",
     ).bind(version_id).bind(offering_id).fetch_optional().await?
         .ok_or_else(|| AppError::Conflict("เพิ่มรายการได้เฉพาะรุ่นเปิดสอนแบบร่าง".into()))?;
+    // Explicit inclusion is the only path that clears this version's offering exclusion.
+    DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering",
+        "UPDATE academic_term_change_sets SET excluded_offering_ids=array_remove(excluded_offering_ids,$2)
+         WHERE id=$1 AND $2=ANY(excluded_offering_ids)")
+        .bind(revision_id).bind(offering_id).execute().await?;
     if already_included {
         refresh_revision_snapshot(tx, revision_id).await?;
         return Ok(());
@@ -399,7 +404,13 @@ pub(super) async fn include_offering(
         ));
     }
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
-        VALUES(gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6)")
+        SELECT gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6
+        WHERE NOT EXISTS(SELECT 1 FROM academic_term_change_sets revision
+            JOIN academic_delivery_versions base ON base.id=revision.base_delivery_version_id,
+            jsonb_array_elements(base.snapshot->'offerings') entry
+            WHERE revision.id=$1 AND (entry->>'id')::uuid=$4)
+        AND NOT EXISTS(SELECT 1 FROM academic_term_change_items WHERE change_set_id=$1
+            AND learning_offering_id=$4 AND action_kind='add_offering')")
         .bind(revision_id).bind(term_id).bind(year_id).bind(offering_id).bind(target).bind(actor_id).execute().await?;
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1")
         .bind(revision_id).execute().await?;

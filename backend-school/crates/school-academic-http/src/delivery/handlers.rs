@@ -1332,6 +1332,72 @@ pub async fn delete_term_change_item(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
+    delete, path="/api/academic/term-change-sets/{id}/offerings/{offeringId}",
+    operation_id="removeDeliveryDraftOffering", tag="academic",
+    params(("id"=Uuid,Path,description="Draft change set ID"),
+        ("offeringId"=Uuid,Path,description="Offering to remove from this draft")),
+    request_body=RemoveDeliveryDraftResourceRequest,
+    responses((status=200,description="Offering removed from the selected draft",body=ApiResponse<AcademicTermChangeSet>),
+        (status=400,description="Invalid removal request",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
+        (status=404,description="Draft or offering not found",body=ApiErrorResponse),
+        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
+))]
+pub async fn remove_draft_offering(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, offering_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    learning_offering_access_policy::require_learning_offering_access(
+        &context.tenant.pool, &context.actor, offering_id, OfferingAction::Manage,
+    ).await?;
+    let mut ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    ids.push(offering_id);
+    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
+    let changed = change_sets::remove_draft_offering(
+        &context.tenant.pool, context.actor.user_id, id, offering_id, request,
+    ).await?;
+    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors).await?;
+    Ok(ok(changed))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete, path="/api/academic/term-change-sets/{id}/groups/{groupId}",
+    operation_id="removeDeliveryDraftGroup", tag="academic",
+    params(("id"=Uuid,Path,description="Draft change set ID"),
+        ("groupId"=Uuid,Path,description="Group to remove from this draft")),
+    request_body=RemoveDeliveryDraftResourceRequest,
+    responses((status=200,description="Group removed from the selected draft",body=ApiResponse<AcademicTermChangeSet>),
+        (status=400,description="Invalid removal request",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
+        (status=404,description="Draft or group not found",body=ApiErrorResponse),
+        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
+))]
+pub async fn remove_draft_group(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, group_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let offering_id = learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool, &context.actor, group_id, OfferingAction::Manage,
+    ).await?;
+    let mut ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    ids.push(offering_id);
+    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
+    let changed = change_sets::remove_draft_group(
+        &context.tenant.pool, context.actor.user_id, id, group_id, request,
+    ).await?;
+    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors).await?;
+    Ok(ok(changed))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/term-change-sets/{id}/preview",
     operation_id = "previewAcademicTermChangeSet",

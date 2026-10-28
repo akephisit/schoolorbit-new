@@ -44332,6 +44332,12 @@
               "null"
             ]
           },
+          "subjectType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "versionNo": {
             "format": "int32",
             "type": "integer"
@@ -44339,6 +44345,7 @@
         },
         "required": [
           "id",
+          "subjectType",
           "kind",
           "schedulingMode",
           "code",
@@ -57178,6 +57185,24 @@
           "groupRowVersion",
           "membershipRowVersion",
           "leftAt"
+        ],
+        "type": "object"
+      },
+      "RemoveDeliveryDraftResourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changeSetRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targetDeliveryVersionRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changeSetRowVersion",
+          "targetDeliveryVersionRowVersion"
         ],
         "type": "object"
       },
@@ -90356,6 +90381,108 @@
         ]
       }
     },
+    "/api/academic/term-change-sets/{id}/groups/{groupId}": {
+      "delete": {
+        "operationId": "removeDeliveryDraftGroup",
+        "parameters": [
+          {
+            "description": "Draft change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Group to remove from this draft",
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveDeliveryDraftResourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Group removed from the selected draft"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid removal request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Draft or group not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Draft changed or resource absent"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/term-change-sets/{id}/items": {
       "put": {
         "operationId": "upsertAcademicTermChangeItem",
@@ -90543,6 +90670,108 @@
               }
             },
             "description": "Operational change item row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/term-change-sets/{id}/offerings/{offeringId}": {
+      "delete": {
+        "operationId": "removeDeliveryDraftOffering",
+        "parameters": [
+          {
+            "description": "Draft change set ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Offering to remove from this draft",
+            "in": "path",
+            "name": "offeringId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveDeliveryDraftResourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermChangeSet"
+                }
+              }
+            },
+            "description": "Offering removed from the selected draft"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid removal request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Draft or offering not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Draft changed or resource absent"
           }
         },
         "tags": [

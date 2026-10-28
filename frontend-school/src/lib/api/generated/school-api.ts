@@ -2794,6 +2794,22 @@ export interface paths {
 		patch: operations['updateAcademicTermChangeSet'];
 		trace?: never;
 	};
+	'/api/academic/term-change-sets/{id}/groups/{groupId}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeDeliveryDraftGroup'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/term-change-sets/{id}/items': {
 		parameters: {
 			query?: never;
@@ -2821,6 +2837,22 @@ export interface paths {
 		put?: never;
 		post?: never;
 		delete: operations['deleteAcademicTermChangeItem'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/term-change-sets/{id}/offerings/{offeringId}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeDeliveryDraftOffering'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -20587,6 +20619,7 @@ export interface components {
 			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			/** Format: int32 */
 			standardPeriodsPerWeek: number | null;
+			subjectType: string | null;
 			/** Format: int32 */
 			versionNo: number;
 		};
@@ -24220,6 +24253,12 @@ export interface components {
 			leftAt: string;
 			/** Format: int64 */
 			membershipRowVersion: number;
+		};
+		RemoveDeliveryDraftResourceRequest: {
+			/** Format: int64 */
+			changeSetRowVersion: number;
+			/** Format: int64 */
+			targetDeliveryVersionRowVersion: number;
 		};
 		RemoveItemInput: {
 			/** Format: int64 */
@@ -42375,6 +42414,80 @@ export interface operations {
 			};
 		};
 	};
+	removeDeliveryDraftGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Group to remove from this draft */
+				groupId: string;
+				/** @description Draft change set ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RemoveDeliveryDraftResourceRequest'];
+			};
+		};
+		responses: {
+			/** @description Group removed from the selected draft */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTermChangeSet'];
+				};
+			};
+			/** @description Invalid removal request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft or group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft changed or resource absent */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	upsertAcademicTermChangeItem: {
 		parameters: {
 			query?: never;
@@ -42511,6 +42624,80 @@ export interface operations {
 				};
 			};
 			/** @description Operational change item row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeDeliveryDraftOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Draft change set ID */
+				id: string;
+				/** @description Offering to remove from this draft */
+				offeringId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RemoveDeliveryDraftResourceRequest'];
+			};
+		};
+		responses: {
+			/** @description Offering removed from the selected draft */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTermChangeSet'];
+				};
+			};
+			/** @description Invalid removal request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft or offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft changed or resource absent */
 			409: {
 				headers: {
 					[name: string]: unknown;
