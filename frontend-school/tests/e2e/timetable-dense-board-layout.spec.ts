@@ -470,6 +470,7 @@ test('bounds a long tray to the board and scrolls all remaining demands', async 
 			status: 'published',
 			rosterStatus: 'published',
 			offeringKind: 'course',
+			subjectType: 'BASIC',
 			offeringCode: demand.offeringCode,
 			offeringName: demand.offeringName,
 			homeroomIds: demand.homeroomIds,

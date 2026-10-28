@@ -6,7 +6,7 @@ import type {
 	TimetableBlockWorkspace,
 	TimetableOrdinaryDemand
 } from '../../api/timetable';
-import { orderTimetableHomerooms } from '#lib/academic/timetable/demand-ordering.ts';
+import { orderTimetableHomerooms } from './demand-ordering.ts';
 
 export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
 export type TimetablePageView = TimetableBoardView | 'wholeSchool';

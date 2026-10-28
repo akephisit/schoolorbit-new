@@ -4,6 +4,7 @@
 		timetableBlockColorKey,
 		timetableLessonColorStyle
 	} from '#lib/academic/timetable/lesson-color.js';
+	import type { TimetableLessonColors } from '#lib/academic/timetable/lesson-color.js';
 	import '#lib/academic/timetable/lesson-color.css';
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
@@ -13,6 +14,7 @@
 
 	let {
 		block,
+		colors,
 		rowId,
 		targetLabel,
 		showTeacher = true,
@@ -26,6 +28,7 @@
 		onRemove
 	}: {
 		block: TimetableBlock;
+		colors: TimetableLessonColors;
 		rowId: string;
 		targetLabel?: string | null;
 		showTeacher?: boolean;
@@ -98,7 +101,7 @@
 <article
 	data-timetable-lesson-card
 	data-lesson-color={colorKey ?? undefined}
-	style={timetableLessonColorStyle(colorKey)}
+	style={timetableLessonColorStyle(colorKey, colors)}
 	data-block-id={block.id}
 	data-row-id={rowId}
 	data-pending={pending ? 'true' : undefined}

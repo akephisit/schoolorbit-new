@@ -1,10 +1,14 @@
 <script lang="ts" module>
-	import type { TimetableLessonColorKey } from '#lib/academic/timetable/lesson-color.js';
+	import type {
+		TimetableLessonColorKey,
+		TimetableLessonColors
+	} from '#lib/academic/timetable/lesson-color.js';
 
 	export interface TimetablePlacementCard {
 		code: string | null;
 		title: string;
 		colorKey: TimetableLessonColorKey | null;
+		colors: TimetableLessonColors;
 	}
 </script>
 
@@ -23,7 +27,7 @@
 <article
 	data-timetable-placement-preview
 	data-lesson-color={card.colorKey ?? undefined}
-	style={timetableLessonColorStyle(card.colorKey)}
+	style={timetableLessonColorStyle(card.colorKey, card.colors)}
 	data-placement-state={state}
 	aria-hidden="true"
 	class={[

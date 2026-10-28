@@ -9,6 +9,7 @@
 		timetableLessonColorStyle
 	} from '#lib/academic/timetable/lesson-color.js';
 	import '#lib/academic/timetable/lesson-color.css';
+	import type { TimetableLessonColors } from '#lib/academic/timetable/lesson-color.js';
 	import type {
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
@@ -33,6 +34,7 @@
 
 	let {
 		view,
+		colors,
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
@@ -46,6 +48,7 @@
 		onOpenStructural
 	}: {
 		view: TimetableBoardView;
+		colors: TimetableLessonColors;
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
@@ -200,7 +203,7 @@
 	{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
 	<article
 		data-lesson-color={colorKey}
-		style={timetableLessonColorStyle(colorKey)}
+		style={timetableLessonColorStyle(colorKey, colors)}
 		draggable={!disabled}
 		class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
 		ondragstart={(event) => dragSynchronized(demand, event)}
@@ -266,7 +269,7 @@
 	{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
 	<article
 		data-lesson-color={colorKey}
-		style={timetableLessonColorStyle(colorKey)}
+		style={timetableLessonColorStyle(colorKey, colors)}
 		draggable={!disabled && selectedIds.length > 0}
 		class="timetable-lesson-fill relative rounded-lg border p-2"
 		ondragstart={(event) => dragOrdinary(demand, event)}

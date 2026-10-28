@@ -8,6 +8,7 @@
 	import type { TimetableBlock } from '#lib/api/timetable.js';
 	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
 	import { buildSchedulerTargetLabel } from '#lib/academic/timetable/block-display.js';
+	import type { TimetableLessonColors } from '#lib/academic/timetable/lesson-color.js';
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
@@ -17,6 +18,7 @@
 
 	let {
 		state,
+		colors,
 		view,
 		row,
 		selectedBlockId = null,
@@ -34,6 +36,7 @@
 		onRemoveBlock
 	}: {
 		state: TimetableBoardState;
+		colors: TimetableLessonColors;
 		view: TimetableBoardView;
 		row: TimetableBoardRow;
 		selectedBlockId?: string | null;
@@ -138,6 +141,7 @@
 									{@const pending = isBlockPending?.(block.id) ?? false}
 									<TimetableLessonCard
 										{block}
+										{colors}
 										needsReview={state.workspace.sourceIssues.some(
 											(issue) => issue.blockId === block.id
 										)}
