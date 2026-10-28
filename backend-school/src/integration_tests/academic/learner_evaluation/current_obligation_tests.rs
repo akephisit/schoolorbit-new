@@ -542,7 +542,82 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
             .fetch_one(&pool)
             .await
             .unwrap();
-    omit(&pool, &actor, &ctx, &[group], false).await;
+    let group_before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(g) FROM learning_groups g WHERE id=$1")
+            .bind(group)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let revision = change_sets::create_change_set(
+        &pool,
+        actor.user_id,
+        dm::CreateAcademicTermChangeSetRequest {
+            academic_term_id: ctx.academic_term_id,
+            reason: "Omit every room of the unused learner subject".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let target = versions::get_version(&pool, revision.target_delivery_version_id)
+        .await
+        .unwrap();
+    // The predecessor can target more rooms than this group's coverage. Omit the
+    // complete offering deliberately; group removal preserves uncovered rooms.
+    change_sets::remove_draft_offering(
+        &pool,
+        actor.user_id,
+        revision.id,
+        offering,
+        dm::RemoveDeliveryDraftResourceRequest {
+            change_set_row_version: revision.row_version,
+            target_delivery_version_row_version: target.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let preview =
+        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
+            .await
+            .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == dm::AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        &pool,
+        actor.user_id,
+        revision.id,
+        dm::PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: preview
+                .findings
+                .iter()
+                .filter(|finding| finding.severity == dm::AcademicChangeFindingSeverity::Warning)
+                .map(|finding| finding.code)
+                .collect(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let group_after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(g) FROM learning_groups g WHERE id=$1")
+            .bind(group)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        group_before, group_after,
+        "whole-offering omission preserves the unused registry group"
+    );
     let published_after: Value =
         sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1")
             .bind(source)
