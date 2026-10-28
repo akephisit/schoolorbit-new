@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import type { TimetableBlockWorkspace } from '#lib/api/timetable.js';
 import {
 	installTimetableMock,
@@ -6,6 +6,12 @@ import {
 	makeTimetableBlock,
 	timetableIds
 } from './timetable-test-harness.js';
+
+import {
+	setTimetableTheme as setTheme,
+	assertTimetableTheme as assertTheme
+} from './timetable-theme.js';
+import { makeColorCohort } from './timetable-sorting-fixtures.js';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1920, height: 1080 } });
 
@@ -25,6 +31,7 @@ function group(
 		status: 'published',
 		rosterStatus: 'published',
 		offeringKind,
+		subjectType: offeringKind === 'course' ? 'BASIC' : null,
 		offeringCode: offeringKind === 'course' ? 'ค21101' : 'GUIDANCE',
 		offeringName: offeringKind === 'course' ? 'คณิตศาสตร์พื้นฐาน' : 'แนะแนว',
 		homeroomIds: [timetableIds.homeroom],
@@ -56,54 +63,6 @@ function demand(
 	};
 }
 
-async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
-	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
-	const toggle = page.getByRole('button', { name: 'Toggle Dark Mode', exact: true });
-	await expect(toggle).toBeVisible();
-	const storedTheme = await page.evaluate(
-		() => JSON.parse(localStorage.getItem('ui-preferences') ?? '{}').theme
-	);
-	if (storedTheme !== theme) {
-		const dark = await page
-			.locator('html')
-			.evaluate((element) => element.classList.contains('dark'));
-		if (dark === (theme === 'dark')) {
-			await toggle.click();
-			if (theme === 'dark') await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-			else await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-		}
-		await toggle.click();
-	}
-	await assertTheme(page, theme);
-}
-
-async function assertTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
-	if (theme === 'dark') await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-	else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-	await expect
-		.poll(() =>
-			page.evaluate(() => JSON.parse(localStorage.getItem('ui-preferences') ?? '{}').theme)
-		)
-		.toBe(theme);
-	const tokenBrightness = await page.evaluate(() => {
-		const probe = document.createElement('span');
-		probe.style.color = 'var(--background)';
-		document.body.append(probe);
-		const context = document.createElement('canvas').getContext('2d')!;
-		context.fillStyle = getComputedStyle(probe).color;
-		context.fillRect(0, 0, 1, 1);
-		probe.remove();
-		return (
-			Array.from(context.getImageData(0, 0, 1, 1).data)
-				.slice(0, 3)
-				.reduce((sum, channel) => sum + channel, 0) /
-			(3 * 255)
-		);
-	});
-	if (theme === 'dark') expect(tokenBrightness).toBeLessThan(0.3);
-	else expect(tokenBrightness).toBeGreaterThan(0.8);
-}
-
 async function colorMetrics(card: Locator, theme: 'light' | 'dark') {
 	await assertTheme(card.page(), theme);
 	const metrics = await card.evaluate((element) => {
@@ -123,6 +82,19 @@ async function colorMetrics(card: Locator, theme: 'light' | 'dark') {
 				})
 				.reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
 		const background = rgb(style.backgroundColor);
+		const linear = background.map((value) => {
+			const channel = value / 255;
+			return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+		});
+		const l = Math.cbrt(
+			0.4122214708 * linear[0] + 0.5363325363 * linear[1] + 0.0514459929 * linear[2]
+		);
+		const m = Math.cbrt(
+			0.2119034982 * linear[0] + 0.6806995451 * linear[1] + 0.1073969566 * linear[2]
+		);
+		const s = Math.cbrt(
+			0.0883024619 * linear[0] + 0.2817188376 * linear[1] + 0.6299787005 * linear[2]
+		);
 		const contrast = (color: string) => {
 			const values = [luminance(background), luminance(rgb(color))].sort((a, b) => b - a);
 			return (values[0] + 0.05) / (values[1] + 0.05);
@@ -139,6 +111,11 @@ async function colorMetrics(card: Locator, theme: 'light' | 'dark') {
 		return {
 			fill: style.backgroundColor,
 			background,
+			lab: [
+				0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+				1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+				0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+			],
 			backgroundLuminance: luminance(background),
 			backgroundImage: style.backgroundImage,
 			textContrast: contrast(style.color),
@@ -151,11 +128,79 @@ async function colorMetrics(card: Locator, theme: 'light' | 'dark') {
 		};
 	});
 	if (theme === 'dark') expect(metrics.backgroundLuminance).toBeLessThan(0.2);
-	else expect(metrics.backgroundLuminance).toBeGreaterThan(0.65);
+	// Stronger categorical fills intentionally vary lightness; actual text contrast remains >= 4.5.
+	else expect(metrics.backgroundLuminance).toBeGreaterThan(0.4);
 	return metrics;
 }
 
 for (const theme of ['light', 'dark'] as const) {
+	for (const count of [16, 24]) {
+		test(`${count} cooccurring lessons use distinct readable paired fills in ${theme}`, async ({
+			page
+		}, testInfo) => {
+			const groups = makeColorCohort(count);
+			const blocks = groups.map((learningGroup, index) => {
+				const periodId = `41000000-0000-4000-8000-${String(201 + (index % 10)).padStart(12, '0')}`;
+				const block = makeTimetableBlock(`dense-color-${index}`, periodId, {
+					groupId: learningGroup.id,
+					offeringId: learningGroup.learningOfferingId,
+					code: learningGroup.offeringCode,
+					name: learningGroup.offeringName
+				});
+				block.dayOfWeek = ['MON', 'TUE', 'WED'][Math.floor(index / 10)];
+				return block;
+			});
+			const mock = await installTimetableMock(page, {
+				learningGroups: groups,
+				ordinaryDemands: groups.map(demand),
+				blocks,
+				periodCount: 10
+			});
+			await page.goto(boardUrl('teacher', timetableIds.teacherA));
+			await setTheme(page, theme);
+			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+			const cards = page.locator('[data-timetable-lesson-card]');
+			await expect(cards).toHaveCount(count);
+			const metrics = await Promise.all(
+				Array.from({ length: count }, (_, index) => colorMetrics(cards.nth(index), theme))
+			);
+			expect(new Set(metrics.map((metric) => metric.fill)).size).toBe(count);
+			for (const metric of metrics) {
+				expect(metric.textContrast).toBeGreaterThanOrEqual(4.5);
+				if (metric.mutedContrast !== null) expect(metric.mutedContrast).toBeGreaterThanOrEqual(4.5);
+			}
+			if (count === 16) {
+				for (let first = 0; first < count; first++)
+					for (let second = first + 1; second < count; second++) {
+						expect(
+							Math.hypot(
+								...metrics[first].lab.map((value, channel) => value - metrics[second].lab[channel])
+							)
+						).toBeGreaterThan(0.045);
+					}
+			}
+			for (const block of blocks) {
+				const trayCard = page.locator(
+					`aside article[data-lesson-color="group:${block.groups[0].learningGroupId}"]`
+				);
+				await expect
+					.poll(async () => (await colorMetrics(trayCard, theme)).fill)
+					.toBe((await colorMetrics(page.locator(`[data-block-id="${block.id}"]`), theme)).fill);
+			}
+			await assertTheme(page, theme);
+			await page.screenshot({
+				path: testInfo.outputPath(`dense-${count}-${theme}.png`),
+				fullPage: true
+			});
+			expect(
+				mock.createRequestCount() +
+					mock.synchronizedCreateRequestCount() +
+					mock.updateRequestCount() +
+					mock.swapRequestCount() +
+					mock.deleteRequestCount()
+			).toBe(0);
+		});
+	}
 	for (const kind of ['course', 'activity', 'synchronized'] as const) {
 		test(`${kind} keeps its whole-card ${theme} fill through preview, pending save, move and reload`, async ({
 			page

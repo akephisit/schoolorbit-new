@@ -258,6 +258,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = prepare_current_core_fixture(test_name).await;
+    school_test_db::run_test_migrations(&pool).await;
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -356,6 +357,158 @@ async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, version_id: Uuid
     .await
     .unwrap();
     school_academic_timetable::services::timetable_lifecycle::update_source(pool,actor,version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+}
+
+#[tokio::test]
+async fn timetable_workspace_classification_uses_pinned_subject_revision() {
+    use school_academic_core::{
+        models::{CreateSubjectVersionRequest, PublishVersionRequest},
+        services::catalog,
+    };
+    use school_academic_delivery::{models::LearningOfferingSnapshot, services::versions};
+
+    let pool = migrated_pool("timetable_workspace_pinned_classification").await;
+    let (version_id, term_id, year_id, _) = draft_version(&pool).await;
+    let query = || TimetableBlockWorkspaceQuery {
+        academic_year_id: year_id,
+        academic_term_id: term_id,
+        timetable_version_id: version_id,
+    };
+    let access = TimetableAccessFilter {
+        includes_school_owned: true,
+        ..TimetableAccessFilter::default()
+    };
+    let directory = &crate::adapters::staff_directory::STAFF_DIRECTORY;
+    let before = timetable_block_service::get_workspace(&pool, query(), &access, directory)
+        .await
+        .unwrap();
+    let source_id = before.version.delivery_version_id;
+    let source = versions::get_version(&pool, source_id).await.unwrap();
+    let pinned_offering = source
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| {
+            matches!(&offering.catalog, LearningOfferingSnapshot::Course(_))
+                && !offering.groups.is_empty()
+        })
+        .unwrap();
+    let LearningOfferingSnapshot::Course(course) = &pinned_offering.catalog else {
+        unreachable!()
+    };
+    let pinned = catalog::get_subject_version(&pool, course.subject_version_id)
+        .await
+        .unwrap();
+    assert_eq!(pinned.subject_type, "BASIC");
+    let pinned_before = serde_json::to_value(&pinned).unwrap();
+    let source_before = serde_json::to_value(&source.snapshot).unwrap();
+    let revised = catalog::create_subject_version(
+        &pool,
+        pinned.subject_id,
+        CreateSubjectVersionRequest {
+            name_th: pinned.name_th.clone(),
+            name_en: pinned.name_en.clone(),
+            credit: pinned.credit.clone(),
+            hours_per_semester: pinned.hours_per_semester,
+            subject_type: "ADDITIONAL".into(),
+            description: pinned.description.clone(),
+            effective_from: catalog::subject_catalog_today(),
+            term_code: pinned.term_code.clone(),
+            periods_per_week: pinned.periods_per_week,
+            grade_level_ids: pinned.grade_level_ids.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    let revised = catalog::publish_subject_version(
+        &pool,
+        revised.id,
+        PublishVersionRequest {
+            row_version: revised.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        catalog::current_subject_version_ids(&pool, &[pinned.subject_id])
+            .await
+            .unwrap()[&pinned.subject_id],
+        revised.id
+    );
+
+    let mut connection = pool.acquire().await.unwrap();
+    let metadata = catalog::subject_groups_for_versions_on_connection(
+        &mut connection,
+        &[pinned.id, revised.id],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        metadata
+            .iter()
+            .find(|row| row.subject_version_id == pinned.id)
+            .unwrap()
+            .subject_type,
+        "BASIC"
+    );
+    assert_eq!(
+        metadata
+            .iter()
+            .find(|row| row.subject_version_id == revised.id)
+            .unwrap()
+            .subject_type,
+        "ADDITIONAL"
+    );
+    drop(connection);
+
+    let after = timetable_block_service::get_workspace(&pool, query(), &access, directory)
+        .await
+        .unwrap();
+    let groups = after
+        .learning_groups
+        .iter()
+        .filter(|group| group.learning_offering_id == pinned_offering.id)
+        .collect::<Vec<_>>();
+    assert_eq!(groups.len(), pinned_offering.groups.len());
+    assert!(groups
+        .iter()
+        .all(|group| group.subject_type.as_deref() == Some("BASIC")));
+    assert_eq!(
+        serde_json::to_value(&before.learning_groups).unwrap(),
+        serde_json::to_value(&after.learning_groups).unwrap()
+    );
+    assert_eq!(
+        pinned_before,
+        serde_json::to_value(
+            catalog::get_subject_version(&pool, pinned.id)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        source_before,
+        serde_json::to_value(
+            versions::get_version(&pool, source_id)
+                .await
+                .unwrap()
+                .snapshot
+        )
+        .unwrap()
+    );
+
+    let denied = timetable_block_service::get_workspace(
+        &pool,
+        query(),
+        &TimetableAccessFilter::default(),
+        directory,
+    )
+    .await
+    .unwrap();
+    assert!(denied.learning_groups.is_empty());
+    assert!(denied.offering_subject_groups.is_empty());
+    assert!(denied.ordinary_demands.is_empty());
+    assert!(denied.synchronized_demands.is_empty());
 }
 
 #[tokio::test]
@@ -786,6 +939,38 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
             .await
             .unwrap();
     let offering=opening.snapshot.offerings.iter().find(|offering| matches!(&offering.catalog,school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode==school_academic_delivery::models::ActivitySchedulingMode::Synchronized)).unwrap();
+    let workspace = timetable_block_service::get_workspace(
+        &pool,
+        TimetableBlockWorkspaceQuery {
+            academic_year_id: year_id,
+            academic_term_id: term_id,
+            timetable_version_id: version_id,
+        },
+        &TimetableAccessFilter {
+            includes_school_owned: true,
+            ..TimetableAccessFilter::default()
+        },
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
+    )
+    .await
+    .unwrap();
+    let activities = workspace
+        .learning_groups
+        .iter()
+        .filter(|group| group.offering_kind == "activity")
+        .collect::<Vec<_>>();
+    assert!(
+        !activities.is_empty(),
+        "fixture must exercise activity classification"
+    );
+    assert!(activities.iter().all(|group| group.subject_type.is_none()));
+    let json = serde_json::to_value(&workspace).unwrap();
+    assert!(json["learningGroups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|group| group["offeringKind"] == "activity")
+        .all(|group| group.get("subjectType") == Some(&serde_json::Value::Null)));
     let period_ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 2").bind(bell_schedule_id).fetch_all(&pool).await.unwrap();
     let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 2",

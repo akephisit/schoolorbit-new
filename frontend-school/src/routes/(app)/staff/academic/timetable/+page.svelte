@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { timetablePlacementColorKey } from '#lib/academic/timetable/lesson-color.js';
+	import {
+		orderTimetableHomerooms,
+		relatedSynchronizedDemands
+	} from '#lib/academic/timetable/demand-ordering.js';
+	import {
+		buildTimetableLessonColors,
+		timetablePlacementColorKey
+	} from '#lib/academic/timetable/lesson-color.js';
 	import TimetablePdfDialog from '#lib/components/academic/timetable/TimetablePdfDialog.svelte';
 	import type { GeneratePdfOptions } from '#lib/utils/pdf.js';
 	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
@@ -384,8 +391,22 @@
 				demand.intendedHomeroomIds.includes(controller?.selectedOwnerId ?? '')
 			);
 		}
+		if (controller.view === 'learning_group') {
+			return relatedSynchronizedDemands(
+				controller.workspace.learningGroups.find(
+					(group) => group.id === controller?.selectedOwnerId
+				),
+				controller.workspace.synchronizedDemands
+			);
+		}
 		return controller.workspace.synchronizedDemands;
 	});
+	const orderedHomerooms = $derived(orderTimetableHomerooms(controller?.workspace.homerooms ?? []));
+	const lessonColors = $derived(
+		buildTimetableLessonColors(
+			controller?.workspace ?? { learningGroups: [], synchronizedDemands: [] }
+		)
+	);
 
 	function newStructuralForm(): StructuralForm {
 		return {
@@ -790,6 +811,7 @@
 			if (!block) return null;
 			return {
 				colorKey,
+				colors: lessonColors,
 				code: block.blockKind === 'course' ? block.offeringCode : null,
 				title: block.offeringName ?? block.title ?? 'รายการตารางสอน'
 			};
@@ -801,6 +823,7 @@
 			if (!demand) return null;
 			return {
 				colorKey,
+				colors: lessonColors,
 				code: candidate.blockKind === 'course' ? demand.offeringCode : null,
 				title: demand.offeringName
 			};
@@ -808,7 +831,9 @@
 		const demand = controller.workspace.synchronizedDemands.find(
 			(item) => item.learningOfferingId === source.learningOfferingId
 		);
-		return demand ? { colorKey, code: null, title: demand.offeringName } : null;
+		return demand
+			? { colorKey, colors: lessonColors, code: null, title: demand.offeringName }
+			: null;
 	}
 
 	function targetBlock(dayOfWeek: string, periodId: string): TimetableBlock | null {
@@ -2160,7 +2185,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each controller.workspace.homerooms as homeroom (homeroom.id)}
+								{#each orderedHomerooms as homeroom (homeroom.id)}
 									<tr>
 										<th
 											class="sticky left-0 z-10 border-b border-r bg-background px-2 py-2 whitespace-nowrap"
@@ -2183,6 +2208,7 @@
 												{#each blocks as block (block.id)}
 													<TimetableLessonCard
 														{block}
+														colors={lessonColors}
 														rowId={homeroom.id}
 														targetLabel={null}
 														needsReview={controller.workspace.sourceIssues.some(
@@ -2208,6 +2234,8 @@
 				>
 					{#if controller.editing}<div class="relative min-h-0">
 							<TimetableUnscheduledTray
+								view={controller.view}
+								colors={lessonColors}
 								ordinaryDemands={visibleOrdinaryDemands}
 								synchronizedDemands={visibleSynchronizedDemands}
 								groups={controller.workspace.learningGroups}
@@ -2222,6 +2250,7 @@
 							/>
 						</div>{/if}
 					<TimetableBoard
+						colors={lessonColors}
 						state={controller.board}
 						view={controller.view}
 						row={controller.selectedRow}

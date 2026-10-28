@@ -6,6 +6,7 @@ import type {
 	TimetableBlockWorkspace,
 	TimetableOrdinaryDemand
 } from '../../api/timetable';
+import { orderTimetableHomerooms } from './demand-ordering.ts';
 
 export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
 export type TimetablePageView = TimetableBoardView | 'wholeSchool';
@@ -123,7 +124,7 @@ export function rowsForTimetableView(
 	view: TimetableBoardView
 ): TimetableBoardRow[] {
 	if (view === 'homeroom') {
-		return state.workspace.homerooms.map((homeroom) => ({
+		return orderTimetableHomerooms(state.workspace.homerooms).map((homeroom) => ({
 			id: homeroom.id,
 			code: homeroom.code,
 			label: homeroom.name,

@@ -43,6 +43,7 @@ export interface TimetableMockOptions {
 	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
 	blocks?: MockBlock[];
 	ordinaryDemands?: TimetableBlockWorkspace['ordinaryDemands'];
+	synchronizedDemands?: TimetableBlockWorkspace['synchronizedDemands'];
 	learningGroups?: TimetableBlockWorkspace['learningGroups'];
 	homerooms?: TimetableBlockWorkspace['homerooms'];
 	staff?: TimetableBlockWorkspace['staff'];
@@ -347,6 +348,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					status: 'published',
 					rosterStatus: 'published',
 					offeringKind: 'course',
+					subjectType: 'BASIC',
 					offeringCode: 'ค21101',
 					offeringName: 'คณิตศาสตร์พื้นฐาน',
 					homeroomIds: [timetableIds.homeroom],
@@ -361,6 +363,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					status: 'published',
 					rosterStatus: 'published',
 					offeringKind: 'course',
+					subjectType: 'BASIC',
 					offeringCode: 'ว21101',
 					offeringName: 'วิทยาศาสตร์พื้นฐาน',
 					homeroomIds: [timetableIds.homeroom],
@@ -412,18 +415,20 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					eligibleInstructors: instructors(eligibleInstructorIds)
 				}
 			],
-			synchronizedDemands: options.includeSynchronizedDemand
-				? [
-						{
-							learningOfferingId: timetableIds.offeringSync,
-							offeringCode: 'CLUB',
-							offeringName: 'ชุมนุม',
-							requiredPeriods: 1,
-							scheduledPeriods: synchronizedScheduledPeriods,
-							intendedHomeroomIds: [timetableIds.homeroom]
-						}
-					]
-				: [],
+			synchronizedDemands:
+				options.synchronizedDemands ??
+				(options.includeSynchronizedDemand
+					? [
+							{
+								learningOfferingId: timetableIds.offeringSync,
+								offeringCode: 'CLUB',
+								offeringName: 'ชุมนุม',
+								requiredPeriods: 1,
+								scheduledPeriods: synchronizedScheduledPeriods,
+								intendedHomeroomIds: [timetableIds.homeroom]
+							}
+						]
+					: []),
 			summary: {
 				blockCount: blocks.length,
 				ordinaryDemandCount: Math.max(requiredPeriods - scheduledPeriods, 0) > 0 ? 1 : 0,

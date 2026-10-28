@@ -1,6 +1,6 @@
 /* Lesson identity owns the whole fill; selection, conflicts and saving keep their semantic rings. */
 .timetable-lesson-fill {
-	--timetable-lesson-background: hsl(var(--timetable-lesson-hue) 72% 91%);
+	--timetable-lesson-background: var(--timetable-lesson-light, var(--card));
 	--muted-foreground: color-mix(
 		in oklab,
 		var(--foreground) 78%,
@@ -11,5 +11,5 @@
 }
 
 .dark .timetable-lesson-fill {
-	--timetable-lesson-background: hsl(var(--timetable-lesson-hue) 38% 22%);
+	--timetable-lesson-background: var(--timetable-lesson-dark, var(--card));
 }

@@ -304,6 +304,49 @@ pub(crate) async fn get_workspace(
             "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
         ));
     }
+    let offering_versions = source
+        .snapshot
+        .offerings
+        .iter()
+        .filter(|offering| {
+            visible_offerings
+                .iter()
+                .any(|visible| visible.id == offering.id)
+                || blocks
+                    .iter()
+                    .any(|block| block.learning_offering_id == Some(offering.id))
+        })
+        .filter_map(|offering| match &offering.catalog {
+            school_academic_delivery::models::LearningOfferingSnapshot::Course(course) => {
+                Some((offering.id, course.subject_version_id))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let version_ids = offering_versions
+        .iter()
+        .map(|(_, id)| *id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let subject_groups =
+        school_academic_core::services::catalog::subject_groups_for_versions_on_connection(
+            connection,
+            &version_ids,
+        )
+        .await?;
+    let subject_types_by_version = subject_groups
+        .iter()
+        .map(|subject| (subject.subject_version_id, &subject.subject_type))
+        .collect::<BTreeMap<_, _>>();
+    let subject_types_by_offering = offering_versions
+        .iter()
+        .filter_map(|(offering_id, version_id)| {
+            subject_types_by_version
+                .get(version_id)
+                .map(|subject_type| (*offering_id, (*subject_type).clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut scheduled_by_group = BTreeMap::<Uuid, i32>::new();
     for block in &blocks {
         for group in &block.groups {
@@ -322,6 +365,9 @@ pub(crate) async fn get_workspace(
             status: group.status.clone(),
             roster_status: group.roster_status.clone(),
             offering_kind: group.offering_kind.clone(),
+            subject_type: subject_types_by_offering
+                .get(&group.learning_offering_id)
+                .cloned(),
             offering_code: group.offering_code.clone(),
             offering_name: group.offering_name.clone(),
             homeroom_ids: group.homeroom_ids.clone(),
@@ -532,37 +578,6 @@ pub(crate) async fn get_workspace(
         })
         .collect::<Vec<_>>();
 
-    let offering_versions = source
-        .snapshot
-        .offerings
-        .iter()
-        .filter(|offering| {
-            visible_offerings
-                .iter()
-                .any(|visible| visible.id == offering.id)
-                || blocks
-                    .iter()
-                    .any(|block| block.learning_offering_id == Some(offering.id))
-        })
-        .filter_map(|offering| match &offering.catalog {
-            school_academic_delivery::models::LearningOfferingSnapshot::Course(course) => {
-                Some((offering.id, course.subject_version_id))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let version_ids = offering_versions
-        .iter()
-        .map(|(_, id)| *id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let subject_groups =
-        school_academic_core::services::catalog::subject_groups_for_versions_on_connection(
-            connection,
-            &version_ids,
-        )
-        .await?;
     let offering_subject_groups = map_offering_subject_groups(&offering_versions, subject_groups);
 
     let summary = TimetableBlockSummary {
@@ -1036,6 +1051,7 @@ mod teacher_load_metadata_tests {
             vec![
                 school_academic_core::services::catalog::SubjectVersionSubjectGroup {
                     subject_version_id: version,
+                    subject_type: "BASIC".into(),
                     subject_group_id: group,
                     name: "คณิตศาสตร์".into(),
                     display_order: Some(2),

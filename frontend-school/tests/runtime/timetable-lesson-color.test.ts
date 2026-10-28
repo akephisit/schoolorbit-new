@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	buildTimetableLessonColors,
 	ordinaryLessonColorKey,
 	synchronizedLessonColorKey,
 	timetableBlockColorKey,
@@ -13,6 +14,13 @@ import {
 	makeTimetableBlock,
 	timetableIds
 } from '../e2e/timetable-test-harness.ts';
+
+import {
+	makeSortingFixture,
+	makeColorCohort,
+	sortingIds
+} from '../e2e/timetable-sorting-fixtures.ts';
+const colors = buildTimetableLessonColors(makeSortingFixture());
 
 test('ordinary demand, pending block and persisted lesson share their learning group color', () => {
 	const expected = ordinaryLessonColorKey(timetableIds.groupA);
@@ -67,8 +75,8 @@ test('moving and reloading existing blocks does not depend on slot, names or blo
 	});
 	after.dayOfWeek = 'FRI';
 	assert.equal(
-		timetableLessonColorStyle(timetableBlockColorKey(after)),
-		timetableLessonColorStyle(timetableBlockColorKey(before))
+		timetableLessonColorStyle(timetableBlockColorKey(after), colors),
+		timetableLessonColorStyle(timetableBlockColorKey(before), colors)
 	);
 	assert.equal(
 		timetablePlacementColorKey(
@@ -79,25 +87,22 @@ test('moving and reloading existing blocks does not depend on slot, names or blo
 	);
 });
 
-test('different subject/class groups and synchronized activities have distinct continuous colors', () => {
+test('cooccurring subject/class groups and synchronized activities have distinct paired colors', () => {
 	const keys = [
 		ordinaryLessonColorKey(timetableIds.groupA),
 		ordinaryLessonColorKey(timetableIds.groupB),
-		ordinaryLessonColorKey('71000000-0000-4000-8000-000000000203'),
+		ordinaryLessonColorKey(sortingIds.activity),
 		synchronizedLessonColorKey(timetableIds.offeringSync)
 	];
-	const colors = keys.map(timetableLessonColorStyle);
-	assert.equal(new Set(colors).size, keys.length);
-	assert.notEqual(
-		timetableLessonColorStyle(ordinaryLessonColorKey('same-id')),
-		timetableLessonColorStyle(synchronizedLessonColorKey('same-id'))
-	);
+	const styles = keys.map((key) => timetableLessonColorStyle(key, colors));
+	assert.equal(new Set(styles).size, keys.length);
+	assert.notEqual(ordinaryLessonColorKey('same-id'), synchronizedLessonColorKey('same-id'));
 });
 
 test('structural periods and unresolved drag blocks stay neutral', () => {
 	const block = makeStructuralTimetableBlock(timetableIds.blockA, timetableIds.period1, 'พัก');
 	assert.equal(timetableBlockColorKey(block), null);
-	assert.equal(timetableLessonColorStyle(null), undefined);
+	assert.equal(timetableLessonColorStyle(null, colors), undefined);
 	assert.equal(
 		timetablePlacementColorKey({
 			kind: 'existing_block',
@@ -106,4 +111,82 @@ test('structural periods and unresolved drag blocks stay neutral', () => {
 		}),
 		null
 	);
+});
+
+test('sixteen formerly clustered colors separate when lessons share a teacher or class', () => {
+	for (const relation of ['teacher', 'homeroom']) {
+		const groups = makeColorCohort().map((group) => ({
+			...group,
+			homeroomIds: relation === 'homeroom' ? group.homeroomIds : [],
+			eligibleInstructors: relation === 'teacher' ? group.eligibleInstructors : []
+		}));
+		const assignments = buildTimetableLessonColors({
+			learningGroups: groups,
+			synchronizedDemands: []
+		});
+		assert.equal(assignments.size, 16);
+		assert.equal(new Set([...assignments.values()].map((tone) => tone.light)).size, 16);
+		assert.equal(new Set([...assignments.values()].map((tone) => tone.dark)).size, 16);
+	}
+});
+
+test('allocation ignores source ordering and remaining periods while preserving immutable source data', () => {
+	const source = makeSortingFixture(),
+		before = structuredClone(source);
+	const expected = buildTimetableLessonColors(source);
+	const reordered = buildTimetableLessonColors({
+		learningGroups: [...source.learningGroups].reverse().map((group) => ({
+			...group,
+			homeroomIds: [...group.homeroomIds].reverse(),
+			eligibleInstructors: [...group.eligibleInstructors].reverse()
+		})),
+		synchronizedDemands: [...source.synchronizedDemands]
+			.reverse()
+			.map((demand) => ({ ...demand, scheduledPeriods: demand.requiredPeriods }))
+	});
+	assert.deepEqual(reordered, expected);
+	assert.deepEqual(source, before);
+});
+
+test('linked synchronized groups contribute teachers without consuming invisible ordinary color slots', () => {
+	const groups = makeColorCohort(15);
+	const linked = Array.from({ length: 10 }, (_, index) => ({
+		...groups[0],
+		id: `linked-${index}`,
+		learningOfferingId: timetableIds.offeringSync
+	}));
+	const assignments = buildTimetableLessonColors({
+		learningGroups: [...groups, ...linked],
+		synchronizedDemands: [
+			{
+				learningOfferingId: timetableIds.offeringSync,
+				offeringCode: 'CLUB',
+				offeringName: 'ชุมนุม',
+				intendedHomeroomIds: [],
+				conflictGroupCount: 0,
+				excludedGroupCount: 0,
+				linkedGroupCount: 0,
+				pendingGroupCount: 0,
+				requiredPeriods: 1,
+				scheduledPeriods: 0
+			}
+		]
+	});
+	assert.equal(assignments.size, 16);
+	assert.equal(new Set([...assignments.values()].map((tone) => tone.light)).size, 16);
+	assert.ok(assignments.has(synchronizedLessonColorKey(timetableIds.offeringSync)));
+	for (const group of linked)
+		assert.equal(assignments.has(ordinaryLessonColorKey(group.id)), false);
+});
+
+test('a two-thousand-lesson shared cohort reuses the finite palette evenly after it is exhausted', () => {
+	const assignments = buildTimetableLessonColors({
+		learningGroups: makeColorCohort(2000),
+		synchronizedDemands: []
+	});
+	const usage = new Map<string, number>();
+	for (const tone of assignments.values()) usage.set(tone.light, (usage.get(tone.light) ?? 0) + 1);
+	assert.equal(assignments.size, 2000);
+	assert.equal(usage.size, 24);
+	assert.ok(Math.max(...usage.values()) - Math.min(...usage.values()) <= 1);
 });
