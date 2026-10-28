@@ -132,7 +132,6 @@ async function mockEditor(
 		academicYearId: ids.year,
 		status: options.publishedVersion ? 'published' : 'draft',
 		sourceVersionId: null,
-		changeSetId: null,
 		effectiveFrom: '2026-05-01',
 		effectiveUntil: null,
 		referenceDate: '2026-05-01',
