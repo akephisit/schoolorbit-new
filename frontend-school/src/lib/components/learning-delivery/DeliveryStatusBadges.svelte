@@ -29,8 +29,9 @@
 			class={`${tones[status.tone]} max-w-full whitespace-normal`}
 			data-status={status.key}
 		>
-			{status.label}{#if showCounts || status.unit === 'กลุ่ม'}
-				{status.count} {status.unit}{/if}
+			{showCounts || status.unit === 'กลุ่ม'
+				? `${status.label} ${status.count} ${status.unit}`
+				: status.label}
 		</Badge>
 	{/each}
 </div>

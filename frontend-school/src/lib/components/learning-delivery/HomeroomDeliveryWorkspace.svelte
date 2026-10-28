@@ -149,7 +149,7 @@
 			<p class="mt-2 text-2xl font-semibold tabular-nums text-amber-700 dark:text-amber-300">
 				{summary.attentionRoomCount}
 			</p>
-			<p class="text-xs text-muted-foreground">ยังไม่ครบตามโครงสร้างของภาคเรียน</p>
+			<p class="text-xs text-muted-foreground">มีรายการหรือข้อมูลที่ต้องตรวจเพิ่มเติม</p>
 		</div>
 	</section>
 
