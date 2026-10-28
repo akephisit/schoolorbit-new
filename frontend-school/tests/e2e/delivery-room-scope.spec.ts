@@ -50,6 +50,7 @@ async function mockRoomScope(
 	options: {
 		reader?: boolean;
 		published?: boolean;
+		synchronized?: boolean;
 		conflictOnce?: boolean;
 		failReadAfterSave?: boolean;
 		saveGate?: Promise<void>;
@@ -62,6 +63,19 @@ async function mockRoomScope(
 	selected.name = 'เคมีเพิ่มเติม';
 	selected.weeklyPeriodTarget = 2;
 	selected.sourceRequirementKind = 'required';
+	const resourceKind = options.synchronized ? 'activity' : 'course';
+	if (options.synchronized) {
+		const activity = navigationVersion().snapshot.offerings.find(
+			(item) => item.catalog.kind === 'activity'
+		)!;
+		if (activity.catalog.kind !== 'activity') throw new Error('Activity fixture is required');
+		selected.kind = 'activity';
+		selected.catalog = {
+			...activity.catalog,
+			activityId: offeringId,
+			activityVersionId: offeringId
+		};
+	}
 	const teacher = {
 		id: 'f0000000-0000-4000-8000-000000000211',
 		teacherId: ids.actor,
@@ -153,7 +167,7 @@ async function mockRoomScope(
 							{
 								offeringId,
 								catalogVersionId: sourceItem.catalogVersionId,
-								resourceKind: 'course',
+								resourceKind,
 								code: selected.code,
 								name: selected.name,
 								weeklyPeriodTarget: 2,
@@ -167,6 +181,10 @@ async function mockRoomScope(
 			room.items = [
 				{
 					...sourceItem,
+					resourceKind,
+					schedulingMode: options.synchronized ? 'synchronized' : null,
+					subjectType: options.synchronized ? null : sourceItem.subjectType,
+					standardPeriodsPerWeek: options.synchronized ? null : sourceItem.standardPeriodsPerWeek,
 					requirementId:
 						index === 2 ? sourceItem.requirementId : `f0000000-0000-4000-8000-00000000030${index}`,
 					catalogVersionId: index === 2 ? sourceItem.catalogVersionId : offeringIds.basic23,
@@ -183,9 +201,11 @@ async function mockRoomScope(
 					weeklyPeriodTarget: index === 2 && audience.has(id) ? 2 : null,
 					groupMode:
 						index === 2 && audience.has(id)
-							? groups.some((group) => group.homeroomIds.length > 1)
-								? 'combined'
-								: 'normal'
+							? options.synchronized
+								? 'central'
+								: groups.some((group) => group.homeroomIds.length > 1)
+									? 'combined'
+									: 'normal'
 							: 'missing',
 					teacherState: index === 2 && audience.has(id) ? 'assigned' : 'missing_primary',
 					alignmentStates:
@@ -242,13 +262,13 @@ async function mockRoomScope(
 		catalogVersions: [
 			{
 				id: sourceItem.catalogVersionId,
-				kind: 'course',
-				subjectType: 'BASIC',
+				kind: resourceKind,
+				subjectType: options.synchronized ? null : 'BASIC',
 				code: selected.code,
 				name: selected.name,
 				label: `${selected.code} — ${selected.name}`,
 				versionNo: 1,
-				schedulingMode: null,
+				schedulingMode: options.synchronized ? 'synchronized' : null,
 				standardPeriodsPerWeek: 2
 			}
 		]
@@ -257,7 +277,7 @@ async function mockRoomScope(
 		id: offeringId,
 		academicYearId: ids.year,
 		academicTermId: ids.term,
-		kind: 'course',
+		kind: resourceKind,
 		codeSnapshot: selected.code,
 		nameSnapshot: selected.name,
 		status: 'published',
@@ -420,7 +440,20 @@ async function mockRoomScope(
 			return route.fallback();
 		}
 	);
-	return { graph, registry, originalRegistry, published, originalPublished, writes, selected };
+	return {
+		graph,
+		registry,
+		originalRegistry,
+		published,
+		originalPublished,
+		writes,
+		selected,
+		removeRoomElsewhere(homeroomId: string) {
+			audience.delete(homeroomId);
+			project();
+			advance();
+		}
+	};
 }
 
 function room(page: Page, name: string) {
@@ -528,6 +561,9 @@ for (const combined of [false, true])
 			await expect(groupScope.getByRole('list')).toContainText('ม.6/1');
 			await expect(groupScope.getByRole('list')).not.toContainText('ม.4/2');
 			await expect(groupScope.getByRole('list')).not.toContainText('ม.4/3');
+			await expect(groupScope).toContainText('หากไม่เหลือห้อง รายการเปิดสอนนี้จะออกจากรุ่นด้วย');
+			await expect(groupScope).toContainText('รวมถึงกลุ่มที่ไม่ได้ผูกห้อง');
+			await expect(groupScope).not.toContainText('กลุ่มอื่นยังอยู่');
 			await groupScope.screenshot({
 				path: testInfo.outputPath('selected-group-room-confirmation.png'),
 				animations: 'disabled'
@@ -538,6 +574,68 @@ for (const combined of [false, true])
 			expect(fixture.writes).toHaveLength(2);
 		});
 	}
+
+test('an already removed room in a stale workspace cannot submit on open or explicit scope reload', async ({
+	page
+}) => {
+	const fixture = await mockRoomScope(page, true);
+	await page.goto(overviewHref);
+	const trigger = room(page, roomNames[0]).getByRole('button', {
+		name: `นำออกจากห้องนี้ · ${roomNames[0]} · เคมีเพิ่มเติม`,
+		exact: true
+	});
+	await expect(trigger).toBeVisible();
+	fixture.removeRoomElsewhere(roomIds[0]);
+	await trigger.click();
+	const scope = page.getByRole('alertdialog', { name: 'นำออกจากห้องนี้', exact: true });
+	await expect(scope.getByRole('alert')).toHaveText(
+		'รายการนี้ไม่อยู่ในห้องที่เลือกแล้ว กรุณาตรวจข้อมูลรายห้องล่าสุด'
+	);
+	await expect(
+		scope.getByRole('button', { name: 'ยืนยันนำออกจากห้องนี้', exact: true })
+	).toHaveCount(0);
+	const freshRead = page.waitForResponse(
+		(response) =>
+			new URL(response.url()).pathname === versionPath && response.request().method() === 'GET'
+	);
+	await scope.getByRole('button', { name: 'ตรวจขอบเขตล่าสุดอีกครั้ง', exact: true }).click();
+	await (await freshRead).finished();
+	await expect(scope.getByRole('alert')).toHaveText(
+		'รายการนี้ไม่อยู่ในห้องที่เลือกแล้ว กรุณาตรวจข้อมูลรายห้องล่าสุด'
+	);
+	await expect(
+		scope.getByRole('button', { name: 'ยืนยันนำออกจากห้องนี้', exact: true })
+	).toHaveCount(0);
+	expect(fixture.writes).toEqual([]);
+	expect(fixture.registry).toEqual(fixture.originalRegistry);
+	expect(fixture.published).toEqual(fixture.originalPublished);
+});
+
+test('central activity group confirmation preserves participation rather than promising unchanged group coverage', async ({
+	page
+}) => {
+	const fixture = await mockRoomScope(page, true, { synchronized: true });
+	await page.goto(
+		`/staff/academic/delivery/${offeringId}?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}&groupId=${groupIds[0]}`
+	);
+	await page
+		.getByRole('button', { name: 'ลบกลุ่มจากรุ่นนี้ · กลุ่มเรียนรวมที่คงไว้', exact: true })
+		.click();
+	const scope = page.getByRole('alertdialog', { name: 'ลบกลุ่มจากรุ่นนี้', exact: true });
+	await expect(scope).toContainText(
+		'กิจกรรมคาบพร้อมกัน: นำเฉพาะกลุ่มนี้ออก โดยห้องที่เข้าร่วมกิจกรรมในรุ่นนี้ยังคงเดิม'
+	);
+	await expect(scope).not.toContainText('หากไม่เหลือห้อง');
+	await expect(scope).not.toContainText('กลุ่มอื่นยังอยู่');
+	for (const name of roomNames) await expect(scope.getByRole('list')).toContainText(name);
+	await expect(scope).toContainText('คะแนน และประวัติเดิมยังคงอยู่');
+	await page.keyboard.press('Escape');
+	await expect(scope).toHaveCount(0);
+	expect(fixture.writes).toEqual([]);
+	expect(fixture.selected.homeroomIds).toEqual(roomIds);
+	expect(fixture.registry).toEqual(fixture.originalRegistry);
+	expect(fixture.published).toEqual(fixture.originalPublished);
+});
 
 test('a normal curriculum row removes only its own room and retains other room groups', async ({
 	page

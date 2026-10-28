@@ -143,16 +143,25 @@ async fn fixture_with_effective(name: &str, current: bool) -> ScopedFixture {
 }
 
 async fn student(f: &ScopedFixture, room: Uuid, starts: NaiveDate) -> (Uuid, Uuid) {
+    scope_student(&f.pool, &f.context, room, starts).await
+}
+
+async fn scope_student(
+    pool: &PgPool,
+    context: &RuntimeContext,
+    room: Uuid,
+    starts: NaiveDate,
+) -> (Uuid, Uuid) {
     let student = Uuid::new_v4();
     let year = Uuid::new_v4();
     sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'not-a-login','Synthetic','Scope consumer','student','active')")
-        .bind(student).execute(&f.pool).await.unwrap();
+        .bind(student).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'active')")
-        .bind(year).bind(student).bind(f.context.year_id).bind(f.context.grade_level_id).bind(f.context.study_program_id)
-        .execute(&f.pool).await.unwrap();
+        .bind(year).bind(student).bind(context.year_id).bind(context.grade_level_id).bind(context.study_program_id)
+        .execute(pool).await.unwrap();
     sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES($1,$2,$3,$4,$5,'current','new')")
-        .bind(Uuid::new_v4()).bind(year).bind(f.context.year_id).bind(room).bind(starts)
-        .execute(&f.pool).await.unwrap();
+        .bind(Uuid::new_v4()).bind(year).bind(context.year_id).bind(room).bind(starts)
+        .execute(pool).await.unwrap();
     (student, year)
 }
 
@@ -166,7 +175,7 @@ async fn member(f: &ScopedFixture, group: Uuid, student: (Uuid, Uuid), source: &
 }
 
 async fn historical_facts(pool: &PgPool) -> Value {
-    sqlx::query_scalar("SELECT jsonb_build_object('members',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_students t),'scores',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_scores t),'sessions',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM attendance_sessions t),'attendanceRecords',(SELECT jsonb_agg(to_jsonb(t) ORDER BY session_id,student_id) FROM attendance_records t),'results',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM academic_course_results t))")
+    sqlx::query_scalar("SELECT jsonb_build_object('members',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_students t),'scores',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_scores t),'sessions',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM attendance_sessions t),'attendanceRecords',(SELECT jsonb_agg(to_jsonb(t) ORDER BY session_id,student_id) FROM attendance_records t),'results',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM academic_course_results t),'activityResults',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM academic_activity_results t))")
         .fetch_one(pool).await.unwrap()
 }
 
@@ -644,4 +653,420 @@ async fn delivery_room_scope_consumer_tracking_batches_future_dates_across_publi
     joined.sort();
     expected.sort();
     assert_eq!(joined, expected);
+}
+
+struct ActivityScopeFixture {
+    pool: PgPool,
+    context: RuntimeContext,
+    old_room: Uuid,
+    offering: Uuid,
+    group: Uuid,
+    today: NaiveDate,
+    starts: NaiveDate,
+}
+
+async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
+    let pool = prepare_delivery_runtime_fixture(name).await;
+    let context = planning_runtime_context(&pool).await;
+    let today: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let starts = today - Duration::days(30);
+    sqlx::query("UPDATE academic_years SET start_date=LEAST(start_date,$2),end_date=GREATEST(end_date,$3) WHERE id=$1")
+        .bind(context.year_id).bind(starts).bind(today + Duration::days(90)).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE academic_terms SET start_date=$2,planned_end_date=$3,closed_on=NULL WHERE id=$1",
+    )
+    .bind(context.term_id)
+    .bind(starts)
+    .bind(today + Duration::days(60))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let old_room = extra_room(&pool, &context, "ACTIVITY-EXCLUDED").await;
+    let opening = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "activity-scope-opening",
+    )
+    .await;
+    let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
+        "SELECT version.id,version.scheduling_mode FROM activity_versions version WHERE version.status='published' AND version.effective_from<=$1 ORDER BY version.id LIMIT 1"
+    ).bind(starts).fetch_one(&pool).await.unwrap();
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(opening.target_delivery_version_id),
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: false,
+            academic_term_id: context.term_id,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::GradeProgram,
+                homeroom_id: None,
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::SelfRegistration,
+            scheduling_mode,
+            capacity: Some(30),
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        }),
+    )
+    .await
+    .unwrap();
+    let group = group(
+        &pool,
+        &context,
+        offering.id,
+        "Real self-registration scope",
+        vec![context.homeroom_id, old_room],
+    )
+    .await;
+    publish(&pool, context.teacher_id, opening.id).await;
+    ActivityScopeFixture {
+        pool,
+        context,
+        old_room,
+        offering: offering.id,
+        group,
+        today,
+        starts,
+    }
+}
+
+async fn restrict_activity(f: &ActivityScopeFixture, date: NaiveDate, empty: bool) {
+    let revision = create_runtime_change_set(
+        &f.pool,
+        f.context.teacher_id,
+        f.context.term_id,
+        (date - f.starts).num_days(),
+        if empty {
+            "activity-scope-empty"
+        } else {
+            "activity-scope-narrow"
+        },
+    )
+    .await;
+    let request = removal(&f.pool, revision.id).await;
+    if empty {
+        change_sets::remove_draft_offering(
+            &f.pool,
+            f.context.teacher_id,
+            revision.id,
+            f.offering,
+            request,
+        )
+        .await
+        .unwrap();
+    } else {
+        change_sets::remove_draft_offering_homeroom(
+            &f.pool,
+            f.context.teacher_id,
+            revision.id,
+            f.offering,
+            f.old_room,
+            request,
+        )
+        .await
+        .unwrap();
+    }
+    let preview = publication_preview(&f.pool, revision.id).await.unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    let request = PublishAcademicTermChangeSetRequest {
+        effective_from: preview.effective_from,
+        row_version: preview.change_set_row_version,
+        target_delivery_version_row_version: preview.target_delivery_version_row_version,
+        preview_hash: preview.preview_hash,
+        acknowledged_warning_codes: preview
+            .findings
+            .iter()
+            .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+            .map(|finding| finding.code)
+            .collect(),
+        idempotency_key: Uuid::new_v4(),
+    };
+    let published = change_sets::publish_change_set(
+        &f.pool,
+        f.context.teacher_id,
+        revision.id,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    let facts = historical_facts(&f.pool).await;
+    let replay =
+        change_sets::publish_change_set(&f.pool, f.context.teacher_id, revision.id, request)
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(published).unwrap(),
+        serde_json::to_value(replay).unwrap()
+    );
+    assert_eq!(
+        facts,
+        historical_facts(&f.pool).await,
+        "same publication key must not rewrite roster/history facts"
+    );
+}
+
+async fn activity_options(
+    f: &ActivityScopeFixture,
+    student: Uuid,
+) -> Vec<super::super::models::StudentActivityOfferingOption> {
+    activities::list_registration_options(
+        &f.pool,
+        student,
+        StudentActivityRegistrationQuery {
+            academic_term_id: f.context.term_id,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn delivery_room_scope_consumer_activity_future_scope_preserves_legacy_registration() {
+    let f = activity_scope_fixture("room_scope_activity_future").await;
+    let pupil = scope_student(&f.pool, &f.context, f.old_room, f.starts).await;
+    let query = StudentActivityRegistrationQuery {
+        academic_term_id: f.context.term_id,
+    };
+    let mut connection = f.pool.acquire().await.unwrap();
+    assert!(
+        audiences::dated_constraint_on_connection(&mut connection, f.offering, f.today)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(connection);
+    let legacy = activity_options(&f, pupil.0).await;
+    let option = legacy
+        .iter()
+        .find(|offering| offering.id == f.offering)
+        .unwrap();
+    assert!(
+        option
+            .groups
+            .iter()
+            .find(|group| group.id == f.group)
+            .unwrap()
+            .registration_open
+    );
+    restrict_activity(&f, f.today + Duration::days(1), false).await;
+    let future = activity_options(&f, pupil.0).await;
+    assert!(
+        future
+            .iter()
+            .find(|offering| offering.id == f.offering)
+            .unwrap()
+            .groups
+            .iter()
+            .find(|group| group.id == f.group)
+            .unwrap()
+            .registration_open,
+        "published future scope must not close today's registration"
+    );
+    let before = groups::get(&f.pool, f.group).await.unwrap();
+    let enrolled = activities::enroll(&f.pool, pupil.0, f.group, query.clone())
+        .await
+        .unwrap();
+    assert!(enrolled.enrolled);
+    assert_eq!(enrolled.revision, before.row_version + 1);
+    let facts = historical_facts(&f.pool).await;
+    let retry = activities::enroll(&f.pool, pupil.0, f.group, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(retry.revision, enrolled.revision);
+    assert_eq!(facts, historical_facts(&f.pool).await);
+    let wrong_term = StudentActivityRegistrationQuery {
+        academic_term_id: Uuid::new_v4(),
+    };
+    assert!(matches!(
+        activities::enroll(&f.pool, pupil.0, f.group, wrong_term).await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(facts, historical_facts(&f.pool).await);
+    let current = groups::get(&f.pool, f.group).await.unwrap();
+    let preview = groups::preview_roster(&f.pool, f.group).await.unwrap();
+    let applied = groups::apply_roster(
+        &f.pool,
+        f.context.teacher_id,
+        f.group,
+        ApplyRosterRequest {
+            row_version: current.row_version,
+            source_hash: preview.source_hash,
+            overrides: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    groups::publish_roster(
+        &f.pool,
+        f.context.teacher_id,
+        f.group,
+        PublishRosterRequest {
+            row_version: applied.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let later_pupil = scope_student(&f.pool, &f.context, f.context.homeroom_id, f.starts).await;
+    let facts = historical_facts(&f.pool).await;
+    assert!(matches!(
+        activities::enroll(&f.pool, later_pupil.0, f.group, query).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        facts,
+        historical_facts(&f.pool).await,
+        "published-roster lifecycle guard still denies registration atomically"
+    );
+}
+
+#[tokio::test]
+async fn delivery_room_scope_consumer_activity_current_and_empty_scope_gate_new_intake_preserve_enrollment(
+) {
+    let f = activity_scope_fixture("room_scope_activity_current_empty").await;
+    let excluded_enrolled = scope_student(&f.pool, &f.context, f.old_room, f.starts).await;
+    let manual = scope_student(&f.pool, &f.context, f.old_room, f.starts).await;
+    let query = StudentActivityRegistrationQuery {
+        academic_term_id: f.context.term_id,
+    };
+    activities::enroll(&f.pool, excluded_enrolled.0, f.group, query.clone())
+        .await
+        .unwrap();
+    // An explicit manager override is an established fact, independent of self-admission policy.
+    let current = groups::get(&f.pool, f.group).await.unwrap();
+    let preview = groups::preview_roster(&f.pool, f.group).await.unwrap();
+    groups::apply_roster(
+        &f.pool,
+        f.context.teacher_id,
+        f.group,
+        ApplyRosterRequest {
+            row_version: current.row_version,
+            source_hash: preview.source_hash,
+            overrides: vec![RosterOverrideInput {
+                student_academic_year_id: manual.1,
+                action: RosterOverrideAction::Add,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let preserved = historical_facts(&f.pool).await;
+    restrict_activity(&f, f.today - Duration::days(1), false).await;
+    assert_eq!(preserved, historical_facts(&f.pool).await);
+    let listed = activity_options(&f, excluded_enrolled.0).await;
+    let offering = listed
+        .iter()
+        .find(|offering| offering.id == f.offering)
+        .unwrap();
+    assert_eq!(offering.enrolled_group_id, Some(f.group));
+    let group = offering
+        .groups
+        .iter()
+        .find(|group| group.id == f.group)
+        .unwrap();
+    assert!(group.enrolled);
+    assert!(!group.registration_open);
+    let excluded = scope_student(&f.pool, &f.context, f.old_room, f.starts).await;
+    let kept = scope_student(&f.pool, &f.context, f.context.homeroom_id, f.starts).await;
+    assert!(activity_options(&f, excluded.0)
+        .await
+        .iter()
+        .all(|offering| offering.id != f.offering));
+    let group_before = groups::get(&f.pool, f.group).await.unwrap();
+    let facts = historical_facts(&f.pool).await;
+    assert!(matches!(
+        activities::enroll(&f.pool, excluded.0, f.group, query.clone()).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert_eq!(
+        group_before.row_version,
+        groups::get(&f.pool, f.group).await.unwrap().row_version
+    );
+    assert_eq!(facts, historical_facts(&f.pool).await);
+    assert!(
+        activity_options(&f, kept.0)
+            .await
+            .iter()
+            .find(|offering| offering.id == f.offering)
+            .unwrap()
+            .groups
+            .iter()
+            .find(|group| group.id == f.group)
+            .unwrap()
+            .registration_open
+    );
+    activities::enroll(&f.pool, kept.0, f.group, query.clone())
+        .await
+        .unwrap();
+    let preserved = historical_facts(&f.pool).await;
+    restrict_activity(&f, f.today, true).await;
+    assert_eq!(preserved, historical_facts(&f.pool).await);
+    for student in [excluded_enrolled.0, manual.0, kept.0] {
+        let options = activity_options(&f, student).await;
+        let offering = options
+            .iter()
+            .find(|offering| offering.id == f.offering)
+            .unwrap();
+        assert_eq!(offering.enrolled_group_id, Some(f.group));
+        assert!(
+            offering
+                .groups
+                .iter()
+                .find(|group| group.id == f.group)
+                .unwrap()
+                .enrolled
+        );
+        assert!(
+            !offering
+                .groups
+                .iter()
+                .find(|group| group.id == f.group)
+                .unwrap()
+                .registration_open
+        );
+    }
+    let denied_empty = scope_student(&f.pool, &f.context, f.context.homeroom_id, f.starts).await;
+    assert!(activity_options(&f, denied_empty.0)
+        .await
+        .iter()
+        .all(|offering| offering.id != f.offering));
+    let facts = historical_facts(&f.pool).await;
+    let revision = groups::get(&f.pool, f.group).await.unwrap().row_version;
+    assert!(matches!(
+        activities::enroll(&f.pool, denied_empty.0, f.group, query).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert_eq!(
+        revision,
+        groups::get(&f.pool, f.group).await.unwrap().row_version
+    );
+    assert_eq!(
+        facts,
+        historical_facts(&f.pool).await,
+        "Some(empty) must not admit or erase established facts"
+    );
 }

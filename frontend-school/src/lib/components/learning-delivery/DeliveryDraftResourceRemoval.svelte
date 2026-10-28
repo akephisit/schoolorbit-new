@@ -118,6 +118,8 @@
 				(groupId && !target.groups.some((item) => item.id === groupId))
 			)
 				throw new Error('รายการนี้ไม่อยู่ในแบบร่างที่แก้ไขได้แล้ว');
+			if (homeroomId && !target.homeroomIds.includes(homeroomId))
+				throw new Error('รายการนี้ไม่อยู่ในห้องที่เลือกแล้ว กรุณาตรวจข้อมูลรายห้องล่าสุด');
 			changeSet = loadedChangeSet;
 			version = loadedVersion;
 			options = loadedOptions;
@@ -238,16 +240,18 @@
 		<div class="min-h-0 space-y-3 overflow-y-auto">
 			{#if loading}<PageSkeleton variant="detail" />{:else if version && offering}
 				{#if groupId}<p class="text-sm">
-						นำเฉพาะกลุ่ม “{group?.name ?? label}” ออกจากรายการ “{offering.name}” ในแบบร่างนี้
-						กลุ่มอื่นยังอยู่
+						นำกลุ่ม “{group?.name ?? label}” ออกจากรายการ “{offering.name}” ในแบบร่างนี้
 					</p>
 					{#if offering.catalog.kind === 'activity' && offering.catalog.schedulingMode === 'synchronized'}<p
 							class="text-sm font-medium"
 						>
-							กิจกรรมคาบพร้อมกัน: การนำกลุ่มนี้ออกมีผลต่อทุกห้องต้นทางของกลุ่มนี้
+							กิจกรรมคาบพร้อมกัน: นำเฉพาะกลุ่มนี้ออก โดยห้องที่เข้าร่วมกิจกรรมในรุ่นนี้ยังคงเดิม
+						</p>{:else}<p class="text-sm text-muted-foreground">
+							ห้องที่ไม่มีกลุ่มอื่นรองรับจะออกจากขอบเขตของรายการในรุ่นนี้ หากไม่เหลือห้อง
+							รายการเปิดสอนนี้จะออกจากรุ่นด้วย รวมถึงกลุ่มที่ไม่ได้ผูกห้อง
 						</p>{/if}
 					{#if homeroomNames.length > 0}<div class="text-sm">
-							<p class="font-medium">ห้องต้นทางที่ได้รับผลกระทบ ({homeroomNames.length} ห้อง)</p>
+							<p class="font-medium">ห้องของกลุ่มนี้ในรุ่นที่เลือก ({homeroomNames.length} ห้อง)</p>
 							<ul class="mt-1 list-inside list-disc">
 								{#each homeroomNames as name, index (`${index}:${name}`)}<li>{name}</li>{/each}
 							</ul>
@@ -262,7 +266,7 @@
 						นำรายการ “{offering.name}” พร้อมทุกกลุ่มเรียน {offering.groups.length} กลุ่มออกจากแบบร่างนี้
 					</p>{/if}
 				<p class="text-sm text-muted-foreground">
-					รุ่นที่เผยแพร่แล้ว ตารางสอน รายชื่อ และประวัติเดิมยังคงอยู่
+					รุ่นที่เผยแพร่แล้ว ตารางสอน รายชื่อ คะแนน และประวัติเดิมยังคงอยู่
 					การนำออกมีผลเฉพาะแบบร่างที่เลือก
 				</p>
 			{/if}

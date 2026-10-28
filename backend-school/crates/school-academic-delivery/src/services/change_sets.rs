@@ -27,8 +27,8 @@ use school_academic_core::{
 use school_errors::AppError;
 
 use super::{
-    append_audit, offerings, require_writable_term, stable_hash, validate_row_version, versions,
-    TermContext,
+    append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
+    validate_row_version, versions, TermContext,
 };
 
 #[derive(Debug, FromRow)]
@@ -3315,10 +3315,6 @@ fn required_change_item_label(
         .get(&id)
         .cloned()
         .ok_or_else(|| AppError::InternalServerError(message.to_string()))
-}
-
-fn bangkok_today() -> NaiveDate {
-    (Utc::now() + chrono::Duration::hours(7)).date_naive()
 }
 
 #[cfg(test)]

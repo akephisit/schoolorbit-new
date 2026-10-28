@@ -1,7 +1,6 @@
 use school_database::DbSession;
 use std::collections::HashMap;
 
-use chrono::Utc;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -13,7 +12,8 @@ use super::super::models::{
     StudentActivityRegistrationResult,
 };
 use super::{
-    append_audit, invalidate_group_academic_confirmations, require_writable_term, TermContext,
+    append_audit, bangkok_today, invalidate_group_academic_confirmations, require_writable_term,
+    TermContext,
 };
 
 pub async fn list_registration_options(
@@ -650,11 +650,15 @@ async fn require_eligible_student(
 }
 
 fn registration_date(term: &TermContext) -> chrono::NaiveDate {
-    Utc::now()
-        .with_timezone(&chrono::FixedOffset::east_opt(7 * 60 * 60).expect("Bangkok offset"))
-        .date_naive()
-        .max(term.start_date)
-        .min(term.date_upper_bound())
+    bounded_registration_date(bangkok_today(), term.start_date, term.date_upper_bound())
+}
+
+fn bounded_registration_date(
+    today: chrono::NaiveDate,
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+) -> chrono::NaiveDate {
+    today.max(start).min(end)
 }
 
 async fn increment_group_revision(
@@ -671,4 +675,36 @@ async fn increment_group_revision(
         .fetch_one()
         .await?;
     Ok(revision)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, TimeZone, Utc};
+
+    #[test]
+    fn registration_dates_use_bangkok_midnight_and_preserve_term_bounds() {
+        let july_1 = NaiveDate::from_ymd_opt(2026, 7, 1).unwrap();
+        let july_2 = NaiveDate::from_ymd_opt(2026, 7, 2).unwrap();
+        let july_3 = NaiveDate::from_ymd_opt(2026, 7, 3).unwrap();
+        let before_midnight =
+            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 16, 59, 59).unwrap());
+        let midnight =
+            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 17, 0, 0).unwrap());
+        assert_eq!(
+            bounded_registration_date(before_midnight, july_1, july_3),
+            july_1
+        );
+        assert_eq!(bounded_registration_date(midnight, july_1, july_3), july_2);
+        assert_eq!(
+            bounded_registration_date(before_midnight, july_2, july_3),
+            july_2
+        );
+        let after_term =
+            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 3, 17, 0, 0).unwrap());
+        assert_eq!(
+            bounded_registration_date(after_term, july_1, july_3),
+            july_3
+        );
+    }
 }
