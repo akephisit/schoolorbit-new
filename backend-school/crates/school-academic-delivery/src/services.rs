@@ -9,6 +9,7 @@ use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
 pub mod activities;
+pub mod audiences;
 pub mod bulk_group_setup;
 pub mod change_sets;
 pub mod effective_teachers;
@@ -20,6 +21,14 @@ pub mod roster_tracking;
 pub mod version_changes;
 pub mod versions;
 pub mod workspaces;
+
+pub(super) fn bangkok_today() -> chrono::NaiveDate {
+    bangkok_date_at(chrono::Utc::now())
+}
+
+pub(super) fn bangkok_date_at(now: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDate {
+    (now + chrono::Duration::hours(7)).date_naive()
+}
 
 pub async fn pending_term_work(
     tx: &mut Transaction<'_, Postgres>,

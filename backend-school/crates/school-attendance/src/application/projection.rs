@@ -147,32 +147,36 @@ async fn project(
         connection, term, start, end,
     )
     .await?;
-    let group_ids: Vec<_> = spans
-        .iter()
-        .flat_map(|v| v.blocks.iter())
-        .flat_map(|b| b.groups.iter())
-        .filter(|g| g.is_active)
-        .map(|g| g.learning_group_id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let memberships = if let Some((student, _)) = history_scope {
-        school_academic_delivery::services::attendance_roster::membership_spans_for_student(
-            connection, &group_ids, start, end, student,
-        )
-        .await?
-    } else {
-        school_academic_delivery::services::attendance_roster::membership_spans(
-            connection, &group_ids, start, end,
-        )
-        .await?
-    };
-    let mut groups = HashMap::<Uuid, Vec<_>>::new();
-    for membership in &memberships {
-        groups
-            .entry(membership.learning_group_id)
-            .or_default()
-            .push(membership);
+    let mut source_groups = BTreeMap::<Uuid, HashSet<Uuid>>::new();
+    for span in &spans {
+        let groups = source_groups.entry(span.delivery_version_id).or_default();
+        groups.extend(
+            span.blocks
+                .iter()
+                .flat_map(|block| block.groups.iter())
+                .filter(|group| group.is_active)
+                .map(|group| group.learning_group_id),
+        );
+    }
+    let mut groups = HashMap::<(Uuid, Uuid), Vec<_>>::new();
+    for (version, group_ids) in source_groups {
+        let group_ids = group_ids.into_iter().collect::<Vec<_>>();
+        let memberships =
+            school_academic_delivery::services::attendance_roster::pinned_membership_spans(
+                connection,
+                version,
+                &group_ids,
+                start,
+                end,
+                history_scope.map(|(student, _)| student),
+            )
+            .await?;
+        for membership in memberships {
+            groups
+                .entry((version, membership.learning_group_id))
+                .or_default()
+                .push(membership);
+        }
     }
     let mut rows = BTreeMap::new();
     let mut history = Vec::new();
@@ -254,7 +258,9 @@ async fn project(
                             .learning_offering_id
                             .map(|id| id.to_string())
                             .unwrap_or_default();
-                        if let Some(members) = groups.get(&group.learning_group_id) {
+                        if let Some(members) =
+                            groups.get(&(span.delivery_version_id, group.learning_group_id))
+                        {
                             for member in members.iter().filter(|m| {
                                 m.joined_at <= date && m.left_at.is_none_or(|d| d >= date)
                             }) {

@@ -45,14 +45,7 @@ async fn delivery_draft_removal_migration_preserves_published_and_unexcluded_pro
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 141).await.unwrap();
     let context = operational_change_runtime_context(&pool).await;
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        12,
-        "removal-migration",
-    )
-    .await;
+    let revision = super::room_scope_tests::historical_revision(&pool, &context, 12).await;
     let before = preserved_facts(&pool).await;
     let projection: Value = sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1)")
         .bind(revision.id)
@@ -364,11 +357,10 @@ async fn delivery_draft_removal_deletes_exclusive_resources_and_retains_shared_d
     )
     .await
     .unwrap();
-    // The first draft's exclusion contains no source membership and does not pin registry rows.
-    assert!(matches!(
-        offerings::get(&pool, offering.id).await,
-        Err(AppError::NotFound(_))
-    ));
+    // Both explicit empty audience parents retain the offering identity for dated eligibility.
+    assert!(offerings::get(&pool, offering.id).await.is_ok());
+    let empty_parents:i64=sqlx::query_scalar("SELECT count(*) FROM academic_delivery_revision_audiences a WHERE learning_offering_id=$1 AND NOT EXISTS(SELECT 1 FROM academic_delivery_revision_audience_rooms r WHERE r.change_set_id=a.change_set_id AND r.learning_offering_id=a.learning_offering_id)").bind(offering.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(empty_parents, 2);
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subject_versions WHERE id=$1)")
             .bind(context.subject_version_id)
@@ -478,7 +470,7 @@ async fn delivery_draft_catalog_options_expose_authoritative_subject_type() {
     }
 }
 
-fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) -> axum::Router {
+pub(super) fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) -> axum::Router {
     use school_auth::{
         config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey,
         session_service::AuthenticatedSession,
@@ -880,6 +872,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -917,22 +910,31 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     )
     .await
     .unwrap();
-    change_sets::remove_draft_offering(
-        &pool,
-        context.teacher_id,
-        revision.id,
-        offering.id,
-        removal_request(&pool, revision.id).await,
-    )
-    .await
-    .unwrap();
+    if draft_version(&pool, revision.id)
+        .await
+        .snapshot
+        .offerings
+        .iter()
+        .any(|o| o.id == offering.id)
+    {
+        change_sets::remove_draft_offering(
+            &pool,
+            context.teacher_id,
+            revision.id,
+            offering.id,
+            removal_request(&pool, revision.id).await,
+        )
+        .await
+        .unwrap();
+    }
     assert!(
         offerings::get(&pool, offering.id).await.is_ok(),
-        "preparation receipt preserves registry resource"
+        "explicit audience intent and preparation receipt preserve registry resource"
     );
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -961,7 +963,10 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
         .filter(|o| o.id == offering.id)
         .collect();
     assert_eq!(restored.len(), 1);
-    assert!(!restored[0].groups.iter().any(|g| g.id == group));
+    assert!(
+        restored[0].groups.iter().any(|g| g.id == group),
+        "explicit reviewed re-add restores its current-curriculum group only"
+    );
 }
 
 #[tokio::test]
@@ -1066,10 +1071,16 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
     )
     .await
     .unwrap();
-    assert!(matches!(
-        offerings::get(&pool, offering.id).await,
-        Err(AppError::NotFound(_))
-    ));
+    assert!(
+        offerings::get(&pool, offering.id).await.is_ok(),
+        "empty scope pins the activity identity"
+    );
+    assert!(draft_version(&pool, revision.id)
+        .await
+        .snapshot
+        .offerings
+        .iter()
+        .all(|o| o.id != offering.id));
     assert!(sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM activity_versions WHERE id=$1)"
     )
@@ -1358,7 +1369,7 @@ async fn activity_zero_targets_http_preserve_scope_revisions_and_negative_valida
     }
 }
 
-async fn open_activity_with_catalog_target(
+pub(super) async fn open_activity_with_catalog_target(
     pool: &PgPool,
     context: &RuntimeContext,
     target_id: Uuid,
@@ -2080,4 +2091,61 @@ async fn http_pending_three_group_removal(command: &str) {
         3,
         "only selected snapshot membership is removed"
     );
+}
+
+#[tokio::test]
+async fn delivery_room_scope_last_course_group_unlinks_its_room() {
+    let pool = prepare_delivery_runtime_fixture("room_scope_last_group").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "room-scope-last-group",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มห้องที่นำออก".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    change_sets::remove_draft_group(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        group.id,
+        removal_request(&pool, revision.id).await,
+    )
+    .await
+    .unwrap();
+    let after = draft_version(&pool, revision.id).await;
+    assert!(after.snapshot.offerings.iter().all(|row|row.id!=offering.id),"removing the last course group must unlink its only room and omit the empty-audience offering");
 }

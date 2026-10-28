@@ -1,5 +1,7 @@
 mod draft_removal;
-pub use draft_removal::{remove_draft_group, remove_draft_offering};
+pub use draft_removal::{
+    remove_draft_group, remove_draft_offering, remove_draft_offering_homeroom,
+};
 
 use school_database::DbSession;
 use std::collections::{BTreeSet, HashMap};
@@ -25,8 +27,8 @@ use school_academic_core::{
 use school_errors::AppError;
 
 use super::{
-    append_audit, offerings, require_writable_term, stable_hash, validate_row_version, versions,
-    TermContext,
+    append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
+    validate_row_version, versions, TermContext,
 };
 
 #[derive(Debug, FromRow)]
@@ -1393,6 +1395,7 @@ pub async fn create_change_set_in_transaction(
         .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(reference_date).bind(&reason)
         .bind(request.idempotency_key.to_string()).bind(&request_hash).bind(actor_user_id).bind(base_id).bind(target_id)
         .execute().await?;
+    super::audiences::inherit(transaction, revision_id, base_id).await?;
     versions::refresh_revision_snapshot(transaction, revision_id).await?;
     DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload)
         VALUES('academic_delivery_version.created','academic_delivery_version',$1,$2,$3,$4,$5)")
@@ -3312,10 +3315,6 @@ fn required_change_item_label(
         .get(&id)
         .cloned()
         .ok_or_else(|| AppError::InternalServerError(message.to_string()))
-}
-
-fn bangkok_today() -> NaiveDate {
-    (Utc::now() + chrono::Duration::hours(7)).date_naive()
 }
 
 #[cfg(test)]

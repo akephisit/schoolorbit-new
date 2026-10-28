@@ -56,15 +56,18 @@ async fn seeds_with_choices_on_connection(
             .collect::<Vec<_>>();
         seeds.push(arrival_seed(term, date, room, roster, c.late_after));
     }
-    let blocks = match school_academic_timetable::services::attendance::blocks_on_connection(
-        connection, term, date,
-    )
-    .await
-    {
-        Ok(b) => b,
-        Err(AppError::NotFound(_)) => vec![],
-        Err(e) => return Err(e),
-    };
+    let timetable =
+        match school_academic_timetable::services::attendance::source_blocks_on_connection(
+            connection, term, date,
+        )
+        .await
+        {
+            Ok(b) => Some(b),
+            Err(AppError::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
+    let delivery_version_id = timetable.as_ref().map(|source| source.delivery_version_id);
+    let blocks = timetable.map(|source| source.blocks).unwrap_or_default();
     let groups = blocks
         .iter()
         .filter(|b| b.block_kind != TimetableBlockKind::Structural)
@@ -77,11 +80,15 @@ async fn seeds_with_choices_on_connection(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let memberships =
-        school_academic_delivery::services::attendance_roster::students_on_connection(
-            connection, &groups, date,
-        )
-        .await?;
+    let memberships = match delivery_version_id {
+        Some(version) => {
+            school_academic_delivery::services::attendance_roster::pinned_students_on_connection(
+                connection, version, &groups, date,
+            )
+            .await?
+        }
+        None => Vec::new(),
+    };
     let student_map: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
     for block in blocks {
         if block.block_kind == TimetableBlockKind::Structural {

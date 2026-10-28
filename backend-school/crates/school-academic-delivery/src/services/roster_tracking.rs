@@ -314,7 +314,7 @@ pub async fn sync_group(
     if !enabled {
         return Ok(());
     }
-    let rows: Vec<(Uuid,Uuid,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,t.start_date,o.starts_on)) AS joined
+    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,t.start_date,o.starts_on)) AS joined,p.homeroom_id
         FROM learning_groups g JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id
         JOIN academic_terms t ON t.id=g.academic_term_id JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_years y ON y.id=g.academic_year_id
@@ -324,7 +324,7 @@ pub async fn sync_group(
         WHERE g.id=$1 AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND sy.status IN ('active','planned')
             AND ($2::uuid[] IS NULL OR sy.id=ANY($2))
             AND GREATEST(p.start_date,config.effective_from,t.start_date,o.starts_on)<=LEAST(COALESCE(t.closed_on,t.planned_end_date,y.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,y.end_date)))
-        GROUP BY sy.id,sy.student_id"#).bind(id).bind(ids).fetch_all().await?;
+        GROUP BY sy.id,sy.student_id,p.homeroom_id"#).bind(id).bind(ids).fetch_all().await?;
     let desired: Vec<_> = rows.iter().map(|row| row.0).collect();
     let old: Vec<(Uuid,Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT m.id,m.student_academic_year_id,m.joined_at,
         LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date),COALESCE(o.ends_on,y.end_date),COALESCE(t.closed_on,t.planned_end_date,y.end_date))
@@ -348,6 +348,36 @@ pub async fn sync_group(
         .execute()
         .await?
         .rows_affected();
+    // Keep raw desired candidates above: a denied new intake is not a departure.
+    let today: NaiveDate = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.roster_tracking.sync_group",
+            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
+        )
+        .fetch_one()
+        .await?;
+    let dates: Vec<_> = rows
+        .iter()
+        .map(|row| row.2.max(today))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let constraints_by_date =
+        super::audiences::dated_group_constraints_for_dates_on_connection(&mut **tx, &[id], &dates)
+            .await?;
+    let mut eligible = Vec::with_capacity(rows.len());
+    for row in rows {
+        let scopes = constraints_by_date.get(&row.2.max(today)).ok_or_else(|| {
+            AppError::InternalServerError("ไม่พบขอบเขตเปิดสอนสำหรับวันที่ตรวจสอบ".into())
+        })?;
+        if scopes
+            .constraint_for_group(id)
+            .is_none_or(|scope| scope.allows_homeroom(id, Some(row.3)))
+        {
+            eligible.push(row);
+        }
+    }
+    let rows = eligible;
     let student_years: Vec<_> = rows.iter().map(|row| row.0).collect();
     let students: Vec<_> = rows.iter().map(|row| row.1).collect();
     let joined_dates: Vec<_> = rows.iter().map(|row| row.2).collect();

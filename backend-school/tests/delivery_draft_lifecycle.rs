@@ -87,9 +87,17 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
     assert_eq!(version.effective_from, None);
     assert_eq!(version.reference_date, date.succ_opt().unwrap());
     assert_eq!(version.row_version, 1);
-    let changed = change_sets::get_change_set(&pool, journal).await.unwrap();
-    assert_eq!(changed.effective_from, None);
-    assert_eq!(changed.reference_date, version.reference_date);
+    // Assert the 089 journal contract directly: current hydration requires later schema views.
+    let (effective_from, reference_date): (Option<chrono::NaiveDate>, chrono::NaiveDate) =
+        sqlx::query_as(
+            "SELECT effective_from,reference_date FROM academic_term_change_sets WHERE id=$1",
+        )
+        .bind(journal)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(effective_from, None);
+    assert_eq!(reference_date, version.reference_date);
     assert!(
         sqlx::query("DELETE FROM academic_delivery_versions WHERE id=$1")
             .bind(source)
@@ -103,7 +111,7 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
 
 #[tokio::test]
 async fn cancelled_cleanup_preflights_all_and_keeps_active_drafts_and_published_rows() {
-    let pool = fixture("cancelled_cleanup_atomic", 89).await;
+    let pool = fixture("cancelled_cleanup_atomic", 144).await;
     let (source, year, term, user) = context(&pool).await;
     sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(term)
@@ -224,7 +232,7 @@ async fn cancelled_cleanup_preflights_all_and_keeps_active_drafts_and_published_
 
 #[tokio::test]
 async fn cancelled_opening_is_immutable_until_hard_deleted_and_stale_revision_is_rejected() {
-    let pool = fixture("cancelled_opening_guards", 89).await;
+    let pool = fixture("cancelled_opening_guards", 144).await;
     let (_, _, term, user) = context(&pool).await;
     sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(term)

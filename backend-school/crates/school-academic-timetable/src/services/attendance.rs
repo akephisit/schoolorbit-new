@@ -7,7 +7,12 @@ use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
+pub struct AttendanceDatedBlocks {
+    pub delivery_version_id: Uuid,
+    pub blocks: Vec<TimetableBlock>,
+}
 pub struct AttendanceTimetableSpan {
+    pub delivery_version_id: Uuid,
     pub effective_from: NaiveDate,
     pub effective_until: NaiveDate,
     pub blocks: Vec<TimetableBlock>,
@@ -19,7 +24,7 @@ pub async fn published_spans(
     start: NaiveDate,
     end: NaiveDate,
 ) -> Result<Vec<AttendanceTimetableSpan>, AppError> {
-    let versions:Vec<(Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut *connection).query_as("academic_timetable.services.attendance.published_spans", "WITH selected AS (SELECT DISTINCT ON(effective_from) id,effective_from FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' AND effective_from<=$3 ORDER BY effective_from,id),versions AS (SELECT id,effective_from,COALESCE(lead(effective_from) OVER(ORDER BY effective_from)-1,$3) effective_until FROM selected) SELECT id,effective_from,effective_until FROM versions WHERE effective_until>=$2 ORDER BY effective_from,id")
+    let versions:Vec<(Uuid,NaiveDate,NaiveDate,Uuid)>=DbSession::new(&mut *connection).query_as("academic_timetable.services.attendance.published_spans", "WITH selected AS (SELECT DISTINCT ON(effective_from) id,effective_from,delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' AND effective_from<=$3 ORDER BY effective_from,id),versions AS (SELECT id,effective_from,delivery_version_id,COALESCE(lead(effective_from) OVER(ORDER BY effective_from)-1,$3) effective_until FROM selected) SELECT id,effective_from,effective_until,delivery_version_id FROM versions WHERE effective_until>=$2 ORDER BY effective_from,id")
         .bind(term).bind(start).bind(end).fetch_all().await?;
     let ids:Vec<Uuid>=DbSession::new(&mut *connection).scalar("academic_timetable.services.attendance.published_spans", "SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=ANY($1) AND is_active ORDER BY timetable_version_id,id LIMIT 20001")
         .bind(versions.iter().map(|v|v.0).collect::<Vec<_>>()).fetch_all().await?;
@@ -39,7 +44,8 @@ pub async fn published_spans(
     Ok(versions
         .into_iter()
         .map(
-            |(id, effective_from, effective_until)| AttendanceTimetableSpan {
+            |(id, effective_from, effective_until, delivery_version_id)| AttendanceTimetableSpan {
+                delivery_version_id,
                 effective_from,
                 effective_until,
                 blocks: grouped.remove(&id).unwrap_or_default(),
@@ -65,6 +71,17 @@ pub async fn blocks_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<TimetableBlock>, AppError> {
+    Ok(source_blocks_on_connection(connection, term, date)
+        .await?
+        .blocks)
+}
+
+/// Daily blocks retain the exact published Delivery source for roster projection.
+pub async fn source_blocks_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<AttendanceDatedBlocks, AppError> {
     let version =
         timetable_version_service::resolve_for_date_on_connection(connection, term, date).await?;
     let ids:Vec<Uuid>=DbSession::new(connection).scalar("academic_timetable.services.attendance.blocks_on_connection", "SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND academic_term_id=$2 AND day_of_week=$3 AND is_active ORDER BY bell_schedule_period_id,id LIMIT 2001").bind(version.id).bind(term).bind(day_code_from_date(date)).fetch_all().await?;
@@ -73,7 +90,10 @@ pub async fn blocks_on_connection(
             "ตารางประจำวันเกินขนาดที่รองรับ".into(),
         ));
     }
-    timetable_block_queries::get_blocks_on_connection(connection, &ids).await
+    Ok(AttendanceDatedBlocks {
+        delivery_version_id: version.delivery_version_id,
+        blocks: timetable_block_queries::get_blocks_on_connection(connection, &ids).await?,
+    })
 }
 #[cfg(test)]
 mod tests {

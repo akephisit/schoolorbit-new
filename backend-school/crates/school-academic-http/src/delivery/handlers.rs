@@ -1375,6 +1375,51 @@ pub async fn remove_draft_offering(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
+    delete, path="/api/academic/term-change-sets/{id}/offerings/{offeringId}/homerooms/{homeroomId}",
+    operation_id="removeDeliveryDraftOfferingHomeroom", tag="academic",
+    params(("id"=Uuid,Path,description="Draft change set ID"),
+        ("offeringId"=Uuid,Path,description="Offering to restrict"),
+        ("homeroomId"=Uuid,Path,description="Homeroom to remove from this draft")),
+    request_body=RemoveDeliveryDraftResourceRequest,
+    responses((status=200,description="Homeroom removed from the selected draft audience",body=ApiResponse<AcademicTermChangeSet>),
+        (status=400,description="Invalid removal request",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
+        (status=404,description="Draft or offering not found",body=ApiErrorResponse),
+        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
+))]
+pub async fn remove_draft_offering_homeroom(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, offering_id, homeroom_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    learning_offering_access_policy::require_learning_offering_access(
+        &context.tenant.pool,
+        &context.actor,
+        offering_id,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let mut ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
+    ids.push(offering_id);
+    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
+    let changed = change_sets::remove_draft_offering_homeroom(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        offering_id,
+        homeroom_id,
+        request,
+    )
+    .await?;
+    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
+        .await?;
+    Ok(ok(changed))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete, path="/api/academic/term-change-sets/{id}/groups/{groupId}",
     operation_id="removeDeliveryDraftGroup", tag="academic",
     params(("id"=Uuid,Path,description="Draft change set ID"),

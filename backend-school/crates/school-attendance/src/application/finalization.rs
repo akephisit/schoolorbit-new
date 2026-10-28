@@ -58,6 +58,10 @@ async fn expected_rounds_with_context(
         connection, term, date, date,
     )
     .await?;
+    let delivery_version_id = spans
+        .iter()
+        .find(|span| span.effective_from <= date && date <= span.effective_until)
+        .map(|span| span.delivery_version_id);
     let mut blocks = spans
         .into_iter()
         .filter(|span| span.effective_from <= date && date <= span.effective_until)
@@ -77,11 +81,15 @@ async fn expected_rounds_with_context(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let memberships =
-        school_academic_delivery::services::attendance_roster::students_on_connection(
-            connection, &groups, date,
-        )
-        .await?;
+    let memberships = match delivery_version_id {
+        Some(version) => {
+            school_academic_delivery::services::attendance_roster::pinned_students_on_connection(
+                connection, version, &groups, date,
+            )
+            .await?
+        }
+        None => Vec::new(),
+    };
     let by_student: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
     for block in blocks {
         for group in block.groups.into_iter().filter(|g| g.is_active) {

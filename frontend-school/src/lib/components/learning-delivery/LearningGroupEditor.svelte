@@ -22,6 +22,8 @@
 		group,
 		managementOptions,
 		canManage = false,
+		coverageEditingBlocked = false,
+		selectedHomeroomIds = null,
 		onSaveGroup,
 		onReplaceTeachers,
 		onReplaceHomerooms
@@ -29,6 +31,8 @@
 		group: LearningGroup;
 		managementOptions: DeliveryManagementOptions;
 		canManage?: boolean;
+		coverageEditingBlocked?: boolean;
+		selectedHomeroomIds?: string[] | null;
 		onSaveGroup: (request: UpdateLearningGroupRequest) => Promise<void>;
 		onReplaceTeachers: (request: ReplaceLearningGroupTeachersRequest) => Promise<void>;
 		onReplaceHomerooms: (request: ReplaceLearningGroupHomeroomsRequest) => Promise<void>;
@@ -126,6 +130,10 @@
 		action: () => Promise<void>,
 		fallback: string
 	) {
+		if (section === 'homerooms' && coverageEditingBlocked) {
+			errorMessage = 'ห้องในรุ่นที่เลือกต่างจากกลุ่มเดิม กรุณาจัดการจากมุมมองรายห้อง';
+			return;
+		}
 		busySection = section;
 		errorMessage = '';
 		try {
@@ -335,10 +343,17 @@
 
 		<div class="space-y-4 xl:border-s xl:ps-6">
 			<div>
-				<h3 class="font-medium">ห้องต้นทางของนักเรียน</h3>
+				<h3 class="font-medium">
+					{coverageEditingBlocked ? 'ห้องต้นทางของกลุ่มเดิม' : 'ห้องต้นทางของนักเรียน'}
+				</h3>
 				<p class="text-xs text-muted-foreground">ใช้สร้างตัวอย่างรายชื่อ ไม่ใช่ห้องที่ใช้เรียน</p>
 			</div>
-			{#if canManage}
+			{#if coverageEditingBlocked}<p class="text-sm text-muted-foreground">
+					รุ่นที่เลือกครอบคลุม {selectedHomeroomIds?.map(homeroomName).join(', ') || 'ไม่มีห้อง'}
+					ห้องด้านล่างเป็นข้อมูลของกลุ่มเดิม จึงแก้ห้องต้นทางตรงนี้ไม่ได้ ใช้ “นำออกจากห้องนี้” ในมุมมองรายห้องเพื่อปรับเฉพาะรุ่น
+					โดยข้อมูลเดิมและคะแนนยังอยู่
+				</p>{/if}
+			{#if canManage && !coverageEditingBlocked}
 				<div class="flex gap-2">
 					<div class="min-w-0 flex-1">
 						<DeliveryOptionCombobox
@@ -364,7 +379,7 @@
 				{#each homeroomIds as homeroomId (homeroomId)}
 					<Badge variant="secondary" class="gap-1 py-1">
 						{homeroomName(homeroomId)}
-						{#if canManage}
+						{#if canManage && !coverageEditingBlocked}
 							<button
 								type="button"
 								class="rounded-sm hover:text-destructive"
@@ -377,7 +392,7 @@
 					<p class="text-sm text-muted-foreground">ยังไม่ได้เลือกห้องต้นทาง</p>
 				{/each}
 			</div>
-			{#if canManage}
+			{#if canManage && !coverageEditingBlocked}
 				<LoadingButton
 					variant="outline"
 					loading={busySection === 'homerooms'}

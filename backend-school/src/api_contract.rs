@@ -730,6 +730,7 @@ use utoipa::OpenApi;
         school_academic_http::delivery::handlers::upsert_term_change_item,
         school_academic_http::delivery::handlers::delete_term_change_item,
         school_academic_http::delivery::handlers::remove_draft_offering,
+        school_academic_http::delivery::handlers::remove_draft_offering_homeroom,
         school_academic_http::delivery::handlers::remove_draft_group,
         school_academic_http::delivery::handlers::preview_term_change_set,
         school_academic_http::handlers::teacher_handoff::preview_teacher_handoff,

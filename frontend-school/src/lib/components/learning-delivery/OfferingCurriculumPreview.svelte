@@ -218,7 +218,8 @@
 		try {
 			const result = await previewLearningOfferingsFromCurriculum({
 				academicTermId,
-				studyProgramIds
+				studyProgramIds,
+				deliveryVersionId
 			});
 			const focusedProposals = visibleCurriculumPreparationProposals(
 				result.proposals,

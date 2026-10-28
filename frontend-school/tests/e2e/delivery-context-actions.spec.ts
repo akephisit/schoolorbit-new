@@ -47,6 +47,14 @@ async function mockContextActions(
 	const selected = graph.snapshot.offerings.find((item) => item.id === offeringId)!;
 	if (selected.catalog.kind === 'activity' && mode !== 'course')
 		selected.catalog.schedulingMode = mode;
+	selected.homeroomIds = [ids.roomA, ids.roomB];
+	selected.targets = selected.homeroomIds.map((homeroomId, index) => ({
+		id: `a0000000-0000-4000-8000-00000000010${index}`,
+		targetKind: 'homeroom',
+		homeroomId,
+		gradeLevelId: ids.grade,
+		studyProgramId: ids.program
+	}));
 	const registry: LearningGroup[] = groupIds.map((id, index) => ({
 		id,
 		learningOfferingId: offeringId,
@@ -227,19 +235,48 @@ async function mockContextActions(
 					return reply(route, 'แบบร่างถูกแก้ไข กรุณาตรวจขอบเขตล่าสุด', 409);
 				}
 				await options.saveGate;
-				if (path.includes('/groups/'))
+				if (path.includes('/groups/')) {
+					const current = graph.snapshot.offerings.find((item) => item.id === offeringId)!;
+					const removed = current.groups.find((group) => path.endsWith(group.id))!;
+					const remaining = current.groups.filter((group) => group.id !== removed.id);
+					const removedExclusiveRooms = new Set(
+						removed.homeroomIds.filter(
+							(id) => !remaining.some((group) => group.homeroomIds.includes(id))
+						)
+					);
+					const audience = current.homeroomIds.filter(
+						(id) => mode === 'synchronized' || !removedExclusiveRooms.has(id)
+					);
 					graph = {
 						...graph,
 						rowVersion: graph.rowVersion + 1,
 						snapshot: {
-							offerings: graph.snapshot.offerings.map((item) =>
+							offerings: graph.snapshot.offerings.flatMap((item) =>
 								item.id === offeringId
-									? { ...item, groups: item.groups.filter((group) => !path.endsWith(group.id)) }
-									: item
+									? audience.length
+										? [
+												{
+													...item,
+													homeroomIds: audience,
+													targets: item.targets.filter(
+														(target) => target.homeroomId && audience.includes(target.homeroomId)
+													),
+													groups: remaining.flatMap((group) => {
+														const homeroomIds = group.homeroomIds.filter((id) =>
+															audience.includes(id)
+														);
+														return group.homeroomIds.length && !homeroomIds.length
+															? []
+															: [{ ...group, homeroomIds }];
+													})
+												}
+											]
+										: []
+									: [item]
 							)
 						}
 					};
-				else
+				} else
 					graph = {
 						...graph,
 						rowVersion: graph.rowVersion + 1,
@@ -255,7 +292,13 @@ async function mockContextActions(
 				const workspace = navigationWorkspace();
 				for (const room of workspace.homerooms)
 					for (const item of room.items)
-						if (!graph.snapshot.offerings.some((row) => row.id === item.offeringId)) {
+						if (
+							!graph.snapshot.offerings.some(
+								(row) =>
+									row.id === item.offeringId &&
+									(row.id !== offeringId || row.homeroomIds.includes(room.homeroom.id))
+							)
+						) {
 							item.offeringId = null;
 							item.offeringState = 'missing';
 							item.groups = [];
@@ -279,10 +322,21 @@ async function mockContextActions(
 	};
 }
 
+async function addLaterGroup(page: Page) {
+	await page.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
+	const create = page.getByRole('dialog', { name: 'เพิ่มกลุ่มเรียน', exact: true });
+	await create.getByLabel('ชื่อกลุ่ม', { exact: true }).fill('กลุ่มที่เพิ่มภายหลัง');
+	await create.getByRole('button', { name: 'สร้างกลุ่มเรียน', exact: true }).click();
+	await expect(create).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'ลบกลุ่มจากรุ่นนี้ · กลุ่มที่เพิ่มภายหลัง', exact: true })
+	).toBeVisible();
+}
+
 for (const mode of ['independent', 'synchronized'] as const)
 	for (const width of [390, 1280])
 		for (const dark of [false, true]) {
-			test(`${mode} activity groups can be removed individually, added later, and the activity removed at ${width}px ${dark ? 'dark' : 'light'}`, async ({
+			test(`${mode} activity supports later groups and ${mode === 'independent' ? 'leaves the revision after its last covered group' : 'preserves participation after group removal until whole removal'} at ${width}px ${dark ? 'dark' : 'light'}`, async ({
 				page
 			}, testInfo) => {
 				await page.setViewportSize({ width, height: 844 });
@@ -301,7 +355,16 @@ for (const mode of ['independent', 'synchronized'] as const)
 						name: 'ลบกลุ่มจากรุ่นนี้',
 						exact: true
 					});
-					await expect(confirmation).toContainText('กลุ่มอื่นยังอยู่');
+					await expect(confirmation).not.toContainText('กลุ่มอื่นยังอยู่');
+					if (mode === 'independent') {
+						await expect(confirmation).toContainText(
+							'หากไม่เหลือห้อง รายการเปิดสอนนี้จะออกจากรุ่นด้วย'
+						);
+						await expect(confirmation).toContainText('รวมถึงกลุ่มที่ไม่ได้ผูกห้อง');
+					} else {
+						await expect(confirmation).toContainText('ห้องที่เข้าร่วมกิจกรรมในรุ่นนี้ยังคงเดิม');
+						await expect(confirmation).not.toContainText('หากไม่เหลือห้อง');
+					}
 					if (name === 'กลุ่มร่วมสองห้อง') {
 						await expect(confirmation).toContainText('ม.1/1');
 						await expect(confirmation).toContainText('ม.1/2');
@@ -322,6 +385,40 @@ for (const mode of ['independent', 'synchronized'] as const)
 					await expect(
 						page.getByRole('button', { name: `ลบกลุ่มจากรุ่นนี้ · ${name}`, exact: true })
 					).toHaveCount(0);
+					if (name === 'กลุ่มร่วมสองห้อง') {
+						const retained = fixture
+							.graph()
+							.snapshot.offerings.find((item) => item.id === fixture.offeringId)!;
+						expect(retained.groups.map((group) => group.id)).toEqual([groupIds[1]]);
+						expect(retained.homeroomIds).toEqual(
+							mode === 'independent' ? [ids.roomB] : [ids.roomA, ids.roomB]
+						);
+						if (mode === 'independent') {
+							await addLaterGroup(page);
+							expect(
+								fixture
+									.graph()
+									.snapshot.offerings.find((item) => item.id === fixture.offeringId)!
+									.groups.find((group) => group.id === createdGroupId)!.homeroomIds
+							).toEqual([]);
+						}
+					}
+				}
+				if (mode === 'independent') {
+					await expect(page).toHaveURL(new URL(fixture.origin, page.url()).href);
+					await expect(page.getByTestId('delivery-offerings-ready')).not.toContainText('ชุมนุม');
+					expect(
+						fixture.graph().snapshot.offerings.some((item) => item.id === fixture.offeringId)
+					).toBe(false);
+					expect(fixture.management.learningGroups.map((group) => group.id)).toEqual([
+						...groupIds,
+						createdGroupId
+					]);
+					expect(fixture.writes.map((write) => write.method)).toEqual(['DELETE', 'POST', 'DELETE']);
+					expect(
+						await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+					).toBe(true);
+					return;
 				}
 				await expect(page).not.toHaveURL(/groupId=/);
 				await expect(
@@ -330,17 +427,11 @@ for (const mode of ['independent', 'synchronized'] as const)
 				await expect(
 					page.getByRole('button', { name: 'ลบจากรุ่นนี้ · ชุมนุม', exact: true })
 				).toBeVisible();
-				await page.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
-				const create = page.getByRole('dialog', { name: 'เพิ่มกลุ่มเรียน', exact: true });
-				await create.getByLabel('ชื่อกลุ่ม', { exact: true }).fill('กลุ่มที่เพิ่มภายหลัง');
-				await create.getByRole('button', { name: 'สร้างกลุ่มเรียน', exact: true }).click();
-				await expect(create).toHaveCount(0);
-				await expect(
-					page.getByRole('button', {
-						name: 'ลบกลุ่มจากรุ่นนี้ · กลุ่มที่เพิ่มภายหลัง',
-						exact: true
-					})
-				).toBeVisible();
+				expect(
+					fixture.graph().snapshot.offerings.find((item) => item.id === fixture.offeringId)!
+						.homeroomIds
+				).toEqual([ids.roomA, ids.roomB]);
+				await addLaterGroup(page);
 				await page.getByRole('button', { name: 'ลบจากรุ่นนี้ · ชุมนุม', exact: true }).click();
 				const remove = page.getByRole('alertdialog', { name: 'ลบจากรุ่นนี้', exact: true });
 				await expect(remove).toContainText('พร้อมทุกกลุ่มเรียน 1 กลุ่ม');

@@ -78,12 +78,21 @@ test('opening readiness is independent of timetable publication', async () => {
 	const readiness = await readProjectFile(
 		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
 	);
+	const detail = await readProjectFile(
+		'src/routes/(app)/staff/academic/delivery/[offeringId]/+page.svelte'
+	);
+	const weeklyPeriods = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingWeeklyPeriodDialog.svelte'
+	);
 
-	assert.match(panel, /DeliveryOptionCombobox/);
-	assert.match(panel, /standardPeriodsPerWeek/);
-	assert.match(panel, /ตามหลักสูตร/);
-	assert.match(panel, /จัดจริงภาคเรียนนี้/);
-	assert.match(panel, /weeklyPeriodTarget/);
+	assert.doesNotMatch(panel, /DeliveryOptionCombobox|OfferingWeeklyPeriodDialog/);
+	assert.match(detail, /canMutateOffering[\s\S]*<OfferingWeeklyPeriodDialog/);
+	assert.match(detail, /จัดจริงภาคเรียนนี้/);
+	assert.match(weeklyPeriods, /standardPeriodsPerWeek/);
+	assert.match(weeklyPeriods, /ตามหลักสูตร/);
+	assert.match(weeklyPeriods, /weeklyPeriodTarget/);
+	assert.match(weeklyPeriods, /version\.status !== 'draft'/);
+	assert.match(weeklyPeriods, /weeklyPeriodAdjustmentRequest/);
 	assert.match(panel, /AcademicChangeReadiness/);
 	assert.doesNotMatch(
 		panel,
@@ -147,6 +156,9 @@ test('published teachers stay locked and exceptional changes use the typed chang
 	const panel = await readProjectFile(
 		'src/lib/components/learning-delivery/AcademicChangeSetPanel.svelte'
 	);
+	const teacherDialog = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingTeacherChangeDialog.svelte'
+	);
 
 	assert.match(detail, /teachersLocked/);
 	assert.match(detail, /ครูผู้สอนถูกล็อกแล้ว/);
@@ -154,7 +166,14 @@ test('published teachers stay locked and exceptional changes use the typed chang
 	assert.match(detail, /canManage={canMutateOffering}/);
 	assert.match(detail, /if \(!canMutateOffering/);
 	assert.match(panel, /changeSet\.status === 'draft'\s*\?\s*'จัดกลุ่มและครู'\s*:\s*'ดูรายละเอียด'/);
-	assert.match(panel, /AcademicTeacherChangeForm/);
+	assert.doesNotMatch(panel, /AcademicTeacherChangeForm/);
+	assert.match(
+		detail,
+		/selectedGroup\.teachersLocked && selectedDeliveryVersionSummary\?\.changeSetId}[\s\S]*<OfferingTeacherChangeDialog/
+	);
+	assert.match(teacherDialog, /AcademicTeacherChangeForm/);
+	assert.match(teacherDialog, /loaded\.status !== 'draft'/);
 	assert.match(panel, /TeacherHandoffPanel/);
 	assert.doesNotMatch(panel, /replaceLearningGroupTeachers/);
+	assert.doesNotMatch(teacherDialog, /replaceLearningGroupTeachers/);
 });

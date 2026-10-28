@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onDestroy, onMount, untrack } from 'svelte';
+	import { deliveryGroupCoverage } from '#lib/academic/learning-delivery-presentation.js';
 	import { registerDeliveryDraftReconcile } from '#lib/academic/delivery-draft-reconcile.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import {
@@ -187,6 +188,14 @@
 	);
 	let courseSnapshot = $derived(offering?.snapshot.kind === 'course' ? offering.snapshot : null);
 	let selectedTimetableTarget = $derived(selectedDeliveryOffering);
+	const selectedGroupCoverage = $derived(
+		selectedGroup
+			? deliveryGroupCoverage(
+					selectedGroup,
+					deliveryVersion ? (selectedDeliveryOffering?.groups ?? []) : null
+				)
+			: null
+	);
 	const visibleGroups = $derived(
 		deliveryVersion
 			? groups.filter((group) =>
@@ -668,6 +677,8 @@
 
 	async function replaceHomerooms(request: ReplaceLearningGroupHomeroomsRequest) {
 		if (!canMutateOffering || !selectedGroup) return;
+		if (selectedGroupCoverage?.differsFromRegistry)
+			throw new Error('ห้องในรุ่นที่เลือกต่างจากกลุ่มเดิม กรุณาจัดการจากมุมมองรายห้อง');
 		const updated = await replaceLearningGroupHomerooms(selectedGroup.id, request);
 		mutationRevision += 1;
 		updateGroupState(updated);
@@ -1268,6 +1279,7 @@
 						{/if}
 						<LearningGroupList
 							groups={visibleGroups}
+							selectedGroups={deliveryVersion ? (selectedDeliveryOffering?.groups ?? []) : null}
 							selectedGroupId={selectedGroup?.id}
 							canManage={canMutateOffering}
 							onSelect={navigateToGroup}
@@ -1341,8 +1353,10 @@
 											{/if}
 										</div>
 										<p class="text-sm text-muted-foreground">
-											ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
-											{selectedGroup.homeroomIds.length} ห้อง · รายชื่อ {rosterStatusLabel(
+											ครู {selectedGroup.teacherAssignments.length} คน · {deliveryVersion
+												? 'ห้องในรุ่นที่เลือก'
+												: 'ห้องต้นทาง'}
+											{selectedGroupCoverage?.homeroomIds.length ?? 0} ห้อง · รายชื่อ {rosterStatusLabel(
 												selectedGroup.rosterStatus
 											)}
 										</p>
@@ -1389,6 +1403,12 @@
 							{/if}
 						</section>
 
+						{#if selectedGroupCoverage?.differsFromRegistry}<p
+								class="text-sm text-muted-foreground"
+							>
+								ห้องที่แสดงในรุ่นนี้เป็นขอบเขตการเปิดสอนเฉพาะรุ่น รายชื่อ การติดตามนักเรียน
+								และคะแนนด้านล่างยังเป็นข้อมูลของกลุ่มเดิม
+							</p>{/if}
 						{#key selectedGroup.id}<RosterTrackingPanel
 								group={selectedGroup}
 								canManage={canManageRoster}
@@ -1405,6 +1425,8 @@
 									group={selectedGroup}
 									{managementOptions}
 									canManage={canMutateOffering}
+									coverageEditingBlocked={selectedGroupCoverage?.differsFromRegistry ?? false}
+									selectedHomeroomIds={selectedGroupCoverage?.homeroomIds ?? null}
 									onSaveGroup={saveGroup}
 									onReplaceTeachers={replaceTeachers}
 									onReplaceHomerooms={replaceHomerooms}

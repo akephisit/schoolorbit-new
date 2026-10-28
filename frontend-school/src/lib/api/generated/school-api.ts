@@ -2858,6 +2858,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/term-change-sets/{id}/offerings/{offeringId}/homerooms/{homeroomId}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeDeliveryDraftOfferingHomeroom'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/term-change-sets/{id}/preview': {
 		parameters: {
 			query?: never;
@@ -23276,6 +23292,8 @@ export interface components {
 		PreviewCurriculumOfferingsRequest: {
 			/** Format: uuid */
 			academicTermId: string;
+			/** Format: uuid */
+			deliveryVersionId?: string | null;
 			studyProgramIds: string[];
 		};
 		PreviewTeacherHandoffRequest: {
@@ -42653,6 +42671,82 @@ export interface operations {
 		};
 		responses: {
 			/** @description Offering removed from the selected draft */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTermChangeSet'];
+				};
+			};
+			/** @description Invalid removal request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft or offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft changed or resource absent */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeDeliveryDraftOfferingHomeroom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom to remove from this draft */
+				homeroomId: string;
+				/** @description Draft change set ID */
+				id: string;
+				/** @description Offering to restrict */
+				offeringId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RemoveDeliveryDraftResourceRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom removed from the selected draft audience */
 			200: {
 				headers: {
 					[name: string]: unknown;

@@ -1811,6 +1811,27 @@ autosave errors, standalone table publication, and deletion limited to an unrefe
 Check read-only and scoped users through the deployed proxy and retain the feature branch and
 recovery artifacts until migration, authenticated smoke, menu registration and acceptance pass.
 
+### Selected opening room scope
+
+[Migration 144](../backend-school/migrations/144_delivery_revision_audiences.sql) adds explicit
+revision-owned audience parents and allowed rooms. An absent parent preserves legacy registry
+semantics; an empty parent intentionally omits the offering and denies new intake after its
+published effective date. Removal never deletes established roster memberships or scores.
+Retained combined groups keep their identities and settings while the selected graph narrows
+coverage. Next drafts inherit both nonempty and empty scope intent. No old removal is guessed
+or backfilled.
+
+Deploy the backend, generated contracts and matched frontend together under the ordinary
+maintenance/all-tenant migration procedure. Rehearse room removal, reviewed curriculum reopening,
+and inherited scope only on owned disposable fixtures or protected copies. Production acceptance
+uses the existing read-only schema/provider smoke gates; it does not delete or reopen live courses
+or groups. Timetable attendance uses its pinned Delivery source; adopting a newer source requires
+the existing explicit timetable reconciliation. No
+roster or timetable is automatically published. After any audience intent is written, old binaries
+are unsafe because they do not enforce it: keep maintenance active on failure and recover by
+rolling forward with 144-compatible providers. Do not erase scope parents, rewrite a published
+snapshot, or restore raw registry coverage as recovery.
+
 ### Opening draft dates and permanent deletion
 
 [Migration 089](../backend-school/migrations/089_delivery_draft_publication_and_deletion.sql)

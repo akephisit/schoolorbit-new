@@ -2252,3 +2252,21 @@ its Python children separately and repeat them without a changed input or diagno
 operational inputs/receipts separately from local verification results; Actions never certifies
 local tests. Production execution still requires the fixed reviewed bundle, fresh approval under
 the shared lock and the actual 300-second observation described in Operations.
+
+### Selected Delivery room audience
+
+Use the disposable PostgreSQL runner with serial tests and a small fixture batch:
+
+```bash
+CARGO_INCREMENTAL=0 ./scripts/test_backend_school.sh delivery_room_scope -- --test-threads=1
+CARGO_INCREMENTAL=0 ./scripts/test_backend_school.sh delivery_draft_removal -- --test-threads=1
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-delivery --lib audiences::tests --locked
+```
+
+On constrained disks select two or three exact room-scope cases per invocation rather than
+retaining all fixture databases in one server. Coverage includes 143-to-144 unscoped-byte
+preservation, explicit empty versus absent intent, combined/split and central-group behavior,
+future added rooms, publication locks, scoped preview/apply replay and stale hashes, inheritance,
+actual HTTP permission/revision guards, and dated/pinned consumer eligibility. Published history,
+manual roster facts and grading evidence remain unchanged. Keep the API export/generation and
+consumer checks serialized with Rust source writers; use the existing target directory.

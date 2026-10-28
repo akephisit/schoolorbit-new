@@ -163,7 +163,7 @@ struct PreviewHomeroomRow {
     study_program_id: Uuid,
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 struct ExistingPreparationGroupRow {
     id: Uuid,
     learning_offering_id: Uuid,
@@ -190,6 +190,7 @@ struct PreviewHashInput<'a> {
     study_program_ids: &'a [Uuid],
     proposals: &'a [CurriculumPreparationProposal],
     curriculum_sources: &'a [crate::models::CurriculumPublicationSource],
+    delivery_context: Option<&'a super::audiences::RevisionContext>,
 }
 
 #[derive(Serialize)]
@@ -309,6 +310,7 @@ pub async fn catalog_owners_for_curriculum_request(
     let preview = preview_from_curriculum(
         pool,
         PreviewCurriculumOfferingsRequest {
+            delivery_version_id: request.delivery_version_id,
             academic_term_id: request.academic_term_id,
             study_program_ids: request.study_program_ids.clone(),
         },
@@ -603,8 +605,13 @@ pub async fn preview_from_curriculum(
         "academic_delivery.services.offerings.preview_from_curriculum",
     )
     .await?;
-    let preview =
-        build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
+    let preview = build_curriculum_preview_scoped(
+        &mut transaction,
+        request.academic_term_id,
+        &program_ids,
+        request.delivery_version_id,
+    )
+    .await?;
     transaction.commit().await?;
     Ok(preview)
 }
@@ -648,7 +655,8 @@ pub async fn preview_term_preparation(
             "ภาคเรียนเป้าหมายต้องอยู่ในสถานะวางแผน".into(),
         ));
     }
-    build_curriculum_preview_for_term(transaction, target_term_id, &program_ids, term, false).await
+    build_curriculum_preview_for_term(transaction, target_term_id, &program_ids, term, false, None)
+        .await
 }
 
 fn default_preparation_choice(
@@ -684,7 +692,7 @@ pub async fn apply_term_preparation(
         .map(default_preparation_choice)
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
-    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
+    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices, None).await?;
     let revision_id = super::change_sets::create_change_set_in_transaction(
         transaction,
         actor,
@@ -781,8 +789,13 @@ pub async fn apply_from_curriculum(
     )
     .await?;
     let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
-    let preview =
-        build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
+    let preview = build_curriculum_preview_scoped(
+        &mut transaction,
+        request.academic_term_id,
+        &program_ids,
+        request.delivery_version_id,
+    )
+    .await?;
     if preview.source_hash != request.source_hash {
         return Err(AppError::Conflict(
             "โครงสร้างหลักสูตรหรือภาคเรียนเปลี่ยนไป กรุณา preview ใหม่".to_string(),
@@ -790,7 +803,18 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let applied = apply_preview_in_transaction(&mut transaction, &term, &preview, &choices).await?;
+    let context = match request.delivery_version_id {
+        Some(id) => Some(super::audiences::revision_context(&mut transaction, id, term.id).await?),
+        None => None,
+    };
+    let applied = apply_preview_in_transaction(
+        &mut transaction,
+        &term,
+        &preview,
+        &choices,
+        context.as_ref(),
+    )
+    .await?;
     if let Some(version_id) = request.delivery_version_id {
         for offering_id in &applied.offering_ids {
             super::versions::include_offering(
@@ -800,6 +824,18 @@ pub async fn apply_from_curriculum(
                 actor_user_id,
             )
             .await?;
+        }
+        if let Some(context) = &context {
+            for id in &applied.offering_ids {
+                super::audiences::clear_omitted_group_commands(
+                    &mut transaction,
+                    context.revision_id,
+                    *id,
+                )
+                .await?;
+            }
+            super::versions::refresh_revision_snapshot(&mut transaction, context.revision_id)
+                .await?;
         }
     }
     DbSession::new(&mut *transaction)
@@ -857,6 +893,7 @@ async fn apply_preview_in_transaction(
     term: &TermContext,
     preview: &CurriculumOfferingPreview,
     choices: &[CurriculumPreparationChoice],
+    context: Option<&super::audiences::RevisionContext>,
 ) -> Result<AppliedCurriculumPreview, AppError> {
     let retained_ids = preview
         .proposals
@@ -943,6 +980,17 @@ async fn apply_preview_in_transaction(
         if !immutable_target_ids.contains(&offering_id) {
             insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
         }
+        let effective_rooms = context
+            .map(|context| preparation_rooms(context, offering_id, &proposal.target_homeroom_ids));
+        if let (Some(context), Some(rooms)) = (context, &effective_rooms) {
+            super::audiences::set_revision_audience(
+                transaction,
+                context.revision_id,
+                offering_id,
+                rooms,
+            )
+            .await?;
+        }
         offering_ids.push(offering_id);
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {
@@ -952,8 +1000,12 @@ async fn apply_preview_in_transaction(
                     term.id,
                     term.academic_year_id,
                     group,
+                    effective_rooms.as_deref(),
                 )
                 .await?;
+                if let Some(context) = context {
+                    DbSession::new(&mut **transaction).query("academic_delivery.services.offerings.apply_preview_in_transaction", "UPDATE academic_term_change_sets SET excluded_group_ids=array_remove(excluded_group_ids,$2) WHERE id=$1 AND $2=ANY(excluded_group_ids)").bind(context.revision_id).bind(outcome.id).execute().await?;
+                }
                 group_ids.push(outcome.id);
                 if outcome.created {
                     created_group_count += 1;
@@ -1923,13 +1975,45 @@ fn offering_kind_order(kind: LearningOfferingKind) -> u8 {
     }
 }
 
-async fn build_curriculum_preview(
+async fn build_curriculum_preview_scoped(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     program_ids: &[Uuid],
+    version: Option<Uuid>,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let term = require_writable_term(transaction, academic_term_id, false).await?;
-    build_curriculum_preview_for_term(transaction, academic_term_id, program_ids, term, true).await
+    let context = match version {
+        Some(id) => {
+            Some(super::audiences::revision_context(transaction, id, academic_term_id).await?)
+        }
+        None => None,
+    };
+    build_curriculum_preview_for_term(
+        transaction,
+        academic_term_id,
+        program_ids,
+        term,
+        true,
+        context.as_ref(),
+    )
+    .await
+}
+fn preparation_rooms(
+    context: &super::audiences::RevisionContext,
+    offering: Uuid,
+    reviewed: &[Uuid],
+) -> Vec<Uuid> {
+    let mut rooms = context
+        .snapshot
+        .offerings
+        .iter()
+        .find(|o| o.id == offering)
+        .map(|o| o.homeroom_ids.clone())
+        .unwrap_or_default();
+    rooms.extend_from_slice(reviewed);
+    rooms.sort_unstable();
+    rooms.dedup();
+    rooms
 }
 
 async fn build_curriculum_preview_for_term(
@@ -1938,6 +2022,7 @@ async fn build_curriculum_preview_for_term(
     program_ids: &[Uuid],
     term: TermContext,
     lock_rows: bool,
+    context: Option<&super::audiences::RevisionContext>,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     // Lock stable owners before resolving their pointers. Joining publication rows
     // in the locking statement could otherwise retain an older statement snapshot
@@ -2035,7 +2120,7 @@ async fn build_curriculum_preview_for_term(
             .push(homeroom);
     }
     let existing_offerings =
-        load_existing_preview_offerings(transaction, academic_term_id, &rows).await?;
+        load_existing_preview_offerings(transaction, academic_term_id, &rows, context).await?;
     let existing_offering_ids = existing_offerings
         .values()
         .map(|offering| offering.offering_id)
@@ -2126,6 +2211,29 @@ async fn build_curriculum_preview_for_term(
                 .cmp(&right.homeroom_ids)
                 .then(left.group_key.cmp(&right.group_key))
         });
+        let mut scoped_groups = Vec::new();
+        if let Some(context) = context {
+            let excluded = &context.exclusions.groups;
+            if let Some(id) = proposal.existing_offering_id {
+                let allowed = preparation_rooms(context, id, &proposal.target_homeroom_ids);
+                for group in existing_groups
+                    .iter()
+                    .filter(|g| g.learning_offering_id == id && !excluded.contains(&g.id))
+                {
+                    let mut group = group.clone();
+                    let had_rooms = !group.homeroom_ids.is_empty();
+                    group.homeroom_ids.retain(|room| allowed.contains(room));
+                    if !had_rooms || !group.homeroom_ids.is_empty() {
+                        scoped_groups.push(group);
+                    }
+                }
+            }
+        }
+        let existing_groups = if context.is_some() {
+            &scoped_groups
+        } else {
+            &existing_groups
+        };
         if let Some(offering_id) = proposal.existing_offering_id {
             let generated_groups = existing_groups
                 .iter()
@@ -2224,6 +2332,7 @@ async fn build_curriculum_preview_for_term(
         study_program_ids: program_ids,
         proposals: &proposals,
         curriculum_sources: &curriculum_sources,
+        delivery_context: context,
     })?;
     Ok(CurriculumOfferingPreview {
         curriculum_sources,
@@ -2237,6 +2346,7 @@ async fn load_existing_preview_offerings(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     requirements: &[PreviewRequirementRow],
+    context: Option<&super::audiences::RevisionContext>,
 ) -> Result<HashMap<(LearningOfferingKind, Uuid), ExistingPreparationOffering>, AppError> {
     let course_version_ids: Vec<Uuid> = requirements
         .iter()
@@ -2248,7 +2358,7 @@ async fn load_existing_preview_offerings(
         .filter(|row| row.resource_kind == LearningOfferingKind::Activity)
         .map(|row| row.catalog_version_id)
         .collect();
-    let rows: Vec<ExistingPreviewOfferingRow> = DbSession::new(&mut **transaction)
+    let mut rows: Vec<ExistingPreviewOfferingRow> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.offerings.load_existing_preview_offerings",
             r#"SELECT 'course'::text AS resource_kind,
@@ -2275,6 +2385,29 @@ async fn load_existing_preview_offerings(
         .bind(&activity_version_ids)
         .fetch_all()
         .await?;
+    if let Some(context) = context {
+        rows.sort_by_key(|row| {
+            let rank = if context
+                .snapshot
+                .offerings
+                .iter()
+                .any(|o| o.id == row.offering_id)
+            {
+                0
+            } else if context.exclusions.offerings.contains(&row.offering_id)
+                || context
+                    .exclusions
+                    .audiences
+                    .iter()
+                    .any(|a| a.offering == row.offering_id)
+            {
+                1
+            } else {
+                2
+            };
+            (rank, row.offering_id)
+        });
+    }
     let ids = rows.iter().map(|row| row.offering_id).collect::<Vec<_>>();
     let mut scopes = load_preparation_offering_scopes(transaction, &ids).await?;
     let mut existing = HashMap::new();
