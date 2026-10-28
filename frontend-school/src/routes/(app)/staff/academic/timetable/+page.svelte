@@ -1856,6 +1856,8 @@
 <PageShell
 	title="ตารางสอน"
 	description="ดูตารางตามห้อง กลุ่มเรียน หรือครู กดแก้ไขเมื่อต้องการจัดตารางเวอร์ชันใหม่"
+	class="xl:flex xl:h-full xl:min-h-0 xl:flex-col"
+	contentClass="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
 >
 	{#snippet actions()}
 		{#if selectedVersion && academicTermId}
@@ -1959,14 +1961,15 @@
 		<PageSkeleton variant="table" rows={7} />
 	{:else}
 		<div
-			class="relative space-y-4"
+			class="relative space-y-4 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:[&>*]:shrink-0"
 			aria-busy={loading || controller.isRefreshing}
 			data-testid="timetable-board-ready"
 		>
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
 				view={activeView}
-				isSaving={busy || previewing || pendingOperationCount > 0}
+				isSaving={busy || pendingOperationCount > 0}
+				isPreviewing={previewing}
 				editing={controller.editing}
 				onViewChange={changeView}
 			>
@@ -2123,7 +2126,9 @@
 			{/if}
 
 			{#if activeView === 'wholeSchool'}
-				<section class="min-w-0 overflow-hidden rounded-xl border bg-background">
+				<section
+					class="min-w-0 overflow-hidden rounded-xl border bg-background xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+				>
 					<div class="border-b bg-muted/20 px-4 py-3">
 						<h2 class="font-semibold">
 							ภาพรวมทั้งโรงเรียน · วัน{days.find((day) => day.id === overviewDay)?.label}
@@ -2132,7 +2137,7 @@
 							มุมมองนี้ใช้ตรวจภาพรวม หากต้องการจัดให้เปิดมุมมองห้องหรือครู
 						</p>
 					</div>
-					<div class="overflow-x-auto">
+					<div class="overflow-auto xl:min-h-0 xl:flex-1">
 						<table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-sm">
 							<thead>
 								<tr class="bg-muted/35">
@@ -2189,13 +2194,17 @@
 				</section>
 			{:else if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
 				<div
-					class={['grid min-h-0 gap-4', controller.editing && 'xl:grid-cols-[15rem_minmax(0,1fr)]']}
+					class={[
+						'grid min-h-0 gap-4 xl:flex-1',
+						controller.editing && 'xl:grid-cols-[15rem_minmax(0,1fr)]'
+					]}
 				>
 					{#if controller.editing}<div class="relative min-h-0">
 							<TimetableUnscheduledTray
 								ordinaryDemands={visibleOrdinaryDemands}
 								synchronizedDemands={visibleSynchronizedDemands}
 								groups={controller.workspace.learningGroups}
+								homerooms={controller.workspace.homerooms}
 								rooms={controller.workspace.rooms}
 								staff={controller.workspace.staff}
 								disabled={!canEdit}

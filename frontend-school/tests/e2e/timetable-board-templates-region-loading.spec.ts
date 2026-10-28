@@ -49,7 +49,7 @@ test('explicit board workspace paints before delayed versions without requesting
 	await workspaces[0].fallback();
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
 	expect(changeSets).toHaveLength(0);
-	const version = page.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true });
+	const version = page.getByRole('combobox', { name: 'เลือกรุ่นตารางสอน', exact: true });
 	const versionRegion = page.locator('[aria-busy]').filter({ has: version }).last();
 	await expect(versionRegion).toHaveAttribute('aria-busy', 'true');
 	await expect(version).toBeDisabled();

@@ -53,6 +53,7 @@ export interface TimetableMockOptions {
 	periodCount?: number;
 	includeSynchronizedDemand?: boolean;
 	previewDelayMs?: number;
+	previewGate?: Promise<void>;
 	createDelayMs?: number;
 	updateDelayMs?: number;
 	deleteDelayMs?: number;
@@ -559,6 +560,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/placement-preview') {
 				previewRequests += 1;
+				await options.previewGate;
 				if (options.previewDelayMs) {
 					await new Promise((resolve) => setTimeout(resolve, options.previewDelayMs));
 				}

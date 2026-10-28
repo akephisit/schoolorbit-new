@@ -75,17 +75,19 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <section
-	class="min-w-0 overflow-hidden rounded-xl border bg-background"
+	class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-background"
 	aria-label={`ตารางของ ${rowLabel}`}
 >
-	<div class="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
+	<div
+		class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3"
+	>
 		<h2 class="text-lg font-semibold">{rowLabel}</h2>
 		<p class="text-sm text-muted-foreground">
 			{canEdit ? 'ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ' : 'กดคาบเพื่อดูรายละเอียด'}
 		</p>
 	</div>
-	<div class="overflow-x-auto" data-timetable-scroll-container>
-		<table class="w-full min-w-[70rem] table-fixed border-collapse text-left">
+	<div class="min-h-0 flex-1 overflow-auto" data-timetable-scroll-container>
+		<table class="w-full min-w-[70rem] table-fixed border-collapse text-left xl:h-full">
 			<thead>
 				<tr class="bg-muted/35">
 					<th
