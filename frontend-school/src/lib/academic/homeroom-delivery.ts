@@ -2,7 +2,8 @@ import type {
 	HomeroomDeliveryItem,
 	HomeroomDeliveryWorkspace,
 	HomeroomDeliveryRoom,
-	CurriculumDeliveryAlignmentState
+	CurriculumDeliveryAlignmentState,
+	DeliveryVersion
 } from '#lib/api/learning-delivery.js';
 
 export type HomeroomReadinessFilter = 'all' | 'ready' | 'attention';
@@ -31,27 +32,263 @@ export function sortHomeroomDeliveryItems<T extends HomeroomItemOrder>(items: re
 	);
 }
 
-type DeliveryRoomShape = {
-	homeroom: { name: string };
-	gradeLevel: { name: string };
-	studyProgram: { code: string; name: string; levelName: string };
-	expectedCount: number;
-	readyCount: number;
-	items?: ReadonlyArray<{ alignmentStates: readonly string[] }>;
-	extraOfferings?: readonly unknown[];
+type DeliveryRoomShape = Pick<
+	HomeroomDeliveryRoom,
+	| 'homeroom'
+	| 'gradeLevel'
+	| 'studyProgram'
+	| 'expectedCount'
+	| 'readyCount'
+	| 'items'
+	| 'extraOfferings'
+	| 'blockers'
+>;
+
+export type DeliveryReviewStatusKey =
+	| CurriculumDeliveryAlignmentState
+	| 'missing_period_target'
+	| 'zero_weekly_periods'
+	| 'groups_present'
+	| 'groups_missing'
+	| 'groups_deferred'
+	| 'central_activity'
+	| 'groups_absent'
+	| 'primary_missing'
+	| 'primary_assigned'
+	| 'teachers_deferred'
+	| 'closed_offering'
+	| 'comparison_unknown'
+	| 'coverage_incomplete'
+	| 'prerequisites'
+	| 'structure_unknown';
+export type DeliveryReviewStatus = {
+	key: DeliveryReviewStatusKey;
+	label: string;
+	count: number;
+	unit: 'รายการ' | 'กลุ่ม' | 'ห้อง';
+	tone: 'success' | 'warning' | 'info' | 'neutral';
+	review: boolean;
 };
+type StatusDefinition = Omit<DeliveryReviewStatus, 'key' | 'count'>;
+const statusDefinitions: Record<DeliveryReviewStatusKey, StatusDefinition> = {
+	curriculum_requirement_not_offered: {
+		label: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
+		unit: 'รายการ',
+		tone: 'warning',
+		review: true
+	},
+	operational_periods_differ: {
+		label: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร',
+		unit: 'รายการ',
+		tone: 'info',
+		review: true
+	},
+	extra_offering: {
+		label: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
+		unit: 'รายการ',
+		tone: 'info',
+		review: true
+	},
+	ended_early: {
+		label: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
+		unit: 'รายการ',
+		tone: 'warning',
+		review: true
+	},
+	closed_offering: { label: 'รายการเปิดสอนปิดแล้ว', unit: 'รายการ', tone: 'warning', review: true },
+	missing_period_target: {
+		label: 'ยังไม่กำหนดคาบที่จัดจริง',
+		unit: 'รายการ',
+		tone: 'warning',
+		review: true
+	},
+	groups_missing: { label: 'ยังไม่จัดกลุ่ม', unit: 'รายการ', tone: 'warning', review: true },
+	groups_deferred: { label: 'รอจัดกลุ่ม', unit: 'รายการ', tone: 'info', review: true },
+	primary_missing: { label: 'ยังไม่มีครูหลัก', unit: 'กลุ่ม', tone: 'warning', review: true },
+	prerequisites: {
+		label: 'ขาดข้อมูลโครงสร้างหลักสูตร',
+		unit: 'ห้อง',
+		tone: 'warning',
+		review: true
+	},
+	coverage_incomplete: {
+		label: 'ยังเปิดสอนรองรับไม่ครบ',
+		unit: 'รายการ',
+		tone: 'warning',
+		review: true
+	},
+	structure_unknown: {
+		label: 'ยังตรวจโครงสร้างไม่ได้',
+		unit: 'ห้อง',
+		tone: 'neutral',
+		review: true
+	},
+	comparison_unknown: {
+		label: 'ยังไม่มีผลเทียบหลักสูตร',
+		unit: 'รายการ',
+		tone: 'neutral',
+		review: true
+	},
+	groups_absent: { label: 'ยังไม่มีกลุ่มเรียน', unit: 'รายการ', tone: 'neutral', review: true },
+	central_activity: { label: 'กิจกรรมคาบกลาง', unit: 'รายการ', tone: 'info', review: false },
+	teachers_deferred: { label: 'กำหนดครูภายหลัง', unit: 'รายการ', tone: 'info', review: false },
+	zero_weekly_periods: {
+		label: 'ไม่จัดคาบประจำสัปดาห์',
+		unit: 'รายการ',
+		tone: 'info',
+		review: false
+	},
+	groups_present: { label: 'มีกลุ่มเรียน', unit: 'กลุ่ม', tone: 'neutral', review: false },
+	primary_assigned: { label: 'มีครูหลัก', unit: 'กลุ่ม', tone: 'success', review: false },
+	matches_curriculum: { label: 'ตรงกับหลักสูตร', unit: 'รายการ', tone: 'success', review: false }
+};
+type StatusEvidence = Map<DeliveryReviewStatusKey, Set<string>>;
+function addStatus(evidence: StatusEvidence, key: DeliveryReviewStatusKey, id: string) {
+	let identities = evidence.get(key);
+	if (!identities) {
+		identities = new Set();
+		evidence.set(key, identities);
+	}
+	identities.add(id);
+}
+function statusBadges(evidence: StatusEvidence): DeliveryReviewStatus[] {
+	return (Object.keys(statusDefinitions) as DeliveryReviewStatusKey[]).flatMap((key) => {
+		const count = evidence.get(key)?.size ?? 0;
+		if (!count) return [];
+		const definition = statusDefinitions[key];
+		return [
+			{
+				key,
+				...definition,
+				count,
+				label:
+					key === 'primary_assigned' && !evidence.has('primary_missing')
+						? 'ครูหลักครบใน'
+						: definition.label
+			}
+		];
+	});
+}
+function itemStatusEvidence(item: HomeroomDeliveryItem, evidence: StatusEvidence) {
+	const id = item.offeringId ?? `requirement:${item.requirementId}`;
+	for (const state of item.alignmentStates) addStatus(evidence, state, id);
+	if (!item.offeringId) {
+		addStatus(evidence, 'curriculum_requirement_not_offered', id);
+		return;
+	}
+	if (!item.alignmentStates.length) addStatus(evidence, 'comparison_unknown', id);
+	if (item.offeringState === 'closed') addStatus(evidence, 'closed_offering', id);
+	if (item.weeklyPeriodTarget === null) addStatus(evidence, 'missing_period_target', id);
+	if (item.weeklyPeriodTarget === 0) addStatus(evidence, 'zero_weekly_periods', id);
+	if (item.groupMode === 'missing') addStatus(evidence, 'groups_missing', id);
+	if (item.groupMode === 'deferred' && item.groups.length === 0)
+		addStatus(evidence, 'groups_deferred', id);
+	if (item.groupMode === 'central') addStatus(evidence, 'central_activity', id);
+	if (
+		item.groups.length === 0 &&
+		(item.groupMode === 'central' ||
+			item.groupMode === 'deferred' ||
+			item.teacherState === 'deferred')
+	)
+		addStatus(evidence, 'teachers_deferred', id);
+	for (const group of item.groups) {
+		addStatus(evidence, 'groups_present', group.id);
+		addStatus(
+			evidence,
+			group.primaryTeacherCount > 0 ? 'primary_assigned' : 'primary_missing',
+			group.id
+		);
+	}
+}
+
+export function deliveryItemStatuses(item: HomeroomDeliveryItem): DeliveryReviewStatus[] {
+	const evidence: StatusEvidence = new Map();
+	itemStatusEvidence(item, evidence);
+	return statusBadges(evidence);
+}
+
+/** Coverage is the provider's opening/group count, separate from this UI review projection. */
+export function deliveryRoomStatus(room: DeliveryRoomShape) {
+	const evidence: StatusEvidence = new Map();
+	for (const item of room.items) itemStatusEvidence(item, evidence);
+	for (const item of room.extraOfferings) {
+		for (const state of item.alignmentStates) addStatus(evidence, state, item.offeringId);
+	}
+	// A room may match one requirement while another differs. Coverage has its own scoped badge.
+	evidence.delete('matches_curriculum');
+	if (room.blockers.length) addStatus(evidence, 'prerequisites', room.homeroom.id);
+	if (room.expectedCount === 0 || room.items.length === 0)
+		addStatus(evidence, 'structure_unknown', room.homeroom.id);
+	const coverageComplete =
+		room.expectedCount > 0 &&
+		room.items.length > 0 &&
+		room.blockers.length === 0 &&
+		room.readyCount === room.expectedCount;
+	const statuses = statusBadges(evidence);
+	if (room.expectedCount > room.readyCount)
+		statuses.push({
+			key: 'coverage_incomplete',
+			...statusDefinitions.coverage_incomplete,
+			count: room.expectedCount - room.readyCount
+		});
+	return {
+		coverageComplete,
+		statuses,
+		needsAttention: !coverageComplete || statuses.some((status) => status.review)
+	};
+}
+
+/** Only the selected version's real groups prove group/teacher facts; they do not prove target-room coverage. */
+export function deliveryOfferingStatuses(
+	offering: DeliveryVersion['snapshot']['offerings'][number],
+	workspace: HomeroomDeliveryWorkspace | null = null
+): DeliveryReviewStatus[] {
+	const evidence: StatusEvidence = new Map();
+	const matching =
+		workspace?.homerooms.flatMap((room) =>
+			room.items.filter((item) => item.offeringId === offering.id)
+		) ?? [];
+	for (const item of matching) {
+		if (item.groupMode === 'missing') addStatus(evidence, 'groups_missing', offering.id);
+		if (item.groupMode === 'deferred' && item.groups.length === 0)
+			addStatus(evidence, 'groups_deferred', offering.id);
+		if (item.groupMode === 'central') addStatus(evidence, 'central_activity', offering.id);
+		if (item.weeklyPeriodTarget === null) addStatus(evidence, 'missing_period_target', offering.id);
+	}
+	if (offering.weeklyPeriodTarget === 0) addStatus(evidence, 'zero_weekly_periods', offering.id);
+	for (const group of offering.groups) {
+		addStatus(evidence, 'groups_present', group.id);
+		addStatus(
+			evidence,
+			group.teachers.some((teacher) => teacher.role === 'primary')
+				? 'primary_assigned'
+				: 'primary_missing',
+			group.id
+		);
+	}
+	if (offering.groups.length === 0) {
+		const central =
+			offering.catalog.kind === 'activity' && offering.catalog.schedulingMode === 'synchronized';
+		if (central) addStatus(evidence, 'central_activity', offering.id);
+		if (
+			central ||
+			matching.some((item) => item.groupMode === 'deferred' || item.teacherState === 'deferred')
+		)
+			addStatus(evidence, 'teachers_deferred', offering.id);
+		if (
+			!central &&
+			!matching.some((item) => ['central', 'missing', 'deferred'].includes(item.groupMode))
+		)
+			addStatus(evidence, 'groups_absent', offering.id);
+	}
+	return statusBadges(evidence);
+}
 
 function normalize(value: string): string {
 	return value.trim().toLocaleLowerCase('th-TH');
 }
-
 function needsAttention(room: DeliveryRoomShape): boolean {
-	return (
-		room.expectedCount === 0 ||
-		room.readyCount < room.expectedCount ||
-		(room.extraOfferings?.length ?? 0) > 0 ||
-		(room.items?.some((item) => !item.alignmentStates.includes('matches_curriculum')) ?? false)
-	);
+	return deliveryRoomStatus(room).needsAttention;
 }
 
 export function filterHomeroomDeliveryRooms<T extends DeliveryRoomShape>(
@@ -92,11 +329,11 @@ export function summarizeHomeroomDelivery(rooms: readonly DeliveryRoomShape[]) {
 }
 
 export const deliveryAlignmentLabels: Record<CurriculumDeliveryAlignmentState, string> = {
-	matches_curriculum: 'ตรงกับหลักสูตร',
-	curriculum_requirement_not_offered: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
-	extra_offering: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-	ended_early: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
-	operational_periods_differ: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
+	matches_curriculum: statusDefinitions.matches_curriculum.label,
+	curriculum_requirement_not_offered: statusDefinitions.curriculum_requirement_not_offered.label,
+	extra_offering: statusDefinitions.extra_offering.label,
+	ended_early: statusDefinitions.ended_early.label,
+	operational_periods_differ: statusDefinitions.operational_periods_differ.label
 };
 
 export function deliveryAlignmentBadgeClass(state: CurriculumDeliveryAlignmentState): string {

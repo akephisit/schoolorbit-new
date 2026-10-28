@@ -682,7 +682,10 @@ import {
 	navigationVersion,
 	navigationWorkspace
 } from './fixtures/delivery-navigation-route-data';
-import type { CurriculumOfferingPreview } from '../../src/lib/api/learning-delivery.js';
+import type {
+	CurriculumOfferingPreview,
+	ApplyCurriculumOfferingsResult
+} from '../../src/lib/api/learning-delivery.js';
 
 const comparisonCatalog = 'c0000000-0000-4000-8000-000000000001';
 const comparisonOffering = 'c0000000-0000-4000-8000-000000000002';
@@ -1045,6 +1048,10 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 				.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
 				.first();
 			await expect(add).toBeVisible();
+			if (view === 'offerings')
+				await expect(
+					scope.getByText('หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน · 2 ห้อง', { exact: true })
+				).toBeVisible();
 			await add.scrollIntoViewIfNeeded();
 			const pageWidth = await page.evaluate(() => ({
 				viewport: window.innerWidth,
@@ -1602,6 +1609,41 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 			]
 		} satisfies CurriculumOfferingPreview)
 	);
+	const originalGroups = structuredClone(fixture.old.groups);
+	await page.route('**/api/academic/offerings/apply-from-curriculum', (route) => {
+		for (const room of fixture.workspace.homerooms) {
+			const item = room.items[0];
+			item.offeringId = fixture.old.id;
+			item.offeringState = 'draft';
+			item.alignmentStates = ['matches_curriculum'];
+			item.groups = fixture.old.groups
+				.filter((group) => group.homeroomIds.includes(room.homeroom.id))
+				.map((group) => ({
+					id: group.id,
+					code: group.code,
+					name: group.name,
+					homeroomIds: group.homeroomIds,
+					homeroomNames: [room.homeroom.name],
+					primaryTeacherCount: 0,
+					status: 'draft',
+					rosterStatus: 'draft',
+					teachersLocked: false
+				}));
+			item.groupMode = 'normal';
+			room.readyCount = 1;
+		}
+		return fulfill(route, {
+			academicTermId: navIds.term,
+			sourceHash: 'c'.repeat(64),
+			offeringIds: [fixture.old.id],
+			groupIds: [],
+			createdOfferingCount: 0,
+			retainedOfferingCount: 1,
+			createdGroupCount: 0,
+			retainedGroupCount: 0,
+			skippedCount: 0
+		} satisfies ApplyCurriculumOfferingsResult);
+	});
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	try {
@@ -1627,6 +1669,25 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 			path: testInfo.outputPath('repeated-manual-conflicts.png'),
 			animations: 'disabled'
 		});
+		await dialog.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true }).click();
+		await expect(dialog).toHaveCount(0);
+		const apply = fixture.academicWrites.find((write) =>
+			write.path.endsWith('/apply-from-curriculum')
+		)!;
+		expect(apply.body).toEqual({
+			academicTermId: navIds.term,
+			studyProgramIds: [navIds.program],
+			deliveryVersionId: navIds.version,
+			sourceHash: 'c'.repeat(64),
+			idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+			choices: [{ proposalId: 'd'.repeat(64), action: 'defer_groups', groups: [] }]
+		});
+		expect(fixture.academicWrites.map((write) => write.path)).toEqual([
+			'/api/academic/offerings/preview-from-curriculum',
+			'/api/academic/offerings/apply-from-curriculum'
+		]);
+		expect(fixture.old.groups).toEqual(originalGroups);
+		expect(errors).toEqual([]);
 	} finally {
 		await testInfo.attach('browser-page-errors', {
 			body: JSON.stringify(errors),
@@ -2018,4 +2079,311 @@ test('same-term history Back cancels a pending version A lookup before version B
 		lookupA.release();
 		optionsB.release();
 	}
+});
+
+async function mockReviewStatuses(page: Page, wrongContext = false) {
+	await mockDeliveryNavigation(page);
+	const workspace = navigationWorkspace(),
+		version = navigationVersion();
+	const course = version.snapshot.offerings.find((item) => item.id === navOfferings.basic21)!;
+	const central = version.snapshot.offerings.find((item) => item.id === navOfferings.club)!;
+	const extra = version.snapshot.offerings.find((item) => item.id === navOfferings.guidance)!;
+	if (extra.catalog.kind !== 'activity')
+		throw new Error('Expected the additional activity fixture');
+	const extraCatalogVersionId = extra.catalog.activityVersionId;
+	const groupId = 'd0000000-0000-4000-8000-000000000111';
+	const extraGroupId = 'd0000000-0000-4000-8000-000000000112';
+	course.weeklyPeriodTarget = 0;
+	course.groups = [
+		{
+			id: groupId,
+			code: 'MANUAL',
+			name: 'กลุ่มที่ยังขาดครู',
+			homeroomIds: [navIds.roomA],
+			preferredRoomIds: [],
+			teachers: []
+		}
+	];
+	central.weeklyPeriodTarget = 0;
+	central.groups = [];
+	extra.groups = [
+		{
+			id: extraGroupId,
+			code: 'EXTRA',
+			name: 'กลุ่มนอกหลักสูตร',
+			homeroomIds: [navIds.roomA],
+			preferredRoomIds: [],
+			teachers: [
+				{
+					assignmentId: 'd0000000-0000-4000-8000-000000000113',
+					teacherId: navIds.actor,
+					displayName: 'ครูหลักกิจกรรมเพิ่มเติม',
+					role: 'primary'
+				}
+			]
+		}
+	];
+	version.snapshot.offerings = [course, central, extra];
+	const courseSource = workspace.homerooms[0].items.find((item) => item.offeringId === course.id)!;
+	workspace.homerooms[0].items = [
+		{
+			...courseSource,
+			weeklyPeriodTarget: 0,
+			teacherState: 'missing_primary',
+			groupMode: 'normal',
+			alignmentStates: ['operational_periods_differ'],
+			groups: [
+				{
+					id: groupId,
+					code: 'MANUAL',
+					name: 'กลุ่มที่ยังขาดครู',
+					homeroomIds: [navIds.roomA],
+					homeroomNames: ['ม.1/1'],
+					primaryTeacherCount: 0,
+					status: 'draft',
+					rosterStatus: 'draft',
+					teachersLocked: false
+				}
+			]
+		}
+	];
+	workspace.homerooms[0].expectedCount = 1;
+	workspace.homerooms[0].readyCount = 1;
+	workspace.homerooms[0].extraOfferings = [
+		{
+			offeringId: extra.id,
+			catalogVersionId: extraCatalogVersionId,
+			resourceKind: 'activity',
+			code: extra.code,
+			name: extra.name,
+			weeklyPeriodTarget: extra.weeklyPeriodTarget,
+			startsOn: null,
+			endsOn: null,
+			alignmentStates: ['extra_offering']
+		}
+	];
+	workspace.homerooms[1].items = [
+		{
+			...courseSource,
+			requirementId: 'd0000000-0000-4000-8000-000000000114',
+			catalogVersionId: 'd0000000-0000-4000-8000-000000000115',
+			name: 'รายวิชาที่ยังไม่เปิด',
+			offeringId: null,
+			offeringState: 'missing',
+			weeklyPeriodTarget: null,
+			teacherState: 'missing_primary',
+			groupMode: 'missing',
+			groups: [],
+			alignmentStates: ['curriculum_requirement_not_offered']
+		}
+	];
+	workspace.homerooms[1].expectedCount = 1;
+	workspace.homerooms[1].readyCount = 0;
+	workspace.homerooms[1].extraOfferings = [];
+	const centralRoom = structuredClone(workspace.homerooms[1]);
+	centralRoom.homeroom = { id: 'd0000000-0000-4000-8000-000000000116', name: 'ม.1/3' };
+	centralRoom.items = [
+		{
+			...courseSource,
+			requirementId: 'd0000000-0000-4000-8000-000000000117',
+			catalogVersionId: central.id,
+			resourceKind: 'activity',
+			code: central.code,
+			name: central.name,
+			schedulingMode: 'synchronized',
+			subjectType: null,
+			standardPeriodsPerWeek: null,
+			weeklyPeriodTarget: 0,
+			offeringId: central.id,
+			offeringState: 'draft',
+			groupMode: 'central',
+			teacherState: 'deferred',
+			groups: [],
+			alignmentStates: ['matches_curriculum']
+		}
+	];
+	centralRoom.expectedCount = 1;
+	centralRoom.readyCount = 1;
+	workspace.homerooms.push(centralRoom);
+	workspace.unlinked = [];
+	const academicReads: string[] = [],
+		writes: string[] = [];
+	page.on('request', (request) => {
+		const path = new URL(request.url()).pathname;
+		if (!path.startsWith('/api/academic/')) return;
+		if (request.method() === 'GET') academicReads.push(path);
+		else writes.push(`${request.method()} ${path}`);
+	});
+	await page.route('**/api/academic/delivery/homerooms?*', (route) =>
+		fulfill(route, wrongContext ? { ...workspace, academicTermId: navIds.activeTerm } : workspace)
+	);
+	await page.route(`**/api/academic/delivery-versions/${navIds.version}`, (route) =>
+		fulfill(route, version)
+	);
+	const query = new URLSearchParams({
+		academicYearId: navIds.year,
+		academicTermId: navIds.term,
+		deliveryVersionId: navIds.version,
+		expandedRooms: ''
+	});
+	return { workspace, version, academicReads, writes, origin: `/staff/academic/delivery?${query}` };
+}
+
+for (const width of [390, 1280])
+	for (const dark of [false, true]) {
+		test(`collapsed room review badges share operational facts with offering rows at ${width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width, height: 1000 });
+			const fixture = await mockReviewStatuses(page);
+			await page.goto(fixture.origin);
+			if (dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+				await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+			}
+			const room = (name: string) =>
+				page.locator('details').filter({ has: page.getByRole('heading', { name, exact: true }) });
+			const summary = room('ม.1/1').locator('summary');
+			await expect(room('ม.1/1')).not.toHaveAttribute('open', '');
+			await expect(summary).toContainText('ครบตามโครงสร้าง');
+			await expect(summary).toContainText('ยังไม่มีครูหลัก 1 กลุ่ม');
+			await expect(summary).toContainText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร 1 รายการ');
+			await expect(summary).toContainText('เปิดสอนเพิ่มเติมนอกหลักสูตร 1 รายการ');
+			await expect(summary).toContainText('1/1');
+			await expect(room('ม.1/2').locator('summary')).toContainText(
+				'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน 1 รายการ'
+			);
+			await expect(room('ม.1/2').locator('summary')).not.toContainText('ยังไม่มีครูหลัก');
+			await expect(room('ม.1/3').locator('summary')).toContainText('กิจกรรมคาบกลาง 1 รายการ');
+			await expect(room('ม.1/3').locator('summary')).toContainText('กำหนดครูภายหลัง 1 รายการ');
+			await expect(room('ม.1/3').locator('summary')).not.toContainText('ยังไม่มีครูหลัก');
+			const statuses = summary.getByTestId('delivery-room-statuses');
+			const headingBounds = await summary
+				.getByRole('heading', { name: 'ม.1/1', exact: true })
+				.boundingBox();
+			const statusBounds = await statuses.boundingBox();
+			if (width >= 640) {
+				expect(statusBounds!.x).toBeGreaterThan(headingBounds!.x + headingBounds!.width);
+				expect(statusBounds!.x + statusBounds!.width).toBeLessThan(
+					(await summary
+						.locator('p')
+						.filter({ hasText: /^1\/1$/ })
+						.boundingBox())!.x
+				);
+			}
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+				width
+			);
+			await page.screenshot({
+				path: testInfo.outputPath('collapsed-room-statuses.png'),
+				animations: 'disabled',
+				fullPage: true
+			});
+			expect(
+				fixture.academicReads.filter(
+					(path) => path === `/api/academic/delivery-versions/${navIds.version}`
+				)
+			).toHaveLength(0);
+			const beforeExpand = fixture.academicReads.length;
+			await summary.focus();
+			await page.keyboard.press('Enter');
+			await expect(room('ม.1/1')).toHaveAttribute('open', '');
+			await expect(
+				room('ม.1/1').getByRole('table').getByText('ยังไม่มีครูหลัก 1 กลุ่ม', { exact: true })
+			).toBeVisible();
+			await room('ม.1/2').locator('summary').click();
+			await expect(
+				room('ม.1/2')
+					.getByRole('row')
+					.filter({ hasText: 'รายวิชาที่ยังไม่เปิด' })
+					.getByRole('cell')
+					.nth(4)
+			).toHaveText('ยังไม่เปิดสอน');
+			await room('ม.1/3').locator('summary').click();
+			await expect(
+				room('ม.1/3').getByRole('row').filter({ hasText: 'ชุมนุม' }).getByRole('cell').nth(4)
+			).toHaveText('กำหนดภายหลัง');
+			expect(fixture.academicReads).toHaveLength(beforeExpand);
+			const filter = page.getByRole('combobox', { name: 'กรองความพร้อมของห้อง', exact: true });
+			await filter.click();
+			await page.getByRole('option', { name: 'ไม่มีรายการที่ต้องตรวจ', exact: true }).click();
+			await expect(page.locator('details')).toHaveCount(1);
+			await expect(room('ม.1/3')).toBeVisible();
+			await filter.click();
+			await page.getByRole('option', { name: 'ต้องตรวจเพิ่มเติม', exact: true }).click();
+			await expect(page.locator('details')).toHaveCount(2);
+			await expect(room('ม.1/1')).toBeVisible();
+			await expect(room('ม.1/2')).toBeVisible();
+			await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+			const offeringRegion = page.getByRole('region', {
+				name: 'มุมมองรายวิชาและกิจกรรม',
+				exact: true
+			});
+			const course = offeringRegion.getByRole('row').filter({ hasText: 'คณิตศาสตร์ต้น' });
+			await expect(course).toContainText('ยังไม่มีครูหลัก 1 กลุ่ม');
+			await expect(course).toContainText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร');
+			await expect(course).toContainText('ไม่จัดคาบประจำสัปดาห์ 1 รายการ');
+			const central = offeringRegion.getByRole('row').filter({ hasText: 'ชุมนุม' });
+			await expect(central).toContainText('กิจกรรมคาบกลาง 1 รายการ');
+			await expect(central).toContainText('กำหนดครูภายหลัง 1 รายการ');
+			await expect(central).not.toContainText('ยังไม่มีครูหลัก');
+			await expect(central).not.toContainText('0/0');
+			const extra = offeringRegion.getByRole('row').filter({ hasText: 'แนะแนว' });
+			await expect(extra).toContainText('เปิดสอนเพิ่มเติมนอกหลักสูตร');
+			await expect(extra).toContainText('ครูหลักครบใน 1 กลุ่ม');
+			await page.screenshot({
+				path: testInfo.outputPath('offering-review-statuses.png'),
+				animations: 'disabled',
+				fullPage: true
+			});
+			expect(
+				fixture.academicReads.filter((path) => path.includes('management-options'))
+			).toHaveLength(0);
+			expect(fixture.writes).toEqual([]);
+		});
+	}
+
+test('offering group facts remain scoped to selected snapshot when room comparison context is unavailable', async ({
+	page
+}) => {
+	const fixture = await mockReviewStatuses(page, true);
+	await page.goto(`${fixture.origin}&view=offerings`);
+	const region = page.getByRole('region', { name: 'มุมมองรายวิชาและกิจกรรม', exact: true });
+	const row = region.getByRole('row').filter({ hasText: 'คณิตศาสตร์ต้น' });
+	await expect(row).toContainText('ยังไม่มีผลเทียบรายห้อง');
+	await expect(row).not.toContainText('ตรงกับหลักสูตร');
+	await expect(row).toContainText('ยังไม่มีครูหลัก 1 กลุ่ม');
+	expect(fixture.writes).toEqual([]);
+	expect(fixture.academicReads.filter((path) => path.includes('management-options'))).toHaveLength(
+		0
+	);
+});
+
+test('an opened course without real groups waits for grouping instead of claiming missing teachers', async ({
+	page
+}) => {
+	const fixture = await mockReviewStatuses(page);
+	const item = fixture.workspace.homerooms[1].items[0];
+	const course = fixture.version.snapshot.offerings.find(
+		(source) => source.id === navOfferings.basic21
+	)!;
+	item.offeringId = course.id;
+	item.catalogVersionId = navOfferings.basic21;
+	item.name = course.name;
+	item.code = course.code;
+	item.requirementKind = 'required';
+	item.offeringState = 'draft';
+	item.weeklyPeriodTarget = 0;
+	item.alignmentStates = ['matches_curriculum'];
+	const target = new URL(fixture.origin, 'http://schoolorbit.test');
+	target.searchParams.set('expandedRooms', navIds.roomB);
+	await page.goto(target.pathname + target.search);
+	const room = page
+		.locator('details')
+		.filter({ has: page.getByRole('heading', { name: 'ม.1/2', exact: true }) });
+	const row = room.getByRole('row').filter({ hasText: item.name });
+	await expect(row.getByRole('cell').nth(4)).toHaveText('รอจัดกลุ่ม');
+	await expect(row).toContainText('ยังไม่จัดกลุ่ม');
+	await expect(row).not.toContainText('ยังไม่มีครูหลัก');
+	expect(fixture.writes).toEqual([]);
 });

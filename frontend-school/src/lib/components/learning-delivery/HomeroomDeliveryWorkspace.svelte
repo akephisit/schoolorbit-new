@@ -1,4 +1,5 @@
 <script lang="ts">
+	import DeliveryStatusBadges from './DeliveryStatusBadges.svelte';
 	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
 	import type { AcademicTermChangeSet } from '#lib/api/learning-delivery.js';
 	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
@@ -11,6 +12,8 @@
 	import {
 		deliveryAlignmentLabels as alignmentLabels,
 		deliveryAlignmentBadgeClass as alignmentBadgeClass,
+		deliveryItemStatuses,
+		deliveryRoomStatus,
 		filterHomeroomDeliveryRooms,
 		sortHomeroomDeliveryItems,
 		summarizeHomeroomDelivery
@@ -92,15 +95,6 @@
 		split: 'แบ่งหลายกลุ่ม',
 		deferred: 'รอรูปแบบการเลือก'
 	} as const;
-	function itemNeedsAttention(item: HomeroomDeliveryItem) {
-		return (
-			!item.alignmentStates.includes('matches_curriculum') ||
-			item.offeringState === 'missing' ||
-			item.groupMode === 'missing' ||
-			(item.offeringId !== null && item.weeklyPeriodTarget === null) ||
-			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary')
-		);
-	}
 
 	function curriculumHref(room: Workspace['homerooms'][number]): string {
 		const query = new SvelteURLSearchParams({
@@ -198,12 +192,12 @@
 							{filters.readiness === 'all'
 								? 'ทุกห้อง'
 								: filters.readiness === 'ready'
-									? 'พร้อมตามโครงสร้าง'
+									? 'ไม่มีรายการที่ต้องตรวจ'
 									: 'ต้องตรวจเพิ่มเติม'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="all">ทุกห้อง</Select.Item>
-							<Select.Item value="ready">พร้อมตามโครงสร้าง</Select.Item>
+							<Select.Item value="ready">ไม่มีรายการที่ต้องตรวจ</Select.Item>
 							<Select.Item value="attention">ต้องตรวจเพิ่มเติม</Select.Item>
 						</Select.Content>
 					</Select.Root>
@@ -216,13 +210,14 @@
 		{:else}
 			<div class="divide-y">
 				{#each rooms as room, index (room.homeroom.id)}
+					{@const roomStatus = deliveryRoomStatus(room)}
 					<details
 						class="group"
 						open={roomIsOpen(room.homeroom.id, index)}
 						ontoggle={(event) => toggleRoom(room.homeroom.id, index, event.currentTarget.open)}
 					>
 						<summary
-							class="flex cursor-pointer list-none flex-col gap-3 p-4 transition-colors hover:bg-muted/25 sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden"
+							class="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-4 transition-colors hover:bg-muted/25 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] [&::-webkit-details-marker]:hidden"
 						>
 							<div class="flex min-w-0 items-start gap-3">
 								<div
@@ -242,25 +237,30 @@
 									</p>
 								</div>
 							</div>
-							<div class="flex items-center gap-3 sm:justify-end">
+							<div
+								class="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"
+								class:hidden={roomIsOpen(room.homeroom.id, index)}
+								data-testid="delivery-room-statuses"
+								aria-label={`สถานะ ${room.homeroom.name}`}
+							>
+								{#if !roomIsOpen(room.homeroom.id, index)}
+									<div class="flex flex-wrap items-center justify-center gap-1.5">
+										{#if roomStatus.coverageComplete}<Badge
+												class="bg-emerald-600 text-white hover:bg-emerald-600"
+												>ครบตามโครงสร้าง</Badge
+											>{/if}
+										<DeliveryStatusBadges statuses={roomStatus.statuses} center />
+									</div>
+								{/if}
+							</div>
+							<div class="order-2 flex items-center gap-3 sm:order-3 sm:col-start-3 sm:justify-end">
 								<div class="text-end">
 									<p class="text-sm font-semibold tabular-nums">
 										{room.readyCount}/{room.expectedCount}
 									</p>
 									<p class="text-xs text-muted-foreground">เปิดสอนรองรับ</p>
 								</div>
-								{#if room.expectedCount > 0 && room.readyCount === room.expectedCount}
-									<Badge class="bg-emerald-600 text-white hover:bg-emerald-600"
-										>ครบตามโครงสร้าง</Badge
-									>
-								{:else}
-									<Badge
-										variant="outline"
-										class="border-amber-500/40 text-amber-700 dark:text-amber-300"
-									>
-										<CircleAlert class="size-3" /> ต้องตรวจ
-									</Badge>
-								{/if}
+
 								<ChevronDown class="size-4 transition-transform group-open:rotate-180" />
 							</div>
 						</summary>
@@ -303,7 +303,12 @@
 										</Table.Header>
 										<Table.Body>
 											{#each room.items as item (item.requirementId)}
-												<Table.Row class={itemNeedsAttention(item) ? 'bg-amber-500/[0.035]' : ''}>
+												{@const itemStatuses = deliveryItemStatuses(item)}
+												<Table.Row
+													class={itemStatuses.some((status) => status.review)
+														? 'bg-amber-500/[0.035]'
+														: ''}
+												>
 													<Table.Cell class="ps-5">
 														<div class="flex items-start gap-3">
 															<div class="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
@@ -333,13 +338,7 @@
 														</div>
 													</Table.Cell>
 													<Table.Cell>
-														<div class="flex max-w-[260px] flex-wrap gap-1.5">
-															{#each item.alignmentStates as state (state)}
-																<Badge variant="outline" class={alignmentBadgeClass(state)}>
-																	{alignmentLabels[state]}
-																</Badge>
-															{/each}
-														</div>
+														<DeliveryStatusBadges statuses={itemStatuses} showCounts={false} />
 													</Table.Cell>
 													<Table.Cell>
 														<Badge
@@ -360,10 +359,12 @@
 													<Table.Cell>
 														<div class="flex items-center gap-1.5 text-sm">
 															<UsersRound class="size-3.5" />
-															{item.teacherState === 'deferred'
-																? 'กำหนดภายหลัง'
-																: item.groupMode === 'deferred' && item.groups.length === 0
-																	? 'รอจัดกลุ่ม'
+															{!item.offeringId
+																? 'ยังไม่เปิดสอน'
+																: item.groups.length === 0
+																	? item.groupMode === 'central' || item.teacherState === 'deferred'
+																		? 'กำหนดภายหลัง'
+																		: 'รอจัดกลุ่ม'
 																	: item.teacherState === 'assigned'
 																		? 'มอบหมายแล้ว'
 																		: 'ยังไม่มีครูหลัก'}
