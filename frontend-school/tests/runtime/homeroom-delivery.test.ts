@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+	deliveryAlignmentNeedsReview,
 	deliveryItemStatuses,
 	deliveryRoomStatus,
 	deliveryOfferingStatuses,
@@ -482,4 +483,15 @@ test('zero real groups prove absence without proving the required grouping mode 
 	assert.equal(statusByKey(statuses, 'groups_missing'), undefined);
 	assert.equal(statusByKey(statuses, 'primary_missing'), undefined);
 	assert.equal(statusByKey(statuses, 'primary_assigned'), undefined);
+});
+
+test('alignment badge review filtering suppresses only known normal evidence and preserves all comparison issues', () => {
+	assert.equal(deliveryAlignmentNeedsReview('matches_curriculum'), false);
+	for (const state of [
+		'curriculum_requirement_not_offered',
+		'operational_periods_differ',
+		'extra_offering',
+		'ended_early'
+	] as const)
+		assert.equal(deliveryAlignmentNeedsReview(state), true);
 });

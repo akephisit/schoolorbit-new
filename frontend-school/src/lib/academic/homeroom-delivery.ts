@@ -336,6 +336,11 @@ export const deliveryAlignmentLabels: Record<CurriculumDeliveryAlignmentState, s
 	operational_periods_differ: statusDefinitions.operational_periods_differ.label
 };
 
+/** Presentation-only classification; the full comparison keeps normal evidence too. */
+export function deliveryAlignmentNeedsReview(state: CurriculumDeliveryAlignmentState): boolean {
+	return statusDefinitions[state].review;
+}
+
 export function deliveryAlignmentBadgeClass(state: CurriculumDeliveryAlignmentState): string {
 	if (state === 'matches_curriculum') return 'border-success/35 text-success';
 	if (state === 'extra_offering' || state === 'operational_periods_differ')
