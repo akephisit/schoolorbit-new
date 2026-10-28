@@ -1,4 +1,6 @@
 <script lang="ts">
+	import DeliveryAlignmentBadges from './DeliveryAlignmentBadges.svelte';
+	import type { DeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
 	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
 	import type { AcademicTermChangeSet, DeliveryVersion } from '#lib/api/learning-delivery.js';
 	import {
@@ -20,7 +22,8 @@
 		returnTo,
 		onFiltersChange,
 		draftChangeSetId = null,
-		onDraftResourceRemoved
+		onDraftResourceRemoved,
+		alignmentFacts = null
 	}: {
 		version: DeliveryVersion;
 		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
@@ -28,6 +31,7 @@
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
 		draftChangeSetId?: string | null;
 		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
+		alignmentFacts?: DeliveryAlignmentFacts | null;
 	} = $props();
 	const groups = $derived(deliverySubjectGroupOptions(version));
 	const items = $derived(filterDeliveryOfferings(version, filters));
@@ -96,11 +100,10 @@
 		<Table.Root>
 			<Table.Header
 				><Table.Row
-					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>คาบ/สัปดาห์</Table.Head><Table.Head
-						>กลุ่มเรียน</Table.Head
-					><Table.Head>ครูหลัก</Table.Head><Table.Head
-						><span class="sr-only">รายละเอียด</span></Table.Head
-					></Table.Row
+					><Table.Head>รายการเปิดสอน</Table.Head><Table.Head>เทียบหลักสูตรปัจจุบัน</Table.Head
+					><Table.Head>คาบ/สัปดาห์</Table.Head><Table.Head>กลุ่มเรียน</Table.Head><Table.Head
+						>ครูหลัก</Table.Head
+					><Table.Head><span class="sr-only">รายละเอียด</span></Table.Head></Table.Row
 				></Table.Header
 			>
 			<Table.Body>
@@ -111,6 +114,9 @@
 							<p class="text-xs text-muted-foreground">
 								{item.kind === 'course' ? 'รายวิชา' : 'กิจกรรม'}
 							</p></Table.Cell
+						>
+						<Table.Cell class="min-w-52"
+							><DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} /></Table.Cell
 						>
 						<Table.Cell>{item.weeklyPeriodTarget}</Table.Cell><Table.Cell
 							>{item.groups.length}</Table.Cell

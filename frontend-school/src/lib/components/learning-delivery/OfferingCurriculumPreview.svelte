@@ -11,7 +11,7 @@
 	import {
 		buildFocusedCurriculumPreparationChoices,
 		visibleCurriculumPreparationProposals,
-		type SynchronizedActivityPreparationTarget
+		type CurriculumPreparationTarget
 	} from '#lib/academic/synchronized-activity-delivery.js';
 	import { curriculumPreparationOrder } from '#lib/academic/curriculum-preparation-order.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -44,7 +44,7 @@
 		academicTermId: string;
 		options: DeliveryManagementOptions;
 		onApplied: () => Promise<void> | void;
-		preparationTarget?: SynchronizedActivityPreparationTarget | null;
+		preparationTarget?: CurriculumPreparationTarget | null;
 		deliveryVersionId?: string | null;
 	} = $props();
 
@@ -285,13 +285,19 @@
 				</h3>
 				<p class="mt-1 text-sm text-muted-foreground">
 					{preparationTarget
-						? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
+						? preparationTarget.schedulingMode === 'synchronized'
+							? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
+							: `ตรวจข้อกำหนดและกลุ่มเรียนของ ${preparationTarget.homeroomCount} ห้องก่อนบันทึกในแบบร่าง`
 						: 'กิจกรรมพร้อมกันเริ่มจากเปิดแบบกลาง และเลือกเปิดพร้อมจัดกลุ่มได้ รายวิชาบังคับเสนอหนึ่งกลุ่มต่อห้อง'}
 				</p>
 			</div>
 		</div>
 	</div>
 
+	{#if preparationTarget}<p class="text-sm text-muted-foreground">
+			รายการใหม่ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ
+			ให้ตรวจการตั้งค่าก่อนบันทึกในแบบร่าง
+		</p>{/if}
 	<div class="grid gap-4 sm:grid-cols-2">
 		<div class="space-y-2">
 			<Label>{preparationTarget ? 'ขอบเขตจากหลักสูตร' : 'แผนการเรียน'}</Label>
@@ -299,7 +305,7 @@
 				<div class="rounded-md border bg-muted/25 px-3 py-2 text-sm">
 					<p class="font-medium">{selectedProgramLabel} · {preparationTarget.homeroomCount} ห้อง</p>
 					<p class="mt-0.5 text-xs text-muted-foreground">
-						ระบบเลือกทุกแผนการเรียนที่มีกิจกรรมนี้ไว้แล้ว
+						ระบบเลือกแผนการเรียนที่มีรายการฉบับนี้ไว้แล้ว
 					</p>
 				</div>
 			{:else}
@@ -572,7 +578,9 @@
 					onclick={applyPreview}
 					><WandSparkles class="size-4" />
 					{preparationTarget
-						? 'เปิดใช้งานกิจกรรม'
+						? preparationTarget.resourceKind === 'activity'
+							? 'เปิดใช้งานกิจกรรม'
+							: 'ยืนยันเปิดรายวิชา'
 						: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว'}</LoadingButton
 				>
 			</div>

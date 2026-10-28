@@ -4,12 +4,13 @@
 	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
 	import DeliveryOfferingAddActions from './DeliveryOfferingAddActions.svelte';
 	import type {
-		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryItem,
 		HomeroomDeliveryWorkspace as Workspace
 	} from '#lib/api/learning-delivery.js';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import {
+		deliveryAlignmentLabels as alignmentLabels,
+		deliveryAlignmentBadgeClass as alignmentBadgeClass,
 		filterHomeroomDeliveryRooms,
 		sortHomeroomDeliveryItems,
 		summarizeHomeroomDelivery
@@ -91,14 +92,6 @@
 		split: 'แบ่งหลายกลุ่ม',
 		deferred: 'รอรูปแบบการเลือก'
 	} as const;
-	const alignmentLabels: Record<CurriculumDeliveryAlignmentState, string> = {
-		matches_curriculum: 'ตรงกับหลักสูตร',
-		curriculum_requirement_not_offered: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
-		extra_offering: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-		ended_early: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
-		operational_periods_differ: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
-	};
-
 	function itemNeedsAttention(item: HomeroomDeliveryItem) {
 		return (
 			!item.alignmentStates.includes('matches_curriculum') ||
@@ -107,16 +100,6 @@
 			(item.offeringId !== null && item.weeklyPeriodTarget === null) ||
 			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary')
 		);
-	}
-
-	function alignmentBadgeClass(state: CurriculumDeliveryAlignmentState): string {
-		if (state === 'matches_curriculum') {
-			return 'border-emerald-500/35 text-emerald-700 dark:text-emerald-300';
-		}
-		if (state === 'curriculum_requirement_not_offered' || state === 'ended_early') {
-			return 'border-amber-500/40 text-amber-800 dark:text-amber-200';
-		}
-		return 'border-sky-500/35 text-sky-800 dark:text-sky-200';
 	}
 
 	function curriculumHref(room: Workspace['homerooms'][number]): string {

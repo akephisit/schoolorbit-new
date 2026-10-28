@@ -8,7 +8,7 @@
 		type DeliveryManagementOptions,
 		type LearningOfferingOverviewItem
 	} from '#lib/api/learning-delivery.js';
-	import type { SynchronizedActivityPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
+	import type { CurriculumPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
 	import { goto } from '$app/navigation';
 	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -42,7 +42,7 @@
 	let addKind = $state<DeliveryOfferingAddKind | null>(null);
 	const optionsRequest = new LatestRequest();
 	onDestroy(() => optionsRequest.abort());
-	let preparationTarget = $state.raw<SynchronizedActivityPreparationTarget | null>(null);
+	let preparationTarget = $state.raw<CurriculumPreparationTarget | null>(null);
 	let deliveryVersionId = $state<string | null>(null);
 	let preparationRevision = $state(0);
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
@@ -85,7 +85,7 @@
 	);
 
 	async function showDialog(
-		target: SynchronizedActivityPreparationTarget | null,
+		target: CurriculumPreparationTarget | null,
 		targetDeliveryVersionId: string | null = defaultDeliveryVersionId,
 		requestedKind: DeliveryOfferingAddKind | null = null
 	) {
@@ -122,7 +122,7 @@
 	}
 
 	export function openCurriculumPreparation(
-		target: SynchronizedActivityPreparationTarget,
+		target: CurriculumPreparationTarget,
 		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
 	) {
 		return showDialog(target, targetDeliveryVersionId);
@@ -237,7 +237,9 @@
 							? 'เพิ่มวิชาเพิ่มเติม'
 							: 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
 					: preparationTarget
-						? `เพิ่มกิจกรรม ${preparationTarget.name}`
+						? preparationTarget.resourceKind === 'activity'
+							? `เพิ่มกิจกรรม ${preparationTarget.name}`
+							: `เปิดรายวิชา ${preparationTarget.name}`
 						: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
 			</Dialog.Title>
 			<Dialog.Description
@@ -248,7 +250,9 @@
 							? 'เพิ่มวิชาเพิ่มเติม'
 							: 'เพิ่มกิจกรรมพัฒนาผู้เรียน'
 					: preparationTarget
-						? `นำกิจกรรมจากหลักสูตรมาเปิดเป็นรายการกลางสำหรับ ${preparationTarget.homeroomCount} ห้อง`
+						? preparationTarget.schedulingMode === 'synchronized'
+							? `นำกิจกรรมจากหลักสูตรมาเปิดเป็นรายการกลางสำหรับ ${preparationTarget.homeroomCount} ห้อง`
+							: `เตรียมรายการตามหลักสูตรและตรวจกลุ่มสำหรับ ${preparationTarget.homeroomCount} ห้อง`
 						: 'เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง'}</Dialog.Description
 			>
 		</Dialog.Header>

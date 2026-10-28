@@ -20,9 +20,10 @@
 		type LearningDeliveryRefreshScope
 	} from '#lib/academic/learning-delivery-page.js';
 	import {
-		buildSynchronizedActivityPreparationTarget,
-		activityDraftCandidates,
-		type SynchronizedActivityPreparationTarget
+		buildCurriculumPreparationTarget,
+		deliveryPreparationDraftCandidates,
+		type CurriculumPreparationFocus,
+		type CurriculumPreparationTarget
 	} from '#lib/academic/synchronized-activity-delivery.js';
 	import {
 		getAcademicTermChangeSet,
@@ -46,6 +47,8 @@
 	} from '#lib/components/academic-workflow/index.js';
 	import AcademicChangeSetDialog from '#lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
 	import AcademicChangeSetPanel from '#lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
+	import { buildDeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
+	import DeliveryAlignmentSummary from '#lib/components/learning-delivery/DeliveryAlignmentSummary.svelte';
 	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
 	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
 	import DeliveryOfferingAddActions from '#lib/components/learning-delivery/DeliveryOfferingAddActions.svelte';
@@ -128,6 +131,24 @@
 		};
 	});
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
+	const comparisonWorkspace = $derived(
+		workspace &&
+			workspace.academicYearId === academicYearId &&
+			workspace.academicTermId === academicTermId &&
+			(!overviewUrl.searchParams.get('deliveryVersionId') ||
+				workspace.deliveryVersionId === overviewUrl.searchParams.get('deliveryVersionId'))
+			? workspace
+			: null
+	);
+	const alignmentFacts = $derived(
+		comparisonWorkspace ? buildDeliveryAlignmentFacts(comparisonWorkspace) : null
+	);
+	const alignmentError = $derived(
+		homeroomError ||
+			(workspace && !comparisonWorkspace
+				? 'ข้อมูลเทียบหลักสูตรไม่ตรงกับปี ภาคเรียน หรือรุ่นที่เลือก'
+				: '')
+	);
 	const returnTo = $derived(workspace ? deliveryOverviewReturnHref(overviewUrl, workspace) : '');
 	let overview = $state.raw<DeliveryVersion | null>(null);
 	let revisionOfferings = $state.raw<DeliveryVersion['snapshot']['offerings']>([]);
@@ -147,14 +168,12 @@
 	let offeringDialog = $state<{
 		openManual: (kind: DeliveryOfferingAddKind) => Promise<void>;
 		openCurriculumPreparation: (
-			target: SynchronizedActivityPreparationTarget,
+			target: CurriculumPreparationTarget,
 			deliveryVersionId?: string | null
 		) => Promise<void>;
 	}>();
 	let deliveryRevisionDialog = $state<{ openDialog: () => void }>();
-	let pendingDeliveryAction = $state.raw<{ kind: 'activate'; catalogVersionId: string } | null>(
-		null
-	);
+	let pendingDeliveryAction = $state.raw<CurriculumPreparationFocus | null>(null);
 	let activationBusy = $state(false);
 	let activationError = $state('');
 	let draftChoices = $state<DeliveryVersionSummary[]>([]);
@@ -379,7 +398,7 @@
 		void refreshDeliveryRegions();
 	}
 
-	async function continueActivityInDraft(versionId: string) {
+	async function continuePreparationInDraft(versionId: string) {
 		const pending = pendingDeliveryAction;
 		const context = activationContext;
 		if (!pending || !canManage || !academicYearId || !academicTermId) return;
@@ -411,7 +430,7 @@
 				.find(
 					(item) =>
 						item.catalogVersionId === pending.catalogVersionId &&
-						item.resourceKind === 'activity' &&
+						item.resourceKind === pending.resourceKind &&
 						item.offeringId
 				);
 			if (existing?.offeringId) {
@@ -423,12 +442,9 @@
 					)
 				);
 			} else {
-				const target = buildSynchronizedActivityPreparationTarget(
-					selected,
-					pending.catalogVersionId
-				);
+				const target = buildCurriculumPreparationTarget(selected, pending);
 				if (!target || !offeringDialog)
-					throw new Error('ไม่พบกิจกรรมในหลักสูตรของร่างนี้ กรุณาตรวจรายการอีกครั้ง');
+					throw new Error('ไม่พบรายการฉบับนี้ในหลักสูตรของร่าง กรุณาตรวจรายการอีกครั้ง');
 				await offeringDialog.openCurriculumPreparation(target, versionId);
 			}
 			pendingDeliveryAction = null;
@@ -441,12 +457,12 @@
 		}
 	}
 
-	async function prepareSynchronizedActivity(catalogVersionId: string) {
+	async function prepareCurriculumRequirement(focus: CurriculumPreparationFocus) {
 		if (activationBusy || !workspace || !canManage || !academicTermId) return;
-		pendingDeliveryAction = { kind: 'activate', catalogVersionId };
+		pendingDeliveryAction = focus;
 		activationError = '';
 		if (workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId) {
-			await continueActivityInDraft(workspace.deliveryVersionId);
+			await continuePreparationInDraft(workspace.deliveryVersionId);
 			return;
 		}
 		const context = activationContext;
@@ -454,17 +470,17 @@
 		try {
 			const versions = await listDeliveryVersions(academicTermId);
 			if (context !== activationContext || !canManage) return;
-			const { source, drafts } = activityDraftCandidates(versions);
+			const { source, drafts } = deliveryPreparationDraftCandidates(versions);
 			if (!source) throw new Error('ไม่พบรุ่นเปิดสอนที่เผยแพร่แล้ว กรุณาสร้างรุ่นเปิดสอนก่อน');
 			deliveryVersions = versions;
 			sourceNotice =
 				workspace.deliveryVersionId !== source.id
-					? 'กำลังดูรุ่นย้อนหลัง ร่างสำหรับเพิ่มกิจกรรมจะใช้ข้อมูลจากรุ่นเผยแพร่ล่าสุด'
-					: 'เพิ่มกิจกรรมในร่างจากรุ่นเผยแพร่ล่าสุด รุ่นที่เผยแพร่แล้วจะคงข้อมูลเดิม';
+					? 'กำลังดูรุ่นย้อนหลัง ร่างสำหรับเปิดรายการตามหลักสูตรจะใช้ข้อมูลจากรุ่นเผยแพร่ล่าสุด'
+					: 'เปิดรายการตามหลักสูตรในร่างจากรุ่นเผยแพร่ล่าสุด รุ่นที่เผยแพร่แล้วจะคงข้อมูลเดิม';
 			draftChoices = drafts;
 			if (drafts.length === 1) {
 				if (workspace.deliveryVersionId !== source.id) toast.info(sourceNotice);
-				await continueActivityInDraft(drafts[0].id);
+				await continuePreparationInDraft(drafts[0].id);
 			} else if (drafts.length > 1) chooseDraftOpen = true;
 			else if (deliveryRevisionDialog) deliveryRevisionDialog.openDialog();
 			else throw new Error('หน้าต่างสร้างร่างยังไม่พร้อม กรุณาลองอีกครั้ง');
@@ -477,7 +493,7 @@
 	}
 
 	async function handleDeliveryRevisionCreated(created: AcademicTermChangeSet) {
-		if (pendingDeliveryAction) await continueActivityInDraft(created.targetDeliveryVersionId);
+		if (pendingDeliveryAction) await continuePreparationInDraft(created.targetDeliveryVersionId);
 		else addChangeSet(created);
 	}
 
@@ -747,7 +763,7 @@
 	{:else}
 		<div class="space-y-4">
 			{#if activationBusy}<p role="status" class="text-sm text-muted-foreground">
-					กำลังเปิดกิจกรรมในแบบร่าง
+					กำลังเตรียมรายการในแบบร่าง
 				</p>{/if}
 			{#if activationError}<div
 					role="alert"
@@ -758,8 +774,7 @@
 						variant="outline"
 						disabled={activationBusy}
 						onclick={() => {
-							if (pendingDeliveryAction)
-								void prepareSynchronizedActivity(pendingDeliveryAction.catalogVersionId);
+							if (pendingDeliveryAction) void prepareCurriculumRequirement(pendingDeliveryAction);
 						}}>ลองอีกครั้ง</Button
 					>
 				</div>{/if}
@@ -825,6 +840,17 @@
 					{/if}
 				{/if}
 			</section>
+			<DeliveryAlignmentSummary
+				workspace={comparisonWorkspace}
+				facts={alignmentFacts}
+				loading={homeroomLoading}
+				error={alignmentError}
+				{canManage}
+				preparing={activationBusy}
+				{returnTo}
+				onRetry={() => loadHomerooms()}
+				onPrepare={prepareCurriculumRequirement}
+			/>
 			<Tabs.Root value={viewMode} onValueChange={changeViewMode}>
 				<Tabs.List class="grid w-full grid-cols-2 sm:w-[430px]">
 					<Tabs.Trigger value="homerooms">มุมมองรายห้อง</Tabs.Trigger>
@@ -855,7 +881,9 @@
 								filters={viewState}
 								{returnTo}
 								onFiltersChange={updateViewState}
-								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
+								onPrepareSynchronizedActivity={(catalogVersionId) => {
+									void prepareCurriculumRequirement({ resourceKind: 'activity', catalogVersionId });
+								}}
 								draftChangeSetId={canManage &&
 								activeChangeSet?.status === 'draft' &&
 								activeChangeSet.targetDeliveryVersionId === workspace.deliveryVersionId
@@ -918,6 +946,9 @@
 											: null}
 										onDraftResourceRemoved={draftResourceRemoved}
 										version={overview}
+										alignmentFacts={overview.id === comparisonWorkspace?.deliveryVersionId
+											? alignmentFacts
+											: null}
 										filters={viewState}
 										{returnTo}
 										onFiltersChange={updateViewState}
@@ -940,9 +971,11 @@
 <Dialog.Root bind:open={chooseDraftOpen}>
 	<Dialog.Content>
 		<Dialog.Header
-			><Dialog.Title>เลือกร่างที่จะเพิ่มกิจกรรม</Dialog.Title><Dialog.Description
-				>{sourceNotice}</Dialog.Description
-			></Dialog.Header
+			><Dialog.Title
+				>{pendingDeliveryAction?.resourceKind === 'course'
+					? 'เลือกร่างที่จะเพิ่มรายวิชา'
+					: 'เลือกร่างที่จะเพิ่มกิจกรรม'}</Dialog.Title
+			><Dialog.Description>{sourceNotice}</Dialog.Description></Dialog.Header
 		>
 		<div class="space-y-2">
 			{#each draftChoices as draft (draft.id)}
@@ -950,7 +983,7 @@
 					class="h-auto w-full justify-start whitespace-normal text-start"
 					variant="outline"
 					disabled={activationBusy}
-					onclick={() => continueActivityInDraft(draft.id)}
+					onclick={() => continuePreparationInDraft(draft.id)}
 					>{changeSets.find((item) => item.id === draft.changeSetId)?.reason || 'แบบร่าง'} · {draft.offeringCount}
 					รายการ</Button
 				>

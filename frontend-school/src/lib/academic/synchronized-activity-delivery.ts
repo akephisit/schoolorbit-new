@@ -11,20 +11,13 @@ export type CurriculumPreparationFocus = Pick<
 	'resourceKind' | 'catalogVersionId'
 >;
 
-export type SynchronizedActivityPreparationTarget = CurriculumPreparationFocus & {
+export type CurriculumPreparationTarget = CurriculumPreparationFocus & {
 	code: string;
 	name: string;
+	schedulingMode: HomeroomDeliveryItem['schedulingMode'];
 	studyProgramIds: string[];
 	homeroomCount: number;
 };
-
-function isSynchronizedActivity(item: HomeroomDeliveryItem, catalogVersionId: string): boolean {
-	return (
-		item.resourceKind === 'activity' &&
-		item.catalogVersionId === catalogVersionId &&
-		item.schedulingMode === 'synchronized'
-	);
-}
 
 export function isPendingSynchronizedActivity(item: HomeroomDeliveryItem): boolean {
 	return (
@@ -34,23 +27,22 @@ export function isPendingSynchronizedActivity(item: HomeroomDeliveryItem): boole
 	);
 }
 
-export function buildSynchronizedActivityPreparationTarget(
+export function buildCurriculumPreparationTarget(
 	workspace: Pick<HomeroomDeliveryWorkspace, 'homerooms'>,
-	catalogVersionId: string
-): SynchronizedActivityPreparationTarget | null {
-	const matchingRooms = workspace.homerooms.filter((room) =>
-		room.items.some((item) => isSynchronizedActivity(item, catalogVersionId))
-	);
-	const pendingItem = matchingRooms
+	focus: CurriculumPreparationFocus
+): CurriculumPreparationTarget | null {
+	const matches = (item: HomeroomDeliveryItem) =>
+		item.resourceKind === focus.resourceKind && item.catalogVersionId === focus.catalogVersionId;
+	const matchingRooms = workspace.homerooms.filter((room) => room.items.some(matches));
+	const pending = matchingRooms
 		.flatMap((room) => room.items)
-		.find((item) => isSynchronizedActivity(item, catalogVersionId) && item.offeringId === null);
-	if (!pendingItem) return null;
-
+		.find((item) => matches(item) && !item.offeringId);
+	if (!pending) return null;
 	return {
-		resourceKind: 'activity',
-		catalogVersionId,
-		code: pendingItem.code,
-		name: pendingItem.name,
+		...focus,
+		code: pending.code,
+		name: pending.name,
+		schedulingMode: pending.schedulingMode,
 		studyProgramIds: [...new Set(matchingRooms.map((room) => room.studyProgram.id))].sort(
 			(left, right) => left.localeCompare(right)
 		),
@@ -104,7 +96,7 @@ export function visibleCurriculumPreparationProposals(
 }
 
 /** Only drafts based on the latest published source can receive this intent. */
-export function activityDraftCandidates(versions: DeliveryVersionSummary[]) {
+export function deliveryPreparationDraftCandidates(versions: DeliveryVersionSummary[]) {
 	const published = versions
 		.filter((version) => version.status === 'published')
 		.sort(
