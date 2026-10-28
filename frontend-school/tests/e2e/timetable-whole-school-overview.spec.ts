@@ -54,12 +54,12 @@ test('changes the displayed day locally and opens canonical block details', asyn
 	await page.goto(wholeSchoolUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
-	await page.getByRole('button', { name: 'เลือกวันดูภาพรวม' }).click();
+	await page.getByRole('combobox', { name: 'เลือกวันดูภาพรวม' }).click();
 	await page.getByRole('option', { name: 'วันอังคาร' }).click();
 	await expect(page.getByText('ภาพรวมทั้งโรงเรียน · วันอังคาร')).toBeVisible();
 	await expect(page.getByRole('button', { name: /ค21101/ })).toHaveCount(0);
 
-	await page.getByRole('button', { name: 'เลือกวันดูภาพรวม' }).click();
+	await page.getByRole('combobox', { name: 'เลือกวันดูภาพรวม' }).click();
 	await page.getByRole('option', { name: 'วันจันทร์' }).click();
 	await page.getByRole('button', { name: /ค21101/ }).click();
 	await expect(page.getByRole('heading', { name: 'รายละเอียดคาบ' })).toBeVisible();

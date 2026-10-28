@@ -110,8 +110,8 @@ test('keeps compact context filters in the top desktop header row', async ({ pag
 	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
 	for (const view of ['ชั้น', 'กลุ่มเรียน', 'ครู', 'โรงเรียน']) {
 		await header.getByRole('button', { name: view, exact: true }).click();
-		const version = header.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true });
-		const owner = header.getByRole(view === 'โรงเรียน' ? 'button' : 'combobox', {
+		const version = header.getByRole('combobox', { name: 'เลือกรุ่นตารางสอน', exact: true });
+		const owner = header.getByRole('combobox', {
 			name: view === 'โรงเรียน' ? 'เลือกวันดูภาพรวม' : 'เลือกรายการสำหรับจัดตาราง',
 			exact: true
 		});

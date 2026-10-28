@@ -135,7 +135,7 @@ test('preselects the first preferred room and lets the scheduler override it bef
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	const teacherPicker = trayCard.getByRole('button', { name: /เลือกครู/ });
-	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
+	const roomPicker = trayCard.getByRole('combobox', { name: 'เลือกห้องเรียน' });
 	await expect(roomPicker).toContainText('ห้องปฏิบัติการ 2');
 	await expect(trayCard).not.toContainText('M1-1-A');
 	const remainingCount = trayCard.getByText('1/1', { exact: true });
@@ -223,7 +223,7 @@ test('preserves a custom special-period title when its type changes', async ({ p
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
 	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
-	const kind = dialog.getByRole('button', { name: 'เลือกประเภทคาบพิเศษ' });
+	const kind = dialog.getByRole('combobox', { name: 'เลือกประเภทคาบพิเศษ' });
 	const title = dialog.getByLabel('ชื่อที่แสดง');
 	await kind.click();
 	await page.getByRole('option', { name: 'โฮมรูม', exact: true }).click();
@@ -483,7 +483,7 @@ test('saves edited room in the background while another lesson can still be drag
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
+	await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน' }).click();
 	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
@@ -523,7 +523,7 @@ test('restores the previous room when a background detail save fails', async ({ 
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
+	await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน' }).click();
 	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
@@ -884,7 +884,7 @@ test('reserves selected teachers when placing a synchronized activity and edits 
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
 	const teacherPicker = trayCard.getByRole('button', { name: 'ยังไม่กำหนดครู' });
-	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
+	const roomPicker = trayCard.getByRole('combobox', { name: 'เลือกห้องเรียน' });
 	await expect(teacherPicker).toBeVisible();
 	const [teacherBox, roomBox] = await Promise.all([
 		teacherPicker.boundingBox(),
