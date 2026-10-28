@@ -145,8 +145,8 @@ an additional mandatory roster for every task.
 | Role | Responsibility | Preferred model when available | Reasoning |
 | --- | --- | --- | --- |
 | Senior/Coordinator | Architecture, scope, shared contracts, assignment, integration, final evidence and authorized delivery | Current primary session model | High when configurable |
-| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium; high for auth, contracts or complex state |
-| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High |
+| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium by default; high for auth, contracts or complex state; xhigh for particularly complex interacting state, async or realtime races, or unresolved reasoning difficulty |
+| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High by default; xhigh for complex transaction, concurrency, idempotency, migration preservation or cross-domain architecture reasoning |
 | Rules/Security Reviewer | Independent read-only review of correctness, rules, permissions, secrets, tenant boundaries and the complete integrated diff | `gpt-6.1-sol` | High |
 | QA/Verifier | Independently assess requirements and acceptance criteria, select coverage and run affected owned checks; report commands, candidate tree, environment and results without editing source | `gpt-6-luna`; `gpt-6.1-sol` for complex validation | Low for predefined check execution; medium for selecting/analyzing coverage; high on `gpt-6.1-sol` for complex authentication, authorization/tenant isolation, security, transactions or data migration validation |
 | Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6-luna`; `gpt-6.1-sol` for architectural uncertainty | Low for file/call-site lookup; medium for multi-layer flow tracing; architectural investigation escalates to `gpt-6.1-sol`/medium |
@@ -157,6 +157,11 @@ These are role defaults, not a claim that every host offers these models. For th
 `gpt-6.1-sol` with high reasoning when the user can select the primary session configuration.
 A skill cannot change its own model; retain the current primary model and never spawn a second
 Coordinator merely to simulate changing it. Explicit user model choices override these defaults.
+
+For Frontend and Backend, xhigh is optional within supported host settings. The Senior may select
+it upfront when evidence establishes the complexity above; a failed attempt at high is not required.
+The Senior may also escalate during work with concrete uncertainty and bounded task context.
+File count alone is not a criterion, and higher reasoning does not replace evidence or required checks.
 
 Select profiles from the host's currently offered models and supported reasoning values. Create
 subagents and pass the chosen model/reasoning through actual spawn controls, such as Codex's
