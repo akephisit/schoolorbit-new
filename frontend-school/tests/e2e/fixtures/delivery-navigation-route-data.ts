@@ -493,6 +493,7 @@ export async function mockDeliveryNavigation(
 						{
 							id: navigationOfferingIds.club,
 							kind: 'activity',
+							subjectType: null,
 							code: 'ACT-TECHNICAL-CLUB',
 							label: 'ACT-TECHNICAL-CLUB — ชุมนุม (ฉบับ 3)',
 							name: 'ชุมนุม',

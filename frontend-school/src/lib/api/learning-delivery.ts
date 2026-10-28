@@ -367,6 +367,32 @@ export const deleteDeliveryVersion = (
 		'ลบแบบร่างรุ่นเปิดสอนไม่สำเร็จ'
 	);
 
+export const removeDeliveryDraftOffering = (
+	id: OperationPath<operations['removeDeliveryDraftOffering']>['id'],
+	offeringId: OperationPath<operations['removeDeliveryDraftOffering']>['offeringId'],
+	body: operations['removeDeliveryDraftOffering']['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.deleteWithBody<AcademicTermChangeSet>(
+			`${changeSetPath(id)}/offerings/${encodeURIComponent(offeringId)}`,
+			body
+		),
+		'นำรายการเปิดสอนออกจากแบบร่างไม่สำเร็จ'
+	);
+
+export const removeDeliveryDraftGroup = (
+	id: OperationPath<operations['removeDeliveryDraftGroup']>['id'],
+	groupId: OperationPath<operations['removeDeliveryDraftGroup']>['groupId'],
+	body: operations['removeDeliveryDraftGroup']['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.deleteWithBody<AcademicTermChangeSet>(
+			`${changeSetPath(id)}/groups/${encodeURIComponent(groupId)}`,
+			body
+		),
+		'นำกลุ่มเรียนออกจากแบบร่างไม่สำเร็จ'
+	);
+
 export const upsertAcademicTermChangeItem = (
 	id: OperationPath<UpsertAcademicTermChangeItemOperation>['id'],
 	body: UpsertAcademicTermChangeItemRequest &

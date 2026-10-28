@@ -497,6 +497,7 @@ test('activity readiness uses the producer name without technical codes and rest
 		await expect(group.getByText(rowTitle, { exact: true })).toBeVisible();
 	}
 	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
+	await page.getByRole('button', { name: 'ปิดรายละเอียด', exact: true }).click();
 	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
 	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
 	await expect(page.getByText('ผลตรวจเบื้องต้น', { exact: false })).toBeVisible();

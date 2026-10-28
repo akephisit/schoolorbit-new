@@ -16,6 +16,7 @@
 	import {
 		selectAcademicTermChangeSetSummary,
 		summarizeAcademicTermChangeSet,
+		type DeliveryOfferingAddKind,
 		type LearningDeliveryRefreshScope
 	} from '#lib/academic/learning-delivery-page.js';
 	import {
@@ -47,6 +48,7 @@
 	import AcademicChangeSetPanel from '#lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
 	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
 	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
+	import DeliveryOfferingAddActions from '#lib/components/learning-delivery/DeliveryOfferingAddActions.svelte';
 	import DeliveryVersionOverviewTable from '#lib/components/learning-delivery/DeliveryVersionOverviewTable.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 
@@ -79,7 +81,7 @@
 	const selectedDelivery = $derived(
 		deliveryVersions.find((version) => version.id === workspace?.deliveryVersionId) ?? null
 	);
-	async function refreshDeliveryVersions(): Promise<void> {
+	async function refreshDeliveryVersions(propagateFailure = false): Promise<void> {
 		if (!academicTermId) return;
 		const { revision, signal } = deliveryVersionsRequest.begin();
 		deliveryVersionsLoading = true;
@@ -90,6 +92,7 @@
 		} catch (error) {
 			if (!isAbortError(error) && deliveryVersionsRequest.isCurrent(revision))
 				deliveryVersionsError = error instanceof Error ? error.message : 'โหลดรุ่นเปิดสอนไม่สำเร็จ';
+			if (propagateFailure && !isAbortError(error)) throw error;
 		} finally {
 			if (deliveryVersionsRequest.isCurrent(revision)) deliveryVersionsLoading = false;
 		}
@@ -142,6 +145,7 @@
 	let errorMessage = $state('');
 	const viewMode = $derived(viewState.view);
 	let offeringDialog = $state<{
+		openManual: (kind: DeliveryOfferingAddKind) => Promise<void>;
 		openCurriculumPreparation: (
 			target: SynchronizedActivityPreparationTarget,
 			deliveryVersionId?: string | null
@@ -227,7 +231,7 @@
 		return selected;
 	}
 
-	async function loadHomerooms() {
+	async function loadHomerooms(propagateFailure = false) {
 		if (!academicYearId || !academicTermId) return;
 		const { revision, signal } = homeroomRequest.begin();
 		homeroomLoading = true;
@@ -242,6 +246,7 @@
 			if (isAbortError(error)) return;
 			if (homeroomRequest.isCurrent(revision)) {
 				homeroomError = error instanceof Error ? error.message : 'โหลดภาพรวมรายห้องไม่สำเร็จ';
+				if (propagateFailure) throw error;
 			}
 		} finally {
 			if (homeroomRequest.isCurrent(revision)) homeroomLoading = false;
@@ -313,7 +318,7 @@
 		await Promise.all([refreshDeliveryVersions(), loadChangeSetSummaries(), loadHomerooms()]);
 	}
 
-	async function loadOverview(termId: string) {
+	async function loadOverview(termId: string, propagateFailure = false) {
 		const { revision, signal } = overviewRequest.begin();
 		overviewLoading = true;
 		try {
@@ -337,6 +342,7 @@
 			if (isAbortError(error)) return;
 			if (overviewRequest.isCurrent(revision))
 				errorMessage = error instanceof Error ? error.message : 'โหลดมุมมองรายวิชาไม่สำเร็จ';
+			if (propagateFailure) throw error;
 		} finally {
 			if (overviewRequest.isCurrent(revision)) overviewLoading = false;
 		}
@@ -482,6 +488,23 @@
 		activeChangeSet = created;
 		void refreshDeliveryVersions();
 		updateSelectedChangeSetUrl(created.id);
+	}
+
+	async function draftResourceRemoved(updated: AcademicTermChangeSet) {
+		if (
+			updated.id !== activeChangeSet?.id ||
+			updated.targetDeliveryVersionId !== workspace?.deliveryVersionId
+		)
+			return;
+		activeChangeSet = updated;
+		changeSets = changeSets.map((item) =>
+			item.id === updated.id ? summarizeAcademicTermChangeSet(updated) : item
+		);
+		await Promise.all([
+			loadHomerooms(true),
+			refreshDeliveryVersions(true),
+			...(academicTermId && overview ? [loadOverview(academicTermId, true)] : [])
+		]);
 	}
 
 	async function updateChangeSet(
@@ -653,6 +676,44 @@
 	description="จัดรายวิชา กลุ่มเรียน ครู และจำนวนคาบ แล้วเผยแพร่รุ่นเปิดสอนเพื่อนำไปจัดตาราง"
 >
 	{#snippet actions()}
+		{#if academicTermId}
+			<div
+				class="w-full min-w-0 sm:w-80"
+				aria-busy={deliveryVersionsLoading}
+				data-testid="delivery-version-selector"
+			>
+				{#if deliveryVersionsLoading && deliveryVersions.length === 0}<PageSkeleton
+						variant="cards"
+						rows={1}
+					/>
+				{:else if deliveryVersionsError}<PageState
+						variant="error"
+						title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
+						description={deliveryVersionsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={refreshDeliveryVersions}
+					/>
+				{:else if deliveryVersions.length > 0}
+					<Select.Root
+						type="single"
+						value={workspace?.deliveryVersionId ?? ''}
+						onValueChange={selectDeliveryVersion}
+					>
+						<Select.Trigger class="w-full" aria-label="เลือกรุ่นเปิดสอน"
+							>{selectedDelivery
+								? deliveryVersionLabel(selectedDelivery)
+								: 'เลือกรุ่นเปิดสอน'}</Select.Trigger
+						>
+						<Select.Content
+							>{#each deliveryVersions as version (version.id)}<Select.Item value={version.id}
+									>{deliveryVersionLabel(version)}</Select.Item
+								>{/each}</Select.Content
+						>
+					</Select.Root>
+				{/if}
+			</div>
+		{/if}
+
 		{#if canManage && academicTermId}
 			{#key academicTermId}
 				<OfferingCreateDialog
@@ -702,45 +763,6 @@
 						}}>ลองอีกครั้ง</Button
 					>
 				</div>{/if}
-			<section
-				class="rounded-xl border bg-card p-3 sm:p-4"
-				aria-label="รุ่นเปิดสอน"
-				aria-busy={deliveryVersionsLoading}
-			>
-				{#if deliveryVersionsLoading && deliveryVersions.length === 0}<PageSkeleton
-						variant="cards"
-						rows={1}
-					/>
-				{:else if deliveryVersionsError}<PageState
-						variant="error"
-						title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
-						description={deliveryVersionsError}
-						actionLabel="ลองอีกครั้ง"
-						onaction={refreshDeliveryVersions}
-					/>
-				{:else if deliveryVersions.length > 0}
-					<div class="space-y-2">
-						<p class="text-sm font-medium">รุ่นเปิดสอน</p>
-						<Select.Root
-							type="single"
-							value={workspace?.deliveryVersionId ?? ''}
-							onValueChange={selectDeliveryVersion}
-							><Select.Trigger class="w-full" aria-label="เลือกรุ่นเปิดสอน"
-								>{selectedDelivery
-									? deliveryVersionLabel(selectedDelivery)
-									: 'เลือกรุ่นเปิดสอน'}</Select.Trigger
-							><Select.Content
-								>{#each deliveryVersions as version (version.id)}<Select.Item value={version.id}
-										>{deliveryVersionLabel(version)}</Select.Item
-									>{/each}</Select.Content
-							></Select.Root
-						>
-						<p class="text-xs text-muted-foreground">
-							รุ่นเปิดสอนหนึ่งรุ่นใช้จัดตารางได้หลายรุ่น การเผยแพร่ที่หน้านี้ไม่เปลี่ยนตารางเดิม
-						</p>
-					</div>
-				{/if}
-			</section>
 			<section
 				class="relative space-y-4"
 				aria-label="การจัดการรุ่นเปิดสอน"
@@ -834,6 +856,15 @@
 								{returnTo}
 								onFiltersChange={updateViewState}
 								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
+								draftChangeSetId={canManage &&
+								activeChangeSet?.status === 'draft' &&
+								activeChangeSet.targetDeliveryVersionId === workspace.deliveryVersionId
+									? activeChangeSet.id
+									: null}
+								onDraftResourceRemoved={draftResourceRemoved}
+								onAddOffering={(kind) => {
+									void offeringDialog?.openManual(kind);
+								}}
 							/>
 						{/if}
 					</section>
@@ -845,6 +876,13 @@
 						aria-busy={overviewLoading}
 						data-testid={overview ? 'delivery-offerings-ready' : undefined}
 					>
+						{#if canManage && workspace?.deliveryVersionStatus === 'draft'}<div class="mb-3">
+								<DeliveryOfferingAddActions
+									onAdd={(kind) => {
+										void offeringDialog?.openManual(kind);
+									}}
+								/>
+							</div>{/if}
 						{#if overviewLoading && !overview}
 							<PageSkeleton variant="table" rows={6} />
 						{:else if errorMessage && !overview}
@@ -873,6 +911,12 @@
 									</p>
 								</div>
 								{#if overview}<DeliveryVersionOverviewTable
+										draftChangeSetId={canManage &&
+										activeChangeSet?.status === 'draft' &&
+										activeChangeSet.targetDeliveryVersionId === overview.id
+											? activeChangeSet.id
+											: null}
+										onDraftResourceRemoved={draftResourceRemoved}
 										version={overview}
 										filters={viewState}
 										{returnTo}

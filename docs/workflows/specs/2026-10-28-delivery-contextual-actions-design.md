@@ -10,4 +10,6 @@ Only exclusive unpublished registry resources without other snapshots, commands,
 
 Management catalog options expose required-nullable `subjectType` from the pinned subject version's authoritative type, with null for activities. The frontend uses it for three explicit add entries without inferring type from codes or requirement kinds.
 
+Bulk group setup opens with homeroom grouping selected, including a course with zero groups. Users choose options and apply directly in one action; the backend recomputes and validates the authoritative preview inside its existing locked transaction. Existing groups, opt-in roster behavior, conflict errors and atomicity remain unchanged. No preview hash or new permission is introduced.
+
 Verification covers stale and denied requests, selected-draft isolation, refresh and candidate-date persistence, guarded exclusive cleanup, preserved integrations, pending-command removal, explicit reinclude and publication group membership. Use disposable Delivery fixtures and generated API checks; browser fixtures establish the contextual actions and retained conflict/error behavior.

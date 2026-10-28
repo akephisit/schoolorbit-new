@@ -17,6 +17,7 @@
 		replaceLearningGroupHomerooms,
 		replaceLearningGroupTeachers,
 		updateLearningGroup,
+		type AcademicTermChangeSet,
 		type CreateLearningGroupRequest,
 		type BulkGroupSetupResponse,
 		type DeliveryManagementOptions,
@@ -45,6 +46,8 @@
 	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
 	import DeliveryBulkGroupSetupDialog from '#lib/components/learning-delivery/DeliveryBulkGroupSetupDialog.svelte';
+	import DeliveryDraftResourceRemoval from '#lib/components/learning-delivery/DeliveryDraftResourceRemoval.svelte';
+	import OfferingTeacherChangeDialog from '#lib/components/learning-delivery/OfferingTeacherChangeDialog.svelte';
 	import OfferingWeeklyPeriodDialog from '#lib/components/learning-delivery/OfferingWeeklyPeriodDialog.svelte';
 	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
 	import DatedRosterMemberships from '#lib/components/learning-delivery/DatedRosterMemberships.svelte';
@@ -143,6 +146,8 @@
 	let actionError = $state('');
 	let activeOfferingId = '';
 	let routeSelectedGroupId = $state('');
+	let pendingCreatedGroup = $state.raw<{ group: LearningGroup; versionId: string } | null>(null);
+	let reconcilingCreatedGroup = $state(false);
 	let mutationRevision = 0;
 	let selectionRevision = 0;
 
@@ -159,7 +164,11 @@
 	);
 	let deliveryVersion = $state.raw<DeliveryVersion | null>(null);
 	let canMutateOffering = $derived(
-		canManage && offering !== null && !offeringIsReadOnly && deliveryVersion?.status === 'draft'
+		canManage &&
+			offering !== null &&
+			!offeringIsReadOnly &&
+			deliveryVersion?.status === 'draft' &&
+			selectedDeliveryOffering !== null
 	);
 	let canManageRoster = $derived(canManage && offering !== null && !offeringIsReadOnly);
 	let publishedRosterGroups = $derived(
@@ -177,6 +186,13 @@
 		deliveryVersion?.snapshot.offerings.find((item) => item.id === offeringId) ?? null
 	);
 	let selectedTimetableTarget = $derived(selectedDeliveryOffering);
+	const visibleGroups = $derived(
+		deliveryVersion
+			? groups.filter((group) =>
+					selectedDeliveryOffering?.groups.some((snapshot) => snapshot.id === group.id)
+				)
+			: groups
+	);
 
 	function preferredDeliveryVersion(
 		loadedVersions: DeliveryVersionSummary[]
@@ -257,6 +273,7 @@
 	}
 
 	function navigateToGroup(group: LearningGroup, replace = false) {
+		if (deliveryVersion && !visibleGroups.some((item) => item.id === group.id)) return;
 		selectionRevision += 1;
 		groupRequest.abort();
 		routeSelectedGroupId = '';
@@ -311,7 +328,7 @@
 			groups = loaded;
 			hasGroups = true;
 			const requested = detailUrl.searchParams.get('groupId');
-			if (!requested && loaded[0]) navigateToGroup(loaded[0], true);
+			if (!requested && visibleGroups[0]) navigateToGroup(visibleGroups[0], true);
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (groupsRequest.isCurrent(revision))
@@ -370,12 +387,20 @@
 	}
 
 	async function loadSelectedGroup(groupId: string) {
+		if (deliveryVersion && !selectedDeliveryOffering?.groups.some((group) => group.id === groupId))
+			return;
 		const { revision, signal } = groupRequest.begin();
 		groupLoading = true;
 		groupError = '';
 		try {
 			const loaded = await getLearningGroup(groupId, { signal });
-			if (!groupRequest.isCurrent(revision) || loaded.learningOfferingId !== offeringId) return;
+			if (
+				!groupRequest.isCurrent(revision) ||
+				loaded.learningOfferingId !== offeringId ||
+				(deliveryVersion &&
+					!selectedDeliveryOffering?.groups.some((group) => group.id === loaded.id))
+			)
+				return;
 			updateGroupState(loaded);
 			selectedGroup = loaded;
 			resetSelectedWorkspace();
@@ -438,15 +463,43 @@
 		}
 	}
 
-	async function createGroup(request: CreateLearningGroupRequest) {
-		if (!canMutateOffering) return;
+	async function reconcileCreatedGroup() {
+		const pending = pendingCreatedGroup;
+		if (!pending || reconcilingCreatedGroup) return;
 		const ownerId = offeringId;
+		reconcilingCreatedGroup = true;
+		actionError = '';
+		try {
+			const refreshed = await getDeliveryVersion(pending.versionId);
+			if (
+				offeringId !== ownerId ||
+				deliveryVersion?.id !== pending.versionId ||
+				pendingCreatedGroup !== pending
+			)
+				return;
+			if (refreshed.rowVersion >= deliveryVersion.rowVersion) deliveryVersion = refreshed;
+			if (!visibleGroups.some((group) => group.id === pending.group.id))
+				throw new Error('สร้างกลุ่มแล้ว แต่ยังแสดงข้อมูลรุ่นล่าสุดไม่สำเร็จ');
+			pendingCreatedGroup = null;
+			navigateToGroup(pending.group);
+		} catch (error) {
+			if (offeringId === ownerId && pendingCreatedGroup === pending)
+				actionError =
+					error instanceof Error ? error.message : 'สร้างกลุ่มแล้ว แต่โหลดรุ่นล่าสุดไม่สำเร็จ';
+		} finally {
+			if (offeringId === ownerId) reconcilingCreatedGroup = false;
+		}
+	}
+	async function createGroup(request: CreateLearningGroupRequest) {
+		if (!canMutateOffering || !deliveryVersion || pendingCreatedGroup) return;
+		const ownerId = offeringId,
+			versionId = deliveryVersion.id;
 		const created = await createLearningGroup(ownerId, request);
-		if (offeringId !== ownerId) return;
-		mutationRevision += 1;
+		if (offeringId !== ownerId || deliveryVersion?.id !== versionId) return;
+		mutationRevision++;
 		groups = [...groups, created];
-		void retryGroups();
-		navigateToGroup(created);
+		pendingCreatedGroup = { group: created, versionId };
+		await reconcileCreatedGroup();
 	}
 
 	function bulkSetupApplied(response: BulkGroupSetupResponse) {
@@ -496,6 +549,62 @@
 			selectedDeliveryVersionSummary;
 	}
 
+	async function draftResourceUpdated(updated: AcademicTermChangeSet) {
+		const ownerId = offeringId,
+			versionId = deliveryVersion?.id;
+		if (!versionId || updated.targetDeliveryVersionId !== versionId) return;
+		const refreshed = await getDeliveryVersion(versionId);
+		if (offeringId !== ownerId || deliveryVersion?.id !== versionId) return;
+		if (refreshed.rowVersion < deliveryVersion.rowVersion)
+			throw new Error('ข้อมูลรุ่นล่าสุดเปลี่ยนระหว่างแสดงผล กรุณาลองอีกครั้ง');
+		mutationRevision++;
+		versionsRequest.abort();
+		deliveryVersion = refreshed;
+		deliveryVersions = deliveryVersions.map((item) =>
+			item.id === refreshed.id
+				? {
+						...item,
+						rowVersion: refreshed.rowVersion,
+						updatedAt: refreshed.updatedAt,
+						offeringCount: refreshed.snapshot.offerings.length,
+						groupCount: refreshed.snapshot.offerings.reduce(
+							(total, item) => total + item.groups.length,
+							0
+						)
+					}
+				: item
+		);
+		selectedDeliveryVersionSummary =
+			deliveryVersions.find((item) => item.id === refreshed.id) ?? selectedDeliveryVersionSummary;
+		if (!refreshed.snapshot.offerings.some((item) => item.id === ownerId)) {
+			await goto(returnHref);
+			return;
+		}
+		if (
+			selectedGroup &&
+			!refreshed.snapshot.offerings
+				.find((item) => item.id === ownerId)
+				?.groups.some((item) => item.id === selectedGroup?.id)
+		) {
+			groupRequest.abort();
+			selectionRevision++;
+			resetSelectedWorkspace();
+			selectedGroup = null;
+			const next = visibleGroups[0];
+			if (next) navigateToGroup(next, true);
+			else {
+				groupLoading = false;
+				const nextUrl = new URL(detailUrl);
+				nextUrl.searchParams.delete('groupId');
+				await goto(resolve(deliveryDetailUrl(nextUrl)), {
+					shallow: true,
+					replace: true,
+					state: page.state
+				});
+			}
+		}
+	}
+
 	async function reloadBulkSetup(signal?: AbortSignal) {
 		if (!deliveryVersion || !canMutateOffering) throw new Error('ร่างนี้ไม่พร้อมแก้ไข');
 		const ownerId = offeringId;
@@ -515,7 +624,13 @@
 		groups = loadedGroups;
 		deliveryVersion = loadedVersion;
 		const currentSelectedId = detailUrl.searchParams.get('groupId') ?? selectedGroup?.id;
-		const refreshedSelection = loadedGroups.find((group) => group.id === currentSelectedId);
+		const refreshedSelection = loadedGroups.find(
+			(group) =>
+				group.id === currentSelectedId &&
+				loadedVersion.snapshot.offerings
+					.find((item) => item.id === ownerId)
+					?.groups.some((snapshot) => snapshot.id === group.id)
+		);
 		if (refreshedSelection) {
 			selectionRevision += 1;
 			groupRequest.abort();
@@ -632,6 +747,8 @@
 		untrack(() => {
 			if (activeOfferingId !== id) {
 				activeOfferingId = id;
+				pendingCreatedGroup = null;
+				reconcilingCreatedGroup = false;
 				offering = null;
 				groups = [];
 				hasGroups = false;
@@ -745,7 +862,7 @@
 		groupRequest.abort();
 		routeSelectedGroupId = '';
 		resetSelectedWorkspace();
-		const known = untrack(() => groups.find((group) => group.id === requestedGroupId));
+		const known = untrack(() => visibleGroups.find((group) => group.id === requestedGroupId));
 		if (known) {
 			selectedGroup = known;
 			groupLoading = false;
@@ -754,6 +871,41 @@
 			selectedGroup = null;
 			void loadSelectedGroup(requestedGroupId);
 		}
+	});
+	$effect.pre(() => {
+		const version = deliveryVersion,
+			eligible = visibleGroups,
+			selected = selectedGroup;
+		const requestedId = detailUrl.searchParams.get('groupId');
+		if (
+			!version ||
+			groupsLoading ||
+			(selected && eligible.some((group) => group.id === selected.id))
+		)
+			return;
+		if (
+			groupLoading &&
+			(!requestedId || selectedDeliveryOffering?.groups.some((group) => group.id === requestedId))
+		)
+			return;
+		untrack(() => {
+			groupRequest.abort();
+			selectionRevision++;
+			routeSelectedGroupId = '';
+			resetSelectedWorkspace();
+			selectedGroup = null;
+			groupLoading = false;
+			if (eligible[0]) navigateToGroup(eligible[0], true);
+			else if (requestedId) {
+				const nextUrl = new URL(detailUrl);
+				nextUrl.searchParams.delete('groupId');
+				void goto(resolve(deliveryDetailUrl(nextUrl)), {
+					shallow: true,
+					replace: true,
+					state: page.state
+				});
+			}
+		});
 	});
 </script>
 
@@ -889,6 +1041,11 @@
 				{/if}
 				{#if actionError}<p role="alert" class="text-sm text-destructive">{actionError}</p>{/if}
 			</section>
+		{:else if deliveryVersion && !selectedDeliveryOffering}<PageState
+				variant="empty"
+				title="รายการนี้ไม่อยู่ในรุ่นเปิดสอนที่เลือก"
+				description="กลับภาพรวมเพื่อเลือกรายการในรุ่นที่ต้องการ"
+			/>
 		{:else}
 			<div class="space-y-5">
 				{#if offeringLoading && !offering}
@@ -918,6 +1075,18 @@
 									onclick={retryOffering}>ลองอีกครั้ง</Button
 								>
 							</div>{/if}
+						{#if canMutateOffering && deliveryVersion && selectedDeliveryVersionSummary?.changeSetId}<div
+								class="flex justify-end px-5 pt-4"
+							>
+								<DeliveryDraftResourceRemoval
+									changeSetId={selectedDeliveryVersionSummary.changeSetId}
+									versionId={deliveryVersion.id}
+									{offeringId}
+									label={offering.nameSnapshot}
+									canManage={canMutateOffering}
+									onRemoved={draftResourceUpdated}
+								/>
+							</div>{/if}
 						<div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
 							<div class="flex min-w-0 items-start gap-4">
 								<div class="rounded-2xl bg-primary/10 p-3 text-primary">
@@ -940,13 +1109,16 @@
 							</div>
 							<div class="grid grid-cols-3 gap-2 text-center">
 								<div class="rounded-xl bg-muted/60 px-4 py-3">
-									<p class="text-lg font-semibold">{hasGroups ? groups.length : '…'}</p>
+									<p class="text-lg font-semibold">{hasGroups ? visibleGroups.length : '…'}</p>
 									<p class="text-xs text-muted-foreground">กลุ่มเรียน</p>
 								</div>
 								<div class="rounded-xl bg-muted/60 px-4 py-3">
 									<p class="text-lg font-semibold">
 										{hasGroups
-											? groups.reduce((sum, group) => sum + group.teacherAssignments.length, 0)
+											? visibleGroups.reduce(
+													(sum, group) => sum + group.teacherAssignments.length,
+													0
+												)
 											: '…'}
 									</p>
 									<p class="text-xs text-muted-foreground">ครูที่มอบหมาย</p>
@@ -954,7 +1126,7 @@
 								<div class="rounded-xl bg-muted/60 px-4 py-3">
 									<p class="text-lg font-semibold">
 										{hasGroups
-											? groups.filter((group) => group.rosterStatus === 'published').length
+											? visibleGroups.filter((group) => group.rosterStatus === 'published').length
 											: '…'}
 									</p>
 									<p class="text-xs text-muted-foreground">รายชื่อพร้อมใช้</p>
@@ -1078,7 +1250,7 @@
 									<DeliveryBulkGroupSetupDialog
 										{offering}
 										version={deliveryVersion}
-										{groups}
+										groups={visibleGroups}
 										trackingStartsOn={rosterTracking?.startsOn}
 										canManage={canMutateOffering && !editorVisible}
 										onRequestManagementOptions={requestManagementOptions}
@@ -1089,13 +1261,28 @@
 							</div>
 						{/if}
 						<LearningGroupList
-							{groups}
+							groups={visibleGroups}
 							selectedGroupId={selectedGroup?.id}
 							canManage={canMutateOffering}
 							onSelect={navigateToGroup}
 							onRequestManagementOptions={requestManagementOptions}
 							onCreate={createGroup}
+							createPending={pendingCreatedGroup !== null}
+							versionId={deliveryVersion?.id}
+							{offeringId}
+							changeSetId={selectedDeliveryVersionSummary?.changeSetId}
+							onDraftResourceRemoved={draftResourceUpdated}
 						/>
+						{#if pendingCreatedGroup}<div class="mt-3 space-y-2">
+								<p role="status" class="text-sm">
+									สร้างกลุ่ม “{pendingCreatedGroup.group.name}” แล้ว กำลังแสดงข้อมูลล่าสุด
+								</p>
+								<Button
+									variant="outline"
+									disabled={reconcilingCreatedGroup}
+									onclick={reconcileCreatedGroup}>แสดงกลุ่มที่สร้างแล้ว</Button
+								>
+							</div>{/if}
 						{#if groupsError}<div
 								role="alert"
 								class="mt-2 flex items-center gap-2 text-sm text-destructive"
@@ -1157,6 +1344,13 @@
 								</div>
 								{#if canMutateOffering}
 									<div class="flex flex-wrap gap-2">
+										{#if selectedGroup.teachersLocked && selectedDeliveryVersionSummary?.changeSetId}<OfferingTeacherChangeDialog
+												changeSetId={selectedDeliveryVersionSummary.changeSetId}
+												{offeringId}
+												groupId={selectedGroup.id}
+												canManage={canMutateOffering}
+												onUpdated={draftResourceUpdated}
+											/>{/if}
 										<Button
 											variant="outline"
 											onclick={() => (editorVisible ? (editorVisible = false) : showEditor())}

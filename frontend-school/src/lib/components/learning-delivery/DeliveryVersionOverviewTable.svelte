@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { DeliveryVersion } from '#lib/api/learning-delivery.js';
+	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
+	import type { AcademicTermChangeSet, DeliveryVersion } from '#lib/api/learning-delivery.js';
 	import {
 		deliveryOfferingHref,
 		type DeliveryOverviewState
@@ -17,12 +18,16 @@
 		version,
 		filters,
 		returnTo,
-		onFiltersChange
+		onFiltersChange,
+		draftChangeSetId = null,
+		onDraftResourceRemoved
 	}: {
 		version: DeliveryVersion;
 		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
 		returnTo: string;
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
+		draftChangeSetId?: string | null;
+		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
 	} = $props();
 	const groups = $derived(deliverySubjectGroupOptions(version));
 	const items = $derived(filterDeliveryOfferings(version, filters));
@@ -116,12 +121,22 @@
 							).length}/{item.groups.length} กลุ่ม</Table.Cell
 						>
 						<Table.Cell
-							><Button
-								variant="outline"
-								size="sm"
-								href={detailUrl(item.id)}
-								data-sveltekit-preload-data="tap">รายละเอียด</Button
-							></Table.Cell
+							><div class="flex flex-wrap justify-end gap-1">
+								<Button
+									variant="outline"
+									size="sm"
+									href={detailUrl(item.id)}
+									data-sveltekit-preload-data="tap">รายละเอียด</Button
+								>
+								{#if version.status === 'draft' && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
+										changeSetId={draftChangeSetId}
+										versionId={version.id}
+										offeringId={item.id}
+										label={deliveryOfferingLabel(item)}
+										canManage={true}
+										onRemoved={onDraftResourceRemoved}
+									/>{/if}
+							</div></Table.Cell
 						>
 					</Table.Row>
 				{/each}

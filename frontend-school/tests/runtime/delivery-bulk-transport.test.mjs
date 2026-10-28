@@ -18,7 +18,9 @@ function transportHarness() {
 	const calls = [];
 	const results = {
 		previewBulkLearningGroupSetup: { targets: [], changedCount: 1 },
-		applyBulkLearningGroupSetup: { groups: [] }
+		applyBulkLearningGroupSetup: { groups: [] },
+		removeDeliveryDraftOffering: { id: 'change-set', rowVersion: 8 },
+		removeDeliveryDraftGroup: { id: 'change-set', rowVersion: 9 }
 	};
 	class ApiClientError extends Error {
 		constructor(message, status) {
@@ -28,7 +30,11 @@ function transportHarness() {
 	}
 	const send = async (method, path, body, options) => {
 		calls.push({ method, path, body, options });
-		const resourcePath = path.replace('/offering-id/', '/{id}/');
+		const resourcePath = path
+			.replace('/offering-id/', '/{id}/')
+			.replace('/change-set-id/', '/{id}/')
+			.replace('/offerings/target-offering', '/offerings/{offeringId}')
+			.replace('/groups/target-group', '/groups/{groupId}');
 		const operation = contract.paths[resourcePath]?.[method.toLowerCase()];
 		return operation
 			? { success: true, status: 200, data: results[operation.operationId] }
@@ -41,7 +47,8 @@ function transportHarness() {
 			ApiClientError,
 			apiClient: {
 				post: (...args) => send('POST', ...args),
-				put: (...args) => send('PUT', ...args)
+				put: (...args) => send('PUT', ...args),
+				deleteWithBody: (...args) => send('DELETE', ...args)
 			},
 			requireApiData(response, fallback) {
 				if (!response.success)
@@ -86,4 +93,24 @@ test('unregistered POST to the bulk apply path is refused instead of serving a p
 	const response = await send('POST', '/api/academic/offerings/offering-id/groups/bulk-setup', {});
 	assert.equal(response.status, 405);
 	assert.equal(response.success, false);
+});
+
+test('draft resource removal uses version-scoped generated DELETE operations and exact revision bodies', async () => {
+	const { api, calls, results } = transportHarness();
+	const body = { changeSetRowVersion: 7, targetDeliveryVersionRowVersion: 4 };
+	assert.equal(
+		await api.removeDeliveryDraftOffering('change-set-id', 'target-offering', body),
+		results.removeDeliveryDraftOffering
+	);
+	assert.equal(
+		await api.removeDeliveryDraftGroup('change-set-id', 'target-group', body),
+		results.removeDeliveryDraftGroup
+	);
+	assert.deepEqual(
+		calls.map(({ method, path, body: payload }) => [method, path, payload]),
+		[
+			['DELETE', '/api/academic/term-change-sets/change-set-id/offerings/target-offering', body],
+			['DELETE', '/api/academic/term-change-sets/change-set-id/groups/target-group', body]
+		]
+	);
 });

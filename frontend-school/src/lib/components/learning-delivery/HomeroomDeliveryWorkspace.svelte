@@ -1,4 +1,8 @@
 <script lang="ts">
+	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
+	import type { AcademicTermChangeSet } from '#lib/api/learning-delivery.js';
+	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
+	import DeliveryOfferingAddActions from './DeliveryOfferingAddActions.svelte';
 	import type {
 		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryItem,
@@ -37,7 +41,10 @@
 		filters,
 		returnTo,
 		onFiltersChange,
-		onPrepareSynchronizedActivity
+		onPrepareSynchronizedActivity,
+		onAddOffering,
+		draftChangeSetId = null,
+		onDraftResourceRemoved
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
@@ -46,6 +53,9 @@
 		returnTo: string;
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
 		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
+		onAddOffering?: (kind: DeliveryOfferingAddKind) => void;
+		draftChangeSetId?: string | null;
+		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
 	} = $props();
 	let summary = $derived(summarizeHomeroomDelivery(workspace.homerooms));
 	let rooms = $derived(
@@ -168,6 +178,11 @@
 
 	<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
 		<div class="border-b bg-muted/20 p-4">
+			{#if canManage && workspace.deliveryVersionStatus === 'draft' && onAddOffering}<div
+					class="mb-3"
+				>
+					<DeliveryOfferingAddActions onAdd={onAddOffering} disabled={activationBusy} />
+				</div>{/if}
 			<div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 				<div>
 					<h2 class="font-semibold">ตรวจการเปิดสอนทีละห้อง</h2>
@@ -383,6 +398,14 @@
 																>
 																	<ArrowUpRight class="size-4" />
 																</Button>
+																{#if canManage && workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
+																		changeSetId={draftChangeSetId}
+																		versionId={workspace.deliveryVersionId}
+																		offeringId={item.offeringId}
+																		label={item.name}
+																		{canManage}
+																		onRemoved={onDraftResourceRemoved}
+																	/>{/if}
 															</div>
 														{:else if isPendingSynchronizedActivity(item)}
 															{#if canManage && onPrepareSynchronizedActivity}
@@ -448,6 +471,14 @@
 													>
 														<ArrowUpRight class="size-4" />
 													</Button>
+													{#if canManage && workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
+															changeSetId={draftChangeSetId}
+															versionId={workspace.deliveryVersionId}
+															offeringId={item.offeringId}
+															label={item.name}
+															{canManage}
+															onRemoved={onDraftResourceRemoved}
+														/>{/if}
 												</div>
 											</div>
 										{/each}

@@ -46,11 +46,14 @@ RETURNS JSONB LANGUAGE SQL STABLE AS $$
         COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',weekly_period_target) ORDER BY id)
             FROM selected_targets),'[]'::JSONB)),revision) AS graph FROM context
     )
-    SELECT jsonb_build_object('offerings',COALESCE(jsonb_agg(
-        jsonb_set(offering,'{groups}',COALESCE((SELECT jsonb_agg(source_group ORDER BY (source_group->>'id')::UUID)
-            FROM jsonb_array_elements(offering->'groups') source_group
-            WHERE NOT ((source_group->>'id')::UUID=ANY(context.excluded_group_ids))), '[]'::JSONB))
-        ORDER BY (offering->>'id')::UUID), '[]'::JSONB))
-    FROM context CROSS JOIN projected CROSS JOIN LATERAL jsonb_array_elements(projected.graph->'offerings') offering
-    WHERE NOT ((offering->>'id')::UUID=ANY(context.excluded_offering_ids));
+    SELECT CASE WHEN cardinality(context.excluded_offering_ids)=0
+            AND cardinality(context.excluded_group_ids)=0 THEN projected.graph
+        ELSE (SELECT jsonb_build_object('offerings',COALESCE(jsonb_agg(
+            jsonb_set(offering,'{groups}',COALESCE((SELECT jsonb_agg(source_group ORDER BY (source_group->>'id')::UUID)
+                FROM jsonb_array_elements(offering->'groups') source_group
+                WHERE NOT ((source_group->>'id')::UUID=ANY(context.excluded_group_ids))), '[]'::JSONB))
+            ORDER BY (offering->>'id')::UUID), '[]'::JSONB))
+            FROM jsonb_array_elements(projected.graph->'offerings') offering
+            WHERE NOT ((offering->>'id')::UUID=ANY(context.excluded_offering_ids))) END
+    FROM context CROSS JOIN projected;
 $$;

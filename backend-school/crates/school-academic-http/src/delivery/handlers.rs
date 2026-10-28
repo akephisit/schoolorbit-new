@@ -1352,15 +1352,25 @@ pub async fn remove_draft_offering(
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     learning_offering_access_policy::require_learning_offering_access(
-        &context.tenant.pool, &context.actor, offering_id, OfferingAction::Manage,
-    ).await?;
+        &context.tenant.pool,
+        &context.actor,
+        offering_id,
+        OfferingAction::Manage,
+    )
+    .await?;
     let mut ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
     ids.push(offering_id);
     let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
     let changed = change_sets::remove_draft_offering(
-        &context.tenant.pool, context.actor.user_id, id, offering_id, request,
-    ).await?;
-    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors).await?;
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        offering_id,
+        request,
+    )
+    .await?;
+    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
+        .await?;
     Ok(ok(changed))
 }
 
@@ -1385,15 +1395,25 @@ pub async fn remove_draft_group(
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let offering_id = learning_offering_access_policy::require_learning_group_access(
-        &context.tenant.pool, &context.actor, group_id, OfferingAction::Manage,
-    ).await?;
+        &context.tenant.pool,
+        &context.actor,
+        group_id,
+        OfferingAction::Manage,
+    )
+    .await?;
     let mut ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
     ids.push(offering_id);
     let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
     let changed = change_sets::remove_draft_group(
-        &context.tenant.pool, context.actor.user_id, id, group_id, request,
-    ).await?;
-    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors).await?;
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        group_id,
+        request,
+    )
+    .await?;
+    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
+        .await?;
     Ok(ok(changed))
 }
 

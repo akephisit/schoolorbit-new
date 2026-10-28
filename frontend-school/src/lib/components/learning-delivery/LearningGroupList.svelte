@@ -1,5 +1,7 @@
 <script lang="ts">
+	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
 	import type {
+		AcademicTermChangeSet,
 		CreateLearningGroupRequest,
 		DeliveryManagementOptions,
 		LearningGroup
@@ -20,7 +22,12 @@
 		canManage = false,
 		onSelect,
 		onRequestManagementOptions,
-		onCreate
+		onCreate,
+		createPending = false,
+		versionId,
+		offeringId,
+		changeSetId,
+		onDraftResourceRemoved
 	}: {
 		groups: LearningGroup[];
 		selectedGroupId?: string | null;
@@ -28,6 +35,11 @@
 		onSelect: (group: LearningGroup) => void;
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onCreate: (request: CreateLearningGroupRequest) => Promise<void>;
+		createPending?: boolean;
+		versionId?: string;
+		offeringId: string;
+		changeSetId?: string | null;
+		onDraftResourceRemoved: (updated: AcademicTermChangeSet) => Promise<void>;
 	} = $props();
 
 	let createOpen = $state(false);
@@ -87,38 +99,52 @@
 			<Badge variant="secondary">{groups.length} กลุ่ม</Badge>{#if canManage}<Button
 					size="sm"
 					variant="outline"
+					disabled={createPending}
 					onclick={showCreate}><Plus class="size-4" /> เพิ่มกลุ่ม</Button
 				>{/if}
 		</div>
 	</header>
 	<div class="divide-y">
 		{#each groups as group (group.id)}
-			<Button
-				type="button"
-				variant="ghost"
-				class="h-auto w-full justify-start rounded-none px-4 py-4 text-start font-normal hover:bg-muted/35"
-				onclick={() => onSelect(group)}
-			>
-				<div class="flex w-full items-center gap-3">
-					<div
-						class={selectedGroupId === group.id
-							? 'rounded-xl bg-primary p-2.5 text-primary-foreground'
-							: 'rounded-xl bg-primary/10 p-2.5 text-primary'}
-					>
-						<UsersRound class="size-4" />
+			<div class="flex flex-wrap items-center gap-2 pr-3">
+				<Button
+					type="button"
+					variant="ghost"
+					class="h-auto min-w-0 flex-1 justify-start rounded-none px-4 py-4 text-start font-normal hover:bg-muted/35"
+					onclick={() => onSelect(group)}
+				>
+					<div class="flex w-full items-center gap-3">
+						<div
+							class={selectedGroupId === group.id
+								? 'rounded-xl bg-primary p-2.5 text-primary-foreground'
+								: 'rounded-xl bg-primary/10 p-2.5 text-primary'}
+						>
+							<UsersRound class="size-4" />
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="font-medium">{group.name}</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								ครู {group.teacherAssignments.length} คน · ห้องต้นทาง {group.homeroomIds.length} ห้อง
+								· ห้องเรียนที่ต้องการ {group.preferredRoomIds.length} ห้อง
+							</p>
+						</div>
+						<Badge variant={group.rosterStatus === 'published' ? 'default' : 'secondary'}
+							>{group.rosterStatus === 'published'
+								? 'รายชื่อเผยแพร่แล้ว'
+								: 'รายชื่อฉบับร่าง'}</Badge
+						><ArrowRight class="size-4 shrink-0 text-muted-foreground" />
 					</div>
-					<div class="min-w-0 flex-1">
-						<p class="font-medium">{group.name}</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							ครู {group.teacherAssignments.length} คน · ห้องต้นทาง {group.homeroomIds.length} ห้อง ·
-							ห้องเรียนที่ต้องการ {group.preferredRoomIds.length} ห้อง
-						</p>
-					</div>
-					<Badge variant={group.rosterStatus === 'published' ? 'default' : 'secondary'}
-						>{group.rosterStatus === 'published' ? 'รายชื่อเผยแพร่แล้ว' : 'รายชื่อฉบับร่าง'}</Badge
-					><ArrowRight class="size-4 shrink-0 text-muted-foreground" />
-				</div>
-			</Button>
+				</Button>
+				{#if canManage && versionId && changeSetId}<DeliveryDraftResourceRemoval
+						{changeSetId}
+						{versionId}
+						{offeringId}
+						groupId={group.id}
+						label={group.name}
+						{canManage}
+						onRemoved={onDraftResourceRemoved}
+					/>{/if}
+			</div>
 		{:else}
 			<div class="p-8 text-center text-sm text-muted-foreground">
 				ยังไม่มีกลุ่มเรียน เริ่มจากเพิ่มกลุ่มตามห้องเรียนหรือชุดผู้เรียนจริง
