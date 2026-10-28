@@ -895,6 +895,8 @@ pub struct StudentActivityRegistrationQuery {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewCurriculumOfferingsRequest {
+    #[serde(default)]
+    pub delivery_version_id: Option<Uuid>,
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
 }

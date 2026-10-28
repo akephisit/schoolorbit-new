@@ -379,6 +379,8 @@
 																		versionId={workspace.deliveryVersionId}
 																		offeringId={item.offeringId}
 																		label={item.name}
+																		homeroomId={room.homeroom.id}
+																		homeroomName={room.homeroom.name}
 																		{canManage}
 																		onRemoved={onDraftResourceRemoved}
 																	/>{/if}
@@ -460,6 +462,8 @@
 															versionId={workspace.deliveryVersionId}
 															offeringId={item.offeringId}
 															label={item.name}
+															homeroomId={room.homeroom.id}
+															homeroomName={room.homeroom.name}
 															{canManage}
 															onRemoved={onDraftResourceRemoved}
 														/>{/if}

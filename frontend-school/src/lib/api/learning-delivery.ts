@@ -380,6 +380,20 @@ export const removeDeliveryDraftOffering = (
 		'นำรายการเปิดสอนออกจากแบบร่างไม่สำเร็จ'
 	);
 
+export const removeDeliveryDraftOfferingHomeroom = (
+	id: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['id'],
+	offeringId: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['offeringId'],
+	homeroomId: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['homeroomId'],
+	body: operations['removeDeliveryDraftOfferingHomeroom']['requestBody']['content']['application/json']
+) =>
+	deliveryData(
+		apiClient.deleteWithBody<AcademicTermChangeSet>(
+			`${changeSetPath(id)}/offerings/${encodeURIComponent(offeringId)}/homerooms/${encodeURIComponent(homeroomId)}`,
+			body
+		),
+		'นำรายการเปิดสอนออกจากห้องนี้ไม่สำเร็จ'
+	);
+
 export const removeDeliveryDraftGroup = (
 	id: OperationPath<operations['removeDeliveryDraftGroup']>['id'],
 	groupId: OperationPath<operations['removeDeliveryDraftGroup']>['groupId'],

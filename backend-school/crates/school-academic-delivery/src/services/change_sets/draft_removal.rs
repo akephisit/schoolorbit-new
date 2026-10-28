@@ -1,5 +1,8 @@
 use super::*;
-use crate::models::{versions::DeliverySnapshot, RemoveDeliveryDraftResourceRequest};
+use crate::models::{
+    versions::DeliverySnapshot, ActivitySchedulingMode, LearningOfferingSnapshot,
+    RemoveDeliveryDraftResourceRequest,
+};
 
 pub async fn remove_draft_offering(
     pool: &PgPool,
@@ -8,7 +11,7 @@ pub async fn remove_draft_offering(
     offering_id: Uuid,
     request: RemoveDeliveryDraftResourceRequest,
 ) -> Result<AcademicTermChangeSet, AppError> {
-    remove_resource(pool, actor, change_set_id, offering_id, None, request).await
+    remove_resource(pool, actor, change_set_id, offering_id, None, None, request).await
 }
 
 pub async fn remove_draft_group(
@@ -24,6 +27,27 @@ pub async fn remove_draft_group(
         change_set_id,
         group_id,
         Some(group_id),
+        None,
+        request,
+    )
+    .await
+}
+
+pub async fn remove_draft_offering_homeroom(
+    pool: &PgPool,
+    actor: Uuid,
+    change_set_id: Uuid,
+    offering_id: Uuid,
+    homeroom_id: Uuid,
+    request: RemoveDeliveryDraftResourceRequest,
+) -> Result<AcademicTermChangeSet, AppError> {
+    remove_resource(
+        pool,
+        actor,
+        change_set_id,
+        offering_id,
+        None,
+        Some(homeroom_id),
         request,
     )
     .await
@@ -35,6 +59,7 @@ async fn remove_resource(
     change_set_id: Uuid,
     resource_id: Uuid,
     group_id: Option<Uuid>,
+    homeroom_id: Option<Uuid>,
     request: RemoveDeliveryDraftResourceRequest,
 ) -> Result<AcademicTermChangeSet, AppError> {
     validate_row_version(request.change_set_row_version)?;
@@ -84,6 +109,34 @@ async fn remove_resource(
         })
         .ok_or_else(|| AppError::Conflict("รายการนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่างที่เลือก".into()))?;
     let offering_id = offering.id;
+    if homeroom_id.is_some_and(|room| !offering.homeroom_ids.contains(&room)) {
+        return Err(AppError::Conflict(
+            "ห้องนี้ไม่ได้อยู่ในรายการเปิดสอนของรุ่นที่เลือก".into(),
+        ));
+    }
+    let mut allowed_rooms = offering.homeroom_ids.clone();
+    if let Some(room) = homeroom_id {
+        allowed_rooms.retain(|id| *id != room);
+    } else if let Some(group) = group_id {
+        let central = matches!(&offering.catalog,LearningOfferingSnapshot::Activity(a) if a.scheduling_mode==ActivitySchedulingMode::Synchronized);
+        if !central {
+            let remaining: std::collections::HashSet<_> = offering
+                .groups
+                .iter()
+                .filter(|g| g.id != group)
+                .flat_map(|g| g.homeroom_ids.iter().copied())
+                .collect();
+            let removed = offering.groups.iter().find(|g| g.id == group);
+            if let Some(removed) = removed {
+                allowed_rooms.retain(|room| {
+                    !removed.homeroom_ids.contains(room) || remaining.contains(room)
+                });
+            }
+        }
+    } else {
+        allowed_rooms.clear();
+    }
+
     let offering_exists: bool = DbSession::new(&mut *tx)
         .scalar(
             "academic_delivery.services.change_sets.remove_draft_resource",
@@ -115,38 +168,51 @@ async fn remove_resource(
     if group_id.is_some_and(|group| !affected_groups.contains(&group)) {
         return Err(AppError::Conflict("ข้อมูลกลุ่มเรียนเปลี่ยนไป กรุณาโหลดใหม่".into()));
     }
-    let removed_commands = DbSession::new(&mut *tx)
-        .query(
-            "academic_delivery.services.change_sets.remove_draft_resource",
-            "DELETE FROM academic_term_change_items WHERE change_set_id=$1
+    let removed_commands = if homeroom_id.is_some() {
+        0
+    } else {
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_delivery.services.change_sets.remove_draft_resource",
+                "DELETE FROM academic_term_change_items WHERE change_set_id=$1
             AND (($2::uuid IS NULL AND learning_offering_id=$3) OR learning_group_id=ANY($4))",
-        )
-        .bind(change_set_id)
-        .bind(group_id)
-        .bind(offering_id)
-        .bind(&affected_groups)
-        .execute()
-        .await
-        .map_err(deletion_error)?
-        .rows_affected();
+            )
+            .bind(change_set_id)
+            .bind(group_id)
+            .bind(offering_id)
+            .bind(&affected_groups)
+            .execute()
+            .await
+            .map_err(deletion_error)?
+            .rows_affected()
+    };
     if let Some(group) = group_id {
         DbSession::new(&mut *tx).query(
             "academic_delivery.services.change_sets.remove_draft_resource",
             "UPDATE academic_term_change_sets SET excluded_group_ids=array_append(excluded_group_ids,$2)
                 WHERE id=$1 AND NOT ($2=ANY(excluded_group_ids))",
         ).bind(change_set_id).bind(group).execute().await?;
-    } else {
+    } else if homeroom_id.is_none() {
         DbSession::new(&mut *tx).query(
             "academic_delivery.services.change_sets.remove_draft_resource",
             "UPDATE academic_term_change_sets SET excluded_offering_ids=array_append(excluded_offering_ids,$2)
                 WHERE id=$1 AND NOT ($2=ANY(excluded_offering_ids))",
         ).bind(change_set_id).bind(offering_id).execute().await?;
     }
+    super::super::audiences::set_revision_audience(
+        &mut tx,
+        change_set_id,
+        offering_id,
+        &allowed_rooms,
+    )
+    .await?;
+    super::super::audiences::clear_omitted_group_commands(&mut tx, change_set_id, offering_id)
+        .await?;
     let (offering_status, downstream_count) =
         offering_deletion_evidence(&mut tx, offering_id).await?;
     let mut deleted_offering = false;
     let mut deleted_groups = 0;
-    if downstream_count == 0 {
+    if downstream_count == 0 && homeroom_id.is_none() {
         if let Some(group) = group_id {
             let exclusive: bool = DbSession::new(&mut *tx).scalar(
                 "academic_delivery.services.change_sets.remove_draft_resource",
@@ -202,7 +268,7 @@ async fn remove_resource(
         actor,
         serde_json::json!({
             "targetDeliveryVersionId":version_id, "learningOfferingId":offering_id,
-            "learningGroupId":group_id, "removedCommandCount":removed_commands,
+            "learningGroupId":group_id, "homeroomId":homeroom_id, "allowedHomeroomIds":allowed_rooms, "removedCommandCount":removed_commands,
             "deletedOffering":deleted_offering, "deletedGroupCount":deleted_groups,
         }),
     )
@@ -220,6 +286,7 @@ pub(super) async fn offering_is_exclusive(
         "academic_delivery.services.change_sets.offering_is_exclusive",
         "SELECT NOT EXISTS(SELECT 1 FROM academic_delivery_versions v,
             jsonb_array_elements(v.snapshot->'offerings') o WHERE v.id<>$2 AND (o->>'id')::uuid=$1)
+            AND NOT EXISTS(SELECT 1 FROM academic_delivery_revision_audiences WHERE learning_offering_id=$1)
             AND NOT EXISTS(SELECT 1 FROM academic_term_change_items item
                 LEFT JOIN learning_groups g ON g.id=item.learning_group_id
                 WHERE item.learning_offering_id=$1 OR g.learning_offering_id=$1)

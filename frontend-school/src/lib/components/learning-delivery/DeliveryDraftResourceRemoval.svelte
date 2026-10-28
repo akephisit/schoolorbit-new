@@ -6,6 +6,7 @@
 		getDeliveryVersion,
 		getLearningDeliveryManagementOptions,
 		removeDeliveryDraftOffering,
+		removeDeliveryDraftOfferingHomeroom,
 		removeDeliveryDraftGroup,
 		type AcademicTermChangeSet,
 		type DeliveryVersion,
@@ -16,12 +17,18 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { Trash2 } from '@lucide/svelte';
+	type RemovalScope =
+		| { groupId: string; homeroomId?: null; homeroomName?: null }
+		| { groupId?: null; homeroomId: string; homeroomName: string }
+		| { groupId?: null; homeroomId?: null; homeroomName?: null };
 	let {
 		changeSetId,
 		versionId,
 		offeringId,
 		label,
 		groupId = null,
+		homeroomId = null,
+		homeroomName = null,
 		canManage,
 		onRemoved
 	}: {
@@ -29,10 +36,9 @@
 		versionId: string;
 		offeringId: string;
 		label: string;
-		groupId?: string | null;
 		canManage: boolean;
 		onRemoved: (updated: AcademicTermChangeSet) => Promise<void>;
-	} = $props();
+	} & RemovalScope = $props();
 	let open = $state(false),
 		loading = $state(false),
 		saving = $state(false),
@@ -47,7 +53,13 @@
 	let session = 0;
 	let observedContext = '';
 	const request = new LatestRequest();
-	const context = $derived(`${changeSetId}:${versionId}:${offeringId}:${groupId ?? ''}`);
+	const context = $derived(
+		`${changeSetId}:${versionId}:${offeringId}:${groupId ?? ''}:${homeroomId ?? ''}`
+	);
+	const validScope = $derived(!(groupId && homeroomId));
+	const actionLabel = $derived(
+		homeroomId ? 'นำออกจากห้องนี้' : groupId ? 'ลบกลุ่มจากรุ่นนี้' : 'ลบจากรุ่นนี้'
+	);
 	const offering = $derived(version?.snapshot.offerings.find((item) => item.id === offeringId));
 	const group = $derived(offering?.groups.find((item) => item.id === groupId));
 	const homeroomNames = $derived(
@@ -68,7 +80,7 @@
 		}
 	}
 	async function show() {
-		if (!canManage || saving) return;
+		if (!canManage || saving || !validScope) return;
 		open = true;
 		session++;
 		saved = null;
@@ -89,6 +101,8 @@
 				getAcademicTermChangeSet(changeSetId, { signal: ticket.signal }),
 				getDeliveryVersion(versionId, { signal: ticket.signal })
 			]);
+			if (!current(token, owner) || !request.isCurrent(ticket.revision)) return;
+			if (!validScope) throw new Error('เลือกนำออกจากห้องหรือกลุ่มอย่างใดอย่างหนึ่ง');
 			const loadedOptions = groupId
 				? await getLearningDeliveryManagementOptions(loadedChangeSet.academicTermId, {
 						signal: ticket.signal
@@ -116,15 +130,27 @@
 		}
 	}
 	async function finish(updated: AcademicTermChangeSet, token: number, owner: string) {
+		if (!current(token, owner)) return;
 		await onRemoved(updated);
 		if (current(token, owner)) {
+			saving = false;
 			open = false;
 			session++;
 			request.abort();
 		}
 	}
 	async function remove() {
-		if (!canManage || !changeSet || !version || loading || saving || needsReload || saved) return;
+		if (
+			!canManage ||
+			!validScope ||
+			!changeSet ||
+			!version ||
+			loading ||
+			saving ||
+			needsReload ||
+			saved
+		)
+			return;
 		const token = session,
 			owner = context;
 		saving = true;
@@ -136,7 +162,9 @@
 			};
 			const updated = groupId
 				? await removeDeliveryDraftGroup(changeSetId, groupId, body)
-				: await removeDeliveryDraftOffering(changeSetId, offeringId, body);
+				: homeroomId
+					? await removeDeliveryDraftOfferingHomeroom(changeSetId, offeringId, homeroomId, body)
+					: await removeDeliveryDraftOffering(changeSetId, offeringId, body);
 			if (!current(token, owner)) return;
 			saved = updated;
 			await finish(updated, token, owner);
@@ -146,21 +174,26 @@
 				errorMessage = error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ';
 			}
 		} finally {
-			if (!disposed && context === owner) saving = false;
+			if (!disposed && session === token && context === owner) saving = false;
 		}
 	}
 	async function reconcileSaved() {
 		if (!saved || saving) return;
+		const token = session,
+			owner = context,
+			accepted = saved;
 		saving = true;
 		errorMessage = '';
 		try {
-			await finish(saved, session, context);
+			await finish(accepted, token, owner);
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'แสดงข้อมูลล่าสุดไม่สำเร็จ';
+			if (current(token, owner))
+				errorMessage = error instanceof Error ? error.message : 'แสดงข้อมูลล่าสุดไม่สำเร็จ';
 		} finally {
-			saving = false;
+			if (!disposed && session === token && context === owner) saving = false;
 		}
 	}
+
 	$effect.pre(() => {
 		const owner = context;
 		if (observedContext !== owner || !canManage) {
@@ -183,10 +216,10 @@
 	bind:ref={trigger}
 	size="sm"
 	variant="ghost"
-	disabled={!canManage}
+	disabled={!canManage || !validScope}
 	onclick={show}
-	aria-label={`${groupId ? 'ลบกลุ่มจากรุ่นนี้' : 'ลบจากรุ่นนี้'} · ${label}`}
-	><Trash2 class="size-4" /><span>{groupId ? 'ลบกลุ่มจากรุ่นนี้' : 'ลบจากรุ่นนี้'}</span></Button
+	aria-label={`${actionLabel} · ${homeroomName ? `${homeroomName} · ` : ''}${label}`}
+	><Trash2 class="size-4" /><span>{actionLabel}</span></Button
 >
 <AlertDialog.Root {open} onOpenChange={changeOpen}>
 	<AlertDialog.Content
@@ -198,8 +231,7 @@
 		}}
 	>
 		<AlertDialog.Header class="shrink-0"
-			><AlertDialog.Title>{groupId ? 'ลบกลุ่มจากรุ่นนี้' : 'ลบจากรุ่นนี้'}</AlertDialog.Title
-			><AlertDialog.Description
+			><AlertDialog.Title>{actionLabel}</AlertDialog.Title><AlertDialog.Description
 				>“{label}” · {changeSet?.reason ?? 'กำลังตรวจรุ่นแบบร่างที่เลือก'}</AlertDialog.Description
 			></AlertDialog.Header
 		>
@@ -220,6 +252,12 @@
 								{#each homeroomNames as name, index (`${index}:${name}`)}<li>{name}</li>{/each}
 							</ul>
 						</div>{/if}
+				{:else if homeroomId}<p class="text-sm">
+						นำรายการ “{offering.name}” ออกจากห้อง “{homeroomName}” เฉพาะรุ่นแบบร่างนี้
+					</p>
+					<p class="text-sm text-muted-foreground">
+						ห้องอื่นยังอยู่ กลุ่มที่ยังครอบคลุมห้องอื่นจะคงเดิม รวมถึงครู รายชื่อ และคะแนนที่มีอยู่
+					</p>
 				{:else}<p class="text-sm">
 						นำรายการ “{offering.name}” พร้อมทุกกลุ่มเรียน {offering.groups.length} กลุ่มออกจากแบบร่างนี้
 					</p>{/if}
@@ -244,7 +282,7 @@
 					loading={saving}
 					loadingLabel="กำลังนำออก"
 					disabled={loading || needsReload || !changeSet || !version}
-					onclick={remove}>ยืนยัน{groupId ? 'ลบกลุ่มจากรุ่นนี้' : 'ลบจากรุ่นนี้'}</LoadingButton
+					onclick={remove}>ยืนยัน{actionLabel}</LoadingButton
 				>{/if}
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

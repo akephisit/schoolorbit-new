@@ -113,7 +113,7 @@ async fn fixture(name: &str, generated: bool) -> PreparationFixture {
     if generated {
         let preview = offerings::preview_from_curriculum(
             &pool,
-            PreviewCurriculumOfferingsRequest {
+            PreviewCurriculumOfferingsRequest { delivery_version_id: None,
                 academic_term_id: context.term_id,
                 study_program_ids: vec![context.study_program_id],
             },
@@ -201,7 +201,7 @@ async fn fixture(name: &str, generated: bool) -> PreparationFixture {
 async fn preview(f: &PreparationFixture, program: Uuid) -> CurriculumOfferingPreview {
     offerings::preview_from_curriculum(
         &f.pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: f.context.term_id,
             study_program_ids: vec![program],
         },

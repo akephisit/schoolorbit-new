@@ -125,6 +125,7 @@ pub(super) async fn apply_curriculum_generated_group(
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     proposal: &CurriculumGroupProposal,
+    effective_rooms: Option<&[Uuid]>,
 ) -> Result<GeneratedGroupApplyOutcome, AppError> {
     if proposal.group_key.trim().is_empty()
         || proposal.name.trim().is_empty()
@@ -169,6 +170,9 @@ pub(super) async fn apply_curriculum_generated_group(
             .bind(id)
             .fetch_all()
             .await?;
+        if let Some(allowed) = effective_rooms {
+            existing_homeroom_ids.retain(|room| allowed.contains(room));
+        }
         existing_homeroom_ids.sort_unstable();
         if existing_homeroom_ids != homeroom_ids {
             return Err(AppError::Conflict(format!(

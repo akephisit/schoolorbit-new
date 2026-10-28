@@ -9,6 +9,7 @@ use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
 pub mod activities;
+pub mod audiences;
 pub mod bulk_group_setup;
 pub mod change_sets;
 pub mod effective_teachers;

@@ -95,6 +95,10 @@ pub fn routes() -> Router<AcademicHttpState> {
             delete(handlers::delete_term_change_item),
         )
         .route(
+            "/term-change-sets/{id}/offerings/{offeringId}/homerooms/{homeroomId}",
+            delete(handlers::remove_draft_offering_homeroom),
+        )
+        .route(
             "/term-change-sets/{id}/offerings/{offeringId}",
             delete(handlers::remove_draft_offering),
         )

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	compareDeliveryOfferings,
+	deliveryGroupCoverage,
 	deliveryOfferingLabel,
 	deliverySubjectGroupOptions,
 	filterDeliveryOfferings
@@ -67,4 +68,36 @@ test('subject-group options and filtering come from metadata for the exact visib
 		filterDeliveryOfferings(version, { ...filters, offeringSearch: 'ค21' })[0].id,
 		navigationOfferingIds.basic21
 	);
+});
+
+test('selected combined-group coverage is a view and never a registry replacement payload', () => {
+	const raw = {
+		id: 'combined',
+		homeroomIds: ['m4-2', 'm4-3', 'm6-1'],
+		rowVersion: 9,
+		teacherAssignments: [{ id: 'retained-teacher' }]
+	};
+	const selected = [{ id: raw.id, homeroomIds: ['m6-1'] }];
+	const before = structuredClone({ raw, selected });
+	const coverage = deliveryGroupCoverage(raw, selected);
+	assert.deepEqual(coverage, { homeroomIds: ['m6-1'], differsFromRegistry: true });
+	coverage.homeroomIds.push('view-only');
+	assert.deepEqual({ raw, selected }, before);
+});
+
+test('empty selected coverage never falls back to registry rooms, while legacy no-version reads retain registry scope', () => {
+	const raw = { id: 'group', homeroomIds: ['m4-2', 'm6-1'] };
+	assert.deepEqual(deliveryGroupCoverage(raw, [{ id: raw.id, homeroomIds: [] }]), {
+		homeroomIds: [],
+		differsFromRegistry: true
+	});
+	assert.deepEqual(deliveryGroupCoverage(raw, []), { homeroomIds: [], differsFromRegistry: true });
+	assert.deepEqual(deliveryGroupCoverage(raw, null), {
+		homeroomIds: raw.homeroomIds,
+		differsFromRegistry: false
+	});
+	assert.deepEqual(deliveryGroupCoverage(raw, [{ id: raw.id, homeroomIds: ['m6-1', 'm4-2'] }]), {
+		homeroomIds: ['m6-1', 'm4-2'],
+		differsFromRegistry: false
+	});
 });

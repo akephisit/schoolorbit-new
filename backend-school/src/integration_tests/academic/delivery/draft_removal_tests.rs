@@ -879,7 +879,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     .await;
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -932,7 +932,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     );
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -2080,4 +2080,61 @@ async fn http_pending_three_group_removal(command: &str) {
         3,
         "only selected snapshot membership is removed"
     );
+}
+
+#[tokio::test]
+async fn delivery_room_scope_last_course_group_unlinks_its_room() {
+    let pool = prepare_delivery_runtime_fixture("room_scope_last_group").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "room-scope-last-group",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มห้องที่นำออก".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    change_sets::remove_draft_group(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        group.id,
+        removal_request(&pool, revision.id).await,
+    )
+    .await
+    .unwrap();
+    let after = draft_version(&pool, revision.id).await;
+    assert!(after.snapshot.offerings.iter().all(|row|row.id!=offering.id),"removing the last course group must unlink its only room and omit the empty-audience offering");
 }

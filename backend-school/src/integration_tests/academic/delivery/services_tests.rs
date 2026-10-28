@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 142).await.unwrap();
+    apply_migrations_through(&pool, 144).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 142).await.unwrap();
+    apply_migrations_through(&pool, 144).await.unwrap();
     pool
 }
 
@@ -4721,7 +4721,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .unwrap();
     let earlier_edition = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![earlier_edition_program_id],
         },
@@ -4735,7 +4735,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
 
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -4854,7 +4854,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
 
     let retained_preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -4964,7 +4964,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
 
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -5100,7 +5100,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     .unwrap();
     let next_preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -6022,7 +6022,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     let draft_version_id = revision.target_delivery_version_id;
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -7744,7 +7744,7 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
     .await;
     let preview = offerings::preview_from_curriculum(
         &pool,
-        PreviewCurriculumOfferingsRequest {
+        PreviewCurriculumOfferingsRequest { delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![program.id],
         },
