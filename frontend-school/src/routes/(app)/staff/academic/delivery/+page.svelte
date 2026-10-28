@@ -180,6 +180,7 @@
 		context: string;
 		academicYearId: string;
 		academicTermId: string;
+		expectedVersionId: string | null;
 	};
 	const preparationRequest = new LatestRequest();
 	let preparationDisposed = false;
@@ -201,7 +202,7 @@
 		`${academicYearId}:${academicTermId}:${$authStore.user?.id ?? ''}`
 	);
 	let observedPreparationContext = '';
-	function preparationCurrent(operation: PreparationOperation): boolean {
+	function preparationOwned(operation: PreparationOperation): boolean {
 		return (
 			!preparationDisposed &&
 			canManage &&
@@ -210,6 +211,19 @@
 			preparationRequest.isCurrent(operation.revision)
 		);
 	}
+	function preparationCurrent(operation: PreparationOperation): boolean {
+		return (
+			preparationOwned(operation) &&
+			operation.expectedVersionId === overviewUrl.searchParams.get('deliveryVersionId')
+		);
+	}
+	function settlePreparation(operation: PreparationOperation) {
+		if (!preparationOwned(operation)) return;
+		if (operation.expectedVersionId !== overviewUrl.searchParams.get('deliveryVersionId'))
+			cancelPreparation();
+		else activationBusy = false;
+	}
+
 	function cancelPreparation() {
 		preparationRequest.abort();
 		pendingDeliveryAction = null;
@@ -221,9 +235,14 @@
 	}
 	$effect.pre(() => {
 		const context = preparationContext,
-			allowed = canManage;
+			allowed = canManage,
+			versionId = overviewUrl.searchParams.get('deliveryVersionId');
 		untrack(() => {
-			if (context !== observedPreparationContext || !allowed) {
+			if (
+				context !== observedPreparationContext ||
+				!allowed ||
+				(pendingDeliveryAction && pendingDeliveryAction.expectedVersionId !== versionId)
+			) {
 				observedPreparationContext = context;
 				cancelPreparation();
 			}
@@ -446,7 +465,18 @@
 				const url = new URL(overviewUrl);
 				url.searchParams.set('deliveryVersionId', versionId);
 				url.searchParams.delete('changeSetId');
-				await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
+				const previousVersionId = operation.expectedVersionId;
+				operation.expectedVersionId = versionId;
+				try {
+					await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
+				} catch (error) {
+					if (
+						preparationOwned(operation) &&
+						overviewUrl.searchParams.get('deliveryVersionId') === previousVersionId
+					)
+						operation.expectedVersionId = previousVersionId;
+					throw error;
+				}
 				if (!preparationCurrent(operation)) return;
 				await tick();
 				if (!preparationCurrent(operation)) return;
@@ -501,7 +531,7 @@
 			if (preparationCurrent(operation) && !isAbortError(error))
 				activationError = error instanceof Error ? error.message : 'เตรียมรายการในร่างไม่สำเร็จ';
 		} finally {
-			if (preparationCurrent(operation)) activationBusy = false;
+			settlePreparation(operation);
 		}
 	}
 
@@ -521,7 +551,8 @@
 			...ticket,
 			context: preparationContext,
 			academicYearId,
-			academicTermId
+			academicTermId,
+			expectedVersionId: overviewUrl.searchParams.get('deliveryVersionId')
 		};
 		const originVersionId = workspace.deliveryVersionId;
 		pendingDeliveryAction = operation;
@@ -555,7 +586,7 @@
 			if (preparationCurrent(operation) && !isAbortError(error))
 				activationError = error instanceof Error ? error.message : 'ค้นหาแบบร่างไม่สำเร็จ';
 		} finally {
-			if (preparationCurrent(operation)) activationBusy = false;
+			settlePreparation(operation);
 		}
 	}
 
@@ -802,17 +833,19 @@
 
 		{#if canManage && academicTermId}
 			{#key academicTermId}
-				<OfferingCreateDialog
-					bind:this={offeringDialog}
-					showTrigger={workspace?.deliveryVersionStatus === 'draft'}
-					{academicTermId}
-					{returnTo}
-					onCreated={addCreated}
-					onApplied={() => refreshDeliveryRegions(true)}
-					defaultDeliveryVersionId={workspace?.deliveryVersionStatus === 'draft'
-						? workspace.deliveryVersionId
-						: null}
-				/>
+				{#key overviewUrl.searchParams.get('deliveryVersionId')}
+					<OfferingCreateDialog
+						bind:this={offeringDialog}
+						showTrigger={workspace?.deliveryVersionStatus === 'draft'}
+						{academicTermId}
+						{returnTo}
+						onCreated={addCreated}
+						onApplied={() => refreshDeliveryRegions(true)}
+						defaultDeliveryVersionId={workspace?.deliveryVersionStatus === 'draft'
+							? workspace.deliveryVersionId
+							: null}
+					/>
+				{/key}
 				<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
 				{#if canManage}
 					<AcademicChangeSetDialog

@@ -1528,3 +1528,180 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 		{ proposalId: 'retain-grouping-conflict', action: 'defer_groups', groups: [] }
 	]);
 });
+
+test('same-term history Back cancels a pending version A lookup before version B starts its own preparation', async ({
+	page
+}) => {
+	const fixture = await mockSharedComparison(page, { manager: true });
+	const lookupA = deferred(),
+		lookupAHandled = deferred(),
+		optionsB = deferred();
+	const draftB = 'c0000000-0000-4000-8000-000000000061',
+		draftC = 'c0000000-0000-4000-8000-000000000062',
+		changeSetB = 'c0000000-0000-4000-8000-000000000063';
+	const workspaceA = fixture.workspace;
+	workspaceA.deliveryVersionStatus = 'published';
+	const workspaceB = structuredClone(workspaceA);
+	workspaceB.deliveryVersionId = draftB;
+	workspaceB.deliveryVersionStatus = 'draft';
+	for (const room of workspaceB.homerooms)
+		for (const item of room.items) item.name = 'วิทยาศาสตร์รุ่นบี';
+	fixture.version.status = 'published';
+	fixture.version.effectiveFrom = '2027-05-01';
+	const summaryBase = {
+		academicYearId: navIds.year,
+		academicTermId: navIds.term,
+		sourceVersionId: null,
+		effectiveFrom: null,
+		effectiveUntil: null,
+		referenceDate: '2027-05-01',
+		rowVersion: 1,
+		offeringCount: 1,
+		groupCount: 0,
+		teacherAssignmentCount: 0,
+		updatedAt: '2027-05-01T00:00:00Z'
+	};
+	const summaries = [
+		{
+			...summaryBase,
+			id: navIds.version,
+			status: 'published',
+			changeSetId: null,
+			effectiveFrom: '2027-05-01'
+		},
+		{
+			...summaryBase,
+			id: draftB,
+			status: 'draft',
+			changeSetId: changeSetB,
+			sourceVersionId: navIds.version
+		},
+		{
+			...summaryBase,
+			id: draftC,
+			status: 'draft',
+			changeSetId: null,
+			sourceVersionId: navIds.version
+		}
+	];
+	let versionLists = 0,
+		optionReads = 0;
+	await page.route('**/api/academic/delivery-versions?*', async (route) => {
+		versionLists++;
+		if (versionLists === 3) {
+			await lookupA.promise;
+			try {
+				await fulfill(route, summaries);
+			} finally {
+				lookupAHandled.release();
+			}
+			return;
+		}
+		return fulfill(route, summaries);
+	});
+	await page.route('**/api/academic/delivery/homerooms?*', (route) =>
+		fulfill(
+			route,
+			new URL(route.request().url()).searchParams.get('deliveryVersionId') === draftB
+				? workspaceB
+				: workspaceA
+		)
+	);
+	await page.route(`**/api/academic/delivery-versions/${draftB}`, (route) =>
+		fulfill(route, {
+			...fixture.version,
+			id: draftB,
+			status: 'draft',
+			effectiveFrom: null,
+			sourceVersionId: navIds.version
+		})
+	);
+	await page.route(`**/api/academic/term-change-sets/${changeSetB}`, (route) =>
+		fulfill(route, {
+			id: changeSetB,
+			academicYearId: navIds.year,
+			academicTermId: navIds.term,
+			targetDeliveryVersionId: draftB,
+			status: 'draft',
+			rowVersion: 1,
+			effectiveFrom: null,
+			referenceDate: '2027-05-01',
+			reason: 'แบบร่างรุ่นบี',
+			createdBy: navIds.actor,
+			createdAt: '2027-05-01T00:00:00Z',
+			updatedAt: '2027-05-01T00:00:00Z',
+			items: [],
+			changes: [],
+			offeringLabels: []
+		})
+	);
+	await page.route('**/api/academic/term-change-sets?*', (route) => fulfill(route, []));
+	await page.route('**/api/academic/delivery/management-options?*', async (route) => {
+		optionReads++;
+		await optionsB.promise;
+		return fulfill(route, {
+			academicYearId: navIds.year,
+			academicTermId: navIds.term,
+			studyPrograms: [workspaceB.homerooms[0].studyProgram],
+			gradeLevels: [workspaceB.homerooms[0].gradeLevel],
+			homerooms: workspaceB.homerooms.map((room) => room.homeroom),
+			learningGroups: [],
+			teachers: [],
+			rooms: [],
+			catalogVersions: []
+		});
+	});
+	const originB = new URL(fixture.origin, 'https://schoolorbit.invalid');
+	originB.searchParams.set('deliveryVersionId', draftB);
+	try {
+		await page.goto(originB.pathname + originB.search);
+		await expect(page.getByTestId('delivery-alignment-summary')).toContainText(
+			'ยังไม่เปิดสอน 1 รายการ'
+		);
+		await page.getByRole('combobox', { name: 'เลือกรุ่นเปิดสอน', exact: true }).click();
+		await page.getByRole('option', { name: /^เผยแพร่แล้ว/ }).click();
+		await expect(page).toHaveURL(
+			(url) => url.searchParams.get('deliveryVersionId') === navIds.version
+		);
+		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
+		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
+		await expect.poll(() => versionLists).toBe(3);
+		await page.goBack();
+		await expect(page).toHaveURL(
+			(url) =>
+				url.searchParams.get('academicTermId') === navIds.term &&
+				url.searchParams.get('deliveryVersionId') === draftB
+		);
+		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
+		await page
+			.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์รุ่นบี', exact: true })
+			.click();
+		const preparationB = page.getByRole('dialog', {
+			name: 'เปิดรายวิชา วิทยาศาสตร์รุ่นบี',
+			exact: true
+		});
+		await expect(preparationB).toBeVisible();
+		await expect.poll(() => optionReads).toBe(1);
+		lookupA.release();
+		await lookupAHandled.promise;
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		await expect(preparationB).toBeVisible();
+		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(1);
+		await expect(page.getByText('เลือกร่างที่จะเพิ่มรายวิชา', { exact: true })).toHaveCount(0);
+		await expect(page).toHaveURL((url) => url.searchParams.get('deliveryVersionId') === draftB);
+		optionsB.release();
+		await expect(
+			preparationB.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
+		).toBeEnabled();
+		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(0);
+		await expect(page).toHaveURL((url) => url.searchParams.get('deliveryVersionId') === draftB);
+	} finally {
+		lookupA.release();
+		optionsB.release();
+	}
+});
