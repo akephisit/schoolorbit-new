@@ -198,7 +198,7 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
         ),
         (
             "school-academic-assessment/src/learner_evaluation/services.rs",
-            &["begin_subject"],
+            &["begin_subject_with_selection"],
         ),
         // Atomic term/year activation is a domain transaction owner.
         (

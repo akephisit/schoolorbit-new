@@ -301,8 +301,14 @@ async fn fixture_with_obligation_groups(
         let id = Uuid::new_v4();
         // Seed a legitimate pre-cutover split group, with no learner obligations.
         // 087 will capture it canonically; no published graph is edited by the test.
-        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group',CASE WHEN $3 THEN 'published' ELSE 'draft' END,'draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).bind(published_unused).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(group).execute(&pool).await.unwrap();
+        if published_unused {
+            // Complete the new historical draft's children first, then validate
+            // its publication preconditions. Never insert into a published group.
+            let published:Option<Uuid>=sqlx::query_scalar("UPDATE learning_groups g SET status='published' FROM learning_offerings o,academic_terms term WHERE g.id=$1 AND g.status='draft' AND o.id=g.learning_offering_id AND o.status='published' AND term.id=g.academic_term_id AND (SELECT count(*) FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.role='primary' AND teacher.starts_on<=term.start_date AND (teacher.ends_on IS NULL OR teacher.ends_on>=term.start_date))=1 RETURNING g.id").bind(id).fetch_optional(&pool).await.unwrap();
+            assert_eq!(published,Some(id),"historical group publication requires a published parent and complete primary-teacher children");
+        }
         Some(id)
     } else {
         None
