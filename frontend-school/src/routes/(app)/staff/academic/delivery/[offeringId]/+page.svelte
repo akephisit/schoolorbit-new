@@ -1148,7 +1148,7 @@
 											{/if}
 										</div>
 										<p class="text-sm text-muted-foreground">
-											{selectedGroup.code} · ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
+											ครู {selectedGroup.teacherAssignments.length} คน · ห้องต้นทาง
 											{selectedGroup.homeroomIds.length} ห้อง · รายชื่อ {rosterStatusLabel(
 												selectedGroup.rosterStatus
 											)}

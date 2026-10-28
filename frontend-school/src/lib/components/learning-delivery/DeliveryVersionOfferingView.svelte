@@ -46,7 +46,7 @@
 		<div class="grid gap-3 md:grid-cols-2">
 			{#each orderedGroups as group (group.id)}
 				<article class="rounded-lg border p-4">
-					<h3 class="font-medium">{group.code} · {group.name}</h3>
+					<h3 class="font-medium">{group.name}</h3>
 					{#if group.description}<p class="mt-1 text-sm text-muted-foreground">
 							{group.description}
 						</p>{/if}
