@@ -256,6 +256,9 @@
 						: 'เลือกนำรายการจากหลักสูตร หรือเพิ่มรายการเฉพาะภาคเรียนเอง'}</Dialog.Description
 			>
 		</Dialog.Header>
+		{#if preparationTarget}<p class="text-sm text-muted-foreground">
+				การเพิ่มนี้ครอบคลุมทุกห้องที่ยังขาดฉบับนี้ รวม {preparationTarget.homeroomCount} ห้อง ระบบจะตรวจข้อจำกัดก่อนบันทึก
+			</p>{/if}
 
 		{#if optionsLoading}
 			<div class="space-y-3 py-4" aria-label="กำลังโหลดตัวเลือก">

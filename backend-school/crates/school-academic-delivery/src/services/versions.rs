@@ -659,25 +659,45 @@ mod tests {
 
     #[test]
     fn zero_activity_targets_preserve_requirements_and_reject_negative_in_both_modes() {
-        for mode in [crate::models::ActivitySchedulingMode::Independent, crate::models::ActivitySchedulingMode::Synchronized] {
+        for mode in [
+            crate::models::ActivitySchedulingMode::Independent,
+            crate::models::ActivitySchedulingMode::Synchronized,
+        ] {
             let mut snapshot = central_snapshot();
             snapshot.offerings[0].groups = ready_snapshot().offerings[0].groups.clone();
-            if let LearningOfferingSnapshot::Activity(activity) = &mut snapshot.offerings[0].catalog {
+            if let LearningOfferingSnapshot::Activity(activity) = &mut snapshot.offerings[0].catalog
+            {
                 activity.scheduling_mode = mode;
             }
             let catalog = serde_json::to_value(&snapshot.offerings[0].catalog).unwrap();
             snapshot.offerings[0].weekly_period_target = 0;
             assert!(readiness(&snapshot).is_empty());
-            assert_eq!(serde_json::to_value(&snapshot.offerings[0].catalog).unwrap(), catalog);
+            assert_eq!(
+                serde_json::to_value(&snapshot.offerings[0].catalog).unwrap(),
+                catalog
+            );
             snapshot.offerings[0].weekly_period_target = -1;
-            assert_eq!(readiness(&snapshot)[0].code, DeliveryReadinessCode::InvalidWeeklyTarget);
+            assert_eq!(
+                readiness(&snapshot)[0].code,
+                DeliveryReadinessCode::InvalidWeeklyTarget
+            );
             snapshot.offerings[0].weekly_period_target = 0;
             snapshot.offerings[0].groups[0].teachers.clear();
-            assert_eq!(readiness(&snapshot)[0].code, DeliveryReadinessCode::MissingPrimaryTeacher);
+            assert_eq!(
+                readiness(&snapshot)[0].code,
+                DeliveryReadinessCode::MissingPrimaryTeacher
+            );
             snapshot.offerings[0].targets.clear();
-            assert!(readiness(&snapshot).iter().any(|finding| finding.code == DeliveryReadinessCode::MissingTargets));
+            assert!(readiness(&snapshot)
+                .iter()
+                .any(|finding| finding.code == DeliveryReadinessCode::MissingTargets));
             snapshot.offerings[0].groups.clear();
-            assert_eq!(readiness(&snapshot).iter().any(|finding| finding.code == DeliveryReadinessCode::MissingGroups), mode == crate::models::ActivitySchedulingMode::Independent);
+            assert_eq!(
+                readiness(&snapshot)
+                    .iter()
+                    .any(|finding| finding.code == DeliveryReadinessCode::MissingGroups),
+                mode == crate::models::ActivitySchedulingMode::Independent
+            );
         }
     }
 

@@ -1166,7 +1166,7 @@ for (const count of [0, 1, 2]) {
 		);
 
 		await expect(page.getByRole('columnheader')).toHaveCount(6);
-		await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+		await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 		if (count === 0) {
 			await expect(page.getByRole('dialog')).toContainText('ชื่อหรือเหตุผลของรุ่น');
 			expect(result.created()).toBe(false);
@@ -1200,7 +1200,7 @@ test('a failed published activation lookup preserves intent and retries', async 
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('เครือข่ายขัดข้อง');
 	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(1);
@@ -1291,7 +1291,7 @@ for (const size of ['mobile', 'desktop'] as const)
 				(mode) => document.documentElement.classList.toggle('dark', mode === 'dark'),
 				theme
 			);
-			const add = page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true });
+			const add = page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true });
 			await add.focus();
 			await page.keyboard.press('Enter');
 			await expect(page.getByRole('dialog')).toHaveCount(1);
@@ -1311,7 +1311,7 @@ test('historical activation explains that its new draft uses the latest publishe
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=82000000-0000-4000-8000-000000000089`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page.getByRole('dialog')).toContainText('กำลังดูรุ่นย้อนหลัง');
 	await expect(page.getByRole('dialog')).toContainText('รุ่นเผยแพร่ล่าสุด');
 });
@@ -1327,7 +1327,7 @@ test('already included activity opens its existing draft detail without preparin
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page).toHaveURL(
 		new RegExp(`/delivery/${ids.offering}.*deliveryVersionId=${ids.version}`)
 	);
@@ -1358,7 +1358,9 @@ test('read-only activity viewer has no creation actions or lazy management reque
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
 	await expect(page.getByText('ต้องมีสิทธิ์จัดการ', { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true })).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
+	).toHaveCount(0);
 	expect(managementReads).toBe(0);
 });
 
@@ -1629,7 +1631,7 @@ test('focused activity preparation hides its code in the heading and missing-pro
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	const dialog = page.getByRole('dialog', { name: 'เพิ่มกิจกรรม ชุมนุม', exact: true });
 	await expect(
 		dialog.getByRole('heading', { name: 'เปิดใช้งาน ชุมนุม', exact: true })
@@ -1672,7 +1674,7 @@ test('activity preparation preserves server-owned existing group names on restor
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await dialog.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
@@ -1691,7 +1693,7 @@ test('curriculum synchronized activation can explicitly create its reviewed home
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
 	);
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม ชุมนุม/ })).toBeVisible();
 	await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await page.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();

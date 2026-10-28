@@ -47,6 +47,7 @@
 	} from '#lib/components/academic-workflow/index.js';
 	import AcademicChangeSetDialog from '#lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
 	import AcademicChangeSetPanel from '#lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
+	import DeliveryMissingRequirements from '#lib/components/learning-delivery/DeliveryMissingRequirements.svelte';
 	import { buildDeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
 	import DeliveryAlignmentSummary from '#lib/components/learning-delivery/DeliveryAlignmentSummary.svelte';
 	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
@@ -538,6 +539,9 @@
 	async function prepareCurriculumRequirement(focus: CurriculumPreparationFocus) {
 		if (
 			!workspace ||
+			!comparisonWorkspace ||
+			homeroomLoading ||
+			Boolean(alignmentError) ||
 			!canManage ||
 			!academicYearId ||
 			!academicTermId ||
@@ -984,9 +988,13 @@
 								filters={viewState}
 								{returnTo}
 								onFiltersChange={updateViewState}
-								onPrepareSynchronizedActivity={(catalogVersionId) => {
-									void prepareCurriculumRequirement({ resourceKind: 'activity', catalogVersionId });
-								}}
+								onPrepareCurriculumRequirement={comparisonWorkspace &&
+								!alignmentError &&
+								!homeroomLoading
+									? (focus) => {
+											void prepareCurriculumRequirement(focus);
+										}
+									: undefined}
 								draftChangeSetId={canManage &&
 								activeChangeSet?.status === 'draft' &&
 								activeChangeSet.targetDeliveryVersionId === workspace.deliveryVersionId
@@ -1059,6 +1067,19 @@
 							</section>
 						{/if}
 					</section>
+					<DeliveryMissingRequirements
+						workspace={comparisonWorkspace}
+						facts={alignmentFacts}
+						loading={homeroomLoading}
+						error={alignmentError}
+						{canManage}
+						preparing={activationBusy}
+						filters={viewState}
+						showFilters={items.length === 0}
+						onFiltersChange={updateViewState}
+						onRetry={() => loadHomerooms()}
+						onPrepare={prepareCurriculumRequirement}
+					/>
 				</Tabs.Content>
 			</Tabs.Root>
 

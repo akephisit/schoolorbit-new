@@ -1078,3 +1078,646 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
     .await
     .unwrap());
 }
+
+#[tokio::test]
+async fn activity_zero_targets_http_preserve_scope_revisions_and_negative_validation() {
+    use axum::http::StatusCode;
+    use school_permissions::registry::codes;
+    use tower::ServiceExt;
+    let pool = prepare_delivery_runtime_fixture("activity_zero_http").await;
+    apply_migrations_through(&pool, 143).await.unwrap();
+    let context = operational_change_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        12,
+        "activity-zero-http",
+    )
+    .await;
+    // Open draft activities through the public operation (which owns inclusion),
+    // since the historical fixture has activities without legacy timetable lessons.
+    for mode in [
+        ActivitySchedulingMode::Independent,
+        ActivitySchedulingMode::Synchronized,
+    ] {
+        let opened = open_activity_with_catalog_target(
+            &pool,
+            &context,
+            revision.target_delivery_version_id,
+            mode,
+            false,
+        )
+        .await;
+        assert_eq!(
+            draft_version(&pool, revision.id)
+                .await
+                .snapshot
+                .offerings
+                .iter()
+                .find(|offering| offering.id == opened.id)
+                .unwrap()
+                .weekly_period_target,
+            1
+        );
+    }
+    let initial = draft_version(&pool, revision.id).await;
+    for mode in [
+        ActivitySchedulingMode::Independent,
+        ActivitySchedulingMode::Synchronized,
+    ] {
+        let offering = initial
+            .snapshot
+            .offerings
+            .iter()
+            .find(|offering| {
+                matches!(&offering.catalog,
+            LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode == mode)
+            })
+            .unwrap();
+        let current = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        let path = format!("/api/academic/term-change-sets/{}/items", revision.id);
+        for (permissions, target, row_version, expected) in [
+            (
+                vec![codes::LEARNING_OFFERING_READ_SCHOOL],
+                0,
+                current.row_version,
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                vec![codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+                -1,
+                current.row_version,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                vec![codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+                0,
+                current.row_version + 1,
+                StatusCode::CONFLICT,
+            ),
+            (
+                vec![codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+                0,
+                current.row_version,
+                StatusCode::OK,
+            ),
+        ] {
+            let before = draft_version(&pool, revision.id).await;
+            let request = json!({
+                "action": "adjust_weekly_period_target", "changeSetRowVersion": row_version,
+                "itemRowVersion": null, "learningOfferingId": offering.id, "weeklyPeriodTarget": target,
+            });
+            let _: UpsertAcademicTermChangeItemRequest =
+                serde_json::from_value(request.clone()).unwrap();
+            let response = delivery_router(&pool, context.teacher_id, &permissions)
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("PUT")
+                        .uri(&path)
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(
+                            serde_json::to_vec(&request).unwrap(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+                .await
+                .unwrap();
+            assert_eq!(
+                status,
+                expected,
+                "{mode:?}: {}",
+                String::from_utf8_lossy(&body)
+            );
+            let after = draft_version(&pool, revision.id).await;
+            if expected == StatusCode::OK {
+                let changed = after
+                    .snapshot
+                    .offerings
+                    .iter()
+                    .find(|row| row.id == offering.id)
+                    .unwrap();
+                assert_eq!(changed.weekly_period_target, 0);
+                assert_eq!(
+                    serde_json::to_value(&changed.groups).unwrap(),
+                    serde_json::to_value(&offering.groups).unwrap()
+                );
+                assert_eq!(
+                    serde_json::to_value(&changed.catalog).unwrap(),
+                    serde_json::to_value(&offering.catalog).unwrap()
+                );
+            } else {
+                assert_eq!(
+                    serde_json::to_value(before).unwrap(),
+                    serde_json::to_value(after).unwrap()
+                );
+            }
+        }
+        let adjusted = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        let (item_id, item_version) = adjusted.items.iter().find_map(|item| match item {
+            school_academic_delivery::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget { id, row_version, learning_offering_id, .. } if *learning_offering_id == offering.id => Some((*id,*row_version)),
+            _ => None,
+        }).unwrap();
+        let request = json!({"action":"adjust_weekly_period_target", "changeSetRowVersion": adjusted.row_version,
+            "itemRowVersion":item_version, "learningOfferingId":offering.id, "weeklyPeriodTarget":2});
+        let _: UpsertAcademicTermChangeItemRequest =
+            serde_json::from_value(request.clone()).unwrap();
+        let response = delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        )
+        .oneshot(
+            axum::http::Request::builder()
+                .method("PUT")
+                .uri(&path)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(request.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            draft_version(&pool, revision.id)
+                .await
+                .snapshot
+                .offerings
+                .iter()
+                .find(|row| row.id == offering.id)
+                .unwrap()
+                .weekly_period_target,
+            2
+        );
+        let current = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        let request =
+            json!({"changeSetRowVersion":current.row_version,"itemRowVersion":item_version+1});
+        let _: DeleteAcademicTermChangeItemRequest =
+            serde_json::from_value(request.clone()).unwrap();
+        let response = delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        )
+        .oneshot(
+            axum::http::Request::builder()
+                .method("DELETE")
+                .uri(format!("{path}/{item_id}"))
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(request.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            serde_json::to_value(&draft_version(&pool, revision.id).await.snapshot).unwrap(),
+            serde_json::to_value(&initial.snapshot).unwrap(),
+            "deleting the adjustment restores Add1 without changing any other graph fact"
+        );
+    }
+    // AddActivity has an explicit actual target, independent of its positive catalog default.
+    let (_, activity_version_id, scheduling_mode) =
+        add_operational_change_catalog_fixture(&pool, &context).await;
+    let catalog_target: i32 =
+        sqlx::query_scalar("SELECT periods_per_week FROM activity_versions WHERE id=$1")
+            .bind(activity_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(catalog_target > 0);
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    for (target, expected) in [(-1, StatusCode::UNPROCESSABLE_ENTITY), (0, StatusCode::OK)] {
+        let request = json!({
+            "action": "add_activity", "changeSetRowVersion": current.row_version, "weeklyPeriodTarget": target,
+            "offering": {
+                "createHomeroomGroups": false, "academicTermId": context.term_id, "activityVersionId": activity_version_id,
+                "curriculumActivityRequirementId": null,
+                "targets": [{"targetKind": "homeroom", "homeroomId": context.homeroom_id,
+                    "gradeLevelId": context.grade_level_id, "studyProgramId": context.study_program_id}],
+                "registrationType": "assigned", "schedulingMode": scheduling_mode, "capacity": null,
+                "attendanceRequirement": {"minimumPercent": null, "requiredSessions": null},
+                "passCriteria": {"requireAttendance": false, "requireTeacherConfirmation": true, "outcomes": ["pass", "fail"]},
+            },
+        });
+        let _: UpsertAcademicTermChangeItemRequest =
+            serde_json::from_value(request.clone()).unwrap();
+        let before = draft_version(&pool, revision.id).await;
+        let response = delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        )
+        .oneshot(
+            axum::http::Request::builder()
+                .method("PUT")
+                .uri(format!(
+                    "/api/academic/term-change-sets/{}/items",
+                    revision.id
+                ))
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(
+                    serde_json::to_vec(&request).unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        assert_eq!(status, expected, "{}", String::from_utf8_lossy(&body));
+        let after = draft_version(&pool, revision.id).await;
+        if expected == StatusCode::OK {
+            let added = after.snapshot.offerings.iter().find(|offering| matches!(&offering.catalog,
+                LearningOfferingSnapshot::Activity(activity) if activity.activity_version_id == activity_version_id)).unwrap();
+            assert_eq!(added.weekly_period_target, 0);
+            assert_eq!(
+                after.snapshot.offerings.len(),
+                before.snapshot.offerings.len() + 1
+            );
+        } else {
+            assert_eq!(
+                serde_json::to_value(before).unwrap(),
+                serde_json::to_value(after).unwrap()
+            );
+        }
+    }
+}
+
+async fn open_activity_with_catalog_target(
+    pool: &PgPool,
+    context: &RuntimeContext,
+    target_id: Uuid,
+    mode: ActivitySchedulingMode,
+    create_groups: bool,
+) -> school_academic_delivery::models::LearningOffering {
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT activity.id FROM activity_versions activity JOIN academic_terms term ON term.id=$1 WHERE activity.status='published' AND activity.scheduling_mode=$2 AND activity.effective_from<=term.start_date ORDER BY activity.id LIMIT 1")
+        .bind(context.term_id).bind(mode).fetch_one(pool).await.unwrap();
+    offerings::create_for_delivery(
+        pool,
+        context.teacher_id,
+        Some(target_id),
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: create_groups,
+            academic_term_id: context.term_id,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode: mode,
+            capacity: None,
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        }),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_and_revisions() {
+    let pool = prepare_delivery_runtime_fixture("activity_target_migration").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        12,
+        "activity-target-migration",
+    )
+    .await;
+    let sibling = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        13,
+        "activity-target-unchanged",
+    )
+    .await;
+    let initial = draft_version(&pool, revision.id).await;
+    let excluded_group_id = initial
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .next()
+        .unwrap()
+        .id;
+    change_sets::remove_draft_group(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        excluded_group_id,
+        removal_request(&pool, revision.id).await,
+    )
+    .await
+    .unwrap();
+    let mut targets = Vec::new();
+    for mode in [
+        ActivitySchedulingMode::Independent,
+        ActivitySchedulingMode::Synchronized,
+    ] {
+        for target in [0, 2] {
+            let opened = open_activity_with_catalog_target(
+                &pool,
+                &context,
+                revision.target_delivery_version_id,
+                mode,
+                true,
+            )
+            .await;
+            for group in groups::list(&pool, opened.id).await.unwrap() {
+                groups::replace_teachers(
+                    &pool,
+                    context.teacher_id,
+                    group.id,
+                    ReplaceLearningGroupTeachersRequest {
+                        row_version: group.row_version,
+                        teachers: vec![TeacherAssignmentInput {
+                            teacher_id: context.teacher_id,
+                            role: LearningTeacherRole::Primary,
+                        }],
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            let current = change_sets::get_change_set(&pool, revision.id)
+                .await
+                .unwrap();
+            change_sets::upsert_change_item(
+                &pool,
+                context.teacher_id,
+                revision.id,
+                UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+                    change_set_row_version: current.row_version,
+                    item_row_version: None,
+                    learning_offering_id: opened.id,
+                    weekly_period_target: target,
+                },
+            )
+            .await
+            .unwrap();
+            targets.push((opened.id, target));
+        }
+    }
+    // A terminal revision can contain the same old ignored command; never repair its recorded graph.
+    let cancelled = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        14,
+        "activity-target-cancelled",
+    )
+    .await;
+    let terminal_activity = open_activity_with_catalog_target(
+        &pool,
+        &context,
+        cancelled.target_delivery_version_id,
+        ActivitySchedulingMode::Synchronized,
+        false,
+    )
+    .await;
+    let terminal_current = change_sets::get_change_set(&pool, cancelled.id)
+        .await
+        .unwrap();
+    change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        cancelled.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: terminal_current.row_version,
+            item_row_version: None,
+            learning_offering_id: terminal_activity.id,
+            weekly_period_target: 2,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_delivery_versions SET status='cancelled' WHERE id=$1")
+        .bind(cancelled.target_delivery_version_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_term_change_sets SET status='cancelled',cancelled_by=$2,cancelled_at=now() WHERE id=$1").bind(cancelled.id).bind(context.teacher_id).execute(&pool).await.unwrap();
+    let terminal_before:Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'").fetch_one(&pool).await.unwrap();
+    let parent_before: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(revision) FROM academic_term_change_sets revision WHERE id=$1",
+    )
+    .bind(revision.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cached = draft_version(&pool, revision.id).await;
+    for (id, _) in &targets {
+        assert_eq!(
+            cached
+                .snapshot
+                .offerings
+                .iter()
+                .find(|row| row.id == *id)
+                .unwrap()
+                .weekly_period_target,
+            1,
+            "pre143 reproduces ignored adjustments"
+        );
+    }
+    let revision_before = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    let sibling_before = draft_version(&pool, sibling.id).await;
+    let sibling_revision_before = change_sets::get_change_set(&pool, sibling.id)
+        .await
+        .unwrap();
+    let history_before = preserved_facts(&pool).await;
+    let journal_before: Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(item) ORDER BY id) FROM academic_term_change_items item",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cached_record: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
+    )
+    .bind(cached.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut expected = cached_record["snapshot"].clone();
+    for offering in expected["offerings"].as_array_mut().unwrap() {
+        for (id, target) in &targets {
+            if offering["id"] == json!(id) {
+                offering["weeklyPeriodTarget"] = json!(target);
+            }
+        }
+    }
+    apply_migrations_through(&pool, 143).await.unwrap();
+    let repaired = draft_version(&pool, revision.id).await;
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&repaired.snapshot).unwrap(),
+        expected,
+        "only weekly scalars change; all ordered graph facts and exclusions remain"
+    );
+    assert_eq!(repaired.row_version, cached.row_version + 1);
+    assert_eq!(current.row_version, revision_before.row_version + 1);
+    let mut expected_version = cached_record;
+    let repaired_record: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
+    )
+    .bind(cached.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for field in ["row_version", "updated_at"] {
+        expected_version[field] = repaired_record[field].clone();
+    }
+    expected_version["snapshot"] = expected.clone();
+    assert_eq!(
+        expected_version, repaired_record,
+        "only the exact raw weekly fields and revision guard/timestamp change"
+    );
+    let parent_after: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(revision) FROM academic_term_change_sets revision WHERE id=$1",
+    )
+    .bind(revision.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut expected_parent = parent_before;
+    for field in ["row_version", "updated_at"] {
+        expected_parent[field] = parent_after[field].clone();
+    }
+    assert_eq!(
+        expected_parent, parent_after,
+        "no parent metadata changes beyond the revision guard and timestamp"
+    );
+    assert_eq!(terminal_before,sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'").fetch_one(&pool).await.unwrap());
+    assert_eq!(
+        serde_json::to_value(sibling_before).unwrap(),
+        serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(sibling_revision_before).unwrap(),
+        serde_json::to_value(
+            change_sets::get_change_set(&pool, sibling.id)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        history_before,
+        preserved_facts(&pool).await,
+        "published bytes/receipts and all downstream facts remain unchanged"
+    );
+    assert_eq!(
+        journal_before,
+        sqlx::query_scalar::<_, Value>(
+            "SELECT jsonb_agg(to_jsonb(item) ORDER BY id) FROM academic_term_change_items item"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    );
+    let projection: Value = sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1,$2)")
+        .bind(revision.id)
+        .bind(current.reference_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(projection, expected);
+    let preview = publication_preview(&pool, revision.id).await.unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.code == AcademicChangeFindingCode::ResourceStale),
+        "{:?}",
+        preview.findings
+    );
+    use tower::ServiceExt;
+    let stale = json!({"action":"adjust_weekly_period_target","changeSetRowVersion":revision_before.row_version,"itemRowVersion":1,"learningOfferingId":targets[0].0,"weeklyPeriodTarget":2});
+    let response = delivery_router(
+        &pool,
+        context.teacher_id,
+        &[school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+    )
+    .oneshot(
+        axum::http::Request::builder()
+            .method("PUT")
+            .uri(format!(
+                "/api/academic/term-change-sets/{}/items",
+                revision.id
+            ))
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(stale.to_string()))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+    let stale_target = change_sets::remove_draft_offering(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        targets[0].0,
+        RemoveDeliveryDraftResourceRequest {
+            change_set_row_version: current.row_version,
+            target_delivery_version_row_version: cached.row_version,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(stale_target, AppError::Conflict(_)));
+    sqlx::raw_sql(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/migrations/143_delivery_added_target_adjustments.sql"
+    )))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&repaired).unwrap(),
+        serde_json::to_value(draft_version(&pool, revision.id).await).unwrap(),
+        "reconciliation retry is a no-op"
+    );
+    assert_eq!(
+        serde_json::to_value(&current).unwrap(),
+        serde_json::to_value(
+            change_sets::get_change_set(&pool, revision.id)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(history_before, preserved_facts(&pool).await);
+}

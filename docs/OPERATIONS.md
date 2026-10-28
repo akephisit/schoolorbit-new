@@ -624,7 +624,14 @@ Publish the opening revision and explicitly update a timetable draft's opening s
 new target applies there. Existing placed lessons and published history are preserved; remove
 zero-target lessons from the draft before publishing it.
 
-The migration expands constraints without rewriting data. Older binaries remain compatible until
+Migration [143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) also fixes
+weekly adjustments to offerings added to the same draft. It repairs only a differing cached weekly
+target backed by that draft's add and adjustment commands, preserving every other captured field
+and array order. Changed draft and parent revision counters advance once; reload a stale editor.
+Published/cancelled revisions, journals, registry data and downstream history remain unchanged.
+This repair never rebuilds a draft graph or restores excluded offerings/groups.
+
+Migration090 expanded constraints without rewriting data. Older binaries remain compatible until
 zero targets are stored in opening revisions. After that point, use a roll-forward fix: older
 validation rejects those revisions. Do not roll back by deleting opening or timetable history.
 

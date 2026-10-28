@@ -19,7 +19,7 @@
 		deliveryOfferingHref,
 		type DeliveryOverviewState
 	} from '#lib/navigation/learning-delivery.js';
-	import { isPendingSynchronizedActivity } from '#lib/academic/synchronized-activity-delivery.js';
+	import type { CurriculumPreparationFocus } from '#lib/academic/synchronized-activity-delivery.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -30,7 +30,7 @@
 		BookOpenCheck,
 		ChevronDown,
 		CircleAlert,
-		CirclePlus,
+		Plus,
 		Search,
 		UsersRound
 	} from '@lucide/svelte';
@@ -42,7 +42,7 @@
 		filters,
 		returnTo,
 		onFiltersChange,
-		onPrepareSynchronizedActivity,
+		onPrepareCurriculumRequirement,
 		onAddOffering,
 		draftChangeSetId = null,
 		onDraftResourceRemoved
@@ -53,7 +53,7 @@
 		filters: Pick<DeliveryOverviewState, 'homeroomSearch' | 'readiness' | 'expandedRooms'>;
 		returnTo: string;
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
-		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
+		onPrepareCurriculumRequirement?: (focus: CurriculumPreparationFocus) => void;
 		onAddOffering?: (kind: DeliveryOfferingAddKind) => void;
 		draftChangeSetId?: string | null;
 		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
@@ -390,23 +390,29 @@
 																		onRemoved={onDraftResourceRemoved}
 																	/>{/if}
 															</div>
-														{:else if isPendingSynchronizedActivity(item)}
-															{#if canManage && onPrepareSynchronizedActivity}
+														{:else if item.offeringId === null}
+															{#if canManage && workspace.deliveryVersionId && onPrepareCurriculumRequirement}
 																<Button
 																	type="button"
 																	size="sm"
 																	variant="outline"
 																	onclick={() =>
-																		onPrepareSynchronizedActivity?.(item.catalogVersionId)}
+																		onPrepareCurriculumRequirement?.({
+																			resourceKind: item.resourceKind,
+																			catalogVersionId: item.catalogVersionId
+																		})}
 																	disabled={activationBusy}
 																>
-																	<CirclePlus class="size-3.5" />
-																	{workspace.deliveryVersionStatus === 'published'
-																		? 'เพิ่มในร่าง'
-																		: 'เพิ่มกิจกรรม'}
+																	<Plus class="size-3.5" />
+																	เพิ่มการจัดการเรียนการสอน
 																</Button>
 															{:else}
-																<span class="text-xs text-muted-foreground">ต้องมีสิทธิ์จัดการ</span
+																<span class="text-xs text-muted-foreground"
+																	>{canManage
+																		? !workspace.deliveryVersionId
+																			? 'สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ'
+																			: 'รอตรวจข้อมูลหลักสูตร'
+																		: 'ต้องมีสิทธิ์จัดการ'}</span
 																>
 															{/if}
 														{/if}
