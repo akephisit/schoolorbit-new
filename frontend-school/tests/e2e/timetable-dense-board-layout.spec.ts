@@ -140,6 +140,108 @@ test('keeps the unscheduled lesson tray compact beside the timetable board', asy
 	expect(trayWidth).toBeLessThanOrEqual(250);
 });
 
+for (const theme of ['light', 'dark']) {
+	test(`fills the available desktop height with local board scrolling in ${theme} mode`, async ({
+		page
+	}) => {
+		await installDenseBoard(page);
+		await page.evaluate(
+			(mode) => document.documentElement.classList.toggle('dark', mode === 'dark'),
+			theme
+		);
+		for (const height of [1080, 800]) {
+			await page.setViewportSize({ width: 1920, height });
+			const geometry = await page
+				.locator('[data-testid="timetable-board-ready"]')
+				.evaluate((workspace) => {
+					const board = workspace.querySelector('section[aria-label^="ตารางของ "]')!;
+					const tray = workspace.querySelector('aside')!;
+					const shell = workspace.closest('.school-page-shell')!;
+					const main = workspace.closest('main')!;
+					const padding = Number.parseFloat(getComputedStyle(shell).paddingBottom);
+					return {
+						boardBottom: board.getBoundingClientRect().bottom,
+						trayBottom: tray.getBoundingClientRect().bottom,
+						availableBottom: main.getBoundingClientRect().bottom - padding,
+						pageOverflow: main.scrollHeight - main.clientHeight
+					};
+				});
+			expect(Math.abs(geometry.boardBottom - geometry.availableBottom)).toBeLessThanOrEqual(2);
+			expect(Math.abs(geometry.trayBottom - geometry.boardBottom)).toBeLessThanOrEqual(1);
+			expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
+		}
+		const scroll = page.locator('[data-timetable-scroll-container]');
+		expect(await scroll.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+			true
+		);
+		await scroll.evaluate((element) => {
+			element.scrollTop = element.scrollHeight;
+		});
+		await expect(page.getByRole('rowheader', { name: 'วันศุกร์', exact: true })).toBeInViewport();
+	});
+}
+
+test('shows each demand’s actual class names under its subject, with readable multiple targets', async ({
+	page
+}) => {
+	const secondHomeroom = '81000000-0000-4000-8000-000000000202';
+	await installTimetableMock(page, {
+		homerooms: [timetableIds.homeroom, secondHomeroom].map((id, index) => ({
+			id,
+			code: `M3-${index + 1}`,
+			name: `ม.3/${index + 1}`,
+			gradeLevelId: '81000000-0000-4000-8000-000000000301',
+			gradeLevelType: 'secondary',
+			gradeLevelYear: 3,
+			roomNumber: String(index + 1),
+			isActive: true
+		})),
+		ordinaryDemands: [
+			{
+				learningGroupId: timetableIds.groupA,
+				learningOfferingId: timetableIds.offeringA,
+				offeringCode: 'ค23101',
+				offeringName: 'คณิตศาสตร์พื้นฐาน',
+				requiredPeriods: 3,
+				scheduledPeriods: 0,
+				remainingPeriods: 3,
+				homeroomIds: [secondHomeroom, timetableIds.homeroom],
+				eligibleInstructors: [
+					{
+						teacherId: timetableIds.teacherA,
+						displayName: 'ครูคณิตศาสตร์',
+						role: 'primary',
+						orderIndex: 0
+					}
+				]
+			}
+		],
+		includeSynchronizedDemand: true
+	});
+	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const tray = page.getByRole('complementary', { name: 'คาบที่ยังไม่ได้จัด' });
+	const course = tray.locator('article').filter({ hasText: 'ค23101' });
+	const targets = course.locator('[data-timetable-demand-targets]');
+	await expect(targets).toHaveText('ม.3/2, ม.3/1');
+	const [subjectBox, targetsBox] = await Promise.all([
+		course.getByText('คณิตศาสตร์พื้นฐาน', { exact: true }).boundingBox(),
+		targets.boundingBox()
+	]);
+	expect(targetsBox!.y).toBeGreaterThanOrEqual(subjectBox!.y + subjectBox!.height);
+	await expect(
+		tray.locator('article').filter({ hasText: 'ชุมนุม' }).locator('[data-timetable-demand-targets]')
+	).toHaveText('ม.3/1');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(targets).toHaveText('ม.3/2, ม.3/1');
+	expect(
+		await targets.evaluate((element) => ({
+			overflow: getComputedStyle(element).overflow,
+			whiteSpace: getComputedStyle(element).whiteSpace
+		}))
+	).toEqual({ overflow: 'visible', whiteSpace: 'normal' });
+});
+
 test('stretches a shorter lesson card to fill the timetable row', async ({ page }) => {
 	await installDenseBoard(page);
 

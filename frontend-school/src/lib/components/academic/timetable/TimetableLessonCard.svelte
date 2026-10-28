@@ -1,5 +1,10 @@
 <script lang="ts">
 	import { buildTimetableBlockDisplay } from '#lib/academic/timetable/block-display.js';
+	import {
+		timetableBlockColorKey,
+		timetableLessonColorStyle
+	} from '#lib/academic/timetable/lesson-color.js';
+	import '#lib/academic/timetable/lesson-color.css';
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
 	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
@@ -35,6 +40,7 @@
 	} = $props();
 
 	const title = $derived(block.offeringName ?? block.title ?? 'รายการตารางสอน');
+	const colorKey = $derived(timetableBlockColorKey(block));
 	const code = $derived(block.offeringCode ?? structuralLabel(block.structuralKind));
 	const allTeacherNames = $derived(
 		[
@@ -91,12 +97,15 @@
 
 <article
 	data-timetable-lesson-card
+	data-lesson-color={colorKey ?? undefined}
+	style={timetableLessonColorStyle(colorKey)}
 	data-block-id={block.id}
 	data-row-id={rowId}
 	data-pending={pending ? 'true' : undefined}
 	draggable={canEdit}
 	class={[
 		'group relative flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
+		colorKey && 'timetable-lesson-fill',
 		needsReview && 'border-destructive/60',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
@@ -118,10 +127,7 @@
 					<AlertTriangle class="size-3" />ต้องตรวจแก้
 				</p>{/if}
 			{#if showCode}
-				<p
-					data-timetable-card-line
-					class="truncate text-[10px] leading-[16px] font-semibold text-primary"
-				>
+				<p data-timetable-card-line class="truncate text-[10px] leading-[16px] font-semibold">
 					{code}
 				</p>
 			{/if}

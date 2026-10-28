@@ -41,7 +41,11 @@ test('shows periods across the top and weekdays down the left side', async ({ pa
 test('places exactly one unscheduled period and projects it into both editable views', async ({
 	page
 }) => {
-	const mock = await installTimetableMock(page, { requiredPeriods: 3 });
+	let releasePreview!: () => void;
+	const previewGate = new Promise<void>((resolve) => {
+		releasePreview = resolve;
+	});
+	const mock = await installTimetableMock(page, { requiredPeriods: 3, previewGate });
 	await page.goto(timetableUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
@@ -53,8 +57,13 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await firstPeriod.dispatchEvent('dragover', { dataTransfer });
 	await expect(firstPeriod).toHaveAttribute('data-state', 'move');
+	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('กำลังตรวจสอบตำแหน่ง');
+	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
+	await expect(page.locator('td[data-state="saving"]')).toHaveCount(0);
+	expect(mock.createRequestCount()).toBe(0);
 	await firstPeriod.dispatchEvent('drop', { dataTransfer });
 	await trayCard.dispatchEvent('dragend', { dataTransfer });
+	releasePreview();
 
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
@@ -64,6 +73,54 @@ test('places exactly one unscheduled period and projects it into both editable v
 
 	await page.getByRole('button', { name: 'กลุ่มเรียน' }).click();
 	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
+});
+
+test('cancels hover previews without saving any timetable changes', async ({ page }) => {
+	const mock = await installTimetableMock(page, { previewDelayMs: 600 });
+	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const cells = page.locator('td[data-timetable-day="MON"]');
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await cells.nth(0).dispatchEvent('dragover', { dataTransfer });
+	await expect.poll(mock.previewRequestCount).toBe(1);
+	await cells.nth(1).dispatchEvent('dragover', { dataTransfer });
+	await expect.poll(mock.previewRequestCount).toBe(2);
+	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
+	await trayCard.dispatchEvent('dragend', { dataTransfer });
+	await expect(page.locator('[data-timetable-placement-preview]')).toHaveCount(0);
+	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('บันทึกอัตโนมัติแล้ว');
+	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
+	expect(mock.createRequestCount()).toBe(0);
+	expect(mock.synchronizedCreateRequestCount()).toBe(0);
+	expect(mock.updateRequestCount()).toBe(0);
+	expect(mock.swapRequestCount()).toBe(0);
+	expect(mock.deleteRequestCount()).toBe(0);
+	expect(mock.blocks()).toHaveLength(0);
+});
+
+test('does not mutate when the dropped placement preview fails', async ({ page }) => {
+	const mock = await installTimetableMock(page);
+	await page.route('**/api/academic/timetable-blocks/placement-preview', async (route) => {
+		await route.fulfill({ status: 500, json: { success: false, error: 'ตรวจตำแหน่งไม่สำเร็จ' } });
+	});
+	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const destination = page.locator('td[data-timetable-day="MON"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await destination.dispatchEvent('dragover', { dataTransfer });
+	await destination.dispatchEvent('drop', { dataTransfer });
+	await expect(page.getByRole('alert')).toContainText('บันทึกไม่สำเร็จ');
+	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
+	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
+	expect(mock.createRequestCount()).toBe(0);
+	expect(mock.synchronizedCreateRequestCount()).toBe(0);
+	expect(mock.updateRequestCount()).toBe(0);
+	expect(mock.swapRequestCount()).toBe(0);
+	expect(mock.deleteRequestCount()).toBe(0);
 });
 
 test('preselects the first preferred room and lets the scheduler override it before placement', async ({
@@ -78,7 +135,7 @@ test('preselects the first preferred room and lets the scheduler override it bef
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	const teacherPicker = trayCard.getByRole('button', { name: /เลือกครู/ });
-	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
+	const roomPicker = trayCard.getByRole('combobox', { name: 'เลือกห้องเรียน' });
 	await expect(roomPicker).toContainText('ห้องปฏิบัติการ 2');
 	await expect(trayCard).not.toContainText('M1-1-A');
 	const remainingCount = trayCard.getByText('1/1', { exact: true });
@@ -166,7 +223,7 @@ test('preserves a custom special-period title when its type changes', async ({ p
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
 	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
-	const kind = dialog.getByRole('button', { name: 'เลือกประเภทคาบพิเศษ' });
+	const kind = dialog.getByRole('combobox', { name: 'เลือกประเภทคาบพิเศษ' });
 	const title = dialog.getByLabel('ชื่อที่แสดง');
 	await kind.click();
 	await page.getByRole('option', { name: 'โฮมรูม', exact: true }).click();
@@ -426,7 +483,7 @@ test('saves edited room in the background while another lesson can still be drag
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
+	await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน' }).click();
 	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
@@ -466,7 +523,7 @@ test('restores the previous room when a background detail save fails', async ({ 
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
+	await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน' }).click();
 	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
@@ -827,7 +884,7 @@ test('reserves selected teachers when placing a synchronized activity and edits 
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
 	const teacherPicker = trayCard.getByRole('button', { name: 'ยังไม่กำหนดครู' });
-	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
+	const roomPicker = trayCard.getByRole('combobox', { name: 'เลือกห้องเรียน' });
 	await expect(teacherPicker).toBeVisible();
 	const [teacherBox, roomBox] = await Promise.all([
 		teacherPicker.boundingBox(),

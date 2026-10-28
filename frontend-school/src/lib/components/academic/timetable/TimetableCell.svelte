@@ -54,7 +54,7 @@
 
 <td
 	class={[
-		'relative border-b border-r p-1.5 align-top transition-colors',
+		'relative h-px border-b border-r p-1.5 align-top transition-colors',
 		state === 'dragging' && 'bg-primary/5 ring-2 ring-inset ring-primary/35',
 		state === 'move' && 'bg-emerald-50 ring-2 ring-inset ring-emerald-500 dark:bg-emerald-950/25',
 		state === 'swap' && 'bg-sky-50 ring-2 ring-inset ring-sky-500 dark:bg-sky-950/25',
@@ -78,7 +78,7 @@
 	}}
 >
 	<span class="sr-only">{stateLabel}</span>
-	<div class="flex min-h-24 min-w-0 flex-col">
+	<div class="flex h-full min-h-24 min-w-0 flex-col">
 		<div class="grid min-h-0 min-w-0 flex-1 auto-rows-fr gap-1.5">
 			{@render children?.()}
 		</div>

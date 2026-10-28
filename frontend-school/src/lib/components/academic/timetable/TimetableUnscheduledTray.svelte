@@ -1,9 +1,16 @@
 <script lang="ts">
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
+	import {
+		ordinaryLessonColorKey,
+		synchronizedLessonColorKey,
+		timetableLessonColorStyle
+	} from '#lib/academic/timetable/lesson-color.js';
+	import '#lib/academic/timetable/lesson-color.css';
 	import type {
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
 		TimetableBlockWorkspaceLearningGroup,
+		TimetableBlockWorkspaceHomeroom,
 		TimetableBlockWorkspaceRoom,
 		TimetableBlockWorkspaceStaff,
 		TimetableOrdinaryDemand,
@@ -25,6 +32,7 @@
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
+		homerooms,
 		rooms,
 		staff,
 		disabled = false,
@@ -36,6 +44,7 @@
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
+		homerooms: TimetableBlockWorkspaceHomeroom[];
 		rooms: TimetableBlockWorkspaceRoom[];
 		staff: TimetableBlockWorkspaceStaff[];
 		disabled?: boolean;
@@ -57,6 +66,7 @@
 	let synchronizedRoomChoices = $state<Record<string, string | null>>({});
 	let synchronizedTeacherChoices = $state<Record<string, string[]>>({});
 	const groupById = $derived(new Map(groups.map((group) => [group.id, group])));
+	const homeroomById = $derived(new Map(homerooms.map((homeroom) => [homeroom.id, homeroom])));
 	const availableRoomIds = $derived(
 		new Set(rooms.filter((room) => room.status.toUpperCase() === 'ACTIVE').map((room) => room.id))
 	);
@@ -64,6 +74,12 @@
 	const visibleSynchronized = $derived(
 		synchronizedDemands.filter((demand) => demand.scheduledPeriods < demand.requiredPeriods)
 	);
+
+	function targetNames(homeroomIds: string[]): string {
+		return [...new Set(homeroomIds)]
+			.map((id) => homeroomById.get(id)?.name ?? 'ไม่พบชื่อห้องประจำชั้น')
+			.join(', ');
+	}
 
 	function selectedInstructorIds(demand: TimetableOrdinaryDemand): string[] {
 		const saved = instructorChoices[demand.learningGroupId];
@@ -218,9 +234,12 @@
 						<h3 class="text-[0.65rem] font-semibold">กิจกรรมพร้อมกัน</h3>
 					</div>
 					{#each visibleSynchronized as demand (demand.learningOfferingId)}
+						{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
 						<article
+							data-lesson-color={colorKey}
+							style={timetableLessonColorStyle(colorKey)}
 							draggable={!disabled}
-							class="relative cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-2 active:cursor-grabbing dark:bg-violet-950/10"
+							class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
 							ondragstart={(event) => dragSynchronized(demand, event)}
 							ondragend={onCancelDrag}
 						>
@@ -238,6 +257,12 @@
 									}}
 								>
 									<p class="text-xs font-medium">{demand.offeringName}</p>
+									<p
+										class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+										data-timetable-demand-targets
+									>
+										{targetNames(demand.intendedHomeroomIds)}
+									</p>
 									<p class="mt-1 text-[0.65rem] text-muted-foreground">
 										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
 									</p>
@@ -282,9 +307,12 @@
 					</div>
 					{#each visibleOrdinary as demand (demand.learningGroupId)}
 						{@const selectedIds = selectedInstructorIds(demand)}
+						{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
 						<article
+							data-lesson-color={colorKey}
+							style={timetableLessonColorStyle(colorKey)}
 							draggable={!disabled && selectedIds.length > 0}
-							class="relative rounded-lg border border-l-4 border-l-primary bg-muted/15 p-2"
+							class="timetable-lesson-fill relative rounded-lg border p-2"
 							ondragstart={(event) => dragOrdinary(demand, event)}
 							ondragend={onCancelDrag}
 						>
@@ -302,9 +330,17 @@
 									}}
 								>
 									{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
-										<p class="text-[0.65rem] font-semibold text-primary">{demand.offeringCode}</p>
+										<p class="text-[0.65rem] font-semibold">{demand.offeringCode}</p>
 									{/if}
 									<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
+									{#if demand.homeroomIds.length > 0}
+										<p
+											class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+											data-timetable-demand-targets
+										>
+											{targetNames(demand.homeroomIds)}
+										</p>
+									{/if}
 								</button>
 							</div>
 							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
