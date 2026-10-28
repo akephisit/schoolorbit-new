@@ -87,9 +87,17 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
     assert_eq!(version.effective_from, None);
     assert_eq!(version.reference_date, date.succ_opt().unwrap());
     assert_eq!(version.row_version, 1);
-    let changed = change_sets::get_change_set(&pool, journal).await.unwrap();
-    assert_eq!(changed.effective_from, None);
-    assert_eq!(changed.reference_date, version.reference_date);
+    // Assert the 089 journal contract directly: current hydration requires later schema views.
+    let (effective_from, reference_date): (Option<chrono::NaiveDate>, chrono::NaiveDate) =
+        sqlx::query_as(
+            "SELECT effective_from,reference_date FROM academic_term_change_sets WHERE id=$1",
+        )
+        .bind(journal)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(effective_from, None);
+    assert_eq!(reference_date, version.reference_date);
     assert!(
         sqlx::query("DELETE FROM academic_delivery_versions WHERE id=$1")
             .bind(source)
