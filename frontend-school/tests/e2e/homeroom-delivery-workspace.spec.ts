@@ -8,11 +8,17 @@ test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
 async function expandChangeDetails(page: Page) {
-	const trigger = page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true });
-	if (await trigger.isVisible()) await trigger.click();
-	for (const offering of await page.getByTestId('delivery-change-offering').all()) {
+	const dialog = page.getByRole('dialog', { name: 'รายละเอียดการเปลี่ยนแปลง', exact: true });
+	if (!(await dialog.isVisible())) {
+		await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
+	}
+	await expect(dialog).toBeVisible();
+	const offerings = dialog.getByTestId('delivery-change-offering');
+	await expect(offerings.first()).toBeVisible();
+	for (const offering of await offerings.all()) {
 		const button = offering.getByRole('button', { name: /ดูรายละเอียด/ }).first();
 		if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+		await expect(button).toHaveAttribute('aria-expanded', 'true');
 	}
 }
 
