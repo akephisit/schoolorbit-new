@@ -2245,7 +2245,13 @@ for (const width of [390, 1280])
 				page.locator('details').filter({ has: page.getByRole('heading', { name, exact: true }) });
 			const summary = room('ม.1/1').locator('summary');
 			await expect(room('ม.1/1')).not.toHaveAttribute('open', '');
-			await expect(summary).toContainText('ครบตามโครงสร้าง');
+			await expect(summary).not.toContainText('ครบตามโครงสร้าง');
+			await expect(summary.locator('[data-status]')).toHaveCount(3);
+			await expect(
+				summary.locator(
+					'[data-status="groups_present"], [data-status="primary_assigned"], [data-status="zero_weekly_periods"]'
+				)
+			).toHaveCount(0);
 			await expect(summary).toContainText('ยังไม่มีครูหลัก 1 กลุ่ม');
 			await expect(summary).toContainText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร 1 รายการ');
 			await expect(summary).toContainText('เปิดสอนเพิ่มเติมนอกหลักสูตร 1 รายการ');
@@ -2254,8 +2260,10 @@ for (const width of [390, 1280])
 				'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน 1 รายการ'
 			);
 			await expect(room('ม.1/2').locator('summary')).not.toContainText('ยังไม่มีครูหลัก');
-			await expect(room('ม.1/3').locator('summary')).toContainText('กิจกรรมคาบกลาง 1 รายการ');
-			await expect(room('ม.1/3').locator('summary')).toContainText('กำหนดครูภายหลัง 1 รายการ');
+			await expect(
+				room('ม.1/3').locator('summary').getByTestId('delivery-room-statuses')
+			).toHaveCount(0);
+			await expect(room('ม.1/3').locator('summary')).toContainText('1/1');
 			await expect(room('ม.1/3').locator('summary')).not.toContainText('ยังไม่มีครูหลัก');
 			const statuses = summary.getByTestId('delivery-room-statuses');
 			const headingBounds = await summary
@@ -2322,15 +2330,19 @@ for (const width of [390, 1280])
 			const course = offeringRegion.getByRole('row').filter({ hasText: 'คณิตศาสตร์ต้น' });
 			await expect(course).toContainText('ยังไม่มีครูหลัก 1 กลุ่ม');
 			await expect(course).toContainText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร');
-			await expect(course).toContainText('ไม่จัดคาบประจำสัปดาห์ 1 รายการ');
+			await expect(course.locator('[data-status="zero_weekly_periods"]')).toHaveCount(0);
+			await expect(course.getByRole('cell').nth(2)).toHaveText('0');
 			const central = offeringRegion.getByRole('row').filter({ hasText: 'ชุมนุม' });
-			await expect(central).toContainText('กิจกรรมคาบกลาง 1 รายการ');
-			await expect(central).toContainText('กำหนดครูภายหลัง 1 รายการ');
+			await expect(central.getByRole('cell').nth(1)).toHaveText('');
+			await expect(central.getByRole('cell').nth(1).locator('[data-slot="badge"]')).toHaveCount(0);
+			await expect(central.getByTestId('delivery-status-badges')).toHaveCount(0);
+			await expect(central.locator('.mt-2')).toHaveCount(0);
 			await expect(central).not.toContainText('ยังไม่มีครูหลัก');
 			await expect(central).not.toContainText('0/0');
 			const extra = offeringRegion.getByRole('row').filter({ hasText: 'แนะแนว' });
 			await expect(extra).toContainText('เปิดสอนเพิ่มเติมนอกหลักสูตร');
-			await expect(extra).toContainText('ครูหลักครบใน 1 กลุ่ม');
+			await expect(extra.locator('[data-status="primary_assigned"]')).toHaveCount(0);
+			await expect(extra.getByRole('cell').nth(4)).toHaveText('1/1 กลุ่ม');
 			await course.getByRole('cell').first().scrollIntoViewIfNeeded();
 			await offeringRegion.screenshot({
 				path: testInfo.outputPath('offering-review-statuses.png'),
@@ -2439,4 +2451,63 @@ test('an opened course without real groups waits for grouping instead of claimin
 	await expect(row).toContainText('ยังไม่จัดกลุ่ม');
 	await expect(row).not.toContainText('ยังไม่มีครูหลัก');
 	expect(fixture.writes).toEqual([]);
+});
+
+test('healthy course and supported central activity have no review badges or empty status rows in either view', async ({
+	page
+}) => {
+	const fixture = await mockReviewStatuses(page);
+	const course = fixture.version.snapshot.offerings.find(
+		(item) => item.id === navOfferings.basic21
+	)!;
+	course.weeklyPeriodTarget = 2;
+	course.groups[0].teachers = [
+		{
+			assignmentId: 'd0000000-0000-4000-8000-000000000121',
+			teacherId: navIds.actor,
+			displayName: 'ครูหลัก',
+			role: 'primary'
+		}
+	];
+	const roomA = fixture.workspace.homerooms[0];
+	roomA.extraOfferings = [];
+	roomA.items[0].alignmentStates = ['matches_curriculum'];
+	roomA.items[0].weeklyPeriodTarget = 2;
+	roomA.items[0].teacherState = 'assigned';
+	roomA.items[0].groups[0].primaryTeacherCount = 1;
+	await page.goto(fixture.origin);
+	for (const name of ['ม.1/1', 'ม.1/3']) {
+		const room = page
+			.locator('details')
+			.filter({ has: page.getByRole('heading', { name, exact: true }) });
+		const summary = room.locator('summary');
+		await expect(summary.getByTestId('delivery-room-statuses')).toHaveCount(0);
+		await expect(summary).toContainText('1/1');
+		await expect(summary).not.toContainText('ครบตามโครงสร้าง');
+		await expect(summary.getByText('ม.1', { exact: true })).toBeVisible();
+		await summary.click();
+		const item = room
+			.getByRole('row')
+			.filter({ hasText: name === 'ม.1/1' ? 'คณิตศาสตร์ต้น' : 'ชุมนุม' });
+		await expect(item.getByTestId('delivery-status-badges')).toHaveCount(0);
+		await expect(item.getByRole('cell').nth(1)).toHaveText('');
+		await expect(item.getByRole('cell').nth(2)).toHaveText('ฉบับร่าง');
+		await expect(item.getByRole('cell').nth(4)).toHaveText(
+			name === 'ม.1/1' ? 'มอบหมายแล้ว' : 'กำหนดภายหลัง'
+		);
+	}
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	const region = page.getByRole('region', { name: 'มุมมองรายวิชาและกิจกรรม', exact: true });
+	for (const name of ['คณิตศาสตร์ต้น', 'ชุมนุม']) {
+		const item = region.getByRole('row').filter({ hasText: name });
+		await expect(item.getByRole('cell').nth(1)).toHaveText('');
+		await expect(item.getByRole('cell').nth(1).locator('[data-slot="badge"]')).toHaveCount(0);
+		await expect(item.getByTestId('delivery-status-badges')).toHaveCount(0);
+		await expect(item.locator('.mt-2')).toHaveCount(0);
+		await expect(item).not.toContainText('ยังไม่มีผลเทียบ');
+	}
+	expect(fixture.writes).toEqual([]);
+	expect(fixture.academicReads.filter((path) => path.includes('management-options'))).toHaveLength(
+		0
+	);
 });

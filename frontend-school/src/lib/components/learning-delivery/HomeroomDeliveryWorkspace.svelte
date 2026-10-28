@@ -12,6 +12,7 @@
 	import {
 		deliveryAlignmentLabels as alignmentLabels,
 		deliveryAlignmentBadgeClass as alignmentBadgeClass,
+		deliveryAlignmentNeedsReview,
 		deliveryItemStatuses,
 		deliveryRoomStatus,
 		filterHomeroomDeliveryRooms,
@@ -237,22 +238,13 @@
 									</p>
 								</div>
 							</div>
-							<div
-								class="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"
-								class:hidden={roomIsOpen(room.homeroom.id, index)}
-								data-testid="delivery-room-statuses"
-								aria-label={`สถานะ ${room.homeroom.name}`}
-							>
-								{#if !roomIsOpen(room.homeroom.id, index)}
-									<div class="flex flex-wrap items-center justify-center gap-1.5">
-										{#if roomStatus.coverageComplete}<Badge
-												class="bg-emerald-600 text-white hover:bg-emerald-600"
-												>ครบตามโครงสร้าง</Badge
-											>{/if}
-										<DeliveryStatusBadges statuses={roomStatus.statuses} center />
-									</div>
-								{/if}
-							</div>
+							{#if !roomIsOpen(room.homeroom.id, index) && roomStatus.statuses.some((status) => status.review)}<div
+									class="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"
+									data-testid="delivery-room-statuses"
+									aria-label={`สถานะ ${room.homeroom.name}`}
+								>
+									<DeliveryStatusBadges statuses={roomStatus.statuses} center />
+								</div>{/if}
 							<div class="order-2 flex items-center gap-3 sm:order-3 sm:col-start-3 sm:justify-end">
 								<div class="text-end">
 									<p class="text-sm font-semibold tabular-nums">
@@ -444,13 +436,15 @@
 																{item.code}
 															</p>{/if}
 														<p class="font-medium">{item.name}</p>
-														<div class="mt-2 flex flex-wrap gap-1.5">
-															{#each item.alignmentStates as state (state)}
-																<Badge variant="outline" class={alignmentBadgeClass(state)}>
-																	{alignmentLabels[state]}
-																</Badge>
-															{/each}
-														</div>
+														{#if item.alignmentStates.some(deliveryAlignmentNeedsReview)}<div
+																class="mt-2 flex flex-wrap gap-1.5"
+															>
+																{#each item.alignmentStates.filter(deliveryAlignmentNeedsReview) as state (state)}
+																	<Badge variant="outline" class={alignmentBadgeClass(state)}>
+																		{alignmentLabels[state]}
+																	</Badge>
+																{/each}
+															</div>{/if}
 													</div>
 													<Button
 														href={offeringHref(item.offeringId)}

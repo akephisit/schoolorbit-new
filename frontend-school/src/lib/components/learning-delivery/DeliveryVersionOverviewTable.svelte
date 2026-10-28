@@ -125,8 +125,8 @@
 							</p></Table.Cell
 						>
 						<Table.Cell class="min-w-52"
-							><DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} />
-							<div class="mt-2">
+							><div class="flex flex-col gap-2">
+								<DeliveryAlignmentBadges fact={alignmentFacts?.offerings.get(item.id)} reviewOnly />
 								<DeliveryStatusBadges
 									statuses={deliveryOfferingStatuses(item, comparisonWorkspace)}
 								/>
