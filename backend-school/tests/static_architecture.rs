@@ -1525,6 +1525,7 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
     let manifest = read_source(manifest_dir().join("Cargo.toml"));
     let assessment_root = workspace_crate_dir("school-academic-assessment");
     let results_root = workspace_crate_dir("school-academic-results");
+    let delivery_root = workspace_crate_dir("school-academic-delivery");
 
     for crate_name in ["school-academic-assessment", "school-academic-results"] {
         assert!(manifest.contains(&format!("\"crates/{crate_name}\"")));
@@ -1535,19 +1536,26 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
 
     let assessment_manifest = read_source(assessment_root.join("Cargo.toml"));
     let results_manifest = read_source(results_root.join("Cargo.toml"));
+    let delivery_manifest = read_source(delivery_root.join("Cargo.toml"));
     assert!(assessment_manifest.contains("school-academic-core = { workspace = true }"));
     assert!(!assessment_manifest.contains("school-academic-results"));
     assert!(results_manifest.contains("school-academic-core = { workspace = true }"));
     assert!(results_manifest.contains("school-academic-assessment = { workspace = true }"));
+    // Results composes public Delivery evidence; the provider must not depend back
+    // on Results or import Assessment implementation details to perform that work.
+    assert!(results_manifest.contains("school-academic-delivery = { workspace = true }"));
+    assert!(results_manifest.contains("\"school-academic-delivery/api-docs\""));
+    assert!(!delivery_manifest.contains("school-academic-results"));
+    assert!(!delivery_manifest.contains("school-academic-assessment"));
     for crate_manifest in [&assessment_manifest, &results_manifest] {
         assert!(crate_manifest.contains("[lints]\nworkspace = true"));
         assert!(!crate_manifest.contains("backend-school"));
     }
 
-    for (crate_root, forbidden) in [
+    let boundaries: [(&PathBuf, &[&str]); 3] = [
         (
             &assessment_root,
-            [
+            &[
                 "crate::AppState",
                 "backend_school::",
                 "modules::academic",
@@ -1558,22 +1566,26 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
         ),
         (
             &results_root,
-            [
+            &[
                 "crate::AppState",
                 "backend_school::",
                 "modules::academic",
-                "school_academic_delivery",
                 "school_academic_timetable",
                 "school_academic_lifecycle",
             ],
         ),
-    ] {
+        (
+            &delivery_root,
+            &["school_academic_results", "school_academic_assessment"],
+        ),
+    ];
+    for (crate_root, forbidden) in boundaries {
         let mut violations = Vec::new();
         for file in list_files(crate_root.join("src"), |path| {
             path.extension().is_some_and(|extension| extension == "rs")
         }) {
             let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
-            for token in forbidden {
+            for &token in forbidden {
                 if source.contains(token) {
                     violations.push(format!("{}: {token}", relative(&file)));
                 }
