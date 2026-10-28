@@ -26,7 +26,7 @@ pub(super) async fn operation_date(
     context: &ResultContext,
     captured: NaiveDate,
 ) -> Result<NaiveDate, AppError> {
-    let (start,end): (NaiveDate,NaiveDate)=DbSession::new(connection).query_as("academic_results.services.obligations.operation_date", "SELECT start_date,planned_end_date FROM academic_terms WHERE id=$1 AND academic_year_id=$2")
+    let (start,end): (NaiveDate,NaiveDate)=DbSession::new(connection).query_as("academic_results.services.obligations.operation_date", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND y.id=$2")
         .bind(context.academic_term_id).bind(context.academic_year_id).fetch_optional().await?
         .ok_or_else(||AppError::ValidationError("Academic term does not belong to selected year".into()))?;
     Ok(clamp_day(captured, start, end))
@@ -136,6 +136,66 @@ async fn result_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn operation_date_uses_closed_planned_then_year_end() {
+        let pool = school_test_db::create_named_test_pool("results_operation_date_bounds").await;
+        let mut connection = pool.acquire().await.unwrap();
+        // Exercise the real query with only its owned calendar inputs. Temporary
+        // tables remain confined to this disposable connection.
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE academic_years(id uuid PRIMARY KEY,end_date date NOT NULL);
+             CREATE TEMP TABLE academic_terms(id uuid PRIMARY KEY,academic_year_id uuid NOT NULL,
+                 start_date date NOT NULL,planned_end_date date,closed_on date);",
+        )
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+        let context = ResultContext {
+            academic_year_id: Uuid::new_v4(),
+            academic_term_id: Uuid::new_v4(),
+        };
+        let start = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+        let closed = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
+        let planned = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
+        let year_end = NaiveDate::from_ymd_opt(2027, 3, 31).unwrap();
+        let captured = NaiveDate::from_ymd_opt(2027, 4, 1).unwrap();
+        sqlx::query("INSERT INTO academic_years VALUES($1,$2)")
+            .bind(context.academic_year_id)
+            .bind(year_end)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO academic_terms VALUES($1,$2,$3,NULL,NULL)")
+            .bind(context.academic_term_id)
+            .bind(context.academic_year_id)
+            .bind(start)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+        for (closed_on, planned_end, expected) in [
+            (Some(closed), Some(planned), closed),
+            (Some(closed), None, closed),
+            (None, Some(planned), planned),
+            (None, None, year_end),
+        ] {
+            sqlx::query("UPDATE academic_terms SET closed_on=$1,planned_end_date=$2 WHERE id=$3")
+                .bind(closed_on)
+                .bind(planned_end)
+                .bind(context.academic_term_id)
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+            assert_eq!(
+                operation_date(&mut connection, &context, captured)
+                    .await
+                    .unwrap(),
+                expected,
+                "closed={closed_on:?}, planned={planned_end:?}"
+            );
+        }
+    }
+
     #[test]
     fn omission_excludes_only_unused_explicit_groups() {
         assert!(retain_candidate(false, false));
