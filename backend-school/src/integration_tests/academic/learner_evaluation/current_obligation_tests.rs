@@ -442,7 +442,7 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
     .unwrap();
     let (room,grade,program):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT h.id,h.grade_level_id,h.study_program_id FROM homerooms h JOIN learning_group_homerooms coverage ON coverage.homeroom_id=h.id WHERE coverage.learning_group_id=$1 ORDER BY h.id LIMIT 1")
         .bind(base_group).fetch_one(&pool).await.unwrap();
-    let offering = offerings::create_for_delivery(
+    let offering = offerings::create(
         &pool,
         actor.user_id,
         Some(revision.target_delivery_version_id),
@@ -668,4 +668,144 @@ async fn learner_current_obligation_current_omitted_invalidated_confirmation_is_
         .iter()
         .any(|reason| reason == "stale_group_confirmation"));
     assert_eq!(before,facts(&pool).await,"invalidated confirmation remains byte-exact through current classification and readonly learner queue");
+}
+
+#[tokio::test]
+async fn learner_current_obligation_phase_and_response_evidence_are_independent_and_coupled_facts_preserved(
+) {
+    let (pool, actor, ctx, base, subject, unused) =
+        scoped_fixture("learner_current_obligation_leaf_branches").await;
+    omit(&pool, &actor, &ctx, &[unused], false).await;
+    let configuration = get_configuration(&pool, &actor, subject, DC, &ctx)
+        .await
+        .unwrap();
+    let criterion = configuration
+        .criteria
+        .iter()
+        .find(|criterion| criterion.lifecycle == "active")
+        .unwrap()
+        .id;
+    let (offering,plan,phase,phase_version):(Uuid,Uuid,Uuid,i64)=sqlx::query_as("SELECT g.learning_offering_id,p.id,phase.id,phase.row_version FROM learning_groups g JOIN course_assessment_plans p ON p.learning_offering_id=g.learning_offering_id JOIN course_assessment_phases phase ON phase.plan_id=p.id WHERE g.id=$1 ORDER BY phase.id LIMIT 1")
+        .bind(unused).fetch_one(&pool).await.unwrap();
+    let pupil:Uuid=sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 ORDER BY id LIMIT 1")
+        .bind(base).fetch_one(&pool).await.unwrap();
+    let day: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    for branch in [
+        "phase_only",
+        "response_only",
+        "score_with_required_item",
+        "final_with_required_lock",
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        assert!(evidence::groups_with_established_history_on_connection(
+            &mut tx,
+            ctx.academic_term_id,
+            ctx.academic_year_id,
+            &[unused]
+        )
+        .await
+        .unwrap()
+        .is_empty());
+        assert!(
+            school_academic_results::services::current_obligation_group_ids_on_connection(
+                &mut tx,
+                ctx.academic_term_id,
+                ctx.academic_year_id,
+                day,
+                &[unused]
+            )
+            .await
+            .unwrap()
+            .is_empty(),
+            "every rollback branch starts as omitted with zero evidence"
+        );
+        match branch {
+            "phase_only" => {
+                sqlx::query("INSERT INTO learning_group_phase_confirmations(learning_group_id,learning_offering_id,academic_term_id,academic_year_id,course_assessment_plan_id,assessment_phase_id,phase_row_version,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8,'{\"invalidated\":true}',$9)")
+                    .bind(unused).bind(offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(plan).bind(phase).bind(phase_version).bind("a".repeat(64)).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+            }
+            "response_only" => {
+                sqlx::query("INSERT INTO learning_group_student_evaluations(learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,student_academic_year_id,quality_level,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,2,$9)")
+                    .bind(unused).bind(offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(DC.as_str()).bind(criterion).bind(pupil).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+            }
+            "score_with_required_item" => {
+                let item = Uuid::new_v4();
+                sqlx::query("INSERT INTO learning_group_score_items(id,learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score) VALUES($1,$2,$3,$4,$5,$6,$7,'Required score companion',10)")
+                    .bind(item).bind(unused).bind(offering).bind(plan).bind(phase).bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute(&mut *tx).await.unwrap();
+                sqlx::query("INSERT INTO learning_group_student_scores(learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score,updated_by) VALUES($1,$2,$3,$4,$5,$6,7.25,$7)")
+                    .bind(unused).bind(offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(item).bind(pupil).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+            }
+            "final_with_required_lock" => {
+                let lock = Uuid::new_v4();
+                sqlx::query("INSERT INTO subject_term_evaluation_locks(id,subject_id,academic_term_id,academic_year_id,domain,roster_checksum,source_checksum,source_snapshot,locked_by) VALUES($1,$2,$3,$4,$5,$6,$6,'{\"groups\":[]}',$7)")
+                    .bind(lock).bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(DC.as_str()).bind("b".repeat(64)).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+                sqlx::query("INSERT INTO subject_term_student_evaluations(learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,evaluation_lock_id,student_academic_year_id,quality_level) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,3)")
+                    .bind(unused).bind(offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(DC.as_str()).bind(criterion).bind(lock).bind(pupil).execute(&mut *tx).await.unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let counts:(i64,i64,i64,i64,i64,i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1),(SELECT count(*) FROM learning_group_score_items WHERE learning_group_id=$1),(SELECT count(*) FROM learning_group_student_scores WHERE learning_group_id=$1),(SELECT count(*) FROM learning_group_phase_confirmations WHERE learning_group_id=$1),(SELECT count(*) FROM learning_group_student_evaluations WHERE learning_group_id=$1),(SELECT count(*) FROM learning_group_evaluation_confirmations WHERE learning_group_id=$1),(SELECT count(*) FROM subject_term_student_evaluations WHERE learning_group_id=$1),(SELECT count(*) FROM subject_term_evaluation_locks WHERE subject_id=$2 AND academic_term_id=$3)")
+            .bind(unused).bind(subject).bind(ctx.academic_term_id).fetch_one(&mut *tx).await.unwrap();
+        let expected = match branch {
+            "phase_only" => (0, 0, 0, 1, 0, 0, 0, 0),
+            "response_only" => (0, 0, 0, 0, 1, 0, 0, 0),
+            "score_with_required_item" => (0, 1, 1, 0, 0, 0, 0, 0),
+            "final_with_required_lock" => (0, 0, 0, 0, 0, 0, 1, 1),
+            _ => unreachable!(),
+        };
+        assert_eq!(counts, expected, "masking evidence count for {branch}");
+        // Scores cannot exist without their item FK, nor final evaluations without
+        // their immutable lock FK. These two cases deliberately verify coupled
+        // preservation; only phase/response cases assert isolated leaf coverage.
+        let snapshot_sql="SELECT jsonb_build_object('items',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_score_items t WHERE learning_group_id=$1),'scores',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_scores t WHERE learning_group_id=$1),'phase',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_phase_confirmations t WHERE learning_group_id=$1),'responses',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_evaluations t WHERE learning_group_id=$1),'finals',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM subject_term_student_evaluations t WHERE learning_group_id=$1),'locks',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM subject_term_evaluation_locks t WHERE subject_id=$2 AND academic_term_id=$3))";
+        let before: Value = sqlx::query_scalar(snapshot_sql)
+            .bind(unused)
+            .bind(subject)
+            .bind(ctx.academic_term_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let leaf = evidence::groups_with_established_history_on_connection(
+            &mut tx,
+            ctx.academic_term_id,
+            ctx.academic_year_id,
+            &[unused],
+        )
+        .await
+        .unwrap();
+        assert!(
+            leaf.contains(&unused),
+            "Assessment leaf must retain {branch}"
+        );
+        let retained =
+            school_academic_results::services::current_obligation_group_ids_on_connection(
+                &mut tx,
+                ctx.academic_term_id,
+                ctx.academic_year_id,
+                day,
+                &[unused],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            retained,
+            vec![unused],
+            "public classifier must retain {branch}"
+        );
+        let after: Value = sqlx::query_scalar(snapshot_sql)
+            .bind(unused)
+            .bind(subject)
+            .bind(ctx.academic_term_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            before, after,
+            "established {branch} bytes must remain exact"
+        );
+        tx.rollback().await.unwrap();
+    }
 }
