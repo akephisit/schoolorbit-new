@@ -538,6 +538,7 @@ async function mockBulkSetup(
 		conflictOnce?: boolean;
 		optionsGate?: Promise<void>;
 		blocked?: boolean;
+		onlySkipped?: boolean;
 		preparationGate?: Promise<void>;
 		initialTrackingMode?: 'manual' | 'homeroom';
 		trackingGate?: Promise<void>;
@@ -724,6 +725,13 @@ async function mockBulkSetup(
 				});
 			}
 			applyRequests.push(body);
+			if (options.onlySkipped)
+				return void (await route.fulfill({
+					status: 409,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'ไม่มีกลุ่มเรียนที่ต้องเปลี่ยนการตั้งค่า' })
+				}));
+
 			if (options.blocked)
 				return void (await route.fulfill({
 					status: 409,
@@ -851,6 +859,7 @@ for (const width of [1280, 390]) {
 				dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 			).toBeEnabled();
 			await page.screenshot({
+				animations: 'disabled',
 				path: testInfo.outputPath(`bulk-direct-save-${width}-${dark ? 'dark' : 'light'}.png`)
 			});
 			const bounds = await dialog.boundingBox();
@@ -982,12 +991,50 @@ test('bulk apply rejects unsafe targets atomically and a late options response c
 	dialog = await chooseBulkTeacher(page);
 	await dialog.getByRole('checkbox', { name: /ม.1\/1/ }).check();
 	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText('กลุ่มนี้ไม่พร้อมแก้ไข');
 	await expect(dialog.getByRole('alert')).toContainText('โหลดกลุ่มล่าสุด');
 	await expect(dialog.getByRole('checkbox', { name: /ม.1\/1/ })).toBeChecked();
 	await expect(
 		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
 	).toBeDisabled();
 	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests).toHaveLength(1);
+});
+
+test('bulk only-skipped group refusal preserves the actual server reason and choices until explicit reload', async ({
+	page
+}) => {
+	const fixture = await mockBulkSetup(page, { onlySkipped: true });
+	await page.goto(url());
+	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+	const dialog = await chooseBulkTeacher(page);
+	await dialog.getByRole('checkbox', { name: /ม.1\/2/ }).check();
+	await dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText('ไม่มีกลุ่มเรียนที่ต้องเปลี่ยนการตั้งค่า');
+	await expect(dialog.getByRole('alert')).toContainText('โหลดกลุ่มล่าสุด');
+	await expect(dialog.getByRole('checkbox', { name: /ม.1\/2/ })).toBeChecked();
+	await expect(
+		dialog.getByRole('combobox', { name: 'เลือกครูหลักสำหรับกลุ่มเป้าหมาย', exact: true })
+	).toContainText('ครูหลักใหม่');
+	await expect(
+		dialog.getByRole('checkbox', { name: 'แทนครูหลักเดิมในกลุ่มที่เลือกด้วย', exact: true })
+	).not.toBeChecked();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeDisabled();
+	expect(fixture.applyRequests).toHaveLength(1);
+	expect(fixture.previewRequests).toHaveLength(0);
+	expect(fixture.applyRequests[0]).toMatchObject({
+		groups: [{ learningGroupId: ids.groupB, rowVersion: 1 }],
+		primaryTeacher: { replaceExistingPrimary: false }
+	});
+	expect(fixture.applyRequests[0].rosterTracking).toBeUndefined();
+	await dialog.getByRole('button', { name: 'โหลดกลุ่มล่าสุด', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	await expect(dialog.getByRole('checkbox', { name: /ม.1\/2/ })).toBeChecked();
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกให้กลุ่มที่เลือก', exact: true })
+	).toBeEnabled();
 	expect(fixture.applyRequests).toHaveLength(1);
 });
 

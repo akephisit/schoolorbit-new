@@ -884,6 +884,7 @@
 		const requestedId = detailUrl.searchParams.get('groupId');
 		if (
 			!version ||
+			!selectedDeliveryOffering ||
 			groupsLoading ||
 			(selected && eligible.some((group) => group.id === selected.id))
 		)

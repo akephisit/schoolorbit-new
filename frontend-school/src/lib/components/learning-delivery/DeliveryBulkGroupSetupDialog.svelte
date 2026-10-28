@@ -188,8 +188,7 @@
 	function fail(error: unknown, fallback: string) {
 		if (error instanceof ApiClientError && error.status === 409) {
 			needsReload = true;
-			errorMessage =
-				'ข้อมูลเปลี่ยนจากที่อื่น โหลดกลุ่มล่าสุดแล้วตรวจรายการที่เลือกก่อนบันทึกอีกครั้ง';
+			errorMessage = `${error.message} โหลดกลุ่มล่าสุดแล้วตรวจรายการที่เลือกก่อนบันทึกอีกครั้ง`;
 		} else errorMessage = error instanceof Error ? error.message : fallback;
 	}
 	async function apply() {

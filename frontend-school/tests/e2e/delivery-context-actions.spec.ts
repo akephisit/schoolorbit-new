@@ -175,6 +175,7 @@ async function mockContextActions(
 						...registry[0],
 						id: createdGroupId,
 						code: 'PREP-GROUP-4',
+						rowVersion: 1,
 						name: body.name,
 						status: 'draft',
 						teachersLocked: false,
@@ -309,6 +310,7 @@ for (const mode of ['independent', 'synchronized'] as const)
 						await expect(confirmation).toContainText('กิจกรรมคาบพร้อมกัน');
 					if (name === 'กลุ่มร่วมสองห้อง')
 						await page.screenshot({
+							animations: 'disabled',
 							path: testInfo.outputPath(
 								`group-delete-${mode}-${width}-${dark ? 'dark' : 'light'}.png`
 							)
@@ -343,6 +345,7 @@ for (const mode of ['independent', 'synchronized'] as const)
 				const remove = page.getByRole('alertdialog', { name: 'ลบจากรุ่นนี้', exact: true });
 				await expect(remove).toContainText('พร้อมทุกกลุ่มเรียน 1 กลุ่ม');
 				await page.screenshot({
+					animations: 'disabled',
 					path: testInfo.outputPath(
 						`offering-delete-${mode}-${width}-${dark ? 'dark' : 'light'}.png`
 					)
@@ -842,6 +845,7 @@ test('a fresh group observed by an in-flight list read before its create acknowl
 			.fill('ชื่อกลุ่มที่แก้ไขแล้ว');
 		await page.getByRole('button', { name: 'บันทึกข้อมูลกลุ่ม', exact: true }).click();
 		await expect.poll(() => listReads).toBe(2);
+		await expect(page.getByTestId('delivery-groups-ready')).toHaveAttribute('aria-busy', 'true');
 		await page.getByRole('button', { name: 'ยกเลิกการแก้ไขกลุ่ม', exact: true }).click();
 		await page.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
 		const create = page.getByRole('dialog', { name: 'เพิ่มกลุ่มเรียน', exact: true });
@@ -869,6 +873,7 @@ test('a fresh group observed by an in-flight list read before its create acknowl
 		);
 		listRead.release();
 		await (await observed).finished();
+		await expect(page.getByTestId('delivery-groups-ready')).toHaveAttribute('aria-busy', 'false');
 		await expect(create.getByRole('button', { name: 'กำลังสร้าง', exact: true })).toBeDisabled();
 		createAck.release();
 		await expect(create).toHaveCount(0);

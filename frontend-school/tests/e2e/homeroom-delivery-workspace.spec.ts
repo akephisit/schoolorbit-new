@@ -1,5 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type { DeliveryManagementOptions } from '../../src/lib/api/learning-delivery.js';
+import type {
+	DeliveryManagementOptions,
+	DeliveryVersion
+} from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -680,6 +683,7 @@ async function mockDraftLifecycle(
 	let publication: Record<string, unknown> | null = null;
 	const detail = {
 		...changeSetDetail(),
+		baseDeliveryVersionId: null,
 		offeringLabels: [
 			{ id: ids.offering, code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน' },
 			{ id: secondOffering, code: 'ว21101', name: 'วิทยาศาสตร์' }
@@ -754,7 +758,13 @@ async function mockDraftLifecycle(
 			}));
 		}
 		if (deleted) return void (await fulfill(route, 'รุ่นนี้ถูกลบแล้ว', 404));
-		return void (await fulfill(route, detail));
+		return void (await fulfill(route, {
+			...detail,
+			status: publication ? 'published' : 'draft',
+			effectiveFrom:
+				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
+			rowVersion: publication ? 2 : 1
+		}));
 	});
 	await page.route(`**/api/academic/delivery-versions/${ids.version}`, async (route) => {
 		if (route.request().method() === 'DELETE') {
@@ -779,18 +789,73 @@ async function mockDraftLifecycle(
 		}
 		return void (await fulfill(route, {
 			id: ids.version,
+			academicYearId: ids.year,
+			academicTermId: ids.term,
+			sourceVersionId: null,
 			rowVersion: 2,
-			status: 'draft',
-			effectiveFrom: null,
+			status: publication ? 'published' : 'draft',
+			effectiveFrom:
+				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
+			effectiveUntil: null,
 			referenceDate: '2027-08-01',
+			createdAt: '2027-07-01T00:00:00Z',
+			updatedAt: '2027-07-01T00:00:00Z',
 			courseMetadata: [],
 			snapshot: {
 				offerings: [
-					{ id: ids.offering, groups: [{ id: ids.group }] },
-					{ id: secondOffering, groups: [] }
+					{
+						id: ids.offering,
+						kind: 'course',
+						code: 'ค21101',
+						name: 'คณิตศาสตร์พื้นฐาน',
+						owningOrganizationUnitId: ids.program,
+						weeklyPeriodTarget: 4,
+						targets: [],
+						homeroomIds: [ids.homeroom],
+						catalog: {
+							kind: 'course',
+							subjectId: ids.catalog,
+							subjectVersionId: ids.catalog,
+							standardPeriodsPerWeek: 3,
+							credit: '1.5',
+							hours: '60',
+							assessmentTotalScore: '100.00'
+						},
+						groups: [
+							{
+								id: ids.group,
+								code: 'PREP-LIFECYCLE-GROUP',
+								name: 'ม.1/1',
+								capacity: null,
+								homeroomIds: [ids.homeroom],
+								preferredRoomIds: [],
+								teachers: []
+							}
+						]
+					},
+					{
+						id: secondOffering,
+						kind: 'course',
+						code: 'ว21101',
+						name: 'วิทยาศาสตร์',
+						owningOrganizationUnitId: ids.program,
+						weeklyPeriodTarget: 3,
+						targets: [],
+						homeroomIds: [],
+						catalog: {
+							kind: 'course',
+							subjectId: secondOffering,
+							subjectVersionId: secondOffering,
+							standardPeriodsPerWeek: 3,
+							credit: '1.5',
+							hours: '60',
+							assessmentTotalScore: '100.00'
+						},
+						groups: []
+					}
 				]
 			}
-		}));
+		} satisfies DeliveryVersion));
 	});
 	await page.route('**/api/academic/term-change-sets?*', (route) =>
 		fulfill(route, deleted ? [] : [changeSetSummary()])
@@ -805,6 +870,9 @@ async function mockDraftLifecycle(
 							...changeSetSummary(),
 							id: ids.version,
 							changeSetId: ids.changeSet,
+							status: publication ? 'published' : 'draft',
+							effectiveFrom:
+								typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
 							rowVersion: 2,
 							sourceVersionId: null,
 							effectiveUntil: null,
@@ -863,8 +931,10 @@ for (const viewport of [
 		await expect(page.getByText(`${ids.offering} · 4 คาบ/สัปดาห์`)).toHaveCount(0);
 		await page.screenshot({ path: testInfo.outputPath(`changes-dialog-${viewport.name}.png`) });
 		await page.getByRole('button', { name: 'ปิดรายละเอียด', exact: true }).click();
+		await expect(page.getByRole('alert')).toHaveCount(0);
 		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-		await expect(page.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
+		const readiness = page.getByRole('dialog', { name: 'ตรวจผลกระทบและความพร้อม', exact: true });
+		await expect(readiness.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
 		await page.getByRole('button', { name: 'ตรวจความพร้อมอีกครั้ง', exact: true }).click();
 		await expect(page.getByText('ค21101 — คณิตศาสตร์พื้นฐาน: ยังไม่มีกลุ่มเรียน')).toBeVisible();
 		await expect(page.getByText('ว21101 — วิทยาศาสตร์: ยังไม่มีกลุ่มเรียน')).toBeVisible();
@@ -874,6 +944,7 @@ for (const viewport of [
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
 		await page.screenshot({
+			animations: 'disabled',
 			path: testInfo.outputPath(`readiness-dialog-${viewport.name}.png`)
 		});
 	});
