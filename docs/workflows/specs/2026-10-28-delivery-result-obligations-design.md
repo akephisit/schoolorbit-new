@@ -42,6 +42,10 @@ In `school-academic-delivery/src/services/offerings.rs`, scoped preparation retu
 
 The builder only reads/locks while creating the preview, and revision/version locks remain held by that transaction. Preserve lock acquisition, exact hash inputs, request/receipt identity, replay/stale behavior and the unscoped Lifecycle path. No schema, wire, generator or policy change is needed for this private correction.
 
+## Coordinated detail audience view
+
+The user also requested complete room visibility in the offering detail. The frontend-owned detail section lists the selected snapshot audience independently of surviving teaching groups, so a retained room with no group is still visible and removable. Reuse the existing typed room DELETE operation and revision/permission guards; do not infer a new audience from registry groups or add another backend policy/API. Preserve group removal and raw registry editor semantics. Verify retained-room/no-group display, independent room removal, loading/error/read-only states, and existing context/permission checks with focused frontend checks and the room-scope browser fixture. Frontend source remains with its designated writer.
+
 ## Verification and recovery
 
 Required families: actual valid M6 course-lock success with unused omitted M4; isolated evidence categories retained with exact history bytes; legacy/included-empty/future-boundary behavior; activity readiness/bulk/direct agreement; learner readiness/lock agreement with criteria and existing locks intact. Add real-owner concurrent first-history serialization, unknown/wrong-context refusal, raw-budget refusal and normal limits applied after filtering. Retain existing scoped preparation/replay, projection, inheritance and dated/pinned attendance checks.

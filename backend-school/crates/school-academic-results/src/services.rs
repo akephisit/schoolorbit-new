@@ -28,6 +28,8 @@ mod course_preparation;
 mod cutover;
 mod effective_results;
 mod locking;
+mod obligations;
+pub use obligations::current_obligation_group_ids_on_connection;
 mod policies;
 mod readiness;
 mod term_preview;

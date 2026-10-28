@@ -27,6 +27,11 @@ test('offering, groups, versions, and selected group start as independent route 
 	assert.match(page, /listLearningGroups/);
 	assert.match(page, /listDeliveryVersions/);
 	assert.match(page, /getDeliveryVersion/);
+	assert.match(page, /const audienceWorkspace = deliveryVersion\.then/);
+	assert.match(
+		page,
+		/getHomeroomDeliveryWorkspace\(version\.academicYearId, version\.academicTermId/
+	);
 	assert.doesNotMatch(page, /listTimetableVersions/);
 	assert.match(page, /getLearningGroup/);
 	assert.match(page, /listDatedRosterMemberships/);
@@ -35,6 +40,7 @@ test('offering, groups, versions, and selected group start as independent route 
 	assert.match(component, /data\.offering/);
 	assert.match(component, /data\.groups/);
 	assert.match(component, /data\.selectedGroup/);
+	assert.match(component, /initialWorkspace=\{data\.audienceWorkspace\}/);
 	assert.deepEqual(mountApiCalls(component), ['subscribe:getLearningGroup']);
 	assert.match(roster, /initialMemberships/);
 	assert.doesNotMatch(roster, /\bonMount\s*\(/);

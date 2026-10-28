@@ -112,20 +112,30 @@ async fn load_scope(
     group: Uuid,
     context: &ResultContext,
 ) -> Result<CourseScope, AppError> {
+    load_scope_at(tx, actor, group, context, None).await
+}
+
+async fn load_scope_at(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    group: Uuid,
+    context: &ResultContext,
+    date: Option<chrono::NaiveDate>,
+) -> Result<CourseScope, AppError> {
     DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
                   d.assessment_total_score::text,o.owning_organization_unit_id,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
                            AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-                           AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+                           AND teacher.starts_on<=LEAST(GREATEST(COALESCE($5::date,current_date),t.start_date),t.planned_end_date)
+                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(COALESCE($5::date,current_date),t.start_date),t.planned_end_date))) AS assigned,
                   (SELECT teacher.teacher_id FROM learning_group_teachers teacher
                      JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                     WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
                       AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary'
-                      AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))
+                      AND teacher.starts_on<=LEAST(GREATEST(COALESCE($5::date,current_date),t.start_date),t.planned_end_date)
+                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(COALESCE($5::date,current_date),t.start_date),t.planned_end_date))
                     ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
                   lock.id IS NOT NULL AS locked,lock.policy_version_id AS locked_policy_id,
                   lock.policy_snapshot AS locked_policy_snapshot
@@ -143,6 +153,7 @@ async fn load_scope(
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(actor.user_id)
+    .bind(date)
     .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Course group not found in context".into()))
@@ -592,8 +603,9 @@ pub(super) async fn workspace_for_lock(
     actor: &ActorContext,
     context: &ResultContext,
     group: Uuid,
+    date: chrono::NaiveDate,
 ) -> Result<CoursePreparationWorkspace, AppError> {
-    let scope = load_scope(tx, actor, group, context).await?;
+    let scope = load_scope_at(tx, actor, group, context, Some(date)).await?;
     let (workspace, _) = load_workspace(tx, actor, &scope).await?;
     Ok(workspace)
 }

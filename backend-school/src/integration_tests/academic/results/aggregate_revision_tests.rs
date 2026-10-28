@@ -573,7 +573,14 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
                 .await
                 .unwrap();
             }
-            let lock = learner::lock_subject(&pool, &actor, course.subject_id, domain, &lc)
+            let lock = learner::lock_subject(
+                &pool,
+                &crate::adapters::academic_result_locks::RESULT_LOCKS,
+                &actor,
+                course.subject_id,
+                domain,
+                &lc,
+            )
                 .await
                 .unwrap();
             assert!(lock.lock.is_some(), "{:?}", lock.blockers);

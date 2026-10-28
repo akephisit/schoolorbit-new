@@ -4068,6 +4068,7 @@ dependencies = [
  "hex",
  "school-academic-assessment",
  "school-academic-core",
+ "school-academic-delivery",
  "school-authorization",
  "school-database",
  "school-errors",

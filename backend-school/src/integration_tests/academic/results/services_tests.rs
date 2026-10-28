@@ -223,10 +223,36 @@ fn results_exact_inclusive_policy_and_teacher_contract() {
     );
 }
 pub(super) async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultContext, Uuid) {
+    let (pool, actor, context, group, _) = fixture_with_unused_group(name, false).await;
+    (pool, actor, context, group)
+}
+
+async fn fixture_with_unused_group(
+    name: &str,
+    include_unused: bool,
+) -> (
+    sqlx::PgPool,
+    ActorContext,
+    ResultContext,
+    Uuid,
+    Option<Uuid>,
+) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
     apply_migrations_through(&pool, 61).await.unwrap();
     let (year,term,group,teacher):(Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let unused = if include_unused {
+        let id = Uuid::new_v4();
+        // Seed a legitimate pre-cutover split group, with no learner obligations.
+        // 087 will capture it canonically; no published graph is edited by the test.
+        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,created_at,updated_at) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,$1::text,'Unused M4 group','draft','draft',created_at,updated_at FROM learning_groups WHERE id=$2").bind(id).bind(group).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1").bind(id).bind(group).execute(&pool).await.unwrap();
+        Some(id)
+    } else {
+        None
+    };
+    // This is the live-service fixture; dedicated historical migration fixtures stay at 061.
+    apply_migrations_through(&pool, 144).await.unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![
@@ -243,6 +269,7 @@ pub(super) async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, ResultCo
             academic_term_id: term,
         },
         group,
+        unused,
     )
 }
 
@@ -2495,3 +2522,6 @@ fn results_endpoint_contract_requires_exact_context_and_typed_envelopes() {
         }
     }
 }
+
+#[path = "result_obligations_tests.rs"]
+mod result_obligations_tests;
