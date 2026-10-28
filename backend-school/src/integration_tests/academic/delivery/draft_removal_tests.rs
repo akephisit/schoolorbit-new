@@ -1721,3 +1721,300 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
     );
     assert_eq!(history_before, preserved_facts(&pool).await);
 }
+
+async fn pending_removal_facts(pool: &PgPool) -> Value {
+    json!({
+        "preserved": preserved_facts(pool).await,
+        "commands": sqlx::query_scalar::<_, Value>("SELECT jsonb_build_object(
+            'revisions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_term_change_sets r),
+            'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM academic_delivery_versions v),
+            'items',(SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM academic_term_change_items i),
+            'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM academic_audit_events a),
+            'plans',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM course_assessment_plans p),
+            'scores',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM learning_group_student_scores s))").fetch_one(pool).await.unwrap(),
+    })
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_http_pending_add_with_three_groups() {
+    http_pending_three_group_removal("add").await;
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_http_pending_period_with_three_groups() {
+    http_pending_three_group_removal("period").await;
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_http_pending_teacher_with_three_groups() {
+    http_pending_three_group_removal("teacher").await;
+}
+
+async fn http_pending_three_group_removal(command: &str) {
+    use axum::http::StatusCode;
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture(&format!("removal_http_pending_{command}")).await;
+    let context = planning_runtime_context(&pool).await;
+    let initial = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "pending-removal-initial",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(initial.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let mut course_groups = groups::list(&pool, offering.id).await.unwrap();
+    while course_groups.len() < 3 {
+        let group = groups::create(
+            &pool,
+            context.teacher_id,
+            offering.id,
+            CreateLearningGroupRequest {
+                name: format!("กลุ่มเรียนที่ {}", course_groups.len() + 1),
+                description: None,
+                capacity: None,
+                preferred_room_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        course_groups.push(group);
+    }
+    assert_eq!(course_groups.len(), 3);
+    for group in &course_groups {
+        let current = groups::get(&pool, group.id).await.unwrap();
+        groups::replace_homerooms(
+            &pool,
+            context.teacher_id,
+            group.id,
+            ReplaceLearningGroupHomeroomsRequest {
+                row_version: current.row_version,
+                homeroom_ids: vec![context.homeroom_id],
+            },
+        )
+        .await
+        .unwrap();
+        let current = groups::get(&pool, group.id).await.unwrap();
+        groups::replace_teachers(
+            &pool,
+            context.teacher_id,
+            group.id,
+            ReplaceLearningGroupTeachersRequest {
+                row_version: current.row_version,
+                teachers: vec![TeacherAssignmentInput {
+                    teacher_id: context.teacher_id,
+                    role: LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let revision = if command == "add" {
+        initial
+    } else {
+        let preview = publication_preview(&pool, initial.id).await.unwrap();
+        assert!(
+            !preview
+                .findings
+                .iter()
+                .any(|f| f.severity == AcademicChangeFindingSeverity::Blocking),
+            "{:?}",
+            preview.findings
+        );
+        change_sets::publish_change_set(
+            &pool,
+            context.teacher_id,
+            initial.id,
+            PublishAcademicTermChangeSetRequest {
+                effective_from: preview.effective_from,
+                row_version: preview.change_set_row_version,
+                target_delivery_version_row_version: preview.target_delivery_version_row_version,
+                preview_hash: preview.preview_hash,
+                acknowledged_warning_codes: vec![],
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await
+        .unwrap();
+        create_runtime_change_set(
+            &pool,
+            context.teacher_id,
+            context.term_id,
+            2,
+            "pending-removal-next",
+        )
+        .await
+    };
+    if command == "period" {
+        let current = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        change_sets::upsert_change_item(
+            &pool,
+            context.teacher_id,
+            revision.id,
+            UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+                change_set_row_version: current.row_version,
+                item_row_version: None,
+                learning_offering_id: offering.id,
+                weekly_period_target: 2,
+            },
+        )
+        .await
+        .unwrap();
+    } else if command == "teacher" {
+        let teacher:Uuid=sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' AND status='active' AND id<>$1 ORDER BY id LIMIT 1").bind(context.teacher_id).fetch_one(&pool).await.unwrap();
+        for group in course_groups.iter().take(2) {
+            let current = change_sets::get_change_set(&pool, revision.id)
+                .await
+                .unwrap();
+            change_sets::upsert_change_item(
+                &pool,
+                context.teacher_id,
+                revision.id,
+                UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+                    change_set_row_version: current.row_version,
+                    item_row_version: None,
+                    learning_group_id: group.id,
+                    teacher_id: teacher,
+                    teacher_role: LearningTeacherRole::Secondary,
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+    let unrelated = open_activity_with_catalog_target(
+        &pool,
+        &context,
+        revision.target_delivery_version_id,
+        ActivitySchedulingMode::Synchronized,
+        false,
+    )
+    .await;
+    let sibling = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        2,
+        "pending-removal-sibling",
+    )
+    .await;
+    if command == "add" {
+        seed_shared_draft_inclusion(&pool, &sibling, &context, offering.id).await;
+    }
+    let sibling_before = serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap();
+    let preserved_before = preserved_facts(&pool).await;
+    let group_id = course_groups[0].id;
+    let group_path = format!(
+        "/api/academic/term-change-sets/{}/groups/{group_id}",
+        revision.id
+    );
+    let offering_path = format!(
+        "/api/academic/term-change-sets/{}/offerings/{}",
+        revision.id, offering.id
+    );
+    let permissions = &[codes::LEARNING_OFFERING_MANAGE_SCHOOL];
+    let mut statuses = Vec::new();
+    for path in [&group_path, &offering_path] {
+        let before = pending_removal_facts(&pool).await;
+        let request = removal_request(&pool, revision.id).await;
+        let audit_before:i64=sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_delivery_draft_resource.removed'").bind(revision.id).fetch_one(&pool).await.unwrap();
+        let (status, body) = http_remove(
+            delivery_router(&pool, context.teacher_id, permissions),
+            path,
+            &request,
+        )
+        .await;
+        statuses.push(status);
+        if status != StatusCode::OK {
+            assert_eq!(
+                before,
+                pending_removal_facts(&pool).await,
+                "failed HTTP removal changes no graph, revision, journal or audit facts"
+            );
+            eprintln!("pending {command}: {path} returned {status}: {body}; all persisted facts unchanged");
+            continue;
+        }
+        let after = removal_request(&pool, revision.id).await;
+        assert_eq!(
+            after.change_set_row_version,
+            request.change_set_row_version + 1
+        );
+        assert_eq!(
+            after.target_delivery_version_row_version,
+            request.target_delivery_version_row_version + 1
+        );
+        let audit_after:i64=sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_delivery_draft_resource.removed'").bind(revision.id).fetch_one(&pool).await.unwrap();
+        assert_eq!(audit_after, audit_before + 1);
+        let current = draft_version(&pool, revision.id).await;
+        if path == &group_path {
+            let remaining = &current
+                .snapshot
+                .offerings
+                .iter()
+                .find(|row| row.id == offering.id)
+                .unwrap()
+                .groups;
+            assert_eq!(remaining.len(), 2);
+            assert!(remaining.iter().all(|group| group.id != group_id));
+            // Once the duplicate preflight is repaired, ordinary permission and stale guards must surface.
+            for (permission, stale_parent, stale_target, expected) in [
+                (vec![], false, false, StatusCode::FORBIDDEN),
+                (permissions.to_vec(), true, false, StatusCode::CONFLICT),
+                (permissions.to_vec(), false, true, StatusCode::CONFLICT),
+            ] {
+                let before = pending_removal_facts(&pool).await;
+                let mut request = removal_request(&pool, revision.id).await;
+                request.change_set_row_version += i64::from(stale_parent);
+                request.target_delivery_version_row_version += i64::from(stale_target);
+                let (status, _) = http_remove(
+                    delivery_router(&pool, context.teacher_id, &permission),
+                    &offering_path,
+                    &request,
+                )
+                .await;
+                assert_eq!(status, expected);
+                assert_eq!(before, pending_removal_facts(&pool).await);
+            }
+        } else {
+            assert!(current
+                .snapshot
+                .offerings
+                .iter()
+                .all(|row| row.id != offering.id));
+            let retained:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND learning_offering_id=$2").bind(revision.id).bind(unrelated.id).fetch_one(&pool).await.unwrap();
+            assert_eq!(retained, 1, "unrelated pending commands survive");
+            let cleared:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND (learning_offering_id=$2 OR learning_group_id=ANY($3))").bind(revision.id).bind(offering.id).bind(course_groups.iter().map(|group|group.id).collect::<Vec<_>>()).fetch_one(&pool).await.unwrap();
+            assert_eq!(cleared, 0);
+        }
+    }
+    assert_eq!(
+        statuses,
+        vec![StatusCode::OK, StatusCode::OK],
+        "both real HTTP routes must accept pending {command} commands"
+    );
+    assert_eq!(
+        preserved_before,
+        preserved_facts(&pool).await,
+        "shared/published registry, rosters, timetable and results stay intact"
+    );
+    assert_eq!(
+        sibling_before,
+        serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap()
+    );
+    assert_eq!(
+        groups::list(&pool, offering.id).await.unwrap().len(),
+        3,
+        "only selected snapshot membership is removed"
+    );
+}
