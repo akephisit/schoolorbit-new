@@ -1,5 +1,11 @@
 <script lang="ts">
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
+	import {
+		ordinaryLessonColorKey,
+		synchronizedLessonColorKey,
+		timetableLessonColorStyle
+	} from '#lib/academic/timetable/lesson-color.js';
+	import '#lib/academic/timetable/lesson-color.css';
 	import type {
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
@@ -228,9 +234,12 @@
 						<h3 class="text-[0.65rem] font-semibold">กิจกรรมพร้อมกัน</h3>
 					</div>
 					{#each visibleSynchronized as demand (demand.learningOfferingId)}
+						{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
 						<article
+							data-lesson-color={colorKey}
+							style={timetableLessonColorStyle(colorKey)}
 							draggable={!disabled}
-							class="relative cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-2 active:cursor-grabbing dark:bg-violet-950/10"
+							class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
 							ondragstart={(event) => dragSynchronized(demand, event)}
 							ondragend={onCancelDrag}
 						>
@@ -298,9 +307,12 @@
 					</div>
 					{#each visibleOrdinary as demand (demand.learningGroupId)}
 						{@const selectedIds = selectedInstructorIds(demand)}
+						{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
 						<article
+							data-lesson-color={colorKey}
+							style={timetableLessonColorStyle(colorKey)}
 							draggable={!disabled && selectedIds.length > 0}
-							class="relative rounded-lg border border-l-4 border-l-primary bg-muted/15 p-2"
+							class="timetable-lesson-fill relative rounded-lg border p-2"
 							ondragstart={(event) => dragOrdinary(demand, event)}
 							ondragend={onCancelDrag}
 						>
@@ -318,7 +330,7 @@
 									}}
 								>
 									{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
-										<p class="text-[0.65rem] font-semibold text-primary">{demand.offeringCode}</p>
+										<p class="text-[0.65rem] font-semibold">{demand.offeringCode}</p>
 									{/if}
 									<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
 									{#if demand.homeroomIds.length > 0}

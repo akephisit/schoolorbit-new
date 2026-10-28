@@ -55,6 +55,7 @@ export interface TimetableMockOptions {
 	previewDelayMs?: number;
 	previewGate?: Promise<void>;
 	createDelayMs?: number;
+	createGate?: Promise<void>;
 	updateDelayMs?: number;
 	deleteDelayMs?: number;
 	deleteGate?: Promise<void>;
@@ -608,26 +609,46 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/ordinary' && method === 'POST') {
 				createRequests += 1;
+				await options.createGate;
 				if (options.createDelayMs) {
 					await new Promise((resolve) => setTimeout(resolve, options.createDelayMs));
 				}
 				const body = route.request().postDataJSON();
 				lastCreateBody = body;
+				const group = workspace().learningGroups.find((item) => item.id === body.learningGroupId);
 				const created = {
 					...makeTimetableBlock(timetableIds.createdBlock, body.bellSchedulePeriodId, {
 						versionId: body.timetableVersionId,
 						groupId: body.learningGroupId,
+						offeringId: group?.learningOfferingId,
+						code: group?.offeringCode,
+						name: group?.offeringName,
 						instructorIds: body.instructorIds,
 						roomId: body.roomId
 					}),
+					blockKind: group?.offeringKind === 'activity' ? 'activity' : 'course',
+					schedulingMode: group?.offeringKind === 'activity' ? 'independent' : null,
 					dayOfWeek: body.dayOfWeek
-				};
+				} satisfies MockBlock;
+				if (group) {
+					created.groups[0] = {
+						...created.groups[0],
+						code: group.code,
+						name: group.name,
+						homeroomIds: group.homeroomIds,
+						homeroomNames: group.homeroomIds.flatMap((id) => {
+							const homeroom = workspace().homerooms.find((item) => item.id === id);
+							return homeroom ? [homeroom.name] : [];
+						})
+					};
+				}
 				blocks = [...blocks, created];
 				await fulfill(route, created, 201);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/synchronized' && method === 'POST') {
 				synchronizedCreateRequests += 1;
+				await options.createGate;
 				const body = route.request().postDataJSON();
 				lastSynchronizedCreateBody = body;
 				const created = {
