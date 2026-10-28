@@ -163,6 +163,10 @@
 		offering?.status === 'cancelled' || offering?.status === 'closed'
 	);
 	let deliveryVersion = $state.raw<DeliveryVersion | null>(null);
+	let selectedDeliveryOffering = $derived(
+		deliveryVersion?.snapshot.offerings.find((item) => item.id === offeringId) ?? null
+	);
+
 	let canMutateOffering = $derived(
 		canManage &&
 			offering !== null &&
@@ -182,9 +186,6 @@
 			: null
 	);
 	let courseSnapshot = $derived(offering?.snapshot.kind === 'course' ? offering.snapshot : null);
-	let selectedDeliveryOffering = $derived(
-		deliveryVersion?.snapshot.offerings.find((item) => item.id === offeringId) ?? null
-	);
 	let selectedTimetableTarget = $derived(selectedDeliveryOffering);
 	const visibleGroups = $derived(
 		deliveryVersion

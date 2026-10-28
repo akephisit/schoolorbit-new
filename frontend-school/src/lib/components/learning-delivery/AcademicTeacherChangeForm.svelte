@@ -42,6 +42,8 @@
 		onSavingChange: (saving: boolean) => void;
 	} = $props();
 
+	const sessionCallbacks = untrack(() => ({ onSaved, onConflict, onSavingChange, onCancel }));
+
 	let action = $state<TeacherAction>('add_group_teacher');
 	let learningGroupId = $state(untrack(() => initialGroupId));
 	let learningGroupTeacherId = $state('');
@@ -201,35 +203,37 @@
 		event.preventDefault();
 		if (!request || savedChangeSet) return;
 		saving = true;
-		onSavingChange(true);
+		sessionCallbacks.onSavingChange(true);
 		errorMessage = '';
 		try {
 			const updated = await upsertAcademicTermChangeItem(changeSet.id, request);
 			savedChangeSet = updated;
-			await onSaved(updated);
+			await sessionCallbacks.onSaved(updated);
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) {
-				await onConflict('ข้อมูลกลุ่มเรียนหรือชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจรายการล่าสุด');
+				await sessionCallbacks.onConflict(
+					'ข้อมูลกลุ่มเรียนหรือชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจรายการล่าสุด'
+				);
 				return;
 			}
 			errorMessage = error instanceof Error ? error.message : 'บันทึกการเปลี่ยนครูไม่สำเร็จ';
 		} finally {
 			saving = false;
-			onSavingChange(false);
+			sessionCallbacks.onSavingChange(false);
 		}
 	}
 	async function showSaved() {
 		if (!savedChangeSet || saving) return;
 		saving = true;
-		onSavingChange(true);
+		sessionCallbacks.onSavingChange(true);
 		errorMessage = '';
 		try {
-			await onSaved(savedChangeSet);
+			await sessionCallbacks.onSaved(savedChangeSet);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'แสดงครูที่บันทึกแล้วไม่สำเร็จ';
 		} finally {
 			saving = false;
-			onSavingChange(false);
+			sessionCallbacks.onSavingChange(false);
 		}
 	}
 </script>
@@ -248,7 +252,13 @@
 					</p>
 				</div>
 			</div>
-			<Button type="button" size="icon" variant="ghost" onclick={onCancel} aria-label="ปิดแบบฟอร์ม">
+			<Button
+				type="button"
+				size="icon"
+				variant="ghost"
+				onclick={sessionCallbacks.onCancel}
+				aria-label="ปิดแบบฟอร์ม"
+			>
 				<X class="size-4" />
 			</Button>
 		</div>
@@ -354,7 +364,9 @@
 			>แสดงครูที่บันทึกแล้ว</LoadingButton
 		>{/if}
 	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" disabled={saving} onclick={onCancel}>ยกเลิก</Button>
+		<Button type="button" variant="outline" disabled={saving} onclick={sessionCallbacks.onCancel}
+			>ยกเลิก</Button
+		>
 		<LoadingButton
 			type="submit"
 			loading={saving}

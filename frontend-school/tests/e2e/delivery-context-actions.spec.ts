@@ -67,6 +67,7 @@ async function mockContextActions(
 	}));
 	selected.groups = registry.slice(0, 2).map((group) => ({
 		id: group.id,
+		code: group.code,
 		name: group.name,
 		capacity: group.capacity ?? null,
 		homeroomIds: group.homeroomIds,
@@ -181,6 +182,7 @@ async function mockContextActions(
 						.find((item) => item.id === offeringId)!
 						.groups.push({
 							id: created.id,
+							code: created.code,
 							name: created.name,
 							capacity: null,
 							homeroomIds: [],
@@ -260,7 +262,16 @@ async function mockContextActions(
 	);
 	const origin = `/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}&view=offerings&kind=${mode === 'course' ? 'course' : 'activity'}&offeringSearch=${encodeURIComponent(selected.name)}&expandedRooms=${ids.roomB}`;
 	const detail = `/staff/academic/delivery/${offeringId}?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}&groupId=${groupIds[0]}&returnTo=${encodeURIComponent(origin)}`;
-	return { origin, detail, offeringId, writes, reads, graph: () => graph };
+	return {
+		origin,
+		detail,
+		offeringId,
+		writes,
+		reads,
+		graph: () => graph,
+		management,
+		changeSet: () => changeSet
+	};
 }
 
 for (const mode of ['independent', 'synchronized'] as const)
@@ -549,4 +560,184 @@ test('touch removal cancellation restores the underlying detail and scroll contr
 	} finally {
 		await context.close();
 	}
+});
+
+function deferredTeacherResponse() {
+	let release!: () => void;
+	const promise = new Promise<void>((resolve) => (release = resolve));
+	return { promise, release };
+}
+const episodeTeacherIds = [
+	'b0000000-0000-4000-8000-000000000001',
+	'b0000000-0000-4000-8000-000000000002'
+];
+async function chooseEpisodeTeacher(page: Page, name: string) {
+	const dialog = page.getByRole('dialog', { name: 'เปลี่ยนครูผู้สอนในกลุ่มนี้', exact: true });
+	await dialog.getByRole('combobox', { name: 'ค้นหาชื่อครู', exact: true }).click();
+	await page.getByRole('option', { name, exact: true }).click();
+	return dialog;
+}
+
+for (const outcome of ['success', 'conflict-read', 'conflict-draft'] as const)
+	test(`a late teacher ${outcome} from group A cannot close group B or clear its pending save`, async ({
+		page
+	}) => {
+		const fixture = await mockContextActions(page, 'course');
+		fixture.management.teachers = episodeTeacherIds.map((id, index) => ({
+			id,
+			name: ['ครูสำหรับกลุ่ม ก', 'ครูสำหรับกลุ่ม ข'][index]
+		}));
+		const a = deferredTeacherResponse(),
+			b = deferredTeacherResponse(),
+			oldCompletion = deferredTeacherResponse();
+		let aConflictPending = false,
+			aConflictStarted = false;
+		const writes: { learningGroupId: string; teacherId: string; changeSetRowVersion: number }[] =
+			[];
+		const changeSetPath = `/api/academic/term-change-sets/${ids.changeSet}`;
+		await page.route(`**${changeSetPath}`, async (route) => {
+			if (aConflictPending && !aConflictStarted) {
+				aConflictStarted = true;
+				await a.promise;
+				try {
+					await reply(route, {
+						...fixture.changeSet(),
+						rowVersion: 8,
+						reason: 'คำตอบเก่าจากกลุ่ม ก'
+					});
+				} finally {
+					oldCompletion.release();
+				}
+				return;
+			}
+			return reply(route, { ...fixture.changeSet(), rowVersion: 20 });
+		});
+		await page.route(`**${changeSetPath}/items`, async (route) => {
+			const body = route.request().postDataJSON();
+			writes.push(body);
+			if (body.learningGroupId === groupIds[0]) {
+				if (outcome !== 'success') {
+					aConflictPending = true;
+					return reply(route, 'ช่วงความรับผิดชอบเปลี่ยนแล้ว', 409);
+				}
+				await a.promise;
+				try {
+					await reply(route, { ...fixture.changeSet(), rowVersion: 21 });
+				} finally {
+					oldCompletion.release();
+				}
+				return;
+			} else await b.promise;
+			return reply(route, { ...fixture.changeSet(), rowVersion: 21 });
+		});
+		const start = new URL(fixture.detail, 'https://schoolorbit.invalid');
+		start.searchParams.set('groupId', groupIds[1]);
+		try {
+			await page.goto(start.pathname + start.search);
+			await expect(page.getByTestId('delivery-selected-group-ready')).toContainText(
+				'กลุ่มที่คงไว้'
+			);
+			await page.getByRole('button', { name: /^กลุ่มร่วมสองห้อง/ }).click();
+			await expect(page).toHaveURL(new RegExp(`groupId=${groupIds[0]}`));
+			await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+			const first = await chooseEpisodeTeacher(page, 'ครูสำหรับกลุ่ม ก');
+			await first.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+			await expect.poll(() => writes.length).toBe(1);
+			if (outcome !== 'success') await expect.poll(() => aConflictStarted).toBe(true);
+			await page.goBack();
+			await expect(page).toHaveURL(new RegExp(`groupId=${groupIds[1]}`));
+			await expect(first).toHaveCount(0);
+			await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+			const second = await chooseEpisodeTeacher(page, 'ครูสำหรับกลุ่ม ข');
+			if (outcome !== 'conflict-draft') {
+				await second.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+				await expect.poll(() => writes.length).toBe(2);
+			}
+
+			a.release();
+			await oldCompletion.promise;
+			await page.evaluate(
+				() =>
+					new Promise<void>((resolve) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+					)
+			);
+			if (outcome === 'conflict-draft') {
+				await expect(
+					second.getByRole('combobox', { name: 'ค้นหาชื่อครู', exact: true })
+				).toContainText('ครูสำหรับกลุ่ม ข');
+				await second.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+				await expect.poll(() => writes.length).toBe(2);
+			}
+			await page.keyboard.press('Escape');
+
+			await expect(second).toBeVisible();
+			await expect(second.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toBeDisabled();
+			await expect(
+				second.getByRole('combobox', { name: 'ค้นหาชื่อครู', exact: true })
+			).toContainText('ครูสำหรับกลุ่ม ข');
+			await expect(second.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+			await expect(second.getByRole('alert')).toHaveCount(0);
+			expect(writes).toHaveLength(2);
+			expect(writes[1]).toMatchObject({
+				learningGroupId: groupIds[1],
+				teacherId: episodeTeacherIds[1],
+				changeSetRowVersion: 20
+			});
+			b.release();
+			await expect(second).toHaveCount(0);
+			expect(writes).toHaveLength(2);
+		} finally {
+			a.release();
+			b.release();
+		}
+	});
+
+test('scoped teacher changes preserve a conflict draft and retry only the read after an accepted save', async ({
+	page
+}) => {
+	const fixture = await mockContextActions(page, 'course');
+	fixture.management.teachers = [{ id: episodeTeacherIds[0], name: 'ครูสำหรับกลุ่ม ก' }];
+	const changeSetPath = `/api/academic/term-change-sets/${ids.changeSet}`;
+	const writes: { learningGroupId: string; teacherId: string; changeSetRowVersion: number }[] = [];
+	let accepted = false,
+		failedRead = false;
+	await page.route(`**${changeSetPath}`, (route) =>
+		reply(route, { ...fixture.changeSet(), rowVersion: writes.length ? 8 : 7 })
+	);
+	await page.route(`**${changeSetPath}/items`, (route) => {
+		writes.push(route.request().postDataJSON());
+		if (writes.length === 1) return reply(route, 'ช่วงความรับผิดชอบเปลี่ยนแล้ว', 409);
+		accepted = true;
+		return reply(route, { ...fixture.changeSet(), rowVersion: 9 });
+	});
+	await page.route(`**/api/academic/delivery-versions/${ids.version}`, (route) => {
+		if (accepted && !failedRead) {
+			failedRead = true;
+			return reply(route, 'โหลดครูที่บันทึกแล้วไม่สำเร็จ', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(fixture.detail);
+	await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+	const dialog = await chooseEpisodeTeacher(page, 'ครูสำหรับกลุ่ม ก');
+	await dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText('กรุณาตรวจรายการล่าสุด');
+	await expect(dialog.getByRole('combobox', { name: 'ค้นหาชื่อครู', exact: true })).toContainText(
+		'ครูสำหรับกลุ่ม ก'
+	);
+	await dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+	await expect(dialog.getByRole('status')).toContainText('บันทึกการเปลี่ยนครูแล้ว');
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true })
+	).toBeDisabled();
+	expect(writes).toHaveLength(2);
+	expect(writes[1]).toMatchObject({
+		learningGroupId: groupIds[0],
+		teacherId: episodeTeacherIds[0],
+		changeSetRowVersion: 8
+	});
+	await dialog.getByRole('button', { name: 'แสดงครูที่บันทึกแล้ว', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(writes).toHaveLength(2);
 });
