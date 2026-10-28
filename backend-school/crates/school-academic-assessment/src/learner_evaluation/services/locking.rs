@@ -24,6 +24,7 @@ struct LockSnapshot {
 
 pub async fn read_lock_readiness(
     pool: &PgPool,
+    result_locks: &dyn crate::ports::ResultLockPort,
     actor: &ActorContext,
     ctx: &EvaluationContext,
 ) -> Result<Vec<LearnerEvaluationSubjectLockReadiness>, AppError> {
@@ -45,6 +46,27 @@ pub async fn read_lock_readiness(
         .execute()
         .await?;
     validate_context(&mut tx, ctx).await?;
+    let date = current_obligation_date(&mut tx, ctx).await?;
+    let candidates: Vec<Uuid> = DbSession::new(&mut *tx).scalar(
+        "academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
+        "SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course' JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' ORDER BY g.id LIMIT $3",
+    ).bind(ctx.academic_term_id).bind(ctx.academic_year_id)
+        .bind((crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT+1) as i64).fetch_all().await?;
+    if candidates.len() > crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT {
+        return Err(AppError::ValidationError(
+            "Learner evaluation raw group scan exceeds its hard limit".into(),
+        ));
+    }
+    let retained = result_locks
+        .current_obligation_group_ids(
+            &mut tx,
+            ctx.academic_term_id,
+            ctx.academic_year_id,
+            date,
+            &candidates,
+        )
+        .await?;
+
     let rows: Vec<LockReadinessRow> = DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
         r#"WITH domains(domain) AS (
                VALUES ('desirable_characteristic'::text), ('reading_thinking_writing'::text)
@@ -59,7 +81,7 @@ pub async fn read_lock_readiness(
                JOIN course_offering_details detail
                  ON detail.learning_offering_id=offering.id
                WHERE group_row.academic_term_id=$1 AND group_row.academic_year_id=$2
-                 AND group_row.status<>'closed'
+                 AND group_row.status<>'closed' AND group_row.id=ANY($3)
            )
            SELECT subject_groups.subject_id,subject_groups.code,subject_groups.name,
                   domains.domain,subject_groups.learning_group_id,subject_groups.group_name,
@@ -100,12 +122,8 @@ pub async fn read_lock_readiness(
                               ON term.id=teacher.academic_term_id
                             WHERE teacher.learning_group_id=subject_groups.learning_group_id
                               AND teacher.role='primary'
-                              AND teacher.starts_on<=LEAST(
-                                  GREATEST(current_date,term.start_date),term.planned_end_date
-                              )
-                              AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(
-                                  GREATEST(current_date,term.start_date),term.planned_end_date
-                              ))
+                              AND teacher.starts_on<=$4::date
+                              AND (teacher.ends_on IS NULL OR teacher.ends_on>=$4::date)
                             ORDER BY teacher.id LIMIT 1
                         ),false)
                         AND confirmation.source_snapshot->'roster'=COALESCE((
@@ -132,7 +150,7 @@ pub async fn read_lock_readiness(
                         ON earlier_group.id=earlier_member.learning_group_id
                        AND earlier_group.academic_term_id=$1
                        AND earlier_group.academic_year_id=$2
-                       AND earlier_group.status<>'closed'
+                       AND earlier_group.status<>'closed' AND earlier_group.id=ANY($3)
                       JOIN course_offering_details earlier_detail
                         ON earlier_detail.learning_offering_id=earlier_group.learning_offering_id
                        AND earlier_detail.subject_id=subject_groups.subject_id
@@ -154,6 +172,8 @@ pub async fn read_lock_readiness(
     )
     .bind(ctx.academic_term_id)
     .bind(ctx.academic_year_id)
+    .bind(&retained)
+    .bind(date)
     .fetch_all()
     .await?;
     if rows.len() > 5000 {
@@ -207,6 +227,7 @@ pub async fn read_lock_readiness(
 
 pub async fn lock_subject(
     pool: &PgPool,
+    result_locks: &dyn crate::ports::ResultLockPort,
     actor: &ActorContext,
     subject: Uuid,
     domain: LearnerEvaluationDomain,
@@ -217,7 +238,9 @@ pub async fn lock_subject(
             "School learner evaluation lock permission is required".into(),
         ));
     }
-    let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
+    let (mut tx, scope) =
+        begin_subject_with_selection(pool, actor, subject, domain, ctx, true, Some(result_locks))
+            .await?;
     if scope.locked {
         return Err(AppError::Conflict(
             "Subject evaluation domain is already locked".into(),

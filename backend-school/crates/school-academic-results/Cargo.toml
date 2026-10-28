@@ -8,6 +8,7 @@ api-docs = [
     "dep:utoipa",
     "school-academic-assessment/api-docs",
     "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
 ]
 
 [dependencies]
@@ -18,6 +19,7 @@ chrono = { workspace = true }
 hex = { workspace = true }
 school-academic-assessment = { workspace = true }
 school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-permissions = { workspace = true }

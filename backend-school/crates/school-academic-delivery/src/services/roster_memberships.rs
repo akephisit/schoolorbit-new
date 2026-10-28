@@ -474,3 +474,29 @@ fn map_membership_overlap(error: sqlx::Error) -> AppError {
         AppError::DbError(error)
     }
 }
+
+/// Presence of any membership episode is an established learner obligation;
+/// removed and ended episodes remain history rather than becoming unused groups.
+pub async fn groups_with_established_history_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    groups: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    if groups.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let requested: std::collections::HashSet<_> = groups.iter().copied().collect();
+    let rows:Vec<(Uuid,bool)>=DbSession::new(connection).query_as("academic_delivery.services.roster_memberships.groups_with_established_history_on_connection",
+        "SELECT g.id,EXISTS(SELECT 1 FROM learning_group_students member WHERE member.learning_group_id=g.id) FROM learning_groups g WHERE g.id=ANY($1) AND g.academic_term_id=$2 AND g.academic_year_id=$3 ORDER BY g.id")
+        .bind(groups).bind(academic_term_id).bind(academic_year_id).fetch_all().await?;
+    if rows.len() != requested.len() {
+        return Err(AppError::Conflict(
+            "Membership history groups do not match the academic context".into(),
+        ));
+    }
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, exists)| exists.then_some(id))
+        .collect())
+}

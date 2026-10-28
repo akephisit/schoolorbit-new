@@ -3,6 +3,7 @@ import {
 	getLearningGroup,
 	getLearningGroupRosterTracking,
 	getDeliveryVersion,
+	getHomeroomDeliveryWorkspace,
 	listDeliveryVersions,
 	getLearningOffering,
 	listDatedRosterMemberships,
@@ -57,6 +58,29 @@ export const load: PageLoad = async ({ fetch, params, url }) => {
 				)
 			: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
 	});
+	const audienceWorkspace = deliveryVersion.then(async (result) => {
+		if (
+			!result.ok ||
+			!result.data ||
+			!result.data.snapshot.offerings.some(
+				(item) => item.id === offeringId && item.homeroomIds.length > 0
+			)
+		)
+			return null;
+		const version = result.data;
+		return {
+			academicYearId: version.academicYearId,
+			academicTermId: version.academicTermId,
+			deliveryVersionId: version.id,
+			result: await captureRouteLoad(
+				getHomeroomDeliveryWorkspace(version.academicYearId, version.academicTermId, {
+					deliveryVersionId: version.id,
+					requestFetch: fetch
+				}),
+				'โหลดชื่อห้องในรุ่นเปิดสอนไม่สำเร็จ'
+			)
+		};
+	});
 	const loadSelectedGroup = (groupId: string): Promise<RouteLoadResult<LearningGroup | null>> =>
 		captureRouteLoad(
 			getLearningGroup(groupId, { requestFetch: fetch }).then((group) => {
@@ -107,6 +131,7 @@ export const load: PageLoad = async ({ fetch, params, url }) => {
 		}
 	}
 	return {
+		audienceWorkspace,
 		rosterTracking,
 		title: 'รายละเอียดรายการเปิดสอน',
 		offeringId,
