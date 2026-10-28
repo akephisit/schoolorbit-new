@@ -393,7 +393,7 @@ test('continuing an already-open activity in a draft preserves the originating f
 }) => {
 	const api = await mockDeliveryNavigation(page, { manager: true, continuation: true });
 	await page.goto(managerOrigin('homerooms', ids.sourceVersion));
-	await page.getByRole('button', { name: 'เพิ่มในร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
 	await expectRequestedContext(page);
 	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
