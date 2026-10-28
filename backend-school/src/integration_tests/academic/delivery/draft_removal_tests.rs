@@ -1912,6 +1912,31 @@ async fn http_pending_three_group_removal(command: &str) {
     if command == "add" {
         seed_shared_draft_inclusion(&pool, &sibling, &context, offering.id).await;
     }
+    let wrong = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        2,
+        "pending-removal-wrong-draft",
+    )
+    .await;
+    if draft_version(&pool, wrong.id)
+        .await
+        .snapshot
+        .offerings
+        .iter()
+        .any(|row| row.id == offering.id)
+    {
+        change_sets::remove_draft_offering(
+            &pool,
+            context.teacher_id,
+            wrong.id,
+            offering.id,
+            removal_request(&pool, wrong.id).await,
+        )
+        .await
+        .unwrap();
+    }
     let sibling_before = serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap();
     let preserved_before = preserved_facts(&pool).await;
     let group_id = course_groups[0].id;
@@ -1967,6 +1992,36 @@ async fn http_pending_three_group_removal(command: &str) {
                 .groups;
             assert_eq!(remaining.len(), 2);
             assert!(remaining.iter().all(|group| group.id != group_id));
+            let cleared_group:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND learning_group_id=$2").bind(revision.id).bind(group_id).fetch_one(&pool).await.unwrap();
+            assert_eq!(cleared_group, 0);
+            let excluded_groups: Vec<Uuid> = sqlx::query_scalar(
+                "SELECT excluded_group_ids FROM academic_term_change_sets WHERE id=$1",
+            )
+            .bind(revision.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(excluded_groups.contains(&group_id));
+            if command == "teacher" {
+                let retained_teacher:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND learning_group_id=$2").bind(revision.id).bind(course_groups[1].id).fetch_one(&pool).await.unwrap();
+                assert_eq!(
+                    retained_teacher, 1,
+                    "another group's pending teacher command survives group removal"
+                );
+            }
+            let before_wrong = pending_removal_facts(&pool).await;
+            let wrong_path = format!(
+                "/api/academic/term-change-sets/{}/offerings/{}",
+                wrong.id, offering.id
+            );
+            let (wrong_status, _) = http_remove(
+                delivery_router(&pool, context.teacher_id, permissions),
+                &wrong_path,
+                &removal_request(&pool, wrong.id).await,
+            )
+            .await;
+            assert_eq!(wrong_status, StatusCode::CONFLICT);
+            assert_eq!(before_wrong, pending_removal_facts(&pool).await);
             // Once the duplicate preflight is repaired, ordinary permission and stale guards must surface.
             for (permission, stale_parent, stale_target, expected) in [
                 (vec![], false, false, StatusCode::FORBIDDEN),
@@ -1992,6 +2047,14 @@ async fn http_pending_three_group_removal(command: &str) {
                 .offerings
                 .iter()
                 .all(|row| row.id != offering.id));
+            let excluded_offerings: Vec<Uuid> = sqlx::query_scalar(
+                "SELECT excluded_offering_ids FROM academic_term_change_sets WHERE id=$1",
+            )
+            .bind(revision.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(excluded_offerings.contains(&offering.id));
             let retained:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND learning_offering_id=$2").bind(revision.id).bind(unrelated.id).fetch_one(&pool).await.unwrap();
             assert_eq!(retained, 1, "unrelated pending commands survive");
             let cleared:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1 AND (learning_offering_id=$2 OR learning_group_id=ANY($3))").bind(revision.id).bind(offering.id).bind(course_groups.iter().map(|group|group.id).collect::<Vec<_>>()).fetch_one(&pool).await.unwrap();

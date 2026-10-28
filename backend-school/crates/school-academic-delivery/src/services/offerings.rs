@@ -1001,6 +1001,14 @@ pub async fn signal_descriptors_on_connection(
     if offering_ids.is_empty() {
         return Ok(Vec::new());
     }
+    // SQL ANY selects each resource once. Preserve the first requested order
+    // while resolving duplicate IDs to that same descriptor, not a missing row.
+    let mut seen = HashSet::new();
+    let offering_ids = offering_ids
+        .iter()
+        .copied()
+        .filter(|id| seen.insert(*id))
+        .collect::<Vec<_>>();
     let rows: Vec<LearningOfferingSignalDescriptor> = DbSession::new(connection)
         .query_as(
             "academic_delivery.services.offerings.signal_descriptors_on_connection",
@@ -1009,7 +1017,7 @@ pub async fn signal_descriptors_on_connection(
            WHERE id = ANY($1)
            ORDER BY id"#,
         )
-        .bind(offering_ids)
+        .bind(&offering_ids)
         .fetch_all()
         .await?;
     let mut rows_by_id: HashMap<Uuid, LearningOfferingSignalDescriptor> = rows
