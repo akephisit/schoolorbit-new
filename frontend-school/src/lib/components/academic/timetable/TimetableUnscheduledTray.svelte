@@ -4,6 +4,7 @@
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
 		TimetableBlockWorkspaceLearningGroup,
+		TimetableBlockWorkspaceHomeroom,
 		TimetableBlockWorkspaceRoom,
 		TimetableBlockWorkspaceStaff,
 		TimetableOrdinaryDemand,
@@ -25,6 +26,7 @@
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
+		homerooms,
 		rooms,
 		staff,
 		disabled = false,
@@ -36,6 +38,7 @@
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
+		homerooms: TimetableBlockWorkspaceHomeroom[];
 		rooms: TimetableBlockWorkspaceRoom[];
 		staff: TimetableBlockWorkspaceStaff[];
 		disabled?: boolean;
@@ -57,6 +60,7 @@
 	let synchronizedRoomChoices = $state<Record<string, string | null>>({});
 	let synchronizedTeacherChoices = $state<Record<string, string[]>>({});
 	const groupById = $derived(new Map(groups.map((group) => [group.id, group])));
+	const homeroomById = $derived(new Map(homerooms.map((homeroom) => [homeroom.id, homeroom])));
 	const availableRoomIds = $derived(
 		new Set(rooms.filter((room) => room.status.toUpperCase() === 'ACTIVE').map((room) => room.id))
 	);
@@ -64,6 +68,12 @@
 	const visibleSynchronized = $derived(
 		synchronizedDemands.filter((demand) => demand.scheduledPeriods < demand.requiredPeriods)
 	);
+
+	function targetNames(homeroomIds: string[]): string {
+		return [...new Set(homeroomIds)]
+			.map((id) => homeroomById.get(id)?.name ?? 'ไม่พบชื่อห้องประจำชั้น')
+			.join(', ');
+	}
 
 	function selectedInstructorIds(demand: TimetableOrdinaryDemand): string[] {
 		const saved = instructorChoices[demand.learningGroupId];
@@ -238,6 +248,12 @@
 									}}
 								>
 									<p class="text-xs font-medium">{demand.offeringName}</p>
+									<p
+										class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+										data-timetable-demand-targets
+									>
+										{targetNames(demand.intendedHomeroomIds)}
+									</p>
 									<p class="mt-1 text-[0.65rem] text-muted-foreground">
 										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
 									</p>
@@ -305,6 +321,14 @@
 										<p class="text-[0.65rem] font-semibold text-primary">{demand.offeringCode}</p>
 									{/if}
 									<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
+									{#if demand.homeroomIds.length > 0}
+										<p
+											class="mt-1 break-words text-[0.65rem] text-muted-foreground"
+											data-timetable-demand-targets
+										>
+											{targetNames(demand.homeroomIds)}
+										</p>
+									{/if}
 								</button>
 							</div>
 							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
