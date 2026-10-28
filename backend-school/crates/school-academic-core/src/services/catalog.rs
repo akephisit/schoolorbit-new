@@ -2281,6 +2281,7 @@ fn map_catalog_write_error(error: sqlx::Error) -> AppError {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SubjectVersionSubjectGroup {
     pub subject_version_id: Uuid,
+    pub subject_type: String,
     pub subject_group_id: Uuid,
     pub name: String,
     pub display_order: Option<i32>,
@@ -2312,7 +2313,8 @@ pub async fn subject_groups_for_versions_on_connection(
     Ok(DbSession::new(connection)
         .query_as(
             "academic_core.services.catalog.subject_groups_for_versions_on_connection",
-            "SELECT version.id AS subject_version_id, sg.id AS subject_group_id,
+            "SELECT version.id AS subject_version_id, version.type AS subject_type,
+                sg.id AS subject_group_id,
                 sg.name_th AS name, sg.display_order
          FROM subject_versions version
          JOIN subjects subject ON subject.id = version.subject_id
