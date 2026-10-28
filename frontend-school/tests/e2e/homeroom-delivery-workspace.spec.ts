@@ -2208,13 +2208,17 @@ test('large delivery changes stay collapsed and bound offering, resource and dif
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 	);
-	await expect(page.getByTestId('delivery-change-summary')).toContainText(
-		'20 กลุ่มรายการ · 120 รายการย่อย'
-	);
 	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
-	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
+	const details = page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true });
+	await expect(details).toBeVisible();
+	await details.click();
+	const dialog = page.getByRole('dialog', { name: 'รายละเอียดการเปลี่ยนแปลง', exact: true });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByTestId('delivery-change-summary')).toHaveText(
+		'20 กลุ่มรายการ · 120 รายการย่อย'
+	);
+	await expect(dialog.getByTestId('delivery-change-offering')).toHaveCount(8);
 	const first = page.getByTestId('delivery-change-offering').first();
 	await first.getByRole('button', { name: /ดูรายละเอียด/ }).click();
 	await expect(first.getByText(/ครูผู้สอน:/)).toHaveCount(8);
