@@ -4896,6 +4896,51 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
 }
 
 #[tokio::test]
+async fn delivery_signal_descriptors_preserve_unique_request_order_and_reject_unknown_ids() {
+    let pool = prepare_delivery_runtime_fixture("delivery_signal_descriptor_identity").await;
+    let ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM learning_offerings ORDER BY id LIMIT 2")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ids.len(), 2);
+    let known = offerings::signal_descriptors(&pool, &ids).await.unwrap();
+    let signature = |descriptor: &school_academic_delivery::services::offerings::LearningOfferingSignalDescriptor| {
+        (descriptor.learning_offering_id, descriptor.academic_term_id, descriptor.row_version)
+    };
+    let requested = [ids[1], ids[0], ids[1], ids[0]];
+    let expected = vec![signature(&known[1]), signature(&known[0])];
+    let descriptors = offerings::signal_descriptors(&pool, &requested)
+        .await
+        .unwrap();
+    assert_eq!(
+        descriptors.iter().map(signature).collect::<Vec<_>>(),
+        expected
+    );
+    let mut connection = pool.acquire().await.unwrap();
+    let descriptors = offerings::signal_descriptors_on_connection(&mut connection, &requested)
+        .await
+        .unwrap();
+    assert_eq!(
+        descriptors.iter().map(signature).collect::<Vec<_>>(),
+        expected
+    );
+    let missing = Uuid::from_u128(u128::MAX);
+    assert!(!ids.contains(&missing));
+    for requested in [vec![ids[0], missing, ids[0]], vec![missing, missing]] {
+        assert!(matches!(
+            offerings::signal_descriptors_on_connection(&mut connection, &requested).await,
+            Err(AppError::InternalServerError(_))
+        ));
+    }
+    drop(connection);
+    assert!(matches!(
+        offerings::signal_descriptors(&pool, &[ids[1], missing, ids[1]]).await,
+        Err(AppError::InternalServerError(_))
+    ));
+}
+
+#[tokio::test]
 async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manual_conflicts() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_preparation_groups").await;
     let context = planning_runtime_context(&pool).await;

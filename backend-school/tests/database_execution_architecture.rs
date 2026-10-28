@@ -200,6 +200,11 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-notifications/src/devices.rs",
             &["cleanup", "register_with_key"],
         ),
+        // Draft removal owns observed locks/mutation/audit/commit, then a fresh response read.
+        (
+            "school-academic-delivery/src/services/change_sets/draft_removal.rs",
+            &["remove_resource"],
+        ),
         // Observation status owns locks+mutation+commit, then a fresh response read.
         (
             "school-supervision/src/services/observations.rs",
@@ -762,10 +767,14 @@ fn production_database_execution_uses_bound_sessions() {
 }
 
 fn inspect_snippet(source: &str) -> BTreeSet<String> {
+    inspect_snippet_at("runtime.rs", source)
+}
+
+fn inspect_snippet_at(file: &str, source: &str) -> BTreeSet<String> {
     let mut problems = BTreeSet::new();
     let syntax = syn::parse_file(source).unwrap();
     Scanner {
-        file: PathBuf::from("runtime.rs"),
+        file: PathBuf::from(file),
         module_dir: PathBuf::new(),
         function: String::new(),
         api_docs: false,
@@ -776,6 +785,46 @@ fn inspect_snippet(source: &str) -> BTreeSet<String> {
     }
     .visit_file(&syntax);
     problems
+}
+
+#[test]
+fn guard_private_work_entries_require_exact_owner_and_function() {
+    let owner = "crates/school-academic-delivery/src/services/change_sets/draft_removal.rs";
+    let entry = "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; tx.commit().await?; get_change_set(pool, id).await?; }";
+    assert!(inspect_snippet_at(owner, entry).is_empty());
+
+    let helper = entry.replace("fn remove_resource(", "fn hydrate_removed_resources(");
+    let other_owner = "crates/school-academic-delivery/src/services/change_sets/unregistered.rs";
+    for (file, source) in [(owner, helper.as_str()), (other_owner, entry)] {
+        let problems = inspect_snippet_at(file, source);
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("private query helper retains a pool capability")),
+            "unregistered private pool helper accepted at {file}: {source}"
+        );
+    }
+}
+
+#[test]
+fn guard_private_work_entries_keep_native_and_nested_pool_guards() {
+    let owner = "crates/school-academic-delivery/src/services/change_sets/draft_removal.rs";
+    for (source, expected) in [
+        (
+            "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; sqlx::query(SQL).execute(&mut *tx).await?; tx.commit().await?; }",
+            "native execution accepts an executor",
+        ),
+        (
+            "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; let connection = TenantPool::observed_checkout_pool(pool, OP).await?; tx.commit().await?; }",
+            "pool helper observed_checkout_pool called while a connection or transaction is held",
+        ),
+    ] {
+        let problems = inspect_snippet_at(owner, source);
+        assert!(
+            problems.iter().any(|problem| problem.contains(expected)),
+            "registered work entry bypassed {expected}: {problems:?}"
+        );
+    }
 }
 
 #[test]
