@@ -296,7 +296,7 @@
 														{firstChange.kind === 'added'
 															? 'เพิ่ม'
 															: firstChange.kind === 'removed'
-																? 'หยุด'
+																? 'ลบออกจากรุ่น'
 																: 'เปลี่ยน'}
 														{firstChange.label}
 													</p>
