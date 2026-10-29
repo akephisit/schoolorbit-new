@@ -471,6 +471,20 @@ async fn delivery_draft_catalog_options_expose_authoritative_subject_type() {
 }
 
 pub(super) fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) -> axum::Router {
+    academic_router(
+        pool,
+        actor,
+        permissions,
+        school_academic_http::delivery::routes(),
+    )
+}
+
+fn academic_router(
+    pool: &PgPool,
+    actor: Uuid,
+    permissions: &[&str],
+    routes: axum::Router<school_academic_http::state::AcademicHttpState>,
+) -> axum::Router {
     use school_auth::{
         config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey,
         session_service::AuthenticatedSession,
@@ -521,7 +535,7 @@ pub(super) fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) 
         lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
     };
     axum::Router::new()
-        .nest("/api/academic", school_academic_http::delivery::routes())
+        .nest("/api/academic", routes)
         .layer(axum::Extension(session))
         .with_state(state)
 }
@@ -2148,4 +2162,128 @@ async fn delivery_room_scope_last_course_group_unlinks_its_room() {
     .unwrap();
     let after = draft_version(&pool, revision.id).await;
     assert!(after.snapshot.offerings.iter().all(|row|row.id!=offering.id),"removing the last course group must unlink its only room and omit the empty-audience offering");
+}
+
+#[tokio::test]
+async fn timetable_placement_preview_http_authorizes_persisted_source_resources() {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::post,
+    };
+    use school_academic_timetable::{
+        models::timetable_block::{
+            CreateStructuralTimetableBlocksRequest, TimetableStructuralKind,
+            TimetableStructuralSlotInput,
+        },
+        services::timetable_block_service,
+    };
+    use school_permissions::registry::codes;
+    use tower::ServiceExt;
+
+    let pool = prepare_delivery_runtime_fixture("timetable_preview_source_http").await;
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (source_version, term, bell, delivery): (Uuid, Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT version.id,version.academic_term_id,version.bell_schedule_id,version.delivery_version_id
+         FROM academic_timetable_versions version
+         JOIN academic_terms term ON term.id=version.academic_term_id
+         WHERE version.status='published' AND term.status='active'
+         ORDER BY version.effective_from,version.id LIMIT 1",
+    ).fetch_one(&pool).await.unwrap();
+    let version = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,status,source_version_id,bell_schedule_id,delivery_version_id,created_by)
+        SELECT $1,academic_term_id,academic_year_id,'draft',id,bell_schedule_id,delivery_version_id,$3 FROM academic_timetable_versions WHERE id=$2")
+        .bind(version).bind(source_version).bind(actor).execute(&pool).await.unwrap();
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM academic_delivery_versions WHERE id=$1)"
+    )
+    .bind(delivery)
+    .fetch_one(&pool)
+    .await
+    .unwrap());
+    sqlx::query("INSERT INTO bell_schedule_periods(id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days)
+        SELECT gen_random_uuid(),$1,'คาบทดสอบ',TIME '09:00',TIME '09:50',1,'MON-FRI'
+        WHERE NOT EXISTS(SELECT 1 FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND order_index=1)")
+        .bind(bell).execute(&pool).await.unwrap();
+    let period: Uuid = sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 1")
+        .bind(bell).fetch_one(&pool).await.unwrap();
+    let block = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor,
+        CreateStructuralTimetableBlocksRequest {
+            timetable_version_id: version,
+            academic_term_id: term,
+            structural_kind: TimetableStructuralKind::Other,
+            title: "คาบพิเศษต้องใช้สิทธิ์ระดับโรงเรียน".into(),
+            note: None,
+            slots: vec![TimetableStructuralSlotInput {
+                day_of_week: "MON".into(),
+                bell_schedule_period_id: period,
+            }],
+            homeroom_ids: vec![],
+            teacher_ids: vec![actor],
+            all_homerooms: false,
+            all_teachers: false,
+            room_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let before = serde_json::to_value(&block).unwrap();
+    // The supplied course candidate hides the actual source's structural scope.
+    // Its version and own teacher would pass the assigned resource policy alone.
+    let payload = json!({
+        "timetableVersionId":version,"academicTermId":term,
+        "source":{"kind":"existing_block","blockId":block.id,"rowVersion":block.row_version},
+        "candidate":{"blockKind":"course","learningGroupId":null,"learningOfferingId":null,
+            "roomId":null,"homeroomIds":[],"teacherIds":[actor],"instructorIds":[]},
+        "targetDayOfWeek":"TUE","targetBellSchedulePeriodId":period,
+        "expectedTargetBlockId":null,"expectedTargetRowVersion":null,
+    });
+    for (permission, expected) in [
+        (
+            codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED,
+            StatusCode::FORBIDDEN,
+        ),
+        (codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL, StatusCode::OK),
+    ] {
+        let routes = axum::Router::new().route(
+            "/timetable-blocks/placement-preview",
+            post(school_academic_http::handlers::timetable_blocks::preview_placement),
+        );
+        let response = academic_router(&pool, actor, &[permission], routes)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/academic/timetable-blocks/placement-preview")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        assert_eq!(status, expected, "{}", String::from_utf8_lossy(&body));
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["success"], expected == StatusCode::OK);
+        if expected == StatusCode::OK {
+            assert_eq!(body["data"]["state"], "move");
+            assert_eq!(body["data"]["conflicts"], json!([]));
+        } else {
+            assert!(body.get("data").is_none_or(Value::is_null));
+        }
+        assert_eq!(
+            before,
+            serde_json::to_value(
+                timetable_block_service::get_block(&pool, block.id)
+                    .await
+                    .unwrap()
+            )
+            .unwrap()
+        );
+    }
 }

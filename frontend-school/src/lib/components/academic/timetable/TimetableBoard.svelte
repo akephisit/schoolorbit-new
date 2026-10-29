@@ -5,6 +5,7 @@
 		TimetableBoardView
 	} from '#lib/academic/timetable/board-state.js';
 	import { blocksForTimetableCell } from '#lib/academic/timetable/board-state.js';
+	import type { TimetablePlacementReasons } from '#lib/academic/timetable/placement-reasons.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
 	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
 	import { buildSchedulerTargetLabel } from '#lib/academic/timetable/block-display.js';
@@ -28,6 +29,7 @@
 		onActivateIntent,
 		onHoverIntent,
 		placementPreview,
+		placementReasons,
 		isBlockPending,
 		isCellPendingRemoval,
 		onSelectBlock,
@@ -45,6 +47,7 @@
 		onDropIntent?: (dayOfWeek: string, periodId: string) => void;
 		onActivateIntent?: (dayOfWeek: string, periodId: string) => void;
 		onHoverIntent?: (dayOfWeek: string, periodId: string) => void;
+		placementReasons?: (dayOfWeek: string, periodId: string) => TimetablePlacementReasons | null;
 		placementPreview?: (dayOfWeek: string, periodId: string) => TimetablePlacementCard | null;
 		isBlockPending?: (blockId: string) => boolean;
 		isCellPendingRemoval?: (dayOfWeek: string, periodId: string) => boolean;
@@ -131,6 +134,7 @@
 								periodLabel={periodLabel(period)}
 								state={currentCellState}
 								disabled={!canEdit}
+								placementReasons={placementReasons?.(day.id, period.id) ?? null}
 								placementCard={placementPreview?.(day.id, period.id) ?? null}
 								pendingRemoval={isCellPendingRemoval?.(day.id, period.id) ?? false}
 								onHoverIntent={() => onHoverIntent?.(day.id, period.id)}
