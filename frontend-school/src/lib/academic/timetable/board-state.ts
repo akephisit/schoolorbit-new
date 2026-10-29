@@ -3,6 +3,7 @@ import type {
 	TimetableBlockPlacementCandidate,
 	TimetableBlockPlacementSource,
 	TimetableBlockPlacementState,
+	TimetableBlockPlacementPreview,
 	TimetableBlockWorkspace,
 	TimetableOrdinaryDemand
 } from '../../api/timetable';
@@ -10,7 +11,9 @@ import { orderTimetableHomerooms } from './demand-ordering.ts';
 
 export type TimetableBoardView = 'homeroom' | 'learning_group' | 'teacher';
 export type TimetablePageView = TimetableBoardView | 'wholeSchool';
-export type LocalTimetableConflict = 'learning_group' | 'homeroom' | 'teacher' | 'room';
+export type LocalTimetableConflict = TimetableBlockPlacementPreview['conflicts'][number];
+type ResourceKind = 'learning_group' | 'homeroom' | 'teacher' | 'room';
+type PlacementResources = Record<ResourceKind, string[]>;
 
 export interface TimetableBoardRow {
 	id: string;
@@ -181,29 +184,57 @@ export function localPlacementPreview(
 	state: TimetableBoardState,
 	request: LocalPlacementRequest
 ): LocalPlacementPreview {
-	const sourceBlockId =
-		request.source.kind === 'existing_block' ? request.source.blockId : undefined;
+	const sourceBlock =
+		request.source.kind === 'existing_block'
+			? state.blocksById.get(request.source.blockId)
+			: undefined;
+	if (
+		sourceBlock?.dayOfWeek === request.dayOfWeek &&
+		sourceBlock.bellSchedulePeriodId === request.bellSchedulePeriodId
+	) {
+		return { state: 'source', targetBlockId: null, conflicts: [] };
+	}
 	const slotBlocks = state.blocks.filter(
 		(block) =>
-			block.id !== sourceBlockId &&
+			block.isActive !== false &&
+			block.id !== sourceBlock?.id &&
 			block.dayOfWeek === request.dayOfWeek &&
 			block.bellSchedulePeriodId === request.bellSchedulePeriodId
 	);
 	const targetBlocks = slotBlocks.filter((block) =>
 		blockBelongsToRow(block, request.view, request.rowId)
 	);
-	const conflicts = localConflicts(state, request.candidate, slotBlocks);
-
-	if (targetBlocks.length > 0) {
-		return {
-			state: request.source.kind === 'existing_block' ? 'swap' : 'blocked',
-			targetBlockId: targetBlocks[0]?.id ?? null,
-			conflicts
-		};
+	const target = targetBlocks[0];
+	const resources = candidateResources(state, request.candidate, sourceBlock);
+	if (sourceBlock && target && targetBlocks.length === 1) {
+		const others = state.blocks.filter(
+			(block) => block.isActive !== false && block.id !== sourceBlock.id && block.id !== target.id
+		);
+		const conflicts = [
+			...localConflicts(
+				resources,
+				others.filter(
+					(block) =>
+						block.dayOfWeek === request.dayOfWeek &&
+						block.bellSchedulePeriodId === request.bellSchedulePeriodId
+				)
+			),
+			...localConflicts(
+				blockResources(target),
+				others.filter(
+					(block) =>
+						block.dayOfWeek === sourceBlock.dayOfWeek &&
+						block.bellSchedulePeriodId === sourceBlock.bellSchedulePeriodId
+				),
+				true
+			)
+		];
+		return { state: conflicts.length ? 'blocked' : 'swap', targetBlockId: target.id, conflicts };
 	}
+	const conflicts = localConflicts(resources, slotBlocks);
 	return {
-		state: conflicts.length > 0 ? 'blocked' : 'move',
-		targetBlockId: null,
+		state: conflicts.length || target ? 'blocked' : 'move',
+		targetBlockId: target?.id ?? null,
 		conflicts
 	};
 }
@@ -223,44 +254,64 @@ export function blockBelongsToRow(
 	);
 }
 
-function localConflicts(
+function candidateResources(
 	state: TimetableBoardState,
 	candidate: TimetableBlockPlacementCandidate,
-	blocks: readonly TimetableBlock[]
-): LocalTimetableConflict[] {
-	const candidateHomerooms = candidate.learningGroupId
-		? (state.groupsById.get(candidate.learningGroupId)?.homeroomIds ?? [])
-		: (candidate.homeroomIds ?? []);
-	const candidateTeachers = new Set([
-		...(candidate.instructorIds ?? []),
-		...(candidate.teacherIds ?? [])
-	]);
-	const conflicts = new Set<LocalTimetableConflict>();
+	sourceBlock?: TimetableBlock
+): PlacementResources {
+	if (sourceBlock) return blockResources(sourceBlock);
+	return {
+		learning_group: candidate.learningGroupId ? [candidate.learningGroupId] : [],
+		homeroom: candidate.learningGroupId
+			? (state.groupsById.get(candidate.learningGroupId)?.homeroomIds ??
+				candidate.homeroomIds ??
+				[])
+			: (candidate.homeroomIds ?? []),
+		teacher: [...(candidate.instructorIds ?? []), ...(candidate.teacherIds ?? [])],
+		room: candidate.roomId ? [candidate.roomId] : []
+	};
+}
 
+function blockResources(block: TimetableBlock): PlacementResources {
+	return {
+		learning_group: block.groups.map((group) => group.learningGroupId),
+		homeroom: blockHomeroomIds(block),
+		teacher: blockTeacherIds(block),
+		room: [...block.groups, ...block.homerooms].flatMap((target) =>
+			target.roomId ? [target.roomId] : []
+		)
+	};
+}
+
+function localConflicts(
+	resources: PlacementResources,
+	blocks: readonly TimetableBlock[],
+	returning = false
+): LocalTimetableConflict[] {
+	const conflicts: LocalTimetableConflict[] = [];
+	const labels: Record<ResourceKind, string> = {
+		learning_group: 'กลุ่มเรียนมีคาบอยู่แล้ว',
+		homeroom: 'ห้องเรียนมีคาบอยู่แล้ว',
+		teacher: 'ครูมีคาบอยู่แล้ว',
+		room: 'ห้องสอนถูกใช้อยู่แล้ว'
+	};
 	for (const block of blocks) {
-		if (
-			candidate.learningGroupId &&
-			block.groups.some((group) => group.learningGroupId === candidate.learningGroupId)
-		) {
-			conflicts.add('learning_group');
-		}
-		const blockHomerooms = blockHomeroomIds(block);
-		if (candidateHomerooms.some((homeroomId) => blockHomerooms.includes(homeroomId))) {
-			conflicts.add('homeroom');
-		}
-		if (
-			candidate.roomId &&
-			[...block.groups, ...block.homerooms].some((target) => target.roomId === candidate.roomId)
-		) {
-			conflicts.add('room');
-		}
-		if (blockTeacherIds(block).some((teacherId) => candidateTeachers.has(teacherId))) {
-			conflicts.add('teacher');
+		const occupied = blockResources(block);
+		for (const kind of ['learning_group', 'homeroom', 'teacher', 'room'] as const) {
+			for (const id of new Set(resources[kind])) {
+				if (!occupied[kind].includes(id)) continue;
+				conflicts.push({
+					conflictType: kind,
+					code: `TIMETABLE_${returning ? 'SWAP_RETURN_' : ''}${kind === 'learning_group' ? 'GROUP' : kind.toUpperCase()}_CONFLICT`,
+					message: `${returning ? 'คาบที่สลับกลับ: ' : ''}${labels[kind]}`,
+					existingBlockId: block.id,
+					targetKind: kind === 'learning_group' ? 'group' : kind === 'room' ? null : kind,
+					targetId: id
+				});
+			}
 		}
 	}
-	return ['learning_group', 'homeroom', 'teacher', 'room'].filter((conflict) =>
-		conflicts.has(conflict as LocalTimetableConflict)
-	) as LocalTimetableConflict[];
+	return conflicts;
 }
 
 export function blockTeacherIds(block: TimetableBlock): string[] {

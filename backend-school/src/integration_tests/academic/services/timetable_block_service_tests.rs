@@ -908,6 +908,133 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
             .unwrap()
             .is_empty()
     );
+
+    // A return leg must retain the block group's exact persisted coverage and
+    // instructors even when the client sends an empty structural candidate.
+    use school_academic_timetable::models::timetable_block::{
+        TimetableBlockKind, TimetableBlockPlacementCandidate,
+        TimetableBlockPlacementPreviewRequest, TimetableBlockPlacementSource,
+        TimetableBlockPlacementState,
+    };
+    let structural = |teacher, homeroom_ids, room_id| CreateStructuralTimetableBlocksRequest {
+        timetable_version_id: version_id,
+        academic_term_id: term_id,
+        structural_kind: TimetableStructuralKind::Other,
+        title: "ทดสอบคาบกลุ่มที่สลับกลับ".into(),
+        note: None,
+        slots: vec![TimetableStructuralSlotInput {
+            day_of_week: "MON".into(),
+            bell_schedule_period_id: period_id,
+        }],
+        homeroom_ids,
+        teacher_ids: vec![teacher],
+        all_homerooms: false,
+        all_teachers: false,
+        room_id,
+    };
+    let swap_source = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor_id,
+        structural(actor_id, vec![], None),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let third = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor_id,
+        structural(teacher_id, vec![homeroom_ids[0]], Some(preferred_room_id)),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let preview_request = TimetableBlockPlacementPreviewRequest {
+        timetable_version_id: version_id,
+        academic_term_id: term_id,
+        source: TimetableBlockPlacementSource::ExistingBlock {
+            block_id: swap_source.id,
+            row_version: swap_source.row_version,
+        },
+        candidate: TimetableBlockPlacementCandidate {
+            block_kind: TimetableBlockKind::Structural,
+            learning_group_id: None,
+            learning_offering_id: None,
+            room_id: None,
+            homeroom_ids: vec![],
+            teacher_ids: vec![],
+            instructor_ids: vec![],
+        },
+        target_day_of_week: "TUE".into(),
+        target_bell_schedule_period_id: period_id,
+        expected_target_block_id: Some(moved.id),
+        expected_target_row_version: Some(moved.row_version),
+    };
+    let preview = timetable_block_service::preview_placement(&pool, preview_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert_eq!(preview.conflicts.len(), 3);
+    for (code, id) in [
+        ("TIMETABLE_SWAP_RETURN_TEACHER_CONFLICT", teacher_id),
+        ("TIMETABLE_SWAP_RETURN_ROOM_CONFLICT", preferred_room_id),
+        ("TIMETABLE_SWAP_RETURN_HOMEROOM_CONFLICT", homeroom_ids[0]),
+    ] {
+        assert!(preview
+            .conflicts
+            .iter()
+            .any(|conflict| conflict.code == code
+                && conflict.target_id == Some(id)
+                && conflict.existing_block_id == Some(third.id)));
+    }
+    let mut create_request = preview_request.clone();
+    create_request.source = TimetableBlockPlacementSource::OrdinaryDemand {
+        learning_group_id: group_id,
+        learning_offering_id: offering_id,
+    };
+    create_request.candidate = TimetableBlockPlacementCandidate {
+        block_kind: TimetableBlockKind::Course,
+        learning_group_id: Some(group_id),
+        learning_offering_id: Some(offering_id),
+        room_id: Some(preferred_room_id),
+        homeroom_ids: vec![],
+        teacher_ids: vec![],
+        instructor_ids: vec![teacher_id],
+    };
+    create_request.target_day_of_week = "WED".into();
+    create_request.expected_target_block_id = None;
+    create_request.expected_target_row_version = None;
+    let preview = timetable_block_service::preview_placement(&pool, create_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Source);
+    assert!(preview.conflicts.is_empty());
+    create_request.target_day_of_week = "TUE".into();
+    let preview = timetable_block_service::preview_placement(&pool, create_request)
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_GROUP_CONFLICT"));
+
+    let mut move_request = preview_request;
+    move_request.source = TimetableBlockPlacementSource::ExistingBlock {
+        block_id: moved.id,
+        row_version: moved.row_version,
+    };
+    move_request.target_day_of_week = "MON".into();
+    move_request.expected_target_block_id = None;
+    move_request.expected_target_row_version = None;
+    let preview = timetable_block_service::preview_placement(&pool, move_request)
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert_eq!(preview.conflicts.len(), 3);
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_HOMEROOM_CONFLICT"));
 }
 
 #[tokio::test]
@@ -1328,4 +1455,249 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .iter()
         .flat_map(|period| &period.entries)
         .any(|entry| entry.learning_group_id == Some(group.learning_group_id)));
+}
+
+#[tokio::test]
+async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks() {
+    use school_academic_timetable::models::timetable_block::{
+        SwapTimetableBlocksRequest, TimetableBlockKind, TimetableBlockMutationKind,
+        TimetableBlockPlacementCandidate, TimetableBlockPlacementPreviewRequest,
+        TimetableBlockPlacementSource, TimetableBlockPlacementState,
+    };
+
+    let pool = migrated_pool("timetable_placement_preview_swap").await;
+    let actor = Uuid::parse_str(ACTOR_ID).unwrap();
+    let (version, term, year, bell) = draft_version(&pool).await;
+    let period: Uuid = sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 1")
+        .bind(bell).fetch_one(&pool).await.unwrap();
+    let teachers: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE user_type='staff' AND status='active' ORDER BY id LIMIT 2",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let homerooms: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 2",
+    )
+    .bind(year)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(teachers.len(), 2);
+    assert_eq!(homerooms.len(), 2);
+    let room: Uuid =
+        sqlx::query_scalar("SELECT id FROM rooms WHERE status='ACTIVE' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let structural = |day: &str, teacher, homeroom_ids: Vec<Uuid>, room_id| {
+        CreateStructuralTimetableBlocksRequest {
+            timetable_version_id: version,
+            academic_term_id: term,
+            structural_kind: TimetableStructuralKind::Other,
+            title: "ทดสอบสลับคาบ".into(),
+            note: None,
+            slots: vec![TimetableStructuralSlotInput {
+                day_of_week: day.into(),
+                bell_schedule_period_id: period,
+            }],
+            homeroom_ids,
+            teacher_ids: vec![teacher],
+            all_homerooms: false,
+            all_teachers: false,
+            room_id,
+        }
+    };
+    let source = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor,
+        structural("MON", teachers[0], vec![], None),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let target = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor,
+        structural("TUE", teachers[1], homerooms.clone(), Some(room)),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let third = timetable_block_service::create_structural_blocks(
+        &pool,
+        actor,
+        structural("MON", teachers[1], homerooms, Some(room)),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    // Deliberately omit every candidate reservation: existing block moves/swaps must
+    // check the persisted targets, including both homeroom rows using the same room.
+    let request = TimetableBlockPlacementPreviewRequest {
+        timetable_version_id: version,
+        academic_term_id: term,
+        source: TimetableBlockPlacementSource::ExistingBlock {
+            block_id: source.id,
+            row_version: source.row_version,
+        },
+        candidate: TimetableBlockPlacementCandidate {
+            block_kind: TimetableBlockKind::Structural,
+            learning_group_id: None,
+            learning_offering_id: None,
+            room_id: None,
+            homeroom_ids: vec![],
+            teacher_ids: vec![],
+            instructor_ids: vec![],
+        },
+        target_day_of_week: " tue ".into(),
+        target_bell_schedule_period_id: period,
+        expected_target_block_id: Some(target.id),
+        expected_target_row_version: Some(target.row_version),
+    };
+    let before = serde_json::to_value([&source, &target, &third]).unwrap();
+    let preview = timetable_block_service::preview_placement(&pool, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert_eq!(preview.mutation, None);
+    assert_eq!(preview.target_day_of_week, "TUE");
+    assert_eq!(
+        preview.conflicts.len(),
+        4,
+        "two homerooms, one teacher, one deduplicated room"
+    );
+    for (code, target_id) in [
+        ("TIMETABLE_SWAP_RETURN_TEACHER_CONFLICT", teachers[1]),
+        ("TIMETABLE_SWAP_RETURN_ROOM_CONFLICT", room),
+    ] {
+        let conflicts = preview
+            .conflicts
+            .iter()
+            .filter(|row| row.code == code)
+            .collect::<Vec<_>>();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].existing_block_id, Some(third.id));
+        assert_eq!(conflicts[0].target_id, Some(target_id));
+    }
+    assert!(preview
+        .conflicts
+        .iter()
+        .all(|row| row.message.starts_with("คาบที่สลับกลับ: ")));
+    let swap = SwapTimetableBlocksRequest {
+        timetable_version_id: version,
+        block_a_id: source.id,
+        block_a_row_version: source.row_version,
+        block_b_id: target.id,
+        block_b_row_version: target.row_version,
+    };
+    assert!(matches!(
+        timetable_block_service::swap_blocks(&pool, actor, swap.clone()).await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let mut stale_requests = Vec::new();
+    let (other_version, _, _, _) = draft_version(&pool).await;
+    let mut stale = request.clone();
+    stale.timetable_version_id = other_version;
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.source = TimetableBlockPlacementSource::ExistingBlock {
+        block_id: Uuid::new_v4(),
+        row_version: source.row_version,
+    };
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.expected_target_block_id = Some(Uuid::new_v4());
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.source = TimetableBlockPlacementSource::ExistingBlock {
+        block_id: source.id,
+        row_version: source.row_version + 1,
+    };
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.expected_target_row_version = Some(target.row_version + 1);
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.expected_target_row_version = None;
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.target_day_of_week = "WED".into();
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.expected_target_block_id = Some(source.id);
+    stale.expected_target_row_version = Some(source.row_version);
+    stale.target_day_of_week = "MON".into();
+    stale_requests.push(stale);
+    let mut stale = request.clone();
+    stale.source = TimetableBlockPlacementSource::SynchronizedOffering {
+        learning_offering_id: Uuid::new_v4(),
+    };
+    stale_requests.push(stale);
+    for stale in stale_requests {
+        let preview = timetable_block_service::preview_placement(&pool, stale)
+            .await
+            .unwrap();
+        assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+        assert_eq!(preview.mutation, None);
+        assert_eq!(preview.conflicts.len(), 1);
+        assert_eq!(preview.conflicts[0].code, "TIMETABLE_STALE_BLOCK");
+        assert_eq!(preview.conflicts[0].existing_block_id, None);
+    }
+    let after = [
+        timetable_block_service::get_block(&pool, source.id)
+            .await
+            .unwrap(),
+        timetable_block_service::get_block(&pool, target.id)
+            .await
+            .unwrap(),
+        timetable_block_service::get_block(&pool, third.id)
+            .await
+            .unwrap(),
+    ];
+    assert_eq!(before, serde_json::to_value(after).unwrap());
+
+    // Moving the target without a swap also uses persisted reservations.
+    let mut move_request = request.clone();
+    move_request.source = TimetableBlockPlacementSource::ExistingBlock {
+        block_id: target.id,
+        row_version: target.row_version,
+    };
+    move_request.target_day_of_week = "MON".into();
+    move_request.expected_target_block_id = None;
+    move_request.expected_target_row_version = None;
+    let preview = timetable_block_service::preview_placement(&pool, move_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_TEACHER_CONFLICT"));
+    timetable_block_service::deactivate_block(&pool, actor, third.id, version, third.row_version)
+        .await
+        .unwrap();
+    let preview = timetable_block_service::preview_placement(&pool, move_request)
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Move);
+    assert_eq!(preview.mutation, Some(TimetableBlockMutationKind::Move));
+    assert!(preview.conflicts.is_empty());
+    let preview = timetable_block_service::preview_placement(&pool, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Swap);
+    assert_eq!(preview.mutation, Some(TimetableBlockMutationKind::Swap));
+    assert!(preview.conflicts.is_empty());
+    let swapped = timetable_block_service::swap_blocks(&pool, actor, swap)
+        .await
+        .unwrap();
+    assert_eq!(swapped.block_a.day_of_week, "TUE");
+    assert_eq!(swapped.block_b.day_of_week, "MON");
+    let preview = timetable_block_service::preview_placement(&pool, request)
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert_eq!(preview.conflicts[0].code, "TIMETABLE_STALE_BLOCK");
 }

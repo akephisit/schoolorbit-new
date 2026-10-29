@@ -7,6 +7,7 @@
 		buildTimetableLessonColors,
 		timetablePlacementColorKey
 	} from '#lib/academic/timetable/lesson-color.js';
+	import { timetablePlacementReasons } from '#lib/academic/timetable/placement-reasons.js';
 	import TimetablePdfDialog from '#lib/components/academic/timetable/TimetablePdfDialog.svelte';
 	import type { GeneratePdfOptions } from '#lib/utils/pdf.js';
 	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
@@ -263,6 +264,7 @@
 	let activePreviewRequest: {
 		session: number;
 		cellKey: string;
+		workspace: TimetableBlockWorkspace;
 		promise: Promise<TimetableBlockPlacementPreview>;
 		abortController: AbortController;
 	} | null = null;
@@ -791,6 +793,26 @@
 		return local.state === 'source' ? 'dragging' : local.state;
 	}
 
+	function placementReasons(dayOfWeek: string, periodId: string) {
+		if (
+			!controller?.dragSource ||
+			!controller.selectedOwnerId ||
+			cellState(dayOfWeek, periodId) !== 'blocked'
+		)
+			return null;
+		const conflicts =
+			controller.preview && previewCellKey === cellKey(dayOfWeek, periodId)
+				? controller.preview.conflicts
+				: localPlacementPreview(controller.board, {
+						view: controller.view,
+						rowId: controller.selectedOwnerId,
+						dayOfWeek,
+						bellSchedulePeriodId: periodId,
+						...controller.dragSource
+					}).conflicts;
+		return timetablePlacementReasons(controller.board, controller.view, conflicts);
+	}
+
 	function isBlockPending(blockId: string): boolean {
 		return pendingBlockIds.has(blockId);
 	}
@@ -800,7 +822,12 @@
 	}
 
 	function placementPreview(dayOfWeek: string, periodId: string): TimetablePlacementCard | null {
-		if (!controller?.dragSource || previewCellKey !== cellKey(dayOfWeek, periodId)) return null;
+		if (
+			!controller?.dragSource ||
+			previewCellKey !== cellKey(dayOfWeek, periodId) ||
+			!['move', 'swap'].includes(cellState(dayOfWeek, periodId))
+		)
+			return null;
 		const { source, candidate } = controller.dragSource;
 		const colorKey = timetablePlacementColorKey(
 			source,
@@ -883,6 +910,7 @@
 	): Promise<TimetableBlockPlacementPreview | null> {
 		if (!controller?.dragSource || !academicTermId) return null;
 		const currentController = controller;
+		const requestedWorkspace = currentController.workspace;
 		const dragSource: TimetableDragSource = controller.dragSource;
 		const target = targetBlock(dayOfWeek, periodId);
 		const requestedCellKey = cellKey(dayOfWeek, periodId);
@@ -901,6 +929,7 @@
 		activePreviewRequest = {
 			session: requestedSession,
 			cellKey: requestedCellKey,
+			workspace: requestedWorkspace,
 			promise,
 			abortController
 		};
@@ -913,7 +942,8 @@
 				placementSession !== requestedSession ||
 				previewRevision !== revision ||
 				previewCellKey !== requestedCellKey ||
-				controller !== currentController
+				controller !== currentController ||
+				currentController.workspace !== requestedWorkspace
 			)
 				return null;
 			currentController.setPreview(preview);
@@ -952,7 +982,8 @@
 		const requestedCellKey = cellKey(dayOfWeek, periodId);
 		const reusablePreviewRequest =
 			activePreviewRequest?.session === placementSession &&
-			activePreviewRequest.cellKey === requestedCellKey
+			activePreviewRequest.cellKey === requestedCellKey &&
+			activePreviewRequest.workspace === operationController.workspace
 				? activePreviewRequest
 				: null;
 		if (reusablePreviewRequest) activePreviewRequest = null;
@@ -2258,6 +2289,7 @@
 						{canEdit}
 						{cellState}
 						{placementPreview}
+						{placementReasons}
 						{isBlockPending}
 						{isCellPendingRemoval}
 						onHoverIntent={previewPlacement}

@@ -43,6 +43,7 @@ class TimetableWorkspaceController {
 
 	setWorkspace = (workspace: TimetableBlockWorkspace) => {
 		this.workspace = workspace;
+		this.preview = null;
 		if (!this.rows.some((row) => row.id === this.selectedOwnerId)) {
 			this.selectedOwnerId = this.initialOwnerId(this.view);
 		}
