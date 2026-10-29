@@ -247,6 +247,49 @@ pub(crate) async fn get_workspace(
             .iter()
             .any(|offering| offering.id == target.learning_offering_id)
     });
+    if source_group_ids.len() > MAX_GROUPS as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
+        ));
+    }
+    let staff_ids =
+        visible_offerings
+            .iter()
+            .flat_map(|offering| offering.groups.iter())
+            .flat_map(|group| group.teachers.iter().map(|teacher| teacher.teacher_id))
+            .chain(blocks.iter().flat_map(|block| {
+                block
+                    .teachers
+                    .iter()
+                    .map(|teacher| teacher.teacher_id)
+                    .chain(block.groups.iter().flat_map(|group| {
+                        group.instructors.iter().map(|teacher| teacher.teacher_id)
+                    }))
+            }))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+    let staff = DbSession::new(connection)
+        .query_as::<(Uuid, String, String)>(
+            "academic_timetable.services.timetable_block_queries.get_workspace",
+            r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
+           FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
+           ORDER BY 2, id LIMIT $2"#,
+        )
+        .bind(&staff_ids)
+        .bind(MAX_STAFF + 1)
+        .fetch_all()
+        .await?;
+    if staff.len() > MAX_STAFF as usize {
+        return Err(AppError::ValidationError(
+            "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
+        ));
+    }
+    // Assignment identity is pinned; names share the current workspace staff projection.
+    let staff_names = staff
+        .iter()
+        .map(|(id, name, _)| (*id, name.clone()))
+        .collect::<BTreeMap<_, _>>();
     let mut eligible_by_group: BTreeMap<Uuid, Vec<TimetableBlockInstructor>> = BTreeMap::new();
     let mut group_rows = Vec::new();
     for offering in &visible_offerings {
@@ -257,13 +300,21 @@ pub(crate) async fn get_workspace(
                     .teachers
                     .iter()
                     .enumerate()
-                    .map(|(index, teacher)| TimetableBlockInstructor {
-                        teacher_id: teacher.teacher_id,
-                        display_name: teacher.display_name.clone(),
-                        role: super::timetable_source::role_text(teacher.role).into(),
-                        order_index: (index + 1) as i32,
+                    .map(|(index, teacher)| {
+                        let display_name = staff_names
+                            .get(&teacher.teacher_id)
+                            .cloned()
+                            .ok_or_else(|| {
+                                AppError::Conflict("ไม่พบข้อมูลบุคลากรของครูผู้สอนในรุ่นเปิดสอน".into())
+                            })?;
+                        Ok(TimetableBlockInstructor {
+                            teacher_id: teacher.teacher_id,
+                            display_name,
+                            role: super::timetable_source::role_text(teacher.role).into(),
+                            order_index: (index + 1) as i32,
+                        })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, AppError>>()?,
             );
             group_rows.push(WorkspaceGroupRow {
                 id: group.id,
@@ -298,11 +349,6 @@ pub(crate) async fn get_workspace(
                 preferred_room_ids: group.preferred_room_ids.clone(),
             });
         }
-    }
-    if group_rows.len() > MAX_GROUPS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
-        ));
     }
     let offering_versions = source
         .snapshot
@@ -517,43 +563,6 @@ pub(crate) async fn get_workspace(
         })
         .collect::<Vec<_>>();
 
-    let staff_ids =
-        learning_groups
-            .iter()
-            .flat_map(|group| {
-                group
-                    .eligible_instructors
-                    .iter()
-                    .map(|teacher| teacher.teacher_id)
-            })
-            .chain(blocks.iter().flat_map(|block| {
-                block
-                    .teachers
-                    .iter()
-                    .map(|teacher| teacher.teacher_id)
-                    .chain(block.groups.iter().flat_map(|group| {
-                        group.instructors.iter().map(|teacher| teacher.teacher_id)
-                    }))
-            }))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-    let staff = DbSession::new(connection)
-        .query_as::<(Uuid, String, String)>(
-            "academic_timetable.services.timetable_block_queries.get_workspace",
-            r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
-           FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
-           ORDER BY 2, id LIMIT $2"#,
-        )
-        .bind(&staff_ids)
-        .bind(MAX_STAFF + 1)
-        .fetch_all()
-        .await?;
-    if staff.len() > MAX_STAFF as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
-        ));
-    }
     let affiliations = staff_directory
         .subject_groups_for_users(connection, &staff_ids)
         .await?;
@@ -919,15 +928,6 @@ pub(crate) async fn get_blocks_on_connection(
                     if let Some(group) = captured.first() {
                         placed.code = group.code.clone();
                         placed.name = group.name.clone();
-                    }
-                    for instructor in &mut placed.instructors {
-                        if let Some(teacher) = captured
-                            .iter()
-                            .flat_map(|group| &group.teachers)
-                            .find(|teacher| teacher.teacher_id == instructor.teacher_id)
-                        {
-                            instructor.display_name = teacher.display_name.clone();
-                        }
                     }
                 }
             }

@@ -640,6 +640,15 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 						...created.groups[0],
 						code: group.code,
 						name: group.name,
+						instructors: created.groups[0].instructors.map((teacher) => ({
+							...teacher,
+							displayName:
+								group.eligibleInstructors.find(
+									(eligible) => eligible.teacherId === teacher.teacherId
+								)?.displayName ??
+								workspace().staff.find((staff) => staff.id === teacher.teacherId)?.displayName ??
+								teacher.displayName
+						})),
 						homeroomIds: group.homeroomIds,
 						homeroomNames: group.homeroomIds.flatMap((id) => {
 							const homeroom = workspace().homerooms.find((item) => item.id === id);
