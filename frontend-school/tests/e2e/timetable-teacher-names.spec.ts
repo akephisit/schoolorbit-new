@@ -92,13 +92,19 @@ for (const theme of ['light', 'dark'] as const)
 			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 			await page.getByRole('button', { name: 'ครู', exact: true }).click();
 			const owner = page.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
-			await expect(owner).toHaveText('Mr. John Smith');
-			await expect(page.getByRole('heading', { name: 'ครูJohn', exact: true })).toBeVisible();
+			await expect(owner).toHaveText('Ms. Mary Jones');
+			await expect(page.getByRole('heading', { name: 'ครูMary', exact: true })).toBeVisible();
+			expect(new URL(page.url()).searchParams.get('ownerId')).toBe(timetableIds.teacherB);
 			await owner.click();
 			for (const teacher of instructors)
 				await expect(
 					page.getByRole('option', { name: teacher.displayName, exact: true })
 				).toBeVisible();
+			await page.getByRole('option', { name: 'Mr. John Smith', exact: true }).click();
+			await expect(owner).toHaveText('Mr. John Smith');
+			await expect(page.getByRole('heading', { name: 'ครูJohn', exact: true })).toBeVisible();
+			expect(new URL(page.url()).searchParams.get('ownerId')).toBe(timetableIds.teacherA);
+			await owner.click();
 			await page.getByRole('option', { name: 'Ms. Mary Jones', exact: true }).click();
 			await expect(owner).toHaveText('Ms. Mary Jones');
 			await expect(page.getByRole('heading', { name: 'ครูMary', exact: true })).toBeVisible();
