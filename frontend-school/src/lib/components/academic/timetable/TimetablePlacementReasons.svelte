@@ -44,10 +44,7 @@
 			>{/if}
 	</Popover.Trigger>
 	<Popover.Content
-		class={[
-			'max-h-72 w-80 max-w-[calc(100vw-2rem)] overflow-auto p-3 text-sm',
-			active && 'pointer-events-none'
-		]}
+		class="max-h-72 w-80 max-w-[calc(100vw-2rem)] overflow-auto p-3 text-sm"
 		align="start"
 		side="top"
 		role="dialog"
@@ -55,11 +52,18 @@
 		onOpenAutoFocus={(event) => event.preventDefault()}
 		onCloseAutoFocus={(event) => event.preventDefault()}
 	>
-		<p class="mb-2 font-semibold text-destructive">เหตุผลที่วางคาบไม่ได้</p>
-		<ul class="space-y-2">
-			{#each reasons.details as detail, index (index)}
-				<li class="break-words">{detail}</li>
-			{/each}
-		</ul>
+		<!-- The floating wrapper also needs transparency throughout the drag and exit transition. -->
+		{#snippet child({ props, wrapperProps })}
+			<div {...wrapperProps} style:pointer-events={active || !open ? 'none' : 'auto'}>
+				<div {...props} style:pointer-events={active || !open ? 'none' : 'auto'}>
+					<p class="mb-2 font-semibold text-destructive">เหตุผลที่วางคาบไม่ได้</p>
+					<ul class="space-y-2">
+						{#each reasons.details as detail, index (index)}
+							<li class="break-words">{detail}</li>
+						{/each}
+					</ul>
+				</div>
+			</div>
+		{/snippet}
 	</Popover.Content>
 </Popover.Root>

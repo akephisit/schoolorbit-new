@@ -244,7 +244,7 @@
 		count: number;
 		label: string;
 	} | null>(null);
-	let saveError = $state('');
+	let saveError = $state<{ message: string; presentation: 'toast' | 'banner' } | null>(null);
 	let publicationDate = $state('');
 	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
 	let publicationKey = '';
@@ -617,7 +617,7 @@
 		workspaceRevision += 1;
 		request.abort();
 		loading = false;
-		if (pendingOperationCount === 0) saveError = '';
+		if (pendingOperationCount === 0) saveError = null;
 		pendingOperationCount += 1;
 		pendingBlockIds = new Set([...pendingBlockIds, ...blockIds]);
 		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
@@ -661,7 +661,7 @@
 			const destination = navigation.to.url.href;
 			void waitForSaves().then(() => {
 				if (saveError) {
-					lifecycleError = saveError;
+					lifecycleError = saveError.message;
 					return;
 				}
 				void goto(destination);
@@ -937,8 +937,11 @@
 			}
 		} catch (error) {
 			cancelPlacement();
-			saveError = error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ';
-			toast.error(saveError);
+			saveError = {
+				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ',
+				presentation: 'toast'
+			};
+			toast.error(saveError.message);
 			return;
 		}
 
@@ -1055,8 +1058,11 @@
 					patchTimetableWorkspaceBlocks(workspace, operation.originalBlocks)
 				);
 			}
-			saveError = error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ';
-			toast.error(saveError);
+			saveError = {
+				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ',
+				presentation: 'toast'
+			};
+			toast.error(saveError.message);
 		} finally {
 			finishPendingOperation(operation.pendingBlockIds);
 		}
@@ -1140,7 +1146,7 @@
 	}
 	async function savedVersion(): Promise<TimetableVersion> {
 		await waitForSaves();
-		if (saveError) throw new Error(saveError);
+		if (saveError) throw new Error(saveError.message);
 		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
 		await reload();
 		if (refreshError) throw new Error(refreshError);
@@ -1466,8 +1472,11 @@
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [operation.originalBlock])
 				);
 			}
-			saveError = error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ';
-			toast.error(saveError);
+			saveError = {
+				message: error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ',
+				presentation: 'banner'
+			};
+			toast.error(saveError.message);
 		} finally {
 			finishPendingOperation([operation.originalBlock.id]);
 		}
@@ -1616,8 +1625,11 @@
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, operation.originalBlocks)
 				);
 			}
-			saveError = error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ';
-			toast.error(saveError);
+			saveError = {
+				message: error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ',
+				presentation: 'banner'
+			};
+			toast.error(saveError.message);
 		} finally {
 			finishPendingOperation(operation.pendingBlockIds, operation.pendingCellKeys);
 		}
@@ -1689,8 +1701,11 @@
 			structuralOpen = false;
 			await reload('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
 		} catch (error) {
-			saveError = error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ';
-			toast.error(saveError);
+			saveError = {
+				message: error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ',
+				presentation: 'banner'
+			};
+			toast.error(saveError.message);
 		} finally {
 			busy = false;
 		}
@@ -2020,11 +2035,11 @@
 					>
 				</div>
 			{/if}
-			{#if saveError}<p
+			{#if saveError?.presentation === 'banner'}<p
 					role="alert"
 					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 				>
-					บันทึกไม่สำเร็จ: {saveError} กรุณาลองดำเนินการอีกครั้ง
+					บันทึกไม่สำเร็จ: {saveError.message} กรุณาลองดำเนินการอีกครั้ง
 				</p>{/if}
 			{#if refreshError}
 				<div

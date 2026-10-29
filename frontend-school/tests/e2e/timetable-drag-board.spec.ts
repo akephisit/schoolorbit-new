@@ -124,7 +124,10 @@ test('does not mutate when the dropped placement preview fails', async ({ page }
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await destination.dispatchEvent('dragover', { dataTransfer });
 	await destination.dispatchEvent('drop', { dataTransfer });
-	await expect(page.getByRole('alert')).toContainText('บันทึกไม่สำเร็จ');
+	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveText(
+		'ตรวจตำแหน่งไม่สำเร็จ'
+	);
+	await expect(page.locator('main [role="alert"]')).toHaveCount(0);
 	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
 	expect(mock.createRequestCount()).toBe(0);

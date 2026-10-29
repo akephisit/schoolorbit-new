@@ -72,6 +72,9 @@ for (const layout of [
 		await cell.dispatchEvent('dragover', { dataTransfer: transfer });
 		const details = page.getByRole('dialog', { name: 'เหตุผลที่วางคาบไม่ได้' });
 		await expect(details).toBeVisible();
+		expect(await details.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe(
+			'none'
+		);
 		await expect(details).toContainText('ครูคณิตศาสตร์ A ไม่ว่าง');
 		await expect(details).toContainText('ม.1/1 ไม่ว่าง');
 		await expect(details).toContainText('ห้องสอน ห้องคณิตศาสตร์ ไม่ว่าง');
@@ -113,7 +116,7 @@ test('teacher view prioritizes the busy class and retains the blocking subject a
 	expect(mock.previewRequestCount()).toBe(0);
 });
 
-test('drop validates once and refuses authoritative server rejection without exposing hidden block details', async ({
+test('rejected drop keeps board geometry stable, shows only a toast and never writes', async ({
 	page
 }) => {
 	const mock = await installTimetableMock(page);
@@ -160,15 +163,34 @@ test('drop validates once and refuses authoritative server rejection without exp
 	await cell.dispatchEvent('dragover', { dataTransfer: transfer });
 	await expect(cell.locator('[data-timetable-placement-preview]')).toBeVisible();
 	expect(previewRequests).toBe(0);
+	const header = page.getByLabel('บริบทตารางสอน');
+	const board = page.locator('section[aria-label^="ตารางของ "]');
+	const before = await Promise.all([header.boundingBox(), board.boundingBox(), cell.boundingBox()]);
+	expect(before.every(Boolean)).toBe(true);
 	await cell.dispatchEvent('drop', { dataTransfer: transfer });
 	await expect.poll(() => previewRequests).toBe(1);
 	release();
-	await expect(page.getByRole('alert')).toContainText('ครูมีคาบสอนในตารางอื่นอยู่แล้ว');
+	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveText(
+		'วางคาบไม่ได้: ครูมีคาบสอนในตารางอื่นอยู่แล้ว'
+	);
+	await expect(page.locator('main [role="alert"]')).toHaveCount(0);
 	await expect(cell.locator('[data-timetable-placement-preview]')).toHaveCount(0);
 	await expect(cell.locator('[data-timetable-lesson-card]')).toHaveCount(0);
+	const after = await Promise.all([header.boundingBox(), board.boundingBox(), cell.boundingBox()]);
+	for (const [index, initial] of before.entries()) {
+		const current = after[index];
+		expect(initial).not.toBeNull();
+		expect(current).not.toBeNull();
+		for (const coordinate of ['x', 'y', 'width', 'height'] as const) {
+			expect(current![coordinate]).toBeCloseTo(initial![coordinate], 1);
+		}
+	}
 	expect(previewRequests).toBe(1);
 	expect(mock.createRequestCount()).toBe(0);
 	expect(mock.swapRequestCount()).toBe(0);
+	expect(mock.synchronizedCreateRequestCount()).toBe(0);
+	expect(mock.updateRequestCount()).toBe(0);
+	expect(mock.blocks()).toHaveLength(0);
 	expect(mock.workspaceRequestCount()).toBe(1);
 });
 
@@ -196,6 +218,9 @@ test('touch selection opens all blocking details and dismisses without cancellin
 		await reason.tap();
 		const details = page.getByRole('dialog', { name: 'เหตุผลที่วางคาบไม่ได้' });
 		await expect(details).toBeVisible();
+		expect(await details.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe(
+			'auto'
+		);
 		await expect(details).toContainText('วิชา: ค21101 วิทยาศาสตร์');
 		await expect(details).toContainText('ม.1/1 ไม่ว่าง');
 		await page.getByRole('heading', { name: 'ม.1/1', exact: true }).tap();
@@ -271,4 +296,72 @@ test('keyboard opens blocking details and Escape dismisses them without a valida
 	await expect(details).not.toBeVisible();
 	expect(mock.previewRequestCount()).toBe(0);
 	expect(mock.createRequestCount()).toBe(0);
+});
+
+test('native drag passes through the conflict popup to an adjacent valid cell and drops once', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	const blocker = makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
+		groupId: timetableIds.groupB,
+		name: 'วิทยาศาสตร์',
+		instructorIds: [timetableIds.teacherA]
+	});
+	blocker.dayOfWeek = 'TUE';
+	const mock = await installTimetableMock(page, {
+		blocks: [blocker],
+		preferredRoomIds: [timetableIds.room]
+	});
+	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const tray = page.locator('aside article[draggable="true"]').first();
+	const blocked = page.locator(
+		`td[data-timetable-day="TUE"][data-timetable-period-id="${timetableIds.period1}"]`
+	);
+	const valid = page.locator(
+		`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period1}"]`
+	);
+	const origin = await tray.boundingBox();
+	const target = await blocked.boundingBox();
+	expect(origin).not.toBeNull();
+	expect(target).not.toBeNull();
+	await page.mouse.move(origin!.x + 24, origin!.y + 24);
+	await page.mouse.down();
+	await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2, {
+		steps: 20
+	});
+	await page.mouse.move(target!.x + target!.width / 2 + 1, target!.y + target!.height / 2);
+	const popup = page.getByRole('dialog', { name: 'เหตุผลที่วางคาบไม่ได้' });
+	await expect(popup).toBeVisible();
+	expect(await popup.evaluate((element) => getComputedStyle(element).pointerEvents)).toBe('none');
+	const popupBox = await popup.boundingBox();
+	const validBox = await valid.boundingBox();
+	expect(popupBox).not.toBeNull();
+	expect(validBox).not.toBeNull();
+	const overlap = {
+		left: Math.max(popupBox!.x, validBox!.x),
+		top: Math.max(popupBox!.y, validBox!.y),
+		right: Math.min(popupBox!.x + popupBox!.width, validBox!.x + validBox!.width),
+		bottom: Math.min(popupBox!.y + popupBox!.height, validBox!.y + validBox!.height)
+	};
+	expect(overlap.right - overlap.left).toBeGreaterThan(10);
+	expect(overlap.bottom - overlap.top).toBeGreaterThan(10);
+	const point = { x: (overlap.left + overlap.right) / 2, y: (overlap.top + overlap.bottom) / 2 };
+	const hit = await valid.evaluate((cell, point) => {
+		const element = document.elementFromPoint(point.x, point.y);
+		return { withinCell: cell.contains(element), description: element?.outerHTML.slice(0, 1200) };
+	}, point);
+	expect(hit.withinCell, hit.description).toBe(true);
+
+	expect(mock.previewRequestCount()).toBe(0);
+	await page.mouse.move(point.x, point.y, { steps: 10 });
+	await page.mouse.move(point.x + 1, point.y + 1);
+	await expect(valid.locator('[data-timetable-placement-preview]')).toBeVisible();
+	await page.mouse.up();
+	await expect(valid.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
+	expect(mock.previewRequestCount()).toBe(1);
+	expect(mock.createRequestCount()).toBe(1);
+	expect(mock.blocks().find((block) => block.id === timetableIds.createdBlock)?.dayOfWeek).toBe(
+		'MON'
+	);
 });
