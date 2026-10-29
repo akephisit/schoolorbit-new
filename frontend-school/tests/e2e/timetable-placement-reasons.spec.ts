@@ -274,29 +274,53 @@ test('reverse swap blockers appear immediately while the source cell keeps its s
 	expect(mock.previewRequestCount()).toBe(0);
 });
 
-test('keyboard opens blocking details and Escape dismisses them without a validation request', async ({
-	page
-}) => {
-	const blocker = makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
-		groupId: timetableIds.groupB,
-		name: 'วิทยาศาสตร์',
-		instructorIds: [timetableIds.teacherA]
+for (const opening of ['keyboard', 'hover'] as const) {
+	test(`keyboard scrolls overflow reasons opened by ${opening} and Escape restores the trigger before cancelling placement`, async ({
+		page
+	}) => {
+		const blockers = Array.from({ length: 18 }, (_, index) =>
+			makeTimetableBlock(
+				`c1000000-0000-4000-8000-${String(index + 500).padStart(12, '0')}`,
+				timetableIds.period1,
+				{
+					groupId: timetableIds.groupB,
+					name: `วิทยาศาสตร์ รายการที่ ${index + 1}`,
+					instructorIds: [timetableIds.teacherA]
+				}
+			)
+		);
+		const mock = await installTimetableMock(page, { blocks: blockers });
+		await page.goto(boardUrl('learning_group'));
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await page.locator('aside article').first().getByRole('button').first().click();
+		const reason = page.locator('[data-timetable-placement-reason]').first();
+		await expect(reason).toContainText('ครูคณิตศาสตร์ A ไม่ว่าง');
+		if (opening === 'hover') await reason.hover();
+		await reason.focus();
+		if (opening === 'keyboard') await page.keyboard.press('Enter');
+		const details = page.getByRole('dialog', { name: 'เหตุผลที่วางคาบไม่ได้' });
+		await expect(details).toBeVisible();
+		await expect(details.locator('li')).toHaveCount(18);
+		await page.keyboard.press('Tab');
+		await expect(details).toBeFocused();
+		expect(await details.evaluate((element) => element.scrollHeight)).toBeGreaterThan(
+			await details.evaluate((element) => element.clientHeight)
+		);
+		expect(await details.evaluate((element) => element.scrollTop)).toBe(0);
+		await page.keyboard.press('PageDown');
+		await expect.poll(() => details.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		await page.keyboard.press('Escape');
+		await expect(details).not.toBeVisible();
+		await expect(reason).toBeVisible();
+		await expect(reason).toBeFocused();
+		expect(mock.previewRequestCount()).toBe(0);
+		expect(mock.createRequestCount()).toBe(0);
+		await page.keyboard.press('Escape');
+		await expect(page.locator('[data-timetable-placement-reason]')).toHaveCount(0);
+		expect(mock.previewRequestCount()).toBe(0);
+		expect(mock.createRequestCount()).toBe(0);
 	});
-	const mock = await installTimetableMock(page, { blocks: [blocker] });
-	await page.goto(boardUrl('learning_group'));
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	await page.locator('aside article').first().getByRole('button').first().click();
-	const reason = page.locator('[data-timetable-placement-reason]').first();
-	await expect(reason).toContainText('ครูคณิตศาสตร์ A ไม่ว่าง');
-	await reason.focus();
-	await page.keyboard.press('Enter');
-	const details = page.getByRole('dialog', { name: 'เหตุผลที่วางคาบไม่ได้' });
-	await expect(details).toBeVisible();
-	await page.keyboard.press('Escape');
-	await expect(details).not.toBeVisible();
-	expect(mock.previewRequestCount()).toBe(0);
-	expect(mock.createRequestCount()).toBe(0);
-});
+}
 
 test('native drag passes through the conflict popup to an adjacent valid cell and drops once', async ({
 	page
