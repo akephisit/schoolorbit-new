@@ -533,9 +533,9 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     sqlx::query(
         r#"INSERT INTO users (
                id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูทดสอบ', 'ตารางสอน',
-                     'staff', 'active')"#,
+               title_en, first_name_en, last_name_en, user_type, status
+           ) VALUES ($1, $2, $3, 'fixture-not-a-login', '', '',
+                     'Ms.', 'Alice', 'Example', 'staff', 'active')"#,
     )
     .bind(teacher_id)
     .bind(format!("{teacher_id}@example.invalid"))
@@ -662,6 +662,126 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .find(|group| group.id == group_id)
         .expect("created group must be available in the timetable workspace");
     assert_eq!(workspace_group.preferred_room_ids, vec![preferred_room_id]);
+    assert_eq!(
+        workspace_group.eligible_instructors[0].display_name, "Ms. Alice Example",
+        "eligible instructor labels must use the canonical complete English name"
+    );
+    let immutable_versions = || async {
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT jsonb_build_object('delivery',to_jsonb(delivery),'timetable',to_jsonb(timetable)) FROM academic_timetable_versions timetable JOIN academic_delivery_versions delivery ON delivery.id=timetable.delivery_version_id WHERE timetable.id=$1",
+        ).bind(version_id).fetch_one(&pool).await.unwrap()
+    };
+    let before_names = immutable_versions().await;
+    let pinned_teacher = before_names["delivery"]["snapshot"]["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|offering| offering["groups"].as_array().unwrap())
+        .flat_map(|group| group["teachers"].as_array().unwrap())
+        .find(|teacher| teacher["teacherId"] == teacher_id.to_string())
+        .unwrap();
+    assert!(
+        pinned_teacher["displayName"]
+            .as_str()
+            .unwrap()
+            .trim()
+            .is_empty(),
+        "English-only fixture must reproduce the historical blank snapshot label"
+    );
+    let username = format!("timetable-{teacher_id}");
+    for (thai, english, expected) in [
+        (
+            ["", "", ""],
+            ["Ms.", "Alice", "Example"],
+            "Ms. Alice Example",
+        ),
+        (
+            ["นางสาว", "มาลี", "ตัวอย่าง"],
+            ["Ms.", "Alice", "Example"],
+            "นางสาวมาลี ตัวอย่าง",
+        ),
+        (
+            ["", "บางส่วน", ""],
+            ["Ms.", "Alice", "Example"],
+            "Ms. Alice Example",
+        ),
+        (["", "บางส่วน", ""], ["", "Alice", "Example"], "บางส่วน"),
+        (["", "", ""], ["", "", ""], username.as_str()),
+    ] {
+        sqlx::query("UPDATE users SET title=$2,first_name=$3,last_name=$4,title_en=$5,first_name_en=$6,last_name_en=$7 WHERE id=$1")
+            .bind(teacher_id).bind(thai[0]).bind(thai[1]).bind(thai[2])
+            .bind(english[0]).bind(english[1]).bind(english[2])
+            .execute(&pool).await.unwrap();
+        let workspace = timetable_block_service::get_workspace(
+            &pool,
+            TimetableBlockWorkspaceQuery {
+                academic_year_id: year_id,
+                academic_term_id: term_id,
+                timetable_version_id: version_id,
+            },
+            &TimetableAccessFilter {
+                includes_school_owned: true,
+                ..TimetableAccessFilter::default()
+            },
+            &crate::adapters::staff_directory::STAFF_DIRECTORY,
+        )
+        .await
+        .unwrap();
+        let eligible = &workspace
+            .learning_groups
+            .iter()
+            .find(|group| group.id == group_id)
+            .unwrap()
+            .eligible_instructors;
+        assert_eq!(eligible.len(), 1);
+        assert_eq!(eligible[0].teacher_id, teacher_id);
+        assert_eq!(eligible[0].role, "primary");
+        assert_eq!(eligible[0].order_index, 1);
+        assert_eq!(eligible[0].display_name, expected);
+        assert_eq!(
+            workspace
+                .ordinary_demands
+                .iter()
+                .find(|demand| demand.learning_group_id == group_id)
+                .unwrap()
+                .eligible_instructors[0]
+                .display_name,
+            expected
+        );
+        assert_eq!(
+            workspace
+                .staff
+                .iter()
+                .find(|staff| staff.id == teacher_id)
+                .unwrap()
+                .display_name,
+            expected
+        );
+        let placed = timetable_block_service::get_block(&pool, block.id)
+            .await
+            .unwrap();
+        assert_eq!(placed.groups[0].instructors[0].display_name, expected);
+        assert_eq!(placed.groups[0].instructors[0].teacher_id, teacher_id);
+        assert_eq!(placed.groups[0].instructors[0].role, "primary");
+        assert_eq!(placed.groups[0].instructors[0].order_index, 1);
+        assert_eq!(immutable_versions().await, before_names);
+    }
+    let denied = timetable_block_service::get_workspace(
+        &pool,
+        TimetableBlockWorkspaceQuery {
+            academic_year_id: year_id,
+            academic_term_id: term_id,
+            timetable_version_id: version_id,
+        },
+        &TimetableAccessFilter::default(),
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
+    )
+    .await
+    .unwrap();
+    assert!(denied.learning_groups.is_empty());
+    assert!(denied.ordinary_demands.is_empty());
+    assert!(denied.staff.is_empty());
+    assert!(denied.blocks.is_empty());
 
     let mut directory = WorkspaceStaffDirectory {
         teacher_id,
