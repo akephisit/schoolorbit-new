@@ -7,7 +7,7 @@ use school_errors::AppError;
 
 use super::{
     services::SessionLoginUser,
-    session_crypto::{RawSessionToken, ThrottleBucketHash, TokenHash},
+    session_crypto::{canonical_session_time, pending_session_token, RawSessionToken, SessionHmacKey, ThrottleBucketHash, TokenHash},
     session_policy::{
         SessionLifetime, SessionTimes, CLEANUP_BATCH_SIZE, PREVIOUS_TOKEN_GRACE, ROTATION_INTERVAL,
         SESSION_RETENTION, THROTTLE_RETENTION, TOUCH_INTERVAL,
@@ -20,12 +20,13 @@ const TOKEN_LOCK_DOMAIN: i64 = 0x534f_544f_4b45_4e01;
 pub enum PresentedTokenKind {
     Current,
     Previous,
+    Pending,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionMaintenanceMode {
-    RotateAndTouch,
-    TouchOnly,
+pub struct ActivityTokenDerivation<'a> {
+    pub key: &'a SessionHmacKey,
+    pub tenant_id: Uuid,
+    pub raw: &'a RawSessionToken,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,6 +89,8 @@ pub struct MaintainedSession {
     pub idle_expires_at: DateTime<Utc>,
     pub absolute_expires_at: DateTime<Utc>,
     pub replacement: Option<RawSessionToken>,
+    pub has_pending: bool,
+    pub credential_changed: bool,
 }
 
 #[derive(Clone, FromRow)]
@@ -126,6 +129,8 @@ struct AuthenticationRow {
     current_token_hash: Vec<u8>,
     previous_token_hash: Option<Vec<u8>>,
     previous_token_valid_until: Option<DateTime<Utc>>,
+    pending_token_hash: Option<Vec<u8>>,
+    pending_created_at: Option<DateTime<Utc>>,
     remember_me: bool,
     rotated_at: DateTime<Utc>,
     last_seen_at: DateTime<Utc>,
@@ -138,12 +143,12 @@ struct AuthenticationRow {
 
 const AUTHENTICATION_COLUMNS: &str = r#"
     SELECT s.id, s.user_id, s.current_token_hash, s.previous_token_hash,
-           s.previous_token_valid_until, s.remember_me, s.rotated_at, s.last_seen_at,
+           s.previous_token_valid_until, s.pending_token_hash, s.pending_created_at, s.remember_me, s.rotated_at, s.last_seen_at,
            s.idle_expires_at, s.absolute_expires_at, s.revoked_at,
            u.user_type, u.status AS user_status
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
-    WHERE s.current_token_hash = $1 OR s.previous_token_hash = $1
+    WHERE s.current_token_hash = $1 OR s.previous_token_hash = $1 OR s.pending_token_hash = $1
     LIMIT 2
 "#;
 
@@ -233,148 +238,121 @@ pub async fn create_login_session(
     Ok(LoginSessionCreation::Created)
 }
 
-pub async fn authenticate_and_maintain<F>(
+/// Validation has no persistent side effects, including expired-credential rejection.
+pub async fn validate_session(
     pool: &PgPool,
     presented_hash: TokenHash,
     now: DateTime<Utc>,
-    maintenance: SessionMaintenanceMode,
-    generate: F,
-) -> Result<Option<MaintainedSession>, AppError>
-where
-    F: FnOnce() -> Result<RawSessionToken, AppError>,
-{
-    let Some(initial) = load_authentication_row(pool, presented_hash).await? else {
+) -> Result<Option<MaintainedSession>, AppError> {
+    let Some(row) = load_authentication_row(pool, presented_hash).await? else {
+        super::audit::session_rejected("unknown_credential");
         return Ok(None);
     };
-    let Some(initial_kind) = presented_kind(&initial, presented_hash) else {
-        return Err(unavailable());
-    };
-
-    if !base_session_is_valid(&initial, now) {
+    let kind = presented_kind(&row, presented_hash).ok_or_else(unavailable)?;
+    if !accepted(&row, kind, now) {
         return Ok(None);
     }
+    Ok(Some(maintained(row, kind, None, false)))
+}
 
-    let previous_expired = previous_token_is_expired(&initial, now);
-    if initial_kind == PresentedTokenKind::Previous && !previous_token_is_valid(&initial, now) {
-        clear_expired_previous_token(pool, initial.id, now).await?;
-        return Ok(None);
-    }
-
-    let rotation_due = initial_kind == PresentedTokenKind::Current
-        && maintenance == SessionMaintenanceMode::RotateAndTouch
-        && initial.rotated_at <= now - ROTATION_INTERVAL;
-    let touch_due = initial.last_seen_at <= now - TOUCH_INTERVAL;
-    if !rotation_due && !touch_due && !previous_expired {
-        return Ok(Some(maintained(initial, initial_kind, None)));
-    }
-
+/// Called only after origin, CSRF and the expected session fence pass. None acknowledges
+/// pending credentials without touching idle; Some is the sole human activity boundary.
+pub async fn maintain_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    expected_session_id: Uuid,
+    presented_hash: TokenHash,
+    now: DateTime<Utc>,
+    activity: Option<ActivityTokenDerivation<'_>>,
+) -> Result<Option<MaintainedSession>, AppError> {
+    let now = canonical_session_time(now)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
-        &pool,
-        "auth.session_repository.authenticate_and_maintain",
-    )
-    .await
-    .map_err(session_store_error)?;
-    let Some(mut locked) =
-        load_authentication_row_for_update(&mut transaction, presented_hash).await?
-    else {
-        transaction.rollback().await.map_err(session_store_error)?;
-        return Ok(None);
-    };
-    let Some(locked_kind) = presented_kind(&locked, presented_hash) else {
-        return Err(unavailable());
-    };
-
-    if !base_session_is_valid(&locked, now) {
-        transaction.rollback().await.map_err(session_store_error)?;
-        return Ok(None);
-    }
-
-    if locked_kind == PresentedTokenKind::Previous && !previous_token_is_valid(&locked, now) {
-        clear_expired_previous_token_in_transaction(&mut transaction, locked.id, now).await?;
-        transaction.commit().await.map_err(session_store_error)?;
-        return Ok(None);
-    }
-
-    let rotation_due = locked_kind == PresentedTokenKind::Current
-        && maintenance == SessionMaintenanceMode::RotateAndTouch
-        && locked.rotated_at <= now - ROTATION_INTERVAL;
-    let touch_due = locked.last_seen_at <= now - TOUCH_INTERVAL;
-    let previous_expired = previous_token_is_expired(&locked, now);
-    let mut replacement = None;
-
-    let current_token_hash = if rotation_due {
-        let token = generate()?;
-        let token_hash = token.token_hash();
-        lock_token_hash(&mut transaction, token_hash).await?;
-        ensure_token_hash_available(&mut transaction, token_hash).await?;
-        replacement = Some(token);
-        token_hash.as_bytes().to_vec()
-    } else {
-        locked.current_token_hash.clone()
-    };
-
-    let (previous_token_hash, previous_token_valid_until, rotated_at) = if rotation_due {
-        (
-            Some(locked.current_token_hash.clone()),
-            Some(now + PREVIOUS_TOKEN_GRACE),
-            now,
-        )
-    } else if previous_expired {
-        (None, None, locked.rotated_at)
-    } else {
-        (
-            locked.previous_token_hash.clone(),
-            locked.previous_token_valid_until,
-            locked.rotated_at,
-        )
-    };
-
-    let lifetime = if locked.remember_me {
-        SessionLifetime::remembered()
-    } else {
-        SessionLifetime::normal()
-    };
-    let last_seen_at = if touch_due { now } else { locked.last_seen_at };
-    let idle_expires_at = if touch_due {
-        (now + lifetime.idle).min(locked.absolute_expires_at)
-    } else {
-        locked.idle_expires_at
-    };
-
+        pool, "auth.session_repository.maintain_session",
+    ).await.map_err(session_store_error)?;
+    // Account/password changes take this lock first too; session then token allocation follow.
     school_database::DbSession::new(&mut *transaction)
-        .query(
-            "auth.src.session_repository.authenticate_and_maintain",
-            r#"
-        UPDATE auth_sessions
-        SET current_token_hash = $1,
-            previous_token_hash = $2,
-            previous_token_valid_until = $3,
-            rotated_at = $4,
-            last_seen_at = $5,
-            idle_expires_at = $6
-        WHERE id = $7
-        "#,
-        )
-        .bind(current_token_hash)
-        .bind(previous_token_hash)
-        .bind(previous_token_valid_until)
-        .bind(rotated_at)
-        .bind(last_seen_at)
-        .bind(idle_expires_at)
-        .bind(locked.id)
-        .execute()
-        .await
-        .map_err(session_store_error)?;
-
-    locked.current_token_hash.clear();
-    locked.previous_token_hash = None;
-    locked.previous_token_valid_until = None;
-    locked.rotated_at = rotated_at;
-    locked.last_seen_at = last_seen_at;
-    locked.idle_expires_at = idle_expires_at;
+        .query("auth.src.session_repository.maintain_session.user_lock",
+            "SELECT id FROM users WHERE id = $1 FOR UPDATE")
+        .bind(user_id).execute().await.map_err(session_store_error)?;
+    let Some(mut row) = load_authentication_row_for_update(&mut transaction, presented_hash).await? else {
+        transaction.rollback().await.map_err(session_store_error)?;
+        return Ok(None);
+    };
+    if row.id != expected_session_id || row.user_id != user_id {
+        return Err(AppError::Conflict("session_changed".into()));
+    }
+    let kind = presented_kind(&row, presented_hash).ok_or_else(unavailable)?;
+    if !accepted(&row, kind, now) {
+        transaction.rollback().await.map_err(session_store_error)?;
+        return Ok(None);
+    }
+    let promoted = kind == PresentedTokenKind::Pending;
+    if promoted {
+        row.previous_token_hash = Some(row.current_token_hash.clone());
+        row.previous_token_valid_until = Some(now + PREVIOUS_TOKEN_GRACE);
+        row.current_token_hash = row.pending_token_hash.take().ok_or_else(unavailable)?;
+        row.pending_created_at = None;
+        row.rotated_at = now;
+    }
+    let touch = activity.is_some() && row.last_seen_at <= now - TOUCH_INTERVAL;
+    let mut replacement = None;
+    let mut staged = false;
+    if let Some(proof) = activity {
+        // Previous credentials may report activity during the grace window, but cannot
+        // derive the current generation or allocate another pending credential.
+        if kind == PresentedTokenKind::Current && row.rotated_at <= now - ROTATION_INTERVAL {
+            let created = row.pending_created_at.unwrap_or(now);
+            let token = pending_session_token(proof.key, proof.tenant_id, row.id, proof.raw, created);
+            let hash = token.token_hash();
+            if let Some(pending) = row.pending_token_hash.as_deref() {
+                if !bool::from(pending.ct_eq(hash.as_bytes().as_slice())) {
+                    return Err(unavailable());
+                }
+            } else {
+                lock_token_hash(&mut transaction, hash).await?;
+                ensure_token_hash_available(&mut transaction, hash).await?;
+                row.pending_token_hash = Some(hash.as_bytes().to_vec());
+                row.pending_created_at = Some(created);
+                staged = true;
+            }
+            replacement = Some(token);
+        }
+    }
+    if touch {
+        let lifetime = if row.remember_me { SessionLifetime::remembered() } else { SessionLifetime::normal() };
+        row.last_seen_at = now;
+        row.idle_expires_at = (now + lifetime.idle).min(row.absolute_expires_at);
+    }
+    if promoted || staged || touch {
+        school_database::DbSession::new(&mut *transaction)
+            .query("auth.src.session_repository.maintain_session", r#"
+                UPDATE auth_sessions SET current_token_hash=$1, previous_token_hash=$2,
+                    previous_token_valid_until=$3, pending_token_hash=$4, pending_created_at=$5,
+                    rotated_at=$6, last_seen_at=$7, idle_expires_at=$8 WHERE id=$9
+            "#)
+            .bind(&row.current_token_hash).bind(&row.previous_token_hash)
+            .bind(row.previous_token_valid_until).bind(&row.pending_token_hash)
+            .bind(row.pending_created_at).bind(row.rotated_at).bind(row.last_seen_at)
+            .bind(row.idle_expires_at).bind(row.id)
+            .execute().await.map_err(session_store_error)?;
+    }
     transaction.commit().await.map_err(session_store_error)?;
+    if promoted { super::audit::session_transition(row.id, "credential_promoted"); }
+    if staged { super::audit::session_transition(row.id, "credential_staged"); }
+    Ok(Some(maintained(row, if promoted { PresentedTokenKind::Current } else { kind }, replacement, promoted || staged || touch)))
+}
 
-    Ok(Some(maintained(locked, locked_kind, replacement)))
+fn accepted(row: &AuthenticationRow, kind: PresentedTokenKind, now: DateTime<Utc>) -> bool {
+    let reason = if row.revoked_at.is_some() { Some("revoked") }
+        else if row.user_status != "active" { Some("inactive_user") }
+        else if row.absolute_expires_at <= now { Some("absolute_expired") }
+        else if row.idle_expires_at <= now { Some("idle_expired") }
+        else if kind == PresentedTokenKind::Previous && !previous_token_is_valid(row, now) { Some("previous_expired") }
+        else { None };
+    if let Some(reason) = reason {
+        super::audit::session_rejected(reason);
+        false
+    } else { true }
 }
 
 #[cfg(test)]
@@ -547,7 +525,7 @@ pub async fn apply_password_change<'a>(
             "auth.src.session_repository.apply_password_change",
             r#"
         UPDATE auth_sessions
-        SET revoked_at = $1, revocation_reason = $2
+        SET revoked_at = $1, revocation_reason = $2, pending_token_hash = NULL, pending_created_at = NULL
         WHERE user_id = $3
           AND id <> $4
           AND revoked_at IS NULL
@@ -573,6 +551,7 @@ pub async fn apply_password_change<'a>(
             previous_token_valid_until = $1 + interval '60 seconds',
             current_token_hash = $2,
             rotated_at = $1,
+            pending_token_hash = NULL, pending_created_at = NULL,
             last_seen_at = $1,
             idle_expires_at = LEAST(
                 $1 + CASE WHEN remember_me THEN interval '7 days' ELSE interval '2 hours' END,
@@ -670,7 +649,7 @@ pub async fn revoke_sessions_on_connection(
                     "auth.src.session_repository.revoke_sessions_on_connection",
                     r#"
                 UPDATE auth_sessions
-                SET revoked_at = $1, revocation_reason = $2
+                SET revoked_at = $1, revocation_reason = $2, pending_token_hash = NULL, pending_created_at = NULL
                 WHERE id = $3
                   AND user_id = $4
                   AND revoked_at IS NULL
@@ -692,7 +671,7 @@ pub async fn revoke_sessions_on_connection(
                     "auth.src.session_repository.revoke_sessions_on_connection",
                     r#"
                 UPDATE auth_sessions
-                SET revoked_at = $1, revocation_reason = $2
+                SET revoked_at = $1, revocation_reason = $2, pending_token_hash = NULL, pending_created_at = NULL
                 WHERE user_id = $3
                   AND revoked_at IS NULL
                   AND idle_expires_at > $1
@@ -875,16 +854,12 @@ fn presented_kind(
         .is_some_and(|hash| bool::from(hash.ct_eq(presented_hash.as_bytes().as_slice())))
     {
         Some(PresentedTokenKind::Previous)
+    } else if row.pending_token_hash.as_deref()
+        .is_some_and(|hash| bool::from(hash.ct_eq(presented_hash.as_bytes().as_slice()))) {
+        Some(PresentedTokenKind::Pending)
     } else {
         None
     }
-}
-
-fn base_session_is_valid(row: &AuthenticationRow, now: DateTime<Utc>) -> bool {
-    row.revoked_at.is_none()
-        && row.user_status == "active"
-        && row.idle_expires_at > now
-        && row.absolute_expires_at > now
 }
 
 fn previous_token_is_valid(row: &AuthenticationRow, now: DateTime<Utc>) -> bool {
@@ -894,17 +869,11 @@ fn previous_token_is_valid(row: &AuthenticationRow, now: DateTime<Utc>) -> bool 
             .is_some_and(|valid_until| valid_until > now)
 }
 
-fn previous_token_is_expired(row: &AuthenticationRow, now: DateTime<Utc>) -> bool {
-    row.previous_token_hash.is_some()
-        && row
-            .previous_token_valid_until
-            .is_some_and(|valid_until| valid_until <= now)
-}
-
 fn maintained(
     row: AuthenticationRow,
     presented_as: PresentedTokenKind,
     replacement: Option<RawSessionToken>,
+    credential_changed: bool,
 ) -> MaintainedSession {
     MaintainedSession {
         session_id: row.id,
@@ -917,55 +886,9 @@ fn maintained(
         idle_expires_at: row.idle_expires_at,
         absolute_expires_at: row.absolute_expires_at,
         replacement,
+        has_pending: row.pending_token_hash.is_some(),
+        credential_changed,
     }
-}
-
-async fn clear_expired_previous_token(
-    pool: &PgPool,
-    session_id: Uuid,
-    now: DateTime<Utc>,
-) -> Result<(), AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "auth.clear_expired_previous_token",
-    )
-    .await
-    .map_err(session_store_error)?;
-    clear_expired_previous_token_on_connection(&mut connection, session_id, now).await
-}
-
-async fn clear_expired_previous_token_on_connection(
-    connection: &mut sqlx::PgConnection,
-    session_id: Uuid,
-    now: DateTime<Utc>,
-) -> Result<(), AppError> {
-    school_database::DbSession::new(&mut *connection).query("auth.src.session_repository.clear_expired_previous_token_on_connection",
-        "UPDATE auth_sessions SET previous_token_hash = NULL, previous_token_valid_until = NULL \
-         WHERE id = $1 AND previous_token_valid_until <= $2",
-    )
-    .bind(session_id)
-    .bind(now)
-    .execute()
-    .await
-    .map_err(session_store_error)?;
-    Ok(())
-}
-
-async fn clear_expired_previous_token_in_transaction(
-    transaction: &mut Transaction<'_, Postgres>,
-    session_id: Uuid,
-    now: DateTime<Utc>,
-) -> Result<(), AppError> {
-    school_database::DbSession::new(&mut **transaction).query("auth.src.session_repository.clear_expired_previous_token_in_transaction",
-        "UPDATE auth_sessions SET previous_token_hash = NULL, previous_token_valid_until = NULL \
-         WHERE id = $1 AND previous_token_valid_until <= $2",
-    )
-    .bind(session_id)
-    .bind(now)
-    .execute()
-    .await
-    .map_err(session_store_error)?;
-    Ok(())
 }
 
 async fn lock_token_hash(
@@ -995,7 +918,7 @@ async fn ensure_token_hash_available(
         .scalar(
             "auth.src.session_repository.ensure_token_hash_available",
             "SELECT EXISTS (SELECT 1 FROM auth_sessions \
-         WHERE current_token_hash = $1 OR previous_token_hash = $1)",
+         WHERE current_token_hash = $1 OR previous_token_hash = $1 OR pending_token_hash = $1)",
         )
         .bind(token_hash.as_bytes().as_slice())
         .fetch_one()

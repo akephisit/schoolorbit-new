@@ -131,3 +131,12 @@ pub fn session_realtime_disconnect(
         reason = reason.as_str()
     );
 }
+
+/// Closed source-owned reasons only; never include a credential, hash or request body.
+pub(crate) fn session_rejected(reason: &'static str) {
+    tracing::warn!(event = "session_rejected", reason);
+}
+
+pub(crate) fn session_transition(session_id: Uuid, transition: &'static str) {
+    tracing::info!(event = "session_transition", session_id = %session_id, transition);
+}

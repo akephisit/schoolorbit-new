@@ -17,8 +17,6 @@ use school_auth::events::PermissionChangeEvent;
 use school_auth::{
     audit::{self, SessionFailureReason},
     events::SessionRevocationEvent,
-    session_crypto::RawSessionToken,
-    session_repository::SessionMaintenanceMode,
     session_service::{self, AuthenticatedSession},
 };
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -754,12 +752,11 @@ pub async fn timetable_websocket_handler(
         &session_context,
         token.token_hash(),
         Utc::now(),
-        SessionMaintenanceMode::TouchOnly,
-        RawSessionToken::generate,
     )
     .await?
     .map(|authentication| authentication.authenticated)
     .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
+    let authenticated = session_service::acknowledge(&session_context, &authenticated, Utc::now()).await?;
     let context = actor_tenant_context_from_session(&state.auth_runtime, &authenticated).await?;
     let access = authorize_socket(
         &context.tenant.pool,

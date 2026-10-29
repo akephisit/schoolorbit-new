@@ -44,7 +44,7 @@ use school_admission::http::handlers::portal::{PortalDocumentMultipart, PortalUp
 use school_auth::consent::models::{ConsentRecordResponse, UserConsentStatus};
 use school_auth::models::{
     ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, ProfileResponse,
-    SessionListData, SessionResponse, UpdateProfileRequest,
+    SessionListData, SessionResponse, SessionState, SessionActivityRequest, UpdateProfileRequest,
 };
 use school_calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag,
@@ -303,6 +303,7 @@ use utoipa::OpenApi;
         school_auth_http::http::session_handlers::login,
         school_auth_http::http::session_handlers::logout,
         school_auth_http::http::session_handlers::me,
+        school_auth_http::http::session_handlers::activity,
         school_auth_http::http::handlers::get_profile,
         school_auth_http::http::handlers::update_profile,
         school_auth_http::http::session_handlers::change_password,
@@ -971,6 +972,9 @@ struct SchoolApiDoc;
         UpdateProfileRequest,
         ChangePasswordRequest,
         CurrentUserResponse,
+        SessionState,
+        SessionActivityRequest,
+        ApiResponse<SessionState>,
         SessionResponse,
         SessionListData,
         ApiResponse<CurrentUserResponse>,

@@ -13,9 +13,8 @@ use uuid::Uuid;
 
 use super::{
     session_crypto::TokenHash,
-    session_policy::{ROTATION_INTERVAL, TOUCH_INTERVAL},
-    session_repository::{
-        MaintainedSession, PresentedTokenKind, SessionMaintenanceMode, SessionValidity,
+        session_repository::{
+        MaintainedSession, PresentedTokenKind, SessionValidity,
     },
 };
 use school_errors::AppError;
@@ -38,6 +37,7 @@ struct CachedAuthentication {
     last_seen_at: DateTime<Utc>,
     validity: SessionValidity,
     checked_at: DateTime<Utc>,
+    has_pending: bool,
 }
 
 impl CachedAuthentication {
@@ -54,16 +54,15 @@ impl CachedAuthentication {
                 absolute_expires_at: row.absolute_expires_at,
             },
             checked_at: now,
+            has_pending: row.has_pending,
         }
     }
 
-    fn fresh(&self, now: DateTime<Utc>, mode: SessionMaintenanceMode) -> bool {
+    fn fresh(&self, now: DateTime<Utc>) -> bool {
         now >= self.checked_at
             && now < self.checked_at + AUTH_TTL
             && self.validity.is_valid_at(now)
-            && now < self.last_seen_at + TOUCH_INTERVAL
-            && (mode == SessionMaintenanceMode::TouchOnly
-                || now < self.rotated_at + ROTATION_INTERVAL)
+
     }
 
     fn into_row(self) -> MaintainedSession {
@@ -78,6 +77,8 @@ impl CachedAuthentication {
             idle_expires_at: self.validity.idle_expires_at,
             absolute_expires_at: self.validity.absolute_expires_at,
             replacement: None,
+            has_pending: self.has_pending,
+            credential_changed: false,
         }
     }
 }
@@ -205,89 +206,46 @@ impl SessionCache {
             .retain(|(school, _, _), _| school != tenant);
     }
 
-    /// `fetch(None)` authenticates normally. A recovery hash must be checked
-    /// directly against the database with TouchOnly maintenance, never cached.
+    /// Cache only read-only current-credential validation. Maintenance is a separate
+    /// guarded operation; no invalidation recovery is allowed to issue credentials.
     pub async fn authenticate<F, Fut>(
         &self,
         tenant: &str,
         hash: TokenHash,
         now: DateTime<Utc>,
-        mode: SessionMaintenanceMode,
-        mut fetch: F,
+        fetch: F,
     ) -> Result<Option<MaintainedSession>, AppError>
     where
-        F: FnMut(Option<TokenHash>) -> Fut,
+        F: FnOnce() -> Fut,
         Fut: Future<Output = Result<Option<MaintainedSession>, AppError>>,
     {
         let key = (tenant.to_string(), *hash.as_bytes());
         let _guard = self.lock_for(&key).lock().await;
         let revision = {
             let state = self.state();
-            if let Some(row) = state.auth.get(&key).filter(|row| row.fresh(now, mode)) {
+            if let Some(row) = state.auth.get(&key).filter(|row| row.fresh(now)) {
                 return Ok(Some(row.clone().into_row()));
             }
             state.revision
         };
-        let mut result = fetch(None).await?;
-        let recovery_revision = {
-            let mut state = self.state();
-            if result
-                .as_ref()
-                .is_some_and(|row| state.changed_since(revision, tenant, row.user_id))
-            {
-                // Keep a committed rotation alive across permission edits, but
-                // verify its replacement credential against fresh database state.
-                state.revision
-            } else {
-                state.auth.remove(&key);
-                if let Some(row) = &result {
-                    // Rotation invalidates any cached use of the old current token. Never
-                    // cache a replacement credential or a previous-token grace acceptance.
-                    if row.replacement.is_some() {
-                        state.auth.retain(|(school, _), cached| {
-                            school != tenant || cached.session_id != row.session_id
-                        });
-                    }
-                    if state.auth.len() >= CAPACITY {
-                        state.auth.clear();
-                    }
-                    let cached = CachedAuthentication::from_row(row, now);
-                    state.store_validation(
-                        (tenant.to_string(), row.session_id, row.user_id),
-                        CachedValidation {
-                            validity: cached.validity.clone(),
-                            checked_at: now,
-                        },
-                    );
-                    if row.presented_as == PresentedTokenKind::Current && row.replacement.is_none()
-                    {
-                        state.auth.insert(key, cached);
-                    }
-                }
-                return Ok(result);
-            }
-        };
-        let original = result.as_mut().ok_or_else(unavailable)?;
-        let replacement = original.replacement.take().ok_or_else(unavailable)?;
-        let mut refreshed = fetch(Some(replacement.token_hash()))
-            .await?
-            .ok_or_else(unavailable)?;
-        if refreshed.session_id != original.session_id
-            || refreshed.user_id != original.user_id
-            || refreshed.presented_as != PresentedTokenKind::Current
-            || refreshed.replacement.is_some()
-            || now >= refreshed.idle_expires_at
-            || now >= refreshed.absolute_expires_at
-            || self
-                .state()
-                .changed_since(recovery_revision, tenant, refreshed.user_id)
-        {
+        let result = fetch().await?;
+        let mut state = self.state();
+        if result.as_ref().is_some_and(|row| state.changed_since(revision, tenant, row.user_id)) {
             return Err(unavailable());
         }
-        // This raced result is deliberately not cached. Only the verified
-        // response owns the raw replacement, just like an ordinary rotation.
-        refreshed.replacement = Some(replacement);
-        Ok(Some(refreshed))
+        state.auth.remove(&key);
+        if let Some(row) = &result {
+            if state.auth.len() >= CAPACITY { state.auth.clear(); }
+            let cached = CachedAuthentication::from_row(row, now);
+            state.store_validation(
+                (tenant.to_string(), row.session_id, row.user_id),
+                CachedValidation { validity: cached.validity.clone(), checked_at: now },
+            );
+            if row.presented_as == PresentedTokenKind::Current && row.replacement.is_none() {
+                state.auth.insert(key, cached);
+            }
+        }
+        Ok(result)
     }
 
     pub async fn revalidate<F, Fut>(

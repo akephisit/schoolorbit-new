@@ -12,6 +12,7 @@ use school_errors::AppError;
 
 type HmacSha256 = Hmac<Sha256>;
 
+const PENDING_DOMAIN: &[u8] = b"schoolorbit/session/pending/v1";
 const CSRF_DOMAIN: &[u8] = b"schoolorbit/session/csrf/v1";
 const IDENTIFIER_DOMAIN: &[u8] = b"schoolorbit/login/identifier/v1";
 const SOURCE_DOMAIN: &[u8] = b"schoolorbit/login/source/v1";
@@ -99,6 +100,30 @@ impl fmt::Debug for RawSessionToken {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("RawSessionToken([REDACTED])")
     }
+}
+
+/// PostgreSQL persists microseconds. Derivation always uses that same canonical precision.
+pub fn canonical_session_time(now: chrono::DateTime<chrono::Utc>) -> Result<chrono::DateTime<chrono::Utc>, AppError> {
+    chrono::DateTime::from_timestamp_micros(now.timestamp_micros())
+        .ok_or_else(|| AppError::ServiceUnavailable("session_time".into()))
+}
+
+pub fn pending_session_token(
+    key: &SessionHmacKey,
+    tenant_id: Uuid,
+    session_id: Uuid,
+    current: &RawSessionToken,
+    pending_created_at: chrono::DateTime<chrono::Utc>,
+) -> RawSessionToken {
+    let mut mac = key.hmac();
+    mac.update(PENDING_DOMAIN);
+    mac.update(tenant_id.as_bytes());
+    mac.update(session_id.as_bytes());
+    mac.update(current.as_bytes());
+    mac.update(&pending_created_at.timestamp_micros().to_be_bytes());
+    let mut bytes = [0_u8; 32];
+    bytes.copy_from_slice(&mac.finalize().into_bytes());
+    RawSessionToken(bytes)
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
