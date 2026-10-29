@@ -757,6 +757,17 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
                 .display_name,
             expected
         );
+        assert_eq!(
+            workspace
+                .blocks
+                .iter()
+                .find(|candidate| candidate.id == block.id)
+                .unwrap()
+                .groups[0]
+                .instructors[0]
+                .display_name,
+            expected,
+        );
         let placed = timetable_block_service::get_block(&pool, block.id)
             .await
             .unwrap();
