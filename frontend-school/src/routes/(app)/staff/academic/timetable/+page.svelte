@@ -41,10 +41,7 @@
 		swapTimetableBlocksOptimistically
 	} from '#lib/academic/timetable/optimistic-block.js';
 
-	import {
-		placementCellState,
-		placementFailureMessage
-	} from '#lib/academic/timetable/placement-preview.js';
+	import { placementFailureMessage } from '#lib/academic/timetable/placement-preview.js';
 
 	import {
 		createTimetableWorkspaceController,
@@ -253,21 +250,11 @@
 	let publicationKey = '';
 	const pendingWaiters = new SvelteSet<() => void>();
 
-	let previewing = $state(false);
 	let pendingBlockIds = $state.raw<Set<string>>(new Set());
 	let pendingRemovalCellKeys = $state.raw<Set<string>>(new Set());
 	let pendingOperationCount = $state(0);
 	let reconcileAfterPending = false;
 	let optimisticSequence = 0;
-	let placementSession = 0;
-	let previewRevision = 0;
-	let activePreviewRequest: {
-		session: number;
-		cellKey: string;
-		workspace: TimetableBlockWorkspace;
-		promise: Promise<TimetableBlockPlacementPreview>;
-		abortController: AbortController;
-	} | null = null;
 	let exportingTeacherLoad = $state(false);
 	let exportingPdf = $state(false);
 	let pdfOpen = $state(false);
@@ -733,21 +720,11 @@
 		source: TimetableBlockPlacementSource,
 		candidate: TimetableBlockPlacementCandidate
 	): void {
-		activePreviewRequest?.abortController.abort();
-		placementSession += 1;
-		previewRevision += 1;
-		activePreviewRequest = null;
-		previewing = false;
 		previewCellKey = '';
 		controller?.startPlacement(source, candidate);
 	}
 
 	function cancelPlacement(): void {
-		activePreviewRequest?.abortController.abort();
-		placementSession += 1;
-		previewRevision += 1;
-		activePreviewRequest = null;
-		previewing = false;
 		previewCellKey = '';
 		controller?.clearPlacement();
 	}
@@ -780,9 +757,6 @@
 			if (block?.dayOfWeek === dayOfWeek && block.bellSchedulePeriodId === periodId)
 				return 'dragging';
 		}
-		if (controller.preview && previewCellKey === cellKey(dayOfWeek, periodId)) {
-			return placementCellState(controller.preview);
-		}
 		const local = localPlacementPreview(controller.board, {
 			view: controller.view,
 			rowId: controller.selectedOwnerId,
@@ -800,16 +774,13 @@
 			cellState(dayOfWeek, periodId) !== 'blocked'
 		)
 			return null;
-		const conflicts =
-			controller.preview && previewCellKey === cellKey(dayOfWeek, periodId)
-				? controller.preview.conflicts
-				: localPlacementPreview(controller.board, {
-						view: controller.view,
-						rowId: controller.selectedOwnerId,
-						dayOfWeek,
-						bellSchedulePeriodId: periodId,
-						...controller.dragSource
-					}).conflicts;
+		const conflicts = localPlacementPreview(controller.board, {
+			view: controller.view,
+			rowId: controller.selectedOwnerId,
+			dayOfWeek,
+			bellSchedulePeriodId: periodId,
+			...controller.dragSource
+		}).conflicts;
 		return timetablePlacementReasons(controller.board, controller.view, conflicts);
 	}
 
@@ -886,81 +857,17 @@
 		periodId: string,
 		dragSource: TimetableDragSource,
 		target: TimetableBlock | null,
-		workspace: TimetableBlockWorkspace,
-		signal?: AbortSignal
+		workspace: TimetableBlockWorkspace
 	): Promise<TimetableBlockPlacementPreview> {
-		if (!academicTermId) return Promise.reject(new Error('ไม่พบภาคเรียนที่กำลังจัดตาราง'));
-		return previewTimetableBlockPlacement(
-			{
-				academicTermId,
-				timetableVersionId: workspace.version.id,
-				targetDayOfWeek: dayOfWeek,
-				targetBellSchedulePeriodId: periodId,
-				expectedTargetBlockId: target?.id ?? null,
-				expectedTargetRowVersion: target?.rowVersion ?? null,
-				...dragSource
-			},
-			{ signal }
-		);
-	}
-
-	async function fetchPlacementPreview(
-		dayOfWeek: string,
-		periodId: string
-	): Promise<TimetableBlockPlacementPreview | null> {
-		if (!controller?.dragSource || !academicTermId) return null;
-		const currentController = controller;
-		const requestedWorkspace = currentController.workspace;
-		const dragSource: TimetableDragSource = controller.dragSource;
-		const target = targetBlock(dayOfWeek, periodId);
-		const requestedCellKey = cellKey(dayOfWeek, periodId);
-		const requestedSession = placementSession;
-		const revision = ++previewRevision;
-		activePreviewRequest?.abortController.abort();
-		const abortController = new AbortController();
-		const promise = requestPlacementPreview(
-			dayOfWeek,
-			periodId,
-			dragSource,
-			target,
-			currentController.workspace,
-			abortController.signal
-		);
-		activePreviewRequest = {
-			session: requestedSession,
-			cellKey: requestedCellKey,
-			workspace: requestedWorkspace,
-			promise,
-			abortController
-		};
-		previewCellKey = requestedCellKey;
-		controller.setPreview(null);
-		previewing = true;
-		try {
-			const preview = await promise;
-			if (
-				placementSession !== requestedSession ||
-				previewRevision !== revision ||
-				previewCellKey !== requestedCellKey ||
-				controller !== currentController ||
-				currentController.workspace !== requestedWorkspace
-			)
-				return null;
-			currentController.setPreview(preview);
-			return preview;
-		} catch (error) {
-			if (
-				placementSession === requestedSession &&
-				previewRevision === revision &&
-				!isAbortError(error) &&
-				!(error instanceof ApiClientError && error.status === 409)
-			) {
-				toast.error(error instanceof Error ? error.message : 'ตรวจตำแหน่งวางคาบไม่สำเร็จ');
-			}
-			return null;
-		} finally {
-			if (placementSession === requestedSession && previewRevision === revision) previewing = false;
-		}
+		return previewTimetableBlockPlacement({
+			academicTermId: workspace.version.academicTermId,
+			timetableVersionId: workspace.version.id,
+			targetDayOfWeek: dayOfWeek,
+			targetBellSchedulePeriodId: periodId,
+			expectedTargetBlockId: target?.id ?? null,
+			expectedTargetRowVersion: target?.rowVersion ?? null,
+			...dragSource
+		});
 	}
 
 	function applyPlacement(dayOfWeek: string, periodId: string): void {
@@ -979,23 +886,13 @@
 			toast.error('รายการนี้กำลังบันทึก กรุณาเลือกคาบอื่นก่อน');
 			return;
 		}
-		const requestedCellKey = cellKey(dayOfWeek, periodId);
-		const reusablePreviewRequest =
-			activePreviewRequest?.session === placementSession &&
-			activePreviewRequest.cellKey === requestedCellKey &&
-			activePreviewRequest.workspace === operationController.workspace
-				? activePreviewRequest
-				: null;
-		if (reusablePreviewRequest) activePreviewRequest = null;
-		const previewPromise =
-			reusablePreviewRequest?.promise ??
-			requestPlacementPreview(
-				dayOfWeek,
-				periodId,
-				dragSource,
-				target,
-				operationController.workspace
-			);
+		const previewPromise = requestPlacementPreview(
+			dayOfWeek,
+			periodId,
+			dragSource,
+			target,
+			operationController.workspace
+		);
 		const originalBlocks: TimetableBlock[] = [];
 		let optimisticKind: OptimisticPlacementOperation['optimisticKind'];
 		let temporaryBlockId: string | undefined;
@@ -1167,7 +1064,7 @@
 
 	function previewPlacement(dayOfWeek: string, periodId: string): void {
 		if (!controller?.dragSource || previewCellKey === cellKey(dayOfWeek, periodId)) return;
-		void fetchPlacementPreview(dayOfWeek, periodId);
+		previewCellKey = cellKey(dayOfWeek, periodId);
 	}
 
 	async function downloadPdf(
@@ -2032,7 +1929,6 @@
 				version={controller.workspace.version}
 				view={activeView}
 				isSaving={busy || pendingOperationCount > 0}
-				isPreviewing={previewing}
 				editing={controller.editing}
 				onViewChange={changeView}
 			>

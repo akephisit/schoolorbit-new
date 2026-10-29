@@ -4,7 +4,7 @@ import type {
 	TimetableBoardState,
 	TimetableBoardView
 } from './board-state.ts';
-import { timetableTeacherLabel } from './teacher-label.ts';
+import { timetableTeacherFullLabel } from './teacher-label.ts';
 
 export interface TimetablePlacementReasons {
 	primary: string;
@@ -77,7 +77,7 @@ export function timetablePlacementReasons(
 			const teachers = unique([
 				...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.displayName)),
 				...block.teachers.map((teacher) => teacher.displayName)
-			]).map(timetableTeacherLabel);
+			]).map(timetableTeacherFullLabel);
 			const classes = unique([
 				...block.groups.flatMap((group) => group.homeroomNames),
 				...block.homerooms.map((homeroom) => homeroom.name)
@@ -90,7 +90,7 @@ export function timetablePlacementReasons(
 					...block.teachers
 				].find((teacher) => teacher.teacherId === conflict.targetId);
 				const name = teacher?.displayName || blockTeacher?.displayName;
-				resource = name ? timetableTeacherLabel(name) : undefined;
+				resource = name ? timetableTeacherFullLabel(name) : undefined;
 			} else if (conflict.conflictType === 'homeroom') {
 				resource =
 					state.homeroomsById.get(conflict.targetId ?? '')?.name ||
@@ -104,7 +104,7 @@ export function timetablePlacementReasons(
 				const target = [...block.groups, ...block.homerooms].find(
 					(target) => target.roomId === conflict.targetId
 				);
-				const name = room?.name || target?.roomName || target?.roomCode;
+				const name = room?.name || target?.roomName;
 				resource = name ? `ห้องสอน ${name}` : undefined;
 			}
 			if (!resource)

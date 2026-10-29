@@ -1,7 +1,6 @@
 import type {
 	TimetableBlockMutationKind,
 	TimetableBlockPlacementCandidate,
-	TimetableBlockPlacementPreview,
 	TimetableBlockPlacementSource,
 	TimetableBlockWorkspace
 } from '../../api/timetable';
@@ -22,7 +21,6 @@ class TimetableWorkspaceController {
 	view = $state<TimetableBoardView>('homeroom');
 	selectedOwnerId!: string | null;
 	dragSource = $state.raw<TimetableDragSource | null>(null);
-	preview = $state.raw<TimetableBlockPlacementPreview | null>(null);
 	pendingMutation = $state<TimetableBlockMutationKind | null>(null);
 	isRefreshing = $state(false);
 
@@ -43,7 +41,6 @@ class TimetableWorkspaceController {
 
 	setWorkspace = (workspace: TimetableBlockWorkspace) => {
 		this.workspace = workspace;
-		this.preview = null;
 		if (!this.rows.some((row) => row.id === this.selectedOwnerId)) {
 			this.selectedOwnerId = this.initialOwnerId(this.view);
 		}
@@ -65,11 +62,6 @@ class TimetableWorkspaceController {
 	) => {
 		if (!this.canEdit) return;
 		this.dragSource = { source, candidate };
-		this.preview = null;
-	};
-
-	setPreview = (preview: TimetableBlockPlacementPreview | null) => {
-		this.preview = preview;
 	};
 
 	beginMutation = (mutation: TimetableBlockMutationKind) => {
@@ -91,7 +83,6 @@ class TimetableWorkspaceController {
 
 	clearPlacement = () => {
 		this.dragSource = null;
-		this.preview = null;
 	};
 
 	remainingDemand = (groupId: string) => remainingDemandForGroup(this.board, groupId);

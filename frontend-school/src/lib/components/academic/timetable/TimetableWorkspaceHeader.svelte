@@ -11,7 +11,6 @@
 		version,
 		view,
 		isSaving = false,
-		isPreviewing = false,
 		editing = false,
 		controls,
 		onViewChange
@@ -19,7 +18,6 @@
 		version: TimetableVersion;
 		view: TimetablePageView;
 		isSaving?: boolean;
-		isPreviewing?: boolean;
 		editing?: boolean;
 		controls: Snippet;
 		onViewChange: (view: TimetablePageView) => void;
@@ -62,8 +60,6 @@
 				<span class="inline-flex items-center gap-1.5" aria-live="polite">
 					{#if isSaving}
 						<LoaderCircle class="size-4 animate-spin" /> กำลังบันทึก
-					{:else if isPreviewing}
-						<LoaderCircle class="size-4 animate-spin" /> กำลังตรวจสอบตำแหน่ง
 					{:else if version.status === 'draft'}
 						<Check class="size-4 text-emerald-600" /> {editing ? 'บันทึกอัตโนมัติแล้ว' : 'โหมดดู'}
 					{:else}

@@ -32,9 +32,12 @@
 			hovered = false;
 		}}
 	>
-		<span class="line-clamp-1 w-full font-semibold text-destructive"
-			>{reasons.primary}{reasons.details.length > 1 ? ` +${reasons.details.length - 1}` : ''}</span
-		>
+		<span class="flex w-full min-w-0 items-center gap-1 font-semibold text-destructive">
+			<span class="line-clamp-1 min-w-0 flex-1">{reasons.primary}</span>
+			{#if reasons.details.length > 1}<span class="shrink-0">+{reasons.details.length - 1}</span
+				>{/if}
+		</span>
+
 		{#if reasons.lesson}<span class="line-clamp-1 w-full">{reasons.lesson}</span>{/if}
 		{#if reasons.context}<span class="line-clamp-1 w-full text-muted-foreground"
 				>{reasons.context}</span
@@ -47,6 +50,7 @@
 		]}
 		align="start"
 		side="top"
+		role="dialog"
 		aria-label="เหตุผลที่วางคาบไม่ได้"
 		onOpenAutoFocus={(event) => event.preventDefault()}
 		onCloseAutoFocus={(event) => event.preventDefault()}
