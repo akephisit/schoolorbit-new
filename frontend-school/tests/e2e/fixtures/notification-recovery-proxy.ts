@@ -156,7 +156,14 @@ export async function startNotificationRecoveryProxy() {
 				displayName: 'Synthetic User',
 				userType: 'staff',
 				status: 'active',
-				permissions: []
+				permissions: [],
+				session: {
+					sessionId: '01900000-0000-7000-8000-000000000001',
+					serverNow: new Date().toISOString(),
+					idleExpiresAt: new Date(Date.now() + 7_200_000).toISOString(),
+					absoluteExpiresAt: new Date(Date.now() + 43_200_000).toISOString(),
+					nextRenewalAt: new Date(Date.now() + 300_000).toISOString()
+				}
 			});
 		}
 		if (url.pathname === '/api/auth/logout') {

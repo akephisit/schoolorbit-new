@@ -22,7 +22,7 @@ use school_test_db::{create_named_test_pool, run_test_migrations};
 
 use school_auth::{
     config::SessionConfig,
-    models::{CurrentUserResponse, LoginRequest},
+    models::{CurrentUserResponse, LoginRequest, SessionState},
     runtime::AuthRuntime,
     session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
     session_policy::normalize_login_identifier,
@@ -253,6 +253,13 @@ fn unsafe_origin_must_equal_the_resolved_tenant_origin() {
 #[test]
 fn current_user_json_has_no_default_pii() {
     let value = serde_json::to_value(CurrentUserResponse {
+        session: SessionState {
+            session_id: Uuid::nil(),
+            server_now: Utc::now(),
+            idle_expires_at: Utc::now() + Duration::hours(2),
+            absolute_expires_at: Utc::now() + Duration::hours(12),
+            next_renewal_at: Utc::now() + Duration::minutes(5),
+        },
         id: Uuid::nil(),
         username: "teacher".to_string(),
         first_name: "Test".to_string(),
@@ -895,7 +902,6 @@ mod protected_router {
     use uuid::Uuid;
 
     use crate::app::APPLICATION_BODY_LIMIT;
-    use crate::middleware::session::maintenance_mode;
     use crate::middleware::session::session_middleware;
     use school_auth::{
         config::SessionConfig,
@@ -905,8 +911,6 @@ mod protected_router {
     };
     use school_auth_http::http::routes::AUTH_JSON_BODY_LIMIT;
     use school_test_db::{create_named_test_pool, run_test_migrations};
-
-    use school_auth::session_repository::SessionMaintenanceMode;
 
     #[derive(Clone)]
     struct DirectoryState(Arc<HashMap<String, (Uuid, String)>>);
@@ -1091,6 +1095,11 @@ mod protected_router {
             .route("/unsafe", patch(protected_identity))
             .route("/unsafe", delete(protected_identity))
             .route("/api/auth/me", get(protected_identity))
+            .route(
+                "/api/auth/activity",
+                post(school_auth_http::http::session_handlers::activity)
+                    .with_state(runtime.clone()),
+            )
             .route("/api/notifications/stream", get(protected_identity))
             .route("/feature-cookie", get(feature_cookie))
             .route_layer(from_fn_with_state(runtime, session_middleware))
@@ -1122,6 +1131,22 @@ mod protected_router {
         request
             .body(Body::empty())
             .expect("protected router request must build")
+    }
+
+    fn activity_request(session_id: Uuid, token: &RawSessionToken, csrf: &str) -> Request<Body> {
+        let mut req = request(
+            Method::POST,
+            "/api/auth/activity",
+            Some("https://tenant-a.schoolorbit.test"),
+            Some(token),
+            Some(csrf),
+        );
+        req.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        *req.body_mut() = Body::from(json!({"expectedSessionId": session_id}).to_string());
+        req
     }
 
     fn set_cookie_count(response: &Response) -> usize {
@@ -2234,37 +2259,137 @@ mod protected_router {
         assert_eq!(accepted.status(), StatusCode::OK);
     }
 
-    #[test]
-    fn rotation_is_deferred_only_for_the_closed_credential_mutation_set() {
-        let session_id = Uuid::new_v4();
-        for (method, path) in [
-            (Method::GET, "/api/notifications/stream".to_string()),
-            (Method::POST, "/api/auth/logout-all".to_string()),
-            (Method::POST, "/api/auth/me/change-password".to_string()),
-            (Method::DELETE, format!("/api/auth/sessions/{session_id}")),
-        ] {
-            assert_eq!(
-                maintenance_mode(&method, &path),
-                SessionMaintenanceMode::TouchOnly,
-                "{method} {path}"
-            );
+    #[tokio::test]
+    async fn activity_security_fences_precede_touch_staging_and_pending_acknowledgment() {
+        let fixture = ProtectedFixture::new("activity_security_fences").await;
+        let user = fixture
+            .insert_user(&fixture.tenant_a_pool, "activity-owner", "active")
+            .await;
+        let (id, a) = fixture
+            .insert_session(&fixture.tenant_a_pool, user, 81, true)
+            .await;
+        let csrf = fixture.csrf(id);
+        let app = protected_app(fixture.runtime.clone());
+        let snapshot = || {
+            sqlx::query_as::<_, (chrono::DateTime<Utc>, chrono::DateTime<Utc>, chrono::DateTime<Utc>, Option<Vec<u8>>, Option<chrono::DateTime<Utc>>, String)>(
+            "SELECT last_seen_at,idle_expires_at,rotated_at,pending_token_hash,pending_created_at,xmin::text FROM auth_sessions WHERE id=$1").bind(id).fetch_one(&fixture.tenant_a_pool)
+        };
+        let before = snapshot().await.unwrap();
+        for csrf_value in ["wrong-csrf", ""] {
+            let denied = app
+                .clone()
+                .oneshot(activity_request(id, &a, csrf_value))
+                .await
+                .unwrap();
+            assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+            assert_eq!(set_cookie_count(&denied), 0);
+            assert_eq!(snapshot().await.unwrap(), before);
         }
-
-        for (method, path) in [
-            (Method::GET, "/api/auth/me"),
-            (Method::GET, "/api/notifications/stream/extra"),
-            (Method::DELETE, "/api/auth/sessions/not-a-uuid"),
-            (
-                Method::DELETE,
-                "/api/auth/sessions/00000000-0000-0000-0000-000000000000/extra",
-            ),
+        let mut foreign = activity_request(id, &a, &csrf);
+        foreign.headers_mut().insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://tenant-b.schoolorbit.test"),
+        );
+        let denied = app.clone().oneshot(foreign).await.unwrap();
+        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(snapshot().await.unwrap(), before);
+        let conflict = app
+            .clone()
+            .oneshot(activity_request(Uuid::new_v4(), &a, &csrf))
+            .await
+            .unwrap();
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+        assert_eq!(set_cookie_count(&conflict), 0);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(conflict.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["error"], "session_changed");
+        assert_eq!(snapshot().await.unwrap(), before);
+        let ordinary = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/auth/me",
+                Some("https://tenant-a.schoolorbit.test"),
+                Some(&a),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ordinary.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&ordinary), 0);
+        assert_eq!(snapshot().await.unwrap(), before);
+        let staged = app
+            .clone()
+            .oneshot(activity_request(id, &a, &csrf))
+            .await
+            .unwrap();
+        assert_eq!(staged.status(), StatusCode::OK);
+        assert_eq!(staged.headers()[header::CACHE_CONTROL], "no-store");
+        let cookie = staged.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .strip_prefix("__Host-schoolorbit_session=")
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let b = RawSessionToken::parse(cookie).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(staged.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["data"]["sessionId"], id.to_string());
+        for field in [
+            "serverNow",
+            "idleExpiresAt",
+            "absoluteExpiresAt",
+            "nextRenewalAt",
         ] {
-            assert_eq!(
-                maintenance_mode(&method, path),
-                SessionMaintenanceMode::RotateAndTouch,
-                "{method} {path}"
-            );
+            assert!(body["data"][field].is_string());
         }
+        let pending = snapshot().await.unwrap();
+        assert!(pending.3.is_some());
+        let invalid_b = app
+            .clone()
+            .oneshot(activity_request(id, &b, "wrong-csrf"))
+            .await
+            .unwrap();
+        assert_eq!(invalid_b.status(), StatusCode::FORBIDDEN);
+        assert_eq!(snapshot().await.unwrap(), pending);
+        let conflicting_b = app
+            .clone()
+            .oneshot(activity_request(Uuid::new_v4(), &b, &csrf))
+            .await
+            .unwrap();
+        assert_eq!(conflicting_b.status(), StatusCode::CONFLICT);
+        assert_eq!(snapshot().await.unwrap(), pending);
+        let invalid_unsafe_b = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/unsafe",
+                Some("https://tenant-a.schoolorbit.test"),
+                Some(&b),
+                Some("wrong-csrf"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(invalid_unsafe_b.status(), StatusCode::FORBIDDEN);
+        assert_eq!(snapshot().await.unwrap(), pending);
+        let acknowledged = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/auth/me",
+                Some("https://tenant-a.schoolorbit.test"),
+                Some(&b),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(acknowledged.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&acknowledged), 0);
+        assert!(snapshot().await.unwrap().3.is_none());
     }
 
     #[tokio::test]
@@ -2453,15 +2578,9 @@ mod protected_router {
 
         let rotated = app
             .clone()
-            .oneshot(request(
-                Method::GET,
-                "/api/auth/me",
-                Some(tenant_a_origin),
-                Some(&due_token),
-                None,
-            ))
+            .oneshot(activity_request(due_session_id, &due_token, &due_csrf))
             .await
-            .expect("ordinary rotation response must resolve");
+            .expect("activity stage response must resolve");
         assert_eq!(rotated.status(), StatusCode::OK);
         assert_eq!(set_cookie_count(&rotated), 1);
         assert_eq!(
@@ -2544,7 +2663,7 @@ mod protected_router {
         let second = second.expect("second concurrent response must resolve");
         assert_eq!(first.status(), StatusCode::OK);
         assert_eq!(second.status(), StatusCode::OK);
-        assert_eq!(set_cookie_count(&first) + set_cookie_count(&second), 1);
+        assert_eq!(set_cookie_count(&first) + set_cookie_count(&second), 0);
         for response in [&first, &second] {
             assert_eq!(
                 response
@@ -2569,6 +2688,6 @@ mod protected_router {
             .await
             .expect("feature-cookie response must resolve");
         assert_eq!(feature.status(), StatusCode::OK);
-        assert_eq!(set_cookie_count(&feature), 2);
+        assert_eq!(set_cookie_count(&feature), 1);
     }
 }

@@ -27,10 +27,11 @@ use super::{
     events::SessionRevocationEvent,
     session_crypto::{identifier_bucket, RawSessionToken, SessionHmacKey},
     session_policy::normalize_login_identifier,
-    session_repository::{SessionMaintenanceMode, SessionRevocationReason},
+    session_repository::SessionRevocationReason,
     session_service::{
-        authenticate, change_password, list_sessions, load_current_user, login, logout, logout_all,
-        revalidate, revoke_selected, LoginCommand, LoginResult, SessionServiceContext,
+        acknowledge, activity, authenticate, change_password, list_sessions, load_current_user,
+        login, logout, logout_all, revalidate, revoke_selected, LoginCommand, LoginResult,
+        SessionServiceContext,
     },
 };
 
@@ -53,41 +54,23 @@ async fn authentication_cache_serves_bursts_without_database_and_expires_closed(
         .await
         .unwrap();
     let hash = RawSessionToken::from_bytes(token).token_hash();
-    let first = authenticate(
-        &fixture.context,
-        hash,
-        fixture.now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("rotation is not due"),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let first = authenticate(&fixture.context, hash, fixture.now)
+        .await
+        .unwrap()
+        .unwrap();
     fixture.pool.close().await;
-    let cached = authenticate(
-        &fixture.context,
-        hash,
-        fixture.now + Duration::seconds(1),
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("cache hits cannot rotate"),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let cached = authenticate(&fixture.context, hash, fixture.now + Duration::seconds(1))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
         first.authenticated.session_id,
         cached.authenticated.session_id
     );
     assert!(cached.replacement.is_none());
-    let expired = authenticate(
-        &fixture.context,
-        hash,
-        fixture.now + Duration::seconds(60),
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("closed database"),
-    )
-    .await
-    .unwrap_err();
+    let expired = authenticate(&fixture.context, hash, fixture.now + Duration::seconds(60))
+        .await
+        .unwrap_err();
     assert_eq!(expired.status_code(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
@@ -103,16 +86,10 @@ async fn session_mutations_invalidate_warm_authentication_and_realtime() {
             .await
             .unwrap();
         let hash = current.credential.token_hash();
-        authenticate(
-            &fixture.context,
-            hash,
-            fixture.now,
-            SessionMaintenanceMode::RotateAndTouch,
-            || panic!("rotation not due"),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        authenticate(&fixture.context, hash, fixture.now)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(revalidate(&current.authenticated, fixture.now)
             .await
             .unwrap());
@@ -151,15 +128,9 @@ async fn session_mutations_invalidate_warm_authentication_and_realtime() {
                 // The old credential intentionally has a 60-second grace period,
                 // but that acceptance must be re-read from the database, not cache.
                 fixture.pool.close().await;
-                assert!(authenticate(
-                    &fixture.context,
-                    hash,
-                    fixture.now,
-                    SessionMaintenanceMode::RotateAndTouch,
-                    || panic!("closed database")
-                )
-                .await
-                .is_err());
+                assert!(authenticate(&fixture.context, hash, fixture.now,)
+                    .await
+                    .is_err());
                 assert!(revalidate(&current.authenticated, fixture.now)
                     .await
                     .is_err());
@@ -167,16 +138,10 @@ async fn session_mutations_invalidate_warm_authentication_and_realtime() {
             }
         }
         assert!(
-            authenticate(
-                &fixture.context,
-                hash,
-                fixture.now,
-                SessionMaintenanceMode::RotateAndTouch,
-                || panic!("revoked credentials cannot rotate")
-            )
-            .await
-            .unwrap()
-            .is_none(),
+            authenticate(&fixture.context, hash, fixture.now,)
+                .await
+                .unwrap()
+                .is_none(),
             "mutation: {mutation}"
         );
         assert!(!revalidate(&current.authenticated, fixture.now)
@@ -196,16 +161,10 @@ async fn deactivated_account_is_rejected_after_identity_invalidation() {
         .await
         .unwrap();
     let hash = current.credential.token_hash();
-    authenticate(
-        &fixture.context,
-        hash,
-        fixture.now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("rotation not due"),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    authenticate(&fixture.context, hash, fixture.now)
+        .await
+        .unwrap()
+        .unwrap();
     sqlx::query(
         "UPDATE users SET status = 'inactive', updated_at = NOW() \
          WHERE id = $1 AND user_type = 'staff'",
@@ -218,16 +177,10 @@ async fn deactivated_account_is_rejected_after_identity_invalidation() {
         .authenticated
         .identity_cache
         .invalidate_identity_user(&fixture.context.tenant().subdomain, user_id);
-    assert!(authenticate(
-        &fixture.context,
-        hash,
-        fixture.now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("inactive user must not rotate")
-    )
-    .await
-    .unwrap()
-    .is_none());
+    assert!(authenticate(&fixture.context, hash, fixture.now,)
+        .await
+        .unwrap()
+        .is_none());
     assert!(!revalidate(&current.authenticated, fixture.now)
         .await
         .unwrap());
@@ -761,15 +714,18 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
         .make_rotation_due(login.authenticated.session_id, fixture.now)
         .await;
 
-    let rotated = authenticate(
+    let validated = authenticate(&fixture.context, login.credential.token_hash(), fixture.now)
+        .await
+        .unwrap()
+        .unwrap();
+    let rotated = activity(
         &fixture.context,
-        login.credential.token_hash(),
+        &validated.authenticated,
+        login.authenticated.session_id,
+        &RawSessionToken::from_bytes([41; 32]),
         fixture.now,
-        SessionMaintenanceMode::RotateAndTouch,
-        AuthServiceFixture::credentials([42; 32]),
     )
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(rotated.csrf_token, login.csrf_token);
     let replacement = rotated.replacement.as_ref().unwrap();
@@ -778,8 +734,6 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
         &fixture.context,
         login.credential.token_hash(),
         fixture.now + Duration::seconds(1),
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("previous credentials must not rotate"),
     )
     .await
     .unwrap()
@@ -796,6 +750,16 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
     )
     .await
     .unwrap();
+    let pending: bool =
+        sqlx::query_scalar("SELECT pending_token_hash IS NOT NULL FROM auth_sessions WHERE id=$1")
+            .bind(login.authenticated.session_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert!(
+        !pending,
+        "password changes clear staged credentials atomically"
+    );
     assert_eq!(password.csrf_token, login.csrf_token);
     assert_eq!(password.credential.cookie_max_age_seconds, Some(2_591_998));
     assert_ne!(password.credential.token_hash(), replacement.token_hash());
@@ -825,15 +789,18 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
     .execute(&fixture.pool)
     .await
     .unwrap();
-    let late = authenticate(
+    let late = authenticate(&fixture.context, other.credential.token_hash(), day_29)
+        .await
+        .unwrap()
+        .unwrap();
+    let late = activity(
         &fixture.context,
-        other.credential.token_hash(),
+        &late.authenticated,
+        other.authenticated.session_id,
+        &RawSessionToken::from_bytes([44; 32]),
         day_29,
-        SessionMaintenanceMode::RotateAndTouch,
-        AuthServiceFixture::credentials([45; 32]),
     )
     .await
-    .unwrap()
     .unwrap();
     assert_eq!(
         late.replacement.unwrap().cookie_max_age_seconds,
@@ -842,7 +809,7 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
 }
 
 #[tokio::test]
-async fn websocket_touch_only_handshake_defers_rotation_to_the_next_ordinary_request() {
+async fn websocket_and_ordinary_requests_never_renew_idle_or_stage_credentials() {
     let fixture = AuthServiceFixture::new("service_websocket_touch_only").await;
     fixture
         .insert_user("teacher.one", "correct-password", "active")
@@ -865,8 +832,6 @@ async fn websocket_touch_only_handshake_defers_rotation_to_the_next_ordinary_req
         &fixture.context,
         login.credential.token_hash(),
         fixture.now + Duration::seconds(1),
-        SessionMaintenanceMode::TouchOnly,
-        || panic!("WebSocket touch-only authentication must not generate a credential"),
     )
     .await
     .unwrap()
@@ -881,18 +846,31 @@ async fn websocket_touch_only_handshake_defers_rotation_to_the_next_ordinary_req
         &fixture.context,
         login.credential.token_hash(),
         fixture.now + Duration::seconds(2),
-        SessionMaintenanceMode::RotateAndTouch,
-        AuthServiceFixture::credentials([62; 32]),
     )
     .await
     .unwrap()
     .unwrap();
 
-    assert!(ordinary.replacement.is_some());
+    assert!(ordinary.replacement.is_none());
     assert_eq!(ordinary.csrf_token, login.csrf_token);
-    let after_ordinary_request = fixture.session_token_hashes(session_id).await;
-    assert_ne!(after_ordinary_request.0, after_handshake.0);
-    assert_eq!(after_ordinary_request.1, Some(after_handshake.0));
+    assert_eq!(
+        fixture.session_token_hashes(session_id).await,
+        after_handshake
+    );
+    let staged = activity(
+        &fixture.context,
+        &ordinary.authenticated,
+        session_id,
+        &RawSessionToken::from_bytes([61; 32]),
+        fixture.now + Duration::seconds(3),
+    )
+    .await
+    .unwrap();
+    assert!(staged.replacement.is_some());
+    assert_eq!(
+        fixture.session_token_hashes(session_id).await,
+        after_handshake
+    );
 }
 
 #[tokio::test]
@@ -1406,4 +1384,146 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
     }
     .with_subscriber(subscriber)
     .await;
+}
+
+#[tokio::test]
+async fn activity_publication_makes_duplicate_pulses_database_free() {
+    let fixture = AuthServiceFixture::new("activity_cache_publication").await;
+    fixture
+        .insert_user("teacher.activity", "password-one", "active")
+        .await;
+    let login = fixture
+        .login_with_token(
+            "teacher.activity",
+            "password-one",
+            false,
+            fixture.now,
+            [202; 32],
+        )
+        .await
+        .unwrap();
+    let now = fixture.now + Duration::minutes(5);
+    let raw = RawSessionToken::from_bytes([202; 32]);
+    let validated = authenticate(&fixture.context, raw.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    let touched = activity(
+        &fixture.context,
+        &validated.authenticated,
+        login.authenticated.session_id,
+        &raw,
+        now,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        touched.authenticated.session_state().next_renewal_at,
+        now + Duration::minutes(5)
+    );
+    fixture.pool.close().await;
+    let cached = authenticate(
+        &fixture.context,
+        raw.token_hash(),
+        now + Duration::seconds(1),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let duplicate = activity(
+        &fixture.context,
+        &cached.authenticated,
+        login.authenticated.session_id,
+        &raw,
+        now + Duration::seconds(1),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        duplicate.authenticated.session_state().idle_expires_at,
+        touched.authenticated.session_state().idle_expires_at
+    );
+    assert!(
+        revalidate(&duplicate.authenticated, now + Duration::seconds(1))
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn pending_promotion_invalidates_warm_a_and_expected_session_mismatch_never_mutates() {
+    let fixture = AuthServiceFixture::new("activity_pending_cache_fence").await;
+    fixture
+        .insert_user("teacher.activity", "password-one", "active")
+        .await;
+    let login = fixture
+        .login_with_token(
+            "teacher.activity",
+            "password-one",
+            false,
+            fixture.now,
+            [203; 32],
+        )
+        .await
+        .unwrap();
+    let now = fixture.now + Duration::minutes(16);
+    let raw = RawSessionToken::from_bytes([203; 32]);
+    let validated = authenticate(&fixture.context, raw.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    let conflict = activity(
+        &fixture.context,
+        &validated.authenticated,
+        Uuid::new_v4(),
+        &raw,
+        now,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(conflict.status_code(), StatusCode::CONFLICT);
+    let pending: bool =
+        sqlx::query_scalar("SELECT pending_token_hash IS NOT NULL FROM auth_sessions WHERE id=$1")
+            .bind(login.authenticated.session_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert!(!pending);
+    let staged = activity(
+        &fixture.context,
+        &validated.authenticated,
+        login.authenticated.session_id,
+        &raw,
+        now,
+    )
+    .await
+    .unwrap();
+    let b = staged.replacement.unwrap();
+    authenticate(&fixture.context, raw.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    let pending = authenticate(&fixture.context, b.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    acknowledge(&fixture.context, &pending.authenticated, now)
+        .await
+        .unwrap();
+    let old = authenticate(&fixture.context, raw.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        old.authenticated.presented_as,
+        super::session_repository::PresentedTokenKind::Previous
+    );
+    assert!(authenticate(
+        &fixture.context,
+        raw.token_hash(),
+        now + Duration::seconds(60)
+    )
+    .await
+    .unwrap()
+    .is_none());
 }

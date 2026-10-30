@@ -1378,6 +1378,34 @@ SQLx checksums; do not rewrite or squash an applied migration to upgrade Postgre
 Runtime rollout, data reconciliation and actual-data restore gates are in
 [Operations](./OPERATIONS.md).
 
+## School session activity and acknowledged rotation
+
+Run the focused auth owner and transport suites against the runner's owned disposable PostgreSQL:
+
+```bash
+./scripts/test_backend_school.sh --package school-auth --locked -- --test-threads=4
+./scripts/test_backend_school.sh --package school-auth-http --locked -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::auth::session_http_tests --locked -- --test-threads=4
+./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests --locked -- --test-threads=4
+cargo test --manifest-path backend-school/Cargo.toml --bin backend-school --features api-docs api_contract::tests --locked
+```
+
+The auth tests cover side-effect-free validation, no idle extension from ordinary/realtime checks,
+activity writes no more than once per five minutes, no redundant validation read after guarded
+metadata publication, absolute clamping, unknown/idle/absolute/revoked/inactive denial, and
+CSRF/tenant/expected-session fences before any touch, staging or pending promotion. Rotation
+regressions retain a valid current credential after a lost reply, resend the same pending credential,
+round-trip PostgreSQL microsecond timestamps, accept quiet pending sessions, promote once under
+concurrency, enforce the exact 60-second previous grace, invalidate warm old-current cache entries,
+clear pending during password/revocation operations and roll back three-column digest collisions.
+Cache tests independently count read closures and fence late fills, publication, permission changes,
+journal overflow, tenant boundaries and local expiry. These fixtures use synthetic users only.
+
+Generate and verify the API contract through the commands in the API-contract section. Browser
+activity tests use trusted input and synthetic session deadlines; retain existing auth/realtime
+checks and timetable read counts. Dedicated real-account session-security tests remain separately
+opt-in as documented below; mocked browser tests do not establish deployed authentication or TLS.
+
 ## Password work and enrollment failure handling
 
 From the repository root, run the shared worker's deterministic cap, admission deadline,

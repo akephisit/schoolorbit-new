@@ -25,8 +25,8 @@ use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
     models::{
-        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, SessionListData,
-        SessionResponse, SessionState, SessionActivityRequest,
+        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest,
+        SessionActivityRequest, SessionListData, SessionResponse, SessionState,
     },
     runtime::AuthRuntime,
     session_crypto::RawSessionToken,
@@ -135,12 +135,8 @@ pub async fn logout_with_tenant(
     };
     let context = runtime.service_context(tenant);
     let now = Utc::now();
-    let Some(authentication) = session_service::authenticate(
-        &context,
-        token.token_hash(),
-        now,
-    )
-    .await?
+    let Some(authentication) =
+        session_service::authenticate(&context, token.token_hash(), now).await?
     else {
         return Ok(expired_auth_response("ออกจากระบบสำเร็จ"));
     };
@@ -175,7 +171,10 @@ pub async fn me(
     let user = session_service::load_current_user(&context, &session).await?;
     Ok((
         StatusCode::OK,
-        Json(ApiResponse::ok(current_user_response(user, session.session_state()))),
+        Json(ApiResponse::ok(current_user_response(
+            user,
+            session.session_state(),
+        ))),
     )
         .into_response())
 }
@@ -199,13 +198,31 @@ pub async fn activity(
     payload_result: Result<Json<SessionActivityRequest>, JsonRejection>,
 ) -> Result<Response, AppError> {
     let payload = parse_json_payload(payload_result)?;
-    let raw = presented_session_token(&headers)?.ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".into()))?;
+    let raw = presented_session_token(&headers)?
+        .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".into()))?;
     let context = runtime.service_context(session.tenant.clone());
-    let result = session_service::activity(&context, &session, payload.expected_session_id, &raw, Utc::now()).await?;
-    let mut response = (StatusCode::OK, Json(ApiResponse::ok(result.authenticated.session_state()))).into_response();
+    let result = session_service::activity(
+        &context,
+        &session,
+        payload.expected_session_id,
+        &raw,
+        Utc::now(),
+    )
+    .await?;
+    let mut response = (
+        StatusCode::OK,
+        Json(ApiResponse::ok(result.authenticated.session_state())),
+    )
+        .into_response();
     if let Some(replacement) = result.replacement {
         let encoded = replacement.encoded();
-        append_response_cookie(&mut response, set_session_cookie(encoded.expose_for_cookie(), replacement.cookie_max_age_seconds));
+        append_response_cookie(
+            &mut response,
+            set_session_cookie(
+                encoded.expose_for_cookie(),
+                replacement.cookie_max_age_seconds,
+            ),
+        );
     }
     insert_csrf_header(&mut response, &result.csrf_token);
     no_store(&mut response);
@@ -404,6 +421,8 @@ fn audit_origin_rejection(error: school_errors::AppError) -> AppError {
 }
 
 fn no_store(response: &mut Response) {
-    response.headers_mut().insert(axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
 }

@@ -12,8 +12,8 @@ use uuid::Uuid;
 use super::{
     audit::{self, LoginRejectionReason},
     config::SessionConfig,
-    models::SessionState,
     events::SessionRevocationEvent,
+    models::SessionState,
     services::{
         find_active_user_shell_by_id, find_session_login_user_by_username, get_primary_role_name,
         ActiveUserShell, SessionLoginUser,
@@ -28,9 +28,10 @@ use super::{
         validate_login_input, validate_new_password, SessionLifetime, SessionTimes,
     },
     session_repository::{
-        apply_password_change, validate_session, maintain_session, ActivityTokenDerivation, MaintainedSession, PresentedTokenKind, cleanup_auth_state, list_user_sessions,
+        apply_password_change, cleanup_auth_state, list_user_sessions,
         load_password_change_snapshot, load_session_validity, lock_password_change,
-        revoke_sessions, NewSession, SessionRevocationReason,
+        maintain_session, revoke_sessions, validate_session, ActivityTokenDerivation,
+        MaintainedSession, NewSession, PresentedTokenKind, SessionRevocationReason,
         SessionRevocationTarget, SessionRow,
     },
     throttle_repository::{check_login_throttles, record_login_failure, ThrottleState},
@@ -86,7 +87,7 @@ pub struct AuthenticatedSession {
     pub user_type: String,
     state: SessionState,
     presented_hash: Option<TokenHash>,
-    presented_as: PresentedTokenKind,
+    pub(crate) presented_as: PresentedTokenKind,
     has_pending: bool,
     rotated_at: DateTime<Utc>,
 }
@@ -106,7 +107,13 @@ impl AuthenticatedSession {
             session_id,
             user_id,
             user_type: user_type.into(),
-            state: SessionState { session_id, server_now: Utc::now(), idle_expires_at: Utc::now() + chrono::Duration::hours(2), absolute_expires_at: Utc::now() + chrono::Duration::hours(12), next_renewal_at: Utc::now() },
+            state: SessionState {
+                session_id,
+                server_now: Utc::now(),
+                idle_expires_at: Utc::now() + chrono::Duration::hours(2),
+                absolute_expires_at: Utc::now() + chrono::Duration::hours(12),
+                next_renewal_at: Utc::now(),
+            },
             presented_hash: None,
             presented_as: PresentedTokenKind::Current,
             has_pending: false,
@@ -116,7 +123,9 @@ impl AuthenticatedSession {
 }
 
 impl AuthenticatedSession {
-    pub fn session_state(&self) -> SessionState { self.state.clone() }
+    pub fn session_state(&self) -> SessionState {
+        self.state.clone()
+    }
 }
 
 impl fmt::Debug for AuthenticatedSession {
@@ -369,13 +378,22 @@ where
     }
 
     let authenticated = AuthenticatedSession {
-        identity_cache: Arc::clone(&context.identity_cache), tenant: context.tenant.clone(),
-        session_id, user_id: user.id, user_type: user.user_type.clone(),
-        state: SessionState { session_id, server_now: command.now,
-            idle_expires_at: command.now + lifetime.idle, absolute_expires_at,
-            next_renewal_at: command.now + super::session_policy::TOUCH_INTERVAL },
-        presented_hash: Some(raw.token_hash()), presented_as: PresentedTokenKind::Current,
-        has_pending: false, rotated_at: command.now,
+        identity_cache: Arc::clone(&context.identity_cache),
+        tenant: context.tenant.clone(),
+        session_id,
+        user_id: user.id,
+        user_type: user.user_type.clone(),
+        state: SessionState {
+            session_id,
+            server_now: command.now,
+            idle_expires_at: command.now + lifetime.idle,
+            absolute_expires_at,
+            next_renewal_at: command.now + super::session_policy::TOUCH_INTERVAL,
+        },
+        presented_hash: Some(raw.token_hash()),
+        presented_as: PresentedTokenKind::Current,
+        has_pending: false,
+        rotated_at: command.now,
     };
     let csrf_token = session_csrf_token(
         context.config.hmac_key(),
@@ -402,10 +420,12 @@ pub async fn authenticate(
     presented_hash: TokenHash,
     now: DateTime<Utc>,
 ) -> Result<Option<SessionAuthentication>, AppError> {
-    let maintained = context.identity_cache.authenticate(
-        &context.tenant.subdomain, presented_hash, now,
-        || validate_session(&context.tenant.pool, presented_hash, now),
-    ).await?;
+    let maintained = context
+        .identity_cache
+        .authenticate(&context.tenant.subdomain, presented_hash, now, || {
+            validate_session(&context.tenant.pool, presented_hash, now)
+        })
+        .await?;
     Ok(maintained.map(|row| authentication_from_row(context, row, presented_hash, now)))
 }
 
@@ -416,8 +436,12 @@ pub async fn acknowledge(
     now: DateTime<Utc>,
 ) -> Result<AuthenticatedSession, AppError> {
     ensure_same_tenant(context, session)?;
-    if session.presented_as != PresentedTokenKind::Pending { return Ok(session.clone()); }
-    maintain(context, session, now, None).await.map(|result| result.authenticated)
+    if session.presented_as != PresentedTokenKind::Pending {
+        return Ok(session.clone());
+    }
+    maintain(context, session, now, None)
+        .await
+        .map(|result| result.authenticated)
 }
 
 pub async fn activity(
@@ -428,15 +452,29 @@ pub async fn activity(
     now: DateTime<Utc>,
 ) -> Result<SessionAuthentication, AppError> {
     ensure_same_tenant(context, session)?;
-    if expected_session_id != session.session_id { return Err(AppError::Conflict("session_changed".into())); }
-    if session.presented_hash != Some(raw.token_hash()) { return Err(authentication_required()); }
+    if expected_session_id != session.session_id {
+        return Err(AppError::Conflict("session_changed".into()));
+    }
+    if session.presented_hash != Some(raw.token_hash()) {
+        return Err(authentication_required());
+    }
     // Fresh metadata makes duplicate non-due pulses database-free; due work revalidates under lock.
-    if session.presented_as != PresentedTokenKind::Pending && !session.has_pending
+    if session.presented_as != PresentedTokenKind::Pending
+        && !session.has_pending
         && now < session.state.next_renewal_at
-        && now < session.rotated_at + super::session_policy::ROTATION_INTERVAL {
-        let mut result = session.clone(); result.state.server_now = now;
-        return Ok(SessionAuthentication { authenticated: result,
-            csrf_token: session_csrf_token(context.config.hmac_key(), context.tenant.tenant_id, session.session_id), replacement: None });
+        && now < session.rotated_at + super::session_policy::ROTATION_INTERVAL
+    {
+        let mut result = session.clone();
+        result.state.server_now = now;
+        return Ok(SessionAuthentication {
+            authenticated: result,
+            csrf_token: session_csrf_token(
+                context.config.hmac_key(),
+                context.tenant.tenant_id,
+                session.session_id,
+            ),
+            replacement: None,
+        });
     }
     maintain(context, session, now, Some(raw)).await
 }
@@ -448,13 +486,29 @@ async fn maintain(
     raw: Option<&RawSessionToken>,
 ) -> Result<SessionAuthentication, AppError> {
     let hash = session.presented_hash.ok_or_else(authentication_required)?;
-    let row = maintain_session(&context.tenant.pool, session.user_id, session.session_id, hash, now,
-        raw.map(|raw| ActivityTokenDerivation { key: context.config.hmac_key(), tenant_id: context.tenant.tenant_id, raw }),
-    ).await?.ok_or_else(authentication_required)?;
-    if row.credential_changed {
-        // All hashes for this session (including a warm A) and in-flight cache fills are fenced.
-        context.identity_cache.invalidate_identity_user(&context.tenant.subdomain, session.user_id);
-    }
+    let revision = context.identity_cache.maintenance_revision();
+    let row = maintain_session(
+        &context.tenant.pool,
+        session.user_id,
+        session.session_id,
+        hash,
+        now,
+        raw.map(|raw| ActivityTokenDerivation {
+            key: context.config.hmac_key(),
+            tenant_id: context.tenant.tenant_id,
+            raw,
+        }),
+    )
+    .await?
+    .ok_or_else(authentication_required)?;
+    context.identity_cache.publish_maintenance(
+        &context.tenant.subdomain,
+        hash,
+        &row,
+        now,
+        revision,
+        session.presented_as == PresentedTokenKind::Current,
+    );
     Ok(authentication_from_row(context, row, hash, now))
 }
 
@@ -465,17 +519,33 @@ fn authentication_from_row(
     now: DateTime<Utc>,
 ) -> SessionAuthentication {
     let authenticated = AuthenticatedSession {
-        identity_cache: Arc::clone(&context.identity_cache), tenant: context.tenant.clone(),
-        session_id: row.session_id, user_id: row.user_id, user_type: row.user_type,
-        state: SessionState { session_id: row.session_id, server_now: now,
-            idle_expires_at: row.idle_expires_at, absolute_expires_at: row.absolute_expires_at,
-            next_renewal_at: row.last_seen_at + super::session_policy::TOUCH_INTERVAL },
-        presented_hash: Some(presented_hash), presented_as: row.presented_as,
-        has_pending: row.has_pending, rotated_at: row.rotated_at,
+        identity_cache: Arc::clone(&context.identity_cache),
+        tenant: context.tenant.clone(),
+        session_id: row.session_id,
+        user_id: row.user_id,
+        user_type: row.user_type,
+        state: SessionState {
+            session_id: row.session_id,
+            server_now: now,
+            idle_expires_at: row.idle_expires_at,
+            absolute_expires_at: row.absolute_expires_at,
+            next_renewal_at: row.last_seen_at + super::session_policy::TOUCH_INTERVAL,
+        },
+        presented_hash: Some(presented_hash),
+        presented_as: row.presented_as,
+        has_pending: row.has_pending,
+        rotated_at: row.rotated_at,
     };
-    SessionAuthentication { authenticated,
-        csrf_token: session_csrf_token(context.config.hmac_key(), context.tenant.tenant_id, row.session_id),
-        replacement: row.replacement.map(|raw| credential(raw, row.remember_me, row.absolute_expires_at, now)),
+    SessionAuthentication {
+        authenticated,
+        csrf_token: session_csrf_token(
+            context.config.hmac_key(),
+            context.tenant.tenant_id,
+            row.session_id,
+        ),
+        replacement: row
+            .replacement
+            .map(|raw| credential(raw, row.remember_me, row.absolute_expires_at, now)),
     }
 }
 

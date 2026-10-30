@@ -7,7 +7,10 @@ use school_errors::AppError;
 
 use super::{
     services::SessionLoginUser,
-    session_crypto::{canonical_session_time, pending_session_token, RawSessionToken, SessionHmacKey, ThrottleBucketHash, TokenHash},
+    session_crypto::{
+        canonical_session_time, pending_session_token, RawSessionToken, SessionHmacKey,
+        ThrottleBucketHash, TokenHash,
+    },
     session_policy::{
         SessionLifetime, SessionTimes, CLEANUP_BATCH_SIZE, PREVIOUS_TOKEN_GRACE, ROTATION_INTERVAL,
         SESSION_RETENTION, THROTTLE_RETENTION, TOUCH_INTERVAL,
@@ -267,14 +270,24 @@ pub async fn maintain_session(
 ) -> Result<Option<MaintainedSession>, AppError> {
     let now = canonical_session_time(now)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool, "auth.session_repository.maintain_session",
-    ).await.map_err(session_store_error)?;
+        pool,
+        "auth.session_repository.maintain_session",
+    )
+    .await
+    .map_err(session_store_error)?;
     // Account/password changes take this lock first too; session then token allocation follow.
     school_database::DbSession::new(&mut *transaction)
-        .query("auth.src.session_repository.maintain_session.user_lock",
-            "SELECT id FROM users WHERE id = $1 FOR UPDATE")
-        .bind(user_id).execute().await.map_err(session_store_error)?;
-    let Some(mut row) = load_authentication_row_for_update(&mut transaction, presented_hash).await? else {
+        .query(
+            "auth.src.session_repository.maintain_session.user_lock",
+            "SELECT id FROM users WHERE id = $1 FOR UPDATE",
+        )
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(session_store_error)?;
+    let Some(mut row) =
+        load_authentication_row_for_update(&mut transaction, presented_hash).await?
+    else {
         transaction.rollback().await.map_err(session_store_error)?;
         return Ok(None);
     };
@@ -302,7 +315,8 @@ pub async fn maintain_session(
         // derive the current generation or allocate another pending credential.
         if kind == PresentedTokenKind::Current && row.rotated_at <= now - ROTATION_INTERVAL {
             let created = row.pending_created_at.unwrap_or(now);
-            let token = pending_session_token(proof.key, proof.tenant_id, row.id, proof.raw, created);
+            let token =
+                pending_session_token(proof.key, proof.tenant_id, row.id, proof.raw, created);
             let hash = token.token_hash();
             if let Some(pending) = row.pending_token_hash.as_deref() {
                 if !bool::from(pending.ct_eq(hash.as_bytes().as_slice())) {
@@ -319,40 +333,76 @@ pub async fn maintain_session(
         }
     }
     if touch {
-        let lifetime = if row.remember_me { SessionLifetime::remembered() } else { SessionLifetime::normal() };
+        let lifetime = if row.remember_me {
+            SessionLifetime::remembered()
+        } else {
+            SessionLifetime::normal()
+        };
         row.last_seen_at = now;
         row.idle_expires_at = (now + lifetime.idle).min(row.absolute_expires_at);
     }
     if promoted || staged || touch {
         school_database::DbSession::new(&mut *transaction)
-            .query("auth.src.session_repository.maintain_session", r#"
+            .query(
+                "auth.src.session_repository.maintain_session",
+                r#"
                 UPDATE auth_sessions SET current_token_hash=$1, previous_token_hash=$2,
                     previous_token_valid_until=$3, pending_token_hash=$4, pending_created_at=$5,
                     rotated_at=$6, last_seen_at=$7, idle_expires_at=$8 WHERE id=$9
-            "#)
-            .bind(&row.current_token_hash).bind(&row.previous_token_hash)
-            .bind(row.previous_token_valid_until).bind(&row.pending_token_hash)
-            .bind(row.pending_created_at).bind(row.rotated_at).bind(row.last_seen_at)
-            .bind(row.idle_expires_at).bind(row.id)
-            .execute().await.map_err(session_store_error)?;
+            "#,
+            )
+            .bind(&row.current_token_hash)
+            .bind(&row.previous_token_hash)
+            .bind(row.previous_token_valid_until)
+            .bind(&row.pending_token_hash)
+            .bind(row.pending_created_at)
+            .bind(row.rotated_at)
+            .bind(row.last_seen_at)
+            .bind(row.idle_expires_at)
+            .bind(row.id)
+            .execute()
+            .await
+            .map_err(session_store_error)?;
     }
     transaction.commit().await.map_err(session_store_error)?;
-    if promoted { super::audit::session_transition(row.id, "credential_promoted"); }
-    if staged { super::audit::session_transition(row.id, "credential_staged"); }
-    Ok(Some(maintained(row, if promoted { PresentedTokenKind::Current } else { kind }, replacement, promoted || staged || touch)))
+    if promoted {
+        super::audit::session_transition(row.id, "credential_promoted");
+    }
+    if staged {
+        super::audit::session_transition(row.id, "credential_staged");
+    }
+    Ok(Some(maintained(
+        row,
+        if promoted {
+            PresentedTokenKind::Current
+        } else {
+            kind
+        },
+        replacement,
+        promoted || staged || touch,
+    )))
 }
 
 fn accepted(row: &AuthenticationRow, kind: PresentedTokenKind, now: DateTime<Utc>) -> bool {
-    let reason = if row.revoked_at.is_some() { Some("revoked") }
-        else if row.user_status != "active" { Some("inactive_user") }
-        else if row.absolute_expires_at <= now { Some("absolute_expired") }
-        else if row.idle_expires_at <= now { Some("idle_expired") }
-        else if kind == PresentedTokenKind::Previous && !previous_token_is_valid(row, now) { Some("previous_expired") }
-        else { None };
+    let reason = if row.revoked_at.is_some() {
+        Some("revoked")
+    } else if row.user_status != "active" {
+        Some("inactive_user")
+    } else if row.absolute_expires_at <= now {
+        Some("absolute_expired")
+    } else if row.idle_expires_at <= now {
+        Some("idle_expired")
+    } else if kind == PresentedTokenKind::Previous && !previous_token_is_valid(row, now) {
+        Some("previous_expired")
+    } else {
+        None
+    };
     if let Some(reason) = reason {
         super::audit::session_rejected(reason);
         false
-    } else { true }
+    } else {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -854,8 +904,11 @@ fn presented_kind(
         .is_some_and(|hash| bool::from(hash.ct_eq(presented_hash.as_bytes().as_slice())))
     {
         Some(PresentedTokenKind::Previous)
-    } else if row.pending_token_hash.as_deref()
-        .is_some_and(|hash| bool::from(hash.ct_eq(presented_hash.as_bytes().as_slice()))) {
+    } else if row
+        .pending_token_hash
+        .as_deref()
+        .is_some_and(|hash| bool::from(hash.ct_eq(presented_hash.as_bytes().as_slice())))
+    {
         Some(PresentedTokenKind::Pending)
     } else {
         None

@@ -13,9 +13,7 @@ use uuid::Uuid;
 
 use super::{
     session_crypto::TokenHash,
-        session_repository::{
-        MaintainedSession, PresentedTokenKind, SessionValidity,
-    },
+    session_repository::{MaintainedSession, PresentedTokenKind, SessionValidity},
 };
 use school_errors::AppError;
 
@@ -59,10 +57,7 @@ impl CachedAuthentication {
     }
 
     fn fresh(&self, now: DateTime<Utc>) -> bool {
-        now >= self.checked_at
-            && now < self.checked_at + AUTH_TTL
-            && self.validity.is_valid_at(now)
-
+        now >= self.checked_at && now < self.checked_at + AUTH_TTL && self.validity.is_valid_at(now)
     }
 
     fn into_row(self) -> MaintainedSession {
@@ -102,6 +97,7 @@ struct Invalidation {
     revision: u64,
     tenant: String,
     user_id: Option<Uuid>,
+    session_id: Option<Uuid>,
 }
 
 impl CacheState {
@@ -124,12 +120,13 @@ impl CacheState {
         valid
     }
 
-    fn invalidate(&mut self, tenant: &str, user_id: Option<Uuid>) {
+    fn invalidate(&mut self, tenant: &str, user_id: Option<Uuid>, session_id: Option<Uuid>) {
         self.revision = self.revision.wrapping_add(1);
         self.invalidations.push_back(Invalidation {
             revision: self.revision,
             tenant: tenant.into(),
             user_id,
+            session_id,
         });
         if self.invalidations.len() > CAPACITY {
             if let Some(removed) = self.invalidations.pop_front() {
@@ -138,7 +135,7 @@ impl CacheState {
         }
     }
 
-    fn changed_since(&self, revision: u64, tenant: &str, user_id: Uuid) -> bool {
+    fn changed_since(&self, revision: u64, tenant: &str, user_id: Uuid, session_id: Uuid) -> bool {
         // An exceptionally slow query that outlives the bounded journal fails
         // closed. Ordinary unrelated changes never discard a committed rotation.
         revision < self.invalidation_floor
@@ -149,7 +146,9 @@ impl CacheState {
                 .rev()
                 .take_while(|event| event.revision > revision)
                 .any(|event| {
-                    event.tenant == tenant && event.user_id.is_none_or(|user| user == user_id)
+                    event.tenant == tenant
+                        && event.user_id.is_none_or(|user| user == user_id)
+                        && event.session_id.is_none_or(|session| session == session_id)
                 })
     }
 }
@@ -188,7 +187,7 @@ impl SessionCache {
 
     pub fn invalidate_identity_user(&self, tenant: &str, user_id: Uuid) {
         let mut state = self.state();
-        state.invalidate(tenant, Some(user_id));
+        state.invalidate(tenant, Some(user_id), None);
         state
             .auth
             .retain(|(school, _), row| school != tenant || row.user_id != user_id);
@@ -199,11 +198,57 @@ impl SessionCache {
 
     pub fn invalidate_identity_tenant(&self, tenant: &str) {
         let mut state = self.state();
-        state.invalidate(tenant, None);
+        state.invalidate(tenant, None, None);
         state.auth.retain(|(school, _), _| school != tenant);
         state
             .validation
             .retain(|(school, _, _), _| school != tenant);
+    }
+
+    pub(crate) fn maintenance_revision(&self) -> u64 {
+        self.state().revision
+    }
+
+    /// Publish authoritative locked metadata while fencing every older read for this session.
+    /// A concurrent account/revocation fence suppresses publication, never invalidation.
+    pub(crate) fn publish_maintenance(
+        &self,
+        tenant: &str,
+        hash: TokenHash,
+        row: &MaintainedSession,
+        now: DateTime<Utc>,
+        revision: u64,
+        cache_current: bool,
+    ) {
+        let mut state = self.state();
+        let changed = state.changed_since(revision, tenant, row.user_id, row.session_id);
+        state.invalidate(tenant, Some(row.user_id), Some(row.session_id));
+        state
+            .auth
+            .retain(|(school, _), cached| school != tenant || cached.session_id != row.session_id);
+        state
+            .validation
+            .retain(|(school, session, _), _| school != tenant || *session != row.session_id);
+        if changed {
+            return;
+        }
+        let cached = CachedAuthentication::from_row(row, now);
+        state.store_validation(
+            (tenant.to_string(), row.session_id, row.user_id),
+            CachedValidation {
+                validity: cached.validity.clone(),
+                checked_at: now,
+            },
+        );
+        if cache_current && row.presented_as == PresentedTokenKind::Current {
+            if state.auth.len() >= CAPACITY {
+                state.auth.clear();
+            }
+            // CachedAuthentication copies hashes/metadata only, never row.replacement.
+            state
+                .auth
+                .insert((tenant.to_string(), *hash.as_bytes()), cached);
+        }
     }
 
     /// Cache only read-only current-credential validation. Maintenance is a separate
@@ -230,16 +275,24 @@ impl SessionCache {
         };
         let result = fetch().await?;
         let mut state = self.state();
-        if result.as_ref().is_some_and(|row| state.changed_since(revision, tenant, row.user_id)) {
+        if result
+            .as_ref()
+            .is_some_and(|row| state.changed_since(revision, tenant, row.user_id, row.session_id))
+        {
             return Err(unavailable());
         }
         state.auth.remove(&key);
         if let Some(row) = &result {
-            if state.auth.len() >= CAPACITY { state.auth.clear(); }
+            if state.auth.len() >= CAPACITY {
+                state.auth.clear();
+            }
             let cached = CachedAuthentication::from_row(row, now);
             state.store_validation(
                 (tenant.to_string(), row.session_id, row.user_id),
-                CachedValidation { validity: cached.validity.clone(), checked_at: now },
+                CachedValidation {
+                    validity: cached.validity.clone(),
+                    checked_at: now,
+                },
             );
             if row.presented_as == PresentedTokenKind::Current && row.replacement.is_none() {
                 state.auth.insert(key, cached);
@@ -279,7 +332,7 @@ impl SessionCache {
         };
         let result = fetch().await?;
         let mut state = self.state();
-        if state.changed_since(revision, tenant, user_id) {
+        if state.changed_since(revision, tenant, user_id, session_id) {
             return Err(unavailable());
         }
         match result {

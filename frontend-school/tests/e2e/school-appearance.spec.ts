@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { startSchoolAppearanceServer } from './fixtures/school-appearance-server';
 import { mockStaffHome, actor } from './fixtures/staff-home-route-data';
@@ -352,6 +353,7 @@ test('system dark preference applies initially and public-to-app SPA navigation 
 				displayName: 'เจ้าของ โปรไฟล์',
 				userType: 'staff',
 				status: 'active',
+				session: sessionState(),
 				primaryRoleName: 'บุคลากร',
 				profileImageFileId: null,
 				permissions: ['settings.read.all', 'settings.update.all']

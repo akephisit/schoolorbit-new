@@ -35,6 +35,7 @@ async function harness(extraClient = {}) {
 		},
 		'#lib/api/session-security.js': { clearSessionSecurity() {} },
 		'#lib/auth/auth-refresh-policy.js': { authRefreshDecision },
+		'#lib/auth/session-awareness.js': { announceAuthenticatedSession() {} },
 		'#lib/stores/auth.js': { authStore },
 		'#lib/stores/notification.js': { notificationStore: { async prepareLogout() {} } },
 		'svelte-sonner': { toast: { success() {} } }
@@ -57,6 +58,13 @@ const response = {
 		lastName: 'User',
 		userType: 'staff',
 		status: 'active',
+		session: {
+			sessionId: '01900000-0000-7000-8000-000000000001',
+			serverNow: '2026-10-29T00:00:00Z',
+			idleExpiresAt: '2026-10-29T02:00:00Z',
+			absoluteExpiresAt: '2026-10-29T12:00:00Z',
+			nextRenewalAt: '2026-10-29T00:05:00Z'
+		},
 		permissions: []
 	}
 };
@@ -205,6 +213,53 @@ test('route session identity survives refresh but changes across same-user reaut
 	h.authStore.clearUser();
 	h.authStore.setUser(user, []);
 	assert.notEqual(h.authStore.sessionEpoch, before);
+});
+
+test('activity metadata updates preserve auth/route generation and reject stale snapshots', async () => {
+	const h = await harness();
+	const user = { id: 'same', user_type: 'staff' };
+	const session = response.data.session;
+	h.authStore.setUser(user, [], session);
+	const epoch = h.authStore.sessionEpoch;
+	const generation = h.authStore.generation;
+	const renewed = {
+		...session,
+		serverNow: '2026-10-29T00:05:00Z',
+		nextRenewalAt: '2026-10-29T00:10:00Z'
+	};
+	h.authStore.updateSession(renewed, epoch);
+	assert.equal(h.state.session, renewed);
+	assert.equal(h.authStore.sessionEpoch, epoch);
+	assert.equal(h.authStore.generation, generation);
+	h.authStore.updateSession(session, epoch);
+	assert.equal(h.state.session, renewed);
+	h.authStore.updateSession({ ...renewed, sessionId: 'another' }, epoch);
+	assert.equal(h.state.session, renewed);
+});
+
+test('same-user session replacement without logout fences an older current-user response', async () => {
+	const h = await harness();
+	const user = { id: 'same', user_type: 'staff' };
+	h.authStore.setUser(user, [], response.data.session);
+	const before = h.authStore.sessionEpoch;
+	const pending = h.authAPI.refreshCurrentUser();
+	const replacement = {
+		...response.data.session,
+		sessionId: '01900000-0000-7000-8000-000000000002'
+	};
+	h.authStore.setUser(user, [], replacement);
+	assert.notEqual(h.authStore.sessionEpoch, before);
+	h.requests[0](response);
+	await pending;
+	assert.equal(h.state.session, replacement);
+});
+
+test('missing required session metadata is unavailable and cannot establish healthy authentication', async () => {
+	const h = await harness();
+	const pending = h.authAPI.refreshCurrentUser();
+	h.requests[0]({ ...response, data: { ...response.data, session: undefined } });
+	assert.equal(await pending, 'unavailable');
+	assert.equal(h.state.isAuthenticated, false);
 });
 
 for (const action of ['logout', 'logoutAll', 'revokeSession']) {

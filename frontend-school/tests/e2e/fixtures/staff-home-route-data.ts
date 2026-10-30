@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { MenuGroup } from '../../../src/lib/api/menu.js';
+import { sessionState } from './session-state';
 export const id = (n: number) => `55000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 export const year = id(1),
 	nextYear = id(2),
@@ -75,6 +76,7 @@ export async function mockStaffHome(
 			if (resource === '/api/auth/me')
 				return reply(route, {
 					...profile(),
+					session: sessionState(),
 					userType: options.userType ?? 'staff',
 					permissions: options.permissions ?? ['achievement.read.all']
 				});

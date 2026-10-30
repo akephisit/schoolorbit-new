@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
 type Schemas = components['schemas'];
@@ -107,6 +108,7 @@ async function mock(page: Page, manager = false, conflict = false) {
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'active',
+					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
 					permissions: manager

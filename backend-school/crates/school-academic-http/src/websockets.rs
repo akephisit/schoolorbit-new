@@ -748,15 +748,13 @@ pub async fn timetable_websocket_handler(
     let token = presented_session_token(&headers)?
         .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     let session_context = state.auth_runtime.service_context(tenant);
-    let authenticated = session_service::authenticate(
-        &session_context,
-        token.token_hash(),
-        Utc::now(),
-    )
-    .await?
-    .map(|authentication| authentication.authenticated)
-    .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
-    let authenticated = session_service::acknowledge(&session_context, &authenticated, Utc::now()).await?;
+    let authenticated =
+        session_service::authenticate(&session_context, token.token_hash(), Utc::now())
+            .await?
+            .map(|authentication| authentication.authenticated)
+            .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
+    let authenticated =
+        session_service::acknowledge(&session_context, &authenticated, Utc::now()).await?;
     let context = actor_tenant_context_from_session(&state.auth_runtime, &authenticated).await?;
     let access = authorize_socket(
         &context.tenant.pool,

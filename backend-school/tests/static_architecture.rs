@@ -6533,7 +6533,8 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
     assert!(handler.contains("parse_realtime_tenant_hint("));
     assert!(handler.contains("session_events.subscribe()"));
     assert!(handler.contains("permission_events.subscribe()"));
-    assert!(handler.contains("SessionMaintenanceMode::TouchOnly"));
+    assert!(handler.contains("session_service::acknowledge("));
+    assert!(!handler.contains("session_service::activity("));
     assert!(handler.contains("session_service::authenticate("));
     assert!(handler.contains("session_service::revalidate("));
     assert!(

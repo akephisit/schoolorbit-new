@@ -20,7 +20,10 @@ pub fn public_routes() -> Router<AuthHttpState> {
 pub fn protected_routes() -> Router<AuthHttpState> {
     Router::new()
         .route("/auth/me", get(session_handlers::me))
-        .route("/auth/activity", post(session_handlers::activity).layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)))
+        .route(
+            "/auth/activity",
+            post(session_handlers::activity).layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
+        )
         .route(
             "/auth/me/profile",
             get(handlers::get_profile).put(handlers::update_profile),
