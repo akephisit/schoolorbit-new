@@ -610,7 +610,7 @@
 	}
 
 	function requestedView(): TimetablePageView {
-		const value = page.url.searchParams.get('view');
+		const value = (page.shallow?.url ?? page.url).searchParams.get('view');
 		return value === 'teacher' || value === 'learning_group' || value === 'wholeSchool'
 			? value
 			: 'homeroom';
@@ -629,20 +629,27 @@
 	}
 
 	function initializeController(workspace: TimetableBlockWorkspace): void {
-		const keepEditing =
-			controller?.workspace.version.id === workspace.version.id && controller.editing;
-		const next = createTimetableWorkspaceController(workspace);
+		const previous = controller?.workspace.version;
+		const sameWorkspace =
+			previous?.id === workspace.version.id &&
+			previous.academicYearId === workspace.version.academicYearId &&
+			previous.academicTermId === workspace.version.academicTermId;
+		const keepEditing = sameWorkspace && controller?.editing;
+		const next = createTimetableWorkspaceController(
+			workspace,
+			sameWorkspace ? controller?.ownerSelections() : undefined
+		);
 		next.setEditing(Boolean(keepEditing));
 		activeView = requestedView();
 		next.setView(activeView === 'wholeSchool' ? 'homeroom' : activeView);
-		const ownerId = page.url.searchParams.get('ownerId');
+		const ownerId = (page.shallow?.url ?? page.url).searchParams.get('ownerId');
 		if (ownerId && activeView !== 'wholeSchool') next.selectOwner(ownerId);
 		controller = next;
 	}
 
 	function syncUrl(): void {
 		if (!controller) return;
-		const next = new URL(page.url.href);
+		const next = new URL((page.shallow?.url ?? page.url).href);
 		next.searchParams.set('timetableVersionId', controller.workspace.version.id);
 		next.searchParams.set('view', activeView);
 		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
@@ -672,7 +679,7 @@
 			versionsLoading = false;
 			const selected = selectPreferredBoardVersion(
 				loadedVersions,
-				page.url.searchParams.get('timetableVersionId')
+				(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
 			);
 			if (!selected) {
 				controller = null;
@@ -728,7 +735,8 @@
 			if (!controller) {
 				const preferred = selectPreferredBoardVersion(
 					loaded,
-					boardRetryVersionId || page.url.searchParams.get('timetableVersionId')
+					boardRetryVersionId ||
+						(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
 				);
 				if (preferred) void loadVersion(preferred.id, true);
 			}
