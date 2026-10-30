@@ -76,7 +76,7 @@ fn activity_update(
 #[tokio::test]
 async fn catalog_year_independence_create_update_publish_without_any_academic_year() {
     let pool = school_test_db::create_named_test_pool("catalog_year_independence_empty").await;
-    apply_migrations_through(&pool, 138).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version()).await.unwrap();
     let years: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_years")
         .fetch_one(&pool)
         .await
@@ -210,7 +210,7 @@ async fn catalog_year_independence_outside_and_overlapping_years_keep_domain_gua
     .await
     .is_err());
     for (index, year) in [2599, 2600].into_iter().enumerate() {
-        sqlx::query("INSERT INTO academic_years(id,year,name,start_date,end_date,school_days,status) VALUES($1,$2,'Overlapping fixture','2040-01-01','2040-12-31','MON','planning')")
+        sqlx::query("INSERT INTO academic_years(id,year,name,school_days,status) VALUES($1,$2,'Independent fixture','MON','planning')")
             .bind(Uuid::new_v4()).bind(year).execute(&pool).await.unwrap();
         let stable = stable_subject(&pool, &format!("YEAR-FREE-OVERLAP-{index}")).await;
         assert!(

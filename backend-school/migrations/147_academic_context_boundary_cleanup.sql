@@ -4,6 +4,92 @@ LOCK TABLE academic_years,academic_terms,calendar_events,calendar_event_targets,
     attendance_settings,attendance_days,academic_promotion_runs,behavior_settings
     IN SHARE ROW EXCLUSIVE MODE;
 
+-- Compare the actual predecessor view to its exact 060 definition. A known
+-- name alone cannot authorize replacing a locally changed business predicate.
+CREATE TEMP VIEW academic147_expected_exam_sources AS
+WITH ready_plan AS (
+    SELECT plan.id,
+           plan.learning_offering_id,
+           plan.academic_term_id,
+           plan.academic_year_id,
+           plan.subject_version_id
+    FROM course_assessment_plans plan
+    JOIN course_offering_details detail
+      ON detail.learning_offering_id = plan.learning_offering_id
+     AND detail.subject_version_id = plan.subject_version_id
+     AND detail.academic_term_id = plan.academic_term_id
+     AND detail.academic_year_id = plan.academic_year_id
+    JOIN academic_terms term ON term.id = plan.academic_term_id
+    JOIN course_assessment_phases phase ON phase.plan_id = plan.id
+    WHERE plan.assessment_coordinator_id IS NOT NULL
+      AND EXISTS (
+          SELECT 1
+          FROM learning_groups coordinator_group
+          JOIN learning_group_teachers coordinator_teacher
+            ON coordinator_teacher.learning_group_id = coordinator_group.id
+           AND coordinator_teacher.teacher_id = plan.assessment_coordinator_id
+           AND coordinator_teacher.starts_on <= LEAST(
+               GREATEST(current_date, term.start_date), term.planned_end_date
+           )
+           AND (
+               coordinator_teacher.ends_on IS NULL
+               OR coordinator_teacher.ends_on >= LEAST(
+                   GREATEST(current_date, term.start_date), term.planned_end_date
+               )
+           )
+          JOIN users coordinator
+            ON coordinator.id = coordinator_teacher.teacher_id
+           AND coordinator.status = 'active'
+          WHERE coordinator_group.learning_offering_id = plan.learning_offering_id
+            AND coordinator_group.status <> 'closed'
+      )
+    GROUP BY plan.id, detail.assessment_total_score
+    HAVING count(phase.id) = 4
+       AND count(DISTINCT phase.phase_code) = 4
+       AND sum(phase.max_score) =
+           detail.assessment_total_score
+)
+SELECT uuid_generate_v5(
+           '5c33b984-10df-58db-bf80-62dbc4a03d1b'::uuid,
+           'exam-source:' || phase.id::text || ':' || learning_group.id::text
+               || ':' || homeroom.id::text
+       ) AS source_id,
+       ready_plan.academic_term_id,
+       ready_plan.academic_year_id,
+       phase.id AS assessment_phase_id,
+       ready_plan.id AS course_assessment_plan_id,
+       ready_plan.learning_offering_id,
+       learning_group.id AS learning_group_id,
+       homeroom.id AS homeroom_id,
+       version.subject_id,
+       homeroom.grade_level_id,
+       phase.phase_code AS exam_kind,
+       phase.exam_duration_minutes AS duration_minutes
+FROM ready_plan
+JOIN course_assessment_phases phase ON phase.plan_id = ready_plan.id
+JOIN subject_versions version ON version.id = ready_plan.subject_version_id
+JOIN learning_groups learning_group
+  ON learning_group.learning_offering_id = ready_plan.learning_offering_id
+ AND learning_group.academic_term_id = ready_plan.academic_term_id
+ AND learning_group.academic_year_id = ready_plan.academic_year_id
+ AND learning_group.status <> 'closed'
+JOIN learning_group_homerooms coverage
+  ON coverage.learning_group_id = learning_group.id
+JOIN homerooms homeroom
+  ON homeroom.id = coverage.homeroom_id
+ AND homeroom.academic_year_id = ready_plan.academic_year_id
+ AND homeroom.is_active
+WHERE phase.phase_code IN ('midterm', 'final')
+  AND phase.exam_arrangement = 'in_timetable'
+  AND phase.exam_duration_minutes IS NOT NULL
+  AND phase.exam_duration_minutes > 0;
+DO $$ BEGIN
+    IF pg_get_viewdef('academic_exam_eligible_sources'::regclass,false)
+       IS DISTINCT FROM pg_get_viewdef('academic147_expected_exam_sources'::regclass,false)
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_UNKNOWN_DATE_DEPENDENCY'; END IF;
+END $$;
+DROP VIEW academic147_expected_exam_sources;
+
 DO $$ BEGIN
     IF EXISTS(
         SELECT 1 FROM pg_proc function_record JOIN pg_namespace namespace ON namespace.oid=function_record.pronamespace
@@ -160,7 +246,7 @@ LEFT JOIN academic_promotion_execution_receipts receipt ON receipt.item_id=item.
 LEFT JOIN homeroom_placements placement ON placement.id=receipt.target_placement_id;
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_promotion_run_items item LEFT JOIN academic_promotion_execution_receipts receipt ON receipt.item_id=item.id AND receipt.run_id=item.run_id
-       WHERE item.status='executed' AND receipt.item_id IS NULL)
+       WHERE (item.status='executed') IS DISTINCT FROM (receipt.item_id IS NOT NULL))
     THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PROMOTION_ITEM_INTENT_UNMAPPABLE'; END IF;
 END $$;
 CREATE FUNCTION pg_temp.academic147_canonical_promotion(document jsonb,owner uuid) RETURNS jsonb LANGUAGE plpgsql AS $$
@@ -215,6 +301,65 @@ DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic147_expected_apply_dates WHERE created_count<>created_offering_count OR all_created_count<>created_count OR invalid_output_count<>0 OR NOT unique_outputs OR (created_count>0 AND date_count<>1))
     THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CURRICULUM_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;
+-- 079 stored the complete normalized identity. Reconstruct Serde field and
+-- enum order, rather than hashing jsonb's different object ordering or accepting
+-- a corrupted legacy checksum. Original evidence is verified, never rewritten.
+CREATE FUNCTION pg_temp.academic147_preparation_identity_valid(
+    actor_id uuid,nonce uuid,source_id uuid,target_id uuid,modules text[],mappings jsonb,
+    source_hash text,request_hash text
+) RETURNS boolean LANGUAGE plpgsql AS $$
+DECLARE normalized_modules text[]; entities json; dates json; normalized_entities jsonb;
+        normalized_dates jsonb; expected_hash text;
+BEGIN
+    IF nonce='00000000-0000-0000-0000-000000000000'::uuid OR source_id=target_id
+       OR source_id='00000000-0000-0000-0000-000000000000'::uuid OR target_id='00000000-0000-0000-0000-000000000000'::uuid
+       OR source_hash !~ '^[0-9a-f]{64}$' OR request_hash !~ '^[0-9a-f]{64}$'
+       OR cardinality(modules) NOT BETWEEN 1 AND 5
+       OR jsonb_typeof(mappings) IS DISTINCT FROM 'object'
+       OR NOT mappings ?& ARRAY['entities','dates'] OR mappings-ARRAY['entities','dates']<>'{}'::jsonb
+       OR jsonb_typeof(mappings->'entities') IS DISTINCT FROM 'array' OR jsonb_typeof(mappings->'dates') IS DISTINCT FROM 'array'
+    THEN RETURN false; END IF;
+    SELECT array_agg(module ORDER BY array_position(ARRAY['delivery','assessments','timetable','exams','supervision'],module))
+    INTO normalized_modules FROM (SELECT DISTINCT unnest(modules) AS module) selected;
+    IF modules IS DISTINCT FROM normalized_modules OR NOT modules<@ARRAY['delivery','assessments','timetable','exams','supervision']
+       OR jsonb_array_length(mappings->'entities')>2000 OR jsonb_array_length(mappings->'dates')>366
+    THEN RETURN false; END IF;
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(mappings->'entities') entry WHERE
+        jsonb_typeof(entry) IS DISTINCT FROM 'object' OR NOT entry ?& ARRAY['kind','sourceId','targetId']
+        OR entry-ARRAY['kind','sourceId','targetId']<>'{}'::jsonb
+        OR jsonb_typeof(entry->'kind') IS DISTINCT FROM 'string' OR jsonb_typeof(entry->'sourceId') IS DISTINCT FROM 'string' OR jsonb_typeof(entry->'targetId') IS DISTINCT FROM 'string'
+        OR entry->>'kind' NOT IN('learning_offering','learning_group','teacher','homeroom','room','bell_period','assessment_plan')
+        OR (entry->>'sourceId')::uuid='00000000-0000-0000-0000-000000000000'::uuid OR (entry->>'targetId')::uuid='00000000-0000-0000-0000-000000000000'::uuid)
+       OR EXISTS(SELECT 1 FROM jsonb_array_elements(mappings->'entities') entry GROUP BY entry->>'kind',entry->>'sourceId' HAVING count(*)<>1)
+       OR EXISTS(SELECT 1 FROM jsonb_array_elements(mappings->'entities') entry GROUP BY entry->>'kind',entry->>'targetId' HAVING count(*)<>1)
+    THEN RETURN false; END IF;
+    SELECT COALESCE(json_agg(json_build_object('kind',entry->>'kind','sourceId',(entry->>'sourceId')::uuid,'targetId',(entry->>'targetId')::uuid)
+        ORDER BY array_position(ARRAY['learning_offering','learning_group','teacher','homeroom','room','bell_period','assessment_plan'],entry->>'kind'),(entry->>'sourceId')::uuid,(entry->>'targetId')::uuid),'[]'::json)
+    INTO entities FROM jsonb_array_elements(mappings->'entities') entry;
+    normalized_entities:=entities::jsonb;
+    IF normalized_entities IS DISTINCT FROM mappings->'entities' THEN RETURN false; END IF;
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(mappings->'dates') entry WHERE
+        jsonb_typeof(entry) IS DISTINCT FROM 'object' OR NOT entry ?& ARRAY['sourceDate','targetDate']
+        OR entry-ARRAY['sourceDate','targetDate']<>'{}'::jsonb
+        OR jsonb_typeof(entry->'sourceDate') IS DISTINCT FROM 'string' OR jsonb_typeof(entry->'targetDate') IS DISTINCT FROM 'string'
+        OR (entry->>'sourceDate')::date::text IS DISTINCT FROM entry->>'sourceDate' OR (entry->>'targetDate')::date::text IS DISTINCT FROM entry->>'targetDate')
+       OR EXISTS(SELECT 1 FROM jsonb_array_elements(mappings->'dates') entry GROUP BY entry->>'sourceDate' HAVING count(*)<>1)
+    THEN RETURN false; END IF;
+    SELECT COALESCE(json_agg(json_build_object('sourceDate',entry->>'sourceDate','targetDate',entry->>'targetDate') ORDER BY (entry->>'sourceDate')::date,(entry->>'targetDate')::date),'[]'::json)
+    INTO dates FROM jsonb_array_elements(mappings->'dates') entry;
+    normalized_dates:=dates::jsonb;
+    IF normalized_dates IS DISTINCT FROM mappings->'dates' THEN RETURN false; END IF;
+    expected_hash:=encode(sha256(convert_to(pg_temp.academic147_compact_json(json_build_array(actor_id,nonce,
+        json_build_object('source_term_id',source_id,'target_term_id',target_id,'modules',modules,
+          'mappings',json_build_object('entities',entities,'dates',dates)),source_hash)),'UTF8')),'hex');
+    RETURN expected_hash=request_hash;
+EXCEPTION WHEN data_exception THEN RETURN false;
+END $$;
+DO $$ BEGIN
+    IF EXISTS(SELECT 1 FROM academic_term_preparation_runs ledger WHERE NOT pg_temp.academic147_preparation_identity_valid(
+        ledger.actor_user_id,ledger.request_id,ledger.source_academic_term_id,ledger.target_academic_term_id,ledger.selected_modules,ledger.mappings,ledger.source_checksum,ledger.request_checksum))
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PREPARATION_REQUEST_UNMAPPABLE'; END IF;
+END $$;
 CREATE TEMP TABLE academic147_preparation_delivery_outputs ON COMMIT DROP AS
 SELECT ledger.id,ledger.target_academic_term_id,ledger.created_at,
        (module->>'createdCount')::bigint AS created_count,
@@ -224,6 +369,19 @@ WHERE module->>'module'='delivery';
 CREATE TEMP TABLE academic147_preparation_created_proof ON COMMIT DROP AS
 SELECT output.id,created.offerings,created.groups,created.revisions,created.date_count,created.starts_on,
        output.created_count,
+       (SELECT count(*) FROM unnest(output.target_ids) candidate(id)
+          JOIN academic_term_change_sets revision ON revision.id=candidate.id
+          JOIN academic_delivery_versions version ON version.id=revision.target_delivery_version_id
+         WHERE revision.academic_term_id=output.target_academic_term_id
+           AND version.academic_term_id=revision.academic_term_id AND version.academic_year_id=revision.academic_year_id
+           AND revision.created_at=output.created_at AND version.created_at=output.created_at
+           AND revision.created_by=ledger.actor_user_id AND version.created_by=ledger.actor_user_id
+           AND (SELECT count(*) FROM academic_audit_events audit
+                 WHERE audit.event_code='academic_delivery_version.created' AND audit.entity_type='academic_delivery_version'
+                   AND audit.entity_id=version.id AND audit.actor_user_id=ledger.actor_user_id
+                   AND audit.academic_term_id=revision.academic_term_id AND audit.academic_year_id=revision.academic_year_id
+                   AND audit.payload->>'changeSetId'=revision.id::text
+                   AND audit.payload->>'referenceDate' IS NOT NULL)=1) AS proven_versions,
        (SELECT count(*) FROM learning_offerings offering WHERE offering.academic_term_id=output.target_academic_term_id AND offering.created_at=output.created_at) AS all_created_offerings,
        (SELECT count(*) FROM unnest(output.target_ids) candidate(id) WHERE
          (SELECT count(*) FROM (
@@ -233,6 +391,7 @@ SELECT output.id,created.offerings,created.groups,created.revisions,created.date
          ) matching)<>1) AS invalid_output_count,
        cardinality(output.target_ids)=(SELECT count(DISTINCT candidate.id) FROM unnest(output.target_ids) candidate(id)) AS unique_outputs
 FROM academic147_preparation_delivery_outputs output
+JOIN academic_term_preparation_runs ledger ON ledger.id=output.id
 CROSS JOIN LATERAL(
     SELECT count(DISTINCT offering.id) FILTER(WHERE offering.created_at=output.created_at) AS offerings,
            count(DISTINCT learning_group.id) FILTER(WHERE learning_group.created_at=output.created_at) AS groups,
@@ -248,7 +407,7 @@ DO $$ BEGIN
     IF EXISTS(SELECT ledger.id FROM academic_term_preparation_runs ledger LEFT JOIN academic147_preparation_delivery_outputs output ON output.id=ledger.id
         GROUP BY ledger.id,ledger.selected_modules HAVING count(output.id)<>CASE WHEN 'delivery'=ANY(ledger.selected_modules) THEN 1 ELSE 0 END)
        OR EXISTS(SELECT 1 FROM academic147_preparation_created_proof WHERE
-         offerings+groups+revisions<>created_count OR revisions<>1 OR offerings<>all_created_offerings
+         offerings+groups+revisions<>created_count OR revisions<>1 OR proven_versions<>1 OR offerings<>all_created_offerings
          OR invalid_output_count<>0 OR NOT unique_outputs OR (offerings>0 AND date_count<>1))
     THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PREPARATION_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;

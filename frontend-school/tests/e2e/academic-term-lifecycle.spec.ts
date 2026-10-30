@@ -18,7 +18,6 @@ function workspace(reader = false): Workspace {
 			academicYearId: year,
 			academicTermId: term,
 			yearName: 'ปีการศึกษา 2569',
-			academicYear: 2569,
 			operationDate: '2026-10-30',
 			termName: 'ภาคเรียนที่ 1',
 			yearStatus: 'active',

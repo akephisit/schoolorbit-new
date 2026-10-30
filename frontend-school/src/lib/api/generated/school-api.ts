@@ -19514,8 +19514,6 @@ export interface components {
 			blocksYearClosure: boolean;
 			customName?: string | null;
 			includedInYearResult: boolean;
-			/** Format: date */
-			plannedEndDate?: string | null;
 			termType: components['schemas']['AcademicTermType'];
 		};
 		CreateAcademicYearRequest: {
@@ -24127,6 +24125,8 @@ export interface components {
 			studentAcademicYearId: string;
 			/** Format: uuid */
 			studentId: string;
+			/** Format: date */
+			targetPlacementStartsOn: string | null;
 			/** Format: uuid */
 			targetYearId: string;
 			/** Format: date-time */
@@ -26996,8 +26996,6 @@ export interface components {
 		TermLifecycleContext: {
 			/** Format: uuid */
 			academicTermId: string;
-			/** Format: int32 */
-			academicYear: number;
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
@@ -27780,8 +27778,6 @@ export interface components {
 			blocksYearClosure: boolean;
 			customName?: string | null;
 			includedInYearResult: boolean;
-			/** Format: date */
-			plannedEndDate?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
 			termType: components['schemas']['AcademicTermType'];

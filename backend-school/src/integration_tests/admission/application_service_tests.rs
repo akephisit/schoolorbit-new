@@ -185,6 +185,7 @@ mod tests {
 
     fn enrollment_payload() -> CompleteEnrollmentRequest {
         CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
             student_code: Some("970001".to_string()),
             form_data: None,
         }
@@ -579,7 +580,9 @@ mod tests {
     }
 
     fn guardian_enrollment_payload() -> CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
         CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
             student_code: Some("970001".into()),
             form_data: Some(serde_json::json!({
                 "father": { "phone": "0800000001", "firstName": "Guardian", "lastName": "Fixture" }
@@ -929,6 +932,7 @@ mod tests {
                 &fixture.pool,
                 sibling,
                 CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
                     student_code: Some("970002".into()),
                     form_data: None,
                 },
@@ -976,6 +980,7 @@ mod tests {
                 &pool,
                 id,
                 CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
                     student_code: Some("ignored-replay".into()),
                     form_data: None,
                 },
@@ -1032,6 +1037,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let payload = || CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
             student_code: None,
             form_data: None,
         };
@@ -1088,6 +1094,7 @@ mod tests {
                 .await
                 .unwrap();
         let payload = |code: &str| CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
             student_code: Some(code.into()),
             form_data: Some(serde_json::json!({
                 "father": { "phone": "0800000001", "firstName": "New", "lastName": "Parent" },
@@ -1402,6 +1409,7 @@ mod tests {
                 &pool,
                 id,
                 CompleteEnrollmentRequest {
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
                     student_code: None,
                     form_data: None,
                 },

@@ -223,7 +223,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request.clone())
@@ -238,7 +237,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     request.expected_year_version = workspace.context.year_row_version;
     request.expected_term_version = workspace.context.term_row_version;
     request.readiness_checksum = workspace.source_checksum;
-    request.closed_on = Some(workspace.context.term_start_date);
     assert!(term_transitions::transition_term(
         &pool,
         &actor,
@@ -259,7 +257,7 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
             .await
             .unwrap();
     assert_eq!(closed.context.term_status, AcademicTermStatus::Closed);
-    assert_eq!(closed.context.closed_on, request.closed_on);
+    assert_eq!(closed.context.term_status, school_academic_core::models::AcademicTermStatus::Closed);
     let mut tx = pool.begin().await.unwrap();
     assert!(
         school_academic_core::services::lifecycle_guard::require_term_write(
@@ -280,14 +278,13 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     request.expected_year_version = workspace.context.year_row_version;
     request.expected_term_version = workspace.context.term_row_version;
     request.readiness_checksum = workspace.source_checksum;
-    request.closed_on = None;
     request.acknowledged_warning_codes.clear();
     request.reason = Some("ทบทวนข้อมูลภาคเรียน".into());
     let reopened = term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request)
         .await
         .unwrap();
     assert_eq!(reopened.context.term_status, AcademicTermStatus::Closing);
-    assert!(reopened.context.closed_on.is_none());
+    assert_eq!(reopened.context.term_status, school_academic_core::models::AcademicTermStatus::Closing);
     let controls_after:String=sqlx::query_scalar("SELECT md5(jsonb_agg(to_jsonb(control) ORDER BY id)::text) FROM academic_gradebook_phase_controls control WHERE academic_term_id=$1").bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
     assert_eq!(controls_before, controls_after);
 }

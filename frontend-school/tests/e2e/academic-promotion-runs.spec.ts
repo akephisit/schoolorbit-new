@@ -118,7 +118,7 @@ async function mock(
 			outcome: 'promote',
 			targetGradeLevelId: id(11),
 			targetStudyProgramId: id(12),
-			targetHomeroomId: null,
+			targetHomeroomId: id(14),
 			reason: null,
 			condition: null
 		};

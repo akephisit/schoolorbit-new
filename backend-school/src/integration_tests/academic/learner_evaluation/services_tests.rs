@@ -38,7 +38,7 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
             .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
         let history = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
         assert!(!history.can_manage && !history.can_confirm);
@@ -159,7 +159,7 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, EvaluationContext, Uuid, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version()).await.unwrap();
     let (year,term,group,subject,teacher):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,d.subject_id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN course_assessment_plans p ON p.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=$1 WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$2)").bind(teacher).bind(group).execute(&pool).await.unwrap();
     let actor = ActorContext {

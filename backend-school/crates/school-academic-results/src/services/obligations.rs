@@ -147,62 +147,18 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn operation_date_uses_closed_planned_then_year_end() {
-        let pool = school_test_db::create_named_test_pool("results_operation_date_bounds").await;
+    async fn operation_date_retains_captured_day_and_requires_exact_context() {
+        let pool = school_test_db::create_named_test_pool("results_operation_date_context").await;
         let mut connection = pool.acquire().await.unwrap();
-        // Exercise the real query with only its owned calendar inputs. Temporary
-        // tables remain confined to this disposable connection.
-        sqlx::raw_sql(
-            "CREATE TEMP TABLE academic_years(id uuid PRIMARY KEY,end_date date NOT NULL);
-             CREATE TEMP TABLE academic_terms(id uuid PRIMARY KEY,academic_year_id uuid NOT NULL,
-                 start_date date NOT NULL,planned_end_date date,closed_on date);",
-        )
-        .execute(&mut *connection)
-        .await
-        .unwrap();
-        let context = ResultContext {
-            academic_year_id: Uuid::new_v4(),
-            academic_term_id: Uuid::new_v4(),
-        };
-        let start = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
-        let closed = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
-        let planned = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
-        let year_end = NaiveDate::from_ymd_opt(2027, 3, 31).unwrap();
-        let captured = NaiveDate::from_ymd_opt(2027, 4, 1).unwrap();
-        sqlx::query("INSERT INTO academic_years VALUES($1,$2)")
-            .bind(context.academic_year_id)
-            .bind(year_end)
-            .execute(&mut *connection)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO academic_terms VALUES($1,$2,$3,NULL,NULL)")
-            .bind(context.academic_term_id)
-            .bind(context.academic_year_id)
-            .bind(start)
-            .execute(&mut *connection)
-            .await
-            .unwrap();
-        for (closed_on, planned_end, expected) in [
-            (Some(closed), Some(planned), closed),
-            (Some(closed), None, closed),
-            (None, Some(planned), planned),
-            (None, None, year_end),
-        ] {
-            sqlx::query("UPDATE academic_terms SET closed_on=$1,planned_end_date=$2 WHERE id=$3")
-                .bind(closed_on)
-                .bind(planned_end)
-                .bind(context.academic_term_id)
-                .execute(&mut *connection)
-                .await
-                .unwrap();
-            assert_eq!(
-                operation_date(&mut connection, &context, captured)
-                    .await
-                    .unwrap(),
-                expected,
-                "closed={closed_on:?}, planned={planned_end:?}"
-            );
+        sqlx::raw_sql("CREATE TEMP TABLE academic_terms(id uuid PRIMARY KEY,academic_year_id uuid NOT NULL)")
+            .execute(&mut *connection).await.unwrap();
+        let mut context = ResultContext { academic_year_id: Uuid::new_v4(), academic_term_id: Uuid::new_v4() };
+        sqlx::query("INSERT INTO academic_terms VALUES($1,$2)").bind(context.academic_term_id).bind(context.academic_year_id).execute(&mut *connection).await.unwrap();
+        for captured in [NaiveDate::from_ymd_opt(2025,1,1).unwrap(),NaiveDate::from_ymd_opt(2030,1,1).unwrap()] {
+            assert_eq!(operation_date(&mut connection,&context,captured).await.unwrap(),captured);
         }
+        context.academic_year_id=Uuid::new_v4();
+        assert!(matches!(operation_date(&mut connection,&context,NaiveDate::from_ymd_opt(2025,1,1).unwrap()).await,Err(AppError::ValidationError(_))));
     }
 
     #[test]
@@ -218,7 +174,7 @@ mod tests {
         assert!(require_scan_budget(CURRENT_OBLIGATION_GROUP_SCAN_LIMIT + 1).is_err());
     }
     #[test]
-    fn bangkok_midnight_and_term_bounds_use_one_captured_day() {
+    fn bangkok_midnight_uses_one_captured_day() {
         let before = DateTime::parse_from_rfc3339("2026-10-28T16:59:59Z")
             .unwrap()
             .with_timezone(&Utc);
@@ -233,21 +189,6 @@ mod tests {
             bangkok_day(after).unwrap(),
             NaiveDate::from_ymd_opt(2026, 10, 29).unwrap()
         );
-        assert_eq!(
-            clamp_day(
-                bangkok_day(before).unwrap(),
-                bangkok_day(after).unwrap(),
-                bangkok_day(after).unwrap()
-            ),
-            bangkok_day(after).unwrap()
-        );
-        assert_eq!(
-            clamp_day(
-                bangkok_day(after).unwrap(),
-                bangkok_day(before).unwrap(),
-                bangkok_day(before).unwrap()
-            ),
-            bangkok_day(before).unwrap()
-        );
+
     }
 }

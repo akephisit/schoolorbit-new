@@ -614,6 +614,7 @@ async fn bulk_group_setup_shared_tracking_policy_refuses_self_registration() {
         &f.pool,
         f.context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             create_homeroom_groups: false,
             academic_term_id: f.context.term_id,
             activity_version_id,

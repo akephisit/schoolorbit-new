@@ -701,6 +701,7 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
         context.teacher_id,
         Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,

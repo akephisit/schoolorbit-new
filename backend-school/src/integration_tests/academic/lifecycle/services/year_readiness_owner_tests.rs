@@ -43,13 +43,13 @@ async fn year_lifecycle_readiness_distinguishes_missing_annual_results_and_optio
         .all(|row| row.resolution_url.is_none()));
     let optional: Uuid = sqlx::query_scalar("SELECT id FROM academic_terms WHERE academic_year_id=$1 AND id<>$2 ORDER BY sequence_no LIMIT 1").bind(year).bind(term).fetch_one(&pool).await.unwrap();
     sqlx::query(
-        "UPDATE academic_terms SET status='closed',closed_on=start_date WHERE academic_year_id=$1",
+        "UPDATE academic_terms SET status='closed' WHERE academic_year_id=$1",
     )
     .bind(year)
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL,included_in_year_result=false,blocks_year_closure=false,term_type='summer' WHERE id=$1").bind(optional).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning',included_in_year_result=false,blocks_year_closure=false,term_type='summer' WHERE id=$1").bind(optional).execute(&pool).await.unwrap();
     let ws = get_year_workspace(&pool, &reader, year).await.unwrap();
     assert!(!ws.findings.iter().any(|row| row.code == "year.terms_open"));
     assert!(ws

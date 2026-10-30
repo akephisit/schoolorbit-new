@@ -707,7 +707,7 @@ async fn promotion_execution_tracks_room_rosters_without_deleting_evidence() {
     sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id) SELECT gen_random_uuid(),g.id,g.academic_term_id,g.academic_year_id,p.homeroom_id FROM learning_groups g JOIN homeroom_placements p ON p.student_academic_year_id=$2 AND p.status='current' WHERE g.id=$1 AND NOT EXISTS(SELECT 1 FROM learning_group_homerooms c WHERE c.learning_group_id=g.id AND c.homeroom_id=p.homeroom_id)")
         .bind(group).bind(student_year).execute(&pool).await.unwrap();
     // The group was explicitly opted in when its term started; simulate that saved policy.
-    sqlx::query("INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) SELECT g.id,'homeroom',t.start_date FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id WHERE g.id=$1")
+    sqlx::query("INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) SELECT g.id,'homeroom',o.starts_on FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id WHERE g.id=$1")
         .bind(group).execute(&pool).await.unwrap();
     let count_before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1 AND student_academic_year_id=$2")
         .bind(group).bind(student_year).fetch_one(&pool).await.unwrap();

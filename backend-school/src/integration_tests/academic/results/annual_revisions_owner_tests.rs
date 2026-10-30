@@ -292,7 +292,6 @@ async fn annual_revision_preserves_zero_replays_and_invalidates_after_source_cor
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: Some("Requested source review".into()),
     };
     assert!(matches!(

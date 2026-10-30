@@ -888,6 +888,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -899,6 +900,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: Some(revision.target_delivery_version_id),
@@ -950,6 +952,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -961,6 +964,7 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: Some(revision.target_delivery_version_id),
@@ -1026,6 +1030,7 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
             change_set_row_version: current.row_version,
             weekly_period_target: 2,
             offering: CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
                 academic_term_id: context.term_id,
                 activity_version_id,
                 curriculum_activity_requirement_id: None,
@@ -1399,6 +1404,7 @@ pub(super) async fn open_activity_with_catalog_target(
         context.teacher_id,
         Some(target_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             create_homeroom_groups: create_groups,
             academic_term_id: context.term_id,
             activity_version_id,

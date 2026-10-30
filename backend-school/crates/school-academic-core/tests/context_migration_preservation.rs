@@ -167,15 +167,19 @@ async fn missing_calendar_year_refuses_zero_or_ambiguous_historical_matches() {
 
 #[tokio::test]
 async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
-    for kind in ["function", "check", "tampered_known_check", "view"] {
+    for kind in ["function", "check", "tampered_known_check", "tampered_known_view", "view"] {
         let pool = predecessor(&format!("context147_unknown_{kind}")).await;
         apply_migrations_through(&pool, 146).await.unwrap();
+        let original_exam_view: String = sqlx::query_scalar("SELECT pg_get_viewdef('academic_exam_eligible_sources'::regclass,false)").fetch_one(&pool).await.unwrap();
         match kind {
             "function" => {
                 sqlx::raw_sql("CREATE FUNCTION surprise_boundary() RETURNS date LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT END_DATE FROM ACADEMIC_YEARS LIMIT 1); END $$").execute(&pool).await.unwrap();
             }
             "check" => {
                 sqlx::raw_sql("ALTER TABLE academic_years ADD CONSTRAINT surprise_boundary CHECK(end_date-start_date<400)").execute(&pool).await.unwrap();
+            }
+            "tampered_known_view" => {
+                sqlx::raw_sql(&format!("CREATE OR REPLACE VIEW academic_exam_eligible_sources AS {} AND false",original_exam_view.trim_end().trim_end_matches(';'))).execute(&pool).await.unwrap();
             }
             "tampered_known_check" => {
                 sqlx::raw_sql("ALTER TABLE academic_years DROP CONSTRAINT academic_years_date_order_check; ALTER TABLE academic_years ADD CONSTRAINT academic_years_date_order_check CHECK(start_date<=end_date AND year>2000)").execute(&pool).await.unwrap();
@@ -210,6 +214,9 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
                     .execute(&pool)
                     .await
                     .unwrap();
+            }
+            "tampered_known_view" => {
+                sqlx::raw_sql(&format!("CREATE OR REPLACE VIEW academic_exam_eligible_sources AS {original_exam_view}")).execute(&pool).await.unwrap();
             }
             "tampered_known_check" => {
                 sqlx::raw_sql("ALTER TABLE academic_years DROP CONSTRAINT academic_years_date_order_check; ALTER TABLE academic_years ADD CONSTRAINT academic_years_date_order_check CHECK(start_date<=end_date)").execute(&pool).await.unwrap();
@@ -302,4 +309,124 @@ async fn missing_or_changed_original_term_request_refuses_before_cleanup() {
         assert_refusal(&pool,"ACADEMIC_CONTEXT_147_TERM_RECEIPT_SOURCE_UNMAPPABLE").await;
         let same:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_transition_receipts WHERE request_id=$1").bind(id).fetch_one(&pool).await.unwrap();assert_eq!(same,1);
     }
+}
+
+#[derive(serde::Serialize)]
+struct OldPreparationIdentity {
+    source_term_id: Uuid,
+    target_term_id: Uuid,
+    modules: Vec<String>,
+    mappings: OldPreparationMappings,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OldPreparationMappings {
+    entities: Vec<OldEntityMapping>,
+    dates: Vec<OldDateMapping>,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OldEntityMapping {
+    kind: String,
+    source_id: Uuid,
+    target_id: Uuid,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OldDateMapping {
+    source_date: NaiveDate,
+    target_date: NaiveDate,
+}
+async fn old_preparation_receipt(pool: &PgPool, mixed: bool) -> (Uuid, Uuid, Uuid, String) {
+    use sha2::{Digest, Sha256};
+    let target: Uuid = sqlx::query_scalar("SELECT id FROM academic_terms WHERE academic_year_id=$1 ORDER BY sequence_no LIMIT 1")
+        .bind(NEXT_YEAR).fetch_one(pool).await.unwrap();
+    let nonce = Uuid::new_v4();
+    let identity = OldPreparationIdentity {
+        source_term_id: TERM,
+        target_term_id: target,
+        modules: vec!["delivery".into()],
+        mappings: OldPreparationMappings {
+            entities: vec![OldEntityMapping { kind: "teacher".into(), source_id: ACTOR, target_id: ACTOR }],
+            dates: vec![OldDateMapping { source_date: NaiveDate::from_ymd_opt(2025,5,2).unwrap(), target_date: NaiveDate::from_ymd_opt(2026,5,3).unwrap() }],
+        },
+    };
+    let source_hash = "c".repeat(64);
+    let checksum = hex::encode(Sha256::digest(serde_json::to_vec(&(ACTOR,nonce,&identity,&source_hash)).unwrap()));
+    let version = Uuid::new_v4();
+    let revision = Uuid::new_v4();
+    let mut tx = pool.begin().await.unwrap();
+    let mut output_ids = vec![revision];
+    let mut created_count = 1;
+    if mixed {
+        let retained: Uuid = sqlx::query_scalar("SELECT id FROM learning_offerings WHERE academic_term_id=$1 AND kind='course' ORDER BY id LIMIT 1").bind(target).fetch_one(&mut *tx).await.unwrap();
+        let subject=Uuid::new_v4(); let subject_version=Uuid::new_v4(); let offering=Uuid::new_v4();
+        sqlx::query("INSERT INTO subjects SELECT (jsonb_populate_record(NULL::subjects,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'code','MIXED-'||$1::text))).* FROM subjects source JOIN course_offering_details detail ON detail.subject_id=source.id WHERE detail.learning_offering_id=$2")
+            .bind(subject).bind(retained).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO subject_versions SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'subject_id',$2::uuid,'code','MIXED-'||$2::text))).* FROM subject_versions source JOIN course_offering_details detail ON detail.subject_version_id=source.id WHERE detail.learning_offering_id=$3")
+            .bind(subject_version).bind(subject).bind(retained).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO learning_offerings SELECT (jsonb_populate_record(NULL::learning_offerings,to_jsonb(source)||jsonb_build_object('id',$1::uuid,'code_snapshot','MIXED-'||$1::text,'starts_on','2026-05-03','status','draft','published_at',NULL,'created_at',now(),'updated_at',now()))).* FROM learning_offerings source WHERE id=$2")
+            .bind(offering).bind(retained).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO course_offering_details SELECT (jsonb_populate_record(NULL::course_offering_details,to_jsonb(source)||jsonb_build_object('learning_offering_id',$1::uuid,'subject_id',$2::uuid,'subject_version_id',$3::uuid,'curriculum_course_requirement_id',NULL))).* FROM course_offering_details source WHERE learning_offering_id=$4")
+            .bind(offering).bind(subject).bind(subject_version).bind(retained).execute(&mut *tx).await.unwrap();
+        output_ids.extend([retained,offering]);
+        created_count+=1;
+    }
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,reference_date,snapshot,created_by) VALUES($1,$2,$3,'2026-05-10','{\"offerings\":[]}',$4)")
+        .bind(version).bind(target).bind(NEXT_YEAR).bind(ACTOR).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,target_delivery_version_id) VALUES($1,$2,$3,'2026-05-10','Historical preparation',$4,repeat('d',64),$5,$6)")
+        .bind(revision).bind(target).bind(NEXT_YEAR).bind(nonce.to_string()).bind(ACTOR).bind(version).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_delivery_version.created','academic_delivery_version',$1,$2,$3,$4,$5)")
+        .bind(version).bind(NEXT_YEAR).bind(target).bind(ACTOR).bind(sqlx::types::Json(serde_json::json!({"changeSetId":revision,"sourceVersionId":null,"referenceDate":"2026-05-10","requestHash":"d".repeat(64)}))).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO academic_term_preparation_runs(request_id,source_academic_term_id,source_academic_year_id,target_academic_term_id,target_academic_year_id,selected_modules,mappings,source_checksum,request_checksum,outcome,actor_user_id) VALUES($1,$2,$3,$4,$5,ARRAY['delivery'],$6,$7,$8,$9,$10)")
+        .bind(nonce).bind(TERM).bind(YEAR).bind(target).bind(NEXT_YEAR).bind(sqlx::types::Json(&identity.mappings)).bind(&source_hash).bind(&checksum)
+        .bind(sqlx::types::Json(serde_json::json!([{"module":"delivery","createdCount":created_count,"targetIds":output_ids}]))).bind(ACTOR).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    (nonce,version,revision,checksum)
+}
+
+#[tokio::test]
+async fn preparation_mapping_checksum_and_independent_revision_dates_are_preserved() {
+    let pool=predecessor("context147_preparation_valid").await;
+    let(nonce,version,revision,checksum)=old_preparation_receipt(&pool, false).await;
+    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1),(SELECT to_jsonb(r) FROM academic_term_change_sets r WHERE id=$2))")
+        .bind(version).bind(revision).fetch_one(&pool).await.unwrap();
+    apply_migrations_through(&pool,147).await.unwrap();
+    let(date,stored):(Option<NaiveDate>,String)=sqlx::query_as("SELECT offering_starts_on,request_checksum FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap();
+    assert_eq!(date,None,"no new offering input effect; the run still created a separately dated revision");
+    assert_eq!(stored,checksum);
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1),(SELECT to_jsonb(r) FROM academic_term_change_sets r WHERE id=$2))")
+        .bind(version).bind(revision).fetch_one(&pool).await.unwrap();
+    assert_eq!(before,after);
+}
+
+#[tokio::test]
+async fn preparation_tampered_checksum_mapping_or_version_proof_refuses_cleanup() {
+    for kind in ["checksum","mapping","version"] {
+        let pool=predecessor(&format!("context147_preparation_{kind}")).await;
+        let(nonce,version,_,_)=old_preparation_receipt(&pool, false).await;
+        sqlx::raw_sql("ALTER TABLE academic_term_preparation_runs DISABLE TRIGGER academic_term_preparation_runs_immutable").execute(&pool).await.unwrap();
+        match kind {
+            "checksum" => {sqlx::query("UPDATE academic_term_preparation_runs SET request_checksum=repeat('e',64) WHERE request_id=$1").bind(nonce).execute(&pool).await.unwrap();}
+            "mapping" => {sqlx::query("UPDATE academic_term_preparation_runs SET mappings=jsonb_set(mappings,'{dates,0,targetDate}','\"2026-05-04\"') WHERE request_id=$1").bind(nonce).execute(&pool).await.unwrap();}
+            _ => {sqlx::query("DELETE FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_delivery_version.created'").bind(version).execute(&pool).await.unwrap();}
+        }
+        sqlx::raw_sql("ALTER TABLE academic_term_preparation_runs ENABLE TRIGGER academic_term_preparation_runs_immutable").execute(&pool).await.unwrap();
+        assert_refusal(&pool,if kind=="version" {"ACADEMIC_CONTEXT_147_PREPARATION_CREATED_INTENT_UNMAPPABLE"} else {"ACADEMIC_CONTEXT_147_PREPARATION_REQUEST_UNMAPPABLE"}).await;
+    }
+}
+
+#[tokio::test]
+async fn preparation_mixed_retained_and_created_offerings_keep_distinct_dates() {
+    let pool=predecessor("context147_preparation_mixed").await;
+    let(nonce,version,revision,checksum)=old_preparation_receipt(&pool,true).await;
+    let before:Vec<(Uuid,NaiveDate)>=sqlx::query_as("SELECT id,starts_on FROM learning_offerings WHERE id IN(SELECT value::uuid FROM academic_term_preparation_runs ledger CROSS JOIN LATERAL jsonb_array_elements_text(ledger.outcome->0->'targetIds') value WHERE ledger.request_id=$1) ORDER BY id").bind(nonce).fetch_all(&pool).await.unwrap();
+    assert_eq!(before.len(),2); assert_ne!(before[0].1,before[1].1);
+    apply_migrations_through(&pool,147).await.unwrap();
+    let(date,stored):(Option<NaiveDate>,String)=sqlx::query_as("SELECT offering_starts_on,request_checksum FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap();
+    assert_eq!(date,NaiveDate::from_ymd_opt(2026,5,3)); assert_eq!(stored,checksum);
+    let after:Vec<(Uuid,NaiveDate)>=sqlx::query_as("SELECT id,starts_on FROM learning_offerings WHERE id=ANY($1) ORDER BY id").bind(before.iter().map(|item|item.0).collect::<Vec<_>>()).fetch_all(&pool).await.unwrap(); assert_eq!(before,after);
+    let references: (NaiveDate,NaiveDate)=sqlx::query_as("SELECT version.reference_date,revision.reference_date FROM academic_delivery_versions version CROSS JOIN academic_term_change_sets revision WHERE version.id=$1 AND revision.id=$2").bind(version).bind(revision).fetch_one(&pool).await.unwrap();
+    assert_eq!(references,(NaiveDate::from_ymd_opt(2026,5,10).unwrap(),NaiveDate::from_ymd_opt(2026,5,10).unwrap()));
+    apply_migrations_through(&pool,147).await.unwrap();
 }

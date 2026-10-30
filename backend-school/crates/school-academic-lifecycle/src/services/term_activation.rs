@@ -10,8 +10,6 @@ use school_permissions::registry::codes;
 use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
 
-const ACTION: &str = "activate";
-
 /// Atomically opens a ready term and, when it is the first term of a planning
 /// year, the year plus its planned enrollment and currently eligible placements.
 pub(crate) async fn activate_term(
@@ -290,7 +288,6 @@ mod tests {
             expected_term_version: 1,
             readiness_checksum: "a".repeat(64),
             acknowledged_warning_codes: vec![],
-            closed_on: None,
             reason: None,
         }
     }

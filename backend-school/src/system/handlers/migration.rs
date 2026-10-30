@@ -992,6 +992,7 @@ mod tests {
     #[test]
     fn school_status_serializes_academic_core_cutover_in_camel_case() {
         let value = serde_json::to_value(SchoolMigrationStatus {
+            academic_context_cutover: AcademicContextCutoverStatus { status: "pendingMigration".into(), migration_version: 147, passed: None, checks: vec![] },
             subdomain: "fixture".to_string(),
             migration_version: 45,
             migration_status: "migrated".to_string(),

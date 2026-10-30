@@ -85,7 +85,6 @@ async fn transition_input(
             expected_term_version: workspace.context.term_row_version,
             readiness_checksum: workspace.source_checksum,
             acknowledged_warning_codes: vec![],
-            closed_on: None,
             reason: None,
         };
     }
@@ -98,7 +97,6 @@ async fn transition_input(
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     }
 }
@@ -118,7 +116,7 @@ async fn lifecycle_activation_requires_closed_predecessors_and_blocks_reopening_
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(target)
         .execute(&pool)
         .await
@@ -144,7 +142,7 @@ async fn lifecycle_activation_requires_closed_predecessors_and_blocks_reopening_
             .await
             .is_err()
     );
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(source)
         .execute(&pool)
         .await
@@ -201,7 +199,6 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     let (first, concurrent) = tokio::join!(
@@ -284,7 +281,6 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
     close.action = TermTransitionAction::Close;
     close.expected_term_version = latest.context.term_row_version;
     close.readiness_checksum = latest.source_checksum;
-    close.closed_on = Some(latest.context.term_start_date);
     assert!(matches!(
         term_transitions::transition_term(&pool, &actor, term, close.clone()).await,
         Err(school_errors::AppError::Forbidden(_))
@@ -324,7 +320,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
     let target_placement = execution.receipts[0].target_placement_id.unwrap();
 
     sqlx::query(
-        "UPDATE academic_terms SET status='closed',closed_on=start_date,row_version=row_version+1
+        "UPDATE academic_terms SET status='closed',row_version=row_version+1
          WHERE academic_year_id=$1 AND status<>'cancelled'",
     )
     .bind(calculation.run.source_year_id)
@@ -336,41 +332,13 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
         .execute(&pool)
         .await
         .unwrap();
-    let (source_end, target_start, target_end): (
-        chrono::NaiveDate,
-        chrono::NaiveDate,
-        chrono::NaiveDate,
-    ) = sqlx::query_as(
-        "SELECT source.end_date,target.start_date,target.end_date
-             FROM academic_years source CROSS JOIN academic_years target
-             WHERE source.id=$1 AND target.id=$2",
-    )
-    .bind(calculation.run.source_year_id)
-    .bind(calculation.run.target_year_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let intervening: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM academic_years
-         WHERE id<>$1 AND id<>$2 AND start_date>$3 AND start_date<$4 ORDER BY start_date,id",
-    )
-    .bind(calculation.run.source_year_id)
-    .bind(calculation.run.target_year_id)
-    .bind(source_end)
-    .bind(target_start)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    for (index, year) in intervening.into_iter().enumerate() {
-        let start = target_end + Duration::days(1 + index as i64 * 366);
-        sqlx::query("UPDATE academic_years SET start_date=$1,end_date=$2 WHERE id=$3")
-            .bind(start)
-            .bind(start + Duration::days(364))
-            .bind(year)
-            .execute(&pool)
-            .await
-            .unwrap();
-    }
+    // Activation ordering follows year identity. Close intervening predecessors
+    // without changing either their identity or any dated placement fact.
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE academic_year_id IN(SELECT id FROM academic_years WHERE year<(SELECT year FROM academic_years WHERE id=$1)) AND status<>'cancelled'")
+        .bind(calculation.run.target_year_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE year<(SELECT year FROM academic_years WHERE id=$1)")
+        .bind(calculation.run.target_year_id).execute(&pool).await.unwrap();
+    let target_start = calculation.run.target_placement_starts_on;
     let term = ready_term_for_existing_year(
         &pool,
         executor.user_id,
@@ -409,7 +377,6 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum.clone(),
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     let policy = super::get_opening_policy(&pool, &actor).await.unwrap();
@@ -634,7 +601,7 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
         &pool,
         actor_id,
         year.id,
-        year.start_date + Duration::days(120),
+        chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive() + Duration::days(120),
     )
     .await;
     let first_workspace = get_activation_workspace(&pool, &actor, year.id, first.id)
@@ -649,14 +616,13 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
         expected_term_version: first_workspace.context.term_row_version,
         readiness_checksum: first_workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     term_transitions::transition_term(&pool, &actor, first.id, first_request.clone())
         .await
         .unwrap();
     sqlx::query(
-        "UPDATE academic_terms SET status='closed',closed_on=start_date,row_version=row_version+1 WHERE id=$1",
+        "UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1",
     )
     .bind(first.id)
     .execute(&pool)
@@ -674,7 +640,6 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
         expected_term_version: later_workspace.context.term_row_version,
         readiness_checksum: later_workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     let outcome = term_transitions::transition_term(&pool, &actor, later.id, later_request.clone())

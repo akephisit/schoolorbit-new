@@ -118,6 +118,7 @@ async fn fixture_with_programs(name: &str, generated: bool, include_b: bool) -> 
         let preview = offerings::preview_from_curriculum(
             &pool,
             PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
                 delivery_version_id: Some(initial_revision.target_delivery_version_id),
                 academic_term_id: context.term_id,
                 study_program_ids: if include_b {
@@ -133,6 +134,7 @@ async fn fixture_with_programs(name: &str, generated: bool, include_b: bool) -> 
             &pool,
             context.teacher_id,
             ApplyCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
                 academic_term_id: context.term_id,
                 study_program_ids: if include_b {
                     programs.clone()
@@ -215,6 +217,7 @@ async fn preview(f: &PreparationFixture, program: Uuid) -> CurriculumOfferingPre
     offerings::preview_from_curriculum(
         &f.pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             delivery_version_id: None,
             academic_term_id: f.context.term_id,
             study_program_ids: vec![program],
@@ -236,6 +239,7 @@ fn request(
     action: PreparationAction,
 ) -> ApplyCurriculumOfferingsRequest {
     ApplyCurriculumOfferingsRequest {
+        starts_on: preview.starts_on,
         academic_term_id: f.context.term_id,
         study_program_ids: vec![program],
         delivery_version_id: None,
@@ -350,6 +354,7 @@ async fn covered_published(name: &str, grade_program: bool) {
         let preview = offerings::preview_from_curriculum(
             &f.pool,
             PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
                 academic_term_id: f.context.term_id,
                 study_program_ids: vec![f.context.study_program_id],
                 delivery_version_id: Some(selected.target_delivery_version_id),
@@ -584,6 +589,7 @@ async fn delivery_room_scope_reopen_reviews_current_rooms_and_retains_valid_gene
     let preview = offerings::preview_from_curriculum(
         &f.pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             academic_term_id: f.context.term_id,
             study_program_ids: vec![f.program_b],
             delivery_version_id: Some(target.id),

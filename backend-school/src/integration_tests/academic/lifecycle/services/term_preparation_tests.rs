@@ -15,13 +15,21 @@ use crate::integration_tests::academic::{
 use school_academic_core::ports::{TermPreparationMappingKind, TermPreparationModule};
 use school_permissions::registry::codes;
 
+fn preparation_mappings() -> TermPreparationMappings {
+    TermPreparationMappings {
+        offering_starts_on: Some(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()),
+        entities: vec![],
+        dates: vec![],
+    }
+}
+
 #[test]
 fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() {
     assert!(normalize_input(
         Uuid::new_v4(),
         Uuid::new_v4(),
         &[TermPreparationModule::Delivery],
-        &TermPreparationMappings::default(),
+        &preparation_mappings(),
     )
     .is_ok());
 
@@ -29,7 +37,7 @@ fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() 
         Uuid::new_v4(),
         Uuid::new_v4(),
         &[],
-        &TermPreparationMappings::default(),
+        &preparation_mappings(),
     )
     .is_err());
     assert!(normalize_input(
@@ -39,7 +47,7 @@ fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() 
             TermPreparationModule::Delivery,
             TermPreparationModule::Delivery,
         ],
-        &TermPreparationMappings::default(),
+        &preparation_mappings(),
     )
     .is_err());
 
@@ -47,6 +55,7 @@ fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() 
     let target_a = Uuid::new_v4();
     let target_b = Uuid::new_v4();
     let mappings = TermPreparationMappings {
+        offering_starts_on: preparation_mappings().offering_starts_on,
         entities: vec![
             TermPreparationEntityMapping {
                 kind: TermPreparationMappingKind::Teacher,
@@ -75,6 +84,7 @@ fn preparation_normalization_is_deterministic() {
     let first = Uuid::from_u128(1);
     let second = Uuid::from_u128(2);
     let mappings = TermPreparationMappings {
+        offering_starts_on: preparation_mappings().offering_starts_on,
         entities: vec![
             TermPreparationEntityMapping {
                 kind: TermPreparationMappingKind::Room,
@@ -133,7 +143,7 @@ async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext
         permissions: vec![codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL.into()],
     };
     let (source_term_id, source_year_id): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT id,academic_year_id FROM academic_terms WHERE status='active' ORDER BY start_date LIMIT 1",
+        "SELECT id,academic_year_id FROM academic_terms WHERE status='active' ORDER BY sequence_no,id LIMIT 1",
     )
     .fetch_one(&pool)
     .await
@@ -143,8 +153,8 @@ async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext
            FROM academic_terms term
            JOIN academic_years year ON year.id=term.academic_year_id
            WHERE term.status='planning'
-             AND year.start_date > (SELECT start_date FROM academic_years WHERE id=$1)
-           ORDER BY year.start_date,term.sequence_no
+             AND year.year > (SELECT year FROM academic_years WHERE id=$1)
+           ORDER BY year.year,term.sequence_no
            LIMIT 1"#,
     )
     .bind(source_year_id)
@@ -208,7 +218,7 @@ async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext
     .await
     .unwrap();
     sqlx::query(
-        "UPDATE academic_terms SET status='closed',closed_on=COALESCE(planned_end_date,start_date),row_version=row_version+1 WHERE id=$1",
+        "UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1",
     )
     .bind(source_term_id)
     .execute(&pool)
@@ -221,68 +231,18 @@ async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext
 async fn preparation_requires_a_future_term_in_an_open_target_year() {
     let (pool, actor, source_term_id, target_term_id) =
         delivery_preparation_fixture("term_preparation_future_boundary").await;
-    let (
-        source_start_date,
-        target_start_date,
-        target_end_date,
-        target_year_id,
-        target_year_start_date,
-    ): (
-        chrono::NaiveDate,
-        chrono::NaiveDate,
-        chrono::NaiveDate,
-        Uuid,
-        chrono::NaiveDate,
-    ) = sqlx::query_as(
-        r#"SELECT source.start_date,target.start_date,target.planned_end_date,
-                  target.academic_year_id,target_year.start_date
-           FROM academic_terms source
-           CROSS JOIN academic_terms target
-           JOIN academic_years target_year ON target_year.id=target.academic_year_id
-           WHERE source.id=$1 AND target.id=$2"#,
-    )
-    .bind(source_term_id)
-    .bind(target_term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (source_year_id, target_year_id, target_year_number): (Uuid, Uuid, i32) = sqlx::query_as("SELECT source.academic_year_id,target.academic_year_id,year.year FROM academic_terms source CROSS JOIN academic_terms target JOIN academic_years year ON year.id=target.academic_year_id WHERE source.id=$1 AND target.id=$2")
+        .bind(source_term_id).bind(target_term_id).fetch_one(&pool).await.unwrap();
     let request = PreviewTermPreparationInput {
         source_term_id,
         target_term_id,
         modules: vec![TermPreparationModule::Delivery],
-        mappings: TermPreparationMappings::default(),
+        mappings: preparation_mappings(),
     };
-
-    sqlx::query("UPDATE academic_years SET start_date=$2 WHERE id=$1")
-        .bind(target_year_id)
-        .bind(source_start_date)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$2 WHERE id=$1")
-        .bind(target_term_id)
-        .bind(source_start_date)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert!(matches!(
-        preview(&pool, &actor, request.clone()).await,
-        Err(school_errors::AppError::Conflict(_))
-    ));
-
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(target_term_id)
-        .bind(target_start_date)
-        .bind(target_end_date)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_years SET start_date=$2 WHERE id=$1")
-        .bind(target_year_id)
-        .bind(target_year_start_date)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let source_year_number: i32 = sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1").bind(source_year_id).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(target_year_id).bind(source_year_number-100).execute(&pool).await.unwrap();
+    assert!(matches!(preview(&pool,&actor,request.clone()).await,Err(school_errors::AppError::Conflict(_))));
+    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(target_year_id).bind(target_year_number).execute(&pool).await.unwrap();
     sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
         .bind(target_year_id)
         .execute(&pool)
@@ -313,7 +273,7 @@ async fn delivery_preparation_preview_is_read_only_and_apply_creates_only_target
         source_term_id,
         target_term_id,
         modules: vec![TermPreparationModule::Delivery],
-        mappings: TermPreparationMappings::default(),
+        mappings: preparation_mappings(),
     };
     let workspace = preview(&pool, &actor, request.clone()).await.unwrap();
     assert!(workspace.can_apply, "{:?}", workspace.findings);
@@ -389,7 +349,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
             source_term_id,
             target_term_id,
             modules: modules.clone(),
-            mappings: TermPreparationMappings::default(),
+            mappings: preparation_mappings(),
         },
     )
     .await
@@ -414,7 +374,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
             source_term_id,
             target_term_id,
             modules: vec![TermPreparationModule::Delivery],
-            mappings: TermPreparationMappings::default(),
+            mappings: preparation_mappings(),
         },
     )
     .await
@@ -433,7 +393,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
             source_term_id,
             target_term_id,
             modules: vec![TermPreparationModule::Delivery],
-            mappings: TermPreparationMappings::default(),
+            mappings: preparation_mappings(),
         },
     )
     .await
@@ -499,7 +459,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .filter(|module| *module != TermPreparationModule::Delivery)
         .collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
-    let delivery_preview = offerings::preview_term_preparation(&mut tx, target_term_id)
+    let delivery_preview = offerings::preview_term_preparation(&mut tx, target_term_id, preparation_mappings().offering_starts_on.unwrap())
         .await
         .unwrap();
     tx.rollback().await.unwrap();
@@ -548,6 +508,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         });
     }
     let mappings = TermPreparationMappings {
+        offering_starts_on: preparation_mappings().offering_starts_on,
         entities: entity_mappings,
         dates: Vec::new(),
     };
@@ -643,7 +604,7 @@ async fn preparation_rejects_stale_preview_and_rolls_every_draft_back_when_audit
         source_term_id,
         target_term_id,
         modules: vec![TermPreparationModule::Delivery],
-        mappings: TermPreparationMappings::default(),
+        mappings: preparation_mappings(),
     };
     let stale_workspace = preview(&pool, &actor, preview_input.clone()).await.unwrap();
     sqlx::query("UPDATE academic_terms SET row_version=row_version+1 WHERE id=$1")
@@ -718,7 +679,7 @@ async fn preparation_checksum_changes_when_selected_module_content_changes() {
         source_term_id,
         target_term_id,
         modules: vec![TermPreparationModule::Assessments],
-        mappings: TermPreparationMappings::default(),
+        mappings: preparation_mappings(),
     };
     let before = preview(&pool, &actor, input.clone()).await.unwrap();
     sqlx::query(
@@ -753,7 +714,7 @@ async fn preparation_preview_requires_school_manage_permission() {
             source_term_id,
             target_term_id,
             modules: vec![TermPreparationModule::Delivery],
-            mappings: TermPreparationMappings::default(),
+            mappings: preparation_mappings(),
         },
     )
     .await;
@@ -813,7 +774,7 @@ async fn delivery_preparation_preview_preserves_managed_one_connection_read_only
         .unwrap();
     let preview = tokio::time::timeout(
         Duration::from_secs(5),
-        offerings::preview_term_preparation(&mut tx, target_term_id),
+        offerings::preview_term_preparation(&mut tx, target_term_id, preparation_mappings().offering_starts_on.unwrap()),
     )
     .await
     .expect("preview must reuse the transaction's only connection")
@@ -896,7 +857,7 @@ async fn preparation_database_failures_preserve_cause_and_release_managed_connec
                     source_term_id,
                     target_term_id,
                     modules: vec![module],
-                    mappings: TermPreparationMappings::default(),
+                    mappings: preparation_mappings(),
                 },
             ),
         )

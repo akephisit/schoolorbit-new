@@ -1001,16 +1001,26 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 		await selectOfferingStartDate(page);
 		await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 		const applyButton = preparation.getByRole('button', {
-			name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม', exact: true
+			name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม',
+			exact: true
 		});
 		await expect(applyButton).toBeEnabled();
-		const actualDate = preparation.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร', exact: true });
+		const actualDate = preparation.getByRole('button', {
+			name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร',
+			exact: true
+		});
 		await actualDate.click();
-		await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^16$/ }).click();
+		await page
+			.locator('[data-calendar-day]:not([data-outside-month])')
+			.filter({ hasText: /^16$/ })
+			.click();
 		await expect(applyButton).toBeDisabled();
 		await expect(preparation.getByRole('alert')).toContainText('วันที่เริ่มเปิดสอนเปลี่ยน');
 		await actualDate.click();
-		await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^15$/ }).click();
+		await page
+			.locator('[data-calendar-day]:not([data-outside-month])')
+			.filter({ hasText: /^15$/ })
+			.click();
 		await expect(applyButton).toBeEnabled();
 		await applyButton.click();
 		await expect(preparation).toHaveCount(0);

@@ -144,7 +144,7 @@ pub async fn create_run(
         .bind(input.source_year_id).bind(input.target_year_id).bind(input.policy_id)
         .bind(input.request_id).bind(checksum).bind(actor.user_id).bind(input.target_placement_starts_on).fetch_one().await?;
     DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_runs.create_run", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.created','promotion_run',$1,$2,$3)")
-        .bind(run.id).bind(actor.user_id).bind(sqlx::types::Json(serde_json::json!({"sourceYearId":input.source_year_id,"targetYearId":input.target_year_id,"policyId":input.policy_id})))
+        .bind(run.id).bind(actor.user_id).bind(sqlx::types::Json(serde_json::json!({"sourceYearId":input.source_year_id,"targetYearId":input.target_year_id,"policyId":input.policy_id,"targetPlacementStartsOn":input.target_placement_starts_on})))
         .execute().await?;
     tx.commit().await?;
     Ok(run)

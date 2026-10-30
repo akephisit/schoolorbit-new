@@ -75,7 +75,7 @@ async fn migrated_pool_with_connections(name: &str, connections: u32) -> PgPool 
     apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical supervision fixture migrations should run");
-    apply_migrations_through(&pool, 114)
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
         .await
         .expect("current supervision fixture migrations should run");
     pool
@@ -418,7 +418,7 @@ async fn supervision_lifecycle_cycles_cannot_move_existing_observations_out_of_c
     .await
     .unwrap();
     let target_term = Uuid::new_v4();
-    sqlx::query("INSERT INTO academic_terms (id,academic_year_id,name,start_date,planned_end_date,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Other test term',start_date,planned_end_date,(SELECT MAX(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$3),'LIFECYCLE-OTHER','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
+    sqlx::query("INSERT INTO academic_terms (id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Other test term',(SELECT MAX(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$3),'LIFECYCLE-OTHER','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
         .bind(target_term).bind(fixture.academic_term_id).bind(fixture.cycle.academic_year_id).execute(&pool).await.unwrap();
     let before = serde_json::to_value(&fixture.cycle).unwrap();
     for request in [

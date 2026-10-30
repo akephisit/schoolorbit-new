@@ -45,7 +45,7 @@ async fn results_lifecycle_guard_keeps_history_and_blocks_ordinary_writes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
             .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
         let course = get_course_workspace(&pool, &actor, &ctx, course_group)
             .await
@@ -326,7 +326,7 @@ async fn fixture_with_obligation_groups(
         None
     };
     // This is the live-service fixture; dedicated historical migration fixtures stay at 061.
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version()).await.unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![

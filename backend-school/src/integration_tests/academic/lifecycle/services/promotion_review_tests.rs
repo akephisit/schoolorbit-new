@@ -155,6 +155,7 @@ async fn ready_run_cohort(
         &pool,
         &actor,
         CreatePromotionRunInput {
+            target_placement_starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
             request_id: Uuid::new_v4(),
             source_year_id: context.academic_year_id,
             target_year_id: target,

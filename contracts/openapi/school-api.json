@@ -40008,13 +40008,6 @@
           "includedInYearResult": {
             "type": "boolean"
           },
-          "plannedEndDate": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "termType": {
             "$ref": "#/components/schemas/AcademicTermType"
           }
@@ -56739,6 +56732,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "targetPlacementStartsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "targetYearId": {
             "format": "uuid",
             "type": "string"
@@ -56753,6 +56753,7 @@
           "runId",
           "sourceYearId",
           "targetYearId",
+          "targetPlacementStartsOn",
           "studentAcademicYearId",
           "studentId",
           "sourceGradeLevelId",
@@ -67178,10 +67179,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "academicYear": {
-            "format": "int32",
-            "type": "integer"
-          },
           "academicYearId": {
             "format": "uuid",
             "type": "string"
@@ -67234,7 +67231,6 @@
           "termStatus",
           "yearRowVersion",
           "termRowVersion",
-          "academicYear",
           "operationDate",
           "sequence",
           "bellScheduleId",
@@ -69945,13 +69941,6 @@
           },
           "includedInYearResult": {
             "type": "boolean"
-          },
-          "plannedEndDate": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "rowVersion": {
             "format": "int64",

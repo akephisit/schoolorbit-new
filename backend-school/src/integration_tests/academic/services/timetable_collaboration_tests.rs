@@ -1259,6 +1259,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
             change_set_row_version: revision.row_version,
             weekly_period_target: 1,
             offering: CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
                 create_homeroom_groups: true,
                 academic_term_id: term_id,
                 activity_version_id,

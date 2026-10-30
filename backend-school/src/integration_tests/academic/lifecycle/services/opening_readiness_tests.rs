@@ -31,14 +31,14 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await;
     let mut tx = pool.begin().await.unwrap();
     let offerings =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
+        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
             .await
             .unwrap();
     let timetables = timetable_version_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
-        term.start_date,
+        chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
         term.bell_schedule_id,
     )
     .await
@@ -75,7 +75,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(activity_version)
     .bind(activity)
     .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .execute(&mut *setup)
     .await
     .unwrap();
@@ -86,7 +86,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(offering)
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .bind(owner)
     .execute(&mut *setup)
     .await
@@ -113,7 +113,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     let version = Uuid::new_v4();
     let delivery_version = Uuid::new_v4();
     sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,$4,'published','{\"offerings\":[]}', $5,now(),uuid_generate_v4(),repeat('0',64))")
-        .bind(delivery_version).bind(term.id).bind(year.id).bind(term.start_date).bind(actor)
+        .bind(delivery_version).bind(term.id).bind(year.id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).bind(actor)
         .execute(&mut *setup).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
@@ -122,7 +122,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(version)
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .bind(term.bell_schedule_id)
     .bind(actor)
     .bind(delivery_version)
@@ -136,7 +136,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(Uuid::new_v4())
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date.succ_opt().unwrap())
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive().succ_opt().unwrap())
     .bind(term.bell_schedule_id)
     .bind(actor)
     .bind(delivery_version)
@@ -147,14 +147,14 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
 
     let mut tx = pool.begin().await.unwrap();
     let offerings =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
+        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
             .await
             .unwrap();
     let timetables = timetable_version_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
-        term.start_date,
+        chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
         term.bell_schedule_id,
     )
     .await
@@ -172,7 +172,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     let cancelled =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
+        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
             .await
             .unwrap();
     assert_eq!(cancelled.count(), 0);
@@ -336,7 +336,7 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
     .bind(student_year)
     .bind(year.id)
     .bind(room)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .execute(&pool)
     .await
     .unwrap();
