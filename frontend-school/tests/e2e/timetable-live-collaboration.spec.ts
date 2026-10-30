@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
+import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import { sessionState } from './fixtures/session-state.ts';
 import { revalidatePage } from './fixtures/page-revalidation.ts';
 import {
@@ -165,6 +166,156 @@ const cell = (period: string, day = 'MON') =>
 	`td[data-timetable-day="${day}"][data-timetable-period-id="${period}"]`;
 
 test.use({ serviceWorkers: 'block' });
+test('native visible and hidden presence bursts keep four-peer roster avatars downloaded once and continuously visible', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	const first = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		second = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const mock = await installTimetableMock(a, { socketMode: 'native', relay });
+	await installTimetableMock(b, { socketMode: 'native', relay, userId: secondUser });
+	const grants: string[] = [],
+		blobs: string[] = [];
+	for (const page of [a, b]) {
+		await page.route('**/api/files/**/download*', async (route) => {
+			if (page === a) grants.push(route.request().url());
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: {
+						url: 'http://127.0.0.1:4173/__collaboration-avatar.png',
+						expiresAt: '2099-01-01T00:00:00Z'
+					}
+				})
+			});
+		});
+		await page.route('**/__collaboration-avatar.png', async (route) => {
+			if (page === a) blobs.push(route.request().url());
+			await route.fulfill({
+				status: 200,
+				contentType: 'image/png',
+				body: Buffer.from(
+					'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+					'base64'
+				)
+			});
+		});
+	}
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	const extraSockets: WebSocket[] = [];
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ผู้ดูรูป');
+		await redirectSocket(second, server.url, secondUser, 'ผู้ขยับเมาส์');
+		await a.goto(url());
+		await b.goto(url());
+		for (let index = 0; index < 3; index++) {
+			const address = new URL(server.url);
+			address.searchParams.set('academicTermId', timetableIds.term);
+			address.searchParams.set('timetableVersionId', timetableIds.draftVersion);
+			address.searchParams.set(
+				'fixtureUser',
+				`51000000-0000-4000-8000-${String(220 + index).padStart(12, '0')}`
+			);
+			address.searchParams.set('fixtureName', `ผู้ร่วม ${index}`);
+			const socket = new WebSocket(address);
+			extraSockets.push(socket);
+			await new Promise<void>((resolve, reject) => {
+				socket.onmessage = (event) => {
+					if (decodeDraftEvent(String(event.data))?.type === 'DraftStateSync') resolve();
+				};
+				socket.onerror = () => reject(new Error('native extra peer failed'));
+			});
+		}
+		await waitPeers(relay, 5);
+		for (const peer of relay.peers.values()) peer.user.profileImageFileId = timetableIds.room;
+		relay.commit(mock.workspace());
+		const images = a.locator('[data-timetable-roster] img');
+		await expect(images).toHaveCount(3);
+		for (const image of await images.all()) await expect(image).toHaveCSS('visibility', 'visible');
+		const nodes = await images.elementHandles(),
+			sources = await images.evaluateAll((values) =>
+				values.map((image) => image.getAttribute('src'))
+			);
+		const membership = await a
+			.locator('[data-timetable-collaborator]')
+			.evaluateAll((values) =>
+				values.map((node) => node.getAttribute('data-timetable-collaborator'))
+			);
+		expect(grants).toHaveLength(3);
+		expect(blobs).toHaveLength(3);
+		await a.locator('[data-timetable-roster]').evaluate((roster) => {
+			const observer = new MutationObserver((records) => {
+				const changed = records.filter(
+					(record) => record.target instanceof HTMLImageElement
+				).length;
+				document.documentElement.dataset.avatarChanges = String(
+					Number(document.documentElement.dataset.avatarChanges ?? 0) + changed
+				);
+			});
+			observer.observe(roster, {
+				subtree: true,
+				attributes: true,
+				attributeFilter: ['src', 'style']
+			});
+		});
+		for (let index = 0; index < 10; index++)
+			await hoverPoint(b, cell(timetableIds.period2), 0.25 + index * 0.04, 0.4);
+		const movingId = [...relay.peers.values()].find((peer) => peer.user.userId === secondUser)!.id;
+		await cursorNear(a, movingId, cell(timetableIds.period2), 0.61, 0.4);
+		for (let index = 0; index < 6; index++)
+			extraSockets[2].send(
+				JSON.stringify({
+					type: 'ClientPresenceUpdate',
+					payload: {
+						context: { viewMode: 'teacher', viewId: timetableIds.teacherB },
+						anchor: {
+							kind: 'cell',
+							dayOfWeek: 'MON',
+							bellSchedulePeriodId: timetableIds.period1,
+							u: index / 6,
+							v: 0.4
+						}
+					}
+				})
+			);
+		await a.getByRole('button', { name: 'เลือกผู้ร่วมจัดตารางและแท็บ', exact: true }).click();
+		await expect(a.getByRole('menuitem').filter({ hasText: 'ครูคณิตศาสตร์ B' })).toBeVisible();
+		await a.keyboard.press('Escape');
+		expect(
+			await a
+				.locator('[data-timetable-collaborator]')
+				.evaluateAll((values) =>
+					values.map((node) => node.getAttribute('data-timetable-collaborator'))
+				)
+		).toEqual(membership);
+		expect(
+			await images.evaluateAll((values) => values.map((image) => image.getAttribute('src')))
+		).toEqual(sources);
+		for (let index = 0; index < nodes.length; index++) {
+			expect(
+				await images.nth(index).evaluate((node, original) => node === original, nodes[index])
+			).toBe(true);
+			await expect(images.nth(index)).toHaveCSS('visibility', 'visible');
+		}
+		expect(
+			await a.evaluate(() => Number(document.documentElement.dataset.avatarChanges ?? 0))
+		).toBe(0);
+		expect(grants).toHaveLength(3);
+		expect(blobs).toHaveLength(3);
+		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.previewRequestCount()).toBe(0);
+	} finally {
+		for (const socket of extraSockets) socket.close();
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
 test('shared structural and synchronized anchors stay within the selected owner while avatar jumps and overview row/day bridges work', async ({
 	browser
 }) => {
@@ -196,7 +347,20 @@ test('shared structural and synchronized anchors stay within the selected owner 
 		socketMode: 'native',
 		relay,
 		blocks: [structural, synchronized],
-		includeSynchronizedDemand: true
+		synchronizedDemands: [
+			{
+				learningOfferingId: timetableIds.offeringSync,
+				offeringCode: 'CLUB',
+				offeringName: 'ชุมนุม',
+				requiredPeriods: 3,
+				scheduledPeriods: 1,
+				intendedHomeroomIds: [timetableIds.homeroom, otherRoom],
+				linkedGroupCount: 0,
+				pendingGroupCount: 0,
+				conflictGroupCount: 0,
+				excludedGroupCount: 0
+			}
+		]
 	});
 	const workspace = mockA.workspace();
 	workspace.homerooms.push({
@@ -255,6 +419,8 @@ test('shared structural and synchronized anchors stay within the selected owner 
 			await owner('ม.1/1');
 		}
 		const tray = 'aside article[data-timetable-source-kind="synchronized_offering"]';
+		await expect(a.locator(tray)).toBeVisible();
+		await expect(b.locator(tray)).toBeVisible();
 		await hoverPoint(a, tray);
 		await cursorNear(b, id, tray, 0.65, 0.4);
 		await owner('ม.1/2');

@@ -719,7 +719,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					};
 				}
 				blocks = [...blocks, created];
-				await fulfill(route, created, 201);
+				await fulfill(route, created);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/synchronized' && method === 'POST') {
@@ -738,7 +738,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					dayOfWeek: body.dayOfWeek
 				};
 				blocks = [...blocks, created];
-				await fulfill(route, created, 201);
+				await fulfill(route, created);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/swap' && method === 'POST') {
