@@ -13,8 +13,8 @@ import {
 	findTimetableBlockElement,
 	findTimetableCellElement,
 	findTimetableDemandElement
-} from './collaboration-dom.js';
-import { sourceGhost } from './collaboration-source.js';
+} from './collaboration-dom.ts';
+import { sourceGhost } from './collaboration-source.ts';
 
 const dayNames: Record<string, string> = {
 	MON: 'จันทร์',
@@ -89,21 +89,51 @@ export function timetableCollaborators(
 		.filter((participant) => participant.tabs.length > 0);
 }
 
+export function collaborationContextsMatch(local: DraftContext, remote: DraftContext): boolean {
+	if (local.viewMode === 'wholeSchool')
+		return Boolean(
+			remote.viewId &&
+			local.dayOfWeek &&
+			(remote.viewMode === 'homeroom' ||
+				(remote.viewMode === 'wholeSchool' && remote.dayOfWeek === local.dayOfWeek))
+		);
+	if (!local.viewId || remote.viewId !== local.viewId) return false;
+	return (
+		remote.viewMode === local.viewMode ||
+		(local.viewMode === 'homeroom' &&
+			remote.viewMode === 'wholeSchool' &&
+			Boolean(remote.dayOfWeek))
+	);
+}
+
 export function resolveCollaborationAnchor(
 	root: HTMLElement,
 	local: DraftContext,
 	remote: DraftContext,
 	anchor: DraftAnchor
 ): HTMLElement | null {
-	if (anchor.kind === 'block')
-		return findTimetableBlockElement(
+	if (!collaborationContextsMatch(local, remote)) return null;
+	if (anchor.kind === 'block') {
+		const element = findTimetableBlockElement(
 			root,
 			anchor.blockId,
 			local.viewMode === 'wholeSchool' && ['homeroom', 'wholeSchool'].includes(remote.viewMode)
 				? remote.viewId
 				: null
 		);
-	if (anchor.kind === 'tray') return findTimetableDemandElement(root, anchor.source);
+		if (
+			remote.viewMode === 'wholeSchool' &&
+			element?.closest<HTMLElement>('[data-timetable-anchor="cell"]')?.dataset.timetableDay !==
+				remote.dayOfWeek
+		)
+			return null;
+		return element;
+	}
+	if (anchor.kind === 'tray')
+		return local.viewMode === 'wholeSchool' || remote.viewMode === 'wholeSchool'
+			? null
+			: findTimetableDemandElement(root, anchor.source);
+	if (remote.viewMode === 'wholeSchool' && anchor.dayOfWeek !== remote.dayOfWeek) return null;
 	if (local.viewMode === 'wholeSchool') {
 		if (
 			!['homeroom', 'wholeSchool'].includes(remote.viewMode) ||
@@ -118,10 +148,6 @@ export function resolveCollaborationAnchor(
 			remote.viewId
 		);
 	}
-	const matchesView =
-		remote.viewMode === local.viewMode ||
-		(local.viewMode === 'homeroom' && remote.viewMode === 'wholeSchool');
-	if (!matchesView || !local.viewId || remote.viewId !== local.viewId) return null;
 	return findTimetableCellElement(
 		root,
 		anchor.dayOfWeek,

@@ -496,6 +496,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			const headers = route.request().headers();
 			relay.commit(workspace(), {
 				connectionId: headers['x-timetable-connection-id'],
+				leaseToken: headers['x-timetable-lease-token'],
 				mutationId: headers['x-timetable-mutation-id']
 			});
 		}
@@ -718,7 +719,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					};
 				}
 				blocks = [...blocks, created];
-				await fulfill(route, created, 201);
+				await fulfill(route, created);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/synchronized' && method === 'POST') {
@@ -737,7 +738,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					dayOfWeek: body.dayOfWeek
 				};
 				blocks = [...blocks, created];
-				await fulfill(route, created, 201);
+				await fulfill(route, created);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/swap' && method === 'POST') {

@@ -116,6 +116,74 @@ function patch(seq: number): DraftEventEnvelope {
 	return { epoch: 'epoch-one', seq, type: 'DraftPatched', payload };
 }
 
+for (const accepted of [true, false]) {
+	test(`release retires local proof and resolves ${accepted ? 'an accepted release' : 'the authoritative stale_reservation after commit'}`, async () => {
+		const h = harness();
+		const claimed = h.session.claim(source, candidate, 'drag');
+		h.reply();
+		const lease = await claimed;
+		const released = h.session.release(lease);
+		assert.equal(h.session.owns(lease), false);
+		assert.equal([...h.timers.values()].filter((timer) => timer.delay === 3000).length, 0);
+		h.reply({
+			accepted,
+			code: accepted ? null : 'stale_reservation',
+			source: null,
+			leaseToken: null,
+			reservationId: null,
+			expiresAt: null
+		});
+		await released;
+		assert.equal(h.timers.size, 0);
+		const sent = h.sent.length;
+		await h.session.release(lease);
+		assert.equal(h.sent.length, sent, 'releasing the locally retired proof is idempotent');
+		const reclaimed = h.session.claim(source, candidate, 'drag');
+		h.reply({ leaseToken: 'new-private-token' });
+		assert.equal(h.session.owns(await reclaimed), true);
+		h.session.reset(null);
+	});
+}
+
+for (const code of ['forbidden', 'invalid_candidate', 'reserved', 'unknown', 'stale', null]) {
+	test(`release still rejects unsuccessful ${String(code)} results`, async () => {
+		const h = harness();
+		const claimed = h.session.claim(source, candidate, 'drag');
+		h.reply();
+		const lease = await claimed;
+		const released = h.session.release(lease);
+		h.reply({ accepted: false, code });
+		await assert.rejects(released);
+		assert.equal(h.session.owns(lease), false);
+		assert.equal(h.timers.size, 0);
+	});
+}
+
+test('release still rejects a mismatched command even when it carries the terminal stale code', async () => {
+	const h = harness();
+	const claimed = h.session.claim(source, candidate, 'edit');
+	h.reply();
+	const released = h.session.release(await claimed);
+	h.reply({ command: 'target', accepted: false, code: 'stale_reservation' });
+	await assert.rejects(released);
+	assert.equal(h.timers.size, 0);
+});
+
+test('release preserves its bounded timeout when no correlated response arrives', async () => {
+	const h = harness();
+	const claimed = h.session.claim(source, candidate, 'edit');
+	h.reply();
+	const released = h.session.release(await claimed);
+	const rejected = assert.rejects(released);
+	h.reply({ requestId: 'different-request', accepted: false, code: 'stale_reservation' });
+	assert.equal(h.timers.size, 1);
+	const timeout = [...h.timers.values()][0];
+	assert.equal(timeout.delay, 4000);
+	timeout.callback();
+	await rejected;
+	assert.equal(h.timers.size, 0);
+});
+
 test('a decoded combined-null metadata baseline makes the session ready and admits an owned claim', async () => {
 	const h = harness();
 	h.session.reset(timetableIds.draftVersion);
@@ -261,5 +329,54 @@ test('two tabs of the same person survive presence updates and closing one tab r
 	assert.deepEqual(
 		h.session.state.users[0].connections.map((connection) => connection.connectionId),
 		['tab-one']
+	);
+});
+
+test('presence-only updates retain existing participant order while joins append and departures remove only their member', () => {
+	const h = harness();
+	const users = [
+		timetableIds.teacherA,
+		timetableIds.teacherB,
+		timetableIds.blockA,
+		timetableIds.blockB
+	].map((userId) => ({
+		userId,
+		name: userId,
+		color: '#123456',
+		connections: [{ connectionId: userId }]
+	}));
+	for (const user of users)
+		h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'DraftPresenceChanged', payload: user });
+	for (const user of [users[0], users[3], users[1], users[2]]) {
+		h.session.apply({
+			epoch: 'epoch-one',
+			seq: 0,
+			type: 'DraftPresenceChanged',
+			payload: { ...user, name: 'ชื่อที่ปรับปรุง', profileImageFileId: timetableIds.room }
+		});
+		assert.deepEqual(
+			h.session.state.users.map((value) => value.userId),
+			users.map((value) => value.userId)
+		);
+	}
+	const joined = {
+		...users[0],
+		userId: timetableIds.user,
+		connections: [{ connectionId: timetableIds.user }]
+	};
+	h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'DraftPresenceChanged', payload: joined });
+	assert.deepEqual(
+		h.session.state.users.map((value) => value.userId),
+		[...users.map((value) => value.userId), joined.userId]
+	);
+	h.session.apply({
+		epoch: 'epoch-one',
+		seq: 0,
+		type: 'DraftPresenceLeft',
+		payload: { connectionId: users[1].connections[0].connectionId }
+	});
+	assert.deepEqual(
+		h.session.state.users.map((value) => value.userId),
+		[users[0].userId, users[2].userId, users[3].userId, joined.userId]
 	);
 });

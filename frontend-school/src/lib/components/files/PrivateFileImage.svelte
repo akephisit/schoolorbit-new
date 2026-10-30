@@ -15,6 +15,8 @@
 	}
 
 	let { fileId, resourceId, alt, class: className = '' }: Props = $props();
+	const activeFileId = $derived(fileId);
+	const activeResourceId = $derived(resourceId);
 
 	function privateFileImage(params: FileImageParams): Attachment<HTMLImageElement> {
 		return (node) => {
@@ -62,7 +64,7 @@
 
 <img
 	style:visibility="hidden"
-	{@attach privateFileImage({ fileId, resourceId })}
+	{@attach privateFileImage({ fileId: activeFileId, resourceId: activeResourceId })}
 	{alt}
 	class={className}
 />

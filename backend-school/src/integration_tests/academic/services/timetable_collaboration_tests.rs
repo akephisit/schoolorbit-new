@@ -3064,3 +3064,227 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
         "actual native frame decoder field/event/accepted: {outcomes:?}"
     );
 }
+
+async fn frontend_releases_from_native_frames(frames: Value) -> bool {
+    use tokio::io::AsyncWriteExt;
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend-school/src/lib/academic/timetable");
+    let script = r#"
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+if (Number(process.versions.node.split('.')[0]) !== 24) process.exit(2);
+const { decodeDraftEvent } = await import(pathToFileURL(join(process.argv[1], 'collaboration-decoder.ts')).href);
+const { createDraftCollaborationSession } = await import(pathToFileURL(join(process.argv[1], 'collaboration-session.ts')).href);
+let input = '';
+process.stdin.setEncoding('utf8');
+for await (const chunk of process.stdin) input += chunk;
+const recorded = JSON.parse(input);
+const events = ['sync', 'claim', 'patch', 'release'].map(key => decodeDraftEvent(recorded[key]));
+assert.ok(events.every(Boolean));
+const [sync, claim, patch, release] = events;
+const expected = [recorded.claimRequest, recorded.releaseRequest];
+const ids = [claim.payload.requestId, release.payload.requestId];
+const timers = new Map();
+let serial = 0, unexpected = 0;
+const session = createDraftCollaborationSession({
+ send(message) { assert.deepEqual(JSON.parse(JSON.stringify(message)), expected.shift()); return true; },
+ uuid() { const id = ids.shift(); assert.ok(id); return id; },
+ setTimer(callback, delay) { const id = ++serial; timers.set(id, { callback, delay }); return id; },
+ clearTimer(id) { timers.delete(id); },
+ onState() {}, onEvent() {}, onReconcile() { unexpected++; }, onLeaseLost() { unexpected++; }
+});
+session.reset(sync.payload.workspace.version.id);
+session.apply(sync);
+assert.equal(session.state.ready, true);
+const claiming = session.claim(claim.payload.source, undefined, 'edit');
+session.apply(claim);
+const lease = await claiming;
+assert.equal(session.owns(lease), true);
+session.apply(patch);
+const releasing = session.release(lease);
+session.apply(release);
+let completed = true;
+try { await releasing; } catch { completed = false; }
+assert.equal(session.owns(lease), false);
+assert.equal(lease.valid, false);
+assert.equal(timers.size, 0);
+assert.equal(expected.length, 0);
+assert.equal(unexpected, 0);
+assert.equal(session.state.ready, true);
+process.stdout.write(completed ? 'released' : 'rejected');
+"#;
+    let mut child = tokio::process::Command::new("node")
+        .args([
+            "--experimental-strip-types",
+            "--input-type=module",
+            "-e",
+            script,
+        ])
+        .arg(directory)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").expect("pinned Node PATH"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("repository-pinned Node must be on PATH");
+    let input = serde_json::to_vec(&frames).unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(10), async move {
+        stdin.write_all(&input).await.unwrap();
+        stdin.shutdown().await.unwrap();
+        drop(stdin);
+        child.wait_with_output().await.unwrap()
+    })
+    .await
+    .expect("bounded actual frontend session");
+    assert!(
+        output.status.success(),
+        "Node24 native-frame session probe must complete; private stderr suppressed"
+    );
+    assert!(
+        output.stdout == b"released" || output.stdout == b"rejected",
+        "fixed session outcome only"
+    );
+    output.stdout == b"released"
+}
+
+#[tokio::test]
+async fn actual_release_after_http_commit_is_terminal_for_the_frontend_session() {
+    let fixture = Fixture::new("native_release_after_commit").await;
+    let (mut owner, sync_wire) = native_socket_wire(&fixture, &fixture.cookie).await;
+    let initial: Value = serde_json::from_str(&sync_wire).unwrap();
+    let connection = uuid(&initial["payload"]["connectionId"]);
+    let (mut peer, _) = fixture.socket().await;
+    let reader = fixture
+        .auth
+        .insert_user(&fixture.auth.tenant_a_pool, "release-readonly", "active")
+        .await;
+    grant(
+        &fixture.auth.tenant_a_pool,
+        reader,
+        &["academic_timetable.read.school"],
+    )
+    .await;
+    let (_, reader_token) = fixture
+        .auth
+        .insert_session(&fixture.auth.tenant_a_pool, reader, 195, false)
+        .await;
+    let reader_cookie = format!(
+        "__Host-schoolorbit_session={}",
+        reader_token.encode().expose_for_cookie()
+    );
+    let (mut readonly, _) = fixture.socket_with_cookie(&reader_cookie).await;
+    let claim_request = json!({"type":"ClientClaim","payload":{"requestId":Uuid::new_v4(),"source":fixture.source(),"purpose":"edit"}});
+    owner
+        .send(Message::Text(claim_request.to_string().into()))
+        .await
+        .unwrap();
+    let claim_wire = native_frame_wire(&mut owner, "DraftCommandResult").await;
+    let claimed: Value = serde_json::from_str(&claim_wire).unwrap();
+    assert_eq!(claimed["payload"]["accepted"], true);
+    let token = uuid(&claimed["payload"]["leaseToken"]);
+    let reservation = uuid(&claimed["payload"]["reservationId"]);
+    // A different tab cannot release this token. A member with no manage access is forbidden.
+    for (socket, code) in [
+        (&mut peer, "stale_reservation"),
+        (&mut readonly, "forbidden"),
+    ] {
+        let denied = command(
+            socket,
+            "ClientRelease",
+            json!({"requestId":Uuid::new_v4(),"leaseToken":token}),
+        )
+        .await;
+        assert_eq!(denied["payload"]["accepted"], false);
+        assert_eq!(denied["payload"]["code"], code);
+        assert!(denied["payload"]["leaseToken"].is_null());
+        let renewed = command(
+            &mut owner,
+            "ClientRenew",
+            json!({"requestId":Uuid::new_v4(),"leaseToken":token}),
+        )
+        .await;
+        assert_eq!(
+            renewed["payload"]["accepted"], true,
+            "denied release must preserve owner lease"
+        );
+    }
+    let blocked = command(
+        &mut peer,
+        "ClientClaim",
+        json!({"requestId":Uuid::new_v4(),"source":fixture.source(),"purpose":"edit"}),
+    )
+    .await;
+    assert_eq!(blocked["payload"]["accepted"], false);
+    assert_eq!(blocked["payload"]["code"], "reserved");
+    let response = fixture
+        .update(
+            Some((connection, token)),
+            "Committed before terminal release",
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let patch_wire = native_frame_wire(&mut owner, "DraftPatched").await;
+    let patch: Value = serde_json::from_str(&patch_wire).unwrap();
+    let updated = &patch["payload"]["upsertedBlocks"][0];
+    assert!(updated["rowVersion"].as_i64().unwrap() > fixture.block.row_version);
+    let release_request =
+        json!({"type":"ClientRelease","payload":{"requestId":Uuid::new_v4(),"leaseToken":token}});
+    owner
+        .send(Message::Text(release_request.to_string().into()))
+        .await
+        .unwrap();
+    let release_wire = native_frame_wire(&mut owner, "DraftCommandResult").await;
+    let release: Value = serde_json::from_str(&release_wire).unwrap();
+    assert_eq!(release["payload"]["command"], "release");
+    assert_eq!(release["payload"]["accepted"], false);
+    assert_eq!(release["payload"]["code"], "stale_reservation");
+    for field in [
+        "source",
+        "target",
+        "reservationId",
+        "leaseToken",
+        "expiresAt",
+    ] {
+        assert!(release["payload"][field].is_null());
+    }
+    let (mut joined, after) = fixture.socket().await;
+    assert!(
+        !after["payload"]["reservations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["reservationId"] == reservation.to_string()),
+        "committed token leaves no public reservation"
+    );
+    let reclaimed = command(&mut peer, "ClientClaim", json!({"requestId":Uuid::new_v4(),"source":{"kind":"existing_block","blockId":updated["id"],"rowVersion":updated["rowVersion"]},"purpose":"edit"})).await;
+    assert_eq!(
+        reclaimed["payload"]["accepted"], true,
+        "peer can reclaim the committed row immediately"
+    );
+    let released = command(
+        &mut peer,
+        "ClientRelease",
+        json!({"requestId":Uuid::new_v4(),"leaseToken":reclaimed["payload"]["leaseToken"]}),
+    )
+    .await;
+    assert_eq!(released["payload"]["accepted"], true);
+    let completed = frontend_releases_from_native_frames(json!({
+        "sync":sync_wire,"claim":claim_wire,"patch":patch_wire,"release":release_wire,
+        "claimRequest":claim_request,"releaseRequest":release_request
+    }))
+    .await;
+    owner.close(None).await.unwrap();
+    peer.close(None).await.unwrap();
+    readonly.close(None).await.unwrap();
+    joined.close(None).await.unwrap();
+    assert!(
+        completed,
+        "real frontend session must accept the actual consumed-reservation release response"
+    );
+}
