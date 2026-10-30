@@ -462,6 +462,23 @@
 				editRoomOptions.retainedRoomId === editRoomId ||
 				editRoomOptions.rooms.some((room) => room.id === editRoomId))
 	);
+	const editRoomLoading = $derived.by(() => {
+		void interactionRevision;
+		const interaction = editInteraction;
+		return Boolean(
+			canEdit &&
+			interaction &&
+			selectedBlock &&
+			interaction.controller === controller &&
+			!interaction.cancelled &&
+			!interaction.captured &&
+			interaction.source.kind === 'existing_block' &&
+			interaction.source.blockId === selectedBlock.id &&
+			interaction.source.rowVersion === selectedBlock.rowVersion &&
+			(!interaction.lease || editCanEdit) &&
+			!editRoomOptions.ready
+		);
+	});
 	onDestroy(() => {
 		disposed = true;
 		cancelPlacement();
@@ -3308,7 +3325,7 @@
 							class="w-full"
 							aria-label="เลือกห้องเรียน"
 							aria-describedby={canEdit ? 'timetable-edit-room-status' : undefined}
-							aria-busy={canEdit && !editRoomOptions.ready}
+							aria-busy={editRoomLoading}
 						>
 							{editRoomId === noRoomValue
 								? 'ไม่ระบุห้อง'
@@ -3324,8 +3341,14 @@
 					</Select.Root>
 					{#if canEdit}
 						<p id="timetable-edit-room-status" class="text-xs text-muted-foreground" role="status">
-							{#if !editRoomOptions.ready}
+							{#if selectedBlock && pendingBlockIds.has(selectedBlock.id)}
+								กำลังบันทึกคาบนี้ กรุณารอให้เสร็จก่อน
+							{:else if selectedBlock && blockLockLabel(selectedBlock.id)}
+								{blockLockLabel(selectedBlock.id)}
+							{:else if editRoomLoading}
 								กำลังตรวจสอบห้องว่าง…
+							{:else if !editCanEdit || !editRoomOptions.ready}
+								ขณะนี้แก้ไขคาบนี้ไม่ได้ กรุณาปิดแล้วเปิดใหม่เพื่อลองอีกครั้ง
 							{:else if !editRoomSelectionValid}
 								ห้องที่เลือกไม่ว่างหรือใช้งานไม่ได้แล้ว กรุณาเลือกห้องใหม่หรือไม่ระบุห้อง
 							{:else if editRoomOptions.rooms.length === 0}

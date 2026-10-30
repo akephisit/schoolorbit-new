@@ -165,6 +165,114 @@ const cell = (period: string, day = 'MON') =>
 	`td[data-timetable-day="${day}"][data-timetable-period-id="${period}"]`;
 
 test.use({ serviceWorkers: 'block' });
+test('room feedback distinguishes pending claims from locked, denied, lost and saving editors', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	const first = await browser.newContext(),
+		second = await browser.newContext();
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	const mockA = await installTimetableMock(a, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		updateDelayMs: 1000
+	});
+	const mockB = await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		userId: secondUser
+	});
+	const server = await startNativeDraftRelay(relay, mockA.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ครูหนึ่ง');
+		await redirectSocket(second, server.url, secondUser, 'ครูสอง');
+		await a.goto(url('wholeSchool'));
+		await b.goto(url());
+		await waitPeers(relay, 2);
+		for (const page of [a, b])
+			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const openEditor = (page: Page) =>
+			page
+				.locator(`[data-timetable-anchor="block"][data-block-id="${block.id}"]`)
+				.getByRole('button', { name: /ดูรายละเอียด/ })
+				.click();
+		const picker = (page: Page) =>
+			page.getByRole('dialog').getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+		const save = (page: Page) =>
+			page.getByRole('dialog').getByRole('button', { name: 'บันทึก', exact: true });
+		const status = (page: Page) => page.getByRole('dialog').getByRole('status');
+		const close = (page: Page) =>
+			page.getByRole('dialog').getByRole('button', { name: 'ปิด', exact: true }).click();
+		const bId = [...relay.peers.values()].find((peer) => peer.user.userId === secondUser)!.id;
+		const bClaims = () =>
+			relay.received.filter(
+				(entry) => entry.connectionId === bId && entry.message.type === 'ClientClaim'
+			).length;
+		relay.holdClaim();
+		await openEditor(a);
+		await expect(status(a)).toHaveText('กำลังตรวจสอบห้องว่าง…');
+		await expect(picker(a)).toHaveAttribute('aria-busy', 'true');
+		await expect(save(a)).toBeDisabled();
+		await expect
+			.poll(() => relay.received.filter((entry) => entry.message.type === 'ClientClaim').length)
+			.toBe(1);
+		relay.releaseClaim();
+		await expect(save(a)).toBeEnabled();
+		await openEditor(b);
+		await expect(status(b)).toHaveText('ครูหนึ่ง กำลังแก้ไข');
+		await expect(picker(b)).toBeDisabled();
+		await expect(picker(b)).toHaveAttribute('aria-busy', 'false');
+		await expect(save(b)).toBeDisabled();
+		expect(bClaims()).toBe(0);
+		await close(a);
+		await expect(status(b)).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
+		expect(bClaims()).toBe(0);
+		await close(b);
+		relay.denyClaim();
+		await openEditor(b);
+		await expect(status(b)).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
+		await expect(picker(b)).toHaveAttribute('aria-busy', 'false');
+		await expect(save(b)).toBeDisabled();
+		expect(bClaims()).toBe(1);
+		await close(b);
+		await openEditor(b);
+		await expect(save(b)).toBeEnabled();
+		relay.reconcile();
+		await expect.poll(() => relay.peers.has(bId)).toBe(false);
+		await waitPeers(relay, 2);
+		await expect(status(b)).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
+		await expect(picker(b)).toHaveAttribute('aria-busy', 'false');
+		await expect(save(b)).toBeDisabled();
+		await close(b);
+		await openEditor(a);
+		await expect(save(a)).toBeEnabled();
+		await a
+			.getByRole('dialog')
+			.getByRole('textbox', { name: 'หมายเหตุ', exact: true })
+			.fill('ทดสอบสถานะกำลังบันทึก');
+		await save(a).click();
+		await expect(a.getByRole('dialog')).toHaveCount(0);
+		await openEditor(a);
+		await expect(status(a)).toHaveText('กำลังบันทึกคาบนี้ กรุณารอให้เสร็จก่อน');
+		await expect(picker(a)).toHaveAttribute('aria-busy', 'false');
+		await expect(save(a)).toBeDisabled();
+		await expect(status(a)).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
+		expect(mockA.updateRequestCount()).toBe(1);
+		for (const mock of [mockA, mockB]) {
+			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.previewRequestCount()).toBe(0);
+		}
+	} finally {
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
 test('placed-block room choices wait for private availability, update on canonical conflicts and retain invalid or historical selections', async ({
 	browser
 }) => {
@@ -202,6 +310,7 @@ test('placed-block room choices wait for private availability, update on canonic
 		const save = dialog.getByRole('button', { name: 'บันทึก', exact: true });
 		await expect(picker).toHaveText('ห้องคณิตศาสตร์');
 		await expect(picker).toBeDisabled();
+		await expect(picker).toHaveAttribute('aria-busy', 'true');
 		await expect(save).toBeDisabled();
 		await expect(dialog.getByRole('status')).toHaveText('กำลังตรวจสอบห้องว่าง…');
 		relay.setRoomOptionsPaused(false);
@@ -270,7 +379,8 @@ test('placed-block room choices wait for private availability, update on canonic
 		await expect(save).toBeDisabled();
 		await expect(picker).toBeDisabled();
 		await expect(picker).toHaveText('ไม่ระบุห้อง');
-		await expect(dialog.getByRole('status')).toHaveText('กำลังตรวจสอบห้องว่าง…');
+		await expect(dialog.getByRole('status')).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
+		await expect(picker).toHaveAttribute('aria-busy', 'false');
 		await dialog.getByRole('button', { name: 'ปิด', exact: true }).click();
 		relay.setRoomOptionsPaused(false);
 		await openEditor();

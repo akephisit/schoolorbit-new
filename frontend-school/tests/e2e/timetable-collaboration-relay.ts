@@ -83,6 +83,9 @@ export function createDraftRelay() {
 	const journal: DraftEventEnvelope[] = [];
 	const received: { connectionId: string; message: DraftClientMessage }[] = [];
 	let denyNextTarget = false;
+	let denyNextClaim = false;
+	let holdNextClaim = false;
+	let heldClaim: (() => void) | null = null;
 	let roomOptionsPaused = false;
 	function editRoomOptions(active: FixtureLease) {
 		const source = active.public.source;
@@ -131,6 +134,16 @@ export function createDraftRelay() {
 		};
 	}
 	function send(peer: FixturePeer, message: ServerMessage) {
+		if (
+			holdNextClaim &&
+			message.type === 'DraftCommandResult' &&
+			message.payload.command === 'claim' &&
+			message.payload.accepted
+		) {
+			holdNextClaim = false;
+			heldClaim = () => send(peer, message);
+			return;
+		}
 		peer.send({ ...message, epoch, seq });
 	}
 	function broadcast(message: ServerMessage) {
@@ -236,7 +249,8 @@ export function createDraftRelay() {
 					const collision = [...leases.values()].find(
 						(item) => JSON.stringify(item.public.source) === JSON.stringify(message.payload.source)
 					);
-					if (collision) {
+					if (collision || denyNextClaim) {
+						denyNextClaim = false;
 						send(peer, {
 							type: 'DraftCommandResult',
 							payload: {
@@ -387,6 +401,17 @@ export function createDraftRelay() {
 		},
 		denyTarget() {
 			denyNextTarget = true;
+		},
+		denyClaim() {
+			denyNextClaim = true;
+		},
+		holdClaim() {
+			holdNextClaim = true;
+		},
+		releaseClaim() {
+			const grant = heldClaim;
+			heldClaim = null;
+			grant?.();
 		},
 		get workspace() {
 			return canonical;
