@@ -1318,7 +1318,7 @@
 			{#if loading && !calendarRendered}<div role="status" aria-label="กำลังโหลดกิจกรรม">
 					<PageSkeleton variant="detail" />
 				</div>{:else if eventsLoaded || calendarRendered}
-				<div class="flex min-h-full min-w-0 flex-col gap-3">
+				<div class="flex h-full min-h-fit min-w-0 flex-col gap-3">
 					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
 						{#if pendingLoading && !pendingLoaded}<p
 								role="status"
@@ -1340,7 +1340,7 @@
 					{/if}
 					<div
 						role="presentation"
-						class="min-h-[22rem] flex-1 sm:min-h-[28rem]"
+						class="min-h-[26rem] flex-1 sm:min-h-[28rem]"
 						onpointerdowncapture={() => (dismissDetailClick = detailOpen)}
 						onclickcapture={captureCalendarClick}
 					>

@@ -59,19 +59,19 @@
 
 	const desktop = new MediaQuery('(min-width: 640px)');
 	let weeksHeight = $state(0);
-	const visibleLaneCount = $derived(
-		fillHeight && weeksHeight
-			? Math.max(
-					1,
-					Math.min(
-						3,
-						Math.floor(
-							(weeksHeight / 6 - (desktop.current ? 52 : 40)) / (desktop.current ? 20 : 11)
-						)
-					)
-				)
-			: 3
-	);
+	let weekdayHeight = $state(0);
+	const visibleLaneCount = $derived.by(() => {
+		if (!fillHeight || !weeksHeight || !weekdayHeight) return 3;
+		// The header is 2.5rem; event lanes begin at 2rem in filling grids.
+		// Reserve the overflow badge and its bottom offset below the last lane.
+		const eventTop = weekdayHeight * 0.8;
+		const laneHeight = desktop.current ? 14 : 10;
+		const overflowSpace = desktop.current ? 18 : 14;
+		return Math.max(
+			1,
+			Math.min(3, Math.floor((weeksHeight / 6 - eventTop - overflowSpace + 1) / (laneHeight + 1)))
+		);
+	});
 	let displayEvents = $derived([...events, ...pendingRequests]);
 	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents, visibleLaneCount));
 
@@ -95,10 +95,11 @@
 <div
 	class={cn(
 		'overflow-hidden rounded-xl border bg-card shadow-sm',
-		fillHeight && 'flex h-full min-h-[22rem] flex-col sm:min-h-[28rem]'
+		fillHeight && 'flex h-full min-h-[26rem] flex-col sm:min-h-[28rem]'
 	)}
 >
 	<div
+		bind:clientHeight={weekdayHeight}
 		class="grid h-10 shrink-0 grid-cols-7 border-b bg-muted/30 text-center text-[11px] font-medium text-muted-foreground sm:text-xs"
 	>
 		{#each CALENDAR_WEEKDAY_LABELS as day (day)}
@@ -150,7 +151,10 @@
 
 						{#if (week.hiddenEventCounts[dayIndex] ?? 0) > 0}
 							<span
-								class="absolute bottom-0.5 right-1 z-20 rounded bg-card/90 px-1 text-[9px] font-medium text-muted-foreground shadow-sm sm:bottom-1 sm:text-[10px]"
+								class={cn(
+									'absolute bottom-0.5 right-1 z-20 rounded bg-card/90 px-1 text-[9px] font-medium text-muted-foreground shadow-sm sm:bottom-1 sm:text-[10px]',
+									fillHeight && 'leading-[12px] sm:leading-[14px]'
+								)}
 							>
 								+{week.hiddenEventCounts[dayIndex]}
 							</span>
@@ -161,8 +165,7 @@
 				<div
 					class={cn(
 						'pointer-events-none absolute inset-x-0 top-8 z-10 grid auto-rows-[13px] grid-cols-7 gap-y-0.5 sm:top-9 sm:auto-rows-[18px]',
-						fillHeight &&
-							'top-7 auto-rows-[10px] gap-y-px sm:top-9 sm:auto-rows-[18px] sm:gap-y-0.5'
+						fillHeight && 'top-8 auto-rows-[10px] gap-y-px sm:top-8 sm:auto-rows-[14px] sm:gap-y-px'
 					)}
 					aria-hidden={!oneventselect}
 				>
@@ -214,6 +217,7 @@
 							<span
 								class={cn(
 									'hidden truncate text-[10px] leading-[18px] sm:block xl:text-[11px]',
+									fillHeight && 'leading-[14px]',
 									timed ? 'font-normal' : 'px-1.5 font-medium'
 								)}
 							>

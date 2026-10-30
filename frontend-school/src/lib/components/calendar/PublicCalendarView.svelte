@@ -367,7 +367,7 @@
 		{:else}
 			<div
 				aria-busy={loading}
-				class="relative grid min-h-[24rem] flex-1 sm:min-h-[30rem] lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
+				class="relative grid min-h-[28rem] flex-1 sm:min-h-[30rem] lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
 			>
 				{#if error}<div
 						role="alert"
