@@ -1,4 +1,4 @@
-import type { TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
+import type { DraftLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
 import { makeTimetableVersion, timetableIds } from '../e2e/timetable-test-harness.ts';
 
 export function collaborationWorkspace(): TimetableBlockWorkspace {
@@ -60,5 +60,20 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 			conflictGroupCount: 0,
 			excludedGroupCount: 0
 		}
+	};
+}
+
+export function emptyLookupChanges(): DraftLookupChanges {
+	return {
+		upsertedStaff: [],
+		removedStaffIds: [],
+		upsertedHomerooms: [],
+		removedHomeroomIds: [],
+		upsertedRooms: [],
+		removedRoomIds: [],
+		upsertedBellPeriods: [],
+		removedBellPeriodIds: [],
+		upsertedOfferingSubjectGroups: [],
+		removedSubjectGroupOfferingIds: []
 	};
 }

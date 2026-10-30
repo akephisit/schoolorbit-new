@@ -1,5 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
+import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
+import { sessionState } from './fixtures/session-state.ts';
 import { revalidatePage } from './fixtures/page-revalidation.ts';
 import {
 	createDraftRelay,
@@ -10,6 +12,7 @@ import {
 	installTimetableMock,
 	timetableIds,
 	makeSynchronizedTimetableBlock,
+	makeStructuralTimetableBlock,
 	makeTimetableBlock
 } from './timetable-test-harness.ts';
 
@@ -75,6 +78,79 @@ async function cursorNear(
 		)
 		.toBeLessThan(4);
 }
+async function cursorAtStationarySender(
+	sender: Page,
+	recipient: Page,
+	relay: DraftRelay,
+	connectionId: string,
+	point: { x: number; y: number }
+) {
+	async function sample() {
+		return sender.evaluate((point) => {
+			const subject = document
+				.elementFromPoint(point.x, point.y)
+				?.closest<HTMLElement>('[data-timetable-anchor="cell"]');
+			if (!subject) return null;
+			const rect = subject.getBoundingClientRect();
+			return {
+				day: subject.dataset.timetableDay!,
+				period: subject.dataset.timetablePeriodId!,
+				u: (point.x - rect.x) / rect.width,
+				v: (point.y - rect.y) / rect.height
+			};
+		}, point);
+	}
+	await expect
+		.poll(async () => {
+			const current = await sample();
+			const message = relay.received
+				.filter(
+					(item) =>
+						item.connectionId === connectionId && item.message.type === 'ClientPresenceUpdate'
+				)
+				.at(-1)?.message;
+			const anchor = message?.type === 'ClientPresenceUpdate' ? message.payload.anchor : null;
+			if (
+				!current ||
+				anchor?.kind !== 'cell' ||
+				anchor.dayOfWeek !== current.day ||
+				anchor.bellSchedulePeriodId !== current.period ||
+				Math.abs(anchor.u - current.u) > 0.01 ||
+				Math.abs(anchor.v - current.v) > 0.01
+			)
+				return 9999;
+			return recipient.evaluate(
+				({ connectionId, current }) => {
+					const target = [
+						...document.querySelectorAll<HTMLElement>('[data-timetable-anchor="cell"]')
+					]
+						.find(
+							(element) =>
+								element.dataset.timetableDay === current.day &&
+								element.dataset.timetablePeriodId === current.period
+						)
+						?.getBoundingClientRect();
+					const cursor = [
+						...document.querySelectorAll<HTMLElement>('[data-timetable-remote-cursor]')
+					]
+						.find((element) => element.dataset.timetableRemoteCursor === connectionId)
+						?.getBoundingClientRect();
+					return target && cursor
+						? Math.hypot(
+								cursor.x - target.x - target.width * current.u,
+								cursor.y - target.y - target.height * current.v
+							)
+						: 9999;
+				},
+				{ connectionId, current }
+			);
+		})
+		.toBeLessThan(4);
+	const current = await sample();
+	if (!current) throw new Error('stationary sender left the board');
+	return current;
+}
+
 async function waitPeers(relay: DraftRelay, count: number) {
 	await expect.poll(() => relay.peers.size).toBe(count);
 }
@@ -203,27 +279,21 @@ test('native sockets preserve semantic cursor geometry, stationary sender resamp
 		await a
 			.getByRole('button', { name: 'Collapse sidebar', exact: true })
 			.evaluate((element) => (element as HTMLButtonElement).click());
-		const stationary = await a.evaluate((point) => {
-			const subject = document
-				.elementFromPoint(point.x, point.y)
-				?.closest<HTMLElement>('[data-timetable-anchor="cell"]');
-			if (!subject) return null;
-			const rect = subject.getBoundingClientRect();
-			return {
-				day: subject.dataset.timetableDay!,
-				period: subject.dataset.timetablePeriodId!,
-				u: (point.x - rect.x) / rect.width,
-				v: (point.y - rect.y) / rect.height
-			};
-		}, senderPoint);
-		expect(stationary).not.toBeNull();
-		await cursorNear(
-			b,
-			aId,
-			cell(stationary!.period, stationary!.day),
-			stationary!.u,
-			stationary!.v
-		);
+		await expect
+			.poll(() =>
+				a.evaluate(
+					() =>
+						document
+							.getAnimations()
+							.filter(
+								(animation) =>
+									animation.playState === 'running' &&
+									Number.isFinite(animation.effect?.getComputedTiming().endTime)
+							).length
+				)
+			)
+			.toBe(0);
+		const stationary = await cursorAtStationarySender(a, b, relay, aId, senderPoint);
 		await b.setViewportSize({ width: 750, height: 900 });
 		await b.locator(cell(stationary!.period, stationary!.day)).evaluate((element) => {
 			const parent = element.closest<HTMLElement>('[data-timetable-scroll-container]');
@@ -632,6 +702,384 @@ test('an authoritative target denial disables the slot and a native drop cannot 
 		await expect(page.locator('main [role="alert"]')).toHaveCount(0);
 	} finally {
 		await context.close();
+		await server.close();
+	}
+});
+
+test('native scoped lookup gains and losses match authorized rows and repair an owner without reloading the workspace', async ({
+	browser
+}) => {
+	const relay = createDraftRelay(),
+		context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		page = await context.newPage();
+	const block = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		'ประชุมทีม',
+		[timetableIds.teacherA]
+	);
+	block.teachers[0].displayName = 'ครู เอ';
+	Object.assign(block.homerooms[0], {
+		roomId: timetableIds.room,
+		roomCode: 'OLD',
+		roomName: 'ห้องเดิม'
+	});
+	const mock = await installTimetableMock(page, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		periodCount: 1,
+		learningGroups: [],
+		ordinaryDemands: [],
+		staff: [
+			{ id: timetableIds.teacherA, displayName: 'ครู เอ', status: 'active', subjectGroups: [] }
+		],
+		rooms: [{ id: timetableIds.room, code: 'OLD', name: 'ห้องเดิม', status: 'ACTIVE' }]
+	});
+	const initial = mock.workspace();
+	initial.bellPeriods[0].isActive = false;
+	mock.publishWorkspace(initial, false);
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ผู้ดูในขอบเขต');
+		await page.goto(url('teacher', timetableIds.teacherA));
+		await waitPeers(relay, 1);
+		const gain = structuredClone(mock.workspace()),
+			roomId = '81000000-0000-4000-8000-000000000211';
+		const gainedStaff = {
+			id: timetableIds.teacherB,
+			displayName: 'ครู บี',
+			status: 'active',
+			subjectGroups: [{ id: timetableIds.groupB, name: 'กลุ่มสาระใหม่', displayOrder: null }]
+		};
+		gain.staff = [gainedStaff, ...gain.staff];
+		gain.rooms = [
+			{ id: timetableIds.roomB, code: 'NEW', name: 'ห้องที่เพิ่งมองเห็น', status: 'ACTIVE' },
+			...gain.rooms
+		];
+		gain.homerooms = [
+			{
+				...gain.homerooms[0],
+				id: roomId,
+				name: 'ป.2/1',
+				code: 'P2-1',
+				gradeLevelType: 'primary',
+				gradeLevelYear: 2
+			},
+			...gain.homerooms
+		];
+		gain.bellPeriods.push({
+			...gain.bellPeriods[0],
+			id: timetableIds.period2,
+			name: 'คาบ 2',
+			orderIndex: 2
+		});
+		gain.blocks = [
+			block,
+			{
+				...block,
+				id: timetableIds.blockB,
+				bellSchedulePeriodId: timetableIds.period2,
+				periodName: 'คาบ 2',
+				rowVersion: 2,
+				teachers: [
+					...block.teachers,
+					{
+						id: 'e1000000-0000-4000-8000-000000000211',
+						teacherId: timetableIds.teacherB,
+						displayName: gainedStaff.displayName,
+						rowVersion: 1,
+						isActive: true
+					}
+				],
+				homerooms: [
+					...block.homerooms.map((target) => ({
+						...target,
+						roomId: timetableIds.roomB,
+						roomCode: 'NEW',
+						roomName: 'ห้องที่เพิ่งมองเห็น'
+					})),
+					{
+						...block.homerooms[0],
+						id: 'f1000000-0000-4000-8000-000000000211',
+						homeroomId: roomId,
+						name: 'ป.2/1',
+						code: 'P2-1',
+						roomId: timetableIds.roomB,
+						roomCode: 'NEW',
+						roomName: 'ห้องที่เพิ่งมองเห็น'
+					}
+				]
+			}
+		];
+		gain.version.rowVersion++;
+		const gainEvent = mock.publishWorkspace(gain);
+		expect(gainEvent.payload.lookupChanges?.staffOrder).toEqual(gain.staff.map((row) => row.id));
+		const owner = page.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
+		await owner.click();
+		await expect(page.getByRole('option')).toHaveText(gain.staff.map((row) => row.displayName));
+		await page.getByRole('option', { name: 'ครู บี', exact: true }).click();
+		await expect(owner).toHaveText('ครู บี');
+		await expect(page.locator('thead th')).toContainText(['วัน / คาบ', 'คาบ 1', 'คาบ 2']);
+		await page.getByRole('button', { name: /ดูรายละเอียด ประชุมทีม/ }).click();
+		await expect(
+			page.getByRole('dialog').getByRole('combobox', { name: 'เลือกห้องเรียน' })
+		).toHaveText('ห้องที่เพิ่งมองเห็น');
+		await page.keyboard.press('Escape');
+		await page.getByRole('button', { name: 'ชั้น', exact: true }).click();
+		await owner.click();
+		await expect(page.getByRole('option')).toHaveText(['ป.2/1', 'ม.1/1']);
+		await page.keyboard.press('Escape');
+		await page.getByRole('button', { name: 'ครู', exact: true }).click();
+		await owner.click();
+		await page.getByRole('option', { name: 'ครู บี', exact: true }).click();
+		const lost = structuredClone(gain);
+		lost.staff = lost.staff.filter((row) => row.id !== timetableIds.teacherB);
+		lost.homerooms = lost.homerooms.filter((row) => row.id !== roomId);
+		lost.rooms = lost.rooms.filter((row) => row.id !== timetableIds.room);
+		lost.bellPeriods = lost.bellPeriods.filter((row) => row.id !== timetableIds.period1);
+		lost.blocks = [
+			{
+				...gain.blocks[1],
+				rowVersion: 3,
+				bellSchedulePeriodId: timetableIds.period2,
+				periodName: 'คาบ 2',
+				teachers: block.teachers,
+				homerooms: gain.blocks[1].homerooms.filter((target) => target.homeroomId !== roomId)
+			}
+		];
+		lost.version.rowVersion++;
+		mock.publishWorkspace(lost);
+		await expect(owner).toHaveText('ครู เอ');
+		await expect(page).toHaveURL(new RegExp(`ownerId=${timetableIds.teacherA}`));
+		await owner.click();
+		await expect(page.getByRole('option')).toHaveText(lost.staff.map((row) => row.displayName));
+		await page.keyboard.press('Escape');
+		await expect(page.locator('thead th')).toContainText(['วัน / คาบ', 'คาบ 2']);
+		expect(mock.workspaceRequestCount()).toBe(1);
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});
+
+test('an inconsistent queued lookup order waits for the captured save then rejoins one complete canonical snapshot', async ({
+	browser
+}) => {
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const relay = createDraftRelay(),
+		context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		page = await context.newPage();
+	const mock = await installTimetableMock(page, { socketMode: 'native', relay, createGate: gate });
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ผู้จัดคิว');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		const id = [...relay.peers.keys()][0];
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const tray = page.locator('aside article').first(),
+			transfer = await page.evaluateHandle(() => new DataTransfer());
+		await tray.dispatchEvent('dragstart', { dataTransfer: transfer });
+		await page
+			.locator(cell(timetableIds.period1))
+			.dispatchEvent('dragover', { dataTransfer: transfer });
+		await page
+			.locator(cell(timetableIds.period1))
+			.dispatchEvent('drop', { dataTransfer: transfer });
+		await tray.dispatchEvent('dragend', { dataTransfer: transfer });
+		await expect.poll(mock.createRequestCount).toBe(1);
+		const malformed = relay.commit(mock.workspace(), {}, false);
+		malformed.payload.lookupChanges = {
+			...emptyLookupChanges(),
+			staffOrder: ['51000000-0000-4000-8000-000000000999']
+		};
+		relay.send(id, malformed);
+		const canonical = structuredClone(mock.workspace());
+		canonical.blocks = [
+			makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
+				groupId: timetableIds.groupB,
+				offeringId: timetableIds.offeringB
+			})
+		];
+		const later = mock.publishWorkspace(canonical, false);
+		relay.send(id, later);
+		expect([...relay.peers.keys()]).toEqual([id]);
+		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(0);
+		release();
+		await expect.poll(() => [...relay.peers.keys()][0]).not.toBe(id);
+		await waitPeers(relay, 1);
+		await expect(page.locator(`[data-block-id="${timetableIds.createdBlock}"]`)).toHaveCount(1);
+		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(1);
+		await expect(page.locator('[data-pending="true"]')).toHaveCount(0);
+		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.previewRequestCount()).toBe(1);
+	} finally {
+		release();
+		await context.close();
+		await server.close();
+	}
+});
+
+test('same-session metadata retains a native lease while same-user session replacement invalidates its proof and rejoins', async ({
+	browser
+}) => {
+	const relay = createDraftRelay(),
+		context = await browser.newContext(),
+		page = await context.newPage();
+	const mock = await installTimetableMock(page, {
+		socketMode: 'native',
+		relay,
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	async function announce(message: object) {
+		await page.evaluate((message) => {
+			const channel = new BroadcastChannel(`schoolorbit:session-activity:${location.origin}`);
+			channel.postMessage(message);
+			channel.close();
+		}, message);
+	}
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ผู้จัดคนเดิม');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		const id = [...relay.peers.keys()][0];
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
+		const dialog = page.getByRole('dialog'),
+			save = dialog.getByRole('button', { name: 'บันทึก', exact: true });
+		await expect(save).toBeEnabled();
+		await dialog.getByRole('textbox', { name: 'หมายเหตุ', exact: true }).fill('ค่าที่ยังไม่บันทึก');
+		const reservation = relay.peers.get(id)!.user.connections[0].activeReservationId;
+		const current = mock.getSessionState(),
+			renewed = sessionState(Date.now() + 1000, { sessionId: current.sessionId });
+		mock.setSessionState(renewed);
+		await announce({ type: 'metadata', session: renewed });
+		await expect(save).toBeEnabled();
+		expect([...relay.peers.keys()]).toEqual([id]);
+		expect(relay.peers.get(id)!.user.connections[0].activeReservationId).toBe(reservation);
+		const next = sessionState(Date.now() + 2000, {
+			sessionId: '01900000-0000-7000-8000-000000000002'
+		});
+		mock.setSessionState(next);
+		const authRefresh = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/auth/me'
+		);
+		await announce({ type: 'observed', sessionId: next.sessionId, serverNow: next.serverNow });
+		await (await authRefresh).finished();
+		await expect.poll(() => [...relay.peers.keys()][0]).not.toBe(id);
+		await waitPeers(relay, 1);
+		await expect(save).toBeDisabled();
+		expect(mock.updateRequestCount()).toBe(0);
+		await expect(dialog.getByRole('textbox', { name: 'หมายเหตุ', exact: true })).toHaveValue(
+			'ค่าที่ยังไม่บันทึก'
+		);
+		await page.keyboard.press('Escape');
+		await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
+		await expect(save).toBeEnabled();
+		await dialog
+			.getByRole('textbox', { name: 'หมายเหตุ', exact: true })
+			.fill('บันทึกด้วยเซสชันใหม่');
+		const request = page.waitForRequest(
+			(request) =>
+				request.method() === 'PUT' && new URL(request.url()).pathname.endsWith(timetableIds.blockA)
+		);
+		await save.click();
+		const headers = (await request).headers();
+		expect(headers['x-timetable-connection-id']).toBe([...relay.peers.keys()][0]);
+		expect(headers['x-timetable-connection-id']).not.toBe(id);
+		await expect.poll(mock.updateRequestCount).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(1);
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});
+
+test('an editor portal preserves the second synchronized overview row and avatar jump highlights its exact day and block', async ({
+	browser
+}) => {
+	const relay = createDraftRelay(),
+		first = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		second = await browser.newContext({ viewport: { width: 1280, height: 900 } }),
+		a = await first.newPage(),
+		b = await second.newPage();
+	const block = makeSynchronizedTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	block.dayOfWeek = 'TUE';
+	const roomId = '81000000-0000-4000-8000-000000000211';
+	block.homerooms.push({
+		...block.homerooms[0],
+		id: 'f1000000-0000-4000-8000-000000000211',
+		homeroomId: roomId,
+		code: 'M1-2',
+		name: 'ม.1/2'
+	});
+	const mock = await installTimetableMock(a, { socketMode: 'native', relay, blocks: [block] });
+	const workspace = mock.workspace();
+	workspace.homerooms.push({
+		...workspace.homerooms[0],
+		id: roomId,
+		code: 'M1-2',
+		name: 'ม.1/2',
+		roomNumber: '2'
+	});
+	mock.publishWorkspace(workspace, false);
+	await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		homerooms: workspace.homerooms,
+		userId: secondUser
+	});
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ผู้แก้ไขภาพรวม');
+		await redirectSocket(second, server.url, secondUser, 'ผู้ติดตาม');
+		await a.goto(url('wholeSchool'));
+		await b.goto(url());
+		await waitPeers(relay, 2);
+		const id = [...relay.peers.values()].find((peer) => peer.user.userId === timetableIds.user)!.id;
+		await a.getByRole('combobox', { name: 'เลือกวันดูภาพรวม', exact: true }).click();
+		await a.getByRole('option', { name: 'วันอังคาร', exact: true }).click();
+		await a.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const selector = `[data-timetable-anchor="block"][data-block-id="${block.id}"]`;
+		// Keep the pointer over the first occurrence, then activate the second using the keyboard.
+		await hoverPoint(a, `${selector}[data-row-id="${timetableIds.homeroom}"]`);
+		await a
+			.locator(`${selector}[data-row-id="${roomId}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด ชุมนุม/ })
+			.focus();
+		await a.keyboard.press('Enter');
+		const dialog = a.getByRole('dialog');
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน' }).click();
+		await a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true }).click();
+		await expect(a.getByRole('listbox')).toHaveCount(0);
+		await dialog.getByRole('textbox', { name: 'หมายเหตุ', exact: true }).hover();
+		await expect.poll(() => relay.peers.get(id)?.user.connections[0].anchor).toBeNull();
+		await b.getByRole('button', { name: /ไปยัง ผู้แก้ไขภาพรวม/ }).click();
+		const exact = b.locator(`${selector}[data-row-id="${roomId}"]`);
+		await expect(exact).toHaveAttribute('data-timetable-jump-target', 'true');
+		await expect(
+			b.locator(`${selector}[data-row-id="${timetableIds.homeroom}"]`)
+		).not.toHaveAttribute('data-timetable-jump-target', 'true');
+		await expect(b.getByRole('combobox', { name: 'เลือกวันดูภาพรวม', exact: true })).toHaveText(
+			'อังคาร'
+		);
+		await expect(b.getByRole('dialog')).toHaveCount(0);
+		expect(relay.peers.get(id)?.user.connections[0].context).toMatchObject({
+			viewMode: 'wholeSchool',
+			viewId: roomId,
+			dayOfWeek: 'TUE'
+		});
+		expect(mock.updateRequestCount()).toBe(0);
+	} finally {
+		await first.close();
+		await second.close();
 		await server.close();
 	}
 });

@@ -8,7 +8,8 @@ import type {
 	DraftParticipant,
 	DraftReservation,
 	TimetableBlockWorkspace,
-	DraftPatch
+	DraftPatch,
+	DraftLookupChanges
 } from '../../src/lib/api/timetable.js';
 
 type ServerMessage<T = DraftEventEnvelope> = T extends DraftEventEnvelope
@@ -21,6 +22,51 @@ type FixturePeer = {
 	active: string | null;
 };
 type FixtureLease = { token: string; public: DraftReservation };
+
+function lookupDelta<T>(before: readonly T[], after: readonly T[], key: (value: T) => string) {
+	const previous = new Map(before.map((value) => [key(value), value]));
+	const nextIds = new Set(after.map(key));
+	const upserted = after.filter(
+		(value) => JSON.stringify(previous.get(key(value))) !== JSON.stringify(value)
+	);
+	const removed = before.filter((value) => !nextIds.has(key(value))).map(key);
+	const changed =
+		JSON.stringify(before.map(key)) !== JSON.stringify(after.map(key)) || upserted.length > 0;
+	return { upserted, removed, order: changed ? after.map(key) : undefined, changed };
+}
+function lookupChanges(
+	before: TimetableBlockWorkspace,
+	after: TimetableBlockWorkspace
+): DraftLookupChanges | undefined {
+	const staff = lookupDelta(before.staff, after.staff, (value) => value.id),
+		homerooms = lookupDelta(before.homerooms, after.homerooms, (value) => value.id),
+		rooms = lookupDelta(before.rooms, after.rooms, (value) => value.id),
+		periods = lookupDelta(before.bellPeriods, after.bellPeriods, (value) => value.id),
+		subjects = lookupDelta(
+			before.offeringSubjectGroups,
+			after.offeringSubjectGroups,
+			(value) => value.learningOfferingId
+		);
+	if (![staff, homerooms, rooms, periods, subjects].some((value) => value.changed))
+		return undefined;
+	return {
+		upsertedStaff: staff.upserted,
+		removedStaffIds: staff.removed,
+		staffOrder: staff.order,
+		upsertedHomerooms: homerooms.upserted,
+		removedHomeroomIds: homerooms.removed,
+		homeroomOrder: homerooms.order,
+		upsertedRooms: rooms.upserted,
+		removedRoomIds: rooms.removed,
+		roomOrder: rooms.order,
+		upsertedBellPeriods: periods.upserted,
+		removedBellPeriodIds: periods.removed,
+		bellPeriodOrder: periods.order,
+		upsertedOfferingSubjectGroups: subjects.upserted,
+		removedSubjectGroupOfferingIds: subjects.removed,
+		subjectGroupOfferingOrder: subjects.order
+	};
+}
 
 /** Protocol fixture, not a substitute for the real server's resource/authorization tests. */
 export function createDraftRelay() {
@@ -264,7 +310,8 @@ export function createDraftRelay() {
 			summary: workspace.summary,
 			sourceIssues: workspace.sourceIssues,
 			totalDraftBlockCount: workspace.totalDraftBlockCount,
-			version: workspace.version
+			version: workspace.version,
+			lookupChanges: previous ? lookupChanges(previous, workspace) : undefined
 		};
 		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
 		journal.push(event);

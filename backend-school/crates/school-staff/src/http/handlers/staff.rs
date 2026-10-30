@@ -170,6 +170,12 @@ pub async fn create_staff(
     actor.require_permission(codes::STAFF_CREATE_ALL)?;
 
     let user_id = staff_service::create_staff(&pool, payload, actor.user_id).await?;
+    state
+        .auth_runtime
+        .invalidate_permission_user(&context.tenant.subdomain, user_id);
+    state
+        .auth_runtime
+        .notify_permission_changed(&context.tenant.subdomain, user_id);
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::with_message(

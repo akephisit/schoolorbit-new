@@ -45924,6 +45924,139 @@
         ],
         "type": "object"
       },
+      "DraftLookupChanges": {
+        "description": "Recipient-specific lookup membership/metadata changes caused by a normal block mutation.",
+        "properties": {
+          "bellPeriodOrder": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "homeroomOrder": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "removedBellPeriodIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedHomeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedRoomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedStaffIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedSubjectGroupOfferingIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "roomOrder": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "staffOrder": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "subjectGroupOfferingOrder": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "upsertedBellPeriods": {
+            "items": {
+              "$ref": "#/components/schemas/BellSchedulePeriod"
+            },
+            "type": "array"
+          },
+          "upsertedHomerooms": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceHomeroom"
+            },
+            "type": "array"
+          },
+          "upsertedOfferingSubjectGroups": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableOfferingSubjectGroup"
+            },
+            "type": "array"
+          },
+          "upsertedRooms": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceRoom"
+            },
+            "type": "array"
+          },
+          "upsertedStaff": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlockWorkspaceStaff"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "upsertedStaff",
+          "removedStaffIds",
+          "upsertedHomerooms",
+          "removedHomeroomIds",
+          "upsertedRooms",
+          "removedRoomIds",
+          "upsertedBellPeriods",
+          "removedBellPeriodIds",
+          "upsertedOfferingSubjectGroups",
+          "removedSubjectGroupOfferingIds"
+        ],
+        "type": "object"
+      },
       "DraftMutationIdentity": {
         "additionalProperties": false,
         "description": "Optional HTTP ownership proof. Actor/session identity always comes from authentication.",
@@ -45984,6 +46117,16 @@
       },
       "DraftPatch": {
         "properties": {
+          "lookupChanges": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftLookupChanges"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mutationId": {
             "format": "uuid",
             "type": "string"

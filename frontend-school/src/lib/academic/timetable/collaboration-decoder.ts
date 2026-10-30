@@ -321,6 +321,75 @@ function version(value: unknown) {
 		array(value.targets, (entry) => object(entry))
 	);
 }
+function uniqueIds(value: unknown): boolean {
+	return array(value, uuid) && new Set(value).size === value.length;
+}
+function uniqueRows(value: unknown, validate: Validator, identity = 'id'): boolean {
+	if (!array(value, validate)) return false;
+	const ids = new Set<string>();
+	return value.every((row) => {
+		const id = object(row) ? row[identity] : undefined;
+		if (!uuid(id) || ids.has(id)) return false;
+		ids.add(id);
+		return true;
+	});
+}
+function bellPeriod(value: unknown) {
+	return (
+		fields(value, ['id', 'bellScheduleId'], ['startTime', 'endTime'], ['orderIndex']) &&
+		typeof value.isActive === 'boolean' &&
+		optional(value.name, text) &&
+		optional(value.applicableDays, text)
+	);
+}
+function homeroom(value: unknown) {
+	return (
+		fields(
+			value,
+			['id', 'gradeLevelId'],
+			['code', 'name', 'gradeLevelType', 'roomNumber'],
+			['gradeLevelYear']
+		) && typeof value.isActive === 'boolean'
+	);
+}
+function room(value: unknown) {
+	return fields(value, ['id'], ['code', 'name', 'status']);
+}
+function subjectGroup(value: unknown) {
+	return (
+		fields(value, ['id'], ['name']) &&
+		(value.displayOrder === null || Number.isSafeInteger(value.displayOrder))
+	);
+}
+function staff(value: unknown) {
+	return (
+		fields(value, ['id'], ['displayName', 'status']) && array(value.subjectGroups, subjectGroup)
+	);
+}
+function offeringSubjectGroup(value: unknown) {
+	return fields(value, ['learningOfferingId']) && subjectGroup(value.subjectGroup);
+}
+function lookupChanges(value: unknown) {
+	return (
+		object(value) &&
+		uniqueRows(value.upsertedStaff, staff) &&
+		uniqueIds(value.removedStaffIds) &&
+		optional(value.staffOrder, uniqueIds) &&
+		uniqueRows(value.upsertedHomerooms, homeroom) &&
+		uniqueIds(value.removedHomeroomIds) &&
+		optional(value.homeroomOrder, uniqueIds) &&
+		uniqueRows(value.upsertedRooms, room) &&
+		uniqueIds(value.removedRoomIds) &&
+		optional(value.roomOrder, uniqueIds) &&
+		uniqueRows(value.upsertedBellPeriods, bellPeriod) &&
+		uniqueIds(value.removedBellPeriodIds) &&
+		optional(value.bellPeriodOrder, uniqueIds) &&
+		uniqueRows(value.upsertedOfferingSubjectGroups, offeringSubjectGroup, 'learningOfferingId') &&
+		uniqueIds(value.removedSubjectGroupOfferingIds) &&
+		optional(value.subjectGroupOfferingOrder, uniqueIds)
+	);
+}
+
 function workspace(value: unknown) {
 	return (
 		object(value) &&
@@ -332,31 +401,10 @@ function workspace(value: unknown) {
 		array(value.ordinaryDemands, ordinaryDemand) &&
 		array(value.synchronizedDemands, synchronizedDemand) &&
 		array(value.sourceIssues, sourceIssue) &&
-		array(
-			value.bellPeriods,
-			(period) =>
-				fields(period, ['id', 'bellScheduleId'], ['startTime', 'endTime'], ['orderIndex']) &&
-				typeof period.isActive === 'boolean' &&
-				optional(period.name, text) &&
-				optional(period.applicableDays, text)
-		) &&
-		array(
-			value.homerooms,
-			(room) =>
-				fields(
-					room,
-					['id', 'gradeLevelId'],
-					['code', 'name', 'gradeLevelType', 'roomNumber'],
-					['gradeLevelYear']
-				) && typeof room.isActive === 'boolean'
-		) &&
-		array(value.rooms, (room) => fields(room, ['id'], ['code', 'name', 'status'])) &&
-		array(
-			value.staff,
-			(staff) =>
-				fields(staff, ['id'], ['displayName', 'status']) &&
-				array(staff.subjectGroups, (group) => fields(group, ['id'], ['name']))
-		) &&
+		uniqueRows(value.bellPeriods, bellPeriod) &&
+		uniqueRows(value.homerooms, homeroom) &&
+		uniqueRows(value.rooms, room) &&
+		uniqueRows(value.staff, staff) &&
 		array(
 			value.learningGroups,
 			(group) =>
@@ -370,11 +418,7 @@ function workspace(value: unknown) {
 				array(group.preferredRoomIds, uuid) &&
 				array(group.eligibleInstructors, instructor)
 		) &&
-		array(
-			value.offeringSubjectGroups,
-			(entry) =>
-				fields(entry, ['learningOfferingId']) && fields(entry.subjectGroup, ['id'], ['name'])
-		)
+		uniqueRows(value.offeringSubjectGroups, offeringSubjectGroup, 'learningOfferingId')
 	);
 }
 function envelope(value: unknown): value is DraftEventEnvelope {
@@ -431,7 +475,8 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 				summary(payload.summary) &&
 				array(payload.sourceIssues, sourceIssue) &&
 				optional(payload.totalDraftBlockCount, integer) &&
-				optional(payload.version, version)
+				optional(payload.version, version) &&
+				optional(payload.lookupChanges, lookupChanges)
 			);
 		case 'DraftReconcileRequired':
 			return typeof payload.reason === 'string' && payload.reason.length > 0;

@@ -15,7 +15,10 @@
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
-	import { applyDraftPatch } from '#lib/academic/timetable/collaboration-patch.js';
+	import {
+		applyDraftPatch,
+		InvalidDraftLookupPatch
+	} from '#lib/academic/timetable/collaboration-patch.js';
 	import { placementSourceKey } from '#lib/academic/timetable/collaboration-source.js';
 	import {
 		createPointerCoalescer,
@@ -350,6 +353,11 @@
 	let interactionRevision = $state(0);
 	let currentAnchor = $state.raw<DraftAnchor | null>(null);
 	let pointerOwnerId = $state<string | null>(null);
+	let editorOrigin = $state.raw<{
+		versionId: string;
+		blockId: string;
+		context: DraftContext;
+	} | null>(null);
 	let domRevision = $state(0);
 	let queuedDraftEvents: DraftEventEnvelope[] = [];
 	let draftQueueOverflow = false;
@@ -360,10 +368,36 @@
 	let presenceCoalescer: ReturnType<
 		typeof createPointerCoalescer<DraftPresenceUpdate, ReturnType<typeof setTimeout>>
 	> | null = null;
+	const editorContext = $derived.by(() => {
+		const origin = editorOrigin;
+		const workspace = controller?.workspace;
+		if (
+			!editOpen ||
+			!origin ||
+			!workspace ||
+			origin.versionId !== workspace.version.id ||
+			origin.blockId !== selectedBlockId ||
+			origin.context.viewMode !== activeView ||
+			!workspace.blocks.some((block) => block.id === origin.blockId)
+		)
+			return null;
+		if (
+			origin.context.viewMode === 'wholeSchool' &&
+			origin.context.viewId &&
+			!workspace.homerooms.some((row) => row.id === origin.context.viewId)
+		)
+			return { ...origin.context, viewId: null };
+		return origin.context;
+	});
 	const collaborationContext = $derived<DraftContext>({
 		viewMode: activeView,
-		viewId: activeView === 'wholeSchool' ? pointerOwnerId : (controller?.selectedOwnerId ?? null),
-		dayOfWeek: activeView === 'wholeSchool' ? overviewDay : null
+		viewId:
+			activeView === 'wholeSchool'
+				? editorContext
+					? (editorContext.viewId ?? null)
+					: pointerOwnerId
+				: (controller?.selectedOwnerId ?? null),
+		dayOfWeek: activeView === 'wholeSchool' ? (editorContext?.dayOfWeek ?? overviewDay) : null
 	});
 	const collaborators = $derived(
 		controller
@@ -390,7 +424,7 @@
 	});
 	const socketContextKey = $derived.by(
 		() =>
-			`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
+			`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${$authStore.session?.sessionId ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
 	);
 	const editCanEdit = $derived.by(() => {
 		void interactionRevision;
@@ -790,7 +824,7 @@
 			} else {
 				const queued = queuedDraftEvents;
 				queuedDraftEvents = [];
-				for (const event of queued) applyCanonicalDraftEvent(event);
+				for (const event of queued) if (!applyCanonicalDraftEvent(event)) break;
 			}
 			for (const resolvePending of pendingWaiters) resolvePending();
 			pendingWaiters.clear();
@@ -838,18 +872,33 @@
 		applyCanonicalDraftEvent(event);
 	}
 
-	function applyCanonicalDraftEvent(event: DraftEventEnvelope): void {
-		if (!controller) return;
+	function applyCanonicalDraftEvent(event: DraftEventEnvelope): boolean {
+		if (!controller) return false;
+		const previousOwnerId = controller.selectedOwnerId;
 		if (event.type === 'DraftStateSync') {
-			if (event.payload.workspace.version.id !== controller.workspace.version.id) return;
+			if (event.payload.workspace.version.id !== controller.workspace.version.id) return false;
 			controller.setWorkspace(event.payload.workspace);
 			if (event.payload.workspace.version.status !== 'draft') controller.setEditing(false);
 		} else if (event.type === 'DraftPatched') {
-			if (event.payload.timetableVersionId !== controller.workspace.version.id) return;
-			controller.setWorkspace(applyDraftPatch(controller.workspace, event.payload));
+			if (event.payload.timetableVersionId !== controller.workspace.version.id) return false;
+			try {
+				controller.setWorkspace(applyDraftPatch(controller.workspace, event.payload));
+			} catch (error) {
+				if (!(error instanceof InvalidDraftLookupPatch)) throw error;
+				queuedDraftEvents = [];
+				requestDraftSnapshot();
+				return false;
+			}
+		}
+		if (previousOwnerId !== controller.selectedOwnerId) {
+			cancelPlacement();
+			currentAnchor = null;
+			pointerOwnerId = null;
+			syncUrl();
 		}
 		const version = controller.workspace.version;
 		versions = versions.map((item) => (item.id === version.id ? version : item));
+		return true;
 	}
 
 	beforeNavigate((navigation) => {
@@ -1866,11 +1915,30 @@
 		} satisfies Record<TimetableBlockWorkspace['sourceIssues'][number]['code'], string>;
 		return labels[code];
 	}
-	function openEditor(block: TimetableBlock): void {
+	function openEditor(block: TimetableBlock, originHomeroomId?: string): void {
 		cancelPlacement();
 		disposeInteraction(editInteraction);
 		editInteraction = null;
 		selectedBlockId = block.id;
+		currentAnchor = null;
+		const workspace = controller?.workspace;
+		const rowId =
+			originHomeroomId &&
+			workspace?.homerooms.some((row) => row.id === originHomeroomId) &&
+			blockBelongsToRow(block, 'homeroom', originHomeroomId)
+				? originHomeroomId
+				: null;
+		editorOrigin = workspace
+			? {
+					versionId: workspace.version.id,
+					blockId: block.id,
+					context: {
+						viewMode: activeView,
+						viewId: activeView === 'wholeSchool' ? rowId : (controller?.selectedOwnerId ?? null),
+						dayOfWeek: activeView === 'wholeSchool' ? block.dayOfWeek : null
+					}
+				}
+			: null;
 		editTitle = block.title ?? '';
 		editNote = block.note ?? '';
 		editRoomId = roomIdForBlockEdit(block) ?? noRoomValue;
@@ -2484,6 +2552,17 @@
 			return;
 		}
 		const context = connection.context;
+		const editReservation = $draftSessionState.reservations.find(
+			(reservation) =>
+				reservation.reservationId === connection.activeReservationId &&
+				reservation.ownerConnectionId === connectionId &&
+				reservation.purpose === 'edit'
+		);
+		const editingSource = editReservation?.source;
+		const editingBlock =
+			editingSource?.kind === 'existing_block'
+				? selectedController.workspace.blocks.find((block) => block.id === editingSource.blockId)
+				: undefined;
 		cancelPlacement();
 		editOpen = false;
 		disposeInteraction(editInteraction);
@@ -2491,8 +2570,9 @@
 		activeView = context.viewMode;
 		currentAnchor = null;
 		if (context.viewMode === 'wholeSchool') {
-			if (context.dayOfWeek && days.some((day) => day.id === context.dayOfWeek))
-				overviewDay = context.dayOfWeek;
+			const targetDay =
+				!connection.anchor && editingBlock ? editingBlock.dayOfWeek : context.dayOfWeek;
+			if (targetDay && days.some((day) => day.id === targetDay)) overviewDay = targetDay;
 			pointerOwnerId = context.viewId ?? null;
 		} else {
 			selectedController.setView(context.viewMode);
@@ -2503,12 +2583,14 @@
 		await tick();
 		if (intent !== jumpIntent || controller !== selectedController || !workspaceRoot) return;
 		const anchor = connection.anchor;
+		const targetBlockId =
+			anchor?.kind === 'block' ? anchor.blockId : !anchor ? editingBlock?.id : null;
 		let subject: HTMLElement | null = null;
-		if (anchor?.kind === 'block') {
-			selectedBlockId = anchor.blockId;
+		if (targetBlockId) {
+			selectedBlockId = targetBlockId;
 			subject = findTimetableBlockElement(
 				workspaceRoot,
-				anchor.blockId,
+				targetBlockId,
 				context.viewMode === 'wholeSchool' ? context.viewId : null
 			);
 		} else if (anchor?.kind === 'cell')
@@ -3078,7 +3160,7 @@
 														needsReview={controller.workspace.sourceIssues.some(
 															(issue) => issue.blockId === block.id
 														)}
-														onSelect={openEditor}
+														onSelect={(block) => openEditor(block, homeroom.id)}
 														lockedBy={blockLockLabel(block.id)}
 													/>
 												{/each}

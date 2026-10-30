@@ -17,12 +17,12 @@ test('whole-school view is a read-only projection of one canonical workspace', a
 	assert.match(page, /มุมมองนี้ใช้ตรวจภาพรวม/);
 });
 
-test('whole-school matrix keeps sticky workbook headers and opens block details read-only', async () => {
+test('whole-school matrix keeps sticky workbook headers and opens details with its semantic owner row', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
 	assert.match(page, /sticky left-0/);
 	assert.match(page, /overflow-x-auto/);
-	assert.match(page, /onSelect=\{openEditor\}/);
+	assert.match(page, /onSelect=\{\(block\) => openEditor\(block, homeroom\.id\)\}/);
 	assert.match(page, /selectedBlock\?\.blockKind/);
 	assert.match(page, /\{#if canEdit\}[\s\S]*บันทึก/);
 });

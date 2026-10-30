@@ -85,6 +85,10 @@ impl Fixture {
                 "academic_timetable.read.school",
                 "academic_timetable.manage.school",
                 "academic_timetable.publish.school",
+                "facility.create.all",
+                "facility.update.all",
+                "facility.delete.all",
+                "staff.create.all",
             ],
         )
         .await;
@@ -115,10 +119,32 @@ impl Fixture {
             auth_runtime: auth.runtime.clone(),
             websocket_manager: manager.clone(),
         };
+        let files =
+            Arc::new(crate::integration_tests::staff::career_integration_tests::file_platform());
+        let administration = school_administration::http::state::AdministrationHttpState {
+            auth_runtime: auth.runtime.clone(),
+            file_platform: files.clone(),
+            facility_changes: Arc::new(
+                crate::adapters::facility_changes::ApplicationFacilityChanges(manager.clone()),
+            ),
+        };
+        let staff = school_staff::http::state::StaffHttpState {
+            auth_runtime: auth.runtime.clone(),
+            file_platform: files,
+        };
         let app = Router::new()
             .nest(
                 "/api/academic",
                 school_academic_http::routes::academic_routes().with_state(http),
+            )
+            .nest(
+                "/api/facilities",
+                school_administration::facility::http::routes::facility_routes()
+                    .with_state(administration),
+            )
+            .nest(
+                "/api",
+                school_staff::http::routes::protected_routes().with_state(staff),
             )
             .route_layer(from_fn_with_state(
                 auth.runtime.clone(),
@@ -180,6 +206,15 @@ impl Fixture {
                 .header("x-timetable-mutation-id", Uuid::new_v4().to_string());
         }
         request
+    }
+
+    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        reqwest::Client::new()
+            .request(method, format!("http://{}{}", self.address, path))
+            .header("origin", "http://localhost:5173")
+            .header("x-school-subdomain", "tenant-a")
+            .header("cookie", &self.cookie)
+            .header("x-csrf-token", &self.csrf)
     }
 
     fn source(&self) -> Value {
@@ -288,9 +323,95 @@ fn uuid(value: &Value) -> Uuid {
     Uuid::parse_str(value.as_str().unwrap()).unwrap()
 }
 
+fn reconstructed_lookups(before: &Value, changes: &Value) -> Value {
+    let mut result = before.clone();
+    for (field, upsert, removed, order, key) in [
+        (
+            "staff",
+            "upsertedStaff",
+            "removedStaffIds",
+            "staffOrder",
+            "id",
+        ),
+        (
+            "homerooms",
+            "upsertedHomerooms",
+            "removedHomeroomIds",
+            "homeroomOrder",
+            "id",
+        ),
+        (
+            "rooms",
+            "upsertedRooms",
+            "removedRoomIds",
+            "roomOrder",
+            "id",
+        ),
+        (
+            "bellPeriods",
+            "upsertedBellPeriods",
+            "removedBellPeriodIds",
+            "bellPeriodOrder",
+            "id",
+        ),
+        (
+            "offeringSubjectGroups",
+            "upsertedOfferingSubjectGroups",
+            "removedSubjectGroupOfferingIds",
+            "subjectGroupOfferingOrder",
+            "learningOfferingId",
+        ),
+    ] {
+        if changes[order].is_null() {
+            assert!(
+                changes[upsert].as_array().unwrap().is_empty()
+                    && changes[removed].as_array().unwrap().is_empty()
+            );
+            continue;
+        }
+        let mut rows = result[field]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| (row[key].as_str().unwrap().to_owned(), row.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for id in changes[removed].as_array().unwrap() {
+            rows.remove(id.as_str().unwrap());
+        }
+        for row in changes[upsert].as_array().unwrap() {
+            rows.insert(row[key].as_str().unwrap().to_owned(), row.clone());
+        }
+        let ordered = changes[order]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| {
+                rows.remove(id.as_str().unwrap())
+                    .expect("every AFTER order ID has metadata")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            rows.is_empty(),
+            "order must describe the complete authorized AFTER list"
+        );
+        result[field] = Value::Array(ordered);
+    }
+    result
+}
+
 #[tokio::test]
 async fn actual_http_cannot_bypass_tab_lease_and_committed_delta_carries_db_revision() {
     let fixture = Fixture::new("collaboration_http_socket_authority").await;
+    sqlx::query("UPDATE auth_sessions SET rotated_at=now()-interval '20 minutes' WHERE id=$1")
+        .bind(fixture.session_id)
+        .execute(&fixture.auth.tenant_a_pool)
+        .await
+        .unwrap();
+    let session_metadata = || async {
+        sqlx::query_scalar::<_, Value>("SELECT jsonb_build_object('idle',idle_expires_at,'absolute',absolute_expires_at,'rotation',rotated_at,'lastSeen',last_seen_at,'pending',pending_token_hash IS NOT NULL) FROM auth_sessions WHERE id=$1")
+            .bind(fixture.session_id).fetch_one(&fixture.auth.tenant_a_pool).await.unwrap()
+    };
+    let before_session = session_metadata().await;
     assert!(
         Arc::strong_count(&fixture.manager.collaboration()) >= 3,
         "HTTP/socket use the same live authority"
@@ -340,7 +461,16 @@ async fn actual_http_cannot_bypass_tab_lease_and_committed_delta_carries_db_revi
         .send()
         .await
         .unwrap();
+    assert!(
+        response.headers().get("set-cookie").is_none(),
+        "ordinary timetable save never stages rotation"
+    );
     assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    assert_eq!(
+        session_metadata().await,
+        before_session,
+        "HTTP/socket collaboration traffic does not own human idle or periodic rotation"
+    );
     let own = event(&mut first, "DraftPatched").await;
     let peer = event(&mut second, "DraftPatched").await;
     assert_eq!(own["seq"], peer["seq"]);
@@ -458,6 +588,34 @@ async fn warm_native_socket_presence_and_lease_frames_work_after_pool_is_closed(
         "stale private commands do not close transport"
     );
     assert!(stale["payload"]["leaseToken"].is_null());
+    let again = command(
+        &mut socket,
+        "ClientClaim",
+        json!({"requestId":Uuid::new_v4(),"source":fixture.source(),"purpose":"edit"}),
+    )
+    .await;
+    assert_eq!(
+        again["payload"]["accepted"], true,
+        "fresh claim after closing PG is memory-only"
+    );
+    socket
+        .send(Message::Text(
+            json!({"type":"ClientReplay","payload":{"epoch":sync["epoch"],"afterSeq":sync["seq"]}})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    let after_replay = command(
+        &mut socket,
+        "ClientRenew",
+        json!({"requestId":Uuid::new_v4(),"leaseToken":again["payload"]["leaseToken"]}),
+    )
+    .await;
+    assert_eq!(
+        after_replay["payload"]["accepted"], true,
+        "replay then renewal work after closing PG"
+    );
     socket.close(None).await.unwrap();
 }
 
@@ -477,7 +635,7 @@ async fn native_socket_scoped_manager_cannot_claim_school_owned_structural_block
         ],
     )
     .await;
-    let (_, token) = fixture
+    let (session, token) = fixture
         .auth
         .insert_session(&fixture.auth.tenant_a_pool, actor, 192, false)
         .await;
@@ -503,6 +661,40 @@ async fn native_socket_scoped_manager_cannot_claim_school_owned_structural_block
     assert_eq!(denied["payload"]["accepted"], false);
     assert_eq!(denied["payload"]["code"], "forbidden");
     assert!(denied["payload"]["source"].is_null());
+    // Existing per-action policy allows explicit own-target creation, while all-target flags
+    // and another teacher's resource remain forbidden. Claim/edit semantics are unchanged.
+    for (selected_teacher, all_teachers, expected) in [
+        (actor, false, 200),
+        (Uuid::parse_str(ACTOR).unwrap(), false, 403),
+        (actor, true, 403),
+    ] {
+        let payload = json!({"timetableVersionId":fixture.version,"academicTermId":fixture.term,
+            "structuralKind":"teacher_meeting","title":"Own target scoped creation",
+            "slots":[{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id}],
+            "homeroomIds":[],"teacherIds":[selected_teacher],"allHomerooms":false,"allTeachers":all_teachers,"roomId":null});
+        let mut request = fixture
+            .request(
+                reqwest::Method::POST,
+                "/api/academic/timetable-blocks/structural",
+            )
+            .json(&payload)
+            .build()
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("cookie", cookie.parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-csrf-token", fixture.auth.csrf(session).parse().unwrap());
+        let response = reqwest::Client::new().execute(request).await.unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            expected,
+            "{}",
+            response.text().await.unwrap()
+        );
+    }
+    event(&mut socket, "DraftPatched").await;
     socket.close(None).await.unwrap();
 }
 
@@ -1337,4 +1529,404 @@ async fn real_cold_fill_overlapping_upstream_change_cannot_install_stale_valid_p
         .any(|room| room["id"] == room_id.to_string()
             && room["name"] == "Changed during canonical fill"));
     socket.close(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn actual_facility_producers_invalidate_active_and_empty_rooms_only_after_success() {
+    let fixture = Fixture::new("collaboration_facility_producers").await;
+    let (mut socket, initial) = fixture.socket().await;
+    let payload =
+        json!({"name_th":"Created by facility owner", "room_type":"GENERAL", "status":"ACTIVE"});
+    let denied = fixture
+        .auth
+        .insert_user(
+            &fixture.auth.tenant_a_pool,
+            "collab-facility-denied",
+            "active",
+        )
+        .await;
+    grant(
+        &fixture.auth.tenant_a_pool,
+        denied,
+        &["academic_timetable.read.school"],
+    )
+    .await;
+    let (session, token) = fixture
+        .auth
+        .insert_session(&fixture.auth.tenant_a_pool, denied, 196, false)
+        .await;
+    let mut request = fixture
+        .request(reqwest::Method::POST, "/api/facilities/rooms")
+        .json(&payload)
+        .build()
+        .unwrap();
+    request.headers_mut().insert(
+        "cookie",
+        format!(
+            "__Host-schoolorbit_session={}",
+            token.encode().expose_for_cookie()
+        )
+        .parse()
+        .unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert("x-csrf-token", fixture.auth.csrf(session).parse().unwrap());
+    assert_eq!(
+        reqwest::Client::new()
+            .execute(request)
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let failed = fixture
+        .request(reqwest::Method::POST, "/api/facilities/rooms")
+        .json(
+            &json!({"name_th":"Invalid room", "room_type":"GENERAL", "building_id":Uuid::new_v4()}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert!(!failed.status().is_success());
+    let unchanged = command(
+        &mut socket,
+        "ClientRenew",
+        json!({"requestId":Uuid::new_v4(),"leaseToken":Uuid::new_v4()}),
+    )
+    .await;
+    assert_eq!(
+        unchanged["epoch"], initial["epoch"],
+        "denied/rolled-back producer does not invalidate"
+    );
+
+    let response = fixture
+        .request(reqwest::Method::POST, "/api/facilities/rooms")
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201, "{}", response.text().await.unwrap());
+    let room_id = uuid(&response.json::<Value>().await.unwrap()["data"]["id"]);
+    event(&mut socket, "DraftReconcileRequired").await;
+    let (mut refreshed, created) = fixture.socket().await;
+    assert_ne!(created["epoch"], initial["epoch"]);
+    assert!(created["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|room| room["id"] == room_id.to_string()));
+    refreshed.close(None).await.unwrap();
+    let cached = fixture.room();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !cached.members().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let response = fixture
+        .request(
+            reqwest::Method::PUT,
+            &format!("/api/facilities/rooms/{room_id}"),
+        )
+        .json(&json!({"status":"INACTIVE"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    let (mut joined, inactive) = fixture.socket().await;
+    assert_ne!(inactive["epoch"], created["epoch"]);
+    assert!(inactive["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|room| room["id"] != room_id.to_string()));
+    let response = fixture
+        .request(
+            reqwest::Method::DELETE,
+            &format!("/api/facilities/rooms/{room_id}"),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    event(&mut joined, "DraftReconcileRequired").await;
+}
+
+#[tokio::test]
+async fn actual_staff_creation_invalidates_empty_canonical_cache_before_private_new_choice() {
+    let fixture = Fixture::new("collaboration_staff_create_producer").await;
+    let (mut socket, initial) = fixture.socket().await;
+    socket.close(None).await.unwrap();
+    let cached = fixture.room();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !cached.members().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut changes = cached.subscribe();
+    let response = fixture.request(reqwest::Method::POST, "/api/staff").json(&json!({
+        "username":"collaboration-created-staff", "email":"collaboration-created-staff@example.test",
+        "password":"Synthetic-fixture-27!", "title":"นาย", "first_name":"ใหม่", "last_name":"ทดสอบ", "role_ids":[]
+    })).send().await.unwrap();
+    assert_eq!(response.status(), 201, "{}", response.text().await.unwrap());
+    let teacher = uuid(&response.json::<Value>().await.unwrap()["data"]["id"]);
+    // Observe the existing domain invalidation signal even while no socket is a member.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if matches!(
+                changes.recv().await.unwrap(),
+                school_academic_timetable::collaboration::DraftSignal::Invalidated
+            ) {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let (mut joined, latest) = fixture.socket().await;
+    assert_ne!(latest["epoch"], initial["epoch"]);
+    // Existing public Staff projection remains source/block scoped. The newly created active
+    // teacher is private candidate input, authorized through the cached resource evaluator.
+    let candidate = json!({"blockKind":"structural","learningGroupId":null,"learningOfferingId":null,"roomId":null,"homeroomIds":fixture.block.homerooms.iter().map(|row|row.homeroom_id).collect::<Vec<_>>(),"teacherIds":[teacher],"instructorIds":[]});
+    let claim = command(&mut joined, "ClientClaim", json!({"requestId":Uuid::new_v4(),"source":fixture.source(),"purpose":"edit","candidate":candidate})).await;
+    assert_eq!(
+        claim["payload"]["accepted"], true,
+        "fresh canonical cache includes the newly created staff resource: {claim}"
+    );
+    joined.close(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn scoped_lookup_gain_and_loss_match_fresh_authorized_http_projection() {
+    let fixture = Fixture::new("collaboration_scoped_lookup_delta").await;
+    let teacher = fixture
+        .auth
+        .insert_user(
+            &fixture.auth.tenant_a_pool,
+            "collab-lookup-teacher",
+            "active",
+        )
+        .await;
+    grant(
+        &fixture.auth.tenant_a_pool,
+        teacher,
+        &["academic_timetable.read.assigned"],
+    )
+    .await;
+    let unit: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE unit_type='subject_group' AND is_active AND subject_group_id IS NOT NULL ORDER BY id LIMIT 1")
+        .fetch_one(&fixture.auth.tenant_a_pool).await.unwrap();
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,is_primary) VALUES($1,$2,'member',true)")
+        .bind(teacher).bind(unit).execute(&fixture.auth.tenant_a_pool).await.unwrap();
+    let (session, token) = fixture
+        .auth
+        .insert_session(&fixture.auth.tenant_a_pool, teacher, 197, false)
+        .await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let csrf = fixture.auth.csrf(session);
+    let (mut manager, manager_sync) = fixture.socket().await;
+    let (mut scoped, initial) = fixture.socket_with_cookie(&cookie).await;
+    assert!(initial["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(
+        initial["payload"]["workspace"]["staff"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "cold join does not broaden public Staff visibility"
+    );
+    let connection = uuid(&manager_sync["payload"]["connectionId"]);
+    let room_id = uuid(&manager_sync["payload"]["workspace"]["rooms"][0]["id"]);
+    let path = format!("http://{}/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.address, fixture.block.academic_year_id, fixture.term, fixture.version);
+    let http_projection = || async {
+        let response = reqwest::Client::new()
+            .get(&path)
+            .header("origin", "http://localhost:5173")
+            .header("x-school-subdomain", "tenant-a")
+            .header("cookie", &cookie)
+            .header("x-csrf-token", &csrf)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        response.json::<Value>().await.unwrap()["data"].clone()
+    };
+    let mut created_block = Value::Null;
+    let mut previous = initial["payload"]["workspace"].clone();
+    for gain in [true, false] {
+        if gain {
+            let response = fixture.request(reqwest::Method::POST, "/api/academic/timetable-blocks/structural").json(&json!({
+                "timetableVersionId":fixture.version,"academicTermId":fixture.term,"structuralKind":"flag_ceremony","title":"New scoped structural block",
+                "slots":[{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id}],
+                "homeroomIds":[],"teacherIds":[teacher],"allHomerooms":true,"allTeachers":false,"roomId":room_id
+            })).send().await.unwrap();
+            assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+            created_block = response.json::<Value>().await.unwrap()["data"][0].clone();
+        } else {
+            let source = json!({"kind":"existing_block","blockId":created_block["id"],"rowVersion":created_block["rowVersion"]});
+            let claimed = command(
+                &mut manager,
+                "ClientClaim",
+                json!({"requestId":Uuid::new_v4(),"source":source,"purpose":"edit"}),
+            )
+            .await;
+            assert_eq!(claimed["payload"]["accepted"], true, "{claimed}");
+            let response = fixture
+                .request(
+                    reqwest::Method::DELETE,
+                    &format!(
+                        "/api/academic/timetable-blocks/{}?timetableVersionId={}&rowVersion={}",
+                        created_block["id"].as_str().unwrap(),
+                        fixture.version,
+                        created_block["rowVersion"].as_i64().unwrap()
+                    ),
+                )
+                .header("x-timetable-connection-id", connection.to_string())
+                .header(
+                    "x-timetable-lease-token",
+                    claimed["payload"]["leaseToken"].as_str().unwrap(),
+                )
+                .header("x-timetable-mutation-id", Uuid::new_v4().to_string())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+        }
+        if !gain {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            scoped
+                .send(Message::Text(
+                    json!({"type":"ClientPresenceUpdate","payload":{
+                        "context":{"viewMode":"teacher","viewId":teacher,"dayOfWeek":"WED"},
+                        "anchor":{"kind":"block","blockId":created_block["id"],"u":0.4,"v":0.6}
+                    }})
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
+        }
+        event(&mut manager, "DraftPatched").await;
+        let patch = event(&mut scoped, "DraftPatched").await;
+        let changes = &patch["payload"]["lookupChanges"];
+        let fresh = http_projection().await;
+        let reconstructed = reconstructed_lookups(&previous, changes);
+        for field in [
+            "staff",
+            "homerooms",
+            "rooms",
+            "bellPeriods",
+            "offeringSubjectGroups",
+        ] {
+            assert_eq!(
+                reconstructed[field], fresh[field],
+                "recipient delta reconstructs exact scoped metadata and producer order for {field}"
+            );
+        }
+        if gain {
+            assert_eq!(changes["upsertedStaff"], fresh["staff"]);
+            assert!(
+                !changes["upsertedStaff"][0]["subjectGroups"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty(),
+                "private newly referenced teacher carries full authoritative affiliations"
+            );
+            assert_eq!(changes["upsertedHomerooms"], fresh["homerooms"]);
+            assert_eq!(changes["upsertedRooms"], fresh["rooms"]);
+            assert_eq!(
+                patch["payload"]["upsertedBlocks"].as_array().unwrap().len(),
+                1
+            );
+        } else {
+            assert_eq!(changes["removedStaffIds"], json!([teacher]));
+            assert_eq!(changes["removedRoomIds"], json!([room_id]));
+            assert_eq!(
+                changes["removedHomeroomIds"].as_array().unwrap().len(),
+                fixture.block.homerooms.len()
+            );
+            assert!(changes["upsertedStaff"].as_array().unwrap().is_empty());
+            assert_eq!(
+                patch["payload"]["removedBlockIds"],
+                json!([created_block["id"]])
+            );
+            assert!(
+                patch["payload"]["upsertedBlocks"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty(),
+                "lost scope sends no unauthorized block"
+            );
+            assert!(fresh["staff"].as_array().unwrap().is_empty());
+            assert!(fresh["homerooms"].as_array().unwrap().is_empty());
+            assert!(fresh["rooms"].as_array().unwrap().is_empty());
+        }
+        if gain {
+            scoped
+                .send(Message::Text(
+                    json!({"type":"ClientPresenceUpdate","payload":{
+                        "context":{"viewMode":"teacher","viewId":teacher,"dayOfWeek":"WED"},
+                        "anchor":{"kind":"block","blockId":created_block["id"],"u":0.4,"v":0.6}
+                    }})
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap();
+            loop {
+                let presence = event(&mut manager, "DraftPresenceChanged").await;
+                if let Some(connection) = presence["payload"]["connections"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|row| {
+                        row["connectionId"] == initial["payload"]["connectionId"]
+                            && row["anchor"]["blockId"] == created_block["id"]
+                    })
+                {
+                    assert_eq!(connection["context"]["viewId"], teacher.to_string());
+                    break;
+                }
+            }
+        } else {
+            loop {
+                let presence = event(&mut manager, "DraftPresenceChanged").await;
+                if presence["seq"].as_u64().unwrap() < patch["seq"].as_u64().unwrap() {
+                    continue;
+                }
+                let connection = presence["payload"]["connections"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|row| row["connectionId"] == initial["payload"]["connectionId"])
+                    .unwrap();
+                assert!(
+                    connection["context"].is_null() && connection["anchor"].is_null(),
+                    "delayed once-authorized pointer never rebroadcasts lost-scope identifiers"
+                );
+                break;
+            }
+            let alive = command(
+                &mut scoped,
+                "ClientRenew",
+                json!({"requestId":Uuid::new_v4(),"leaseToken":Uuid::new_v4()}),
+            )
+            .await;
+            assert_eq!(
+                alive["epoch"], initial["epoch"],
+                "normal scope loss keeps the same healthy connection/epoch"
+            );
+        }
+        previous = fresh;
+    }
+    manager.close(None).await.unwrap();
+    scoped.close(None).await.unwrap();
 }

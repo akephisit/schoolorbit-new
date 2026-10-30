@@ -142,6 +142,11 @@ impl FromRef<AppState> for school_administration::http::state::AdministrationHtt
         Self {
             auth_runtime: state.auth_runtime.clone(),
             file_platform: state.file_platform.clone(),
+            facility_changes: std::sync::Arc::new(
+                crate::adapters::facility_changes::ApplicationFacilityChanges(
+                    state.websocket_manager.clone(),
+                ),
+            ),
         }
     }
 }

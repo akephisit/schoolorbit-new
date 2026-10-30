@@ -424,6 +424,49 @@ fn unrelated_large_canonical_graph_does_not_overflow_small_patch_journal() {
 #[test]
 fn before_after_scope_change_emits_removal_without_new_unauthorized_resource() {
     let (room, _, actor) = fixture();
+    let offering_id = Uuid::new_v4();
+    let period_id = {
+        let mut state = room.lock().unwrap();
+        let workspace = Arc::make_mut(&mut state.workspace);
+        workspace.bell_periods[0].is_active = false;
+        let block = &mut workspace.blocks[0];
+        block.block_kind = TimetableBlockKind::Course;
+        block.structural_kind = None;
+        block.learning_offering_id = Some(offering_id);
+        block.teachers.clear();
+        block.groups.push(TimetableBlockGroup {
+            id: Uuid::new_v4(),
+            learning_group_id: Uuid::new_v4(),
+            learning_offering_id: offering_id,
+            code: "Retained".into(),
+            name: "Retained source group".into(),
+            homeroom_ids: Vec::new(),
+            homeroom_names: Vec::new(),
+            room_id: None,
+            room_code: None,
+            room_name: None,
+            instructors: vec![TimetableBlockInstructor {
+                teacher_id: actor,
+                display_name: "Teacher".into(),
+                role: "primary".into(),
+                order_index: 1,
+            }],
+            sync_status: None,
+            row_version: 1,
+            is_active: true,
+        });
+        workspace
+            .offering_subject_groups
+            .push(TimetableOfferingSubjectGroup {
+                learning_offering_id: offering_id,
+                subject_group: TimetableSubjectGroup {
+                    id: Uuid::new_v4(),
+                    name: "Retained subject".into(),
+                    display_order: Some(1),
+                },
+            });
+        workspace.bell_periods[0].id
+    };
     let viewer = member(
         actor,
         TimetableAccessFilter {
@@ -434,7 +477,22 @@ fn before_after_scope_change_emits_removal_without_new_unauthorized_resource() {
     room.join(viewer.clone()).unwrap();
     let mut changed = room.lock().unwrap().workspace.blocks[0].clone();
     let id = changed.id;
-    changed.teachers[0].teacher_id = Uuid::new_v4();
+    let mut restored = changed.clone();
+    let delayed_presence = DraftPresenceUpdate {
+        context: DraftContext {
+            view_mode: DraftViewMode::Teacher,
+            view_id: Some(actor),
+            day_of_week: Some("MON".into()),
+        },
+        anchor: Some(DraftAnchor::Block {
+            block_id: id,
+            u: 0.4,
+            v: 0.6,
+        }),
+    };
+    room.update_presence(viewer.connection_id, delayed_presence.clone())
+        .unwrap();
+    changed.groups[0].instructors[0].teacher_id = Uuid::new_v4();
     changed.row_version += 1;
     room.publish_blocks(vec![changed], None, None, Uuid::new_v4())
         .unwrap();
@@ -448,6 +506,43 @@ fn before_after_scope_change_emits_removal_without_new_unauthorized_resource() {
     assert!(patch.upserted_blocks.is_empty());
     assert_eq!(patch.summary.block_count, 0);
     assert_eq!(events[0].seq, 1);
+    room.update_presence(viewer.connection_id, delayed_presence)
+        .unwrap();
+    let state = room.lock().unwrap();
+    assert!(state.members[&viewer.connection_id].context.is_none());
+    assert!(state.members[&viewer.connection_id].anchor.is_none());
+    drop(state);
+    let lookups = patch.lookup_changes.as_ref().unwrap();
+    assert_eq!(lookups.removed_staff_ids, vec![actor]);
+    assert_eq!(lookups.removed_bell_period_ids, vec![period_id]);
+    assert_eq!(
+        lookups.removed_subject_group_offering_ids,
+        vec![offering_id]
+    );
+    assert_eq!(lookups.staff_order, Some(Vec::new()));
+    assert_eq!(lookups.bell_period_order, Some(Vec::new()));
+    assert_eq!(lookups.subject_group_offering_order, Some(Vec::new()));
+    assert!(lookups.upserted_offering_subject_groups.is_empty());
+    restored.row_version += 2;
+    room.publish_blocks(vec![restored], None, None, Uuid::new_v4())
+        .unwrap();
+    let events = room
+        .signal_events(viewer.connection_id, DraftSignal::Committed(2))
+        .unwrap();
+    let DraftServerMessage::DraftPatched(patch) = &events[0].event else {
+        panic!("patch")
+    };
+    let lookups = patch.lookup_changes.as_ref().unwrap();
+    assert_eq!(lookups.staff_order, Some(vec![actor]));
+    assert_eq!(lookups.bell_period_order, Some(vec![period_id]));
+    assert_eq!(
+        lookups.subject_group_offering_order,
+        Some(vec![offering_id])
+    );
+    assert_eq!(
+        lookups.upserted_offering_subject_groups[0].learning_offering_id,
+        offering_id
+    );
 }
 
 #[test]
@@ -780,5 +875,39 @@ fn existing_inactive_teacher_can_be_claimed_for_repair_but_cannot_be_newly_selec
         .unwrap();
     assert!(
         matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted)
+    );
+}
+
+#[test]
+fn idle_cache_eviction_does_not_split_an_externally_held_draft_authority() {
+    let (held, runtime, _) = fixture();
+    let original = held.key;
+    held.lock().unwrap().empty_since = Some(Instant::now() - ROOM_IDLE_TTL * 2);
+    let (other, _, _) = fixture();
+    let state = other.lock().unwrap();
+    runtime
+        .install(
+            other.key,
+            (*state.workspace).clone(),
+            (*state.visibility).clone(),
+        )
+        .unwrap();
+    assert!(
+        runtime.room(original).unwrap().is_some(),
+        "an admission/connection still holding the old Arc must retain its unique valid authority"
+    );
+    drop(held);
+    let (third, _, _) = fixture();
+    let state = third.lock().unwrap();
+    runtime
+        .install(
+            third.key,
+            (*state.workspace).clone(),
+            (*state.visibility).clone(),
+        )
+        .unwrap();
+    assert!(
+        runtime.room(original).unwrap().is_none(),
+        "truly unreferenced idle rooms remain evictable"
     );
 }

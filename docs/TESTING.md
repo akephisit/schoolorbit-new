@@ -691,7 +691,8 @@ the runtime injected into HTTP. It covers proof bypass/cross-tab refusal, scoped
 changed-block patches with database-trigger version revisions, publication preview without a
 workspace reload, hot interaction after closing PostgreSQL, queued authorization generation,
 pinned commit cancellation/disconnect/TTL, initial-sync watermark, no-member upstream invalidation,
-postcommit failure, deferred COMMIT timeout, and cold version-row fencing. Domain cases separately
+postcommit failure, deferred COMMIT timeout, cold version-row/cache-fill fencing, real Facility/Staff
+producer invalidation, and scoped lookup gain/loss matching fresh HTTP metadata and producer order. Domain cases separately
 cover cross-view footprints/swaps, private candidate ownership, filtered sequence watermarks,
 replay/expiry and bounded tiny deltas for a workspace larger than the journal limit's half size.
 Use only runner-owned disposable databases, never a live or customer tenant. A fixture's isolated test context does not substitute for

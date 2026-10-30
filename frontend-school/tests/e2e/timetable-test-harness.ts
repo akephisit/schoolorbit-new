@@ -1,4 +1,5 @@
-import { sessionState } from './fixtures/session-state';
+import type { SessionState } from '../../src/lib/api/auth.js';
+import { sessionState } from './fixtures/session-state.ts';
 import type { Page, Route } from '@playwright/test';
 import {
 	createDraftRelay,
@@ -53,6 +54,8 @@ export interface TimetableMockOptions {
 	learningGroups?: TimetableBlockWorkspace['learningGroups'];
 	homerooms?: TimetableBlockWorkspace['homerooms'];
 	staff?: TimetableBlockWorkspace['staff'];
+	rooms?: TimetableBlockWorkspace['rooms'];
+	bellPeriods?: TimetableBlockWorkspace['bellPeriods'];
 	offeringSubjectGroups?: TimetableBlockWorkspace['offeringSubjectGroups'];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
@@ -313,6 +316,7 @@ function periods(count = 3) {
 }
 
 export async function installTimetableMock(page: Page, options: TimetableMockOptions = {}) {
+	let currentSession = sessionState();
 	const status = options.status ?? 'draft';
 	const selectedVersion = makeTimetableVersion(status);
 	let versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
@@ -349,7 +353,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
 			latestDeliveryVersionId,
-			bellPeriods: periods(options.periodCount),
+			bellPeriods: options.bellPeriods ?? periods(options.periodCount),
 			blocks,
 			learningGroups: options.learningGroups ?? [
 				{
@@ -395,7 +399,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					isActive: true
 				}
 			],
-			rooms: [
+			rooms: options.rooms ?? [
 				{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' },
 				{ id: timetableIds.roomB, code: 'LAB-2', name: 'ห้องปฏิบัติการ 2', status: 'ACTIVE' }
 			],
@@ -512,7 +516,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
-					session: sessionState(),
+					session: currentSession,
 					profileImageFileId: null,
 					permissions: options.permissions ?? ['*']
 				});
@@ -889,6 +893,10 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	return {
 		workspace,
 		relay,
+		getSessionState: () => structuredClone(currentSession),
+		setSessionState: (next: SessionState) => {
+			currentSession = structuredClone(next);
+		},
 		publishWorkspace: (next: TimetableBlockWorkspace, publish = true) => {
 			blocks = structuredClone(next.blocks);
 			versions = versions.map((version) =>
@@ -896,6 +904,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			);
 			latestDeliveryVersionId = next.latestDeliveryVersionId;
 			sourceIssues = structuredClone(next.sourceIssues);
+			options.staff = structuredClone(next.staff);
+			options.homerooms = structuredClone(next.homerooms);
+			options.rooms = structuredClone(next.rooms);
+			options.bellPeriods = structuredClone(next.bellPeriods);
+			options.offeringSubjectGroups = structuredClone(next.offeringSubjectGroups);
 			return relay.commit(next, {}, publish);
 		},
 		workspaceRequestCount: () => workspaceRequests,

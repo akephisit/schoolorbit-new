@@ -288,22 +288,24 @@ impl DraftRoom {
         update: DraftPresenceUpdate,
     ) -> Result<(), AppError> {
         let mut state = self.lock()?;
+        if !state.valid {
+            return Err(stale());
+        }
         let projected = &state
             .member_visibility
             .get(&connection_id)
             .ok_or_else(stale)?
             .read;
-        if !context_visible(&projected, &update.context)
-            || update
-                .anchor
-                .as_ref()
-                .is_some_and(|anchor| !anchor_visible(&projected, anchor))
-        {
-            return Err(forbidden());
-        }
+        // A peer mutation can remove an anchor/context before this in-flight frame arrives.
+        // Sanitize against current authorized indices without closing healthy membership or
+        // retaining/rebroadcasting identifiers that are no longer visible.
+        let context = context_visible(projected, &update.context).then_some(update.context);
+        let anchor = update
+            .anchor
+            .filter(|anchor| context.is_some() && anchor_visible(projected, anchor));
         let member = state.members.get_mut(&connection_id).ok_or_else(stale)?;
-        member.context = Some(update.context);
-        member.anchor = update.anchor;
+        member.context = context;
+        member.anchor = anchor;
         drop(state);
         let _ = self.signals.send(DraftSignal::Presence(connection_id));
         Ok(())
@@ -591,14 +593,25 @@ impl TimetableCollaborationRuntime {
             ));
         }
         rooms.retain(|_, room| {
-            room.lock()
-                .map(|state| {
-                    !state.committing.is_empty()
-                        || state
-                            .empty_since
-                            .is_none_or(|at| at.elapsed() < ROOM_IDLE_TTL)
-                })
-                .unwrap_or(true)
+            let Ok(mut state) = room.lock() else {
+                return true;
+            };
+            // External owners include accepted writes waiting for the mutation gate.
+            // Evicting a still-valid referenced room would split the draft authority.
+            let retained = Arc::strong_count(room) > 1
+                || !state.committing.is_empty()
+                || state
+                    .empty_since
+                    .is_none_or(|at| at.elapsed() < ROOM_IDLE_TTL);
+            if !retained {
+                // Retire under the state lock before removal, including a concurrent Weak
+                // upgrade after the reference-count check. An old handle can never write.
+                state.valid = false;
+                state.leases.clear();
+                state.active_leases.clear();
+                let _ = room.signals.send(DraftSignal::Invalidated);
+            }
+            retained
         });
         if let Some(room) = rooms.get(&key) {
             if room.lock()?.valid {

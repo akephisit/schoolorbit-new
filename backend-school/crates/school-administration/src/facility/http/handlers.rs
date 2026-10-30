@@ -168,6 +168,12 @@ pub async fn create_room(
         .actor
         .require_permission(codes::FACILITY_CREATE_ALL)?;
     let room = services::create_room(&context.tenant.pool, payload).await?;
+    state.facility_changes.room_changed(
+        context.tenant.tenant_id,
+        &context.tenant.subdomain,
+        context.actor.user_id,
+        room.id,
+    );
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(room))).into_response())
 }
@@ -194,6 +200,12 @@ pub async fn update_room(
         .actor
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
     let room = services::update_room(&context.tenant.pool, id, payload).await?;
+    state.facility_changes.room_changed(
+        context.tenant.tenant_id,
+        &context.tenant.subdomain,
+        context.actor.user_id,
+        room.id,
+    );
 
     Ok(Json(ApiResponse::ok(room)).into_response())
 }
@@ -218,6 +230,12 @@ pub async fn delete_room(
         .actor
         .require_permission(codes::FACILITY_DELETE_ALL)?;
     services::delete_room(&context.tenant.pool, id).await?;
+    state.facility_changes.room_changed(
+        context.tenant.tenant_id,
+        &context.tenant.subdomain,
+        context.actor.user_id,
+        id,
+    );
 
     Ok(Json(ApiResponse::empty()).into_response())
 }

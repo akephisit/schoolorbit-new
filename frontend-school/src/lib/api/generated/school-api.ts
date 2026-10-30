@@ -21089,6 +21089,24 @@ export interface components {
 			/** Format: uuid */
 			requestId: string;
 		};
+		/** @description Recipient-specific lookup membership/metadata changes caused by a normal block mutation. */
+		DraftLookupChanges: {
+			bellPeriodOrder?: string[] | null;
+			homeroomOrder?: string[] | null;
+			removedBellPeriodIds: string[];
+			removedHomeroomIds: string[];
+			removedRoomIds: string[];
+			removedStaffIds: string[];
+			removedSubjectGroupOfferingIds: string[];
+			roomOrder?: string[] | null;
+			staffOrder?: string[] | null;
+			subjectGroupOfferingOrder?: string[] | null;
+			upsertedBellPeriods: components['schemas']['BellSchedulePeriod'][];
+			upsertedHomerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+			upsertedOfferingSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
+			upsertedRooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+			upsertedStaff: components['schemas']['TimetableBlockWorkspaceStaff'][];
+		};
 		/** @description Optional HTTP ownership proof. Actor/session identity always comes from authentication. */
 		DraftMutationIdentity: {
 			/** Format: uuid */
@@ -21108,6 +21126,7 @@ export interface components {
 			userId: string;
 		};
 		DraftPatch: {
+			lookupChanges?: components['schemas']['DraftLookupChanges'] | null;
 			/** Format: uuid */
 			mutationId: string;
 			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];

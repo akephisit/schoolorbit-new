@@ -92,7 +92,7 @@ impl MalwareScanner for UnexpectedScanner {
     }
 }
 
-fn file_platform() -> FilePlatform {
+pub(crate) fn file_platform() -> FilePlatform {
     FilePlatform::new(
         Arc::new(UnexpectedStorageProvider),
         Arc::new(UnexpectedScanner),

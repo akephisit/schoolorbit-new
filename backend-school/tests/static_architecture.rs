@@ -9622,11 +9622,20 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
             .unwrap()
             .is_match(&get_blocks)
     );
-    let clear_timetable = extract_braced_block(&templates, "pub async fn clear_timetable", false);
-    assert!(clear_timetable.contains("get_blocks_on_connection(&mut completion, &ids)"));
+    let clear_entry = extract_braced_block(&templates, "pub async fn clear_timetable", false);
     assert!(
-        clear_timetable.find("transaction.commit()").unwrap()
-            < clear_timetable.find("get_blocks_on_connection(").unwrap()
+        Regex::new(r"context\s*\.\s*execute")
+            .unwrap()
+            .is_match(&clear_entry)
+            && clear_entry.contains("MutationScope::WholeDraft")
+    );
+    let clear_timetable =
+        extract_braced_block(&templates, "async fn clear_timetable_in_permit", false);
+    assert!(clear_timetable.contains("get_blocks_on_connection("));
+    assert!(
+        clear_timetable.find("get_blocks_on_connection(").unwrap()
+            < clear_timetable.find("permit.commit(transaction)").unwrap(),
+        "the one batched hydration must precede COMMIT so failure cannot hide committed changes"
     );
     assert!(
         !Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_block(?:_on_connection)?\(")

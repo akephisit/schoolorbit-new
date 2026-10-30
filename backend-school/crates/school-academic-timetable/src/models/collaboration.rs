@@ -7,8 +7,9 @@ use uuid::Uuid;
 
 use super::timetable_block::{
     TimetableBlock, TimetableBlockPlacementCandidate, TimetableBlockPlacementSource,
-    TimetableBlockSummary, TimetableBlockWorkspace, TimetableOrdinaryDemand,
-    TimetableSynchronizedDemand,
+    TimetableBlockSummary, TimetableBlockWorkspace, TimetableBlockWorkspaceHomeroom,
+    TimetableBlockWorkspaceRoom, TimetableBlockWorkspaceStaff, TimetableOfferingSubjectGroup,
+    TimetableOrdinaryDemand, TimetableSynchronizedDemand,
 };
 use super::timetable_source::TimetableSourceIssue;
 use super::timetable_version::TimetableVersion;
@@ -254,6 +255,35 @@ pub struct DraftPatch {
     pub source_issues: Vec<TimetableSourceIssue>,
     pub total_draft_block_count: Option<i64>,
     pub version: Option<TimetableVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup_changes: Option<DraftLookupChanges>,
+}
+
+/// Recipient-specific lookup membership/metadata changes caused by a normal block mutation.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DraftLookupChanges {
+    pub upserted_staff: Vec<TimetableBlockWorkspaceStaff>,
+    pub removed_staff_ids: Vec<Uuid>,
+    pub upserted_homerooms: Vec<TimetableBlockWorkspaceHomeroom>,
+    pub removed_homeroom_ids: Vec<Uuid>,
+    pub upserted_rooms: Vec<TimetableBlockWorkspaceRoom>,
+    pub removed_room_ids: Vec<Uuid>,
+    pub upserted_bell_periods: Vec<school_academic_core::models::BellSchedulePeriod>,
+    pub removed_bell_period_ids: Vec<Uuid>,
+    pub upserted_offering_subject_groups: Vec<TimetableOfferingSubjectGroup>,
+    pub removed_subject_group_offering_ids: Vec<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub staff_order: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homeroom_order: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub room_order: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bell_period_order: Option<Vec<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_group_offering_order: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

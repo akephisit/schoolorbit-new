@@ -15,6 +15,7 @@ export type DraftClientMessage = Schemas['DraftClientMessage'];
 export type DraftCommandResult = Schemas['DraftCommandResult'];
 export type DraftContext = Schemas['DraftContext'];
 export type DraftEventEnvelope = Schemas['DraftEventEnvelope'];
+export type DraftLookupChanges = Schemas['DraftLookupChanges'];
 export type DraftMutationIdentity = Schemas['DraftMutationIdentity'];
 export type DraftParticipant = Schemas['DraftParticipant'];
 export type DraftPatch = Schemas['DraftPatch'];

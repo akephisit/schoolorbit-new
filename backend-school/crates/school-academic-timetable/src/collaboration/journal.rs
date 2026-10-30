@@ -125,6 +125,102 @@ fn changed<T: serde::Serialize>(left: &T, right: &T) -> Result<bool, AppError> {
         != serde_json::to_value(right).map_err(|_| stale())?)
 }
 
+fn lookup_delta<T: serde::Serialize + Clone>(
+    before: &[T],
+    after: &[T],
+    key: impl Fn(&T) -> Uuid,
+) -> Result<(Vec<T>, Vec<Uuid>), AppError> {
+    let before_by_id = before
+        .iter()
+        .map(|entry| (key(entry), entry))
+        .collect::<BTreeMap<_, _>>();
+    let after_ids = after.iter().map(&key).collect::<BTreeSet<_>>();
+    let mut upserts = Vec::new();
+    for entry in after {
+        if match before_by_id.get(&key(entry)) {
+            Some(old) => changed(*old, entry)?,
+            None => true,
+        } {
+            upserts.push(entry.clone());
+        }
+    }
+    Ok((
+        upserts,
+        before_by_id
+            .keys()
+            .filter(|id| !after_ids.contains(*id))
+            .copied()
+            .collect(),
+    ))
+}
+
+fn lookup_changes(
+    before: &TimetableBlockWorkspace,
+    after: &TimetableBlockWorkspace,
+) -> Result<Option<DraftLookupChanges>, AppError> {
+    let (upserted_staff, removed_staff_ids) =
+        lookup_delta(&before.staff, &after.staff, |entry| entry.id)?;
+    let (upserted_homerooms, removed_homeroom_ids) =
+        lookup_delta(&before.homerooms, &after.homerooms, |entry| entry.id)?;
+    let (upserted_rooms, removed_room_ids) =
+        lookup_delta(&before.rooms, &after.rooms, |entry| entry.id)?;
+    let (upserted_bell_periods, removed_bell_period_ids) =
+        lookup_delta(&before.bell_periods, &after.bell_periods, |entry| entry.id)?;
+    let (upserted_offering_subject_groups, removed_subject_group_offering_ids) = lookup_delta(
+        &before.offering_subject_groups,
+        &after.offering_subject_groups,
+        |entry| entry.learning_offering_id,
+    )?;
+    if upserted_staff.is_empty()
+        && removed_staff_ids.is_empty()
+        && upserted_homerooms.is_empty()
+        && removed_homeroom_ids.is_empty()
+        && upserted_rooms.is_empty()
+        && removed_room_ids.is_empty()
+        && upserted_bell_periods.is_empty()
+        && removed_bell_period_ids.is_empty()
+        && upserted_offering_subject_groups.is_empty()
+        && removed_subject_group_offering_ids.is_empty()
+    {
+        return Ok(None);
+    }
+    let staff_order = (!upserted_staff.is_empty() || !removed_staff_ids.is_empty())
+        .then(|| after.staff.iter().map(|entry| entry.id).collect());
+    let homeroom_order = (!upserted_homerooms.is_empty() || !removed_homeroom_ids.is_empty())
+        .then(|| after.homerooms.iter().map(|entry| entry.id).collect());
+    let room_order = (!upserted_rooms.is_empty() || !removed_room_ids.is_empty())
+        .then(|| after.rooms.iter().map(|entry| entry.id).collect());
+    let bell_period_order = (!upserted_bell_periods.is_empty()
+        || !removed_bell_period_ids.is_empty())
+    .then(|| after.bell_periods.iter().map(|entry| entry.id).collect());
+    let subject_group_offering_order = (!upserted_offering_subject_groups.is_empty()
+        || !removed_subject_group_offering_ids.is_empty())
+    .then(|| {
+        after
+            .offering_subject_groups
+            .iter()
+            .map(|entry| entry.learning_offering_id)
+            .collect()
+    });
+    Ok(Some(DraftLookupChanges {
+        staff_order,
+        homeroom_order,
+        room_order,
+        bell_period_order,
+        subject_group_offering_order,
+        upserted_staff,
+        removed_staff_ids,
+        upserted_homerooms,
+        removed_homeroom_ids,
+        upserted_rooms,
+        removed_room_ids,
+        upserted_bell_periods,
+        removed_bell_period_ids,
+        upserted_offering_subject_groups,
+        removed_subject_group_offering_ids,
+    }))
+}
+
 fn project_patch(
     before: &TimetableBlockWorkspace,
     after: &TimetableBlockWorkspace,
@@ -200,6 +296,7 @@ fn project_patch(
         source_issues: after.source_issues.clone(),
         total_draft_block_count: after.total_draft_block_count,
         version: Some(after.version.clone()),
+        lookup_changes: lookup_changes(before, after)?,
     })
 }
 

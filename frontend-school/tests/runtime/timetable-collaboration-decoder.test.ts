@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
-import { collaborationWorkspace } from './timetable-collaboration-fixture.ts';
+import { collaborationWorkspace, emptyLookupChanges } from './timetable-collaboration-fixture.ts';
 import { timetableIds } from '../e2e/timetable-test-harness.ts';
 import { makeTimetableBlock } from '../e2e/timetable-test-harness.ts';
 
@@ -165,6 +165,67 @@ test('a valid Thai snapshot above sixteen MiB uses UTF-8 bytes and keeps complet
 	if (event?.type === 'DraftStateSync')
 		assert.equal(event.payload.workspace.blocks[0].note, block.note);
 	block.note = 'ก'.repeat(Math.ceil((64 * 1024 * 1024) / 3));
+	assert.equal(
+		decodeDraftEvent(
+			JSON.stringify({
+				epoch,
+				seq: 0,
+				type: 'DraftStateSync',
+				payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+			})
+		),
+		null
+	);
+});
+
+test('workspace and lookup-delta rows share identity/metadata validation, including unique authoritative orders', () => {
+	const workspace = collaborationWorkspace();
+	const staff = {
+		id: timetableIds.teacherA,
+		displayName: 'ครูใหม่',
+		status: 'active',
+		subjectGroups: [{ id: timetableIds.groupA, name: 'คณิตศาสตร์', displayOrder: null }]
+	};
+	const valid = { ...emptyLookupChanges(), upsertedStaff: [staff], staffOrder: [staff.id] };
+	const patch = {
+		epoch,
+		seq: 1,
+		type: 'DraftPatched',
+		payload: {
+			timetableVersionId: workspace.version.id,
+			mutationId: timetableIds.blockA,
+			upsertedBlocks: [],
+			removedBlockIds: [],
+			ordinaryDemands: [],
+			synchronizedDemands: [],
+			summary: workspace.summary,
+			sourceIssues: [],
+			lookupChanges: valid
+		}
+	};
+	assert.equal(decodeDraftEvent(JSON.stringify(patch))?.type, 'DraftPatched');
+	for (const changes of [
+		{ ...valid, staffOrder: [staff.id, staff.id] },
+		{ ...valid, removedStaffIds: ['invalid-selector'] },
+		{
+			...valid,
+			upsertedStaff: [
+				{ ...staff, subjectGroups: [{ id: 'invalid', name: 'bad', displayOrder: null }] }
+			]
+		},
+		{ ...valid, upsertedStaff: [staff, staff] }
+	])
+		assert.equal(
+			decodeDraftEvent(
+				JSON.stringify({ ...patch, payload: { ...patch.payload, lookupChanges: changes } })
+			),
+			null
+		);
+	const invalidStaff = {
+		...staff,
+		subjectGroups: [{ id: 'invalid', name: 'bad', displayOrder: null }]
+	};
+	workspace.staff = [invalidStaff];
 	assert.equal(
 		decodeDraftEvent(
 			JSON.stringify({

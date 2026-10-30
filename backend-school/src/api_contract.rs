@@ -2013,6 +2013,7 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         DraftAvailability,
         DraftStateSync,
         DraftPatch,
+        DraftLookupChanges,
         DraftServerMessage,
         DraftEventEnvelope,
         DraftMutationIdentity,
