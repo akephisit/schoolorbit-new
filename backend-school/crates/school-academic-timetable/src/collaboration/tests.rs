@@ -172,13 +172,22 @@ fn claim(
     connection: Uuid,
     source: TimetableBlockPlacementSource,
 ) -> DraftCommandResult {
+    claim_with_purpose(room, connection, source, DraftReservationPurpose::Drag)
+}
+
+fn claim_with_purpose(
+    room: &DraftRoom,
+    connection: Uuid,
+    source: TimetableBlockPlacementSource,
+    purpose: DraftReservationPurpose,
+) -> DraftCommandResult {
     let events = room
         .command(
             connection,
             DraftClientMessage::ClientClaim(DraftClaim {
                 request_id: Uuid::new_v4(),
                 source,
-                purpose: DraftReservationPurpose::Drag,
+                purpose,
                 candidate: None,
             }),
         )
@@ -264,7 +273,9 @@ fn wrong_tab_cannot_renew_or_release_and_expiry_frees_source() {
         }),
     ] {
         let response = room.command(second.connection_id, command).unwrap();
-        assert!(matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted && result.lease_token.is_none()));
+        assert!(
+            matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted && result.lease_token.is_none())
+        );
     }
     room.expire(Instant::now() + LEASE_TTL);
     assert!(claim(&room, second.connection_id, source(&room)).accepted);
@@ -277,7 +288,12 @@ fn disconnect_does_not_release_pinned_commit_exclusion() {
     let second = member(actor, full_access());
     room.join(first.clone()).unwrap();
     room.join(second.clone()).unwrap();
-    let grant = claim(&room, first.connection_id, source(&room));
+    let grant = claim_with_purpose(
+        &room,
+        first.connection_id,
+        source(&room),
+        DraftReservationPurpose::Edit,
+    );
     let identity = DraftMutationIdentity {
         connection_id: first.connection_id,
         lease_token: grant.lease_token.unwrap(),
@@ -352,12 +368,27 @@ fn zero_subscriber_commit_advances_journal_and_snapshot_atomically() {
         .unwrap();
     assert_eq!(replay.len(), 1);
     assert_eq!(replay[0].seq, 1);
-    assert!(matches!(replay[0].event, DraftServerMessage::DraftReconcileRequired { .. }));
+    assert!(matches!(
+        replay[0].event,
+        DraftServerMessage::DraftReconcileRequired { .. }
+    ));
     changed.row_version += 1;
-    room.publish_blocks(vec![changed], None, None, Uuid::new_v4()).unwrap();
-    let replay = room.command(viewer.connection_id, DraftClientMessage::ClientReplay(DraftReplay { epoch, after_seq: 1 })).unwrap();
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4())
+        .unwrap();
+    let replay = room
+        .command(
+            viewer.connection_id,
+            DraftClientMessage::ClientReplay(DraftReplay {
+                epoch,
+                after_seq: 1,
+            }),
+        )
+        .unwrap();
     assert_eq!(replay.len(), 1);
-    assert!(matches!(replay[0].event, DraftServerMessage::DraftPatched(_)));
+    assert!(matches!(
+        replay[0].event,
+        DraftServerMessage::DraftPatched(_)
+    ));
     assert_eq!(replay[0].seq, 2);
 }
 
@@ -370,14 +401,22 @@ fn unrelated_large_canonical_graph_does_not_overflow_small_patch_journal() {
         workspace.blocks[0].note = Some("x".repeat(9 * 1024 * 1024));
         state.workspace = Arc::new(workspace);
     }
-    let viewer = member(actor, full_access()); room.join(viewer.clone()).unwrap();
+    let viewer = member(actor, full_access());
+    room.join(viewer.clone()).unwrap();
     let mut changed = room.lock().unwrap().workspace.blocks[1].clone();
-    changed.row_version += 1; changed.title = Some("Small changed lesson".into());
+    changed.row_version += 1;
+    changed.title = Some("Small changed lesson".into());
     let changed_id = changed.id;
-    room.publish_blocks(vec![changed], None, None, Uuid::new_v4()).unwrap();
-    let events = room.signal_events(viewer.connection_id, DraftSignal::Committed(1)).unwrap();
-    let DraftServerMessage::DraftPatched(patch) = &events[0].event else { panic!("small patch must not reconcile") };
-    assert_eq!(patch.upserted_blocks.len(), 1); assert_eq!(patch.upserted_blocks[0].id, changed_id);
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4())
+        .unwrap();
+    let events = room
+        .signal_events(viewer.connection_id, DraftSignal::Committed(1))
+        .unwrap();
+    let DraftServerMessage::DraftPatched(patch) = &events[0].event else {
+        panic!("small patch must not reconcile")
+    };
+    assert_eq!(patch.upserted_blocks.len(), 1);
+    assert_eq!(patch.upserted_blocks[0].id, changed_id);
     assert!(room.lock().unwrap().journal_bytes < 100_000);
     assert!(serde_json::to_vec(&events).unwrap().len() < 100_000);
 }
@@ -475,16 +514,37 @@ fn high_frequency_presence_and_recipient_projection_do_not_rebuild_workspace_vis
         let mut state = room.lock().unwrap();
         let mut workspace = (*state.workspace).clone();
         let original = workspace.blocks[0].clone();
-        for _ in 0..2_000 { let mut block = original.clone(); block.id = Uuid::new_v4(); workspace.blocks.push(block); }
+        for _ in 0..2_000 {
+            let mut block = original.clone();
+            block.id = Uuid::new_v4();
+            workspace.blocks.push(block);
+        }
         state.workspace = Arc::new(workspace);
         (original.id, state.projection_rebuilds)
     };
     for _ in 0..250 {
-        room.update_presence(viewer.connection_id, DraftPresenceUpdate {
-            context: DraftContext { view_mode: DraftViewMode::Teacher, view_id: Some(actor), day_of_week: Some("MON".into()) },
-            anchor: Some(DraftAnchor::Block { block_id, u: 0.2, v: 0.8 }),
-        }).unwrap();
-        let events = room.signal_events(other.connection_id, DraftSignal::Presence(viewer.connection_id)).unwrap();
+        room.update_presence(
+            viewer.connection_id,
+            DraftPresenceUpdate {
+                context: DraftContext {
+                    view_mode: DraftViewMode::Teacher,
+                    view_id: Some(actor),
+                    day_of_week: Some("MON".into()),
+                },
+                anchor: Some(DraftAnchor::Block {
+                    block_id,
+                    u: 0.2,
+                    v: 0.8,
+                }),
+            },
+        )
+        .unwrap();
+        let events = room
+            .signal_events(
+                other.connection_id,
+                DraftSignal::Presence(viewer.connection_id),
+            )
+            .unwrap();
         assert_eq!(events.len(), 1);
     }
     assert_eq!(room.lock().unwrap().projection_rebuilds, rebuilds);
@@ -492,42 +552,233 @@ fn high_frequency_presence_and_recipient_projection_do_not_rebuild_workspace_vis
 
 #[test]
 fn second_claim_keeps_first_captured_drop_proof_and_active_pointer_is_unambiguous() {
-    let (room, _, actor) = fixture(); let editor = member(actor, full_access()); room.join(editor.clone()).unwrap();
-    let first_source = source(&room); let first = claim(&room, editor.connection_id, first_source.clone());
-    let target = DraftTarget { day_of_week: "TUE".into(), bell_schedule_period_id: room.lock().unwrap().workspace.bell_periods[0].id, block_id: None };
-    room.command(editor.connection_id, DraftClientMessage::ClientTarget(DraftTargetUpdate { request_id: Uuid::new_v4(), lease_token: first.lease_token.unwrap(), target: Some(target.clone()), candidate: None })).unwrap();
-    let second_source = { let state = room.lock().unwrap(); TimetableBlockPlacementSource::ExistingBlock { block_id: state.workspace.blocks[1].id, row_version: 1 } };
-    let second = claim(&room, editor.connection_id, second_source); assert!(second.accepted);
-    let candidate = room.lock().unwrap().leases[&first.lease_token.unwrap()].candidate.clone().unwrap();
-    let identity = DraftMutationIdentity { connection_id: editor.connection_id, lease_token: first.lease_token.unwrap(), mutation_id: Uuid::new_v4() };
-    let permit = room.begin_commit(actor, editor.session_id, Some(&identity), MutationScope::Placement { source: first_source, candidate, targets: vec![target] }).unwrap();
-    assert_eq!(room.lock().unwrap().active_leases[&editor.connection_id], second.lease_token.unwrap());
+    let (room, _, actor) = fixture();
+    let editor = member(actor, full_access());
+    room.join(editor.clone()).unwrap();
+    let first_source = source(&room);
+    let first = claim(&room, editor.connection_id, first_source.clone());
+    let target = DraftTarget {
+        day_of_week: "TUE".into(),
+        bell_schedule_period_id: room.lock().unwrap().workspace.bell_periods[0].id,
+        block_id: None,
+    };
+    room.command(
+        editor.connection_id,
+        DraftClientMessage::ClientTarget(DraftTargetUpdate {
+            request_id: Uuid::new_v4(),
+            lease_token: first.lease_token.unwrap(),
+            target: Some(target.clone()),
+            candidate: None,
+        }),
+    )
+    .unwrap();
+    let second_source = {
+        let state = room.lock().unwrap();
+        TimetableBlockPlacementSource::ExistingBlock {
+            block_id: state.workspace.blocks[1].id,
+            row_version: 1,
+        }
+    };
+    let second = claim(&room, editor.connection_id, second_source);
+    assert!(second.accepted);
+    let candidate = room.lock().unwrap().leases[&first.lease_token.unwrap()]
+        .candidate
+        .clone()
+        .unwrap();
+    let identity = DraftMutationIdentity {
+        connection_id: editor.connection_id,
+        lease_token: first.lease_token.unwrap(),
+        mutation_id: Uuid::new_v4(),
+    };
+    let permit = room
+        .begin_commit(
+            actor,
+            editor.session_id,
+            Some(&identity),
+            MutationScope::Placement {
+                source: first_source,
+                candidate,
+                targets: vec![target],
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        room.lock().unwrap().active_leases[&editor.connection_id],
+        second.lease_token.unwrap()
+    );
     drop(permit);
-    assert!(room.lock().unwrap().leases.contains_key(&second.lease_token.unwrap()));
+    assert!(room
+        .lock()
+        .unwrap()
+        .leases
+        .contains_key(&second.lease_token.unwrap()));
 }
 
 #[test]
 fn token_for_another_source_or_unconfirmed_room_cannot_authorize_actual_save() {
-    let (room, _, actor) = fixture(); let editor = member(actor, full_access()); room.join(editor.clone()).unwrap();
+    let (room, _, actor) = fixture();
+    let editor = member(actor, full_access());
+    room.join(editor.clone()).unwrap();
     let grant = claim(&room, editor.connection_id, source(&room));
-    let identity = DraftMutationIdentity { connection_id: editor.connection_id, lease_token: grant.lease_token.unwrap(), mutation_id: Uuid::new_v4() };
+    let identity = DraftMutationIdentity {
+        connection_id: editor.connection_id,
+        lease_token: grant.lease_token.unwrap(),
+        mutation_id: Uuid::new_v4(),
+    };
     let other_id = room.lock().unwrap().workspace.blocks[1].id;
-    assert!(room.begin_commit(actor, editor.session_id, Some(&identity), MutationScope::Blocks(vec![other_id])).is_err());
-    let mut candidate = room.lock().unwrap().leases[&grant.lease_token.unwrap()].candidate.clone().unwrap(); candidate.room_id = Some(Uuid::new_v4());
-    assert!(room.begin_commit(actor, editor.session_id, Some(&identity), MutationScope::Placement { source: source(&room), candidate, targets: Vec::new() }).is_err());
+    assert!(room
+        .begin_commit(
+            actor,
+            editor.session_id,
+            Some(&identity),
+            MutationScope::Blocks(vec![other_id])
+        )
+        .is_err());
+    let mut candidate = room.lock().unwrap().leases[&grant.lease_token.unwrap()]
+        .candidate
+        .clone()
+        .unwrap();
+    candidate.room_id = Some(Uuid::new_v4());
+    assert!(room
+        .begin_commit(
+            actor,
+            editor.session_id,
+            Some(&identity),
+            MutationScope::Placement {
+                source: source(&room),
+                candidate,
+                targets: Vec::new()
+            }
+        )
+        .is_err());
 }
 
 #[test]
 fn pinned_reservation_remains_public_after_disconnect_and_expiry_until_permit_finishes() {
-    let (room, _, actor) = fixture(); let editor = member(actor, full_access()); let viewer = member(Uuid::new_v4(), full_access()); room.join(editor.clone()).unwrap(); room.join(viewer.clone()).unwrap();
-    let grant = claim(&room, editor.connection_id, source(&room)); let block_id = room.lock().unwrap().workspace.blocks[0].id;
-    let proof = DraftMutationIdentity { connection_id: editor.connection_id, lease_token: grant.lease_token.unwrap(), mutation_id: Uuid::new_v4() };
-    let permit = room.begin_commit(actor, editor.session_id, Some(&proof), MutationScope::Blocks(vec![block_id])).unwrap();
-    room.disconnect(editor.connection_id); room.expire(Instant::now() + LEASE_TTL * 2);
-    let events = room.signal_events(viewer.connection_id, DraftSignal::Reservations).unwrap();
-    let DraftServerMessage::DraftReservationsChanged { reservations } = &events[0].event else { panic!("reservations") };
-    assert_eq!(reservations[0].reservation_id, grant.reservation_id.unwrap());
+    let (room, _, actor) = fixture();
+    let editor = member(actor, full_access());
+    let viewer = member(Uuid::new_v4(), full_access());
+    room.join(editor.clone()).unwrap();
+    room.join(viewer.clone()).unwrap();
+    let grant = claim_with_purpose(
+        &room,
+        editor.connection_id,
+        source(&room),
+        DraftReservationPurpose::Edit,
+    );
+    let block_id = room.lock().unwrap().workspace.blocks[0].id;
+    let proof = DraftMutationIdentity {
+        connection_id: editor.connection_id,
+        lease_token: grant.lease_token.unwrap(),
+        mutation_id: Uuid::new_v4(),
+    };
+    let permit = room
+        .begin_commit(
+            actor,
+            editor.session_id,
+            Some(&proof),
+            MutationScope::Blocks(vec![block_id]),
+        )
+        .unwrap();
+    room.disconnect(editor.connection_id);
+    room.expire(Instant::now() + LEASE_TTL * 2);
+    let events = room
+        .signal_events(viewer.connection_id, DraftSignal::Reservations)
+        .unwrap();
+    let DraftServerMessage::DraftReservationsChanged { reservations } = &events[0].event else {
+        panic!("reservations")
+    };
+    assert_eq!(
+        reservations[0].reservation_id,
+        grant.reservation_id.unwrap()
+    );
     drop(permit);
-    let events = room.signal_events(viewer.connection_id, DraftSignal::Reservations).unwrap();
-    let DraftServerMessage::DraftReservationsChanged { reservations } = &events[0].event else { panic!("reservations") }; assert!(reservations.is_empty());
+    let events = room
+        .signal_events(viewer.connection_id, DraftSignal::Reservations)
+        .unwrap();
+    let DraftServerMessage::DraftReservationsChanged { reservations } = &events[0].event else {
+        panic!("reservations")
+    };
+    assert!(reservations.is_empty());
+}
+
+#[test]
+fn private_authorized_new_teacher_does_not_need_to_be_in_public_workspace_projection() {
+    let (room, _, actor) = fixture();
+    let added = Uuid::new_v4();
+    {
+        let mut state = room.lock().unwrap();
+        Arc::make_mut(&mut state.workspace)
+            .staff
+            .push(TimetableBlockWorkspaceStaff {
+                id: added,
+                display_name: "Private new choice".into(),
+                status: "active".into(),
+                subject_groups: Vec::new(),
+            });
+    }
+    let editor = member(actor, full_access());
+    room.join(editor.clone()).unwrap();
+    assert!(
+        !room.lock().unwrap().member_visibility[&editor.connection_id]
+            .read
+            .staff
+            .contains(&added)
+    );
+    let mut candidate = authority::candidate_from_block(&room.lock().unwrap().workspace.blocks[0]);
+    candidate.teacher_ids.push(added);
+    let response = room
+        .command(
+            editor.connection_id,
+            DraftClientMessage::ClientClaim(DraftClaim {
+                request_id: Uuid::new_v4(),
+                source: source(&room),
+                purpose: DraftReservationPurpose::Edit,
+                candidate: Some(candidate),
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if result.accepted)
+    );
+}
+
+#[test]
+fn existing_inactive_teacher_can_be_claimed_for_repair_but_cannot_be_newly_selected() {
+    let (room, _, actor) = fixture();
+    let other_teacher = {
+        let mut state = room.lock().unwrap();
+        for teacher in &mut Arc::make_mut(&mut state.workspace).staff {
+            teacher.status = "inactive".into();
+        }
+        state.workspace.staff[1].id
+    };
+    let editor = member(actor, full_access());
+    room.join(editor.clone()).unwrap();
+    let accepted = claim_with_purpose(
+        &room,
+        editor.connection_id,
+        source(&room),
+        DraftReservationPurpose::Edit,
+    );
+    assert!(
+        accepted.accepted,
+        "existing inactive references must remain repairable"
+    );
+    let mut candidate = authority::candidate_from_block(&room.lock().unwrap().workspace.blocks[0]);
+    candidate.teacher_ids.push(other_teacher);
+    let response = room
+        .command(
+            editor.connection_id,
+            DraftClientMessage::ClientTarget(DraftTargetUpdate {
+                request_id: Uuid::new_v4(),
+                lease_token: accepted.lease_token.unwrap(),
+                target: None,
+                candidate: Some(candidate),
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted)
+    );
 }

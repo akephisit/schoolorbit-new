@@ -942,7 +942,10 @@ pub(crate) mod protected_router {
         }
 
         /// Shares the central directory/session fixture with domain-owned migrated fixtures.
-        pub(crate) async fn with_prepared_tenant_pool(test_name: &str, tenant_a_pool: sqlx::PgPool) -> Self {
+        pub(crate) async fn with_prepared_tenant_pool(
+            test_name: &str,
+            tenant_a_pool: sqlx::PgPool,
+        ) -> Self {
             let tenant_b_pool = create_named_test_pool(&format!("{test_name}_tenant_b")).await;
             run_test_migrations(&tenant_b_pool).await;
 
@@ -1009,7 +1012,12 @@ pub(crate) mod protected_router {
             }
         }
 
-        pub(crate) async fn insert_user(&self, pool: &sqlx::PgPool, username: &str, status: &str) -> Uuid {
+        pub(crate) async fn insert_user(
+            &self,
+            pool: &sqlx::PgPool,
+            username: &str,
+            status: &str,
+        ) -> Uuid {
             sqlx::query_scalar(
                 "INSERT INTO users (\
                      username, email, password_hash, first_name, last_name, user_type, status\

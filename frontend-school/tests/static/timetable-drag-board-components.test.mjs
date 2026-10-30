@@ -62,7 +62,7 @@ test('lesson tray and board expose native drag with tap-to-place parity', async 
 	assert.doesNotMatch(page, /activePreviewRequest|reusablePreviewRequest/);
 	assert.match(
 		page,
-		/function applyPlacement[\s\S]*const previewPromise = requestPlacementPreview/
+		/function applyPlacement[\s\S]*const previewPromise = confirmInteractionTarget\([\s\S]*\.then\(\(lease\) => \{[\s\S]*return requestPlacementPreview/
 	);
 	assert.match(page, /beginPendingOperation\(pendingIds\)[\s\S]*persistOptimisticPlacement/);
 });

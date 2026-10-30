@@ -77,7 +77,12 @@ pub async fn cleanup(
     let before = published_fingerprint(&mut tx, term).await?;
     // Never delete the first eligible target before checking the last one.
     for (id, row_version, expected_block_count) in &tables {
-        let deletion_permit = timetable_lifecycle::TimetableDeletionPermit::cancelled_cleanup(&mut tx, actor.user_id, *id).await?;
+        let deletion_permit = timetable_lifecycle::TimetableDeletionPermit::cancelled_cleanup(
+            &mut tx,
+            actor.user_id,
+            *id,
+        )
+        .await?;
         timetable_lifecycle::delete_in_transaction(
             &mut tx,
             &deletion_permit,
@@ -116,7 +121,12 @@ pub async fn cleanup(
     }
     if expected_hash.is_some() {
         for (id, row_version, expected_block_count) in &tables {
-            let deletion_permit = timetable_lifecycle::TimetableDeletionPermit::cancelled_cleanup(&mut tx, actor.user_id, *id).await?;
+            let deletion_permit = timetable_lifecycle::TimetableDeletionPermit::cancelled_cleanup(
+                &mut tx,
+                actor.user_id,
+                *id,
+            )
+            .await?;
             timetable_lifecycle::delete_in_transaction(
                 &mut tx,
                 &deletion_permit,

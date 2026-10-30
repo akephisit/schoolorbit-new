@@ -3,7 +3,30 @@ import type { DraftEventEnvelope } from '../../api/timetable.js';
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const dayPattern = /^(MON|TUE|WED|THU|FRI|SAT|SUN)$/u;
 const collectionLimit = 100_000;
-const maxEventCharacters = 64 * 1024 * 1024;
+const maxEventBytes = 64 * 1024 * 1024;
+
+/** Match the transport budget without allocating a second complete encoded snapshot. */
+function withinEventBudget(value: string): boolean {
+	if (value.length > maxEventBytes) return false;
+	let bytes = 0;
+	for (let index = 0; index < value.length; index++) {
+		const code = value.charCodeAt(index);
+		if (code < 0x80) bytes++;
+		else if (code < 0x800) bytes += 2;
+		else if (
+			code >= 0xd800 &&
+			code <= 0xdbff &&
+			index + 1 < value.length &&
+			value.charCodeAt(index + 1) >= 0xdc00 &&
+			value.charCodeAt(index + 1) <= 0xdfff
+		) {
+			bytes += 4;
+			index++;
+		} else bytes += 3;
+		if (bytes > maxEventBytes) return false;
+	}
+	return true;
+}
 type Validator = (value: unknown) => boolean;
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -419,7 +442,7 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 
 /** Decode into the generated contract after checking all identities used by DOM and mutations. */
 export function decodeDraftEvent(data: unknown): DraftEventEnvelope | null {
-	if (typeof data !== 'string' || data.length > maxEventCharacters) return null;
+	if (typeof data !== 'string' || !withinEventBudget(data)) return null;
 	try {
 		const parsed: unknown = JSON.parse(data);
 		return envelope(parsed) ? parsed : null;

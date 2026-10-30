@@ -28,6 +28,7 @@ use school_http::HttpError as AppError;
 use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions",operation_id="createTimetableVersion",request_body=CreateTimetableVersionRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses((status=200, description = "Timetable version created",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn create_version(
     State(state): State<AcademicHttpState>,
@@ -40,12 +41,9 @@ pub async fn create_version(
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let version = timetable_version_service::create_initial_draft(
-        &context.tenant.pool,
-        &mutation,
-        request,
-    )
-    .await?;
+    let version =
+        timetable_version_service::create_initial_draft(&context.tenant.pool, &mutation, request)
+            .await?;
     signal_version(
         &state,
         &context,
@@ -126,7 +124,7 @@ pub async fn resolve_version(
     post,
     path = "/api/academic/timetable-versions/{source_id}/clone",
     operation_id = "cloneTimetableVersion",
-    params(("source_id" = Uuid, Path, description = "Published timetable version ID")),
+    params(crate::mutation::TimetableMutationHeaders, ("source_id" = Uuid, Path, description = "Published timetable version ID")),
     request_body = CloneTimetableVersionRequest,
     responses(
         (status = 200, description = "Draft timetable version cloned from the published source", body = ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),
@@ -150,13 +148,9 @@ pub async fn clone_version(
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let version = timetable_version_service::clone_draft(
-        &context.tenant.pool,
-        &mutation,
-        source_id,
-        payload,
-    )
-    .await?;
+    let version =
+        timetable_version_service::clone_draft(&context.tenant.pool, &mutation, source_id, payload)
+            .await?;
     signal_version(
         &state,
         &context,
@@ -168,7 +162,7 @@ pub async fn clone_version(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/timetable-versions/{version_id}/delivery-source",operation_id="updateTimetableDeliverySource",
-    params(("version_id"=Uuid,Path)),request_body=UpdateTimetableDeliverySourceRequest,
+    params(crate::mutation::TimetableMutationHeaders, ("version_id"=Uuid,Path)),request_body=UpdateTimetableDeliverySourceRequest,
     responses((status=200, description = "Timetable version delivery source updated",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn update_delivery_source(
     State(state): State<AcademicHttpState>,
@@ -190,13 +184,8 @@ pub async fn update_delivery_source(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let version = timetable_lifecycle::update_source(
-        &context.tenant.pool,
-        &mutation,
-        id,
-        request,
-    )
-    .await?;
+    let version =
+        timetable_lifecycle::update_source(&context.tenant.pool, &mutation, id, request).await?;
     signal_version(
         &state,
         &context,
@@ -208,7 +197,7 @@ pub async fn update_delivery_source(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/delete-draft",operation_id="deleteTimetableDraft",
-    params(("version_id"=Uuid,Path)),request_body=DeleteTimetableDraftRequest,
+    params(crate::mutation::TimetableMutationHeaders, ("version_id"=Uuid,Path)),request_body=DeleteTimetableDraftRequest,
     responses((status=200, description = "Timetable draft deletion result returned",body=ApiResponse<school_academic_timetable::models::timetable_version::DeletedTimetableDraft>),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn delete_draft(
     State(state): State<AcademicHttpState>,
@@ -237,8 +226,7 @@ pub async fn delete_draft(
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let result =
-        timetable_lifecycle::delete_draft(&context.tenant.pool, &mutation, id, request)
-            .await?;
+        timetable_lifecycle::delete_draft(&context.tenant.pool, &mutation, id, request).await?;
     signal_version(
         &state,
         &context,
@@ -275,7 +263,7 @@ pub async fn preview_publication(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publish",operation_id="publishTimetableVersion",
-    params(("version_id"=Uuid,Path)),request_body=PublishTimetableVersionRequest,
+    params(crate::mutation::TimetableMutationHeaders, ("version_id"=Uuid,Path)),request_body=PublishTimetableVersionRequest,
     responses((status=200, description = "Timetable version publication result returned",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn publish_version(
     State(state): State<AcademicHttpState>,
@@ -297,8 +285,7 @@ pub async fn publish_version(
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let version =
-        timetable_lifecycle::publish(&context.tenant.pool, &mutation, id, request)
-            .await?;
+        timetable_lifecycle::publish(&context.tenant.pool, &mutation, id, request).await?;
     signal_version(
         &state,
         &context,

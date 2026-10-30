@@ -51,7 +51,8 @@ test('places exactly one unscheduled period and projects it into both editable v
 
 	await expect(page.getByText('3/3', { exact: true })).toBeVisible();
 	expect(mock.workspaceRequestCount()).toBe(1);
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
@@ -88,7 +89,8 @@ test('hovering multiple cells and cancelling never requests validation or saves 
 	const mock = await installTimetableMock(page);
 	await page.goto(timetableUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const cells = page.locator('td[data-timetable-day="MON"]');
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
@@ -118,7 +120,8 @@ test('does not mutate when the dropped placement preview fails', async ({ page }
 	});
 	await page.goto(timetableUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const destination = page.locator('td[data-timetable-day="MON"]').first();
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
@@ -403,7 +406,8 @@ test('shows the dragged lesson preview only in the cell currently under the poin
 	const beforeSecondRow = await secondRow.boundingBox();
 	expect(beforeSecondRow).not.toBeNull();
 
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await firstPeriod.dispatchEvent('dragover', { dataTransfer });
@@ -635,7 +639,8 @@ test('keeps timetable row geometry stable while drag feedback is active', async 
 	]);
 	expect(before.every(Boolean)).toBe(true);
 
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await expect(firstPeriod).toHaveAttribute('data-state', 'move');
@@ -657,7 +662,8 @@ test('uses border-only placement feedback without visible status labels', async 
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await expect(firstPeriod).toHaveAttribute('data-state', 'move');
@@ -691,7 +697,8 @@ test('keeps a quick drop alive while its placement preview is still loading', as
 	await page.goto(timetableUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
-	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const trayCard = page.locator('aside article').first();
+	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });

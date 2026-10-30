@@ -99,7 +99,9 @@ mod tests {
         transaction.rollback().await.unwrap();
         let draft = timetable_version_service::clone_draft(
             &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor_id,
+            ),
             source_id,
             CloneTimetableVersionRequest {
                 resume_draft_id: None,

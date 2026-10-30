@@ -3,10 +3,14 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { writable, get } from 'svelte/store';
+import { createDraftCollaborationSession } from '../../src/lib/academic/timetable/collaboration-session.ts';
+import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 
 test('timetable idle catches up after subscription even when restarted sequence is unchanged', async () => {
 	let runtime;
 	const dependencies = {
+		'#lib/academic/timetable/collaboration-session.js': { createDraftCollaborationSession },
+		'#lib/academic/timetable/collaboration-decoder.js': { decodeDraftEvent },
 		'#lib/realtime/visibility-idle.js': { browserVisibilityDependencies: () => ({}) },
 		'svelte/store': { writable },
 		'#lib/api/client.js': {

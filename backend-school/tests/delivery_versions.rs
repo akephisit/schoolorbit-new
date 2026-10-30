@@ -257,7 +257,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
         .unwrap();
     let draft = tables::clone_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -280,7 +282,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
     assert!(cloned_count > 0);
     let resumed = tables::clone_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -296,7 +300,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
         .unwrap();
     let failure = timetable_lifecycle::delete_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         DeleteTimetableDraftRequest {
             expected_block_count: cloned_count,
@@ -310,7 +316,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
     );
     let incorrect_count = timetable_lifecycle::delete_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         DeleteTimetableDraftRequest {
             row_version: draft.row_version,
@@ -326,7 +334,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
     let children_before: serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('blocks',(SELECT jsonb_agg(to_jsonb(b) ORDER BY id) FROM academic_timetable_blocks b WHERE timetable_version_id=$1),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id) FROM academic_timetable_block_groups g JOIN academic_timetable_blocks b ON b.id=g.block_id WHERE b.timetable_version_id=$1),'sync',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM academic_timetable_block_group_sync s JOIN academic_timetable_blocks b ON b.id=s.block_id WHERE b.timetable_version_id=$1))").bind(draft.id).fetch_one(&pool).await.unwrap();
     let referenced = timetable_lifecycle::delete_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         DeleteTimetableDraftRequest {
             row_version: draft.row_version,
@@ -354,7 +364,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
         .unwrap();
     let deleted = timetable_lifecycle::delete_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         DeleteTimetableDraftRequest {
             expected_block_count: cloned_count,
@@ -385,7 +397,9 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
     );
     assert!(timetable_lifecycle::delete_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor
+        ),
         source_id,
         DeleteTimetableDraftRequest {
             expected_block_count: cloned_count,
@@ -425,7 +439,9 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         .unwrap();
     let draft = tables::clone_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -525,7 +541,9 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         .unwrap();
     let updated = timetable_lifecycle::update_source(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         UpdateTimetableDeliverySourceRequest {
             row_version: reloaded.row_version,
@@ -997,7 +1015,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         FROM academic_timetable_versions version WHERE id=$1").bind(source_id).fetch_one(&pool).await.unwrap();
     let draft = tables::clone_draft(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -1180,7 +1200,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         .unwrap();
     let updated = timetable_lifecycle::update_source(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         UpdateTimetableDeliverySourceRequest {
             row_version: reloaded.row_version,
@@ -1309,7 +1331,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     let create_error = if mode == "synchronized" {
         blocks::create_synchronized_block(
             &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor,
+            ),
             CreateSynchronizedTimetableBlockRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: source.academic_term_id,
@@ -1331,7 +1355,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     } else {
         blocks::create_ordinary_block(
             &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor,
+            ),
             CreateOrdinaryTimetableBlockRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: source.academic_term_id,
@@ -1368,7 +1394,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
             && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch));
     let rejected_publish = timetable_lifecycle::publish(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         draft.id,
         PublishTimetableVersionRequest {
             row_version: preview.row_version,
@@ -1400,9 +1428,17 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
                 .any(|group| group.learning_offering_id == offering.id && group.is_active)
     }) {
         if mode == "synchronized" {
-            blocks::deactivate_block(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), block.id, draft.id, block.row_version)
-                .await
-                .unwrap();
+            blocks::deactivate_block(
+                &pool,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                    &pool, actor,
+                ),
+                block.id,
+                draft.id,
+                block.row_version,
+            )
+            .await
+            .unwrap();
             continue;
         }
         let target = block
@@ -1412,7 +1448,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
             .unwrap();
         blocks::remove_target(
             &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor,
+            ),
             block.id,
             RemoveTimetableBlockTargetRequest {
                 timetable_version_id: draft.id,

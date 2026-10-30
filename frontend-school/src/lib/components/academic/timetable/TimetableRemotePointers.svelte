@@ -25,6 +25,7 @@
 	};
 	type VisiblePointer = { pointer: TimetableRemotePointer; x: number; y: number };
 	let visible = $state.raw<VisiblePointer[]>([]);
+	let overlayRoot = $state<HTMLDivElement | null>(null);
 	const motions = new SvelteMap<string, Motion>();
 	let invalidate = () => {};
 
@@ -76,7 +77,7 @@
 				const previous = motions.get(pointer.connectionId);
 				const sameContext = previous?.contextKey === pointer.contextKey;
 				const from =
-					previous?.subjectKey === pointer.subjectKey
+					sameContext && previous?.subjectKey === pointer.subjectKey
 						? interpolatePointer(previous.from, previous.to, now - previous.started)
 						: pointer.position;
 				const previousPoint =
@@ -114,8 +115,9 @@
 
 	$effect(() => {
 		const region = root;
+		const overlay = overlayRoot;
 		const subjects = pointers.map((pointer) => pointer.subject);
-		if (!region) {
+		if (!region || !overlay) {
 			visible = [];
 			return;
 		}
@@ -126,6 +128,9 @@
 			if (disposed) return;
 			let moving = false;
 			const next: VisiblePointer[] = [];
+			const overlayRect = overlay!.getBoundingClientRect();
+			const scaleX = overlay!.offsetWidth > 0 ? overlayRect.width / overlay!.offsetWidth : 1;
+			const scaleY = overlay!.offsetHeight > 0 ? overlayRect.height / overlay!.offsetHeight : 1;
 			for (const pointer of pointers) {
 				if (!pointer.subject.isConnected || !region?.contains(pointer.subject)) continue;
 				const motion = motions.get(pointer.connectionId);
@@ -135,7 +140,12 @@
 					? motionPoint(motion, now)
 					: projectPointer(pointer.position, pointer.subject.getBoundingClientRect());
 				const clipped = visibleRect(pointer.subject, !(motion?.fromClientPoint && elapsed < 66));
-				if (point && clipped && containsPointer(clipped, point)) next.push({ pointer, ...point });
+				if (point && clipped && containsPointer(clipped, point))
+					next.push({
+						pointer,
+						x: (point.x - overlayRect.left) / scaleX,
+						y: (point.y - overlayRect.top) / scaleY
+					});
 			}
 			visible = next;
 			if (moving) schedule();
@@ -154,7 +164,24 @@
 				});
 			schedule();
 		}
-		const observer = new ResizeObserver(layoutChanged);
+		const geometry = (element: Element) => {
+			const rect = element.getBoundingClientRect();
+			return [rect.x, rect.y, rect.width, rect.height].join(':');
+		};
+		const observed = new SvelteMap<Element, string>(
+			[region, ...subjects].map((element) => [element, geometry(element)])
+		);
+		const observer = new ResizeObserver((entries) => {
+			let changed = false;
+			for (const entry of entries) {
+				const next = geometry(entry.target);
+				changed ||= observed.get(entry.target) !== next;
+				observed.set(entry.target, next);
+			}
+			// New observers always report once; a presence sample does not itself change layout.
+			if (changed) layoutChanged();
+			else schedule();
+		});
 		observer.observe(region);
 		for (const subject of subjects) observer.observe(subject);
 		window.addEventListener('resize', layoutChanged);
@@ -175,6 +202,7 @@
 </script>
 
 <div
+	bind:this={overlayRoot}
 	class="pointer-events-none fixed inset-0 z-40 overflow-hidden"
 	aria-hidden="true"
 	data-timetable-remote-pointers

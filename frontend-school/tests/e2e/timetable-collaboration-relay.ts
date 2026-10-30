@@ -241,7 +241,8 @@ export function createDraftRelay() {
 	}
 	function commit(
 		workspace: TimetableBlockWorkspace,
-		identity: { connectionId?: string; mutationId?: string } = {}
+		identity: { connectionId?: string; mutationId?: string } = {},
+		publish = true
 	) {
 		const previous = canonical;
 		canonical = structuredClone(workspace);
@@ -267,7 +268,7 @@ export function createDraftRelay() {
 		};
 		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
 		journal.push(event);
-		for (const peer of peers.values()) peer.send(event);
+		if (publish) for (const peer of peers.values()) peer.send(event);
 		return event;
 	}
 	return {
@@ -294,15 +295,27 @@ export type DraftRelay = ReturnType<typeof createDraftRelay>;
 export async function installRoutedDraftSocket(
 	page: Page,
 	relay: DraftRelay,
-	workspace: () => TimetableBlockWorkspace,
+	workspace: (versionId?: string) => TimetableBlockWorkspace,
 	identity: { userId: string; name: string }
 ) {
+	const rooms = new Map<string, DraftRelay>([[workspace().version.id, relay]]);
 	await page.routeWebSocket('**/ws/timetable*', (socket: WebSocketRoute) => {
 		if (!new URL(socket.url()).searchParams.has('timetableVersionId')) {
-			socket.send(JSON.stringify({ type: 'StateSync', payload: { users: [], locks: [], seq: 0 } }));
+			socket.send(JSON.stringify({ type: 'StateSync', payload: { users: [], current_seq: 0 } }));
 			return;
 		}
-		const peer = relay.join(workspace(), (event) => socket.send(JSON.stringify(event)), identity);
+		const versionId = new URL(socket.url()).searchParams.get('timetableVersionId') ?? undefined;
+		const selectedWorkspace = workspace(versionId);
+		let scopedRelay = rooms.get(selectedWorkspace.version.id);
+		if (!scopedRelay) {
+			scopedRelay = createDraftRelay();
+			rooms.set(selectedWorkspace.version.id, scopedRelay);
+		}
+		const peer = scopedRelay.join(
+			selectedWorkspace,
+			(event) => socket.send(JSON.stringify(event)),
+			identity
+		);
 		socket.onMessage((data) => peer.receive(JSON.parse(String(data)) as DraftClientMessage));
 		socket.onClose(() => peer.close());
 	});
@@ -347,7 +360,8 @@ export async function startNativeDraftRelay(
 								(payload.length >>> 8) & 255,
 								payload.length & 255
 							]);
-			socket.write(Buffer.concat([header, payload]));
+			if (!socket.destroyed && !socket.writableEnded)
+				socket.write(Buffer.concat([header, payload]));
 		}
 		const url = new URL(request.url ?? '/', 'http://localhost');
 		const peer = relay.join(workspace(), (event) => frame(1, Buffer.from(JSON.stringify(event))), {
@@ -398,6 +412,7 @@ export async function startNativeDraftRelay(
 				if (opcode === 1) peer.receive(JSON.parse(payload.toString()) as DraftClientMessage);
 			}
 		}
+		socket.on('error', () => socket.destroy());
 		socket.on('data', read);
 		socket.on('close', () => {
 			sockets.delete(socket);

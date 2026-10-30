@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
 use sqlx::{types::Json, FromRow, PgPool};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::models::timetable::{
@@ -359,8 +359,22 @@ pub async fn from_current(
     get_template(pool, template_id).await
 }
 
-pub async fn apply_template(pool: &PgPool, context: &TimetableMutationContext, template_id: Uuid, request: ApplyTemplateRequest) -> Result<TemplateApplyResult, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move { apply_template_in_permit(&pool, permit, template_id, request).await }).await
+pub async fn apply_template(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    template_id: Uuid,
+    request: ApplyTemplateRequest,
+) -> Result<TemplateApplyResult, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::WholeDraft,
+            move |pool, permit| async move {
+                apply_template_in_permit(&pool, permit, template_id, request).await
+            },
+        )
+        .await
 }
 
 async fn apply_template_in_permit(
@@ -368,7 +382,13 @@ async fn apply_template_in_permit(
     permit: Arc<CommitPermit>,
     template_id: Uuid,
     request: ApplyTemplateRequest,
-) -> Result<(TemplateApplyResult, Vec<crate::models::timetable_block::TimetableBlock>), AppError> {
+) -> Result<
+    (
+        TemplateApplyResult,
+        Vec<crate::models::timetable_block::TimetableBlock>,
+    ),
+    AppError,
+> {
     let actor_user_id = permit.actor_id;
     permit.require_version(request.timetable_version_id)?;
     let template = get_template(pool, template_id).await?;
@@ -646,9 +666,16 @@ async fn apply_template_in_permit(
         }
         block_ids.push(block_id);
     }
-    let blocks = timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    let blocks =
+        timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
     permit.commit(transaction).await?;
-    Ok((TemplateApplyResult { applied: block_ids.len(), entry_ids: block_ids }, blocks))
+    Ok((
+        TemplateApplyResult {
+            applied: block_ids.len(),
+            entry_ids: block_ids,
+        },
+        blocks,
+    ))
 }
 
 fn eligible_template_group_instructors(
@@ -673,10 +700,23 @@ fn eligible_template_group_instructors(
     ids
 }
 
-pub async fn clear_timetable(pool: &PgPool, context: &TimetableMutationContext, request: ClearTimetableRequest) -> Result<Vec<crate::models::timetable_block::TimetableBlock>, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move { let value = clear_timetable_in_permit(&pool, permit, request).await?;
-        let blocks = value.clone();
-        Ok((value, blocks)) }).await
+pub async fn clear_timetable(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    request: ClearTimetableRequest,
+) -> Result<Vec<crate::models::timetable_block::TimetableBlock>, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::WholeDraft,
+            move |pool, permit| async move {
+                let value = clear_timetable_in_permit(&pool, permit, request).await?;
+                let blocks = value.clone();
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn clear_timetable_in_permit(

@@ -18,6 +18,7 @@ const epoch = '00000000-0000-0000-0000-000000000005';
 const session = 'synthetic-private-session';
 const probeToken = 'e'.repeat(64);
 const origin = 'https://sandbox.example.test';
+const maxMessageBytes = 64 * 1024 * 1024;
 const nginxImage = 'public.ecr.aws/docker/library/nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94';
 const workspace = () => ({
  version: { id: draft, academicYearId: year, academicTermId: term, status: 'draft' },
@@ -27,10 +28,19 @@ const workspace = () => ({
 const sync = () => ({ epoch, seq: 0, type: 'DraftStateSync', payload: {
  connectionId, workspace: workspace(), users: [{ userId: epoch, name: 'Synthetic staff', color: '#123456', connections: [{ connectionId, context: null, anchor: null }] }], reservations: []
 } });
+const frameHeader = (opcode, length, final = true) => {
+ const first = (final ? 128 : 0) | opcode;
+ if (length < 126) return Buffer.from([first, length]);
+ if (length <= 65535) return Buffer.from([first, 126, length >> 8, length & 255]);
+ const header = Buffer.alloc(10);
+ header[0] = first;
+ header[1] = 127;
+ header.writeBigUInt64BE(BigInt(length), 2);
+ return header;
+};
 const frame = (opcode, payload, final = true) => {
  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
- const header = body.length < 126 ? Buffer.from([(final ? 128 : 0) | opcode, body.length]) : Buffer.from([(final ? 128 : 0) | opcode, 126, body.length >> 8, body.length & 255]);
- return Buffer.concat([header, body]);
+ return Buffer.concat([frameHeader(opcode, body.length, final), body]);
 };
 function temporary(t) {
  const directory = mkdtempSync(path.join(os.tmpdir(), 'schoolorbit-ws-smoke-'));
@@ -59,7 +69,7 @@ timetable_websocket_smoke fixture "$2" "$3" "$4" "$5"`, 'ws-fixture', path.join(
  });
 }
 async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragmented = false } = {}) {
- const observations = { requests: [], commands: [], pings: 0, pongs: 0, closes: 0, errors: [], httpConnections: [] };
+ const observations = { requests: [], commands: [], pings: 0, pongs: 0, closes: 0, errors: [], httpConnections: [], waitedForOversizedPayload: false };
  const server = tls ? https.createServer(tls) : http.createServer();
  server.on('request', (request, response) => {
   observations.httpConnections.push(request.headers.connection ?? '');
@@ -84,9 +94,21 @@ async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragm
   if (mode === 'wrong-version') state.payload.workspace.version.id = epoch;
   if (mode === 'invalid-state') state.payload.users = null;
   if (mode === 'private-lease') state.payload.reservations = [{ leaseToken: session }];
-  if (mode === 'oversized-frame') { socket.write(Buffer.from([0x81, 127, 0, 0, 0, 0, 2, 0, 0, 0])); return; }
+  if (mode === 'oversized-frame' || mode === 'oversized-fragments') {
+   if (mode === 'oversized-fragments') socket.write(frame(1, '{', false));
+   socket.write(frameHeader(mode === 'oversized-frame' ? 1 : 0, maxMessageBytes + (mode === 'oversized-frame' ? 1 : 0)));
+   // The reader must reject from the header, without waiting for this absent payload.
+   const guard = setTimeout(() => { observations.waitedForOversizedPayload = true; socket.destroy(); }, 2000);
+   socket.once('close', () => clearTimeout(guard));
+   return;
+  }
   if (mode === 'masked-server') { socket.write(Buffer.from([0x81, 0x80])); return; }
-  const body = JSON.stringify(state);
+  if (mode === 'large-thai') {
+   state.payload.workspace.blocks = [{ id: epoch, note: 'ก'.repeat(6 * 1024 * 1024) }];
+   state.payload.workspace.totalDraftBlockCount = 1;
+  }
+  const body = Buffer.from(JSON.stringify(state));
+  if (mode === 'large-thai') assert.ok(body.length > 16 * 1024 * 1024 && body.length < maxMessageBytes);
   if (fragmented) {
    const middle = Math.floor(body.length / 2);
    socket.write(frame(1, body.slice(0, middle), false));
@@ -151,9 +173,41 @@ test('standalone smoke performs read-only draft and term exchanges with masked f
  assert.equal(observations.pings, 2); assert.equal(observations.pongs, 2); assert.equal(observations.closes, 2);
 });
 
+test('standalone smoke accepts Thai draft events above sixteen MiB in single and fragmented frames', async t => {
+ const directory = temporary(t);
+ for (const fragmented of [false, true]) {
+  await t.test(fragmented ? 'fragmented UTF-8 event' : 'single 64-bit-length frame', async child => {
+   const { port, observations } = await fixtureServer(child, { mode: 'large-thai', fragmented });
+   const result = await runProbe(directory, `http://localhost:${port}`, { timeout: '10' });
+   assert.equal(result.status, 0, result.stdout + result.stderr);
+   assert.deepEqual(observations.errors, []);
+   assert.equal(observations.commands.length, 2);
+   assert.equal(observations.pings, 1);
+   assert.equal(observations.pongs, fragmented ? 1 : 0);
+   assert.equal(observations.closes, 1);
+  });
+ }
+});
+
+test('standalone smoke rejects declared frame and cumulative event overflow before reading payloads', async t => {
+ const directory = temporary(t);
+ for (const mode of ['oversized-frame', 'oversized-fragments']) {
+  await t.test(mode, async child => {
+   const { port, observations } = await fixtureServer(child, { mode });
+   const result = await runProbe(directory, `http://localhost:${port}`, { timeout: '10' });
+   assert.equal(result.status, 1);
+   assert.match(result.stdout, /^FAIL fixture handshake/);
+   assert.doesNotMatch(result.stdout + result.stderr, /synthetic-private|00000000|Traceback|localhost/);
+   assert.equal(observations.waitedForOversizedPayload, false, 'must refuse the header before the fixture payload guard fires');
+   assert.equal(observations.commands.length, 0);
+   assert.deepEqual(observations.errors, []);
+  });
+ }
+});
+
 test('standalone smoke fails closed for invalid upgrades, scope, frames, private leases, credentials and stalled pong without exposing payloads', async t => {
  const directory = temporary(t);
- for (const mode of ['reject', 'bad-handshake', 'wrong-version', 'invalid-state', 'private-lease', 'oversized-frame', 'masked-server', 'no-pong']) {
+ for (const mode of ['reject', 'bad-handshake', 'wrong-version', 'invalid-state', 'private-lease', 'masked-server', 'no-pong']) {
   await t.test(mode, async child => {
    const { port, observations } = await fixtureServer(child, { mode });
    const result = await runProbe(directory, `http://localhost:${port}`, { timeout: '0.4' });

@@ -170,7 +170,7 @@ export function timetableRemotePointers(
 					name: participant.name,
 					color: participant.color,
 					subjectKey,
-					contextKey: `${connection.context.viewMode}:${connection.context.viewId ?? ''}`,
+					contextKey: `${connection.context.viewMode}:${connection.context.viewId ?? ''}:${connection.context.viewMode === 'wholeSchool' ? (connection.context.dayOfWeek ?? '') : ''}`,
 					subject,
 					position: { u: anchor.u, v: anchor.v },
 					ghost: reservation?.purpose === 'drag' ? sourceGhost(workspace, reservation.source) : null

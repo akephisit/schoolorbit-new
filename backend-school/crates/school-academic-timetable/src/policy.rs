@@ -58,13 +58,30 @@ pub struct TimetableResourceSet {
 impl TimetableResourceSet {
     pub fn include_block(&mut self, block: &crate::models::timetable_block::TimetableBlock) {
         self.timetable_version_ids.push(block.timetable_version_id);
-        self.learning_offering_ids.extend(block.learning_offering_id);
-        self.learning_group_ids.extend(block.groups.iter().map(|group| group.learning_group_id));
-        self.homeroom_ids.extend(block.homerooms.iter().map(|target| target.homeroom_id));
-        self.teacher_ids.extend(block.teachers.iter().map(|target| target.teacher_id));
-        self.teacher_ids.extend(block.groups.iter().flat_map(|group| group.instructors.iter()).map(|teacher| teacher.teacher_id));
-        self.room_ids.extend(block.groups.iter().filter_map(|group| group.room_id).chain(block.homerooms.iter().filter_map(|target| target.room_id)));
-        self.requires_school_scope |= block.block_kind == crate::models::timetable_block::TimetableBlockKind::Structural;
+        self.learning_offering_ids
+            .extend(block.learning_offering_id);
+        self.learning_group_ids
+            .extend(block.groups.iter().map(|group| group.learning_group_id));
+        self.homeroom_ids
+            .extend(block.homerooms.iter().map(|target| target.homeroom_id));
+        self.teacher_ids
+            .extend(block.teachers.iter().map(|target| target.teacher_id));
+        self.teacher_ids.extend(
+            block
+                .groups
+                .iter()
+                .flat_map(|group| group.instructors.iter())
+                .map(|teacher| teacher.teacher_id),
+        );
+        self.room_ids.extend(
+            block
+                .groups
+                .iter()
+                .filter_map(|group| group.room_id)
+                .chain(block.homerooms.iter().filter_map(|target| target.room_id)),
+        );
+        self.requires_school_scope |=
+            block.block_kind == crate::models::timetable_block::TimetableBlockKind::Structural;
     }
 }
 
@@ -276,17 +293,39 @@ pub struct TimetableResourceAccessSnapshot {
 }
 
 impl TimetableResourceAccessSnapshot {
-    pub fn require_resources(&self, resources: &TimetableResourceSet, filter: &TimetableAccessFilter) -> Result<(), AppError> {
-        if !needs_resource_lookup(filter, resources)? { return Ok(()); }
+    pub fn require_resources(
+        &self,
+        resources: &TimetableResourceSet,
+        filter: &TimetableAccessFilter,
+    ) -> Result<(), AppError> {
+        if !needs_resource_lookup(filter, resources)? {
+            return Ok(());
+        }
         for (kind, ids) in [
-            ("version", &resources.timetable_version_ids), ("offering", &resources.learning_offering_ids),
-            ("group", &resources.learning_group_ids), ("homeroom", &resources.homeroom_ids),
-            ("teacher", &resources.teacher_ids), ("room", &resources.room_ids),
+            ("version", &resources.timetable_version_ids),
+            ("offering", &resources.learning_offering_ids),
+            ("group", &resources.learning_group_ids),
+            ("homeroom", &resources.homeroom_ids),
+            ("teacher", &resources.teacher_ids),
+            ("room", &resources.room_ids),
         ] {
             for id in normalized_ids(ids) {
-                let target = self.targets.get(&(kind.into(), id)).ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรตารางสอนบางรายการ".into()))?;
-                if !target.permission_neutral && !timetable_target_allowed(filter, &TimetableResourceTarget { owner_organization_unit_ids: target.owner_organization_unit_ids.clone(), actor_is_assigned: target.actor_is_assigned }) {
-                    return Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรตารางสอนบางรายการ".into()));
+                let target = self
+                    .targets
+                    .get(&(kind.into(), id))
+                    .ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรตารางสอนบางรายการ".into()))?;
+                if !target.permission_neutral
+                    && !timetable_target_allowed(
+                        filter,
+                        &TimetableResourceTarget {
+                            owner_organization_unit_ids: target.owner_organization_unit_ids.clone(),
+                            actor_is_assigned: target.actor_is_assigned,
+                        },
+                    )
+                {
+                    return Err(AppError::Forbidden(
+                        "ไม่มีสิทธิ์เข้าถึงทรัพยากรตารางสอนบางรายการ".into(),
+                    ));
                 }
             }
         }
@@ -294,7 +333,11 @@ impl TimetableResourceAccessSnapshot {
     }
 }
 
-pub async fn resource_access_snapshot_on_connection(connection: &mut sqlx::PgConnection, actor: &ActorContext, resources: &TimetableResourceSet) -> Result<TimetableResourceAccessSnapshot, AppError> {
+pub async fn resource_access_snapshot_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    resources: &TimetableResourceSet,
+) -> Result<TimetableResourceAccessSnapshot, AppError> {
     let version_ids = normalized_ids(&resources.timetable_version_ids);
     let offering_ids = normalized_ids(&resources.learning_offering_ids);
     let group_ids = normalized_ids(&resources.learning_group_ids);
@@ -380,7 +423,12 @@ pub async fn resource_access_snapshot_on_connection(connection: &mut sqlx::PgCon
     .fetch_all()
     .await?;
 
-    Ok(TimetableResourceAccessSnapshot { targets: targets.into_iter().map(|target| ((target.resource_kind.clone(), target.resource_id), target)).collect() })
+    Ok(TimetableResourceAccessSnapshot {
+        targets: targets
+            .into_iter()
+            .map(|target| ((target.resource_kind.clone(), target.resource_id), target))
+            .collect(),
+    })
 }
 
 fn timetable_target_allowed(

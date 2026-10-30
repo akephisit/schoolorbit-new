@@ -70,6 +70,12 @@ impl TimetableEvent {
 }
 
 pub trait AcademicRealtimePort: Send + Sync {
+    /// Trusted application routing identity, never supplied by a client frame.
+    fn register_tenant(
+        &self,
+        school_key: &str,
+        tenant_id: Uuid,
+    ) -> Result<(), school_errors::AppError>;
     fn broadcast_mutation(
         &self,
         school_key: String,

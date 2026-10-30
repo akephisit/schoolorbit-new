@@ -44,6 +44,6 @@ test('published cards expose canonical instructor names without edit controls', 
 		card,
 		/block\.teachers\.map\(\(teacher\) => timetableTeacherLabel\(teacher\.displayName\)\)/
 	);
-	assert.match(card, /\{#if canEdit\}/);
+	assert.match(card, /\{#if canEdit && !lockedBy\}/);
 	assert.match(page, /controller\?\.canEdit/);
 });

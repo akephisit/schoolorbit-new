@@ -126,3 +126,54 @@ test('public reservation snapshots refuse accidentally disclosed private proof o
 		null
 	);
 });
+
+test('the complete JSON event budget accepts exactly 64 MiB of UTF-8 and refuses one additional byte', () => {
+	const limit = 64 * 1024 * 1024;
+	const workspace = collaborationWorkspace();
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	block.note = '';
+	workspace.blocks = [block];
+	const sync = {
+		epoch,
+		seq: 0,
+		type: 'DraftStateSync',
+		payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+	};
+	const overhead = Buffer.byteLength(JSON.stringify(sync), 'utf8');
+	block.note = 'x'.repeat(limit - overhead);
+	const exact = JSON.stringify(sync);
+	assert.equal(Buffer.byteLength(exact, 'utf8'), limit);
+	assert.equal(decodeDraftEvent(exact)?.type, 'DraftStateSync');
+	assert.equal(decodeDraftEvent(exact + ' '), null);
+});
+
+test('a valid Thai snapshot above sixteen MiB uses UTF-8 bytes and keeps complete persisted notes', () => {
+	const workspace = collaborationWorkspace();
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	block.note = 'ก'.repeat(6 * 1024 * 1024);
+	workspace.blocks = [block];
+	const serialized = JSON.stringify({
+		epoch,
+		seq: 0,
+		type: 'DraftStateSync',
+		payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+	});
+	assert.ok(serialized.length < 16 * 1024 * 1024);
+	assert.ok(Buffer.byteLength(serialized, 'utf8') > 16 * 1024 * 1024);
+	const event = decodeDraftEvent(serialized);
+	assert.equal(event?.type, 'DraftStateSync');
+	if (event?.type === 'DraftStateSync')
+		assert.equal(event.payload.workspace.blocks[0].note, block.note);
+	block.note = 'ก'.repeat(Math.ceil((64 * 1024 * 1024) / 3));
+	assert.equal(
+		decodeDraftEvent(
+			JSON.stringify({
+				epoch,
+				seq: 0,
+				type: 'DraftStateSync',
+				payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+			})
+		),
+		null
+	);
+});

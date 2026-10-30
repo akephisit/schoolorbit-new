@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::models::timetable_block::{
@@ -233,12 +233,23 @@ pub async fn preview_placement_on_connection(
     super::timetable_block_conflicts::preview_placement(connection, request).await
 }
 
-pub async fn create_ordinary_block(pool: &PgPool, context: &TimetableMutationContext, request: CreateOrdinaryTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::Ordinary(request.clone()), move |pool, permit| async move {
-        let value = create_ordinary_block_in_permit(&pool, permit, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn create_ordinary_block(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    request: CreateOrdinaryTimetableBlockRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Ordinary(request.clone()),
+            move |pool, permit| async move {
+                let value = create_ordinary_block_in_permit(&pool, permit, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn create_ordinary_block_in_permit(
@@ -381,12 +392,23 @@ async fn create_ordinary_block_in_permit(
     Ok(result)
 }
 
-pub async fn create_synchronized_block(pool: &PgPool, context: &TimetableMutationContext, request: CreateSynchronizedTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::Synchronized(request.clone()), move |pool, permit| async move {
-        let value = create_synchronized_block_in_permit(&pool, permit, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn create_synchronized_block(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    request: CreateSynchronizedTimetableBlockRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Synchronized(request.clone()),
+            move |pool, permit| async move {
+                let value = create_synchronized_block_in_permit(&pool, permit, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn create_synchronized_block_in_permit(
@@ -511,18 +533,38 @@ async fn create_synchronized_block_in_permit(
     Ok(result)
 }
 
-pub async fn create_structural_blocks(pool: &PgPool, context: &TimetableMutationContext, request: CreateStructuralTimetableBlocksRequest) -> Result<Vec<TimetableBlock>, AppError> {
+pub async fn create_structural_blocks(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    request: CreateStructuralTimetableBlocksRequest,
+) -> Result<Vec<TimetableBlock>, AppError> {
     structural_first_slot(&request)?;
-    context.execute(pool, request.timetable_version_id, MutationScope::Structural(request.clone()), move |pool, permit| async move {
-        let value = create_structural_blocks_in_permit(&pool, permit, request).await?;
-        let blocks = value.clone();
-        Ok((value, blocks))
-    }).await
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Structural(request.clone()),
+            move |pool, permit| async move {
+                let value = create_structural_blocks_in_permit(&pool, permit, request).await?;
+                let blocks = value.clone();
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
-fn structural_first_slot(request: &CreateStructuralTimetableBlocksRequest) -> Result<&crate::models::timetable_block::TimetableStructuralSlotInput, AppError> {
-    if request.title.trim().is_empty() { return Err(AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into())); }
-    request.slots.first().ok_or_else(|| AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into()))
+fn structural_first_slot(
+    request: &CreateStructuralTimetableBlocksRequest,
+) -> Result<&crate::models::timetable_block::TimetableStructuralSlotInput, AppError> {
+    if request.title.trim().is_empty() {
+        return Err(AppError::ValidationError(
+            "ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into(),
+        ));
+    }
+    request
+        .slots
+        .first()
+        .ok_or_else(|| AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into()))
 }
 
 async fn create_structural_blocks_in_permit(
@@ -644,17 +686,30 @@ async fn create_structural_blocks_in_permit(
         }
         block_ids.push(block_id);
     }
-    let result = timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    let result =
+        timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
     permit.commit(transaction).await?;
     Ok(result)
 }
 
-pub async fn remove_target(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RemoveTimetableBlockTargetRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::Blocks(vec![block_id]), move |pool, permit| async move {
-        let value = remove_target_in_permit(&pool, permit, block_id, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn remove_target(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    block_id: Uuid,
+    request: RemoveTimetableBlockTargetRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Blocks(vec![block_id]),
+            move |pool, permit| async move {
+                let value = remove_target_in_permit(&pool, permit, block_id, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn remove_target_in_permit(
@@ -821,12 +876,27 @@ async fn remove_target_in_permit(
     Ok(result)
 }
 
-pub async fn update_block(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: UpdateTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::Update { block_id, request: request.clone() }, move |pool, permit| async move {
-        let value = update_block_in_permit(&pool, permit, block_id, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn update_block(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    block_id: Uuid,
+    request: UpdateTimetableBlockRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Update {
+                block_id,
+                request: request.clone(),
+            },
+            move |pool, permit| async move {
+                let value = update_block_in_permit(&pool, permit, block_id, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn update_block_in_permit(
@@ -1017,12 +1087,23 @@ async fn update_block_in_permit(
     Ok(result)
 }
 
-pub async fn swap_blocks(pool: &PgPool, context: &TimetableMutationContext, request: SwapTimetableBlocksRequest) -> Result<SwapTimetableBlocksResponse, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::Swap(request.clone()), move |pool, permit| async move {
-        let value = swap_blocks_in_permit(&pool, permit, request).await?;
-        let blocks = vec![value.block_a.clone(), value.block_b.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn swap_blocks(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    request: SwapTimetableBlocksRequest,
+) -> Result<SwapTimetableBlocksResponse, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::Swap(request.clone()),
+            move |pool, permit| async move {
+                let value = swap_blocks_in_permit(&pool, permit, request).await?;
+                let blocks = vec![value.block_a.clone(), value.block_b.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn swap_blocks_in_permit(
@@ -1111,12 +1192,24 @@ async fn swap_blocks_in_permit(
     Ok(result)
 }
 
-pub async fn retry_sync(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RetryTimetableBlockSyncRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move {
-        let value = retry_sync_in_permit(&pool, permit, block_id, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn retry_sync(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    block_id: Uuid,
+    request: RetryTimetableBlockSyncRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::WholeDraft,
+            move |pool, permit| async move {
+                let value = retry_sync_in_permit(&pool, permit, block_id, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn retry_sync_in_permit(
@@ -1156,12 +1249,24 @@ async fn retry_sync_in_permit(
     Ok(result)
 }
 
-pub async fn restore_group(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RestoreTimetableBlockGroupRequest) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move {
-        let value = restore_group_in_permit(&pool, permit, block_id, request).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn restore_group(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    block_id: Uuid,
+    request: RestoreTimetableBlockGroupRequest,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            request.timetable_version_id,
+            MutationScope::WholeDraft,
+            move |pool, permit| async move {
+                let value = restore_group_in_permit(&pool, permit, block_id, request).await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn restore_group_in_permit(
@@ -1201,12 +1306,32 @@ async fn restore_group_in_permit(
     Ok(result)
 }
 
-pub async fn deactivate_block(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, timetable_version_id: Uuid, row_version: i64) -> Result<TimetableBlock, AppError> {
-    context.execute(pool, timetable_version_id, MutationScope::Blocks(vec![block_id]), move |pool, permit| async move {
-        let value = deactivate_block_in_permit(&pool, permit, block_id, timetable_version_id, row_version).await?;
-        let blocks = vec![value.clone()];
-        Ok((value, blocks))
-    }).await
+pub async fn deactivate_block(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    block_id: Uuid,
+    timetable_version_id: Uuid,
+    row_version: i64,
+) -> Result<TimetableBlock, AppError> {
+    context
+        .execute(
+            pool,
+            timetable_version_id,
+            MutationScope::Blocks(vec![block_id]),
+            move |pool, permit| async move {
+                let value = deactivate_block_in_permit(
+                    &pool,
+                    permit,
+                    block_id,
+                    timetable_version_id,
+                    row_version,
+                )
+                .await?;
+                let blocks = vec![value.clone()];
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn deactivate_block_in_permit(
@@ -1252,12 +1377,26 @@ async fn deactivate_block_in_permit(
     Ok(result)
 }
 
-pub async fn deactivate_series(pool: &PgPool, context: &TimetableMutationContext, series_id: Uuid, timetable_version_id: Uuid) -> Result<Vec<TimetableBlock>, AppError> {
-    context.execute(pool, timetable_version_id, MutationScope::Series(series_id), move |pool, permit| async move {
-        let value = deactivate_series_in_permit(&pool, permit, series_id, timetable_version_id).await?;
-        let blocks = value.clone();
-        Ok((value, blocks))
-    }).await
+pub async fn deactivate_series(
+    pool: &PgPool,
+    context: &TimetableMutationContext,
+    series_id: Uuid,
+    timetable_version_id: Uuid,
+) -> Result<Vec<TimetableBlock>, AppError> {
+    context
+        .execute(
+            pool,
+            timetable_version_id,
+            MutationScope::Series(series_id),
+            move |pool, permit| async move {
+                let value =
+                    deactivate_series_in_permit(&pool, permit, series_id, timetable_version_id)
+                        .await?;
+                let blocks = value.clone();
+                Ok((value, blocks))
+            },
+        )
+        .await
 }
 
 async fn deactivate_series_in_permit(
@@ -1300,7 +1439,8 @@ async fn deactivate_series_in_permit(
         .bind(actor_id)
         .execute()
         .await?;
-    let result = timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    let result =
+        timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
     permit.commit(transaction).await?;
     Ok(result)
 }

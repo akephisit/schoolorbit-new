@@ -90870,6 +90870,45 @@
         "operationId": "applyTeacherHandoff",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "description": "Published opening revision ID",
             "in": "path",
             "name": "id",
@@ -92429,6 +92468,45 @@
         "operationId": "deleteTimetableBlock",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "path",
             "name": "block_id",
             "required": true,
@@ -92485,6 +92563,45 @@
       "put": {
         "operationId": "updateTimetableBlock",
         "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           {
             "in": "path",
             "name": "block_id",
@@ -92577,6 +92694,45 @@
         "operationId": "restoreTimetableBlockGroup",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "path",
             "name": "block_id",
             "required": true,
@@ -92628,6 +92784,45 @@
         "operationId": "retryTimetableBlockSync",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "path",
             "name": "block_id",
             "required": true,
@@ -92678,6 +92873,45 @@
       "delete": {
         "operationId": "removeTimetableBlockTarget",
         "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           {
             "in": "path",
             "name": "block_id",
@@ -92768,6 +93002,47 @@
     "/api/academic/timetable-blocks/clear": {
       "delete": {
         "operationId": "clearTimetable",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -92828,6 +93103,47 @@
     "/api/academic/timetable-blocks/ordinary": {
       "post": {
         "operationId": "createOrdinaryTimetableBlock",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -92970,6 +93286,45 @@
         "operationId": "deleteTimetableBlockSeries",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "path",
             "name": "series_id",
             "required": true,
@@ -93018,6 +93373,47 @@
     "/api/academic/timetable-blocks/structural": {
       "post": {
         "operationId": "createStructuralTimetableBlocks",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -93088,6 +93484,47 @@
     "/api/academic/timetable-blocks/swap": {
       "post": {
         "operationId": "swapTimetableBlocks",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -93128,6 +93565,47 @@
     "/api/academic/timetable-blocks/synchronized": {
       "post": {
         "operationId": "createSynchronizedTimetableBlock",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -93589,6 +94067,45 @@
         "operationId": "applyTimetableTemplate",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "description": "Timetable template ID",
             "in": "path",
             "name": "template_id",
@@ -93778,6 +94295,47 @@
       },
       "post": {
         "operationId": "createTimetableVersion",
+        "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -93859,6 +94417,45 @@
       "post": {
         "operationId": "cloneTimetableVersion",
         "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           {
             "description": "Published timetable version ID",
             "in": "path",
@@ -93952,6 +94549,45 @@
         "operationId": "deleteTimetableDraft",
         "parameters": [
           {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "path",
             "name": "version_id",
             "required": true,
@@ -94032,6 +94668,45 @@
       "put": {
         "operationId": "updateTimetableDeliverySource",
         "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           {
             "in": "path",
             "name": "version_id",
@@ -94214,6 +94889,45 @@
       "post": {
         "operationId": "publishTimetableVersion",
         "parameters": [
+          {
+            "description": "Server-issued tab connection ID; requires the lease and mutation headers together.",
+            "in": "header",
+            "name": "X-Timetable-Connection-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Private confirmed lease token. Never broadcast this value to peers.",
+            "in": "header",
+            "name": "X-Timetable-Lease-Token",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Client mutation identity, echoed in the committed draft delta.",
+            "in": "header",
+            "name": "X-Timetable-Mutation-Id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
           {
             "in": "path",
             "name": "version_id",

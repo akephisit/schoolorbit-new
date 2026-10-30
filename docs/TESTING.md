@@ -672,6 +672,39 @@ toolchain/host/release flags and at least two source-changing samples for both t
 Staff service. Record rebuilt packages as well as wall time; warm Cargo results do not measure
 complete build/push/deployment time.
 
+### Timetable draft collaboration
+
+Run the domain memory authority tests and real PostgreSQL/session/HTTP/native WebSocket fixture
+from the repository root. Use the configured pinned Rust toolchain and the owned disposable runner:
+
+```bash
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetable --features api-docs collaboration -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --nocapture --test-threads=2
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture --test-threads=2
+cargo test --manifest-path backend-school/Cargo.toml -p school-auth-http context::tests -- --nocapture
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http websockets::security_tests -- --nocapture
+```
+
+The dedicated transport fixture uses the original protected-router directory/session owner with
+prepared academic databases, actual opaque cookies and CSRF, two native socket tabs, and exactly
+the runtime injected into HTTP. It covers proof bypass/cross-tab refusal, scoped claim denial,
+changed-block patches with database-trigger version revisions, publication preview without a
+workspace reload, hot interaction after closing PostgreSQL, queued authorization generation,
+pinned commit cancellation/disconnect/TTL, initial-sync watermark, no-member upstream invalidation,
+postcommit failure, deferred COMMIT timeout, and cold version-row fencing. Domain cases separately
+cover cross-view footprints/swaps, private candidate ownership, filtered sequence watermarks,
+replay/expiry and bounded tiny deltas for a workspace larger than the journal limit's half size.
+Use only runner-owned disposable databases, never a live or customer tenant. A fixture's isolated test context does not substitute for
+shared-runtime HTTP/socket authority acceptance.
+
+The three `X-Timetable-Connection-Id`, `X-Timetable-Lease-Token` and `X-Timetable-Mutation-Id`
+headers form one optional HTTP ownership proof. Keep their CORS proxy checks and the direct and
+reverse-proxy WebSocket smoke recipes below when changing this boundary. Frontend decoding and
+standalone smoke use a 64 MiB UTF-8 budget per complete JSON event; server incoming interaction
+commands have a separate 64 KiB limit. This does not impose a note/schema cap or claim server
+outbound enforcement. Backend tests establish
+transport behavior locally; they do not replace deployed proxy acceptance or browser interaction.
+
 ### School session authentication
 
 Session changes require the schema, repository, service, HTTP/middleware, and realtime

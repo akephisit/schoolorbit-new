@@ -6,6 +6,7 @@ mod mutation;
 mod tests;
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,9 @@ use crate::models::timetable_block::{
 use crate::policy::{TimetableAccessFilter, TimetableVisibility};
 
 pub use authority::{CommitPermit, MutationScope};
-pub use mutation::{CreationPermit, MutationAuthorizationPort, TimetableMutationContext, VersionMutationPermit};
+pub use mutation::{
+    CreationPermit, MutationAuthorizationPort, TimetableMutationContext, VersionMutationPermit,
+};
 
 pub const LEASE_TTL: Duration = Duration::from_secs(10);
 const MAX_ROOMS: usize = 128;
@@ -70,7 +73,6 @@ struct VisibilityIndex {
     homerooms: HashSet<Uuid>,
     staff: HashSet<Uuid>,
     groups: HashSet<Uuid>,
-    rooms: HashSet<Uuid>,
     periods: HashSet<Uuid>,
 }
 
@@ -78,33 +80,57 @@ impl VisibilityIndex {
     fn build(workspace: &TimetableBlockWorkspace) -> Self {
         Self {
             blocks: workspace.blocks.iter().map(|entry| entry.id).collect(),
-            ordinary_demands: workspace.ordinary_demands.iter().map(|entry| (entry.learning_group_id, entry.learning_offering_id)).collect(),
-            synchronized_offerings: workspace.synchronized_demands.iter().map(|entry| entry.learning_offering_id).collect(),
+            ordinary_demands: workspace
+                .ordinary_demands
+                .iter()
+                .map(|entry| (entry.learning_group_id, entry.learning_offering_id))
+                .collect(),
+            synchronized_offerings: workspace
+                .synchronized_demands
+                .iter()
+                .map(|entry| entry.learning_offering_id)
+                .collect(),
             homerooms: workspace.homerooms.iter().map(|entry| entry.id).collect(),
             staff: workspace.staff.iter().map(|entry| entry.id).collect(),
-            groups: workspace.learning_groups.iter().map(|entry| entry.id).collect(),
-            rooms: workspace.rooms.iter().map(|entry| entry.id).collect(),
-            periods: workspace.bell_periods.iter().map(|entry| entry.id).collect(),
+            groups: workspace
+                .learning_groups
+                .iter()
+                .map(|entry| entry.id)
+                .collect(),
+            periods: workspace
+                .bell_periods
+                .iter()
+                .map(|entry| entry.id)
+                .collect(),
         }
-    }
-
-    fn candidate_visible(&self, candidate: &TimetableBlockPlacementCandidate) -> bool {
-        candidate.room_id.is_none_or(|id| self.rooms.contains(&id))
-            && candidate.homeroom_ids.iter().all(|id| self.homerooms.contains(id))
-            && candidate.teacher_ids.iter().chain(&candidate.instructor_ids).all(|id| self.staff.contains(id))
     }
 }
 
-struct MemberVisibility { read: VisibilityIndex, manage: Option<VisibilityIndex> }
+struct MemberVisibility {
+    read: VisibilityIndex,
+    manage: Option<VisibilityIndex>,
+}
 
-fn member_visibility(workspace: &TimetableBlockWorkspace, visibility: &TimetableVisibility, member: &DraftMember) -> MemberVisibility {
+fn member_visibility(
+    workspace: &TimetableBlockWorkspace,
+    visibility: &TimetableVisibility,
+    member: &DraftMember,
+) -> MemberVisibility {
     MemberVisibility {
-        read: VisibilityIndex::build(&crate::policy::project_workspace(workspace, visibility, &member.access)),
+        read: VisibilityIndex::build(&crate::policy::project_workspace(
+            workspace,
+            visibility,
+            &member.access,
+        )),
         manage: member.manage_access.as_ref().map(|access| {
             let mut projected = crate::policy::project_workspace(workspace, visibility, access);
             projected.blocks.retain(|block| {
-                let mut resources = crate::policy::TimetableResourceSet::default(); resources.include_block(block);
-                member.resource_access.require_resources(&resources, access).is_ok()
+                let mut resources = crate::policy::TimetableResourceSet::default();
+                resources.include_block(block);
+                member
+                    .resource_access
+                    .require_resources(&resources, access)
+                    .is_ok()
             });
             VisibilityIndex::build(&projected)
         }),
@@ -150,25 +176,55 @@ impl DraftRoom {
         })
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn signal_subscriber_count(&self) -> usize {
+        self.signals.receiver_count()
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<DraftSignal> {
         self.signals.subscribe()
     }
 
     pub fn resource_inputs(&self) -> Result<crate::policy::TimetableResourceSet, AppError> {
-        let state = self.lock()?; let workspace = &state.workspace;
-        let mut resources = crate::policy::TimetableResourceSet { timetable_version_ids: vec![workspace.version.id],
-            learning_offering_ids: state.visibility.source.offerings.iter().map(|entry| entry.id).collect(),
-            learning_group_ids: workspace.learning_groups.iter().map(|entry| entry.id).collect(),
+        let state = self.lock()?;
+        let workspace = &state.workspace;
+        let mut resources = crate::policy::TimetableResourceSet {
+            timetable_version_ids: vec![workspace.version.id],
+            learning_offering_ids: state
+                .visibility
+                .source
+                .offerings
+                .iter()
+                .map(|entry| entry.id)
+                .collect(),
+            learning_group_ids: workspace
+                .learning_groups
+                .iter()
+                .map(|entry| entry.id)
+                .collect(),
             homeroom_ids: workspace.homerooms.iter().map(|entry| entry.id).collect(),
-            teacher_ids: workspace.staff.iter().map(|entry| entry.id).collect(), room_ids: workspace.rooms.iter().map(|entry| entry.id).collect(), requires_school_scope: false };
-        for block in &workspace.blocks { resources.include_block(block); }
+            teacher_ids: workspace.staff.iter().map(|entry| entry.id).collect(),
+            room_ids: workspace.rooms.iter().map(|entry| entry.id).collect(),
+            requires_school_scope: false,
+        };
+        for block in &workspace.blocks {
+            resources.include_block(block);
+        }
         Ok(resources)
     }
 
-    pub fn members(&self) -> Result<Vec<DraftMember>, AppError> { Ok(self.lock()?.members.values().cloned().collect()) }
+    pub fn members(&self) -> Result<Vec<DraftMember>, AppError> {
+        Ok(self.lock()?.members.values().cloned().collect())
+    }
 
-    pub fn set_portraits(&self, connection_id: Uuid, portraits: BTreeMap<Uuid, Uuid>) -> Result<(), AppError> {
-        if let Some(member) = self.lock()?.members.get_mut(&connection_id) { member.portraits = portraits; }
+    pub fn set_portraits(
+        &self,
+        connection_id: Uuid,
+        portraits: BTreeMap<Uuid, Uuid>,
+    ) -> Result<(), AppError> {
+        if let Some(member) = self.lock()?.members.get_mut(&connection_id) {
+            member.portraits = portraits;
+        }
         Ok(())
     }
 
@@ -201,8 +257,14 @@ impl DraftRoom {
             state.members.remove(&connection_id);
             state.member_visibility.remove(&connection_id);
             state.active_leases.remove(&connection_id);
-            let pinned = state.committing.values().filter_map(|record| record.lease_token).collect::<HashSet<_>>();
-            state.leases.retain(|token, lease| lease.public.owner_connection_id != connection_id || pinned.contains(token));
+            let pinned = state
+                .committing
+                .values()
+                .filter_map(|record| record.lease_token)
+                .collect::<HashSet<_>>();
+            state.leases.retain(|token, lease| {
+                lease.public.owner_connection_id != connection_id || pinned.contains(token)
+            });
             // In-flight committing footprints are owned by their permit, never by socket lifetime.
             if state.members.is_empty() {
                 state.empty_since = Some(Instant::now());
@@ -226,7 +288,11 @@ impl DraftRoom {
         update: DraftPresenceUpdate,
     ) -> Result<(), AppError> {
         let mut state = self.lock()?;
-        let projected = &state.member_visibility.get(&connection_id).ok_or_else(stale)?.read;
+        let projected = &state
+            .member_visibility
+            .get(&connection_id)
+            .ok_or_else(stale)?
+            .read;
         if !context_visible(&projected, &update.context)
             || update
                 .anchor
@@ -248,10 +314,18 @@ impl DraftRoom {
             .lock()
             .map(|mut state| {
                 let before = state.leases.len();
-                let pinned = state.committing.values().filter_map(|record| record.lease_token).collect::<HashSet<_>>();
-                state.leases.retain(|token, lease| lease.deadline > now || pinned.contains(token));
+                let pinned = state
+                    .committing
+                    .values()
+                    .filter_map(|record| record.lease_token)
+                    .collect::<HashSet<_>>();
+                state
+                    .leases
+                    .retain(|token, lease| lease.deadline > now || pinned.contains(token));
                 let live_tokens = state.leases.keys().copied().collect::<HashSet<_>>();
-                state.active_leases.retain(|_, token| live_tokens.contains(token));
+                state
+                    .active_leases
+                    .retain(|_, token| live_tokens.contains(token));
                 before != state.leases.len()
             })
             .unwrap_or(false);
@@ -328,28 +402,48 @@ impl DraftRoom {
             }
             command => {
                 let (request_id, kind) = match &command {
-                    DraftClientMessage::ClientClaim(value) => (value.request_id, DraftCommandKind::Claim),
-                    DraftClientMessage::ClientTarget(value) => (value.request_id, DraftCommandKind::Target),
-                    DraftClientMessage::ClientRenew(value) => (value.request_id, DraftCommandKind::Renew),
-                    DraftClientMessage::ClientRelease(value) => (value.request_id, DraftCommandKind::Release),
+                    DraftClientMessage::ClientClaim(value) => {
+                        (value.request_id, DraftCommandKind::Claim)
+                    }
+                    DraftClientMessage::ClientTarget(value) => {
+                        (value.request_id, DraftCommandKind::Target)
+                    }
+                    DraftClientMessage::ClientRenew(value) => {
+                        (value.request_id, DraftCommandKind::Renew)
+                    }
+                    DraftClientMessage::ClientRelease(value) => {
+                        (value.request_id, DraftCommandKind::Release)
+                    }
                     _ => return Err(stale()),
                 };
                 match authority::lease_command(self, connection_id, command) {
                     Ok(events) => Ok(events),
                     Err(error) => {
                         let state = self.lock()?;
-                        if !state.valid || !state.members.contains_key(&connection_id) { return Err(error); }
+                        if !state.valid || !state.members.contains_key(&connection_id) {
+                            return Err(error);
+                        }
                         let code = match error {
                             AppError::Forbidden(_) => "forbidden",
                             AppError::ValidationError(_) => "invalid_candidate",
                             AppError::Conflict(_) | AppError::NotFound(_) => "stale_reservation",
                             _ => return Err(error),
                         };
-                        Ok(vec![DraftEventEnvelope { epoch: state.epoch, seq: state.seq,
+                        Ok(vec![DraftEventEnvelope {
+                            epoch: state.epoch,
+                            seq: state.seq,
                             event: DraftServerMessage::DraftCommandResult(DraftCommandResult {
-                                request_id, command: kind, accepted: false, code: Some(code.into()),
-                                source: None, target: None, reservation_id: None, lease_token: None, expires_at: None,
-                            }) }])
+                                request_id,
+                                command: kind,
+                                accepted: false,
+                                code: Some(code.into()),
+                                source: None,
+                                target: None,
+                                reservation_id: None,
+                                lease_token: None,
+                                expires_at: None,
+                            }),
+                        }])
                     }
                 }
             }
@@ -361,6 +455,7 @@ pub struct TimetableCollaborationRuntime {
     rooms: Mutex<BTreeMap<DraftKey, Arc<DraftRoom>>>,
     writes: Arc<Semaphore>,
     cold_load: tokio::sync::Mutex<()>,
+    cold_generation: AtomicU64,
 }
 
 impl Default for TimetableCollaborationRuntime {
@@ -375,6 +470,23 @@ impl TimetableCollaborationRuntime {
             rooms: Mutex::new(BTreeMap::new()),
             writes: Arc::new(Semaphore::new(MAX_ACCEPTED_WRITES)),
             cold_load: tokio::sync::Mutex::new(()),
+            cold_generation: AtomicU64::new(0),
+        }
+    }
+
+    pub fn has_tenant_rooms(&self, tenant_id: Uuid) -> bool {
+        self.rooms
+            .lock()
+            .map(|rooms| rooms.keys().any(|key| key.tenant_id == tenant_id))
+            .unwrap_or(true)
+    }
+
+    pub fn invalidate_all(&self) {
+        if let Ok(rooms) = self.rooms.lock() {
+            self.cold_generation.fetch_add(1, Ordering::AcqRel);
+            for room in rooms.values() {
+                room.invalidate();
+            }
         }
     }
 
@@ -391,23 +503,60 @@ impl TimetableCollaborationRuntime {
         staff_directory: &dyn crate::ports::StaffDirectoryPort,
     ) -> Result<Arc<DraftRoom>, AppError> {
         let _load = self.cold_load.lock().await;
-        if let Some(room) = self.rooms.lock().map_err(|_| stale())?.iter()
+        if let Some(room) = self
+            .rooms
+            .lock()
+            .map_err(|_| stale())?
+            .iter()
             .find(|(key, _)| key.tenant_id == tenant_id && key.timetable_version_id == version_id)
-            .map(|(_, room)| room.clone()) {
-            if room.lock()?.valid { return Ok(room); }
+            .map(|(_, room)| room.clone())
+        {
+            if room.lock()?.valid {
+                return Ok(room);
+            }
         }
-        let mut connection = school_tenancy::TenantPool::begin_observed(pool, "academic_timetable.collaboration.load_room").await?;
+        let generation = self.cold_generation.load(Ordering::Acquire);
+        let mut connection = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_timetable.collaboration.load_room",
+        )
+        .await?;
         // Every placement/lifecycle writer locks this version before changing its graph. A cold
         // or uncertain-COMMIT recovery read must wait for that transaction's final outcome.
-        school_database::DbSession::new(&mut *connection).scalar::<Uuid>(
-            "academic_timetable.collaboration.load_room.version_fence", "SELECT id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
-        ).bind(version_id).fetch_optional().await?.ok_or_else(|| AppError::NotFound("Timetable version not found".into()))?;
-        let version = crate::services::timetable_version_service::get_version_on_connection(&mut connection, version_id, Utc::now().date_naive()).await?;
-        let key = DraftKey { tenant_id, academic_term_id: version.academic_term_id, timetable_version_id: version_id };
-        let query = crate::models::timetable_block::TimetableBlockWorkspaceQuery { academic_year_id: version.academic_year_id, academic_term_id: version.academic_term_id, timetable_version_id: version_id };
-        let (workspace, visibility) = crate::services::timetable_block_queries::get_canonical_workspace(&mut connection, query, staff_directory).await?;
+        school_database::DbSession::new(&mut *connection)
+            .scalar::<Uuid>(
+                "academic_timetable.collaboration.load_room.version_fence",
+                "SELECT id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+            )
+            .bind(version_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("Timetable version not found".into()))?;
+        let version = crate::services::timetable_version_service::get_version_on_connection(
+            &mut connection,
+            version_id,
+            Utc::now().date_naive(),
+        )
+        .await?;
+        let key = DraftKey {
+            tenant_id,
+            academic_term_id: version.academic_term_id,
+            timetable_version_id: version_id,
+        };
+        let query = crate::models::timetable_block::TimetableBlockWorkspaceQuery {
+            academic_year_id: version.academic_year_id,
+            academic_term_id: version.academic_term_id,
+            timetable_version_id: version_id,
+        };
+        let (workspace, visibility) =
+            crate::services::timetable_block_queries::get_canonical_workspace(
+                &mut connection,
+                query,
+                staff_directory,
+            )
+            .await?;
         connection.commit().await?;
-        self.install(key, workspace, visibility)
+        self.install_fenced(key, workspace, visibility, Some(generation))
     }
 
     pub fn install(
@@ -416,12 +565,31 @@ impl TimetableCollaborationRuntime {
         workspace: TimetableBlockWorkspace,
         visibility: TimetableVisibility,
     ) -> Result<Arc<DraftRoom>, AppError> {
+        self.install_fenced(key, workspace, visibility, None)
+    }
+
+    fn install_fenced(
+        &self,
+        key: DraftKey,
+        workspace: TimetableBlockWorkspace,
+        visibility: TimetableVisibility,
+        generation: Option<u64>,
+    ) -> Result<Arc<DraftRoom>, AppError> {
         if workspace.version.id != key.timetable_version_id
             || workspace.version.academic_term_id != key.academic_term_id
         {
             return Err(stale());
         }
         let mut rooms = self.rooms.lock().map_err(|_| stale())?;
+        // Invalidation advances under this same map lock, including when no room exists yet.
+        // Check and insertion are one atomic cache-fill decision.
+        if generation
+            .is_some_and(|accepted| accepted != self.cold_generation.load(Ordering::Acquire))
+        {
+            return Err(AppError::ServiceUnavailable(
+                "Draft cache changed during loading; reconnect".into(),
+            ));
+        }
         rooms.retain(|_, room| {
             room.lock()
                 .map(|state| {
@@ -479,6 +647,7 @@ impl TimetableCollaborationRuntime {
 
     pub fn invalidate_term(&self, tenant_id: Uuid, term_id: Option<Uuid>) {
         if let Ok(rooms) = self.rooms.lock() {
+            self.cold_generation.fetch_add(1, Ordering::AcqRel);
             for (key, room) in rooms.iter() {
                 if key.tenant_id == tenant_id
                     && term_id.is_none_or(|term| term == key.academic_term_id)
@@ -487,6 +656,11 @@ impl TimetableCollaborationRuntime {
                 }
             }
         }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn accepted_write_count(&self) -> usize {
+        MAX_ACCEPTED_WRITES - self.writes.available_permits()
     }
 
     pub fn admit_write(&self) -> Result<OwnedSemaphorePermit, AppError> {
@@ -551,8 +725,19 @@ fn participant(state: &RoomState, viewer: &DraftMember, user_id: Uuid) -> DraftP
                     .cloned();
                 DraftConnectionPresence {
                     connection_id: member.connection_id,
-                    active_reservation_id: state.active_leases.get(&member.connection_id).and_then(|token| state.leases.get(token))
-                        .filter(|lease| source_visible(projected, &lease.public.source) && lease.public.target.as_ref().and_then(|target| target.block_id).is_none_or(|id| projected.blocks.contains(&id)))
+                    active_reservation_id: state
+                        .active_leases
+                        .get(&member.connection_id)
+                        .and_then(|token| state.leases.get(token))
+                        .filter(|lease| {
+                            source_visible(projected, &lease.public.source)
+                                && lease
+                                    .public
+                                    .target
+                                    .as_ref()
+                                    .and_then(|target| target.block_id)
+                                    .is_none_or(|id| projected.blocks.contains(&id))
+                        })
                         .map(|lease| lease.public.reservation_id),
                     context,
                     anchor,
@@ -582,28 +767,56 @@ fn reservations(state: &RoomState, viewer: &DraftMember) -> Vec<DraftReservation
 
 fn source_visible(index: &VisibilityIndex, source: &TimetableBlockPlacementSource) -> bool {
     match source {
-        TimetableBlockPlacementSource::ExistingBlock { block_id, .. } => index.blocks.contains(block_id),
-        TimetableBlockPlacementSource::OrdinaryDemand { learning_group_id, learning_offering_id } => index.ordinary_demands.contains(&(*learning_group_id, *learning_offering_id)),
-        TimetableBlockPlacementSource::SynchronizedOffering { learning_offering_id } => index.synchronized_offerings.contains(learning_offering_id),
+        TimetableBlockPlacementSource::ExistingBlock { block_id, .. } => {
+            index.blocks.contains(block_id)
+        }
+        TimetableBlockPlacementSource::OrdinaryDemand {
+            learning_group_id,
+            learning_offering_id,
+        } => index
+            .ordinary_demands
+            .contains(&(*learning_group_id, *learning_offering_id)),
+        TimetableBlockPlacementSource::SynchronizedOffering {
+            learning_offering_id,
+        } => index.synchronized_offerings.contains(learning_offering_id),
     }
 }
 
 fn context_visible(index: &VisibilityIndex, context: &DraftContext) -> bool {
-    if context.day_of_week.as_ref().is_some_and(|day| !authority::valid_day(day)) { return false; }
+    if context
+        .day_of_week
+        .as_ref()
+        .is_some_and(|day| !authority::valid_day(day))
+    {
+        return false;
+    }
     match context.view_mode {
-        DraftViewMode::WholeSchool => context.view_id.is_none_or(|id| index.homerooms.contains(&id)),
-        DraftViewMode::Homeroom => context.view_id.is_some_and(|id| index.homerooms.contains(&id)),
+        DraftViewMode::WholeSchool => context
+            .view_id
+            .is_none_or(|id| index.homerooms.contains(&id)),
+        DraftViewMode::Homeroom => context
+            .view_id
+            .is_some_and(|id| index.homerooms.contains(&id)),
         DraftViewMode::Teacher => context.view_id.is_some_and(|id| index.staff.contains(&id)),
-        DraftViewMode::LearningGroup => context.view_id.is_some_and(|id| index.groups.contains(&id)),
+        DraftViewMode::LearningGroup => {
+            context.view_id.is_some_and(|id| index.groups.contains(&id))
+        }
     }
 }
 
 fn anchor_visible(index: &VisibilityIndex, anchor: &DraftAnchor) -> bool {
-    anchor.has_valid_coordinates() && match anchor {
-        DraftAnchor::Cell { day_of_week, bell_schedule_period_id, .. } => authority::valid_day(day_of_week) && index.periods.contains(bell_schedule_period_id),
-        DraftAnchor::Block { block_id, .. } => index.blocks.contains(block_id),
-        DraftAnchor::Tray { source, .. } => source_visible(index, source),
-    }
+    anchor.has_valid_coordinates()
+        && match anchor {
+            DraftAnchor::Cell {
+                day_of_week,
+                bell_schedule_period_id,
+                ..
+            } => {
+                authority::valid_day(day_of_week) && index.periods.contains(bell_schedule_period_id)
+            }
+            DraftAnchor::Block { block_id, .. } => index.blocks.contains(block_id),
+            DraftAnchor::Tray { source, .. } => source_visible(index, source),
+        }
 }
 
 fn stale() -> AppError {

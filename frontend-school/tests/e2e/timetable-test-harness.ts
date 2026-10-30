@@ -427,7 +427,16 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				}
 			],
 			synchronizedDemands:
-				options.synchronizedDemands ??
+				options.synchronizedDemands?.map((demand) => ({
+					...demand,
+					scheduledPeriods:
+						demand.scheduledPeriods +
+						blocks.filter((block) => block.learningOfferingId === demand.learningOfferingId)
+							.length -
+						(options.blocks ?? []).filter(
+							(block) => block.learningOfferingId === demand.learningOfferingId
+						).length
+				})) ??
 				(options.includeSynchronizedDemand
 					? [
 							{
@@ -459,10 +468,15 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 
 	const relay = options.relay ?? createDraftRelay();
 	if (options.socketMode !== 'native')
-		await installRoutedDraftSocket(page, relay, () => workspace(), {
-			userId: options.userId ?? timetableIds.user,
-			name: options.userName ?? 'ผู้จัดตารางทดสอบ'
-		});
+		await installRoutedDraftSocket(
+			page,
+			relay,
+			(versionId) => workspace(versions.find((version) => version.id === versionId)),
+			{
+				userId: options.userId ?? timetableIds.user,
+				name: options.userName ?? 'ผู้จัดตารางทดสอบ'
+			}
+		);
 	async function fulfill(route: Route, data: unknown, status = 200) {
 		const path = new URL(route.request().url()).pathname;
 		const mutation =
@@ -873,6 +887,15 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	return {
 		workspace,
 		relay,
+		publishWorkspace: (next: TimetableBlockWorkspace, publish = true) => {
+			blocks = structuredClone(next.blocks);
+			versions = versions.map((version) =>
+				version.id === next.version.id ? structuredClone(next.version) : version
+			);
+			latestDeliveryVersionId = next.latestDeliveryVersionId;
+			sourceIssues = structuredClone(next.sourceIssues);
+			return relay.commit(next, {}, publish);
+		},
 		workspaceRequestCount: () => workspaceRequests,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,

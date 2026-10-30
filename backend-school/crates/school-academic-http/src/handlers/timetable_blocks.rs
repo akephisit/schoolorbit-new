@@ -123,6 +123,7 @@ pub async fn preview_placement(
     path = "/api/academic/timetable-blocks/ordinary",
     operation_id = "createOrdinaryTimetableBlock",
     request_body = CreateOrdinaryTimetableBlockRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Ordinary timetable block created", body = ApiResponse<TimetableBlock>),
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
@@ -153,12 +154,9 @@ pub async fn create_ordinary(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let block = timetable_block_service::create_ordinary_block(
-        &context.tenant.pool,
-        &mutation,
-        payload,
-    )
-    .await?;
+    let block =
+        timetable_block_service::create_ordinary_block(&context.tenant.pool, &mutation, payload)
+            .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &block);
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
@@ -168,6 +166,7 @@ pub async fn create_ordinary(
     path = "/api/academic/timetable-blocks/synchronized",
     operation_id = "createSynchronizedTimetableBlock",
     request_body = CreateSynchronizedTimetableBlockRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Synchronized timetable block created", body = ApiResponse<TimetableBlock>),
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
@@ -214,6 +213,7 @@ pub async fn create_synchronized(
     path = "/api/academic/timetable-blocks/structural",
     operation_id = "createStructuralTimetableBlocks",
     request_body = CreateStructuralTimetableBlocksRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Structural timetable blocks created", body = ApiResponse<Vec<TimetableBlock>>),
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
@@ -245,12 +245,9 @@ pub async fn create_structural(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let blocks = timetable_block_service::create_structural_blocks(
-        &context.tenant.pool,
-        &mutation,
-        payload,
-    )
-    .await?;
+    let blocks =
+        timetable_block_service::create_structural_blocks(&context.tenant.pool, &mutation, payload)
+            .await?;
     for block in &blocks {
         broadcast_changed(&state, &headers, context.actor.user_id, block);
     }
@@ -261,7 +258,7 @@ pub async fn create_structural(
     put,
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "updateTimetableBlock",
-    params(("block_id" = Uuid, Path)),
+    params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = UpdateTimetableBlockRequest,
     responses(
         (status = 200, description = "Timetable block updated", body = ApiResponse<TimetableBlock>),
@@ -296,13 +293,9 @@ pub async fn update_block(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let block = timetable_block_service::update_block(
-        &context.tenant.pool,
-        &mutation,
-        block_id,
-        payload,
-    )
-    .await?;
+    let block =
+        timetable_block_service::update_block(&context.tenant.pool, &mutation, block_id, payload)
+            .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &block);
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
@@ -311,7 +304,7 @@ pub async fn update_block(
     delete,
     path = "/api/academic/timetable-blocks/{block_id}/targets",
     operation_id = "removeTimetableBlockTarget",
-    params(("block_id" = Uuid, Path)),
+    params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RemoveTimetableBlockTargetRequest,
     responses(
         (status = 200, description = "Timetable block target removal result returned", body = ApiResponse<TimetableBlock>),
@@ -349,13 +342,9 @@ pub async fn remove_target(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let block = timetable_block_service::remove_target(
-        &context.tenant.pool,
-        &mutation,
-        block_id,
-        payload,
-    )
-    .await?;
+    let block =
+        timetable_block_service::remove_target(&context.tenant.pool, &mutation, block_id, payload)
+            .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &block);
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
@@ -364,7 +353,7 @@ pub async fn remove_target(
     post,
     path = "/api/academic/timetable-blocks/{block_id}/sync",
     operation_id = "retryTimetableBlockSync",
-    params(("block_id" = Uuid, Path)),
+    params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RetryTimetableBlockSyncRequest,
     responses((status = 200, description = "Timetable block synchronization retry result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
@@ -379,13 +368,9 @@ pub async fn retry_sync(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let block = timetable_block_service::retry_sync(
-        &context.tenant.pool,
-        &mutation,
-        block_id,
-        payload,
-    )
-    .await?;
+    let block =
+        timetable_block_service::retry_sync(&context.tenant.pool, &mutation, block_id, payload)
+            .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &block);
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
@@ -394,7 +379,7 @@ pub async fn retry_sync(
     post,
     path = "/api/academic/timetable-blocks/{block_id}/restore",
     operation_id = "restoreTimetableBlockGroup",
-    params(("block_id" = Uuid, Path)),
+    params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RestoreTimetableBlockGroupRequest,
     responses((status = 200, description = "Timetable block group restoration result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
@@ -409,13 +394,9 @@ pub async fn restore_group(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let block = timetable_block_service::restore_group(
-        &context.tenant.pool,
-        &mutation,
-        block_id,
-        payload,
-    )
-    .await?;
+    let block =
+        timetable_block_service::restore_group(&context.tenant.pool, &mutation, block_id, payload)
+            .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &block);
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
@@ -424,7 +405,7 @@ pub async fn restore_group(
     delete,
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "deleteTimetableBlock",
-    params(("block_id" = Uuid, Path), DeleteTimetableBlockQuery),
+    params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path), DeleteTimetableBlockQuery),
     responses((status = 200, description = "Timetable block deletion result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
@@ -454,7 +435,7 @@ pub async fn delete_block(
     delete,
     path = "/api/academic/timetable-blocks/series/{series_id}",
     operation_id = "deleteTimetableBlockSeries",
-    params(("series_id" = Uuid, Path), DeleteTimetableBlockSeriesQuery),
+    params(crate::mutation::TimetableMutationHeaders, ("series_id" = Uuid, Path), DeleteTimetableBlockSeriesQuery),
     responses((status = 200, description = "Timetable block series deletion result returned", body = ApiResponse<Vec<TimetableBlock>>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
@@ -496,6 +477,7 @@ pub async fn delete_series(
     path = "/api/academic/timetable-blocks/swap",
     operation_id = "swapTimetableBlocks",
     request_body = SwapTimetableBlocksRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Timetable block swap result returned", body = ApiResponse<school_academic_timetable::models::timetable_block::SwapTimetableBlocksResponse>),
         (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
@@ -524,8 +506,7 @@ pub async fn swap_blocks(
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let result =
-        timetable_block_service::swap_blocks(&context.tenant.pool, &mutation, payload)
-            .await?;
+        timetable_block_service::swap_blocks(&context.tenant.pool, &mutation, payload).await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &result.block_a);
     broadcast_changed(&state, &headers, context.actor.user_id, &result.block_b);
     Ok(Json(ApiResponse::ok(result)).into_response())

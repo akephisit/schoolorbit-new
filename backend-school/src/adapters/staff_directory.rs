@@ -16,7 +16,8 @@ impl StaffDirectoryPort for ApplicationStaffDirectory {
         viewer: &school_authorization::ActorContext,
         user_ids: &[Uuid],
     ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
-        school_staff::services::collaboration_portraits_on_connection(connection, viewer, user_ids).await
+        school_staff::services::collaboration_portraits_on_connection(connection, viewer, user_ids)
+            .await
     }
 
     async fn subject_groups_for_users(

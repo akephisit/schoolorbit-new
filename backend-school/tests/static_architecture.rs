@@ -447,6 +447,47 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
 }
 
 #[test]
+fn timetable_isolated_test_context_cannot_enter_production_dependency_or_call_paths() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let production = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .unwrap()
+        .split("[dev-dependencies]")
+        .next()
+        .unwrap();
+    assert!(!production.lines().any(
+        |line| line.starts_with("school-academic-timetable =") && line.contains("test-support")
+    ));
+    let domain = read_source(workspace_crate_dir("school-academic-timetable").join("Cargo.toml"));
+    assert!(domain.contains("test-support = []"));
+    assert!(!domain
+        .lines()
+        .any(|line| line.trim_start().starts_with("default =") && line.contains("test-support")));
+    let context = read_source(
+        workspace_crate_dir("school-academic-timetable").join("src/collaboration/mutation.rs"),
+    );
+    assert!(
+        context.contains("#[cfg(any(test, feature = \"test-support\"))]\n    pub fn for_tests(")
+    );
+    for source in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        if source
+            .components()
+            .any(|part| part.as_os_str() == "integration_tests")
+        {
+            continue;
+        }
+        assert!(
+            !read_source(&source).contains("TimetableMutationContext::for_tests"),
+            "production cannot create isolated collaboration authority: {}",
+            source.display()
+        );
+    }
+}
+
+#[test]
 fn permission_registry_has_one_workspace_owner() {
     let manifest = read_source(manifest_dir().join("Cargo.toml"));
     let crate_root = workspace_crate_dir("school-permissions");

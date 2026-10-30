@@ -197,7 +197,7 @@ pub async fn from_current(
     post,
     path = "/api/academic/timetable-templates/{template_id}/apply",
     operation_id = "applyTimetableTemplate",
-    params(("template_id" = Uuid, Path, description = "Timetable template ID")),
+    params(crate::mutation::TimetableMutationHeaders, ("template_id" = Uuid, Path, description = "Timetable template ID")),
     request_body = ApplyTemplateRequest,
     responses(
         (status = 200, description = "Applied timetable template", body = ApiResponse<school_academic_timetable::models::timetable::TemplateApplyResult>),
@@ -246,6 +246,7 @@ pub async fn apply_template(
     path = "/api/academic/timetable-blocks/clear",
     operation_id = "clearTimetable",
     request_body = ClearTimetableRequest,
+    params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Cleared timetable blocks", body = ApiResponse<Vec<school_academic_timetable::models::timetable_block::TimetableBlock>>),
         (status = 400, description = "Invalid clear request", body = ApiErrorResponse),
@@ -267,12 +268,9 @@ pub async fn clear_timetable(
     let academic_term_id = payload.academic_term_id;
     let timetable_version_id = payload.timetable_version_id;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let entries = timetable_template_service::clear_timetable(
-        &context.tenant.pool,
-        &mutation,
-        payload,
-    )
-    .await?;
+    let entries =
+        timetable_template_service::clear_timetable(&context.tenant.pool, &mutation, payload)
+            .await?;
     let revision = entries
         .iter()
         .map(|entry| entry.row_version)

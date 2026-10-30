@@ -762,6 +762,8 @@
 	): void {
 		workspaceRevision += 1;
 		request.abort();
+		reloadRequest.abort();
+		controller?.setRefreshing(false);
 		loading = false;
 		if (pendingOperationCount === 0) saveError = null;
 		pendingOperationCount += 1;
@@ -818,7 +820,7 @@
 		if (disposed || versionId !== controller?.workspace.version.id) return;
 		// Canonical socket state supersedes any older read of this same workspace.
 		workspaceRevision++;
-		versionsRevision++;
+		loading = false;
 		reloadRequest.abort();
 		controller.setRefreshing(false);
 		if (workspaceReadVersionId === versionId) {
@@ -1075,7 +1077,9 @@
 				((item.source.kind === 'existing_block' && item.source.blockId === blockId) ||
 					item.target?.blockId === blockId)
 		);
-		return reservation ? peerName(reservation.ownerConnectionId) : null;
+		return reservation
+			? `${peerName(reservation.ownerConnectionId)} ${reservation.purpose === 'edit' ? 'กำลังแก้ไข' : 'กำลังจัดคาบ'}`
+			: null;
 	}
 
 	function cellLockLabel(dayOfWeek: string, periodId: string): string | null {
@@ -2346,7 +2350,12 @@
 				untrack(() => {
 					if (versionsRevision === initialVersionsRevision) {
 						if (result.ok) {
-							versions = result.data;
+							versions = result.data.map((version) =>
+								controller?.workspace.version.id === version.id &&
+								controller.workspace.version.rowVersion > version.rowVersion
+									? controller.workspace.version
+									: version
+							);
 							boardRetryVersionId ||=
 								selectPreferredBoardVersion(result.data, requestedVersionId)?.id ?? '';
 						} else versionsError = result.error;
@@ -2380,8 +2389,13 @@
 			event.clientX === 0 &&
 			event.clientY === 0 &&
 			(event.type.startsWith('drag') || event.type === 'drop')
-		)
+		) {
+			if (event.type === 'dragstart') {
+				lastPointerPoint = null;
+				currentAnchor = null;
+			}
 			return;
+		}
 		lastPointerPoint = { x: event.clientX, y: event.clientY };
 		samplePointerAtPoint(lastPointerPoint);
 	}

@@ -132,8 +132,13 @@ pub(crate) async fn get_workspace(
     access: &TimetableAccessFilter,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
-    let (workspace, visibility) = get_canonical_workspace(connection, query, staff_directory).await?;
-    Ok(crate::policy::project_workspace(&workspace, &visibility, access))
+    let (workspace, visibility) =
+        get_canonical_workspace(connection, query, staff_directory).await?;
+    Ok(crate::policy::project_workspace(
+        &workspace,
+        &visibility,
+        access,
+    ))
 }
 
 pub(crate) async fn get_canonical_workspace(
@@ -141,7 +146,10 @@ pub(crate) async fn get_canonical_workspace(
     query: TimetableBlockWorkspaceQuery,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<(TimetableBlockWorkspace, crate::policy::TimetableVisibility), AppError> {
-    let access = &TimetableAccessFilter { includes_school_owned: true, ..Default::default() };
+    let access = &TimetableAccessFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
     const MAX_GROUPS: i64 = 2_000;
     const MAX_HOMEROOMS: i64 = 500;
     const MAX_ROOMS: i64 = 2_000;
@@ -295,7 +303,12 @@ pub(crate) async fn get_canonical_workspace(
             "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
         ));
     }
-    let staff_ids = staff.iter().map(|(id, _, _)| *id).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    let staff_ids = staff
+        .iter()
+        .map(|(id, _, _)| *id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     // Assignment identity is pinned; names share the current workspace staff projection.
     let staff_names = staff
         .iter()
@@ -658,26 +671,43 @@ pub(crate) async fn get_canonical_workspace(
         "SELECT advisor.homeroom_id,advisor.user_id FROM homeroom_advisors advisor JOIN homerooms homeroom ON homeroom.id=advisor.homeroom_id WHERE homeroom.academic_year_id=$1",
     ).bind(query.academic_year_id).fetch_all().await?;
     let mut homeroom_advisors = BTreeMap::<Uuid, BTreeSet<Uuid>>::new();
-    for (homeroom, actor) in advisors { homeroom_advisors.entry(homeroom).or_default().insert(actor); }
-    let offering_ids = source.snapshot.offerings.iter().map(|offering| offering.id).chain(blocks.iter().filter_map(|block| block.learning_offering_id)).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    for (homeroom, actor) in advisors {
+        homeroom_advisors.entry(homeroom).or_default().insert(actor);
+    }
+    let offering_ids = source
+        .snapshot
+        .offerings
+        .iter()
+        .map(|offering| offering.id)
+        .chain(blocks.iter().filter_map(|block| block.learning_offering_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
-    let visibility = crate::policy::TimetableVisibility { source: source.snapshot, homeroom_advisors, block_offering_owners };
-    Ok((TimetableBlockWorkspace {
-        total_draft_block_count,
-        source_issues,
-        latest_delivery_version_id,
-        version,
-        bell_periods,
-        blocks,
-        ordinary_demands,
-        synchronized_demands,
-        learning_groups,
-        homerooms,
-        rooms,
-        staff,
-        offering_subject_groups,
-        summary,
-    }, visibility))
+    let visibility = crate::policy::TimetableVisibility {
+        source: source.snapshot,
+        homeroom_advisors,
+        block_offering_owners,
+    };
+    Ok((
+        TimetableBlockWorkspace {
+            total_draft_block_count,
+            source_issues,
+            latest_delivery_version_id,
+            version,
+            bell_periods,
+            blocks,
+            ordinary_demands,
+            synchronized_demands,
+            learning_groups,
+            homerooms,
+            rooms,
+            staff,
+            offering_subject_groups,
+            summary,
+        },
+        visibility,
+    ))
 }
 
 pub(crate) async fn get_block(

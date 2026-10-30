@@ -7,7 +7,10 @@ use school_auth_http::context::ActorTenantContext;
 
 use super::*;
 
-pub(super) struct PreparedDraft { room: Arc<DraftRoom>, member: DraftMember }
+pub(super) struct PreparedDraft {
+    room: Arc<DraftRoom>,
+    member: DraftMember,
+}
 
 pub(super) async fn prepare(
     state: &AcademicWebSocketState,
@@ -16,29 +19,92 @@ pub(super) async fn prepare(
     term_id: Uuid,
     version_id: Uuid,
 ) -> Result<PreparedDraft, AppError> {
-    let access = school_academic_timetable::services::timetable_realtime_service::authorize_draft_socket(&context.tenant.pool, &context.actor, term_id, version_id).await?;
-    let room = state.collaboration.load_room(context.tenant.tenant_id, &context.tenant.pool, version_id, state.staff_directory).await?;
-    if room.key.academic_term_id != term_id { return Err(AppError::NotFound("Draft not found in selected term".into())); }
+    state
+        .websocket_manager
+        .register_tenant(&context.tenant.subdomain, context.tenant.tenant_id)?;
+    let access =
+        school_academic_timetable::services::timetable_realtime_service::authorize_draft_socket(
+            &context.tenant.pool,
+            &context.actor,
+            term_id,
+            version_id,
+        )
+        .await?;
+    let room = state
+        .collaboration
+        .load_room(
+            context.tenant.tenant_id,
+            &context.tenant.pool,
+            version_id,
+            state.staff_directory,
+        )
+        .await?;
+    if room.key.academic_term_id != term_id {
+        return Err(AppError::NotFound(
+            "Draft not found in selected term".into(),
+        ));
+    }
     let existing = room.members()?;
-    let user_ids = existing.iter().map(|member| member.actor.user_id).chain([access.user_id]).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(&context.tenant.pool, "academic_http.websockets.draft.portraits").await.map_err(school_errors::AppError::from)?;
+    let user_ids = existing
+        .iter()
+        .map(|member| member.actor.user_id)
+        .chain([access.user_id])
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        &context.tenant.pool,
+        "academic_http.websockets.draft.portraits",
+    )
+    .await
+    .map_err(school_errors::AppError::from)?;
     // Profile access is resolved at join; pointer and lease frames never query Staff or Files.
     for member in &existing {
-        let portraits = state.staff_directory.collaboration_portraits(&mut connection, &member.actor, &user_ids).await?.into_iter().collect();
+        let portraits = state
+            .staff_directory
+            .collaboration_portraits(&mut connection, &member.actor, &user_ids)
+            .await?
+            .into_iter()
+            .collect();
         room.set_portraits(member.connection_id, portraits)?;
     }
-    let portraits = state.staff_directory.collaboration_portraits(&mut connection, &context.actor, &user_ids).await?.into_iter().collect::<BTreeMap<_, _>>();
-    let resource_access = Arc::new(school_academic_timetable::policy::resource_access_snapshot_on_connection(&mut connection, &context.actor, &room.resource_inputs()?).await?);
-    let member = DraftMember { connection_id: Uuid::new_v4(), actor: context.actor.clone(), session_id: session.session_id,
-        name: access.display_name, color: generate_color_from_uuid(&access.user_id), access: access.read_access,
-        manage_access: access.manage_access, resource_access, portraits, context: None, anchor: None };
+    let portraits = state
+        .staff_directory
+        .collaboration_portraits(&mut connection, &context.actor, &user_ids)
+        .await?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let resource_access = Arc::new(
+        school_academic_timetable::policy::resource_access_snapshot_on_connection(
+            &mut connection,
+            &context.actor,
+            &room.resource_inputs()?,
+        )
+        .await?,
+    );
+    let member = DraftMember {
+        connection_id: Uuid::new_v4(),
+        actor: context.actor.clone(),
+        session_id: session.session_id,
+        name: access.display_name,
+        color: generate_color_from_uuid(&access.user_id),
+        access: access.read_access,
+        manage_access: access.manage_access,
+        resource_access,
+        portraits,
+        context: None,
+        anchor: None,
+    };
     Ok(PreparedDraft { room, member })
 }
 
 async fn send(socket: &mut WebSocket, events: Vec<DraftEventEnvelope>) -> Result<(), ()> {
     for event in events {
         let wire = serde_json::to_string(&event).map_err(|_| ())?;
-        socket.send(Message::Text(wire.into())).await.map_err(|_| ())?;
+        socket
+            .send(Message::Text(wire.into()))
+            .await
+            .map_err(|_| ())?;
     }
     Ok(())
 }
@@ -53,7 +119,12 @@ fn queued_authority(
         SocketSessionDecision::Unavailable => return Some(SocketCloseReason::SessionUnavailable),
         SocketSessionDecision::Continue => {}
     }
-    (drain_queued_permission_events(permissions, &authenticated.tenant.subdomain, authenticated.user_id) == SocketPermissionDecision::Disconnect).then_some(SocketCloseReason::PermissionChanged)
+    (drain_queued_permission_events(
+        permissions,
+        &authenticated.tenant.subdomain,
+        authenticated.user_id,
+    ) == SocketPermissionDecision::Disconnect)
+        .then_some(SocketCloseReason::PermissionChanged)
 }
 
 pub(super) async fn handle(
@@ -69,18 +140,29 @@ pub(super) async fn handle(
     let tenant = authenticated.tenant.subdomain.clone();
     let term_id = room.key.academic_term_id;
     let mut changes = room.subscribe();
-    let legacy_sender = state.websocket_manager.get_or_create_room(tenant.clone(), term_id);
+    let legacy_sender = state
+        .websocket_manager
+        .get_or_create_room(tenant.clone(), term_id);
     let mut upstream = legacy_sender.subscribe();
     let gate = room.mutation_gate().await;
     if let Some(reason) = queued_authority(&mut sessions, &mut permissions, &authenticated) {
         close_realtime_socket(&mut socket, &authenticated, reason).await;
         return;
     }
-    let sync = match room.join(member) { Ok(sync) => sync, Err(_) => return };
+    let sync = match room.join(member) {
+        Ok(sync) => sync,
+        Err(_) => return,
+    };
     let mut sent_seq = sync.seq;
     drop(gate);
-    if send(&mut socket, vec![sync]).await.is_err() { room.disconnect(connection_id); return; }
-    let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL);
+    if send(&mut socket, vec![sync]).await.is_err() {
+        room.disconnect(connection_id);
+        return;
+    }
+    let mut heartbeat = tokio::time::interval_at(
+        tokio::time::Instant::now() + HEARTBEAT_INTERVAL,
+        HEARTBEAT_INTERVAL,
+    );
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_inbound = Instant::now();
     let mut last_presence = Instant::now() - Duration::from_secs(1);

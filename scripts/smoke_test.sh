@@ -410,7 +410,8 @@ import time
 import urllib.parse
 import uuid
 
-MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+# Match the browser decoder's complete UTF-8 event budget, including JSON overhead.
+MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 
 def require(condition):
     if not condition:
@@ -539,6 +540,9 @@ def run():
             require(length <= MAX_MESSAGE_BYTES)
             if opcode >= 8:
                 require(bool(first & 0x80) and length <= 125)
+            else:
+                # Refuse an oversized fragmented event before receiving its next payload.
+                require(length <= MAX_MESSAGE_BYTES - len(fragments))
             return bool(first & 0x80), opcode, receive(length)
 
         fragments = bytearray()
