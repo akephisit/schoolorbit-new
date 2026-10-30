@@ -66,7 +66,7 @@ export function mountSessionActivity(warning: (value: SessionWarning | null) => 
 		now: () => performance.now(),
 		wallNow: Date.now,
 		setTimer: (callback, delay) => setTimeout(callback, delay),
-		clearTimer: clearTimeout,
+		clearTimer: (timer) => clearTimeout(timer),
 		warning,
 		resyncClock: async () =>
 			(await authAPI.refreshCurrentUser({ silent: true })) === 'authenticated',
