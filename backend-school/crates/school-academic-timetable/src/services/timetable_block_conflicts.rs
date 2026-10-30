@@ -61,11 +61,6 @@ pub(crate) async fn preview_placement(
         TimetableBlockPlacementSource::ExistingBlock { block_id, .. } => Some(block_id),
         _ => None,
     };
-    let mut excluded_block_ids = source_block_id.into_iter().collect::<Vec<_>>();
-    if let Some(target_id) = request.expected_target_block_id {
-        excluded_block_ids.push(target_id);
-    }
-    excluded_block_ids = canonical_ids(&excluded_block_ids);
 
     let version_valid: bool = DbSession::new(connection)
         .scalar(
@@ -101,20 +96,205 @@ pub(crate) async fn preview_placement(
         ));
     }
 
+    let source_block = if let TimetableBlockPlacementSource::ExistingBlock {
+        block_id,
+        row_version,
+    } = &request.source
+    {
+        load_placement_block(
+            connection,
+            *block_id,
+            request.timetable_version_id,
+            request.academic_term_id,
+        )
+        .await?
+        .filter(|block| block.row_version == *row_version)
+    } else {
+        None
+    };
+    let target_block = if let Some(block_id) = request.expected_target_block_id {
+        load_placement_block(
+            connection,
+            block_id,
+            request.timetable_version_id,
+            request.academic_term_id,
+        )
+        .await?
+        .filter(|block| {
+            Some(block.row_version) == request.expected_target_row_version
+                && block.day_of_week == target_day
+                && block.bell_schedule_period_id == request.target_bell_schedule_period_id
+                && source_block_id != Some(block_id)
+        })
+    } else {
+        None
+    };
+    if (source_block_id.is_some() && source_block.is_none())
+        || (request.expected_target_block_id.is_some()
+            && (source_block.is_none() || target_block.is_none()))
+        || (request.expected_target_block_id.is_none()
+            && request.expected_target_row_version.is_some())
+    {
+        return Ok(blocked_preview(
+            source_block_id,
+            request.expected_target_block_id,
+            target_day,
+            request.target_bell_schedule_period_id,
+            candidate,
+            TimetableBlockConflict {
+                conflict_type: TimetableBlockConflictType::StaleBlock,
+                code: "TIMETABLE_STALE_BLOCK".to_string(),
+                message: "รายการต้นทางหรือรายการที่จะสลับเปลี่ยนแปลงแล้ว กรุณาโหลดตารางสอนใหม่".to_string(),
+                existing_block_id: None,
+                target_kind: None,
+                target_id: None,
+            },
+        ));
+    }
+    let mut excluded_block_ids = source_block_id.into_iter().collect::<Vec<_>>();
+    excluded_block_ids.extend(request.expected_target_block_id);
+    let reservations = if let Some(block) = &source_block {
+        block.reservations()
+    } else {
+        candidate_reservations(connection, request.timetable_version_id, &candidate).await?
+    };
+    let mut conflicts = placement_conflicts(
+        connection,
+        request.timetable_version_id,
+        &target_day,
+        request.target_bell_schedule_period_id,
+        &reservations,
+        &excluded_block_ids,
+    )
+    .await?;
+    if let (Some(source), Some(target)) = (&source_block, &target_block) {
+        let mut return_conflicts = placement_conflicts(
+            connection,
+            request.timetable_version_id,
+            &source.day_of_week,
+            source.bell_schedule_period_id,
+            &target.reservations(),
+            &excluded_block_ids,
+        )
+        .await?;
+        for conflict in &mut return_conflicts {
+            conflict.code = conflict
+                .code
+                .replacen("TIMETABLE_", "TIMETABLE_SWAP_RETURN_", 1);
+            conflict.message = format!("คาบที่สลับกลับ: {}", conflict.message);
+        }
+        conflicts.extend(return_conflicts);
+    }
+    let state = if !conflicts.is_empty() {
+        TimetableBlockPlacementState::Blocked
+    } else if request.expected_target_block_id.is_some() {
+        TimetableBlockPlacementState::Swap
+    } else if source_block_id.is_some() {
+        TimetableBlockPlacementState::Move
+    } else {
+        TimetableBlockPlacementState::Source
+    };
+    let mutation = match state {
+        TimetableBlockPlacementState::Source => Some(TimetableBlockMutationKind::Create),
+        TimetableBlockPlacementState::Move => Some(TimetableBlockMutationKind::Move),
+        TimetableBlockPlacementState::Swap => Some(TimetableBlockMutationKind::Swap),
+        TimetableBlockPlacementState::Blocked => None,
+    };
+    Ok(TimetableBlockPlacementPreview {
+        state,
+        source_block_id,
+        target_block_id: request.expected_target_block_id,
+        target_day_of_week: target_day,
+        target_bell_schedule_period_id: request.target_bell_schedule_period_id,
+        normalized_candidate: candidate,
+        conflicts,
+        mutation,
+    })
+}
+
+struct PlacementReservations {
+    group_ids: Vec<Uuid>,
+    homeroom_ids: Vec<Uuid>,
+    teacher_ids: Vec<Uuid>,
+    room_ids: Vec<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PlacementBlock {
+    day_of_week: String,
+    bell_schedule_period_id: Uuid,
+    row_version: i64,
+    group_ids: Vec<Uuid>,
+    homeroom_ids: Vec<Uuid>,
+    teacher_ids: Vec<Uuid>,
+    room_ids: Vec<Uuid>,
+}
+
+impl PlacementBlock {
+    fn reservations(&self) -> PlacementReservations {
+        PlacementReservations {
+            group_ids: self.group_ids.clone(),
+            homeroom_ids: self.homeroom_ids.clone(),
+            teacher_ids: self.teacher_ids.clone(),
+            room_ids: self.room_ids.clone(),
+        }
+    }
+}
+
+async fn load_placement_block(
+    connection: &mut sqlx::PgConnection,
+    block_id: Uuid,
+    timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<Option<PlacementBlock>, AppError> {
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_conflicts.load_placement_block",
+            r#"SELECT block.day_of_week, block.bell_schedule_period_id, block.row_version,
+            ARRAY(SELECT learning_group_id FROM academic_timetable_block_groups
+                  WHERE block_id = block.id AND is_active) AS group_ids,
+            ARRAY(SELECT homeroom_id FROM academic_timetable_block_homerooms
+                  WHERE block_id = block.id AND is_active
+                  UNION SELECT unnest(homeroom_ids) FROM academic_timetable_block_groups
+                  WHERE block_id = block.id AND is_active) AS homeroom_ids,
+            ARRAY(SELECT teacher_id FROM academic_timetable_block_teachers
+                  WHERE block_id = block.id AND is_active
+                  UNION SELECT instructor.instructor_id
+                  FROM academic_timetable_block_groups target
+                  JOIN academic_timetable_block_group_instructors instructor
+                    ON instructor.block_group_id = target.id
+                  WHERE target.block_id = block.id AND target.is_active) AS teacher_ids,
+            ARRAY(SELECT room_id FROM academic_timetable_block_groups
+                  WHERE block_id = block.id AND is_active AND room_id IS NOT NULL
+                  UNION SELECT room_id FROM academic_timetable_block_homerooms
+                  WHERE block_id = block.id AND is_active AND room_id IS NOT NULL) AS room_ids
+           FROM academic_timetable_blocks block
+           WHERE block.id = $1 AND block.timetable_version_id = $2
+             AND block.academic_term_id = $3 AND block.is_active"#,
+        )
+        .bind(block_id)
+        .bind(timetable_version_id)
+        .bind(academic_term_id)
+        .fetch_optional()
+        .await?)
+}
+
+async fn candidate_reservations(
+    connection: &mut sqlx::PgConnection,
+    timetable_version_id: Uuid,
+    candidate: &TimetableBlockPlacementCandidate,
+) -> Result<PlacementReservations, AppError> {
     let group_ids = candidate.learning_group_id.into_iter().collect::<Vec<_>>();
     let covered_homeroom_ids: Vec<Uuid> = if group_ids.is_empty() {
         candidate.homeroom_ids.clone()
     } else {
-        let mut ids = if let Some(block_id) = source_block_id {
-            DbSession::new(connection).scalar::<Uuid>("academic_timetable.services.timetable_block_conflicts.preview_placement", "SELECT DISTINCT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=$1 AND is_active AND learning_group_id=ANY($2)")
-                .bind(block_id).bind(&group_ids).fetch_all().await?
-        } else {
+        let mut ids: Vec<Uuid> = {
             let source_id: Uuid = DbSession::new(connection)
                 .scalar(
                     "academic_timetable.services.timetable_block_conflicts.preview_placement",
                     "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
                 )
-                .bind(request.timetable_version_id)
+                .bind(timetable_version_id)
                 .fetch_one()
                 .await?;
             let source = school_academic_delivery::services::versions::get_version_on_connection(
@@ -138,6 +318,22 @@ pub(crate) async fn preview_placement(
     teacher_ids = canonical_ids(&teacher_ids);
     let room_ids = candidate.room_id.into_iter().collect::<Vec<_>>();
 
+    Ok(PlacementReservations {
+        group_ids,
+        homeroom_ids: covered_homeroom_ids,
+        teacher_ids,
+        room_ids,
+    })
+}
+
+async fn placement_conflicts(
+    connection: &mut sqlx::PgConnection,
+    timetable_version_id: Uuid,
+    day: &str,
+    period_id: Uuid,
+    reservations: &PlacementReservations,
+    excluded_block_ids: &[Uuid],
+) -> Result<Vec<TimetableBlockConflict>, AppError> {
     let conflicts: Vec<(String, Uuid, Uuid)> = DbSession::new(connection)
         .query_as(
             "academic_timetable.services.timetable_block_conflicts.preview_placement",
@@ -207,45 +403,20 @@ pub(crate) async fn preview_placement(
            WHERE NOT (block_id = ANY($8))
            ORDER BY kind, block_id, target_id"#,
         )
-        .bind(request.timetable_version_id)
-        .bind(&target_day)
-        .bind(request.target_bell_schedule_period_id)
-        .bind(&group_ids)
-        .bind(&covered_homeroom_ids)
-        .bind(&teacher_ids)
-        .bind(&room_ids)
-        .bind(&excluded_block_ids)
+        .bind(timetable_version_id)
+        .bind(day)
+        .bind(period_id)
+        .bind(&reservations.group_ids)
+        .bind(&reservations.homeroom_ids)
+        .bind(&reservations.teacher_ids)
+        .bind(&reservations.room_ids)
+        .bind(excluded_block_ids)
         .fetch_all()
         .await?;
-    let conflicts = conflicts
+    conflicts
         .into_iter()
         .map(|(kind, block_id, target_id)| conflict_from_row(&kind, block_id, target_id))
-        .collect::<Result<Vec<_>, _>>()?;
-    let state = if !conflicts.is_empty() {
-        TimetableBlockPlacementState::Blocked
-    } else if request.expected_target_block_id.is_some() {
-        TimetableBlockPlacementState::Swap
-    } else if source_block_id.is_some() {
-        TimetableBlockPlacementState::Move
-    } else {
-        TimetableBlockPlacementState::Source
-    };
-    let mutation = match state {
-        TimetableBlockPlacementState::Source => Some(TimetableBlockMutationKind::Create),
-        TimetableBlockPlacementState::Move => Some(TimetableBlockMutationKind::Move),
-        TimetableBlockPlacementState::Swap => Some(TimetableBlockMutationKind::Swap),
-        TimetableBlockPlacementState::Blocked => None,
-    };
-    Ok(TimetableBlockPlacementPreview {
-        state,
-        source_block_id,
-        target_block_id: request.expected_target_block_id,
-        target_day_of_week: target_day,
-        target_bell_schedule_period_id: request.target_bell_schedule_period_id,
-        normalized_candidate: candidate,
-        conflicts,
-        mutation,
-    })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 fn conflict_from_row(

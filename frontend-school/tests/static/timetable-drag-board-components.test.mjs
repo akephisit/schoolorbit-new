@@ -50,9 +50,19 @@ test('lesson tray and board expose native drag with tap-to-place parity', async 
 	assert.match(page, /swapTimetableBlocks/);
 	assert.match(page, /placementFailureMessage\(preview\)/);
 	assert.match(page, /if \(failureMessage\) throw new Error\(failureMessage\)/);
+	const hover = page.slice(
+		page.indexOf('function previewPlacement('),
+		page.indexOf('async function downloadPdf(')
+	);
+	assert.match(hover, /previewCellKey = cellKey/);
+	assert.doesNotMatch(
+		hover,
+		/requestPlacementPreview|previewTimetableBlockPlacement|fetchPlacementPreview/
+	);
+	assert.doesNotMatch(page, /activePreviewRequest|reusablePreviewRequest/);
 	assert.match(
 		page,
-		/activePreviewRequest\?\.session === placementSession[\s\S]*reusablePreviewRequest\?\.promise/
+		/function applyPlacement[\s\S]*const previewPromise = requestPlacementPreview/
 	);
 	assert.match(page, /beginPendingOperation\(pendingIds\)[\s\S]*persistOptimisticPlacement/);
 });

@@ -15,7 +15,8 @@ use school_academic_timetable::models::timetable_block::{
     DeleteTimetableBlockSeriesQuery, RemoveTimetableBlockTargetRequest,
     RestoreTimetableBlockGroupRequest, RetryTimetableBlockSyncRequest, SwapTimetableBlocksRequest,
     TimetableBlock, TimetableBlockKind, TimetableBlockPlacementPreviewRequest,
-    TimetableBlockWorkspaceQuery, TimetableTargetKind, UpdateTimetableBlockRequest,
+    TimetableBlockPlacementSource, TimetableBlockWorkspaceQuery, TimetableTargetKind,
+    UpdateTimetableBlockRequest,
 };
 use school_academic_timetable::policy::{
     require_timetable_list_access, require_timetable_resources, TimetableAction,
@@ -100,6 +101,9 @@ pub async fn preview_placement(
         room_ids: payload.candidate.room_id.into_iter().collect(),
         requires_school_scope: payload.candidate.block_kind == TimetableBlockKind::Structural,
     };
+    if let TimetableBlockPlacementSource::ExistingBlock { block_id, .. } = &payload.source {
+        resources_from_block(&context, *block_id, &mut resources).await?;
+    }
     if let Some(block_id) = payload.expected_target_block_id {
         resources_from_block(&context, block_id, &mut resources).await?;
     }

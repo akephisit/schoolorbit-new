@@ -1,14 +1,4 @@
-import type {
-	TimetableBlockPlacementPreview,
-	TimetableBlockPlacementState
-} from '../../api/timetable';
-
-export function placementCellState(
-	preview: TimetableBlockPlacementPreview
-): Exclude<TimetableBlockPlacementState, 'source'> | 'dragging' {
-	if (preview.state === 'source') return preview.mutation === 'create' ? 'move' : 'dragging';
-	return preview.state;
-}
+import type { TimetableBlockPlacementPreview } from '../../api/timetable';
 
 export function placementFailureMessage(preview: TimetableBlockPlacementPreview): string | null {
 	if (preview.state === 'blocked') {

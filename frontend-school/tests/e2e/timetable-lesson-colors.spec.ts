@@ -377,25 +377,29 @@ for (const theme of ['light', 'dark'] as const) {
 		});
 	}
 
-	test(`blocked preview retains its lesson fill and destructive border in ${theme}`, async ({
+	test(`blocked target shows readable reasons without covering them with the lesson preview in ${theme}`, async ({
 		page
 	}) => {
-		const mock = await installTimetableMock(page, { blockedPeriodId: timetableIds.period2 });
+		const blocker = makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
+			groupId: timetableIds.groupB,
+			code: 'ว21101',
+			name: 'วิทยาศาสตร์'
+		});
+		const mock = await installTimetableMock(page, { blocks: [blocker] });
 		await page.goto(boardUrl());
 		await setTheme(page, theme);
 		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 		const trayCard = page.locator('aside article').first();
-		const fill = (await colorMetrics(trayCard, theme)).fill;
 		const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 		await trayCard.dispatchEvent('dragstart', { dataTransfer });
 		await page
 			.locator(`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period2}"]`)
 			.dispatchEvent('dragover', { dataTransfer });
-		const preview = page.locator('[data-timetable-placement-preview]');
-		await expect(preview).toHaveAttribute('data-placement-state', 'blocked');
-		const metrics = await colorMetrics(preview, theme);
-		expect(metrics.fill).toBe(fill);
-		expect(metrics.border).toEqual(metrics.destructive);
+		await expect(page.locator('[data-timetable-placement-preview]')).toHaveCount(0);
+		const reason = page.locator('[data-timetable-placement-reason]');
+		await expect(reason).toContainText('ครูคณิตศาสตร์ A ไม่ว่าง');
+		await expect(reason).toContainText('วิชา: ว21101 วิทยาศาสตร์');
+		expect(mock.previewRequestCount()).toBe(0);
 		await trayCard.dispatchEvent('dragend', { dataTransfer });
 		expect(
 			mock.createRequestCount() +

@@ -5,6 +5,8 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import TimetablePlacementReasons from './TimetablePlacementReasons.svelte';
+	import type { TimetablePlacementReasons as PlacementReasons } from '#lib/academic/timetable/placement-reasons.js';
 	import { LoaderCircle } from '@lucide/svelte';
 	import TimetablePlacementPreviewCard, {
 		type TimetablePlacementCard
@@ -15,12 +17,13 @@
 		periodId,
 		dayLabel,
 		periodLabel,
-		state = 'neutral',
+		state: cellState = 'neutral',
 		disabled = false,
 		onDropIntent,
 		onHoverIntent,
 		onActivateIntent,
 		placementCard = null,
+		placementReasons = null,
 		pendingRemoval = false,
 		children
 	}: {
@@ -34,10 +37,12 @@
 		onHoverIntent?: () => void;
 		onActivateIntent?: () => void;
 		placementCard?: TimetablePlacementCard | null;
+		placementReasons?: PlacementReasons | null;
 		pendingRemoval?: boolean;
 		children?: Snippet;
 	} = $props();
 
+	let dragActive = $state(false);
 	const stateLabels: Record<TimetableCellState, string> = {
 		neutral: 'ว่าง',
 		dragging: 'กำลังเลือกตำแหน่ง',
@@ -47,31 +52,41 @@
 		saving: 'กำลังบันทึก',
 		stale: 'ข้อมูลเปลี่ยนแล้ว'
 	};
-	const stateLabel = $derived(stateLabels[state]);
-	const canActivate = $derived(!disabled && (state === 'move' || state === 'swap'));
-	const actionLabel = $derived(state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่');
+	const stateLabel = $derived(stateLabels[cellState]);
+	const canActivate = $derived(!disabled && (cellState === 'move' || cellState === 'swap'));
+	const actionLabel = $derived(cellState === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่');
 </script>
 
 <td
 	class={[
 		'relative h-px border-b border-r p-1.5 align-top transition-colors',
-		state === 'dragging' && 'bg-primary/5 ring-2 ring-inset ring-primary/35',
-		state === 'move' && 'bg-emerald-50 ring-2 ring-inset ring-emerald-500 dark:bg-emerald-950/25',
-		state === 'swap' && 'bg-sky-50 ring-2 ring-inset ring-sky-500 dark:bg-sky-950/25',
-		state === 'blocked' && 'bg-destructive/5 ring-2 ring-inset ring-destructive/60',
-		state === 'saving' && 'animate-pulse bg-amber-50 dark:bg-amber-950/20',
-		state === 'stale' && 'bg-orange-50 ring-2 ring-inset ring-orange-500 dark:bg-orange-950/20'
+		cellState === 'dragging' && 'bg-primary/5 ring-2 ring-inset ring-primary/35',
+		cellState === 'move' &&
+			'bg-emerald-50 ring-2 ring-inset ring-emerald-500 dark:bg-emerald-950/25',
+		cellState === 'swap' && 'bg-sky-50 ring-2 ring-inset ring-sky-500 dark:bg-sky-950/25',
+		cellState === 'blocked' && 'bg-destructive/5 ring-2 ring-inset ring-destructive/60',
+		cellState === 'saving' && 'animate-pulse bg-amber-50 dark:bg-amber-950/20',
+		cellState === 'stale' && 'bg-orange-50 ring-2 ring-inset ring-orange-500 dark:bg-orange-950/20'
 	]}
 	aria-label={`${dayLabel} ${periodLabel} — ${stateLabel}`}
 	data-timetable-day={dayOfWeek}
 	data-timetable-period-id={periodId}
-	data-state={state}
+	data-state={cellState}
 	ondragover={(event) => {
 		if (disabled) return;
 		event.preventDefault();
+		dragActive = true;
 		onHoverIntent?.();
 	}}
+	ondragleave={(event) => {
+		if (
+			!(event.relatedTarget instanceof Node) ||
+			!event.currentTarget.contains(event.relatedTarget)
+		)
+			dragActive = false;
+	}}
 	ondrop={(event) => {
+		dragActive = false;
 		if (disabled) return;
 		event.preventDefault();
 		onDropIntent?.(event);
@@ -93,8 +108,11 @@
 			<span class="sr-only">{actionLabel}</span>
 		</button>
 	{/if}
-	{#if placementCard}
-		<TimetablePlacementPreviewCard card={placementCard} {state} />
+	{#if cellState === 'blocked' && placementReasons}
+		<TimetablePlacementReasons reasons={placementReasons} active={dragActive} />
+	{/if}
+	{#if placementCard && cellState !== 'blocked'}
+		<TimetablePlacementPreviewCard card={placementCard} state={cellState} />
 	{/if}
 	{#if pendingRemoval}
 		<span

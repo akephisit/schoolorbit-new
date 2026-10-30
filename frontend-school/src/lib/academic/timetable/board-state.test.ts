@@ -7,6 +7,7 @@ import type {
 	TimetableBlockPlacementSource,
 	TimetableBlockWorkspace
 } from '../../api/timetable';
+import { timetablePlacementReasons } from './placement-reasons.ts';
 import {
 	blockInstructorIds,
 	blockTargetTeacherIds,
@@ -166,7 +167,7 @@ test('one block projects into all covered homerooms and exact teacher rows', () 
 	assert.equal(state.blocksById.size, 3);
 });
 
-test('local placement detects row, teacher, and room conflicts', () => {
+test('local swap removes source and target reservations and uses persisted source resources', () => {
 	const state = createTimetableBoardState(workspace());
 	const source: TimetableBlockPlacementSource = {
 		kind: 'existing_block',
@@ -192,9 +193,7 @@ test('local placement detects row, teacher, and room conflicts', () => {
 	});
 	assert.equal(preview.state, 'swap');
 	assert.equal(preview.targetBlockId, 'block-1');
-	assert.ok(preview.conflicts.includes('homeroom'));
-	assert.ok(preview.conflicts.includes('teacher'));
-	assert.ok(preview.conflicts.includes('room'));
+	assert.deepEqual(preview.conflicts, []);
 });
 
 test('demand accounting follows canonical block membership and published versions are read-only', () => {
@@ -223,4 +222,139 @@ test('keeps confirmed group instructors separate from provisional teacher target
 
 	assert.deepEqual(blockInstructorIds(synchronized), ['teacher-1']);
 	assert.deepEqual(blockTargetTeacherIds(synchronized), ['teacher-1', 'teacher-2']);
+});
+
+function requestForGroup(): {
+	source: TimetableBlockPlacementSource;
+	candidate: TimetableBlockPlacementCandidate;
+	view: 'homeroom';
+	rowId: string;
+	dayOfWeek: string;
+	bellSchedulePeriodId: string;
+} {
+	return {
+		source: {
+			kind: 'ordinary_demand',
+			learningGroupId: 'group-1',
+			learningOfferingId: 'offering-1'
+		},
+		candidate: {
+			blockKind: 'course',
+			learningGroupId: 'group-1',
+			learningOfferingId: 'offering-1',
+			instructorIds: ['teacher-1', 'teacher-2', 'teacher-2'],
+			teacherIds: [],
+			roomId: 'room-1'
+		},
+		view: 'homeroom',
+		rowId: 'homeroom-1',
+		dayOfWeek: 'WED',
+		bellSchedulePeriodId: 'period-2'
+	};
+}
+
+test('local reasons retain actual block and every exact conflicting resource, including co-teachers', () => {
+	const state = createTimetableBoardState(workspace());
+	const preview = localPlacementPreview(state, requestForGroup());
+	assert.equal(preview.state, 'blocked');
+	assert.deepEqual(
+		preview.conflicts.map((conflict) => [
+			conflict.conflictType,
+			conflict.targetId,
+			conflict.existingBlockId
+		]),
+		[
+			['homeroom', 'homeroom-2', 'block-3'],
+			['teacher', 'teacher-1', 'block-3'],
+			['teacher', 'teacher-2', 'block-3']
+		]
+	);
+	const homeroom = timetablePlacementReasons(state, 'homeroom', preview.conflicts);
+	assert.match(homeroom.primary, /ครูหนึ่ง ไม่ว่าง/);
+	assert.match(homeroom.lesson ?? '', /group-2/);
+	assert.match(homeroom.context ?? '', /ม.1\/2/);
+	assert.equal(homeroom.details.length, 1);
+	assert.match(homeroom.details[0], /ครูสอง/);
+	assert.match(homeroom.details[0], /ม.1\/2 ไม่ว่าง/);
+	assert.match(
+		timetablePlacementReasons(state, 'teacher', preview.conflicts).primary,
+		/ม.1\/2 ไม่ว่าง/
+	);
+	assert.match(
+		timetablePlacementReasons(state, 'learning_group', preview.conflicts).primary,
+		/ครูหนึ่ง ไม่ว่าง/
+	);
+	assert.deepEqual(
+		timetablePlacementReasons(state, 'homeroom', [...preview.conflicts, ...preview.conflicts]),
+		homeroom
+	);
+});
+
+test('swap checks third-party blockers in both directions and never reports the dragged source', () => {
+	const data = workspace();
+	data.blocks.push(block('third-party', 'group-3', 'TUE', 'period-1', ['teacher-1'], [], 'room-9'));
+	const state = createTimetableBoardState(data);
+	const request = {
+		...requestForGroup(),
+		source: { kind: 'existing_block', blockId: 'block-2', rowVersion: 1 } as const,
+		dayOfWeek: 'MON',
+		bellSchedulePeriodId: 'period-1',
+		rowId: 'homeroom-2'
+	};
+	const preview = localPlacementPreview(state, request);
+	assert.equal(preview.state, 'blocked');
+	assert.deepEqual(
+		preview.conflicts.map((conflict) => conflict.existingBlockId),
+		['third-party']
+	);
+	assert.equal(preview.conflicts[0].code, 'TIMETABLE_SWAP_RETURN_TEACHER_CONFLICT');
+	assert.match(
+		timetablePlacementReasons(state, 'homeroom', preview.conflicts).primary,
+		/^คาบที่สลับกลับ: /
+	);
+	const sameSlot = localPlacementPreview(state, { ...request, dayOfWeek: 'TUE' });
+	assert.equal(sameSlot.state, 'source');
+	assert.deepEqual(sameSlot.conflicts, []);
+
+	data.blocks.push(block('forward-blocker', 'group-3', 'MON', 'period-1', ['teacher-2'], [], null));
+	const forward = localPlacementPreview(createTimetableBoardState(data), request);
+	assert.equal(forward.state, 'blocked');
+	assert.ok(forward.conflicts.some((conflict) => conflict.existingBlockId === 'forward-blocker'));
+	assert.ok(
+		forward.conflicts.every(
+			(conflict) => !['block-1', 'block-2'].includes(conflict.existingBlockId ?? '')
+		)
+	);
+});
+
+test('detailed labels include activity, structural and room identities; hidden server references stay generic', () => {
+	const data = workspace();
+	data.blocks[0].blockKind = 'structural';
+	data.blocks[0].title = 'ประชุมครู';
+	data.blocks[0].offeringName = null;
+	data.blocks[0].groups[0].roomName = 'ห้องประชุม';
+	const state = createTimetableBoardState(data);
+	const preview = localPlacementPreview(state, {
+		...requestForGroup(),
+		dayOfWeek: 'MON',
+		bellSchedulePeriodId: 'period-1'
+	});
+	const roomConflict = preview.conflicts.filter((conflict) => conflict.conflictType === 'room');
+	assert.match(
+		timetablePlacementReasons(state, 'teacher', roomConflict).details[0],
+		/ห้องสอน ห้องประชุม ไม่ว่าง · กิจกรรมรวม: ประชุมครู/
+	);
+	data.blocks[0].blockKind = 'activity';
+	assert.match(
+		timetablePlacementReasons(state, 'teacher', roomConflict).lesson ?? '',
+		/กิจกรรม: ประชุมครู/
+	);
+	const hidden = {
+		...roomConflict[0],
+		existingBlockId: 'outside-scope',
+		message: 'ห้องสอนถูกใช้อยู่แล้ว'
+	};
+	assert.deepEqual(timetablePlacementReasons(state, 'teacher', [hidden]).details, [
+		'ห้องสอนถูกใช้อยู่แล้ว'
+	]);
 });
