@@ -23,7 +23,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
-	import { Check, ChevronDown, Inbox, Plus, UsersRound } from '@lucide/svelte';
+	import { Check, ChevronDown, Inbox, LockKeyhole, Plus, UsersRound } from '@lucide/svelte';
 	import TimetableRoomPicker from './TimetableRoomPicker.svelte';
 	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';
 
@@ -42,6 +42,8 @@
 		rooms,
 		staff,
 		disabled = false,
+		sourceLockLabel,
+		onSelectionChange,
 		onChooseDemand,
 		onDragStartDemand,
 		onCancelDrag,
@@ -56,6 +58,11 @@
 		rooms: TimetableBlockWorkspaceRoom[];
 		staff: TimetableBlockWorkspaceStaff[];
 		disabled?: boolean;
+		sourceLockLabel?: (source: TimetableBlockPlacementSource) => string | null;
+		onSelectionChange?: (
+			source: TimetableBlockPlacementSource,
+			candidate: TimetableBlockPlacementCandidate
+		) => void;
 		onChooseDemand: (
 			source: TimetableBlockPlacementSource,
 			candidate: TimetableBlockPlacementCandidate
@@ -112,6 +119,8 @@
 				? selected.filter((id) => id !== teacherId)
 				: [...selected, teacherId]
 		};
+		const selection = ordinarySelection(demand);
+		onSelectionChange?.(selection.source, selection.candidate);
 	}
 
 	function selectedOrdinaryRoomId(demand: TimetableOrdinaryDemand): string | null {
@@ -172,6 +181,8 @@
 			...synchronizedTeacherChoices,
 			[demand.learningOfferingId]: teacherIds
 		};
+		const selection = synchronizedSelection(demand);
+		onSelectionChange?.(selection.source, selection.candidate);
 	}
 
 	function dragOrdinary(demand: TimetableOrdinaryDemand, event: DragEvent): void {
@@ -201,14 +212,23 @@
 
 {#snippet synchronizedCard(demand: TimetableSynchronizedDemand)}
 	{@const colorKey = synchronizedLessonColorKey(demand.learningOfferingId)}
+	{@const lockedBy = sourceLockLabel?.(synchronizedSelection(demand).source) ?? null}
+	{@const cardDisabled = disabled || Boolean(lockedBy)}
 	<article
+		data-timetable-anchor="tray"
+		data-timetable-source-kind="synchronized_offering"
+		data-timetable-offering-id={demand.learningOfferingId}
+		data-timetable-locked-by={lockedBy ?? undefined}
 		data-lesson-color={colorKey}
 		style={timetableLessonColorStyle(colorKey, colors)}
-		draggable={!disabled}
+		draggable={!cardDisabled}
 		class="timetable-lesson-fill relative cursor-grab rounded-lg border p-2 active:cursor-grabbing"
 		ondragstart={(event) => dragSynchronized(demand, event)}
 		ondragend={onCancelDrag}
 	>
+		{#if lockedBy}<p class="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+				<LockKeyhole class="size-3" />{lockedBy} กำลังจัดคาบนี้
+			</p>{/if}
 		<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
 			{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
 		</Badge>
@@ -216,7 +236,7 @@
 			<button
 				type="button"
 				class="min-w-0 flex-1 text-left"
-				{disabled}
+				disabled={cardDisabled}
 				onclick={() => {
 					const selection = synchronizedSelection(demand);
 					onChooseDemand(selection.source, selection.candidate);
@@ -243,7 +263,7 @@
 					value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
 					label="ครูที่กันเวลาไว้"
 					showLabel={false}
-					{disabled}
+					disabled={cardDisabled}
 					onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
 				/>
 			</div>
@@ -252,12 +272,15 @@
 					size="sm"
 					{rooms}
 					value={selectedSynchronizedRoomId(demand)}
-					{disabled}
-					onValueChange={(roomId) =>
-						(synchronizedRoomChoices = {
+					disabled={cardDisabled}
+					onValueChange={(roomId) => {
+						synchronizedRoomChoices = {
 							...synchronizedRoomChoices,
 							[demand.learningOfferingId]: roomId
-						})}
+						};
+						const selection = synchronizedSelection(demand);
+						onSelectionChange?.(selection.source, selection.candidate);
+					}}
 				/>
 			</div>
 		</div>
@@ -267,14 +290,24 @@
 {#snippet ordinaryCard(demand: TimetableOrdinaryDemand)}
 	{@const selectedIds = selectedInstructorIds(demand)}
 	{@const colorKey = ordinaryLessonColorKey(demand.learningGroupId)}
+	{@const lockedBy = sourceLockLabel?.(ordinarySelection(demand).source) ?? null}
+	{@const cardDisabled = disabled || Boolean(lockedBy)}
 	<article
+		data-timetable-anchor="tray"
+		data-timetable-source-kind="ordinary_demand"
+		data-timetable-group-id={demand.learningGroupId}
+		data-timetable-offering-id={demand.learningOfferingId}
+		data-timetable-locked-by={lockedBy ?? undefined}
 		data-lesson-color={colorKey}
 		style={timetableLessonColorStyle(colorKey, colors)}
-		draggable={!disabled && selectedIds.length > 0}
+		draggable={!cardDisabled && selectedIds.length > 0}
 		class="timetable-lesson-fill relative rounded-lg border p-2"
 		ondragstart={(event) => dragOrdinary(demand, event)}
 		ondragend={onCancelDrag}
 	>
+		{#if lockedBy}<p class="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+				<LockKeyhole class="size-3" />{lockedBy} กำลังจัดคาบนี้
+			</p>{/if}
 		<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
 			{demand.remainingPeriods}/{demand.requiredPeriods}
 		</Badge>
@@ -282,7 +315,7 @@
 			<button
 				type="button"
 				class="min-w-0 flex-1 text-left"
-				disabled={disabled || selectedIds.length === 0}
+				disabled={cardDisabled || selectedIds.length === 0}
 				onclick={() => {
 					const selection = ordinarySelection(demand);
 					onChooseDemand(selection.source, selection.candidate);
@@ -313,7 +346,7 @@
 								variant="outline"
 								size="sm"
 								class="w-full justify-between text-xs"
-								disabled={disabled || demand.eligibleInstructors.length === 0}
+								disabled={cardDisabled || demand.eligibleInstructors.length === 0}
 							>
 								<span class="flex min-w-0 items-center gap-1.5">
 									<UsersRound class="size-3.5" />
@@ -368,12 +401,12 @@
 					size="sm"
 					{rooms}
 					value={selectedOrdinaryRoomId(demand)}
-					{disabled}
-					onValueChange={(roomId) =>
-						(ordinaryRoomChoices = {
-							...ordinaryRoomChoices,
-							[demand.learningGroupId]: roomId
-						})}
+					disabled={cardDisabled}
+					onValueChange={(roomId) => {
+						ordinaryRoomChoices = { ...ordinaryRoomChoices, [demand.learningGroupId]: roomId };
+						const selection = ordinarySelection(demand);
+						onSelectionChange?.(selection.source, selection.candidate);
+					}}
 				/>
 			</div>
 		</div>

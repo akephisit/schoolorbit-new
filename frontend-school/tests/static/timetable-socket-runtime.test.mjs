@@ -168,6 +168,24 @@ test('repeated desired params within the debounce still replace a different acti
 	assert.equal(socketA.closed, true);
 });
 
+test('switching a draft within the same term replaces its socket and observer mode remains distinct', () => {
+	const { environment, runtime } = createHarness();
+	const first = { ...termA, timetableVersionId: 'draft-a' };
+	const second = { ...termA, timetableVersionId: 'draft-b' };
+	runtime.connect(first);
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	runtime.connect(second);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets[0].closed, true);
+	assert.deepEqual(environment.sockets[1].params, second);
+	environment.sockets[1].open();
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets[1].closed, true);
+	assert.deepEqual(environment.sockets[2].params, termA);
+});
+
 test('replacement detaches every old handler and ignores already captured callbacks', () => {
 	const { environment, notifications, runtime } = createHarness();
 

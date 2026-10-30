@@ -1,0 +1,136 @@
+use std::sync::{Arc, Barrier};
+
+use school_academic_core::models::{BellSchedulePeriod, TimetableVersionStatus};
+use school_academic_delivery::models::versions::DeliverySnapshot;
+
+use super::*;
+use crate::models::timetable_block::*;
+use crate::models::timetable_version::TimetableVersion;
+
+fn block(id: Uuid, version: &TimetableVersion, period: Uuid, teacher: Uuid) -> TimetableBlock {
+    TimetableBlock { id, timetable_version_id: version.id, academic_term_id: version.academic_term_id,
+        academic_year_id: version.academic_year_id, bell_schedule_id: version.bell_schedule_id, bell_schedule_period_id: period,
+        period_name: "Period".into(), start_time: "08:00".parse().unwrap(), end_time: "09:00".parse().unwrap(), day_of_week: "MON".into(),
+        block_kind: TimetableBlockKind::Structural, scheduling_mode: None, learning_offering_id: None, offering_code: None, offering_name: None,
+        structural_kind: Some(TimetableStructuralKind::Other), title: Some("Lesson".into()), note: None, series_id: None, groups: Vec::new(), homerooms: Vec::new(),
+        teachers: vec![TimetableBlockTeacher { id: Uuid::new_v4(), teacher_id: teacher, display_name: "Teacher".into(), row_version: 1, is_active: true }],
+        sync_states: Vec::new(), row_version: 1, is_active: true, created_at: Utc::now(), updated_at: Utc::now() }
+}
+
+fn fixture() -> (Arc<DraftRoom>, TimetableCollaborationRuntime, Uuid) {
+    let version = TimetableVersion { id: Uuid::new_v4(), academic_term_id: Uuid::new_v4(), academic_year_id: Uuid::new_v4(), effective_from: None, effective_until: None,
+        status: TimetableVersionStatus::Draft, display_state: None, source_version_id: None, delivery_version_id: Uuid::new_v4(), bell_schedule_id: Uuid::new_v4(),
+        row_version: 1, created_by: None, published_by: None, published_at: None, created_at: Utc::now(), updated_at: Utc::now(), targets: Vec::new() };
+    let teacher = Uuid::new_v4();
+    let period_id = Uuid::new_v4();
+    let period = BellSchedulePeriod { id: period_id, bell_schedule_id: version.bell_schedule_id, name: Some("Period".into()), start_time: "08:00".parse().unwrap(), end_time: "09:00".parse().unwrap(), order_index: 1, applicable_days: None, is_active: true };
+    let second_teacher = Uuid::new_v4();
+    let blocks = vec![block(Uuid::new_v4(), &version, period_id, teacher), block(Uuid::new_v4(), &version, period_id, second_teacher)];
+    let workspace = TimetableBlockWorkspace { total_draft_block_count: Some(2), source_issues: Vec::new(), latest_delivery_version_id: version.delivery_version_id,
+        version, bell_periods: vec![period], blocks, ordinary_demands: Vec::new(), synchronized_demands: Vec::new(), learning_groups: Vec::new(), homerooms: Vec::new(), rooms: Vec::new(),
+        staff: [teacher, second_teacher].into_iter().map(|id| TimetableBlockWorkspaceStaff { id, subject_groups: Vec::new(), display_name: "Teacher".into(), status: "active".into() }).collect(), offering_subject_groups: Vec::new(),
+        summary: TimetableBlockSummary { block_count: 2, ordinary_demand_count: 0, synchronized_demand_count: 0, linked_group_count: 0, waiting_group_count: 0, conflict_group_count: 0, excluded_group_count: 0 } };
+    let key = DraftKey { tenant_id: Uuid::new_v4(), academic_term_id: workspace.version.academic_term_id, timetable_version_id: workspace.version.id };
+    let runtime = TimetableCollaborationRuntime::new();
+    let room = runtime.install(key, workspace, TimetableVisibility { source: DeliverySnapshot { offerings: Vec::new() }, homeroom_advisors: BTreeMap::new() }).unwrap();
+    (room, runtime, teacher)
+}
+
+fn member(actor_id: Uuid, access: TimetableAccessFilter) -> DraftMember {
+    DraftMember { connection_id: Uuid::new_v4(), actor: ActorContext { user_id: actor_id, permissions: Vec::new() }, session_id: Uuid::new_v4(), name: "Editor".into(), color: "#123456".into(),
+        manage_access: Some(access.clone()), access, portraits: BTreeMap::new(), context: None, anchor: None }
+}
+fn full_access() -> TimetableAccessFilter { TimetableAccessFilter { includes_school_owned: true, ..Default::default() } }
+fn source(room: &DraftRoom) -> TimetableBlockPlacementSource { let state = room.lock().unwrap(); TimetableBlockPlacementSource::ExistingBlock { block_id: state.workspace.blocks[0].id, row_version: 1 } }
+fn claim(room: &DraftRoom, connection: Uuid, source: TimetableBlockPlacementSource) -> DraftCommandResult {
+    let events = room.command(connection, DraftClientMessage::ClientClaim(DraftClaim { request_id: Uuid::new_v4(), source, purpose: DraftReservationPurpose::Drag, candidate: None })).unwrap();
+    let DraftServerMessage::DraftCommandResult(result) = events[0].event.clone() else { panic!("command result expected") }; result
+}
+
+#[test]
+fn simultaneous_first_claim_has_exactly_one_winner_even_for_same_user_tabs() {
+    let (room, _, actor) = fixture();
+    let first = member(actor, full_access()); let second = member(actor, full_access());
+    room.join(first.clone()).unwrap(); room.join(second.clone()).unwrap();
+    let source = source(&room); let barrier = Arc::new(Barrier::new(3));
+    let mut jobs = Vec::new();
+    for connection in [first.connection_id, second.connection_id] { let room = room.clone(); let source = source.clone(); let barrier = barrier.clone(); jobs.push(std::thread::spawn(move || { barrier.wait(); claim(&room, connection, source).accepted })); }
+    barrier.wait();
+    assert_eq!(jobs.into_iter().map(|job| job.join().unwrap()).filter(|accepted| *accepted).count(), 1);
+}
+
+#[test]
+fn separate_blocks_can_be_claimed_concurrently_and_private_tokens_never_reach_peers() {
+    let (room, _, actor) = fixture(); let first = member(actor, full_access()); let second = member(actor, full_access()); room.join(first.clone()).unwrap(); room.join(second.clone()).unwrap();
+    let first_claim = claim(&room, first.connection_id, source(&room)); assert!(first_claim.accepted);
+    let second_source = { let state = room.lock().unwrap(); TimetableBlockPlacementSource::ExistingBlock { block_id: state.workspace.blocks[1].id, row_version: 1 } };
+    assert!(claim(&room, second.connection_id, second_source).accepted);
+    let peer = room.signal_events(second.connection_id, DraftSignal::Reservations).unwrap();
+    let wire = serde_json::to_string(&peer).unwrap();
+    assert!(!wire.contains(&first_claim.lease_token.unwrap().to_string())); assert!(!wire.contains("candidate")); assert!(!wire.contains("leaseToken"));
+}
+
+#[test]
+fn wrong_tab_cannot_renew_or_release_and_expiry_frees_source() {
+    let (room, _, actor) = fixture(); let first = member(actor, full_access()); let second = member(actor, full_access()); room.join(first.clone()).unwrap(); room.join(second.clone()).unwrap();
+    let grant = claim(&room, first.connection_id, source(&room)); let token = grant.lease_token.unwrap();
+    for command in [DraftClientMessage::ClientRenew(DraftLeaseCommand { request_id: Uuid::new_v4(), lease_token: token }), DraftClientMessage::ClientRelease(DraftLeaseCommand { request_id: Uuid::new_v4(), lease_token: token })] {
+        assert!(room.command(second.connection_id, command).is_err());
+    }
+    room.expire(Instant::now() + LEASE_TTL);
+    assert!(claim(&room, second.connection_id, source(&room)).accepted);
+}
+
+#[test]
+fn disconnect_does_not_release_pinned_commit_exclusion() {
+    let (room, _, actor) = fixture(); let first = member(actor, full_access()); let second = member(actor, full_access()); room.join(first.clone()).unwrap(); room.join(second.clone()).unwrap();
+    let grant = claim(&room, first.connection_id, source(&room));
+    let identity = DraftMutationIdentity { connection_id: first.connection_id, lease_token: grant.lease_token.unwrap(), mutation_id: Uuid::new_v4() };
+    let id = room.lock().unwrap().workspace.blocks[0].id;
+    let permit = room.begin_commit(actor, first.session_id, Some(&identity), MutationScope::Blocks(vec![id])).unwrap();
+    room.disconnect(first.connection_id); room.expire(Instant::now() + LEASE_TTL * 2);
+    assert!(!claim(&room, second.connection_id, source(&room)).accepted);
+    drop(permit); assert!(claim(&room, second.connection_id, source(&room)).accepted);
+}
+
+#[test]
+fn direct_http_commit_cannot_bypass_another_connections_reservation() {
+    let (room, _, actor) = fixture(); let first = member(actor, full_access()); room.join(first.clone()).unwrap();
+    assert!(claim(&room, first.connection_id, source(&room)).accepted);
+    assert!(room.begin_commit(Uuid::new_v4(), Uuid::new_v4(), None, MutationScope::WholeDraft).is_err());
+}
+
+#[test]
+fn zero_subscriber_commit_advances_journal_and_snapshot_atomically() {
+    let (room, _, actor) = fixture(); let mut changed = room.lock().unwrap().workspace.blocks[0].clone(); changed.row_version += 1;
+    assert_eq!(room.publish_blocks(vec![changed.clone()], None, Uuid::new_v4()).unwrap(), 1);
+    let viewer = member(actor, full_access()); let sync = room.join(viewer.clone()).unwrap(); assert_eq!(sync.seq, 1);
+    let DraftServerMessage::DraftStateSync(sync) = sync.event else { panic!("state sync") }; assert_eq!(sync.workspace.blocks.iter().find(|block| block.id == changed.id).unwrap().row_version, 2);
+    let epoch = room.lock().unwrap().epoch;
+    let replay = room.command(viewer.connection_id, DraftClientMessage::ClientReplay(DraftReplay { epoch, after_seq: 0 })).unwrap(); assert_eq!(replay.len(), 1); assert_eq!(replay[0].seq, 1);
+}
+
+#[test]
+fn before_after_scope_change_emits_removal_without_new_unauthorized_resource() {
+    let (room, _, actor) = fixture(); let viewer = member(actor, TimetableAccessFilter { assigned_actor_id: Some(actor), ..Default::default() }); room.join(viewer.clone()).unwrap();
+    let mut changed = room.lock().unwrap().workspace.blocks[0].clone(); let id = changed.id; changed.teachers[0].teacher_id = Uuid::new_v4(); changed.row_version += 1;
+    room.publish_blocks(vec![changed], None, Uuid::new_v4()).unwrap();
+    let events = room.signal_events(viewer.connection_id, DraftSignal::Committed(1)).unwrap(); let DraftServerMessage::DraftPatched(patch) = &events[0].event else { panic!("patch") };
+    assert_eq!(patch.removed_block_ids, vec![id]); assert!(patch.upserted_blocks.is_empty()); assert_eq!(patch.summary.block_count, 0); assert_eq!(events[0].seq, 1);
+}
+
+#[test]
+fn invisible_commit_still_emits_empty_sequenced_patch_and_epoch_mismatch_reconciles() {
+    let (room, _, actor) = fixture(); let viewer = member(actor, TimetableAccessFilter::default()); room.join(viewer.clone()).unwrap();
+    let mut changed = room.lock().unwrap().workspace.blocks[0].clone(); changed.row_version += 1; room.publish_blocks(vec![changed], None, Uuid::new_v4()).unwrap();
+    let events = room.signal_events(viewer.connection_id, DraftSignal::Committed(1)).unwrap(); let DraftServerMessage::DraftPatched(patch) = &events[0].event else { panic!("patch") }; assert!(patch.upserted_blocks.is_empty()); assert_eq!(events[0].seq, 1);
+    let events = room.command(viewer.connection_id, DraftClientMessage::ClientReplay(DraftReplay { epoch: Uuid::new_v4(), after_seq: 0 })).unwrap(); assert!(matches!(events[0].event, DraftServerMessage::DraftReconcileRequired { .. }));
+}
+
+#[test]
+fn client_cannot_forge_server_events_or_actor_fields_and_coordinates_are_bounded() {
+    assert!(serde_json::from_value::<DraftClientMessage>(serde_json::json!({"type":"DraftPatched","payload":{}})).is_err());
+    assert!(serde_json::from_value::<DraftPresenceUpdate>(serde_json::json!({"context":{"viewMode":"wholeSchool","viewId":null},"anchor":null,"userId":Uuid::new_v4()})).is_err());
+    assert!(!DraftAnchor::Block { block_id: Uuid::new_v4(), u: f64::NAN, v: 0.5 }.has_valid_coordinates());
+    assert!(!DraftAnchor::Block { block_id: Uuid::new_v4(), u: 1.1, v: 0.5 }.has_valid_coordinates());
+}

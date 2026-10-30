@@ -132,6 +132,16 @@ pub(crate) async fn get_workspace(
     access: &TimetableAccessFilter,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
+    let (workspace, visibility) = get_canonical_workspace(connection, query, staff_directory).await?;
+    Ok(crate::policy::project_workspace(&workspace, &visibility, access))
+}
+
+pub(crate) async fn get_canonical_workspace(
+    connection: &mut sqlx::PgConnection,
+    query: TimetableBlockWorkspaceQuery,
+    staff_directory: &dyn crate::ports::StaffDirectoryPort,
+) -> Result<(TimetableBlockWorkspace, crate::policy::TimetableVisibility), AppError> {
+    let access = &TimetableAccessFilter { includes_school_owned: true, ..Default::default() };
     const MAX_GROUPS: i64 = 2_000;
     const MAX_HOMEROOMS: i64 = 500;
     const MAX_ROOMS: i64 = 2_000;
@@ -642,7 +652,14 @@ pub(crate) async fn get_workspace(
     } else {
         None
     };
-    Ok(TimetableBlockWorkspace {
+    let advisors: Vec<(Uuid, Uuid)> = DbSession::new(connection).query_as(
+        "academic_timetable.services.timetable_block_queries.get_canonical_workspace.advisors",
+        "SELECT advisor.homeroom_id,advisor.user_id FROM homeroom_advisors advisor JOIN homerooms homeroom ON homeroom.id=advisor.homeroom_id WHERE homeroom.academic_year_id=$1",
+    ).bind(query.academic_year_id).fetch_all().await?;
+    let mut homeroom_advisors = BTreeMap::<Uuid, BTreeSet<Uuid>>::new();
+    for (homeroom, actor) in advisors { homeroom_advisors.entry(homeroom).or_default().insert(actor); }
+    let visibility = crate::policy::TimetableVisibility { source: source.snapshot, homeroom_advisors };
+    Ok((TimetableBlockWorkspace {
         total_draft_block_count,
         source_issues,
         latest_delivery_version_id,
@@ -657,7 +674,7 @@ pub(crate) async fn get_workspace(
         staff,
         offering_subject_groups,
         summary,
-    })
+    }, visibility))
 }
 
 pub(crate) async fn get_block(

@@ -17,6 +17,7 @@ use school_academic_timetable::models::timetable::{
     TimetableTemplateTargetSelector, UpdateTemplateRequest,
 };
 use school_academic_timetable::models::timetable_block::*;
+use school_academic_timetable::models::collaboration::*;
 use school_academic_timetable::models::timetable_publication::*;
 use school_academic_timetable::models::timetable_source::*;
 use school_academic_timetable::models::timetable_version::{
@@ -1988,6 +1989,29 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         TimetableSynchronizedDemand,
         TimetableBlockSummary,
         TimetableBlockWorkspace,
+        DraftViewMode,
+        DraftContext,
+        DraftAnchor,
+        DraftTarget,
+        DraftReservationPurpose,
+        DraftPresenceUpdate,
+        DraftClaim,
+        DraftTargetUpdate,
+        DraftLeaseCommand,
+        DraftReplay,
+        DraftClientMessage,
+        DraftConnectionPresence,
+        DraftParticipant,
+        DraftReservation,
+        DraftCommandKind,
+        DraftCommandResult,
+        DraftBlockedCell,
+        DraftAvailability,
+        DraftStateSync,
+        DraftPatch,
+        DraftServerMessage,
+        DraftEventEnvelope,
+        DraftMutationIdentity,
         CreateOrdinaryTimetableBlockRequest,
         CreateSynchronizedTimetableBlockRequest,
         TimetableStructuralSlotInput,

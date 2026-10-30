@@ -1797,6 +1797,11 @@
 		let socketKey = '';
 		const synchronize = () => {
 			const nextSocketKey = `${currentTermId}:${userId}`;
+			if (!currentTermId || !userId) {
+				disconnectTimetableSocket();
+				socketKey = '';
+				return;
+			}
 			if (currentTermId && userId && nextSocketKey !== socketKey) {
 				disconnectTimetableSocket();
 				connectTimetableSocket({ academicTermId: currentTermId, currentUserId: userId });
@@ -2101,6 +2106,7 @@
 
 			{#if activeView === 'wholeSchool'}
 				<section
+					data-timetable-board-view="wholeSchool"
 					class="min-w-0 overflow-hidden rounded-xl border bg-background xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
 				>
 					<div class="border-b bg-muted/20 px-4 py-3">
@@ -2141,6 +2147,7 @@
 													blockBelongsToRow(block, 'homeroom', homeroom.id)
 											)}
 											<TimetableCell
+												rowId={homeroom.id}
 												dayOfWeek={overviewDay}
 												periodId={period.id}
 												dayLabel={`วัน${days.find((day) => day.id === overviewDay)?.label}`}

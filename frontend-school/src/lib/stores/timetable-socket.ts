@@ -207,6 +207,9 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 		currentAcademicTermId = params.academicTermId;
 		const url = new URL('/ws/timetable', BACKEND_WS_URL);
 		url.searchParams.set('academicTermId', String(params.academicTermId));
+		if (params.timetableVersionId) {
+			url.searchParams.set('timetableVersionId', params.timetableVersionId);
+		}
 		const schoolSubdomain = getSchoolSubdomainHint();
 		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
 		return new WebSocket(url);

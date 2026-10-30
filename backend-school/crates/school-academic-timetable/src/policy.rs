@@ -7,6 +7,9 @@ use school_authorization::{self as resource_access_policy, AcademicResourcePermi
 use school_errors::AppError;
 use school_permissions::registry::codes;
 
+mod visibility;
+pub use visibility::{project_workspace, recompute_workspace, TimetableVisibility};
+
 const READ_ASSIGNED_PERMISSIONS: &[&str] = &[
     codes::ACADEMIC_TIMETABLE_READ_ASSIGNED,
     codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED,

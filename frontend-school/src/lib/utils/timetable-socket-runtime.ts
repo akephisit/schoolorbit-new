@@ -8,6 +8,8 @@ const SOCKET_OPEN = 1;
 export type TimetableSocketParams = {
 	academicTermId: string;
 	currentUserId: string;
+	/** Absent for observers such as the delivery workspace. */
+	timetableVersionId?: string;
 };
 
 type TimetableSocketLike = {
@@ -51,7 +53,8 @@ function sameParams(left: TimetableSocketParams | null, right: TimetableSocketPa
 	return (
 		left !== null &&
 		String(left.academicTermId) === String(right.academicTermId) &&
-		String(left.currentUserId) === String(right.currentUserId)
+		String(left.currentUserId) === String(right.currentUserId) &&
+		left.timetableVersionId === right.timetableVersionId
 	);
 }
 
