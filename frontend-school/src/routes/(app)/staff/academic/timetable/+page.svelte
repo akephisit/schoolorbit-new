@@ -829,7 +829,14 @@
 				reconcileAfterPending = true;
 				return;
 			}
+			const previousOwnerId = targetController.selectedOwnerId;
 			targetController.setWorkspace(workspace);
+			if (previousOwnerId !== targetController.selectedOwnerId) {
+				cancelPlacement();
+				currentAnchor = null;
+				pointerOwnerId = null;
+				syncUrl();
+			}
 			if (message) toast.success(message);
 		} catch (error) {
 			if (disposed || !reloadRequest.isCurrent(revision) || isAbortError(error)) return;

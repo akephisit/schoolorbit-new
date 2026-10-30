@@ -322,3 +322,61 @@ test('publication validation stays in its workflow while request failure uses on
 	await expect(dialog.getByRole('alert')).toHaveCount(0);
 	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
 });
+
+test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant and same-version initialization', async ({
+	page
+}) => {
+	let workspaceFrames = 0;
+	const relay = createDraftRelay();
+	const join = relay.join;
+	// Observe the mocked transport hand-off; page websocket events cover native sockets only.
+	relay.join = (workspace, output, identity) =>
+		join(
+			workspace,
+			(event) => {
+				if (event.type === 'DraftStateSync' || event.type === 'DraftPatched') workspaceFrames++;
+				output(event);
+			},
+			identity
+		);
+	const mock = await installTimetableMock(page, { relay });
+	await page.goto(
+		url().replace('view=homeroom', 'view=teacher').replace(secondClass, timetableIds.teacherB)
+	);
+	const selector = page.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
+	await expect(selector).toHaveText('ครูคณิตศาสตร์ B');
+	// Presence can be sent only after the session has accepted its initial StateSync.
+	await expect
+		.poll(() =>
+			mock.relay.received.some(
+				({ message }) =>
+					message.type === 'ClientPresenceUpdate' &&
+					message.payload.context.viewMode === 'teacher' &&
+					message.payload.context.viewId === timetableIds.teacherB
+			)
+		)
+		.toBe(true);
+	await expect(selector).toHaveText('ครูคณิตศาสตร์ B');
+	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherB}`));
+	expect(workspaceFrames).toBe(1);
+	const baselineFrames = workspaceFrames;
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const complete = mock.workspace();
+	const restricted = structuredClone(complete);
+	restricted.staff = restricted.staff.filter((row) => row.id !== timetableIds.teacherB);
+	// Model a scoped HTTP read without delivering a canonical WS patch first.
+	mock.publishWorkspace(restricted, false);
+	await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
+	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
+	await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
+	expect(workspaceFrames).toBe(baselineFrames);
+	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
+	expect(mock.workspaceRequestCount()).toBe(2);
+	mock.publishWorkspace(complete, false);
+	await revalidatePage(page);
+	await expect.poll(mock.workspaceRequestCount).toBe(3);
+	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
+	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
+	await selector.click();
+	await expect(page.getByRole('option', { name: 'ครูคณิตศาสตร์ B', exact: true })).toBeVisible();
+});
