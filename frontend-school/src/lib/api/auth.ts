@@ -7,6 +7,7 @@ import {
 import type { components } from '#lib/api/generated/school-api.js';
 import { clearSessionSecurity } from '#lib/api/session-security.js';
 import { authRefreshDecision, type AuthRefreshResult } from '#lib/auth/auth-refresh-policy.js';
+import { announceAuthenticatedSession } from '#lib/auth/session-awareness.js';
 import { authStore, type User } from '#lib/stores/auth.js';
 import { notificationStore } from '#lib/stores/notification.js';
 import { toast } from 'svelte-sonner';
@@ -21,11 +22,25 @@ type SessionListData = Schemas['SessionListData'];
 type UpdateProfileRequestDto = Schemas['UpdateProfileRequest'];
 type ChangePasswordRequestDto = Schemas['ChangePasswordRequest'];
 type EmptyData = Schemas['EmptyData'];
+export type SessionState = Schemas['SessionState'];
 
 function normalizeCurrentUser(userData: CurrentUserDto): {
 	user: User;
 	permissions: string[];
+	session: SessionState;
 } {
+	if (
+		!userData.session ||
+		![
+			userData.session.serverNow,
+			userData.session.idleExpiresAt,
+			userData.session.absoluteExpiresAt,
+			userData.session.nextRenewalAt
+		].every((value) => Number.isFinite(Date.parse(value))) ||
+		!userData.session.sessionId
+	) {
+		throw new Error('ข้อมูลระยะเวลาการเข้าสู่ระบบไม่ถูกต้อง กรุณาลองอีกครั้ง');
+	}
 	return {
 		user: {
 			id: userData.id,
@@ -39,7 +54,8 @@ function normalizeCurrentUser(userData: CurrentUserDto): {
 			primaryRoleName: userData.primaryRoleName ?? undefined,
 			profileImageFileId: userData.profileImageFileId ?? undefined
 		},
-		permissions: userData.permissions
+		permissions: userData.permissions,
+		session: userData.session
 	};
 }
 
@@ -59,7 +75,8 @@ class AuthAPI {
 				requireApiData(response, 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ').user
 			);
 
-			authStore.setUser(currentUser.user, currentUser.permissions);
+			authStore.setUser(currentUser.user, currentUser.permissions, currentUser.session);
+			announceAuthenticatedSession(currentUser.session);
 			toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');
 
 			return currentUser.user;
@@ -99,6 +116,15 @@ class AuthAPI {
 	async listSessions(options: ApiRequestOptions = {}): Promise<SessionDto[]> {
 		const response = await apiClient.get<SessionListData>('/api/auth/sessions', options);
 		return requireApiData(response, 'ไม่สามารถโหลดรายการอุปกรณ์ได้').sessions;
+	}
+
+	async recordActivity(
+		expectedSessionId: string,
+		options: ApiRequestOptions = {}
+	): Promise<SessionState> {
+		const request: Schemas['SessionActivityRequest'] = { expectedSessionId };
+		const response = await apiClient.post<SessionState>('/api/auth/activity', request, options);
+		return requireApiData(response, 'ยังต่อเวลาการใช้งานไม่ได้ กรุณาลองอีกครั้ง');
 	}
 
 	async revokeSession(sessionId: string, options: { current?: boolean } = {}): Promise<void> {
@@ -158,7 +184,8 @@ class AuthAPI {
 						return 'unavailable';
 					}
 					const currentUser = normalizeCurrentUser(response.data);
-					authStore.setUser(currentUser.user, currentUser.permissions);
+					authStore.setUser(currentUser.user, currentUser.permissions, currentUser.session);
+					announceAuthenticatedSession(currentUser.session);
 					return 'authenticated';
 				}
 

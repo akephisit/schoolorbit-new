@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
 	DeliveryManagementOptions,
@@ -221,6 +222,7 @@ async function mockEditor(
 					displayName: 'ทดสอบ วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: options.permissions ?? ['*']
 				});
 			if (path === '/api/menu/user') return fulfill(route, { groups: [] });

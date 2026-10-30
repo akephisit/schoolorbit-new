@@ -4106,6 +4106,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/auth/activity': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['renewSessionActivity'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -11009,6 +11025,7 @@ export interface components {
 				primaryRoleName?: string | null;
 				/** Format: uuid */
 				profileImageFileId: string | null;
+				session: components['schemas']['SessionState'];
 				status: string;
 				username: string;
 				userType: string;
@@ -13012,6 +13029,22 @@ export interface components {
 		ApiResponse_SessionListData: {
 			data: {
 				sessions: components['schemas']['SessionResponse'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SessionState: {
+			data: {
+				/** Format: date-time */
+				absoluteExpiresAt: string;
+				/** Format: date-time */
+				idleExpiresAt: string;
+				/** Format: date-time */
+				nextRenewalAt: string;
+				/** Format: date-time */
+				serverNow: string;
+				/** Format: uuid */
+				sessionId: string;
 			};
 			message?: string;
 			success: boolean;
@@ -20098,6 +20131,7 @@ export interface components {
 			primaryRoleName?: string | null;
 			/** Format: uuid */
 			profileImageFileId: string | null;
+			session: components['schemas']['SessionState'];
 			status: string;
 			username: string;
 			userType: string;
@@ -25420,6 +25454,10 @@ export interface components {
 			/** Format: uuid */
 			templateId: string;
 		};
+		SessionActivityRequest: {
+			/** Format: uuid */
+			expectedSessionId: string;
+		};
 		SessionListData: {
 			sessions: components['schemas']['SessionResponse'][];
 		};
@@ -25437,6 +25475,18 @@ export interface components {
 			/** Format: date-time */
 			lastSeenAt: string;
 			rememberMe: boolean;
+		};
+		SessionState: {
+			/** Format: date-time */
+			absoluteExpiresAt: string;
+			/** Format: date-time */
+			idleExpiresAt: string;
+			/** Format: date-time */
+			nextRenewalAt: string;
+			/** Format: date-time */
+			serverNow: string;
+			/** Format: uuid */
+			sessionId: string;
 		};
 		SignatureAsset: {
 			/** Format: date-time */
@@ -48340,6 +48390,75 @@ export interface operations {
 			};
 			/** @description Request conflicts with the current resource state */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	renewSessionActivity: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SessionActivityRequest'];
+			};
+		};
+		responses: {
+			/** @description Authoritative session deadlines */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SessionState'];
+				};
+			};
+			/** @description Malformed activity */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session expired or invalid */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Origin or CSRF rejected */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session changed; reconcile current user */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};

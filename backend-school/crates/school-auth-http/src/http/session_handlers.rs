@@ -25,12 +25,11 @@ use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
     models::{
-        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, SessionListData,
-        SessionResponse,
+        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest,
+        SessionActivityRequest, SessionListData, SessionResponse, SessionState,
     },
     runtime::AuthRuntime,
     session_crypto::RawSessionToken,
-    session_repository::SessionMaintenanceMode,
     session_service::{self, AuthenticatedSession, LoginCommand, LoginUserSnapshot},
 };
 
@@ -87,7 +86,7 @@ pub async fn login_with_tenant(
     .await?;
 
     let data = LoginData {
-        user: current_user_response(result.user),
+        user: current_user_response(result.user, result.authenticated.session_state()),
     };
     let encoded = result.credential.encoded();
     let mut response = (StatusCode::OK, Json(ApiResponse::ok(data))).into_response();
@@ -100,6 +99,7 @@ pub async fn login_with_tenant(
     );
     append_response_cookie(&mut response, expire_legacy_cookie());
     insert_csrf_header(&mut response, &result.csrf_token);
+    no_store(&mut response);
     Ok(response)
 }
 
@@ -135,14 +135,8 @@ pub async fn logout_with_tenant(
     };
     let context = runtime.service_context(tenant);
     let now = Utc::now();
-    let Some(authentication) = session_service::authenticate(
-        &context,
-        token.token_hash(),
-        now,
-        SessionMaintenanceMode::TouchOnly,
-        RawSessionToken::generate,
-    )
-    .await?
+    let Some(authentication) =
+        session_service::authenticate(&context, token.token_hash(), now).await?
     else {
         return Ok(expired_auth_response("ออกจากระบบสำเร็จ"));
     };
@@ -177,9 +171,62 @@ pub async fn me(
     let user = session_service::load_current_user(&context, &session).await?;
     Ok((
         StatusCode::OK,
-        Json(ApiResponse::ok(current_user_response(user))),
+        Json(ApiResponse::ok(current_user_response(
+            user,
+            session.session_state(),
+        ))),
     )
         .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post, path = "/api/auth/activity", operation_id = "renewSessionActivity", tag = "auth",
+    request_body = SessionActivityRequest,
+    responses(
+        (status = 200, description = "Authoritative session deadlines", body = ApiResponse<SessionState>),
+        (status = 400, description = "Malformed activity", body = school_http::ApiErrorResponse),
+        (status = 401, description = "Session expired or invalid", body = school_http::ApiErrorResponse),
+        (status = 403, description = "Origin or CSRF rejected", body = school_http::ApiErrorResponse),
+        (status = 409, description = "Session changed; reconcile current user", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
+    )
+))]
+pub async fn activity(
+    State(runtime): State<AuthRuntime>,
+    Extension(session): Extension<AuthenticatedSession>,
+    headers: HeaderMap,
+    payload_result: Result<Json<SessionActivityRequest>, JsonRejection>,
+) -> Result<Response, AppError> {
+    let payload = parse_json_payload(payload_result)?;
+    let raw = presented_session_token(&headers)?
+        .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".into()))?;
+    let context = runtime.service_context(session.tenant.clone());
+    let result = session_service::activity(
+        &context,
+        &session,
+        payload.expected_session_id,
+        &raw,
+        Utc::now(),
+    )
+    .await?;
+    let mut response = (
+        StatusCode::OK,
+        Json(ApiResponse::ok(result.authenticated.session_state())),
+    )
+        .into_response();
+    if let Some(replacement) = result.replacement {
+        let encoded = replacement.encoded();
+        append_response_cookie(
+            &mut response,
+            set_session_cookie(
+                encoded.expose_for_cookie(),
+                replacement.cookie_max_age_seconds,
+            ),
+        );
+    }
+    insert_csrf_header(&mut response, &result.csrf_token);
+    no_store(&mut response);
+    Ok(response)
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -306,6 +353,7 @@ pub async fn change_password(
         ),
     );
     insert_csrf_header(&mut response, &result.csrf_token);
+    no_store(&mut response);
     Ok(response)
 }
 
@@ -319,8 +367,9 @@ fn parse_json_payload<T>(payload_result: Result<Json<T>, JsonRejection>) -> Resu
     }
 }
 
-fn current_user_response(user: LoginUserSnapshot) -> CurrentUserResponse {
+fn current_user_response(user: LoginUserSnapshot, session: SessionState) -> CurrentUserResponse {
     CurrentUserResponse {
+        session,
         id: user.id,
         username: user.username,
         first_name: user.first_name,
@@ -369,4 +418,11 @@ fn audit_origin_rejection(error: school_errors::AppError) -> AppError {
         audit::origin_rejected(SessionFailureReason::InvalidOrigin);
     }
     error.into()
+}
+
+fn no_store(response: &mut Response) {
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
 }

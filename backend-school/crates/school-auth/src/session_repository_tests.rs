@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Timelike, Utc};
 use sqlx::PgPool;
@@ -16,14 +13,14 @@ use school_test_db::{
 
 use super::{
     session_crypto::{
-        identifier_bucket, source_bucket, RawSessionToken, SessionHmacKey, ThrottleBucketHash,
-        TokenHash,
+        identifier_bucket, pending_session_token, source_bucket, RawSessionToken, SessionHmacKey,
+        ThrottleBucketHash, TokenHash,
     },
     session_policy::{BucketKind, SessionLifetime, SessionTimes},
     session_repository::{
-        authenticate_and_maintain, cleanup_auth_state, list_user_sessions, revalidate_session,
-        revoke_sessions, NewSession, PresentedTokenKind, SessionMaintenanceMode,
-        SessionRevocationReason, SessionRevocationTarget,
+        cleanup_auth_state, list_user_sessions, maintain_session, revalidate_session,
+        revoke_sessions, validate_session, ActivityTokenDerivation, MaintainedSession, NewSession,
+        PresentedTokenKind, SessionRevocationReason, SessionRevocationTarget,
     },
     throttle_repository::{check_login_throttles, record_login_failure},
 };
@@ -79,12 +76,10 @@ async fn closed_session_store_entrypoints_preserve_service_unavailable() {
         )
         .await
         .map(|_| ()),
-        authenticate_and_maintain(
+        validate_session(
             &pool,
             RawSessionToken::from_bytes([71; 32]).token_hash(),
             now,
-            SessionMaintenanceMode::RotateAndTouch,
-            || panic!("an unavailable store must not generate a replacement credential"),
         )
         .await
         .map(|_| ()),
@@ -191,7 +186,7 @@ impl SessionFixture {
     }
 
     async fn set_last_seen_at(&self, value: DateTime<Utc>) {
-        sqlx::query("UPDATE auth_sessions SET last_seen_at = $1 WHERE id = $2")
+        sqlx::query("UPDATE auth_sessions SET created_at=LEAST(created_at,$1), last_seen_at = $1 WHERE id = $2")
             .bind(value)
             .bind(self.session_id)
             .execute(&self.pool)
@@ -302,134 +297,200 @@ fn new_session(
     }
 }
 
-#[tokio::test]
-async fn concurrent_rotation_keeps_one_current_hash_and_one_grace_hash() {
-    let fixture = SessionFixture::concurrent("concurrent_rotation", 4).await;
-    let old = fixture.raw_token.token_hash();
-    fixture
-        .set_rotated_at(Utc::now() - Duration::minutes(16))
-        .await;
-    let now = database_timestamp(Utc::now());
-    let barrier = Arc::new(Barrier::new(2));
-
-    let (left, right) = tokio::join!(
-        async {
-            barrier.wait().await;
-            authenticate_and_maintain(
-                &fixture.pool,
-                old,
-                now,
-                SessionMaintenanceMode::RotateAndTouch,
-                || Ok(RawSessionToken::from_bytes([1; 32])),
-            )
-            .await
-        },
-        async {
-            barrier.wait().await;
-            authenticate_and_maintain(
-                &fixture.pool,
-                old,
-                now,
-                SessionMaintenanceMode::RotateAndTouch,
-                || Ok(RawSessionToken::from_bytes([2; 32])),
-            )
-            .await
-        },
-    );
-
-    assert!(left.is_ok());
-    assert!(right.is_ok());
-    let left = left.unwrap().expect("left request must authenticate");
-    let right = right.unwrap().expect("right request must authenticate");
-    assert_eq!(
-        left.replacement.is_some() as usize + right.replacement.is_some() as usize,
-        1
-    );
-    let (current, previous, rotated_at) = fixture.hashes().await;
-    assert_eq!(previous.as_deref(), Some(old.as_bytes().as_slice()));
-    assert_ne!(current.as_slice(), old.as_bytes().as_slice());
-    assert_eq!(rotated_at, left.rotated_at.max(right.rotated_at));
+async fn pulse(
+    fixture: &SessionFixture,
+    raw: &RawSessionToken,
+    now: DateTime<Utc>,
+) -> Result<Option<MaintainedSession>, school_errors::AppError> {
+    maintain_session(
+        &fixture.pool,
+        fixture.user_id,
+        fixture.session_id,
+        raw.token_hash(),
+        now,
+        Some(ActivityTokenDerivation {
+            key: &SessionHmacKey::for_tests([11; 32]),
+            tenant_id: Uuid::nil(),
+            raw,
+        }),
+    )
+    .await
 }
 
 #[tokio::test]
-async fn current_previous_and_touch_only_maintenance_follow_the_contract() {
-    let fixture = SessionFixture::active("current_previous_touch").await;
-    let old = fixture.raw_token.token_hash();
+async fn concurrent_activity_stages_exactly_one_reproducible_pending_credential() {
+    let fixture = SessionFixture::concurrent("concurrent_rotation", 4).await;
     let now = database_timestamp(Utc::now());
     fixture.set_rotated_at(now - Duration::minutes(16)).await;
-
-    let current = authenticate_and_maintain(
-        &fixture.pool,
-        old,
-        now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || Ok(RawSessionToken::from_bytes([21; 32])),
+    let (left, right) = tokio::join!(
+        pulse(&fixture, &fixture.raw_token, now),
+        pulse(&fixture, &fixture.raw_token, now)
+    );
+    let left = left.unwrap().unwrap();
+    let right = right.unwrap().unwrap();
+    assert_eq!(
+        left.replacement.as_ref().unwrap().token_hash(),
+        right.replacement.as_ref().unwrap().token_hash()
+    );
+    let (current, previous, _) = fixture.hashes().await;
+    assert_eq!(
+        current.as_slice(),
+        fixture.raw_token.token_hash().as_bytes()
+    );
+    assert!(previous.is_none());
+    let pending: (Vec<u8>, DateTime<Utc>) = sqlx::query_as(
+        "SELECT pending_token_hash,pending_created_at FROM auth_sessions WHERE id=$1",
     )
+    .bind(fixture.session_id)
+    .fetch_one(&fixture.pool)
     .await
-    .unwrap()
     .unwrap();
-    assert_eq!(current.presented_as, PresentedTokenKind::Current);
-    let replacement = current.replacement.unwrap();
+    assert_eq!(
+        pending.0.as_slice(),
+        left.replacement.unwrap().token_hash().as_bytes()
+    );
+    assert_eq!(pending.1, now);
+}
 
-    let previous = authenticate_and_maintain(
-        &fixture.pool,
-        old,
-        now + Duration::seconds(1),
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("previous credentials must never rotate"),
+#[tokio::test]
+async fn lost_stage_reply_quiet_pending_and_exact_previous_grace_follow_acknowledgment() {
+    let fixture = SessionFixture::active("current_previous_touch").await;
+    let now = database_timestamp(Utc::now());
+    fixture.set_rotated_at(now - Duration::minutes(16)).await;
+    let old = fixture.raw_token.token_hash();
+    let staged = pulse(&fixture, &fixture.raw_token, now)
+        .await
+        .unwrap()
+        .unwrap();
+    let b = staged.replacement.unwrap();
+    // Lost reply: A stays current indefinitely within the session and repeats the same B.
+    let quiet = now + Duration::minutes(30);
+    assert_eq!(
+        validate_session(&fixture.pool, old, quiet)
+            .await
+            .unwrap()
+            .unwrap()
+            .presented_as,
+        PresentedTokenKind::Current
+    );
+    assert_eq!(
+        validate_session(&fixture.pool, b.token_hash(), quiet)
+            .await
+            .unwrap()
+            .unwrap()
+            .presented_as,
+        PresentedTokenKind::Pending
+    );
+    let replay = pulse(&fixture, &fixture.raw_token, quiet)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(replay.replacement.unwrap().token_hash(), b.token_hash());
+    let (first, duplicate) = tokio::join!(
+        maintain_session(
+            &fixture.pool,
+            fixture.user_id,
+            fixture.session_id,
+            b.token_hash(),
+            quiet,
+            None
+        ),
+        maintain_session(
+            &fixture.pool,
+            fixture.user_id,
+            fixture.session_id,
+            b.token_hash(),
+            quiet,
+            None
+        )
+    );
+    assert!(first.unwrap().unwrap().replacement.is_none());
+    assert!(duplicate.unwrap().unwrap().replacement.is_none());
+    let (current, previous, rotated) = fixture.hashes().await;
+    assert_eq!(current.as_slice(), b.token_hash().as_bytes());
+    assert_eq!(previous.as_deref(), Some(old.as_bytes().as_slice()));
+    assert_eq!(rotated, quiet);
+    let (pending, grace): (Option<Vec<u8>>, DateTime<Utc>) = sqlx::query_as(
+        "SELECT pending_token_hash,previous_token_valid_until FROM auth_sessions WHERE id=$1",
     )
+    .bind(fixture.session_id)
+    .fetch_one(&fixture.pool)
     .await
-    .unwrap()
     .unwrap();
-    assert_eq!(previous.presented_as, PresentedTokenKind::Previous);
-    assert!(previous.replacement.is_none());
+    assert!(pending.is_none());
+    assert_eq!(grace, quiet + Duration::seconds(60));
+    assert!(
+        validate_session(&fixture.pool, old, grace - Duration::microseconds(1))
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(validate_session(&fixture.pool, old, grace)
+        .await
+        .unwrap()
+        .is_none());
+    // Validation rejects the expired A without deleting or touching anything.
+    assert_eq!(
+        fixture.hashes().await.1.as_deref(),
+        Some(old.as_bytes().as_slice())
+    );
+}
 
-    let after_grace = now + Duration::seconds(61);
-    assert!(authenticate_and_maintain(
-        &fixture.pool,
-        old,
-        after_grace,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("expired previous credentials must not rotate"),
+#[tokio::test]
+async fn ordinary_validation_does_not_touch_and_activity_writes_at_most_once_per_five_minutes() {
+    let fixture = SessionFixture::active("activity_write_coalescing").await;
+    let now = database_timestamp(Utc::now());
+    fixture.set_last_seen_at(now - Duration::minutes(6)).await;
+    let before: (DateTime<Utc>, DateTime<Utc>, String) = sqlx::query_as(
+        "SELECT last_seen_at,idle_expires_at,xmin::text FROM auth_sessions WHERE id=$1",
     )
+    .bind(fixture.session_id)
+    .fetch_one(&fixture.pool)
     .await
-    .unwrap()
-    .is_none());
-
-    let replacement_hash = replacement.token_hash();
-    fixture
-        .set_rotated_at(after_grace - Duration::minutes(16))
-        .await;
-    fixture
-        .set_last_seen_at(after_grace - Duration::minutes(6))
-        .await;
-    let generated = AtomicBool::new(false);
-    let before = fixture.hashes().await;
-    let maintained = authenticate_and_maintain(
-        &fixture.pool,
-        replacement_hash,
-        after_grace,
-        SessionMaintenanceMode::TouchOnly,
-        || {
-            generated.store(true, Ordering::SeqCst);
-            Ok(RawSessionToken::from_bytes([22; 32]))
-        },
-    )
-    .await
-    .unwrap()
     .unwrap();
-    let after = fixture.hashes().await;
-    assert!(!generated.load(Ordering::SeqCst));
-    assert!(maintained.replacement.is_none());
-    assert_eq!(before.0, after.0);
-    assert_eq!(before.1, after.1);
-    let touched_at: DateTime<Utc> =
-        sqlx::query_scalar("SELECT last_seen_at FROM auth_sessions WHERE id = $1")
+    for _ in 0..5 {
+        validate_session(&fixture.pool, fixture.raw_token.token_hash(), now)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    let after: (DateTime<Utc>, DateTime<Utc>, String) = sqlx::query_as(
+        "SELECT last_seen_at,idle_expires_at,xmin::text FROM auth_sessions WHERE id=$1",
+    )
+    .bind(fixture.session_id)
+    .fetch_one(&fixture.pool)
+    .await
+    .unwrap();
+    assert_eq!(before, after);
+    let renewed = pulse(&fixture, &fixture.raw_token, now)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(renewed.last_seen_at, now);
+    let version: String = sqlx::query_scalar("SELECT xmin::text FROM auth_sessions WHERE id=$1")
+        .bind(fixture.session_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+    assert_ne!(version, before.2);
+    for _ in 0..5 {
+        pulse(&fixture, &fixture.raw_token, now + Duration::minutes(4))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    let duplicate_version: String =
+        sqlx::query_scalar("SELECT xmin::text FROM auth_sessions WHERE id=$1")
             .bind(fixture.session_id)
             .fetch_one(&fixture.pool)
             .await
             .unwrap();
-    assert_eq!(touched_at, after_grace);
+    assert_eq!(version, duplicate_version);
+    let renewed_again = pulse(&fixture, &fixture.raw_token, now + Duration::minutes(5))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(renewed_again.last_seen_at, now + Duration::minutes(5));
 }
 
 #[tokio::test]
@@ -557,13 +618,10 @@ async fn inactive_revoked_and_expired_sessions_fail_authentication_and_revalidat
             .await
             .unwrap();
         let now = Utc::now() + Duration::seconds(2);
-        assert!(authenticate_and_maintain(
+        assert!(validate_session(
             &fixture.pool,
             fixture.raw_token.token_hash(),
-            now,
-            SessionMaintenanceMode::RotateAndTouch,
-            || panic!("invalid session must not rotate"),
-        )
+            now,)
         .await
         .unwrap()
         .is_none());
@@ -578,16 +636,12 @@ async fn inactive_revoked_and_expired_sessions_fail_authentication_and_revalidat
         .execute(&fixture.pool)
         .await
         .unwrap();
-    assert!(authenticate_and_maintain(
-        &fixture.pool,
-        fixture.raw_token.token_hash(),
-        Utc::now(),
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("inactive user session must not rotate"),
-    )
-    .await
-    .unwrap()
-    .is_none());
+    assert!(
+        validate_session(&fixture.pool, fixture.raw_token.token_hash(), Utc::now(),)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -654,92 +708,69 @@ async fn listing_and_user_revocation_include_only_owned_active_sessions() {
 }
 
 #[tokio::test]
-async fn token_collisions_roll_back_insert_and_rotation() {
-    let fixture = SessionFixture::active("token_collision").await;
-    let duplicate = new_session(
-        Uuid::new_v4(),
-        fixture.user_id,
-        fixture.raw_token.token_hash(),
-        false,
-        Utc::now(),
-    );
-    let insert_error = create_login_session(&fixture.pool, &duplicate, fixture.identifier_hash)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        insert_error.status_code(),
-        axum::http::StatusCode::SERVICE_UNAVAILABLE
-    );
-    let session_count: i64 = sqlx::query_scalar("SELECT count(*) FROM auth_sessions")
+async fn token_collisions_roll_back_insert_and_pending_staging_across_all_columns() {
+    for column in [
+        "current_token_hash",
+        "previous_token_hash",
+        "pending_token_hash",
+    ] {
+        let fixture = SessionFixture::active(&format!("token_collision_{column}")).await;
+        let now = database_timestamp(Utc::now());
+        fixture.set_rotated_at(now - Duration::minutes(16)).await;
+        let candidate = pending_session_token(
+            &SessionHmacKey::for_tests([11; 32]),
+            Uuid::nil(),
+            fixture.session_id,
+            &fixture.raw_token,
+            now,
+        );
+        let second = RawSessionToken::from_bytes([72; 32]);
+        let second_id = fixture.create_same_user_session(&second).await;
+        let query = match column {
+            "current_token_hash" => "UPDATE auth_sessions SET current_token_hash=$1 WHERE id=$2",
+            "previous_token_hash" => "UPDATE auth_sessions SET previous_token_hash=$1,previous_token_valid_until=rotated_at+interval '60 seconds' WHERE id=$2",
+            _ => "UPDATE auth_sessions SET pending_token_hash=$1,pending_created_at=rotated_at WHERE id=$2",
+        };
+        sqlx::query(query)
+            .bind(candidate.token_hash().as_bytes().as_slice())
+            .bind(second_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let before = fixture.hashes().await;
+        assert!(
+            pulse(&fixture, &fixture.raw_token, now).await.is_err(),
+            "{column}"
+        );
+        assert_eq!(before, fixture.hashes().await);
+        let pending: bool = sqlx::query_scalar(
+            "SELECT pending_token_hash IS NOT NULL FROM auth_sessions WHERE id=$1",
+        )
+        .bind(fixture.session_id)
         .fetch_one(&fixture.pool)
         .await
         .unwrap();
-    assert_eq!(session_count, 1);
-
-    fixture
-        .set_rotated_at(Utc::now() - Duration::minutes(16))
-        .await;
-    let before = fixture.hashes().await;
-    let rotation_result = authenticate_and_maintain(
-        &fixture.pool,
-        fixture.raw_token.token_hash(),
-        Utc::now(),
-        SessionMaintenanceMode::RotateAndTouch,
-        || Ok(RawSessionToken::from_bytes(*fixture.raw_token.as_bytes())),
-    )
-    .await;
-    let rotation_error = match rotation_result {
-        Ok(_) => panic!("same-token rotation must be rejected"),
-        Err(error) => error,
-    };
-    assert_eq!(
-        rotation_error.status_code(),
-        axum::http::StatusCode::SERVICE_UNAVAILABLE
-    );
-    let after = fixture.hashes().await;
-    assert_eq!(before, after);
+        assert!(!pending);
+        let colliding_insert = new_session(
+            Uuid::new_v4(),
+            fixture.user_id,
+            candidate.token_hash(),
+            false,
+            now,
+        );
+        assert!(
+            create_login_session(&fixture.pool, &colliding_insert, fixture.identifier_hash)
+                .await
+                .is_err(),
+            "{column}"
+        );
+    }
 }
 
 #[tokio::test]
-async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
+async fn concurrent_same_digest_insert_is_serialized_and_pending_promotion_races_are_safe() {
     let fixture = SessionFixture::concurrent("cross_column_collision", 4).await;
-    let old = fixture.raw_token.token_hash();
     let now = database_timestamp(Utc::now());
-    fixture.set_rotated_at(now - Duration::minutes(16)).await;
-    let rotated = authenticate_and_maintain(
-        &fixture.pool,
-        old,
-        now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || Ok(RawSessionToken::from_bytes([71; 32])),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    let current = rotated.replacement.unwrap();
-
-    let colliding_insert = new_session(Uuid::new_v4(), fixture.user_id, old, false, now);
-    assert!(
-        create_login_session(&fixture.pool, &colliding_insert, fixture.identifier_hash)
-            .await
-            .is_err()
-    );
-
-    let second = RawSessionToken::from_bytes([72; 32]);
-    let second_id = fixture.create_same_user_session(&second).await;
-    fixture
-        .set_rotated_at_for(second_id, now - Duration::minutes(16))
-        .await;
-    assert!(authenticate_and_maintain(
-        &fixture.pool,
-        second.token_hash(),
-        now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || Ok(RawSessionToken::from_bytes(*fixture.raw_token.as_bytes())),
-    )
-    .await
-    .is_err());
-
     let shared = RawSessionToken::from_bytes([73; 32]);
     let left = new_session(
         Uuid::new_v4(),
@@ -748,9 +779,18 @@ async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
         false,
         now,
     );
+    // Different users avoid serializing the race on the per-user lock: allocation
+    // must still reject one writer through the digest advisory lock/check.
+    let competing_user = create_test_user(
+        &fixture.pool,
+        "digest-race-other@example.test",
+        "test-password",
+    )
+    .await
+    .unwrap();
     let right = new_session(
         Uuid::new_v4(),
-        fixture.user_id,
+        competing_user,
         shared.token_hash(),
         false,
         now,
@@ -770,20 +810,34 @@ async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
         left_result.is_ok() as usize + right_result.is_ok() as usize,
         1
     );
-    assert_eq!(
-        left_result.is_err() as usize + right_result.is_err() as usize,
-        1
+    fixture.set_rotated_at(now - Duration::minutes(16)).await;
+    let b = pulse(&fixture, &fixture.raw_token, now)
+        .await
+        .unwrap()
+        .unwrap()
+        .replacement
+        .unwrap();
+    let (a, b_result) = tokio::join!(
+        pulse(&fixture, &fixture.raw_token, now + Duration::seconds(1)),
+        maintain_session(
+            &fixture.pool,
+            fixture.user_id,
+            fixture.session_id,
+            b.token_hash(),
+            now + Duration::seconds(1),
+            None
+        )
     );
-    assert!(authenticate_and_maintain(
-        &fixture.pool,
-        current.token_hash(),
-        now,
-        SessionMaintenanceMode::TouchOnly,
-        || panic!("touch-only authentication must not generate"),
-    )
-    .await
-    .unwrap()
-    .is_some());
+    let a = a.unwrap().unwrap();
+    let promoted = b_result.unwrap().unwrap();
+    if let Some(replayed) = a.replacement {
+        assert_eq!(replayed.token_hash(), b.token_hash());
+    }
+    assert_eq!(promoted.presented_as, PresentedTokenKind::Current);
+    assert_eq!(
+        fixture.hashes().await.0.as_slice(),
+        b.token_hash().as_bytes()
+    );
 }
 
 #[tokio::test]
@@ -913,4 +967,121 @@ async fn cleanup_retains_recent_rows_and_deletes_exactly_one_batch() {
     .unwrap();
     assert_eq!(expired_sessions, 5);
     assert_eq!(stale_throttles, 5);
+}
+
+#[tokio::test]
+async fn pending_credentials_cannot_revive_idle_absolute_revoked_or_inactive_sessions() {
+    for reason in ["idle", "absolute", "revoked", "inactive"] {
+        let fixture = SessionFixture::active(&format!("pending_denial_{reason}")).await;
+        let now = database_timestamp(Utc::now());
+        fixture.set_rotated_at(now - Duration::minutes(16)).await;
+        let b = pulse(&fixture, &fixture.raw_token, now)
+            .await
+            .unwrap()
+            .unwrap()
+            .replacement
+            .unwrap();
+        match reason {
+            "revoked" => {
+                revoke_sessions(
+                    &fixture.pool,
+                    fixture.user_id,
+                    SessionRevocationTarget::Session(fixture.session_id),
+                    SessionRevocationReason::Logout,
+                    now,
+                )
+                .await
+                .unwrap();
+                let pending: bool = sqlx::query_scalar(
+                    "SELECT pending_token_hash IS NOT NULL FROM auth_sessions WHERE id=$1",
+                )
+                .bind(fixture.session_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+                assert!(!pending);
+            }
+            "inactive" => {
+                sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+                    .bind(fixture.user_id)
+                    .execute(&fixture.pool)
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                let query = if reason == "absolute" {
+                    "UPDATE auth_sessions SET idle_expires_at=$1,absolute_expires_at=$1 WHERE id=$2"
+                } else {
+                    "UPDATE auth_sessions SET idle_expires_at=$1 WHERE id=$2"
+                };
+                sqlx::query(query)
+                    .bind(now + Duration::seconds(1))
+                    .bind(fixture.session_id)
+                    .execute(&fixture.pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        let version: String =
+            sqlx::query_scalar("SELECT xmin::text FROM auth_sessions WHERE id=$1")
+                .bind(fixture.session_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        for raw in [&fixture.raw_token, &b] {
+            assert!(
+                validate_session(&fixture.pool, raw.token_hash(), now + Duration::seconds(2))
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "{reason}"
+            );
+            assert!(
+                pulse(&fixture, raw, now + Duration::seconds(2))
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "{reason}"
+            );
+            assert!(maintain_session(
+                &fixture.pool,
+                fixture.user_id,
+                fixture.session_id,
+                raw.token_hash(),
+                now + Duration::seconds(2),
+                None
+            )
+            .await
+            .unwrap()
+            .is_none());
+        }
+        let after: String = sqlx::query_scalar("SELECT xmin::text FROM auth_sessions WHERE id=$1")
+            .bind(fixture.session_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        assert_eq!(version, after, "{reason}");
+    }
+}
+
+#[tokio::test]
+async fn human_activity_clamps_both_lifetimes_to_the_original_absolute_expiry() {
+    for remembered in [false, true] {
+        let fixture =
+            SessionFixture::active(&format!("activity_absolute_clamp_{remembered}")).await;
+        let now = database_timestamp(Utc::now());
+        let absolute = now + Duration::minutes(1);
+        sqlx::query("UPDATE auth_sessions SET created_at=$1-interval '10 minutes',last_seen_at=$1-interval '6 minutes',idle_expires_at=$1+interval '30 seconds',absolute_expires_at=$2,remember_me=$3 WHERE id=$4")
+            .bind(now).bind(absolute).bind(remembered).bind(fixture.session_id).execute(&fixture.pool).await.unwrap();
+        let result = pulse(&fixture, &fixture.raw_token, now)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.idle_expires_at, absolute);
+        assert_eq!(result.absolute_expires_at, absolute);
+        assert!(pulse(&fixture, &fixture.raw_token, absolute)
+            .await
+            .unwrap()
+            .is_none());
+    }
 }

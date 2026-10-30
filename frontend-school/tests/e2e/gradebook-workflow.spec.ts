@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { GroupPhaseWorkspace } from '../../src/lib/api/academicGradebook.js';
 
@@ -171,6 +172,7 @@ async function mockGradebook(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-09-01T00:00:00Z',
 					email: null,
 					nationalId: null,

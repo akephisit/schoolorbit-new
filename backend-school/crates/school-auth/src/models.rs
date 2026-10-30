@@ -158,10 +158,29 @@ impl From<User> for ProfileResponse {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionState {
+    pub session_id: Uuid,
+    pub server_now: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
+    pub next_renewal_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionActivityRequest {
+    pub expected_session_id: Uuid,
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentUserResponse {
+    pub session: SessionState,
     pub id: Uuid,
     pub username: String,
     pub first_name: String,

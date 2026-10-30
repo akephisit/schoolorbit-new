@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -117,6 +118,7 @@ async function mockAssessmentApis(
 					lastName: 'ระบบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-09-02T00:00:00Z',
 					email: null,
 					nationalId: null,

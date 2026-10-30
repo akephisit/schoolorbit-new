@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
@@ -74,6 +75,7 @@ async function mock(
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-09-01T00:00:00Z',
 					email: null,
 					nationalId: null,

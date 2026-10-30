@@ -8844,6 +8844,9 @@
                   "null"
                 ]
               },
+              "session": {
+                "$ref": "#/components/schemas/SessionState"
+              },
               "status": {
                 "type": "string"
               },
@@ -8855,6 +8858,7 @@
               }
             },
             "required": [
+              "session",
               "id",
               "username",
               "firstName",
@@ -16319,6 +16323,53 @@
             },
             "required": [
               "sessions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SessionState": {
+        "properties": {
+          "data": {
+            "properties": {
+              "absoluteExpiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "idleExpiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "nextRenewalAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "serverNow": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionId",
+              "serverNow",
+              "idleExpiresAt",
+              "absoluteExpiresAt",
+              "nextRenewalAt"
             ],
             "type": "object"
           },
@@ -42415,6 +42466,9 @@
               "null"
             ]
           },
+          "session": {
+            "$ref": "#/components/schemas/SessionState"
+          },
           "status": {
             "type": "string"
           },
@@ -42426,6 +42480,7 @@
           }
         },
         "required": [
+          "session",
           "id",
           "username",
           "firstName",
@@ -61410,6 +61465,19 @@
         ],
         "type": "object"
       },
+      "SessionActivityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedSessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedSessionId"
+        ],
+        "type": "object"
+      },
       "SessionListData": {
         "properties": {
           "sessions": {
@@ -61465,6 +61533,38 @@
           "idleExpiresAt",
           "absoluteExpiresAt",
           "isCurrent"
+        ],
+        "type": "object"
+      },
+      "SessionState": {
+        "properties": {
+          "absoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "idleExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "nextRenewalAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "serverNow": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "serverNow",
+          "idleExpiresAt",
+          "absoluteExpiresAt",
+          "nextRenewalAt"
         ],
         "type": "object"
       },
@@ -99194,6 +99294,86 @@
         },
         "tags": [
           "attendance"
+        ]
+      }
+    },
+    "/api/auth/activity": {
+      "post": {
+        "operationId": "renewSessionActivity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SessionState"
+                }
+              }
+            },
+            "description": "Authoritative session deadlines"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed activity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session expired or invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session changed; reconcile current user"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
+          }
+        },
+        "tags": [
+          "auth"
         ]
       }
     },

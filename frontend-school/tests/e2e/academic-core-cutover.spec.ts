@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { UpdateAcademicTermRequest } from '../../src/lib/api/academic-core';
 import {
@@ -53,6 +54,7 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-08-24T00:00:00Z',
 					email: null,
 					nationalId: null,

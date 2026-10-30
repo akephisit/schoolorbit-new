@@ -96,7 +96,10 @@ test('backend auth success handlers return enveloped data', async () => {
 	assert.doesNotMatch(sessionSource, /Json\(LoginResponse\s*\{/);
 	assert.match(sessionSource, /LoginData\s*\{\s*user:\s*current_user_response/);
 	assert.match(sessionSource, /Json\(ApiResponse::ok\(data\)\)/);
-	assert.match(sessionSource, /ApiResponse::ok\(current_user_response\(user\)\)/);
+	assert.match(
+		sessionSource,
+		/ApiResponse::ok\(current_user_response\(\s*user,\s*session\.session_state\(\),?\s*\)\)/
+	);
 	assert.match(sessionSource, /ApiResponse::ok\(SessionListData\s*\{\s*sessions\s*\}\)/);
 	assert.match(profileSource, /ApiResponse::ok\(profile_response\)/);
 });
@@ -144,7 +147,12 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 		source,
 		/function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*\{[\s\S]*user:\s*User;[\s\S]*permissions:\s*string\[\];[\s\S]*\}/
 	);
-	assert.match(source, /authStore\.setUser\(currentUser\.user,\s*currentUser\.permissions\)/);
+	assert.match(
+		source,
+		/authStore\.setUser\(currentUser\.user,\s*currentUser\.permissions,\s*currentUser\.session\)/
+	);
+	assert.match(source, /session:\s*userData\.session/);
+	assert.match(source, /Schemas\['SessionState'\]/);
 	assert.doesNotMatch(source, /interface\s+BackendUser/);
 	assert.doesNotMatch(source, /userData\.user_type/);
 	assert.doesNotMatch(source, /\.\.\.userData/);
@@ -1135,7 +1143,22 @@ test('new academic workspace mutations use typed returned resources', async () =
 	assert.match(deliveryPage, /function addCreated\(_item: LearningOfferingOverviewItem\)/);
 	assert.match(deliveryPage, /function addCreated[\s\S]*?refreshDeliveryRegions\(\)/);
 	assert.match(deliveryDetailPage, /const created = await createLearningGroup\(/);
-	assert.match(deliveryDetailPage, /groups = \[\.\.\.groups, created\]\.sort/);
+	assert.match(
+		deliveryDetailPage,
+		/const existing = groups\.find\(\(group\) => group\.id === created\.id\)/
+	);
+	assert.match(
+		deliveryDetailPage,
+		/const accepted = existing && existing\.rowVersion > created\.rowVersion \? existing : created/
+	);
+	assert.match(
+		deliveryDetailPage,
+		/groups = existing\s*\? groups\.map\(\(group\) => \(group\.id === created\.id \? accepted : group\)\)\s*:\s*\[\.\.\.groups, accepted\]/
+	);
+	assert.match(
+		deliveryDetailPage,
+		/pendingCreatedGroup = \{ group: accepted, versionId \};\s*await reconcileCreatedGroup\(\)/
+	);
 	assert.match(deliveryDetailPage, /const updated = await updateLearningGroup\(/);
 	assert.match(deliveryDetailPage, /updateGroupState\(updated\)/);
 });
