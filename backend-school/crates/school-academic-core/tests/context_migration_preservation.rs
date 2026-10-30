@@ -167,7 +167,7 @@ async fn missing_calendar_year_refuses_zero_or_ambiguous_historical_matches() {
 
 #[tokio::test]
 async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
-    for kind in ["function", "check", "view"] {
+    for kind in ["function", "check", "tampered_known_check", "view"] {
         let pool = predecessor(&format!("context147_unknown_{kind}")).await;
         apply_migrations_through(&pool, 146).await.unwrap();
         match kind {
@@ -176,6 +176,9 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
             }
             "check" => {
                 sqlx::raw_sql("ALTER TABLE academic_years ADD CONSTRAINT surprise_boundary CHECK(end_date-start_date<400)").execute(&pool).await.unwrap();
+            }
+            "tampered_known_check" => {
+                sqlx::raw_sql("ALTER TABLE academic_years DROP CONSTRAINT academic_years_date_order_check; ALTER TABLE academic_years ADD CONSTRAINT academic_years_date_order_check CHECK(start_date<=end_date AND year>2000)").execute(&pool).await.unwrap();
             }
             _ => {
                 sqlx::raw_sql(
@@ -207,6 +210,9 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
                     .execute(&pool)
                     .await
                     .unwrap();
+            }
+            "tampered_known_check" => {
+                sqlx::raw_sql("ALTER TABLE academic_years DROP CONSTRAINT academic_years_date_order_check; ALTER TABLE academic_years ADD CONSTRAINT academic_years_date_order_check CHECK(start_date<=end_date)").execute(&pool).await.unwrap();
             }
             _ => {
                 sqlx::raw_sql("DROP VIEW surprise_boundary")
@@ -240,4 +246,60 @@ async fn transformed_target_reassignment_refuses_even_when_foreign_keys_are_vali
     .await
     .unwrap();
     apply_migrations_through(&pool, 147).await.unwrap();
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all="camelCase")]
+struct OldTermRequest {
+    academic_year_id:Uuid,request_id:Uuid,action:String,expected_year_version:i64,expected_term_version:i64,
+    readiness_checksum:String,acknowledged_warning_codes:Vec<String>,closed_on:Option<NaiveDate>,reason:Option<String>,
+}
+async fn old_term_receipt(pool:&PgPool,audit:bool)->(Uuid,serde_json::Value,serde_json::Value,String) {
+    use sha2::{Digest,Sha256};
+    let id=Uuid::new_v4();
+    let request=OldTermRequest{academic_year_id:YEAR,request_id:id,action:"reopen".into(),expected_year_version:2,expected_term_version:3,
+        readiness_checksum:"a".repeat(64),acknowledged_warning_codes:vec![],closed_on:None,reason:Some("แก้ไข  ผล\nสองบรรทัด \"quoted\"".into())};
+    let checksum=hex::encode(Sha256::digest(serde_json::to_vec(&(ACTOR,TERM,&request)).unwrap()));
+    let request=serde_json::to_value(request).unwrap();
+    let bell:Uuid=sqlx::query_scalar("SELECT bell_schedule_id FROM academic_terms WHERE id=$1").bind(TERM).fetch_one(pool).await.unwrap();
+    let outcome=serde_json::json!({"requestId":id,"action":"reopen","completedAt":"2025-05-01T17:30:00Z","context":{
+        "academicYearId":YEAR,"academicTermId":TERM,"yearName":"Historical year","termName":"Historical term","yearStatus":"active","termStatus":"closing",
+        "yearRowVersion":3,"termRowVersion":4,"yearStartDate":"2025-05-01","yearEndDate":"2026-04-30","termStartDate":"2025-05-01","plannedEndDate":"2025-10-31","closedOn":null,
+        "sequence":1,"bellScheduleId":bell,"includedInYearResult":true,"blocksYearClosure":true
+    }});
+    sqlx::query("INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,created_at) VALUES($1,$2,$3,$4,'reopen',$5,$6,$7,'2025-05-01T17:30:00Z')")
+        .bind(id).bind(YEAR).bind(TERM).bind(ACTOR).bind(&checksum).bind(sqlx::types::Json(serde_json::json!({"context":outcome["context"]}))).bind(sqlx::types::Json(&outcome)).execute(pool).await.unwrap();
+    if audit {
+        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic.term.reopen','academic_term',$1,$2,$1,$3,$4)")
+            .bind(TERM).bind(YEAR).bind(ACTOR).bind(sqlx::types::Json(serde_json::json!([request,outcome]))).execute(pool).await.unwrap();
+    }
+    (id,request,outcome,checksum)
+}
+
+#[tokio::test]
+async fn historical_term_request_mapping_preserves_full_checksum_and_real_event_day() {
+    let pool=predecessor("context147_term_receipt").await;
+    let(id,mut request,old_outcome,old_checksum)=old_term_receipt(&pool,true).await;
+    apply_migrations_through(&pool,147).await.unwrap();
+    request.as_object_mut().unwrap().remove("closedOn");
+    let(canonical,outcome,checksum,evidence):(serde_json::Value,serde_json::Value,String,serde_json::Value)=sqlx::query_as("SELECT canonical_request,outcome,request_checksum,accepted_readiness FROM academic_term_transition_receipts WHERE request_id=$1").bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(canonical,request);assert_eq!(checksum,old_checksum);
+    assert_eq!(outcome["context"]["operationDate"],"2025-05-02");
+    assert_eq!(outcome["completedAt"],old_outcome["completedAt"]);
+    assert!(outcome["context"].get("plannedEndDate").is_none());
+    assert_eq!(evidence["context"],old_outcome["context"],"original accepted readiness remains historical evidence");
+    let audit:serde_json::Value=sqlx::query_scalar("SELECT payload FROM academic_audit_events WHERE event_code='academic.term.reopen' AND entity_id=$1").bind(TERM).fetch_one(&pool).await.unwrap();
+    assert_eq!(audit[1],old_outcome,"original audit is not replaced by a fabricated current result");
+    apply_migrations_through(&pool,147).await.unwrap();
+}
+
+#[tokio::test]
+async fn missing_or_changed_original_term_request_refuses_before_cleanup() {
+    for missing in [true,false] {
+        let pool=predecessor(if missing{"context147_receipt_missing"}else{"context147_receipt_changed"}).await;
+        let(id,_,_,_)=old_term_receipt(&pool,!missing).await;
+        if !missing {sqlx::query("UPDATE academic_audit_events SET payload=jsonb_set(payload,'{0,reason}','\"changed evidence\"') WHERE entity_id=$1 AND event_code='academic.term.reopen'").bind(TERM).execute(&pool).await.unwrap();}
+        assert_refusal(&pool,"ACADEMIC_CONTEXT_147_TERM_RECEIPT_SOURCE_UNMAPPABLE").await;
+        let same:i64=sqlx::query_scalar("SELECT count(*) FROM academic_term_transition_receipts WHERE request_id=$1").bind(id).fetch_one(&pool).await.unwrap();assert_eq!(same,1);
+    }
 }

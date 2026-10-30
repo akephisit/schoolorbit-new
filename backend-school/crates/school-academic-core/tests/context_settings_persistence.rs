@@ -84,20 +84,22 @@ async fn visibility_defaults_are_atomic_revision_protected_and_independent_of_li
         context_settings::update(&pool, &actor, command(1, None, vec![])).await,
         Err(school_errors::AppError::Conflict(_))
     ));
-    assert!(context_settings::update(
-        &pool,
-        &actor,
-        command(
-            2,
-            Some(year.id),
-            vec![AcademicContextVisibilityInput {
-                id: year.id,
-                is_visible: false
-            }]
+    assert!(
+        context_settings::update(
+            &pool,
+            &actor,
+            command(
+                2,
+                Some(year.id),
+                vec![AcademicContextVisibilityInput {
+                    id: year.id,
+                    is_visible: false
+                }]
+            )
         )
-    )
-    .await
-    .is_err());
+        .await
+        .is_err()
+    );
     assert!(
         years_terms::get_year(&pool, year.id)
             .await
@@ -153,4 +155,216 @@ async fn concurrent_context_commands_accept_one_revision_and_deny_partial_permis
         matches!(a, Err(school_errors::AppError::Conflict(_)))
             || matches!(b, Err(school_errors::AppError::Conflict(_)))
     );
+}
+
+#[tokio::test]
+async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filter_children() {
+    let (pool, actor, year) = fixture("context_visible_term_parent").await;
+    let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(academic_year_id,code,name,status) VALUES($1,'CONTEXT','Context bell','published') RETURNING id").bind(year.id).fetch_one(&pool).await.unwrap();
+    let term = years_terms::create_term(
+        &pool,
+        actor.user_id,
+        CreateAcademicTermRequest {
+            academic_year_id: year.id,
+            term_type: AcademicTermType::Regular,
+            custom_name: None,
+            included_in_year_result: true,
+            blocks_year_closure: true,
+            bell_schedule_id: bell,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!term.is_visible);
+    let selected = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 1,
+            default_academic_year_id: Some(year.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![AcademicContextVisibilityInput {
+                id: year.id,
+                is_visible: true,
+            }],
+            terms: vec![AcademicContextVisibilityInput {
+                id: term.id,
+                is_visible: true,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        selected.context_options.default_academic_term_id,
+        Some(term.id)
+    );
+    assert_eq!(selected.terms[0].status, AcademicTermStatus::Planning);
+    let invalid = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 2,
+            default_academic_year_id: Some(year.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![AcademicContextVisibilityInput {
+                id: year.id,
+                is_visible: false,
+            }],
+            terms: vec![],
+        },
+    )
+    .await;
+    assert!(invalid.is_err());
+    let hidden = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 2,
+            default_academic_year_id: None,
+            default_academic_term_id: None,
+            years: vec![AcademicContextVisibilityInput {
+                id: year.id,
+                is_visible: false,
+            }],
+            terms: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        !hidden
+            .context_options
+            .terms
+            .iter()
+            .any(|row| row.id == term.id)
+    );
+    assert!(
+        years_terms::get_term(&pool, term.id)
+            .await
+            .unwrap()
+            .is_visible,
+        "own flag survives hidden parent"
+    );
+    let other = years_terms::create_year(
+        &pool,
+        actor.user_id,
+        CreateAcademicYearRequest {
+            year: 2902,
+            custom_name: None,
+            school_days: vec!["MON".into()],
+        },
+    )
+    .await
+    .unwrap();
+    let mismatch = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 3,
+            default_academic_year_id: Some(other.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![
+                AcademicContextVisibilityInput {
+                    id: year.id,
+                    is_visible: true,
+                },
+                AcademicContextVisibilityInput {
+                    id: other.id,
+                    is_visible: true,
+                },
+            ],
+            terms: vec![],
+        },
+    )
+    .await;
+    assert!(mismatch.is_err());
+    assert!(
+        !years_terms::get_year(&pool, other.id)
+            .await
+            .unwrap()
+            .is_visible
+    );
+    assert!(sqlx::query("UPDATE academic_context_settings SET default_academic_year_id=$1,default_academic_term_id=$2 WHERE singleton").bind(year.id).bind(term.id).execute(&pool).await.is_err(),"deferred database guard rejects hidden default parent");
+    let selected = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 3,
+            default_academic_year_id: Some(year.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![AcademicContextVisibilityInput {
+                id: year.id,
+                is_visible: true,
+            }],
+            terms: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        context_settings::update(
+            &pool,
+            &actor,
+            UpdateAcademicContextSettingsRequest {
+                row_version: selected.settings.row_version,
+                default_academic_year_id: Some(year.id),
+                default_academic_term_id: Some(term.id),
+                years: vec![],
+                terms: vec![AcademicContextVisibilityInput {
+                    id: term.id,
+                    is_visible: false
+                }],
+            }
+        )
+        .await
+        .is_err()
+    );
+    let cleared = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: selected.settings.row_version,
+            default_academic_year_id: Some(year.id),
+            default_academic_term_id: None,
+            years: vec![],
+            terms: vec![AcademicContextVisibilityInput {
+                id: term.id,
+                is_visible: false,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cleared.settings.default_academic_year_id, Some(year.id));
+    assert_eq!(cleared.settings.default_academic_term_id, None);
+}
+
+#[test]
+fn year_and_term_commands_reject_every_retired_boundary_key() {
+    fn rejects<T: serde::de::DeserializeOwned>(base: serde_json::Value) {
+        assert!(serde_json::from_value::<T>(base.clone()).is_ok());
+        for key in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
+            for value in [serde_json::Value::Null, serde_json::json!("2025-01-01")] {
+                let mut input = base.clone();
+                input.as_object_mut().unwrap().insert(key.into(), value);
+                assert!(
+                    serde_json::from_value::<T>(input).is_err(),
+                    "retired {key} must fail closed even when null"
+                );
+            }
+        }
+    }
+    let year = serde_json::json!({"year":2901,"customName":null,"schoolDays":["MON"]});
+    rejects::<CreateAcademicYearRequest>(year.clone());
+    let mut update = year;
+    update["rowVersion"] = serde_json::json!(1);
+    rejects::<UpdateAcademicYearRequest>(update);
+    let term = serde_json::json!({"termType":"regular","customName":null,"includedInYearResult":true,"blocksYearClosure":true,"bellScheduleId":Uuid::new_v4()});
+    let mut create = term.clone();
+    create["academicYearId"] = serde_json::json!(Uuid::new_v4());
+    rejects::<CreateAcademicTermRequest>(create);
+    let mut update = term;
+    update["rowVersion"] = serde_json::json!(1);
+    rejects::<UpdateAcademicTermRequest>(update);
 }

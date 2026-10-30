@@ -144,7 +144,6 @@ pub struct CreateAcademicTermRequest {
     pub academic_year_id: Uuid,
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
-    pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
@@ -156,7 +155,6 @@ pub struct CreateAcademicTermRequest {
 pub struct UpdateAcademicTermRequest {
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
-    pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,

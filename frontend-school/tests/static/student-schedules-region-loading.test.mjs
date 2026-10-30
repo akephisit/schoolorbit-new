@@ -50,12 +50,15 @@ test('scoped term selection rejects foreign terms and optional calendar keeps wh
 		'https://school.test/student/exams?academicYearId=year-a&academicTermId=term-b'
 	);
 	const required = resolveScopedAcademicContextUrl(options, requested, true);
-	assert.equal(required.academicYearId, 'year-a');
-	assert.equal(required.academicTermId, 'term-a');
-	assert.equal(required.replaceUrl.searchParams.get('academicTermId'), 'term-a');
+	assert.deepEqual(required, { academicYearId: '', academicTermId: '', replaceUrl: null });
 	const optional = resolveScopedAcademicContextUrl(options, requested, false);
-	assert.equal(optional.academicTermId, '');
-	assert.equal(optional.replaceUrl.searchParams.has('academicTermId'), false);
+	assert.deepEqual(optional, { academicYearId: '', academicTermId: '', replaceUrl: null });
+	const wholeYearUrl = new URL('https://school.test/student/exams?academicYearId=year-a');
+	assert.deepEqual(resolveScopedAcademicContextUrl(options, wholeYearUrl, false), {
+		academicYearId: 'year-a',
+		academicTermId: '',
+		replaceUrl: null
+	});
 	assert.equal(
 		resolveScopedAcademicContextUrl({ ...options, years: [], terms: [] }, requested, true)
 			.academicYearId,

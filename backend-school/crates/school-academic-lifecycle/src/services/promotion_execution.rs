@@ -238,7 +238,8 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
     .fetch_optional()
     .await?
         .ok_or_else(|| AppError::Conflict("รายการนี้ไม่อยู่ในการอนุมัติเดิม".into()))?;
-    if approved.source_checksum != item.source_checksum
+    if approved.target_placement_starts_on != item.target_placement_starts_on
+        || approved.source_checksum != item.source_checksum
         || super::checksum(&approved.decision)? != super::checksum(&item.decision)?
     {
         return Err(AppError::Conflict("ผลการพิจารณาเปลี่ยนหลังอนุมัติ".into()));
@@ -281,7 +282,7 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
         batch.actor_user_id,
         run.source_year_id,
         run.target_year_id,
-        run.target_placement_starts_on,
+        approved.target_placement_starts_on,
         &source,
         &core_decision,
     )

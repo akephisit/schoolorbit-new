@@ -16,7 +16,7 @@ pub async fn read_term_context(
         "SELECT year.id AS academic_year_id,term.id AS academic_term_id,year.name AS year_name,
          term.name AS term_name,year.status AS year_status,term.status AS term_status,
          year.row_version AS year_row_version,term.row_version AS term_row_version,
-         year.year AS academic_year,(now() AT TIME ZONE 'Asia/Bangkok')::date AS operation_date,term.sequence_no AS sequence,term.bell_schedule_id,
+         (now() AT TIME ZONE 'Asia/Bangkok')::date AS operation_date,term.sequence_no AS sequence,term.bell_schedule_id,
          term.included_in_year_result,term.blocks_year_closure
          FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id
          WHERE year.id=$1 AND term.id=$2",

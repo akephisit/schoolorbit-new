@@ -6,12 +6,12 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::types::Json;
 use sqlx::PgPool;
+use sqlx::types::Json;
 use uuid::Uuid;
 
 #[doc(hidden)]
-pub const ITEM_COLUMNS:&str="id,run_id,source_year_id,target_year_id,student_academic_year_id,student_id,source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id,decision,reviewed_by,reviewed_at,status,row_version,created_at,updated_at";
+pub const ITEM_COLUMNS: &str = "id,run_id,source_year_id,target_year_id,target_placement_starts_on,student_academic_year_id,student_id,source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id,decision,reviewed_by,reviewed_at,status,row_version,created_at,updated_at";
 
 pub async fn calculate_run(
     pool: &PgPool,
@@ -148,7 +148,7 @@ pub async fn calculate_run(
              source_grade_level_id=EXCLUDED.source_grade_level_id,source_study_program_id=EXCLUDED.source_study_program_id,
              source_row_version=EXCLUDED.source_row_version,annual_revision_id=EXCLUDED.annual_revision_id,
              source_checksum=EXCLUDED.source_checksum,recommendation=EXCLUDED.recommendation,
-             existing_target_student_year_id=EXCLUDED.existing_target_student_year_id,decision=NULL,reviewed_by=NULL,reviewed_at=NULL,
+             existing_target_student_year_id=EXCLUDED.existing_target_student_year_id,target_placement_starts_on=NULL,decision=NULL,reviewed_by=NULL,reviewed_at=NULL,
              status='calculated',row_version=academic_promotion_run_items.row_version+1,updated_at=now()
              WHERE academic_promotion_run_items.status<>'executed'"
         ).bind(run.id).bind(run.source_year_id).bind(run.target_year_id).bind(Json(prepared)).execute().await?;

@@ -1,5 +1,5 @@
 use super::{
-    cleanup_watch::{perform_cleanup_watch, CleanupObservation},
+    cleanup_watch::{CleanupObservation, perform_cleanup_watch},
     malware_scanner::{MalwareScanner, ScanOutcome},
     namespace_binding::{self, BindingError, ConfiguredNamespaces},
     platform_service::{FilePlatform, UploadCommand},
@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 use url::Url;
 use uuid::Uuid;
 
@@ -216,7 +216,7 @@ async fn late_remote_put_after_client_cancel_head404_and_real039_purge_is_recove
             .unwrap();
     let repository = SqlFileRepository::new(pool.clone());
     platform.request_delete(&repository, file).await.unwrap();
-    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Watch fixture','2045-01-01','2045-12-31','planning') RETURNING id").fetch_one(&pool).await.unwrap();
+    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2988,'Watch fixture','planning') RETURNING id").fetch_one(&pool).await.unwrap();
     let campaign:Uuid=sqlx::query_scalar("INSERT INTO certificate_campaigns(academic_year_id,name,event_date,status) VALUES($1,'Watch fixture','2045-01-01','purging') RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO certificate_campaign_purge_jobs(campaign_id,status,template_count,candidate_count,request_count,open_request_count,issued_certificate_count,revoked_certificate_count,file_count,total_file_bytes) VALUES($1,'finalizing',0,0,0,0,0,0,1,$2)").bind(campaign).bind(byte_size).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO certificate_campaign_purge_files(campaign_id,file_id,object_count,byte_size) VALUES($1,$2,1,$3)").bind(campaign).bind(file).bind(byte_size).execute(&pool).await.unwrap();
@@ -455,11 +455,13 @@ async fn stale_expiry_candidate_promoted_under_file_lock_is_not_revoked() {
     .await
     .unwrap();
     promotion.commit().await.unwrap();
-    assert!(!tokio::time::timeout(Duration::from_secs(3), worker)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap());
+    assert!(
+        !tokio::time::timeout(Duration::from_secs(3), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+    );
     let state:(String,String,bool,i64)=sqlx::query_as("SELECT f.lifecycle_status,f.retention_class,w.revoked_at IS NULL,(SELECT count(*) FROM file_operations WHERE file_id=f.id AND operation_type='delete_object') FROM files f JOIN file_storage_cleanup_watches w ON w.file_id=f.id WHERE f.id=$1")
         .bind(file).fetch_one(&pool).await.unwrap();
     assert_eq!(state, ("processing".into(), "standard".into(), true, 0));
@@ -580,17 +582,21 @@ async fn claimed_watch_advances_due_order_even_when_worker_never_finishes() {
         .bind(first).execute(&pool).await.unwrap();
     let allowed = vec![provider.namespace(StorageClass::Private).unwrap()];
     let repository = SqlFileRepository::new(pool.clone());
-    assert!(!repository
-        .cleanup_starting_preference(&allowed)
-        .await
-        .unwrap());
+    assert!(
+        !repository
+            .cleanup_starting_preference(&allowed)
+            .await
+            .unwrap()
+    );
     // Discard all local sweep state: the next reconstructed sweep starts with watches.
     drop(repository);
     let repository = SqlFileRepository::new(pool.clone());
-    assert!(repository
-        .cleanup_starting_preference(&allowed)
-        .await
-        .unwrap());
+    assert!(
+        repository
+            .cleanup_starting_preference(&allowed)
+            .await
+            .unwrap()
+    );
     let claim = repository
         .claim_cleanup_watch("lost-finish", Duration::from_secs(60), &allowed)
         .await

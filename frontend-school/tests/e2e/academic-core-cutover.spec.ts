@@ -174,7 +174,6 @@ test('future term form keeps annual flags consistent and resets editing when swi
 				years: [
 					{ ...year, status: 'active' },
 					{
-						isVisible: true,
 						...year,
 						id: ids.futureYear,
 						year: 2569,
@@ -502,6 +501,7 @@ test('hidden drafts expose separate visibility and default actions and retain an
 	};
 	let failOnce = true;
 	const writes: Array<{
+		rowVersion: number;
 		years: Array<{ id: string; isVisible: boolean }>;
 		terms: Array<{ id: string; isVisible: boolean }>;
 		defaultAcademicYearId: string;
@@ -522,9 +522,15 @@ test('hidden drafts expose separate visibility and default actions and retain an
 			writes.push(body);
 			if (failOnce) {
 				failOnce = false;
+				settings.rowVersion += 1;
 				await fulfill(route, 'ข้อมูลเปลี่ยนแปลง กรุณาตรวจสอบอีกครั้ง', 409);
 				return true;
 			}
+			if (body.rowVersion !== settings.rowVersion) {
+				await fulfill(route, 'ข้อมูลเปลี่ยนแปลง กรุณาโหลดข้อมูลล่าสุด', 409);
+				return true;
+			}
+
 			for (const item of body.years)
 				if (item.id === future.id) {
 					future.isVisible = item.isVisible;
@@ -564,6 +570,9 @@ test('hidden drafts expose separate visibility and default actions and retain an
 	await yearControls.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
 	await expect(controls.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนแปลง');
 	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
+	await controls.getByRole('button', { name: 'โหลดข้อมูลล่าสุด', exact: true }).click();
+	await expect(controls.getByRole('alert')).toHaveCount(0);
+	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
 	await yearControls.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
 	await expect(
 		yearControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })
@@ -585,8 +594,75 @@ test('hidden drafts expose separate visibility and default actions and retain an
 		{ years: [], terms: [{ id: draftTerm.id, isVisible: true }] },
 		{ years: [], terms: [] }
 	]);
+	expect(writes[0].rowVersion).toBe(1);
+	expect(writes[1].rowVersion).toBe(2);
 	expect(writes.at(-1)).toMatchObject({
 		defaultAcademicYearId: future.id,
 		defaultAcademicTermId: draftTerm.id
 	});
+});
+
+test('a settings response with concurrent year metadata requires review before rebasing the preserved draft', async ({
+	page
+}) => {
+	let savedYear = { ...year, isVisible: false };
+	let settings = { rowVersion: 1, defaultAcademicYearId: null, defaultAcademicTermId: null };
+	const edits: Array<{ year: number; rowVersion: number }> = [];
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [savedYear],
+				terms: [],
+				bellSchedules: [],
+				contextSettings: settings
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/context/settings') {
+			savedYear = {
+				...savedYear,
+				name: 'ชื่อปีที่ผู้ใช้อื่นแก้ไขล่าสุด',
+				isVisible: true,
+				rowVersion: 3
+			};
+			settings = { ...settings, rowVersion: 2 };
+			await fulfill(route, {
+				settings,
+				years: [savedYear],
+				terms: [],
+				contextOptions: { ...settings, years: [savedYear], terms: [] }
+			});
+			return true;
+		}
+		if (url.pathname === `/api/academic/years/${year.id}` && route.request().method() === 'PATCH') {
+			const body = route.request().postDataJSON();
+			edits.push(body);
+			savedYear = { ...savedYear, year: body.year, name: `ปีการศึกษา ${body.year}`, rowVersion: 4 };
+			await fulfill(route, savedYear);
+			return true;
+		}
+		return false;
+	});
+	await page.goto('/staff/academic/core');
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2572');
+	await page
+		.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น' })
+		.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true })
+		.click();
+	await expect(
+		page.getByText('ข้อมูลปีการศึกษาที่บันทึกไว้เปลี่ยนระหว่างแก้ไข', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByText('ข้อมูลล่าสุด: ชื่อปีที่ผู้ใช้อื่นแก้ไขล่าสุด', { exact: false })
+	).toBeVisible();
+	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
+	await expect(page.getByRole('button', { name: 'บันทึกปีการศึกษา', exact: true })).toBeDisabled();
+	expect(edits).toEqual([]);
+	await page
+		.getByRole('button', { name: 'ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน', exact: true })
+		.click();
+	await page.getByRole('button', { name: 'บันทึกปีการศึกษา', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'ปีการศึกษา 2572', exact: true })).toBeVisible();
+	expect(edits).toEqual([expect.objectContaining({ year: 2572, rowVersion: 3 })]);
 });

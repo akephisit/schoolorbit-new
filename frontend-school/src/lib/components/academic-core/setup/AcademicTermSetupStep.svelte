@@ -12,6 +12,7 @@
 		standardTermName
 	} from '#lib/academic-core/foundation-presentation.js';
 	import { canPlanTermsInYear, termAnnualFlags } from '#lib/academic-core/term-planning.js';
+	import { termDraftBase, termDraftMetadataMatches } from '#lib/academic-core/context-drafts.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -47,6 +48,11 @@
 	} = $props();
 
 	let editing = $state<AcademicTerm | null>(null);
+	let draftBase = $state<ReturnType<typeof termDraftBase> | null>(null);
+	const latestEditing = $derived(terms.find((term) => term.id === editing?.id) ?? null);
+	const metadataChanged = $derived(
+		!!draftBase && !!latestEditing && !termDraftMetadataMatches(draftBase, latestEditing)
+	);
 	let termType = $state<AcademicTermType>('regular');
 	let customName = $state('');
 	let bellScheduleId = $derived(
@@ -69,6 +75,7 @@
 
 	function resetDraft() {
 		editing = null;
+		draftBase = null;
 		termType = 'regular';
 		customName = '';
 		bellScheduleId = schedules.find((schedule) => schedule.isDefault)?.id ?? schedules[0]?.id ?? '';
@@ -80,6 +87,7 @@
 	function beginEdit(term: AcademicTerm) {
 		if (!canPlan || busy || term.status !== 'planning') return;
 		editing = term;
+		draftBase = termDraftBase(term);
 		termType = term.termType;
 		customName = customNameFromStored(term.name, standardTermName(term.termType, term.sequence));
 		bellScheduleId = term.bellScheduleId;
@@ -91,7 +99,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!canPlan || busy) return;
+		if (!canPlan || busy || metadataChanged) return;
 		errorMessage = '';
 		if (!bellScheduleId) {
 			errorMessage = 'กรุณาเลือกตารางเวลา';
@@ -107,8 +115,7 @@
 			const saved = editing
 				? await onUpdate(editing.id, {
 						...common,
-						rowVersion:
-							terms.find((term) => term.id === editing?.id)?.rowVersion ?? editing.rowVersion
+						rowVersion: latestEditing?.rowVersion ?? editing.rowVersion
 					})
 				: await onCreate({ academicYearId: year.id, ...common });
 			onSaved(saved);
@@ -256,6 +263,36 @@
 				</Collapsible.Content>
 			</Collapsible.Root>
 
+			{#if metadataChanged && latestEditing}
+				<div
+					role="alert"
+					class="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+				>
+					<p class="font-medium">ข้อมูลภาคเรียนที่บันทึกไว้เปลี่ยนระหว่างแก้ไข</p>
+					<p>
+						ข้อมูลล่าสุด: {latestEditing.name} · {TERM_TYPES.find(
+							(option) => option.value === latestEditing?.termType
+						)?.label} · {schedules.find((schedule) => schedule.id === latestEditing?.bellScheduleId)
+							?.name}
+					</p>
+					<p>
+						รวมผลทั้งปี: {latestEditing.includedInYearResult ? 'ใช่' : 'ไม่'} · ต้องจัดการก่อนปิดปี: {latestEditing.blocksYearClosure
+							? 'ใช่'
+							: 'ไม่'}
+					</p>
+					<p>ฉบับร่างของคุณยังอยู่ ตรวจสอบกับข้อมูลล่าสุดก่อนบันทึก</p>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						disabled={busy}
+						onclick={() => {
+							if (latestEditing) draftBase = termDraftBase(latestEditing);
+						}}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button
+					>
+				</div>
+			{/if}
+
 			{#if errorMessage}
 				<p
 					role="alert"
@@ -265,7 +302,7 @@
 				</p>
 			{/if}
 
-			<Button type="submit" disabled={busy || schedules.length === 0}>
+			<Button type="submit" disabled={busy || metadataChanged || schedules.length === 0}>
 				{#if editing}<Save class="size-4" /> บันทึกภาคเรียน{:else}<Plus class="size-4" /> เพิ่มภาคเรียน{/if}
 			</Button>
 		</form>

@@ -1,3 +1,4 @@
+import { offeringStartsOn, selectOfferingStartDate } from './fixtures/offering-start-date';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
@@ -809,8 +810,9 @@ async function mockSharedComparison(
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) => {
 		previewAttempts++;
 		if (options.failPreview && previewAttempts === 1)
-			return fulfill(route, 'ฉบับทะเบียนนี้เริ่มใช้หลังวันเริ่มภาคเรียน', 409);
+			return fulfill(route, 'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก', 409);
 		return fulfill(route, {
+			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			curriculumSources: [],
 			sourceHash: 'e'.repeat(64),
@@ -991,23 +993,33 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 		await expect(preparation).toContainText('ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ');
 		if (mode === 'synchronized') await expect(preparation).toContainText('รายการกลาง');
 		else await expect(preparation).not.toContainText('รายการเปิดสอนกลางเพียงรายการเดียว');
+		await selectOfferingStartDate(page);
 		await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 		await expect(preparation.getByRole('alert')).toContainText(
-			'ฉบับทะเบียนนี้เริ่มใช้หลังวันเริ่มภาคเรียน'
+			'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก'
 		);
+		await selectOfferingStartDate(page);
 		await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
-		await preparation
-			.getByRole('button', {
-				name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม',
-				exact: true
-			})
-			.click();
+		const applyButton = preparation.getByRole('button', {
+			name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม', exact: true
+		});
+		await expect(applyButton).toBeEnabled();
+		const actualDate = preparation.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร', exact: true });
+		await actualDate.click();
+		await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^16$/ }).click();
+		await expect(applyButton).toBeDisabled();
+		await expect(preparation.getByRole('alert')).toContainText('วันที่เริ่มเปิดสอนเปลี่ยน');
+		await actualDate.click();
+		await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^15$/ }).click();
+		await expect(applyButton).toBeEnabled();
+		await applyButton.click();
 		await expect(preparation).toHaveCount(0);
 		const apply = fixture.academicWrites.find((write) =>
 			write.path.endsWith('/apply-from-curriculum')
 		)!;
 		expect(apply.body).toMatchObject({
 			academicTermId: navIds.term,
+			startsOn: offeringStartsOn,
 			studyProgramIds: [navIds.program],
 			deliveryVersionId: navIds.version,
 			choices: [
@@ -1087,11 +1099,13 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 			});
 			await expect(dialog).toContainText('การเพิ่มนี้ครอบคลุมทุกห้องที่ยังขาดฉบับนี้ รวม 2 ห้อง');
 			await expect(dialog).toContainText('ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ');
+			await selectOfferingStartDate(page);
 			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 			await expect(dialog.getByRole('alert')).toHaveText(
-				'ฉบับทะเบียนนี้เริ่มใช้หลังวันเริ่มภาคเรียน กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+				'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
 			);
 			await expect(dialog).toContainText(mode === 'course' ? 'วิทยาศาสตร์' : 'กิจกรรมใหม่');
+			await selectOfferingStartDate(page);
 			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 			await page.screenshot({
 				path: testInfo.outputPath('inline-curriculum-preparation.png'),
@@ -1327,6 +1341,7 @@ test('a partially offered exact course version opens pending program B for provi
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) => {
 		previewBody = route.request().postDataJSON();
 		return fulfill(route, {
+			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			sourceHash: 'f'.repeat(64),
 			curriculumSources: [],
@@ -1357,6 +1372,7 @@ test('a partially offered exact course version opens pending program B for provi
 	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
 	await expect(preparation).toBeVisible();
 	await expect(preparation).toContainText('แผนที่ยังไม่เปิดสอน · 1 ห้อง');
+	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(preparation.getByText('ใช้รายการเดิม', { exact: true })).toBeVisible();
 	expect(previewBody).toMatchObject({ academicTermId: navIds.term, studyProgramIds: [programB] });
@@ -1554,6 +1570,7 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 		await expect(preparationB).toBeVisible();
 		await expect(page.getByText('เลือกร่างที่จะเพิ่มรายวิชา', { exact: true })).toHaveCount(0);
 		newOptions.release();
+		await selectOfferingStartDate(page);
 		await expect(
 			preparationB.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
 		).toBeEnabled();
@@ -1603,6 +1620,7 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 	}));
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			curriculumSources: [],
 			sourceHash: 'c'.repeat(64),
@@ -1675,6 +1693,7 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		const missing = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
 		await missing.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: `เปิดรายวิชา ${name}`, exact: true });
+		await selectOfferingStartDate(page);
 		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 		await expect(dialog.getByText(message, { exact: true })).toHaveCount(2);
 		await expect(
@@ -1742,6 +1761,7 @@ test('a focused offering-level provider conflict blocks save without offering ap
 		'รายการ ว30104 เผยแพร่แล้วและยังไม่ครอบคลุมห้องเป้าหมายที่เลือก ไม่สามารถเพิ่มเป้าหมายจากการเตรียมเปิดสอนได้';
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			sourceHash: 'a'.repeat(64),
 			curriculumSources: [],
@@ -1775,6 +1795,7 @@ test('a focused offering-level provider conflict blocks save without offering ap
 	await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
 	await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
 	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
+	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(
 		preparation.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
@@ -1790,6 +1811,7 @@ test('a focused offering-level provider conflict blocks save without offering ap
 	expect(
 		fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
 	).toHaveLength(0);
+	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(action).toHaveText('ยังเปิดรายการนี้ไม่ได้');
 	await expect(
@@ -1811,6 +1833,7 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 }) => {
 	const fixture = await mockSharedComparison(page, { manager: true });
 	const preview: CurriculumOfferingPreview = {
+		startsOn: offeringStartsOn,
 		academicTermId: navIds.term,
 		sourceHash: 'b'.repeat(64),
 		curriculumSources: [],
@@ -1888,6 +1911,7 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 		.click();
 	await page.getByRole('option', { name: /แผนคณิตศาสตร์/ }).click();
 	await page.keyboard.press('Escape');
+	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	const save = preparation.getByRole('button', {
 		name: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว',
@@ -2092,6 +2116,7 @@ test('same-term history Back cancels a pending version A lookup before version B
 		await expect(page.getByText('เลือกร่างที่จะเพิ่มรายวิชา', { exact: true })).toHaveCount(0);
 		await expect(page).toHaveURL((url) => url.searchParams.get('deliveryVersionId') === draftB);
 		optionsB.release();
+		await selectOfferingStartDate(page);
 		await expect(
 			preparationB.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
 		).toBeEnabled();

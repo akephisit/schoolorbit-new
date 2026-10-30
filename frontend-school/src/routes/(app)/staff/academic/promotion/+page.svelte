@@ -315,15 +315,17 @@
 					</p>{/if}
 			</div>
 			<div class="space-y-2">
-				<Label for="promotion-placement-start">วันที่เริ่มจัดนักเรียนในห้องปลายทาง</Label>
+				<Label for="promotion-placement-start">วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่</Label>
 				<DatePicker
 					id="promotion-placement-start"
 					bind:value={targetPlacementStartsOn}
-					ariaLabel="วันที่เริ่มจัดนักเรียนในห้องปลายทาง"
+					ariaLabel="วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่"
 					required
 					disabled={saving}
 				/>
-				<p class="text-xs text-muted-foreground">ระบุวันที่มีผลจริงสำหรับการจัดห้องของรอบนี้</p>
+				<p class="text-xs text-muted-foreground">
+					ใช้สำหรับรายการใหม่ในรอบนี้ รายการเดิมคงวันที่ของแต่ละคน
+				</p>
 			</div>
 
 			<div class="space-y-2">

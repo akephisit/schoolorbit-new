@@ -746,6 +746,7 @@ pub async fn apply_from_curriculum(
     .await?;
     if let Some((
         stored_request_hash,
+        stored_starts_on,
         source_hash,
         offering_ids,
         group_ids,
@@ -757,6 +758,7 @@ pub async fn apply_from_curriculum(
     )) = DbSession::new(&mut preflight)
         .query_as::<(
             String,
+            Option<chrono::NaiveDate>,
             String,
             Vec<Uuid>,
             Vec<Uuid>,
@@ -767,7 +769,7 @@ pub async fn apply_from_curriculum(
             i32,
         )>(
             "academic_delivery.services.offerings.apply_from_curriculum.preflight",
-            "SELECT request_hash::text, source_hash::text, offering_ids, group_ids, \
+            "SELECT request_hash::text, starts_on, source_hash::text, offering_ids, group_ids, \
                 created_offering_count, retained_offering_count, \
                 created_group_count, retained_group_count, skipped_count \
          FROM learning_delivery_apply_runs WHERE idempotency_key = $1",
@@ -776,7 +778,9 @@ pub async fn apply_from_curriculum(
         .fetch_optional()
         .await?
     {
-        if stored_request_hash.trim_end() != request_hash {
+        if stored_request_hash.trim_end() != request_hash
+            || stored_starts_on.is_some_and(|date| date != request.starts_on)
+        {
             return Err(AppError::Conflict(
                 "idempotencyKey ถูกใช้กับคำขออื่นแล้ว".to_string(),
             ));
@@ -854,8 +858,8 @@ pub async fn apply_from_curriculum(
              idempotency_key, academic_term_id, request_hash, source_hash,
              offering_ids, group_ids, created_offering_count,
              retained_offering_count, created_group_count, retained_group_count,
-             skipped_count, actor_user_id, curriculum_sources
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+             skipped_count, actor_user_id, curriculum_sources, starts_on
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         )
         .bind(request.idempotency_key)
         .bind(request.academic_term_id)
@@ -870,6 +874,7 @@ pub async fn apply_from_curriculum(
         .bind(applied.skipped_count as i32)
         .bind(actor_user_id)
         .bind(sqlx::types::Json(&preview.curriculum_sources))
+        .bind((applied.created_offering_count > 0).then_some(request.starts_on))
         .execute()
         .await?;
     transaction.commit().await?;

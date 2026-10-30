@@ -52,6 +52,12 @@
 		return invalidate(ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
 	}
 
+	async function reloadContextSettings() {
+		await loadWorkspace();
+		const result = await data.workspace;
+		if (!result.ok) throw new Error(result.error);
+	}
+
 	$effect.pre(() => {
 		const routeResult = data.workspace;
 		const initialMutationRevision = mutationRevision;
@@ -262,7 +268,7 @@
 				{canManage}
 				{contextSettings}
 				onUpdateContextSettings={saveContextSettings}
-				onReloadContextSettings={loadWorkspace}
+				onReloadContextSettings={reloadContextSettings}
 				{busy}
 				onCreateYear={addYear}
 				onUpdateYear={editYear}

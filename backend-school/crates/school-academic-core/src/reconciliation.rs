@@ -1,7 +1,7 @@
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::Deserialize;
-use sqlx::{types::Json, PgPool};
+use sqlx::{PgPool, types::Json};
 
 pub use crate::models::ReconciliationCheck;
 

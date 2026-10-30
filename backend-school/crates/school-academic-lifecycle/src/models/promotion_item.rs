@@ -20,6 +20,8 @@ pub struct PromotionRunItem {
     pub run_id: Uuid,
     pub source_year_id: Uuid,
     pub target_year_id: Uuid,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub target_placement_starts_on: Option<chrono::NaiveDate>,
     pub student_academic_year_id: Uuid,
     pub student_id: Uuid,
     pub source_grade_level_id: Uuid,

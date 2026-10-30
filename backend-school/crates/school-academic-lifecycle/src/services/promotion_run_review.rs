@@ -1,6 +1,6 @@
 use super::super::models::*;
 use super::{
-    promotion_calculation::{evidence_checksum, ITEM_COLUMNS},
+    promotion_calculation::{ITEM_COLUMNS, evidence_checksum},
     promotion_runs::RUN_COLUMNS,
 };
 use school_academic_core::services::{lifecycle_guard, promotion_students, promotion_targets};
@@ -104,8 +104,8 @@ pub async fn review_item(
     let core_decision = input.decision.core_command();
     promotion_targets::validate_destination(&mut tx, &source, run.target_year_id, &core_decision)
         .await?;
-    let item:PromotionRunItem=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}")))
-        .bind(sqlx::types::Json(&input.decision)).bind(actor.user_id).bind(item_id).fetch_one().await?;
+    let item:PromotionRunItem=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',target_placement_starts_on=$4,row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}")))
+        .bind(sqlx::types::Json(&input.decision)).bind(actor.user_id).bind(item_id).bind(input.decision.target_homeroom_id.map(|_|run.target_placement_starts_on)).fetch_one().await?;
     let all_reviewed:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.promotion_run_review.review_item", "SELECT NOT EXISTS(SELECT 1 FROM academic_promotion_run_items WHERE run_id=$1 AND status NOT IN ('reviewed','executed'))")
         .bind(run_id).fetch_one().await?;
     let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,reviewed_by=CASE WHEN $2 THEN $3 ELSE NULL END,reviewed_at=CASE WHEN $2 THEN now() ELSE NULL END,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))

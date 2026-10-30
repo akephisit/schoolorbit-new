@@ -84,7 +84,13 @@
 		visibleCurriculumPreparationProposals(preview?.proposals ?? [], preparationTarget)
 	);
 	let applyBlocked = $derived.by(() => {
-		if (!startsOn || !preview || choices.length !== preview.proposals.length) return true;
+		if (
+			!startsOn ||
+			!preview ||
+			preview.startsOn !== startsOn ||
+			choices.length !== preview.proposals.length
+		)
+			return true;
 		if (preparationTarget) {
 			if (displayedProposals.length !== 1) return true;
 			const focusedChoice = choices.find(
@@ -391,6 +397,13 @@
 			onclick={buildPreview}><Eye class="size-4" /> ตรวจและจัดกลุ่มก่อน</LoadingButton
 		>
 	</div>
+
+	{#if preview && preview.startsOn !== startsOn}<p
+			role="alert"
+			class="text-sm text-amber-700 dark:text-amber-400"
+		>
+			วันที่เริ่มเปิดสอนเปลี่ยน กรุณาตรวจตัวอย่างใหม่ก่อนนำไปใช้
+		</p>{/if}
 
 	{#if preview}
 		<div class="rounded-xl border bg-muted p-3 text-sm">

@@ -20,7 +20,7 @@ pub async fn execute_decision(
     actor: Uuid,
     source_year: Uuid,
     target_year: Uuid,
-    placement_starts_on: chrono::NaiveDate,
+    placement_starts_on: Option<chrono::NaiveDate>,
     source: &PromotionStudentContext,
     decision: &PromotionDestinationCommand,
 ) -> Result<PromotionWriteOutcome, AppError> {
@@ -95,6 +95,9 @@ pub async fn execute_decision(
                 .bind(id).bind(current.student_id).bind(target_year).bind(grade).bind(program).execute().await?;
             result.target_student_year_id = Some(id);
             if let Some(room) = decision.target_homeroom_id {
+                let placement_starts_on = placement_starts_on.ok_or_else(|| {
+                    AppError::ValidationError("รายการจัดห้องต้องมีวันเริ่มที่อนุมัติแล้ว".into())
+                })?;
                 let placement = Uuid::now_v7();
                 DbSession::new(&mut **tx).query("academic_core.services.promotion_execution.execute_decision", "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES($1,$2,$3,$4,$5,'planned','promotion')")
                     .bind(placement).bind(id).bind(target_year).bind(room).bind(placement_starts_on).execute().await?;

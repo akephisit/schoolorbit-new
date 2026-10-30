@@ -938,3 +938,39 @@ test('scoped selectors leave missing defaults and invalid explicit parent-term c
 	);
 	assert.equal(resolveScopedAcademicTerm(options, older)?.id, 'term-planning');
 });
+
+test('draft metadata guards allow visibility-only revisions but detect concurrent year and term edits', async () => {
+	await importAcademicContextStore();
+	const { yearDraftBase, termDraftBase, yearDraftMetadataMatches, termDraftMetadataMatches } =
+		await academicContextStoreServer.ssrLoadModule('/src/lib/academic-core/context-drafts.ts');
+	const year = { ...contextOptions().years[0], schoolDays: ['MON', 'TUE'], rowVersion: 1 };
+	const term = { ...contextOptions().terms[0], bellScheduleId: 'bell', rowVersion: 1 };
+	const yearBase = yearDraftBase(year),
+		termBase = termDraftBase(term);
+	assert.equal(
+		yearDraftMetadataMatches(yearBase, {
+			...year,
+			isVisible: false,
+			rowVersion: 2,
+			schoolDays: ['TUE', 'MON']
+		}),
+		true
+	);
+	assert.equal(
+		termDraftMetadataMatches(termBase, { ...term, isVisible: false, rowVersion: 2 }),
+		true
+	);
+	for (const change of [
+		{ name: 'Changed by another actor' },
+		{ year: year.year + 1 },
+		{ schoolDays: ['MON'] }
+	])
+		assert.equal(yearDraftMetadataMatches(yearBase, { ...year, ...change, rowVersion: 3 }), false);
+	for (const change of [
+		{ name: 'Changed term' },
+		{ bellScheduleId: 'other-bell' },
+		{ includedInYearResult: false },
+		{ termType: 'summer' }
+	])
+		assert.equal(termDraftMetadataMatches(termBase, { ...term, ...change, rowVersion: 3 }), false);
+});

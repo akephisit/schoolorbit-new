@@ -23,8 +23,8 @@ pub(crate) async fn insert_file(pool: &PgPool, actor_id: Uuid) -> Uuid {
 
 pub(crate) async fn insert_template(pool: &PgPool, actor_id: Uuid) -> Uuid {
     let academic_year_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO academic_years (year, name, start_date, end_date, status)
-             VALUES (2998, 'School font upload test', '2998-01-01', '2998-12-31', 'planning')
+        "INSERT INTO academic_years (year, name, status)
+             VALUES (2998, 'School font upload test', 'planning')
              RETURNING id",
     )
     .fetch_one(pool)

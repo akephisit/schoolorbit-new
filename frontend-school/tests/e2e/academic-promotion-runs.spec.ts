@@ -55,6 +55,7 @@ function fixture(): Schema['PromotionRunWorkspace'] {
 				item: {
 					id: id(5),
 					runId: id(3),
+					targetPlacementStartsOn: null,
 					sourceYearId: id(1),
 					targetYearId: id(2),
 					studentAcademicYearId: id(7),
@@ -112,6 +113,7 @@ async function mock(
 		current.run.status = level === 'approver' ? 'reviewed' : 'approved';
 		current.run.rowVersion = 3;
 		current.students[0].item.status = 'reviewed';
+		current.students[0].item.targetPlacementStartsOn = '2027-05-17';
 		current.students[0].item.decision = {
 			outcome: 'promote',
 			targetGradeLevelId: id(11),
@@ -200,7 +202,22 @@ async function mock(
 						status: year.status
 					}))
 				});
-			if (path === '/api/academic/years') return reply(route, [current.sourceYear, current.targetYear].map((year) => ({ id: year.academicYearId, year: year.year, name: year.name, status: year.status, rowVersion: year.rowVersion, isVisible: true, schoolDays: ['MON'], migrated: false, createdAt: time, updatedAt: time })));
+			if (path === '/api/academic/years')
+				return reply(
+					route,
+					[current.sourceYear, current.targetYear].map((year) => ({
+						id: year.academicYearId,
+						year: year.year,
+						name: year.name,
+						status: year.status,
+						rowVersion: year.rowVersion,
+						isVisible: true,
+						schoolDays: ['MON'],
+						migrated: false,
+						createdAt: time,
+						updatedAt: time
+					}))
+				);
 
 			if (path === '/api/academic/lifecycle/promotion-policies/options')
 				return reply(route, {
@@ -319,6 +336,7 @@ async function mock(
 			if (path === root && method === 'POST') {
 				const body: Schema['CreatePromotionRunInput'] = route.request().postDataJSON();
 				writes.push({ path, body });
+				current.run.targetPlacementStartsOn = body.targetPlacementStartsOn;
 				return reply(route, { ...current.run, status: 'draft', rowVersion: 1 });
 			}
 			if (path === `${root}/${id(3)}/calculate`) {
@@ -717,8 +735,13 @@ test('list creates a run only for the chosen source and future planning year', a
 	await dialog.getByLabel('ปีการศึกษาปลายทาง', { exact: true }).click();
 	await page.getByRole('option', { name: 'ปีการศึกษา 2570', exact: true }).click();
 	await expect(dialog.getByRole('button', { name: 'สร้างรอบ', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'วันที่เริ่มจัดนักเรียนในห้องปลายทาง', exact: true }).click();
-	await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^15$/ }).click();
+	await dialog
+		.getByRole('button', { name: 'วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่', exact: true })
+		.click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^15$/ })
+		.click();
 	await dialog.getByRole('button', { name: 'สร้างรอบ', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`/promotion/${id(3)}$`));
 	expect(observed.writes[0].body).toMatchObject({
@@ -827,4 +850,15 @@ test('uncertain execution retry retains the original request ID and does not rep
 	expect(observed.writes).toHaveLength(2);
 	expect(observed.writes[1].body).toEqual(observed.writes[0].body);
 	expect(observed.current.run.rowVersion).toBe(4);
+});
+
+test('reviewed placement dates display independently of the default for new promotion items', async ({
+	page
+}) => {
+	await mock(page, 'executor');
+	await page.goto(pageUrl);
+	await expect(
+		page.getByText('วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่: 16 พ.ค. 2570', { exact: true })
+	).toBeVisible();
+	await expect(page.getByText('เริ่มจัดห้อง 17 พ.ค. 2570', { exact: true })).toBeVisible();
 });

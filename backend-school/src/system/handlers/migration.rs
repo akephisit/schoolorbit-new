@@ -1,10 +1,10 @@
 use crate::AppState;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use school_academic_core::reconciliation::{
-    read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
+    PHASE_B_MIGRATION_VERSION, ReconciliationCheck, read_academic_core_cleanup_audit,
 };
 use school_academic_results::services::{
-    read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
+    GRADEBOOK_RESULTS_MIGRATION_VERSION, read_gradebook_results_cutover_audit,
 };
 use school_http::HttpError as AppError;
 use serde::Serialize;
@@ -50,12 +50,60 @@ struct SchoolMigrationStatus {
     migration_error: Option<String>,
     #[serde(rename = "academicCoreCutover")]
     academic_core_cutover: AcademicCoreCutoverStatus,
+    #[serde(rename = "academicContextCutover")]
+    academic_context_cutover: AcademicContextCutoverStatus,
     #[serde(rename = "gradebookResultsCutover")]
     gradebook_results_cutover: GradebookResultsCutoverStatus,
     #[serde(rename = "deliveryTimetableCutover")]
     delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
     #[serde(rename = "staffProfileCutover")]
     staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcademicContextCutoverStatus {
+    status: String,
+    migration_version: i64,
+    passed: Option<bool>,
+    checks: Vec<ReconciliationCheck>,
+}
+async fn academic_context_cutover_status(
+    pool: Option<&PgPool>,
+    version: i32,
+) -> AcademicContextCutoverStatus {
+    if version < 147 {
+        return AcademicContextCutoverStatus {
+            status: "pendingMigration".into(),
+            migration_version: 147,
+            passed: None,
+            checks: vec![],
+        };
+    }
+    if let Some(pool) = pool {
+        if let Ok(audit) =
+            school_academic_core::context_reconciliation::read_academic_context_cutover_audit(pool)
+                .await
+        {
+            return AcademicContextCutoverStatus {
+                status: if audit.completed {
+                    "cutoverCompleted"
+                } else {
+                    "cutoverFailed"
+                }
+                .into(),
+                migration_version: 147,
+                passed: Some(audit.completed),
+                checks: audit.checks,
+            };
+        }
+    }
+    AcademicContextCutoverStatus {
+        status: "unavailable".into(),
+        migration_version: 147,
+        passed: Some(false),
+        checks: vec![],
+    }
 }
 
 #[derive(Serialize)]
@@ -396,6 +444,7 @@ pub async fn migration_status(
         let (
             version,
             academic_core_cutover,
+            academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
             staff_profile_cutover,
@@ -417,6 +466,7 @@ pub async fn migration_status(
                     (
                         version,
                         academic_core_cutover,
+                        academic_context_cutover_status(Some(&pool), version).await,
                         gradebook_results_cutover,
                         delivery_timetable_cutover_status(Some(&pool), version).await,
                         staff_profile_cutover_status(Some(&pool), version).await,
@@ -425,6 +475,7 @@ pub async fn migration_status(
                 Err(_) => (
                     reported_version,
                     academic_core_cutover_unavailable(reported_version),
+                    academic_context_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_unavailable(reported_version),
                     delivery_timetable_cutover_unavailable(),
                     staff_profile_cutover_status(None, reported_version).await,
@@ -434,6 +485,7 @@ pub async fn migration_status(
             (
                 reported_version,
                 academic_core_cutover_status(None, reported_version).await,
+                academic_context_cutover_status(None, reported_version).await,
                 gradebook_results_cutover_status(None, reported_version).await,
                 delivery_timetable_cutover_status(None, reported_version).await,
                 staff_profile_cutover_status(None, reported_version).await,
@@ -463,6 +515,7 @@ pub async fn migration_status(
             last_migrated_at: school.last_migrated_at,
             migration_error: school.migration_error,
             academic_core_cutover,
+            academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
             staff_profile_cutover,
@@ -701,8 +754,8 @@ async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::integration_tests::academic::cutover_test_support::{
-        apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-        seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
+        CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+        seed_academic_cutover_fixture, seed_release_two_predecessor,
     };
     use school_test_db::create_named_test_pool;
 
@@ -918,11 +971,13 @@ mod tests {
         assert_eq!(value["migrationVersion"], 60);
         assert_eq!(value["passed"], true);
         assert!(value["checks"].as_array().unwrap().len() >= 6);
-        assert!(value["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|check| check["passed"] == true));
+        assert!(
+            value["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|check| check["passed"] == true)
+        );
         for forbidden in [
             "studentId",
             "studentAcademicYearId",
@@ -975,7 +1030,10 @@ mod tests {
         let internal_routes = &app_source[app_source.find("fn internal_routes").unwrap()
             ..app_source.find("fn protected_routes").unwrap()];
         assert!(!internal_routes.contains("/internal/academic-core/reconcile-all"));
-        assert!(internal_routes
-            .contains("route_layer(from_fn(middleware::internal_auth::validate_internal_secret))"));
+        assert!(
+            internal_routes.contains(
+                "route_layer(from_fn(middleware::internal_auth::validate_internal_secret))"
+            )
+        );
     }
 }

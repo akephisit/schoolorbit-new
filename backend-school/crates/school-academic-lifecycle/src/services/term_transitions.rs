@@ -5,8 +5,20 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{types::Json, Postgres, Transaction};
+use sqlx::{Postgres, Transaction, types::Json};
 use uuid::Uuid;
+
+fn action_name(action: TermTransitionAction) -> &'static str {
+    match action {
+        TermTransitionAction::MarkReady => "mark_ready",
+        TermTransitionAction::BeginClosing => "begin_closing",
+        TermTransitionAction::CancelClosing => "cancel_closing",
+        TermTransitionAction::Close => "close",
+        TermTransitionAction::Reopen => "reopen",
+        TermTransitionAction::Cancel => "cancel",
+        TermTransitionAction::Activate => "activate",
+    }
+}
 
 pub(crate) fn action_permission(action: TermTransitionAction) -> &'static str {
     match action {
@@ -47,17 +59,9 @@ pub async fn transition_term(
     // Acquire before any entity lock or readiness read. Ordinary writers use
     // the shared side of this same lock, including audited corrections.
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let receipt:Option<(Uuid,String,Json<TermTransitionOutcome>)>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.term_transitions.transition_term",
-        "SELECT actor_user_id,request_checksum,outcome FROM academic_term_transition_receipts WHERE request_id=$1",
-    ).bind(request.request_id).fetch_optional().await?;
-    if let Some((owner, checksum, outcome)) = receipt {
-        if owner != actor.user_id || checksum != request_checksum {
-            return Err(AppError::Conflict(
-                "คำขอนี้เคยใช้กับข้อมูลหรือผู้ดำเนินการอื่นแล้ว".into(),
-            ));
-        }
+    if let Some(outcome) = replay_term_transition(&mut tx, actor.user_id, term, &request).await? {
         tx.commit().await?;
-        return Ok(outcome.0);
+        return Ok(outcome);
     }
     DbSession::new(&mut *tx)
         .query(
@@ -98,7 +102,9 @@ pub async fn transition_term(
     }
     let target = target_state(before.term_status, before.year_status, request.action)?;
     if request.action == TermTransitionAction::Close {
-        external.require_attendance_delivery_complete(&mut tx,term,before.operation_date).await?;
+        external
+            .require_attendance_delivery_complete(&mut tx, term, before.operation_date)
+            .await?;
         if !workspace.coverage.ready
             || workspace
                 .findings
@@ -136,8 +142,8 @@ pub async fn transition_term(
         let successor:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term",
             "SELECT EXISTS(SELECT 1 FROM academic_terms successor JOIN academic_years owner ON owner.id=successor.academic_year_id
              WHERE successor.status IN ('active','closing','closed') AND
-             ((successor.academic_year_id=$1 AND successor.sequence_no>$2) OR owner.year>$3))",
-        ).bind(request.academic_year_id).bind(before.sequence).bind(before.academic_year).fetch_one().await?;
+             ((successor.academic_year_id=$1 AND successor.sequence_no>$2) OR owner.year>(SELECT year FROM academic_years WHERE id=$1)))",
+        ).bind(request.academic_year_id).bind(before.sequence).fetch_one().await?;
         let running:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term", "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id<>$1 AND status IN ('active','closing'))")
             .bind(term).fetch_one().await?;
         if successor || running {
@@ -171,9 +177,9 @@ pub async fn transition_term(
         TermTransitionAction::Cancel => "cancel",
         TermTransitionAction::Activate => "activate",
     };
-    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(request.request_id).bind(request.academic_year_id).bind(term).bind(actor.user_id).bind(action)
-        .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
+        .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).bind(Json(&request)).execute().await?;
     years_terms::append_audit(
         &mut tx,
         &format!("academic.term.{action}"),
@@ -189,7 +195,33 @@ pub async fn transition_term(
     Ok(outcome)
 }
 
-pub(crate) fn validate_request(request: &TermTransitionRequest) -> Result<(),AppError> {
+pub(super) async fn replay_term_transition(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    actor: Uuid,
+    term: Uuid,
+    request: &TermTransitionRequest,
+) -> Result<Option<TermTransitionOutcome>, AppError> {
+    let receipt:Option<(Uuid,Uuid,Uuid,String,Json<TermTransitionRequest>,Json<TermTransitionOutcome>)>=DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_transitions.replay",
+        "SELECT actor_user_id,academic_term_id,academic_year_id,action,canonical_request,outcome FROM academic_term_transition_receipts WHERE request_id=$1")
+        .bind(request.request_id).fetch_optional().await?;
+    let Some((owner, stored_term, stored_year, action, Json(original), Json(outcome))) = receipt
+    else {
+        return Ok(None);
+    };
+    if owner != actor
+        || stored_term != term
+        || stored_year != request.academic_year_id
+        || original != *request
+        || action != action_name(request.action)
+    {
+        return Err(AppError::Conflict(
+            "คำขอนี้เคยใช้กับบริบท การดำเนินการ หรือผู้ดำเนินการอื่นแล้ว".into(),
+        ));
+    }
+    Ok(Some(outcome))
+}
+
+pub(crate) fn validate_request(request: &TermTransitionRequest) -> Result<(), AppError> {
     if request.request_id.is_nil()
         || request.academic_year_id.is_nil()
         || request.expected_year_version <= 0
@@ -262,10 +294,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn term_transition_request_requires_precise_context_date_and_reopening_reason() {
-        let start = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
-        let end = NaiveDate::from_ymd_opt(2027, 4, 30).unwrap();
-        let term_start = NaiveDate::from_ymd_opt(2026, 5, 16).unwrap();
+    fn term_transition_request_requires_precise_identity_and_reopening_reason() {
         let mut request = TermTransitionRequest {
             academic_year_id: uuid::Uuid::new_v4(),
             request_id: uuid::Uuid::new_v4(),
@@ -274,46 +303,43 @@ mod tests {
             expected_term_version: 2,
             readiness_checksum: "a".repeat(64),
             acknowledged_warning_codes: vec![],
-            closed_on: Some(term_start),
             reason: None,
         };
-        assert!(validate_request(&request, start, end, term_start).is_ok());
-        for date in [None, Some(start), Some(end.succ_opt().unwrap())] {
-            request.closed_on = date;
-            assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_ok());
+        for key in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
+            let mut obsolete = serde_json::to_value(&request).unwrap();
+            obsolete[key] = serde_json::json!("2026-05-01");
+            assert!(serde_json::from_value::<TermTransitionRequest>(obsolete).is_err());
         }
-        request.closed_on = Some(end);
-        assert!(validate_request(&request, start, end, term_start).is_ok());
         request.action = TermTransitionAction::Reopen;
-        request.closed_on = None;
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.reason = Some("ตรวจสอบผลแก้ไข".into());
-        assert!(validate_request(&request, start, end, term_start).is_ok());
+        assert!(validate_request(&request).is_ok());
         request.reason = Some(" ".into());
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.reason = Some("ก".repeat(1001));
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.action = TermTransitionAction::BeginClosing;
         request.reason = None;
-        assert!(validate_request(&request, start, end, term_start).is_ok());
+        assert!(validate_request(&request).is_ok());
         request.expected_term_version = 0;
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.expected_term_version = 1;
         request.expected_year_version = -1;
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.expected_year_version = 1;
         request.readiness_checksum = "invalid".into();
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.readiness_checksum = "a".repeat(64);
         request.request_id = uuid::Uuid::nil();
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.request_id = uuid::Uuid::new_v4();
         request.action = TermTransitionAction::Activate;
         request.reason = Some("ไม่เกี่ยวกับการเปิดภาคเรียน".into());
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
         request.reason = None;
         request.acknowledged_warning_codes = vec!["opening.warning".into()];
-        assert!(validate_request(&request, start, end, term_start).is_err());
+        assert!(validate_request(&request).is_err());
     }
 
     #[test]

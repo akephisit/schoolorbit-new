@@ -7,7 +7,6 @@
 		UpdateAcademicContextSettingsRequest
 	} from '#lib/api/academic-core.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 
 	let {
@@ -30,6 +29,19 @@
 	let pending = $state('');
 	let error = $state('');
 	const yearIsDefault = $derived(settings.defaultAcademicYearId === year.id);
+
+	async function reload() {
+		if (pending) return;
+		pending = 'reload';
+		try {
+			await onreload();
+			error = '';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ';
+		} finally {
+			pending = '';
+		}
+	}
 
 	async function save(action: string, changes: Partial<UpdateAcademicContextSettingsRequest>) {
 		if (!canManage || pending) return;
@@ -84,8 +96,9 @@
 					disabled={!!pending || yearIsDefault}
 					title={yearIsDefault ? 'เปลี่ยนค่าเริ่มต้นก่อนซ่อนปีนี้' : undefined}
 					onclick={() =>
-						save(`year-visibility:${year.id}`, { years: [{ id: year.id, isVisible: !year.isVisible }] })}
-					>{year.isVisible ? 'ซ่อนจากตัวเลือก' : 'แสดงในตัวเลือก'}</LoadingButton
+						save(`year-visibility:${year.id}`, {
+							years: [{ id: year.id, isVisible: !year.isVisible }]
+						})}>{year.isVisible ? 'ซ่อนจากตัวเลือก' : 'แสดงในตัวเลือก'}</LoadingButton
 				>
 				<LoadingButton
 					type="button"
@@ -95,8 +108,10 @@
 					loadingLabel="กำลังตั้งค่า..."
 					disabled={!!pending || !year.isVisible || yearIsDefault}
 					onclick={() =>
-						save(`year-default:${year.id}`, { defaultAcademicYearId: year.id, defaultAcademicTermId: null })}
-					>ตั้งเป็นค่าเริ่มต้น</LoadingButton
+						save(`year-default:${year.id}`, {
+							defaultAcademicYearId: year.id,
+							defaultAcademicTermId: null
+						})}>ตั้งเป็นค่าเริ่มต้น</LoadingButton
 				>
 			</div>
 		{/if}
@@ -115,7 +130,11 @@
 			<div class="flex flex-wrap items-center gap-2 text-sm">
 				<span>{term.name}</span>
 				<Badge variant="outline"
-					>{!year.isVisible ? 'ซ่อนตามปีการศึกษา' : term.isVisible ? 'แสดงในตัวเลือก' : 'ซ่อนจากตัวเลือก'}</Badge
+					>{!year.isVisible
+						? 'ซ่อนตามปีการศึกษา'
+						: term.isVisible
+							? 'แสดงในตัวเลือก'
+							: 'ซ่อนจากตัวเลือก'}</Badge
 				>
 				{#if settings.defaultAcademicTermId === term.id}<Badge variant="secondary"
 						>ค่าเริ่มต้นของโรงเรียน</Badge
@@ -164,7 +183,13 @@
 		>
 			{error}
 		</p>
-		<Button type="button" size="sm" variant="outline" disabled={!!pending} onclick={onreload}
-			>โหลดข้อมูลล่าสุด</Button
+		<LoadingButton
+			type="button"
+			size="sm"
+			variant="outline"
+			disabled={!!pending}
+			loading={pending === 'reload'}
+			loadingLabel="กำลังโหลด..."
+			onclick={reload}>โหลดข้อมูลล่าสุด</LoadingButton
 		>{/if}
 </section>

@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::{to_bytes, Body},
-    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
+    Extension, Router,
+    body::{Body, to_bytes},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Extension, Router,
 };
 use chrono::{Duration, Utc};
 use school_authorization::PermissionCache;
@@ -16,7 +16,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use school_auth_http::origin::{
-    parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER,
+    SCHOOL_SUBDOMAIN_HEADER, TenantOriginPolicy, parse_realtime_tenant_hint,
 };
 use school_test_db::{create_named_test_pool, run_test_migrations};
 
@@ -24,7 +24,7 @@ use school_auth::{
     config::SessionConfig,
     models::{CurrentUserResponse, LoginRequest, SessionState},
     runtime::AuthRuntime,
-    session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
+    session_crypto::{RawSessionToken, SessionHmacKey, identifier_bucket, session_csrf_token},
     session_policy::normalize_login_identifier,
     session_service::AuthenticatedSession,
 };
@@ -335,9 +335,11 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         header::COOKIE,
         HeaderValue::from_static("broken; also-broken=; auth_token=legacy.jwt"),
     )]);
-    assert!(presented_session_token(&malformed)
-        .expect("malformed unrelated pairs must not panic")
-        .is_none());
+    assert!(
+        presented_session_token(&malformed)
+            .expect("malformed unrelated pairs must not panic")
+            .is_none()
+    );
 
     let malformed_identity = HeaderMap::from_iter([(
         header::COOKIE,
@@ -347,9 +349,11 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         ))
         .expect("malformed cookie fixture must be representable"),
     )]);
-    assert!(presented_session_token(&malformed_identity)
-        .expect("one malformed identity cookie must be treated as absent")
-        .is_none());
+    assert!(
+        presented_session_token(&malformed_identity)
+            .expect("one malformed identity cookie must be treated as absent")
+            .is_none()
+    );
 
     let mut mixed = valid.clone();
     mixed.append(
@@ -605,14 +609,16 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
     );
     assert_eq!(success.status(), StatusCode::OK);
     assert_eq!(set_cookie_count(&success), 2);
-    assert!(success
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .all(|value| value
-            .to_str()
-            .expect("expiry must be ASCII")
-            .contains("Max-Age=0")));
+    assert!(
+        success
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .all(|value| value
+                .to_str()
+                .expect("expiry must be ASCII")
+                .contains("Max-Age=0"))
+    );
 
     let unavailable_session_id = Uuid::new_v4();
     let unavailable_token = fixture
@@ -879,19 +885,19 @@ pub(crate) mod protected_router {
     use std::{
         collections::HashMap,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
     };
 
     use axum::{
-        body::{to_bytes, Body, Bytes},
-        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, Path, State},
-        http::{header, HeaderValue, Method, Request, StatusCode},
+        Json, Router,
+        body::{Body, Bytes, to_bytes},
+        extract::{DefaultBodyLimit, Extension, Path, State, rejection::JsonRejection},
+        http::{HeaderValue, Method, Request, StatusCode, header},
         middleware::from_fn_with_state,
         response::{IntoResponse, Response},
         routing::{delete, get, patch, post, put},
-        Json, Router,
     };
     use chrono::{Duration, Utc};
     use school_authorization::PermissionCache;
@@ -906,7 +912,7 @@ pub(crate) mod protected_router {
     use school_auth::{
         config::SessionConfig,
         runtime::AuthRuntime,
-        session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
+        session_crypto::{RawSessionToken, SessionHmacKey, session_csrf_token},
         session_service::AuthenticatedSession,
     };
     use school_auth_http::http::routes::AUTH_JSON_BODY_LIMIT;
@@ -1407,9 +1413,9 @@ pub(crate) mod protected_router {
         let today = Utc::now()
             .with_timezone(&chrono_tz::Asia::Bangkok)
             .date_naive();
-        let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2986,'Care HTTP',$1,$2,'active') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status,is_visible) VALUES(2986,'Care HTTP','active',true) RETURNING id").fetch_one(&fixture.tenant_a_pool).await.unwrap();
         let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE_HTTP','Care HTTP',true) RETURNING id").bind(year).fetch_one(&fixture.tenant_a_pool).await.unwrap();
-        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'CARE_HTTP','Care HTTP','regular',$2,$3,$4,'active',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES($1,1,'CARE_HTTP','Care HTTP','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&fixture.tenant_a_pool).await.unwrap();
         let round = school_student_care::services::create_round(
             &fixture.tenant_a_pool,
             a,
@@ -1667,14 +1673,14 @@ pub(crate) mod protected_router {
         let group_ids = vec![Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
         let term_id = {
             let mut tx = fixture.tenant_a_pool.begin().await.unwrap();
-            let year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Bulk HTTP success',$1,$2,'planning') RETURNING id")
-                .bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2988,'Bulk HTTP success','planning') RETURNING id")
+                .fetch_one(&mut *tx).await.unwrap();
             let bell: Uuid = sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id")
                 .bind(year).fetch_one(&mut *tx).await.unwrap();
-            let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id")
-                .bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
-                .bind(offering_id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id")
+                .bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
+                .bind(offering_id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(offering_id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             for (index, id) in group_ids.iter().enumerate() {
@@ -1699,11 +1705,13 @@ pub(crate) mod protected_router {
             versions::get_version(&fixture.tenant_a_pool, opening.target_delivery_version_id)
                 .await
                 .unwrap();
-        assert!(version
-            .snapshot
-            .offerings
-            .iter()
-            .any(|offering| offering.id == offering_id && offering.groups.len() == 3));
+        assert!(
+            version
+                .snapshot
+                .offerings
+                .iter()
+                .any(|offering| offering.id == offering_id && offering.groups.len() == 3)
+        );
         let unselected_before = serde_json::to_value(
             groups::get(&fixture.tenant_a_pool, group_ids[2])
                 .await
@@ -2064,12 +2072,12 @@ pub(crate) mod protected_router {
             .await
             .unwrap();
             let mut tx = tenant.pool.begin().await.unwrap();
-            let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2987,'Bulk HTTP',$1,$2,'planning') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2987,'Bulk HTTP','planning') RETURNING id").fetch_one(&mut *tx).await.unwrap();
             let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id").bind(year).fetch_one(&mut *tx).await.unwrap();
-            let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id").bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
             let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
-                .bind(id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
+                .bind(id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             tx.commit().await.unwrap();

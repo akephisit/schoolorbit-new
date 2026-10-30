@@ -53,6 +53,15 @@ pub async fn replay_command<T: serde::de::DeserializeOwned + Send + Unpin + 'sta
     Ok(Some(outcome.0))
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PromotionCreationIdentity {
+    request_id: uuid::Uuid,
+    source_year_id: uuid::Uuid,
+    target_year_id: uuid::Uuid,
+    policy_id: uuid::Uuid,
+}
+
 pub async fn create_run(
     pool: &PgPool,
     actor: &ActorContext,
@@ -76,23 +85,31 @@ pub async fn create_run(
             "ระบุปีต้นทาง ปีปลายทาง เกณฑ์ และรหัสคำขอให้ถูกต้อง".into(),
         ));
     }
-    let checksum = super::checksum(&(actor.user_id, &input))?;
+    let checksum = super::checksum(&(
+        actor.user_id,
+        PromotionCreationIdentity {
+            request_id: input.request_id,
+            source_year_id: input.source_year_id,
+            target_year_id: input.target_year_id,
+            policy_id: input.policy_id,
+        },
+    ))?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_lifecycle.services.promotion_runs.create_run",
     )
     .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let previous: Option<(uuid::Uuid, String)> = DbSession::new(&mut *tx)
+    let previous: Option<(uuid::Uuid, String,chrono::NaiveDate)> = DbSession::new(&mut *tx)
         .query_as(
             "academic_lifecycle.services.promotion_runs.create_run",
-            "SELECT id,request_checksum FROM academic_promotion_runs WHERE request_id=$1",
+            "SELECT id,request_checksum,target_placement_starts_on FROM academic_promotion_runs WHERE request_id=$1",
         )
         .bind(input.request_id)
         .fetch_optional()
         .await?;
-    if let Some((id, original)) = previous {
-        if original != checksum {
+    if let Some((id, original, placement_date)) = previous {
+        if original != checksum || placement_date != input.target_placement_starts_on {
             return Err(AppError::Conflict(
                 "รหัสคำขอนี้เคยใช้กับข้อมูลหรือผู้ดำเนินการอื่นแล้ว".into(),
             ));

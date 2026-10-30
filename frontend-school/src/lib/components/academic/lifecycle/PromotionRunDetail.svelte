@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { resolve } from '$app/paths';
+	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import { ArrowRight } from '@lucide/svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import PromotionImpactsDialog from './PromotionImpactsDialog.svelte';
@@ -422,6 +423,11 @@
 					<div>
 						<p class="text-xs text-muted-foreground">เตรียมข้อมูลให้</p>
 						<p class="font-semibold text-primary">{workspace.targetYear.name}</p>
+						<p class="text-xs text-muted-foreground">
+							วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่: {formatCalendarDate(
+								workspace.run.targetPlacementStartsOn
+							)}
+						</p>
 					</div>
 				</div>
 				<Badge variant="outline"
@@ -514,7 +520,10 @@
 										{row.item.decision
 											? outcomeLabels[row.item.decision.outcome]
 											: 'ข้อเสนอ · ยังไม่ยืนยันผลพิจารณา'}
-									</p></Table.Cell
+									</p>
+									{#if row.item.targetPlacementStartsOn}<p class="text-xs text-muted-foreground">
+											เริ่มจัดห้อง {formatCalendarDate(row.item.targetPlacementStartsOn)}
+										</p>{/if}</Table.Cell
 								><Table.Cell
 									>{#if row.receipt || row.item.status === 'executed'}ดำเนินการแล้ว{:else if row.needsRecalculation}ต้องคำนวณใหม่{:else if !row.annualResultCurrent}ผลรายปียังไม่พร้อม{:else if row.item.status === 'reviewed'}ตรวจแล้ว{:else if row.item.status === 'failed'}ต้องลองใหม่{:else}รอตรวจ{/if}</Table.Cell
 								><Table.Cell

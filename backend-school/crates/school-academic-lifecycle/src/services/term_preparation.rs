@@ -88,6 +88,32 @@ pub fn validate_checksum(value: &str) -> Result<(), AppError> {
 }
 
 #[doc(hidden)]
+#[derive(Serialize)]
+struct PreparationMappingsIdentity<'a> {
+    entities: &'a [super::super::models::TermPreparationEntityMapping],
+    dates: &'a [super::super::models::TermPreparationDateMapping],
+}
+#[derive(Serialize)]
+struct PreparationRequestIdentity<'a> {
+    source_term_id: Uuid,
+    target_term_id: Uuid,
+    modules: &'a [TermPreparationModule],
+    mappings: PreparationMappingsIdentity<'a>,
+}
+fn preparation_request_identity(
+    input: &NormalizedPreparationInput,
+) -> PreparationRequestIdentity<'_> {
+    PreparationRequestIdentity {
+        source_term_id: input.source_term_id,
+        target_term_id: input.target_term_id,
+        modules: &input.modules,
+        mappings: PreparationMappingsIdentity {
+            entities: &input.mappings.entities,
+            dates: &input.mappings.dates,
+        },
+    }
+}
+
 pub fn normalize_input(
     source_term_id: Uuid,
     target_term_id: Uuid,
@@ -1315,7 +1341,7 @@ pub async fn apply(
     let request_checksum = super::checksum(&(
         actor.user_id,
         input.request_id,
-        &normalized,
+        preparation_request_identity(&normalized),
         &input.source_checksum,
     ))?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
@@ -1331,8 +1357,14 @@ pub async fn apply(
         .execute()
         .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
-    if let Some(replay) =
-        replay(&mut tx, input.request_id, actor.user_id, &request_checksum).await?
+    if let Some(replay) = replay(
+        &mut tx,
+        input.request_id,
+        actor.user_id,
+        &request_checksum,
+        normalized.mappings.offering_starts_on,
+    )
+    .await?
     {
         tx.commit().await?;
         return Ok(replay);
@@ -1350,6 +1382,7 @@ pub async fn apply(
     }
     let resolved = ResolvedMappings::from_workspace(&state.workspace)?;
     let mut outcomes = Vec::new();
+    let mut created_offering_intent = None;
     for module in &normalized.modules {
         let outcome = match module {
             TermPreparationModule::Delivery => {
@@ -1359,6 +1392,9 @@ pub async fn apply(
                     .ok_or_else(|| AppError::Conflict("ไม่พบตัวอย่าง Delivery ที่พร้อมใช้".into()))?;
                 let result =
                     offerings::apply_term_preparation(&mut tx, actor.user_id, preview).await?;
+                if result.created_offering_count > 0 {
+                    created_offering_intent = Some(preview.starts_on);
+                }
                 let mut ids = result.offering_ids;
                 ids.extend(result.group_ids);
                 ids.push(result.delivery_revision_id);
@@ -1410,8 +1446,8 @@ pub async fn apply(
             r#"INSERT INTO academic_term_preparation_runs(
                id,request_id,source_academic_term_id,source_academic_year_id,
                target_academic_term_id,target_academic_year_id,selected_modules,mappings,
-               source_checksum,request_checksum,outcome,actor_user_id
-           ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at"#,
+               source_checksum,request_checksum,outcome,actor_user_id,offering_starts_on
+           ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING created_at"#,
         )
         .bind(run_id)
         .bind(input.request_id)
@@ -1431,6 +1467,7 @@ pub async fn apply(
         .bind(&request_checksum)
         .bind(sqlx::types::Json(&outcomes))
         .bind(actor.user_id)
+        .bind(created_offering_intent)
         .fetch_one()
         .await?;
     let result = TermPreparationOutcome {
@@ -1461,9 +1498,10 @@ async fn replay(
     request_id: Uuid,
     actor_id: Uuid,
     request_checksum: &str,
+    offering_starts_on: Option<NaiveDate>,
 ) -> Result<Option<TermPreparationOutcome>, AppError> {
-    let row: Option<(Uuid, Uuid, Uuid, Uuid, Uuid, String, sqlx::types::Json<Vec<TermPreparationModuleOutcome>>, chrono::DateTime<chrono::Utc>)> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.replay",
-        "SELECT id,request_id,source_academic_term_id,target_academic_term_id,actor_user_id,request_checksum,outcome,created_at FROM academic_term_preparation_runs WHERE request_id=$1",
+    let row: Option<(Uuid, Uuid, Uuid, Uuid, Uuid, String, sqlx::types::Json<Vec<TermPreparationModuleOutcome>>, chrono::DateTime<chrono::Utc>,Option<NaiveDate>)> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.replay",
+        "SELECT id,request_id,source_academic_term_id,target_academic_term_id,actor_user_id,request_checksum,outcome,created_at,offering_starts_on FROM academic_term_preparation_runs WHERE request_id=$1",
     ).bind(request_id).fetch_optional().await?;
     let Some((
         run_id,
@@ -1474,11 +1512,15 @@ async fn replay(
         stored_checksum,
         sqlx::types::Json(modules),
         created_at,
+        stored_offering_date,
     )) = row
     else {
         return Ok(None);
     };
-    if stored_actor_id != actor_id || stored_checksum != request_checksum {
+    if stored_actor_id != actor_id
+        || stored_checksum != request_checksum
+        || stored_offering_date.is_some_and(|date| Some(date) != offering_starts_on)
+    {
         return Err(AppError::Conflict(
             "requestId ถูกใช้กับคำขอเตรียมภาคเรียนอื่นแล้ว".into(),
         ));

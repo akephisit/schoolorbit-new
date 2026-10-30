@@ -40,11 +40,10 @@ async fn fixture(name: &str) -> Fixture {
         .await
         .unwrap();
     let date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
-    let start = date - chrono::Duration::days(30);
-    let end = date + chrono::Duration::days(300);
-    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Care fixture',$1,$2,'active') RETURNING id").bind(start).bind(end).fetch_one(&pool).await.unwrap();
+    let placement_start = date - chrono::Duration::days(30);
+    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status,is_visible) VALUES(2988,'Care fixture','active',true) RETURNING id").fetch_one(&pool).await.unwrap();
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE','Care fixture',true) RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
-    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'CARE','Care fixture','regular',$2,$3,$4,'active',true,true) RETURNING id").bind(year).bind(start).bind(end).bind(bell).fetch_one(&pool).await.unwrap();
+    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES($1,1,'CARE','Care fixture','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
     let grade:Uuid=sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active) VALUES('secondary',1,true) ON CONFLICT(level_type,year) DO UPDATE SET is_active=true RETURNING id").fetch_one(&pool).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id) VALUES($1,$2)",
@@ -68,7 +67,7 @@ async fn fixture(name: &str) -> Fixture {
             .unwrap();
         let sy:Uuid=sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(uuidv7(),$1,$2,$3,$4,'active') RETURNING id").bind(id).bind(year).bind(grade).bind(program).fetch_one(&pool).await.unwrap();
         if n == 0 {
-            sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) VALUES(uuidv7(),$1,$2,$3,$4,'current','regular',1)").bind(sy).bind(year).bind(room).bind(start).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) VALUES(uuidv7(),$1,$2,$3,$4,'current','regular',1)").bind(sy).bind(year).bind(room).bind(placement_start).execute(&pool).await.unwrap();
         }
     }
     sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')").bind(student).bind(parent).execute(&pool).await.unwrap();
@@ -317,13 +316,15 @@ async fn care_submission_pins_version_replay_durable_alert_and_scoped_ack() {
     assert_eq!(routine_summary.len(), 1);
     assert!(!routine_summary[0].urgent);
     assert!(routine_summary[0].acknowledged_at.is_none());
-    assert!(get_assignment(
-        &f.pool,
-        access(f.admin.actor_id, &[codes::STUDENT_CARE_READ_SCHOOL]),
-        assignment.id
-    )
-    .await
-    .is_err());
+    assert!(
+        get_assignment(
+            &f.pool,
+            access(f.admin.actor_id, &[codes::STUDENT_CARE_READ_SCHOOL]),
+            assignment.id
+        )
+        .await
+        .is_err()
+    );
     let jobs: i64 =
         sqlx::query_scalar("SELECT count(*) FROM notification_receipts WHERE recipient_id=$1")
             .bind(f.teacher.actor_id)
@@ -408,9 +409,11 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         .await
         .unwrap();
     let mut selected_connection = f.pool.acquire().await.unwrap();
-    assert!(sensitive_staff(&mut selected_connection, &[read_only])
-        .await
-        .is_err());
+    assert!(
+        sensitive_staff(&mut selected_connection, &[read_only])
+            .await
+            .is_err()
+    );
     assert!(
         sensitive_staff(&mut selected_connection, &[read_only, f.teacher.actor_id])
             .await
@@ -439,17 +442,21 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         .await
         .unwrap();
     assert_eq!(count, 0);
-    assert!(save_visit(
-        &f.pool,
-        f.teacher,
-        None,
-        visit_payload(&f, f.second, vec![f.teacher.actor_id])
-    )
-    .await
-    .is_err());
-    assert!(save_case(&f.pool, f.teacher, None, case_payload(&f, None))
+    assert!(
+        save_visit(
+            &f.pool,
+            f.teacher,
+            None,
+            visit_payload(&f, f.second, vec![f.teacher.actor_id])
+        )
         .await
-        .is_err());
+        .is_err()
+    );
+    assert!(
+        save_case(&f.pool, f.teacher, None, case_payload(&f, None))
+            .await
+            .is_err()
+    );
     let (t, tr) = instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Teacher).await;
     let target = CreateCareAssignments {
         request_id: Uuid::now_v7(),
@@ -461,9 +468,11 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         }],
         reviewer_user_ids: vec![f.teacher.actor_id],
     };
-    assert!(create_assignments(&f.pool, f.teacher, target.clone())
-        .await
-        .is_err());
+    assert!(
+        create_assignments(&f.pool, f.teacher, target.clone())
+            .await
+            .is_err()
+    );
     let teacher_response = create_assignments(&f.pool, f.admin, target).await.unwrap();
     assert_eq!(teacher_response[0].respondent_id, f.other.actor_id);
     let (g, gr) = instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Guardian).await;
@@ -479,13 +488,17 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         .await
         .unwrap();
     assert!(get_assignment(&f.pool, parent, ga.id).await.is_err());
-    assert!(save_response(&f.pool, parent, ga.id, p, false)
-        .await
-        .is_err());
-    assert!(assignments(&f.pool, parent, CareListQuery::default())
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        save_response(&f.pool, parent, ga.id, p, false)
+            .await
+            .is_err()
+    );
+    assert!(
+        assignments(&f.pool, parent, CareListQuery::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
     let (m, mr) = instrument_round(
         &f,
         CareInstrumentMode::ManualResult,
@@ -499,18 +512,22 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         scale_key: "base".into(),
         score: 1,
     }];
-    assert!(save_response(
-        &f.pool,
-        access(f.student, &[codes::STUDENT_CARE_READ_OWN]),
-        ma.id,
-        p.clone(),
-        true
-    )
-    .await
-    .is_err());
-    assert!(save_response(&f.pool, f.teacher, ma.id, p.clone(), true)
+    assert!(
+        save_response(
+            &f.pool,
+            access(f.student, &[codes::STUDENT_CARE_READ_OWN]),
+            ma.id,
+            p.clone(),
+            true
+        )
         .await
-        .is_err());
+        .is_err()
+    );
+    assert!(
+        save_response(&f.pool, f.teacher, ma.id, p.clone(), true)
+            .await
+            .is_err()
+    );
     save_response(&f.pool, f.teacher, ma.id, p.clone(), false)
         .await
         .unwrap();
@@ -519,9 +536,11 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
     p.row_version = 2;
     p.request_id = Uuid::now_v7();
     p.manual_note = Some("Paper scored by trained fixture staff".into());
-    assert!(save_response(&f.pool, f.teacher, ma.id, p, true)
-        .await
-        .is_ok());
+    assert!(
+        save_response(&f.pool, f.teacher, ma.id, p, true)
+            .await
+            .is_ok()
+    );
 }
 #[tokio::test]
 async fn care_current_guardian_authority_matches_rounds_overview_and_responses() {
@@ -582,49 +601,150 @@ async fn care_current_guardian_authority_matches_rounds_overview_and_responses()
     );
 
     for (change, restore, child_only) in [
-        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", true),
-        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='student' WHERE id=$1", true),
-        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", false),
-        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='parent' WHERE id=$1", false),
-        ("DELETE FROM student_parents WHERE student_user_id=$1", "INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')", true),
+        (
+            "UPDATE users SET status='inactive' WHERE id=$1",
+            "UPDATE users SET status='active' WHERE id=$1",
+            true,
+        ),
+        (
+            "UPDATE users SET user_type='staff' WHERE id=$1",
+            "UPDATE users SET user_type='student' WHERE id=$1",
+            true,
+        ),
+        (
+            "UPDATE users SET status='inactive' WHERE id=$1",
+            "UPDATE users SET status='active' WHERE id=$1",
+            false,
+        ),
+        (
+            "UPDATE users SET user_type='staff' WHERE id=$1",
+            "UPDATE users SET user_type='parent' WHERE id=$1",
+            false,
+        ),
+        (
+            "DELETE FROM student_parents WHERE student_user_id=$1",
+            "INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')",
+            true,
+        ),
     ] {
         let target = if child_only { f.student } else { f.parent };
-        sqlx::query(change).bind(target).execute(&f.pool).await.unwrap();
-        let listed = assignments(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
-        let listed_rounds = rounds(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
+        sqlx::query(change)
+            .bind(target)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let listed = assignments(
+            &f.pool,
+            parent,
+            CareListQuery {
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let listed_rounds = rounds(
+            &f.pool,
+            parent,
+            CareListQuery {
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         if child_only {
-            assert_eq!(listed.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current.id]);
-            assert_eq!(listed_rounds.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current_round.id]);
+            assert_eq!(
+                listed.iter().map(|v| v.id).collect::<Vec<_>>(),
+                vec![current.id]
+            );
+            assert_eq!(
+                listed_rounds.iter().map(|v| v.id).collect::<Vec<_>>(),
+                vec![current_round.id]
+            );
             get_assignment(&f.pool, parent, current.id).await.unwrap();
             get_round(&f.pool, parent, current_round.id).await.unwrap();
         } else {
             assert!(listed.is_empty());
             assert!(listed_rounds.is_empty());
-            assert!(matches!(get_assignment(&f.pool, parent, current.id).await, Err(AppError::NotFound(_))));
-            assert!(matches!(get_round(&f.pool, parent, current_round.id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                get_assignment(&f.pool, parent, current.id).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                get_round(&f.pool, parent, current_round.id).await,
+                Err(AppError::NotFound(_))
+            ));
         }
         let counts = overview(&f.pool, parent).await.unwrap();
-        assert_eq!((counts.assigned_count, counts.submitted_count, counts.urgent_unacknowledged_count), (i64::from(child_only), 0, 0));
+        assert_eq!(
+            (
+                counts.assigned_count,
+                counts.submitted_count,
+                counts.urgent_unacknowledged_count
+            ),
+            (i64::from(child_only), 0, 0)
+        );
         for (id, round_id, payload, submit) in [
             (draft.id, draft_round.id, draft_payload.clone(), false),
-            (submitted.id, submitted_round.id, submitted_payload.clone(), true),
+            (
+                submitted.id,
+                submitted_round.id,
+                submitted_payload.clone(),
+                true,
+            ),
         ] {
-            assert!(matches!(get_assignment(&f.pool, parent, id).await, Err(AppError::NotFound(_))));
-            assert!(matches!(get_round(&f.pool, parent, round_id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                get_assignment(&f.pool, parent, id).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                get_round(&f.pool, parent, round_id).await,
+                Err(AppError::NotFound(_))
+            ));
             // Exact successful receipt replay and fresh saves both use current authority.
-            assert!(matches!(save_response(&f.pool, parent, id, payload, submit).await, Err(AppError::NotFound(_))));
-            assert!(matches!(save_response(&f.pool, parent, id, response(2), false).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                save_response(&f.pool, parent, id, payload, submit).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                save_response(&f.pool, parent, id, response(2), false).await,
+                Err(AppError::NotFound(_))
+            ));
         }
         // Independent school authority is an OR branch, not revoked own authority.
-        assert_eq!(rounds(&f.pool, f.admin, CareListQuery::default()).await.unwrap().len(), 3);
+        assert_eq!(
+            rounds(&f.pool, f.admin, CareListQuery::default())
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
         assert_eq!(overview(&f.pool, f.admin).await.unwrap().submitted_count, 1);
-        get_assignment(&f.pool, f.teacher, submitted.id).await.unwrap();
+        get_assignment(&f.pool, f.teacher, submitted.id)
+            .await
+            .unwrap();
         if restore.starts_with("INSERT") {
-            sqlx::query(restore).bind(target).bind(f.parent).execute(&f.pool).await.unwrap();
+            sqlx::query(restore)
+                .bind(target)
+                .bind(f.parent)
+                .execute(&f.pool)
+                .await
+                .unwrap();
         } else {
-            sqlx::query(restore).bind(target).execute(&f.pool).await.unwrap();
+            sqlx::query(restore)
+                .bind(target)
+                .execute(&f.pool)
+                .await
+                .unwrap();
         }
-        assert_eq!(assignments(&f.pool, parent, CareListQuery::default()).await.unwrap().len(), 3);
+        assert_eq!(
+            assignments(&f.pool, parent, CareListQuery::default())
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
         get_round(&f.pool, parent, draft_round.id).await.unwrap();
     }
 }
@@ -639,14 +759,16 @@ async fn care_private_replay_revocation_case_transitions_and_concurrent_revision
     let case = save_case(&f.pool, f.teacher, None, create.clone())
         .await
         .unwrap();
-    assert!(save_case(
-        &f.pool,
-        f.other,
-        None,
-        case_payload(&f, Some(assignment.id))
-    )
-    .await
-    .is_err());
+    assert!(
+        save_case(
+            &f.pool,
+            f.other,
+            None,
+            case_payload(&f, Some(assignment.id))
+        )
+        .await
+        .is_err()
+    );
     let change = SaveCareCase {
         request_id: Uuid::now_v7(),
         row_version: Some(1),
@@ -672,9 +794,11 @@ async fn care_private_replay_revocation_case_transitions_and_concurrent_revision
     let mut escalation = case_payload(&f, None);
     escalation.source_visit_id = Some(visit.visit.id);
     escalation.assigned_user_ids = vec![f.other.actor_id];
-    assert!(save_case(&f.pool, outsider, None, escalation)
-        .await
-        .is_err());
+    assert!(
+        save_case(&f.pool, outsider, None, escalation)
+            .await
+            .is_err()
+    );
     let change = SaveCareVisit {
         request_id: Uuid::now_v7(),
         row_version: Some(1),
@@ -694,9 +818,11 @@ async fn care_private_replay_revocation_case_transitions_and_concurrent_revision
         save_visit(&f.pool, f.admin, Some(visit.visit.id), stale).await,
         Err(AppError::Conflict(_))
     ));
-    assert!(save_visit(&f.pool, f.teacher, None, visit_input)
-        .await
-        .is_err());
+    assert!(
+        save_visit(&f.pool, f.teacher, None, visit_input)
+            .await
+            .is_err()
+    );
     let event = AddCareCaseEvent {
         request_id: Uuid::now_v7(),
         row_version: 2,
@@ -813,9 +939,11 @@ async fn care_submit_notification_failure_rolls_back_and_retries_once() {
     let own = access(f.student, &[codes::STUDENT_CARE_READ_OWN]);
     let p = response(1);
     sqlx::raw_sql("CREATE FUNCTION reject_care_notification() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic_failure'; END $$; CREATE TRIGGER reject_care_notification BEFORE INSERT ON notification_receipts FOR EACH ROW EXECUTE FUNCTION reject_care_notification();").execute(&f.pool).await.unwrap();
-    assert!(save_response(&f.pool, own, assignment.id, p.clone(), true)
-        .await
-        .is_err());
+    assert!(
+        save_response(&f.pool, own, assignment.id, p.clone(), true)
+            .await
+            .is_err()
+    );
     let state = get_assignment(&f.pool, own, assignment.id).await.unwrap();
     assert_eq!(state.assignment.row_version, 1);
     assert_eq!(state.assignment.status, CareAssignmentStatus::Assigned);
@@ -923,21 +1051,25 @@ async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() 
     assert!(!replay.urgent);
     assert!(replay.acknowledged_at.is_none());
     assert_eq!(replay.row_version, changed.row_version);
-    assert!(update_assignment_reviewers(
-        &f.pool,
-        f.teacher,
-        digital.id,
-        UpdateCareAssignmentReviewers {
-            request_id: Uuid::now_v7(),
-            row_version: changed.row_version,
-            ..handoff
-        }
-    )
-    .await
-    .is_err());
-    assert!(get_assignment(&f.pool, f.teacher, digital.id)
+    assert!(
+        update_assignment_reviewers(
+            &f.pool,
+            f.teacher,
+            digital.id,
+            UpdateCareAssignmentReviewers {
+                request_id: Uuid::now_v7(),
+                row_version: changed.row_version,
+                ..handoff
+            }
+        )
         .await
-        .is_err());
+        .is_err()
+    );
+    assert!(
+        get_assignment(&f.pool, f.teacher, digital.id)
+            .await
+            .is_err()
+    );
     let detail = get_assignment(&f.pool, f.other, digital.id).await.unwrap();
     assert_eq!(detail.answers[0].option_key, "b");
     assert_eq!(detail.results[0].score, 2);
@@ -954,9 +1086,11 @@ async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() 
     )
     .await
     .unwrap();
-    assert!(save_response(&f.pool, f.teacher, manual.id, draft, false)
-        .await
-        .is_err());
+    assert!(
+        save_response(&f.pool, f.teacher, manual.id, draft, false)
+            .await
+            .is_err()
+    );
     let jobs: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM notification_receipts WHERE idempotency_key LIKE $1",
     )

@@ -79,7 +79,15 @@ export async function mockCalendar(
 		endTime: null,
 		allDay: true,
 		isPublic: true,
-		targets: [{ id: id(113), audienceType: 'all', gradeLevelId: null, homeroomId: null, academicYearId: null }],
+		targets: [
+			{
+				id: id(113),
+				audienceType: 'all',
+				gradeLevelId: null,
+				homeroomId: null,
+				academicYearId: null
+			}
+		],
 		tags: tags.map((tag) => ({ id: tag.id, name: tag.name })),
 		reminders: [],
 		createdBy: null,

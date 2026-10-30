@@ -928,7 +928,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-man
 Academic context visibility and school defaults are independent of operational lifecycle status.
 The focused cases below cover explicit defaults, invalid parent/term selection, preserving existing
 URLs and open drafts, stale option reads after an authoritative settings response, separate
-visibility/default actions, and date-free year/term contracts. Run static/type checks before browser
+visibility/default actions, metadata-conflict review without discarding drafts, and date-free year/term contracts. Run static/type checks before browser
 fixtures; do not overlap Vite instances, generation, or the self-hosted public calendar suite.
 
 ```bash
@@ -945,10 +945,12 @@ Then, from another terminal in `frontend-school`:
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-core-cutover.spec.ts tests/e2e/academic-context.spec.ts --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-navigation.spec.ts --grep 'creating an activity with groups' --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-requests.spec.ts tests/e2e/behavior-workflow.spec.ts tests/e2e/academic-term-lifecycle.spec.ts --grep 'enrollment year|direct event defaults|manager selects event settings|scheduled behavior cutoffs|final closure|closed term prepares' --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-final-region-loading.spec.ts tests/e2e/academic-promotion-runs.spec.ts --grep 'enrollment shows the round|list creates a run|reviewed placement dates' --project=chromium --workers=1
 ```
 
 Actual event, offering, placement and Behavior cutoff dates stay in their owning forms. Calendar targeting selects an enrollment year explicitly; a cutoff is the final inclusive
-day of a Behavior cycle, with the next cycle starting the following day. After stopping the dev
+day of a Behavior cycle, with the next cycle starting the following day. A Promotion run date is
+the default for new items; existing per-item placement dates remain independent. After stopping the dev
 server, run the public calendar fixture alone; it owns its API and Vite servers and checks
 unrestricted actual month navigation, cross-month search, focused retry and mobile/desktop themes:
 

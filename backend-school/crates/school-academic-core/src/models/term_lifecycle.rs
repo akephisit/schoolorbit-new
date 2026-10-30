@@ -12,7 +12,6 @@ pub struct TermLifecycleContext {
     pub term_status: AcademicTermStatus,
     pub year_row_version: i64,
     pub term_row_version: i64,
-    pub academic_year: i32,
     pub operation_date: NaiveDate,
     pub sequence: i32,
     pub bell_schedule_id: Uuid,

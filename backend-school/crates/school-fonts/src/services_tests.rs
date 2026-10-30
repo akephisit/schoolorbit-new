@@ -131,8 +131,8 @@ async fn insert_staged_font(
 
 async fn insert_template(pool: &PgPool, actor_id: Uuid, year: i32) -> Uuid {
     let academic_year_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO academic_years (year, name, start_date, end_date, status)
-         VALUES ($1, 'School font service test', make_date($1, 1, 1), make_date($1, 12, 31), 'planning')
+        "INSERT INTO academic_years (year, name, status)
+         VALUES ($1, 'School font service test', 'planning')
          RETURNING id",
     )
     .bind(year)
@@ -212,19 +212,23 @@ async fn manager_entry_points_require_only_the_font_manager_permission() {
         font_test_context("school_font_manager_authority").await;
 
     assert!(services::list_for_manager(&pool, &manager).await.is_ok());
-    assert!(services::list_for_manager(&pool, &template_designer)
+    assert!(
+        services::list_for_manager(&pool, &template_designer)
+            .await
+            .is_err()
+    );
+    assert!(
+        services::attach_for_manager(
+            &pool,
+            &ordinary_user,
+            AttachSchoolFontBatchRequest {
+                file_ids: vec![Uuid::new_v4()],
+                rights_confirmed: true,
+            },
+        )
         .await
-        .is_err());
-    assert!(services::attach_for_manager(
-        &pool,
-        &ordinary_user,
-        AttachSchoolFontBatchRequest {
-            file_ids: vec![Uuid::new_v4()],
-            rights_confirmed: true,
-        },
-    )
-    .await
-    .is_err());
+        .is_err()
+    );
 }
 
 #[tokio::test]
@@ -267,10 +271,12 @@ async fn inspection_preserves_selection_order_and_classifies_batch_failures() {
             .collect::<Vec<_>>(),
         vec![bold, regular]
     );
-    assert!(inspected
-        .files
-        .iter()
-        .all(|file| file.status == SchoolFontUploadStatus::Ready));
+    assert!(
+        inspected
+            .files
+            .iter()
+            .all(|file| file.status == SchoolFontUploadStatus::Ready)
+    );
 
     let duplicate = insert_staged_font(
         &pool,
@@ -291,10 +297,12 @@ async fn inspection_preserves_selection_order_and_classifies_batch_failures() {
     )
     .await
     .expect("duplicate variants should be returned as inspection statuses");
-    assert!(duplicate_selection
-        .files
-        .iter()
-        .all(|file| file.status == SchoolFontUploadStatus::DuplicateSelection));
+    assert!(
+        duplicate_selection
+            .files
+            .iter()
+            .all(|file| file.status == SchoolFontUploadStatus::DuplicateSelection)
+    );
 
     let variable = insert_staged_font(
         &pool,
@@ -443,10 +451,12 @@ async fn ready_batch_attaches_atomically_and_rejects_existing_variants_or_missin
     assert_eq!(attached.items.len(), 2);
     assert_eq!(attached.items[0].font_weight, 700);
     assert_eq!(attached.items[1].font_weight, 400);
-    assert!(attached
-        .items
-        .iter()
-        .all(|font| font.font_style == SchoolFontStyle::Normal && font.reference_count == 0));
+    assert!(
+        attached
+            .items
+            .iter()
+            .all(|font| font.font_style == SchoolFontStyle::Normal && font.reference_count == 0)
+    );
     let promoted_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM files
          WHERE id = ANY($1::uuid[]) AND retention_class = 'standard' AND expires_at IS NULL",

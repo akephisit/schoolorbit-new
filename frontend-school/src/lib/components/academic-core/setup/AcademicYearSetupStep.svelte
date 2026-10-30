@@ -11,6 +11,7 @@
 		standardAcademicYearName,
 		type AcademicWeekday
 	} from '#lib/academic-core/foundation-presentation.js';
+	import { yearDraftBase, yearDraftMetadataMatches } from '#lib/academic-core/context-drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
@@ -56,6 +57,11 @@
 	let advancedOpen = $state(untrack(() => customName.length > 0));
 	let errorMessage = $state('');
 
+	let draftBase = $state(untrack(() => (existing ? yearDraftBase(existing) : null)));
+	const metadataChanged = $derived(
+		!!existing && !!draftBase && !yearDraftMetadataMatches(draftBase, existing)
+	);
+
 	const standardName = $derived(standardAcademicYearName(year));
 	const displayName = $derived(customName.trim() || standardName);
 
@@ -67,7 +73,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (busy) return;
+		if (busy || metadataChanged) return;
 		errorMessage = '';
 		if (schoolDays.length === 0) {
 			errorMessage = 'กรุณาเลือกวันเรียนอย่างน้อย 1 วัน';
@@ -143,6 +149,30 @@
 		</Collapsible.Content>
 	</Collapsible.Root>
 
+	{#if metadataChanged && existing}
+		<div
+			role="alert"
+			class="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+		>
+			<p class="font-medium">ข้อมูลปีการศึกษาที่บันทึกไว้เปลี่ยนระหว่างแก้ไข</p>
+			<p>
+				ข้อมูลล่าสุด: {existing.name} · ปี {existing.year} · วันเรียน {existing.schoolDays.join(
+					', '
+				)}
+			</p>
+			<p>ฉบับร่างของคุณยังอยู่ ตรวจสอบกับข้อมูลล่าสุดก่อนบันทึก</p>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				disabled={busy}
+				onclick={() => {
+					if (existing) draftBase = yearDraftBase(existing);
+				}}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button
+			>
+		</div>
+	{/if}
+
 	{#if errorMessage}
 		<p
 			role="alert"
@@ -152,7 +182,7 @@
 		</p>
 	{/if}
 
-	<Button type="submit" disabled={busy}>
+	<Button type="submit" disabled={busy || metadataChanged}>
 		<Save class="size-4" />
 		{existing ? 'บันทึกปีการศึกษา' : 'สร้างปีสำหรับวางแผน'}
 	</Button>

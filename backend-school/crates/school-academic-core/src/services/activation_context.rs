@@ -48,10 +48,15 @@ pub async fn read_activation_state(
         context.year_status,
         AcademicYearStatus::Planning | AcademicYearStatus::Ready
     );
+    let selected_year = years
+        .iter()
+        .find(|row| row.academic_year_id == year)
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?
+        .year;
     let predecessor = years
         .iter()
         .rev()
-        .find(|row| row.year < context.academic_year)
+        .find(|row| row.year < selected_year)
         .cloned();
     let mut issues = Vec::new();
     let push = |issues: &mut Vec<ActivationIssue>, code, count| {
@@ -105,7 +110,7 @@ pub async fn read_activation_state(
             years
                 .iter()
                 .filter(|row| {
-                    row.year < context.academic_year
+                    row.year < selected_year
                         && !matches!(
                             row.status,
                             AcademicYearStatus::Closed | AcademicYearStatus::Archived
