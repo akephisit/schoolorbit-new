@@ -345,10 +345,12 @@ test('own pending requests and a successful submission patch markers without rer
 	await dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true }).check();
 	await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect(
-		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
-	).toBeVisible();
-	await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องของฉันใหม่,/ }).click();
+	const updatedDay = page.getByRole('button', {
+		name: '1 ต.ค. 2569, 1 กิจกรรม, 1 คำร้องรออนุมัติ',
+		exact: true
+	});
+	await expect(updatedDay).toBeVisible();
+	await updatedDay.click({ position: { x: 5, y: 5 } });
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉันใหม่');

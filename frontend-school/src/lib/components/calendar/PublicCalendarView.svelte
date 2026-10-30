@@ -53,6 +53,8 @@
 	let selectedDate = $state(''),
 		dayDialogOpen = $state(false),
 		searchOpen = $state(false);
+	let selectedAnchor: HTMLElement | null = null;
+	let detailsElement = $state.raw<HTMLElement | null>(null);
 	let owner = '',
 		jumpDate = '',
 		consumed: typeof data.events | null = null;
@@ -214,11 +216,20 @@
 				: selectedYearId
 		);
 	}
-	function selectDate(date: string) {
+	function selectDate(date: string, anchor?: HTMLElement) {
 		selectedDate = date;
+		selectedAnchor =
+			anchor ?? document.querySelector<HTMLButtonElement>(`[data-calendar-date="${date}"]`);
 		if (window.matchMedia('(max-width: 1023px)').matches) dayDialogOpen = true;
 	}
+	function closeDetails() {
+		const restoreFocus = detailsElement?.contains(document.activeElement);
+		const anchor = selectedAnchor;
+		clearSelection();
+		if (restoreFocus && anchor?.isConnected) anchor.focus();
+	}
 	function clearSelection() {
+		selectedAnchor = null;
 		selectedDate = '';
 		jumpDate = '';
 		dayDialogOpen = false;
@@ -229,7 +240,7 @@
 		clearSelection();
 	}
 	function dismissWithEscape(event: KeyboardEvent) {
-		if (event.key === 'Escape' && !dayDialogOpen && !searchOpen) clearSelection();
+		if (event.key === 'Escape' && !dayDialogOpen && !searchOpen) closeDetails();
 	}
 	function setDayDialogOpen(open: boolean) {
 		dayDialogOpen = open;
@@ -393,6 +404,7 @@
 					{/if}
 				</div>
 				<aside
+					bind:this={detailsElement}
 					data-public-calendar-details
 					class="hidden min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
 				>
@@ -411,7 +423,7 @@
 									variant="ghost"
 									size="icon-sm"
 									aria-label="ปิดรายละเอียดกิจกรรม"
-									onclick={clearSelection}><X class="size-4" /></Button
+									onclick={closeDetails}><X class="size-4" /></Button
 								>
 							</div>
 						</div>

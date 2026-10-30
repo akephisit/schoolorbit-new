@@ -85,3 +85,57 @@ test('standalone calendar fits changing heights, links home and keeps embed chro
 	await expect(page.getByRole('link', { name: 'กลับหน้าแรก', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('heading', { name: 'ปฏิทินโรงเรียน', exact: true })).toHaveCount(0);
 });
+
+test('public desktop details return keyboard focus to their day after close or Escape', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1543, height: 884 });
+	await page.goto(`${fixture.baseUrl}/calendar?month=2026-10`);
+	const day = page.locator('[data-calendar-date="2026-10-01"]');
+	const close = page.getByRole('button', { name: 'ปิดรายละเอียดกิจกรรม', exact: true });
+	await day.focus();
+	await page.keyboard.press('Enter');
+	await close.focus();
+	await page.keyboard.press('Enter');
+	await expect(day).toHaveAttribute('aria-pressed', 'false');
+	await expect(day).toBeFocused();
+	await page.keyboard.press('Enter');
+	await close.focus();
+	await page.keyboard.press('Escape');
+	await expect(day).toHaveAttribute('aria-pressed', 'false');
+	await expect(day).toBeFocused();
+	await page.keyboard.press('Enter');
+	const today = page.getByRole('button', { name: 'วันนี้', exact: true });
+	await today.focus();
+	await page.keyboard.press('Escape');
+	await expect(day).toHaveAttribute('aria-pressed', 'false');
+	await expect(today).toBeFocused();
+	await day.focus();
+	await page.keyboard.press('Enter');
+	await today.click();
+	await expect(day).toHaveAttribute('aria-pressed', 'false');
+	await expect(today).toBeFocused();
+});
+
+for (const mode of ['page', 'embed']) {
+	test(`public ${mode} calendar lets short screens reach the last row and return to controls`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 390, height: 480 });
+		await page.goto(`${fixture.baseUrl}/calendar${mode === 'embed' ? '/embed' : ''}?month=2026-10`);
+		const lastDay = page.locator('[data-calendar-date]').last();
+		await expect(lastDay).toBeVisible();
+		for (const height of [480, 360]) {
+			await page.setViewportSize({ width: 390, height });
+			await lastDay.scrollIntoViewIfNeeded();
+			await expect(lastDay).toBeInViewport();
+			if (height === 360 || mode === 'page')
+				await expect
+					.poll(() => page.locator('main').evaluate((element) => element.scrollTop))
+					.toBeGreaterThan(0);
+			const navigation = page.getByRole('button', { name: 'เดือนถัดไป', exact: true });
+			await navigation.scrollIntoViewIfNeeded();
+			await expect(navigation).toBeInViewport();
+		}
+	});
+}
