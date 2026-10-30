@@ -549,7 +549,9 @@ test('restores the previous room when a background detail save fails', async ({ 
 	await expect(card).toContainText('ห้องปฏิบัติการ 2', { timeout: 300 });
 	await expect(card).toContainText('ห้องคณิตศาสตร์', { timeout: 3000 });
 	await expect(
-		page.getByRole('alert').filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
+		page
+			.locator('[data-sonner-toast][data-type=error]')
+			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.updateRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(1);
@@ -617,7 +619,9 @@ test('removes immediately and restores the card when the background delete fails
 	await expect(card).toBeVisible({ timeout: 3000 });
 	await expect(cell.getByLabel('กำลังลบคาบ')).toHaveCount(0);
 	await expect(
-		page.getByRole('alert').filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
+		page
+			.locator('[data-sonner-toast][data-type=error]')
+			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.deleteRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(1);
