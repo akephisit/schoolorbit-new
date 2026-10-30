@@ -1,3 +1,4 @@
+import { sessionState } from './session-state';
 import { expect, type Page, type Route } from '@playwright/test';
 import type {
 	CurriculumManagementOptions,
@@ -249,6 +250,7 @@ export async function installCurriculumCatalog(
 					displayName: 'ทดสอบ หลักสูตร',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: ['*']
 				});
 			if (path === `/api/academic/curricula/${ids.curriculum}`)

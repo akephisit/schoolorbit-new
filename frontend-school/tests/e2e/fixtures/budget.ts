@@ -1,3 +1,4 @@
+import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 import type { StaffLookupItem, OrganizationUnitLookupItem } from '../../../src/lib/api/lookup';
 import type { MenuGroup } from '../../../src/lib/api/menu';
@@ -347,6 +348,7 @@ export async function mockBudget(
 			displayName: role === 'requester' ? 'ผู้ขอ ทดสอบ' : 'ผู้พิจารณา ทดสอบ',
 			userType: 'staff',
 			status: 'active',
+			session: sessionState(),
 			permissions: effectivePermissions()
 		})
 	);

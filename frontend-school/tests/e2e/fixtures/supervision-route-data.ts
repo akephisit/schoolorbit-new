@@ -1,3 +1,4 @@
+import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 export const id = (n: number) => `44000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 export const year = id(1);
@@ -142,6 +143,7 @@ export async function mock(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
+					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
 					permissions: options.permissions ?? [

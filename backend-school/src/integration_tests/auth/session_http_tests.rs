@@ -885,7 +885,7 @@ mod protected_router {
     };
 
     use axum::{
-        body::{Body, Bytes},
+        body::{to_bytes, Body, Bytes},
         extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, Path, State},
         http::{header, HeaderValue, Method, Request, StatusCode},
         middleware::from_fn_with_state,
@@ -1095,10 +1095,13 @@ mod protected_router {
             .route("/unsafe", patch(protected_identity))
             .route("/unsafe", delete(protected_identity))
             .route("/api/auth/me", get(protected_identity))
-            .route(
-                "/api/auth/activity",
-                post(school_auth_http::http::session_handlers::activity)
-                    .with_state(runtime.clone()),
+            .nest(
+                "/api",
+                Router::new().route(
+                    "/auth/activity",
+                    post(school_auth_http::http::session_handlers::activity)
+                        .with_state(runtime.clone()),
+                ),
             )
             .route("/api/notifications/stream", get(protected_identity))
             .route("/feature-cookie", get(feature_cookie))

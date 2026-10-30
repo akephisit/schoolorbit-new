@@ -27,6 +27,9 @@ const state = (now = 0, overrides: Partial<SessionState> = {}): SessionState => 
 
 function harness(hold = false, initial = state()) {
 	let now = 0;
+	let wall = start;
+	let rechecks = 0;
+	let validation: (() => Promise<boolean>) | undefined;
 	const timers = new Map<ReturnType<typeof setTimeout>, { due: number; callback(): void }>();
 	const requests: {
 		session: SessionState;
@@ -37,6 +40,11 @@ function harness(hold = false, initial = state()) {
 	const accepted: SessionState[] = [];
 	const controller = createSessionActivityController({
 		now: () => now,
+		wallNow: () => wall,
+		async resyncClock() {
+			rechecks++;
+			return validation ? validation() : true;
+		},
 		setTimer(callback, delay) {
 			const timer = setTimeout(() => {}, 1_000_000_000);
 			clearTimeout(timer);
@@ -70,6 +78,15 @@ function harness(hold = false, initial = state()) {
 		get now() {
 			return now;
 		},
+		get rechecks() {
+			return rechecks;
+		},
+		validateWith(next: () => Promise<boolean>) {
+			validation = next;
+		},
+		setWall(value: number) {
+			wall = value;
+		},
 		async advance(delta: number) {
 			const target = now + delta;
 			let iterations = 0;
@@ -77,16 +94,19 @@ function harness(hold = false, initial = state()) {
 				const next = [...timers.entries()].sort((a, b) => a[1].due - b[1].due)[0];
 				if (!next || next[1].due > target) break;
 				assert.ok(iterations++ < 100, 'timer must not busy loop');
+				wall += next[1].due - now;
 				now = next[1].due;
 				timers.delete(next[0]);
 				next[1].callback();
 				for (let i = 0; i < 8; i++) await Promise.resolve();
 			}
+			wall += target - now;
 			now = target;
 			for (let i = 0; i < 8; i++) await Promise.resolve();
 		},
 		jump(delta: number) {
 			now += delta;
+			wall += delta;
 			controller.wake();
 		}
 	};
@@ -191,14 +211,78 @@ test('same-user session replacement and disposal abort and fence late responses'
 	}
 });
 
-test('local clock changes do not advance the monotonic renewal deadline', async (t) => {
+test('local clock forward/rewind triggers validation without advancing monotonic authority', async () => {
 	const h = harness();
-	t.mock.method(Date, 'now', () => Date.parse('2099-01-01T00:00:00Z'));
+	h.setWall(Date.parse('2099-01-01T00:00:00Z'));
+	h.controller.wake();
+	await h.advance(0);
+	assert.equal(h.rechecks, 1);
+	h.setWall(start - 3_600_000);
+	h.controller.wake();
+	await h.advance(0);
+	assert.equal(h.rechecks, 2);
 	h.controller.trustedActivity();
 	await h.advance(ACTIVITY_WINDOW_MS - 1);
 	assert.equal(h.requests.length, 0);
 	await h.advance(1);
 	assert.equal(h.requests.length, 1);
+	h.controller.dispose();
+});
+
+test('OS suspend with a paused monotonic clock discards old input and validates expiry once', async () => {
+	const h = harness();
+	h.controller.trustedActivity();
+	h.setWall(start + 3 * 3_600_000);
+	h.validateWith(async () => {
+		h.controller.setSession(null);
+		return false;
+	});
+	h.controller.wake();
+	h.controller.wake();
+	await h.advance(0);
+	assert.equal(h.rechecks, 1);
+	assert.equal(h.requests.length, 0, 'hours-old input must never POST activity');
+	assert.equal(h.warnings.at(-1), null, 'the central auth owner handled the actual expiry');
+	h.controller.dispose();
+});
+
+test('sleep revalidation corrects deadlines and fresh input remains required', async () => {
+	const h = harness();
+	h.controller.trustedActivity();
+	h.setWall(start + 3 * 3_600_000);
+	h.validateWith(async () => {
+		h.controller.setSession(state(3 * 3_600_000, { idleExpiresAt: date(3 * 3_600_000 + 180_000) }));
+		return true;
+	});
+	h.controller.wake();
+	await h.advance(0);
+	assert.equal(h.rechecks, 1);
+	assert.equal(h.requests.length, 0);
+	assert.equal(h.warnings.at(-1)?.remainingMinutes, 3);
+	h.controller.dispose();
+});
+
+test('a queued timer detects suspend without wake or new input and never replays old activity', async () => {
+	const h = harness();
+	await h.advance(ACTIVITY_WINDOW_MS - 1_000);
+	h.controller.trustedActivity();
+	h.setWall(start + h.now + 3_600_000);
+	h.validateWith(async () => {
+		h.controller.setSession(
+			state(ACTIVITY_WINDOW_MS + 3_600_000, {
+				idleExpiresAt: date(7_200_000),
+				nextRenewalAt: date(ACTIVITY_WINDOW_MS)
+			})
+		);
+		return true;
+	});
+	// Only the previously queued one-second timer resumes; no pageshow/focus/input occurs.
+	await h.advance(1_000);
+	assert.equal(h.rechecks, 1);
+	assert.equal(h.requests.length, 0, 'the monotonic clock cannot make pre-suspend input fresh');
+	await h.advance(ACTIVITY_WINDOW_MS);
+	assert.equal(h.rechecks, 1);
+	assert.equal(h.requests.length, 0);
 	h.controller.dispose();
 });
 

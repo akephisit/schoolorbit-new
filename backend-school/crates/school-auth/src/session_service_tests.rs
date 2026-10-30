@@ -1262,6 +1262,8 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
             SessionRevocationReason::UserSelected,
         );
         audit::cleanup_failed();
+        audit::session_transition(Uuid::nil(), "credential_staged");
+        audit::session_rejected("unknown_credential");
     });
     captured.clear();
 
@@ -1297,6 +1299,37 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
             .login_with_token(username, password, false, fixture.now, [83; 32])
             .await
             .unwrap();
+        let now = fixture.now + Duration::minutes(16);
+        let validated = authenticate(&fixture.context, current.credential.token_hash(), now)
+            .await
+            .unwrap()
+            .unwrap();
+        let stage = activity(
+            &fixture.context,
+            &validated.authenticated,
+            current.authenticated.session_id,
+            &RawSessionToken::from_bytes([82; 32]),
+            now,
+        )
+        .await
+        .unwrap();
+        let pending_cookie = stage.replacement.unwrap().encoded();
+        let pending_raw = RawSessionToken::parse(pending_cookie.expose_for_cookie()).unwrap();
+        let pending = authenticate(&fixture.context, pending_raw.token_hash(), now)
+            .await
+            .unwrap()
+            .unwrap();
+        acknowledge(&fixture.context, &pending.authenticated, now)
+            .await
+            .unwrap();
+        assert!(authenticate(
+            &fixture.context,
+            RawSessionToken::from_bytes([84; 32]).token_hash(),
+            now
+        )
+        .await
+        .unwrap()
+        .is_none());
         revoke_selected(
             &fixture.context,
             &current.authenticated,
@@ -1355,6 +1388,9 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
             source,
             user_agent,
             "forced-cleanup-secret-error",
+            current.credential.encoded().expose_for_cookie(),
+            pending_cookie.expose_for_cookie(),
+            &current.csrf_token.expose_for_header(),
             &hex::encode(identifier_hash.as_bytes()),
         ] {
             assert!(!logs.contains(secret), "audit leaked secret marker");
@@ -1365,6 +1401,9 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
             "session_created",
             "session_revoked",
             "auth_cleanup_failed",
+            "credential_staged",
+            "credential_promoted",
+            "unknown_credential",
         ] {
             assert!(logs.contains(required), "missing audit marker {required}");
         }
@@ -1377,7 +1416,7 @@ async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
             if fields.get("event").is_some() {
                 assert!(fields.keys().all(|field| matches!(
                     field.as_str(),
-                    "event" | "tenant_id" | "user_id" | "session_id" | "reason"
+                    "event" | "tenant_id" | "user_id" | "session_id" | "reason" | "transition"
                 )));
             }
         }
@@ -1526,4 +1565,163 @@ async fn pending_promotion_invalidates_warm_a_and_expected_session_mismatch_neve
     .await
     .unwrap()
     .is_none());
+}
+
+#[tokio::test]
+async fn non_due_activity_never_crosses_the_idle_or_absolute_validation_deadline() {
+    for boundary in ["idle", "absolute"] {
+        let fixture = AuthServiceFixture::new(&format!("activity_deadline_{boundary}")).await;
+        fixture
+            .insert_user("teacher.deadline", "password-one", "active")
+            .await;
+        let login = fixture
+            .login_with_token(
+                "teacher.deadline",
+                "password-one",
+                false,
+                fixture.now,
+                [204; 32],
+            )
+            .await
+            .unwrap();
+        let expiry = fixture.now + Duration::seconds(1);
+        let query = if boundary == "absolute" {
+            "UPDATE auth_sessions SET idle_expires_at=$1,absolute_expires_at=$1 WHERE id=$2"
+        } else {
+            "UPDATE auth_sessions SET idle_expires_at=$1 WHERE id=$2"
+        };
+        sqlx::query(query)
+            .bind(expiry)
+            .bind(login.authenticated.session_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let raw = RawSessionToken::from_bytes([204; 32]);
+        let validated = authenticate(&fixture.context, raw.token_hash(), fixture.now)
+            .await
+            .unwrap()
+            .unwrap();
+        fixture.pool.close().await;
+        let rejected = activity(
+            &fixture.context,
+            &validated.authenticated,
+            login.authenticated.session_id,
+            &raw,
+            expiry,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            rejected.status_code(),
+            StatusCode::UNAUTHORIZED,
+            "{boundary}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn password_change_pending_digest_collision_rolls_back_password_and_staging() {
+    let fixture = AuthServiceFixture::new("password_pending_collision").await;
+    fixture
+        .insert_user("teacher.pending", "password-one", "active")
+        .await;
+    let login = fixture
+        .login_with_token(
+            "teacher.pending",
+            "password-one",
+            false,
+            fixture.now,
+            [205; 32],
+        )
+        .await
+        .unwrap();
+    let now = fixture.now + Duration::minutes(16);
+    let raw = RawSessionToken::from_bytes([205; 32]);
+    let validated = authenticate(&fixture.context, raw.token_hash(), now)
+        .await
+        .unwrap()
+        .unwrap();
+    let staged = activity(
+        &fixture.context,
+        &validated.authenticated,
+        login.authenticated.session_id,
+        &raw,
+        now,
+    )
+    .await
+    .unwrap();
+    let encoded = staged.replacement.unwrap().encoded();
+    let b = RawSessionToken::parse(encoded.expose_for_cookie()).unwrap();
+    let hash = b.token_hash();
+    let before: (Vec<u8>, Vec<u8>, DateTime<Utc>) = sqlx::query_as("SELECT current_token_hash,pending_token_hash,pending_created_at FROM auth_sessions WHERE id=$1")
+        .bind(login.authenticated.session_id).fetch_one(&fixture.pool).await.unwrap();
+    let result = change_password(
+        &fixture.context,
+        &staged.authenticated,
+        "password-one",
+        "password-two",
+        now,
+        || Ok(b),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(result.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        fixture
+            .password_verifies("teacher.pending", "password-one")
+            .await
+    );
+    let after: (Vec<u8>, Vec<u8>, DateTime<Utc>) = sqlx::query_as("SELECT current_token_hash,pending_token_hash,pending_created_at FROM auth_sessions WHERE id=$1")
+        .bind(login.authenticated.session_id).fetch_one(&fixture.pool).await.unwrap();
+    assert_eq!(before, after);
+    assert_eq!(after.1.as_slice(), hash.as_bytes());
+}
+
+#[tokio::test]
+async fn explicit_password_change_idle_refresh_respects_the_original_absolute_limit() {
+    for remembered in [false, true] {
+        let fixture =
+            AuthServiceFixture::new(&format!("password_absolute_clamp_{remembered}")).await;
+        fixture
+            .insert_user("teacher.clamp", "password-one", "active")
+            .await;
+        let login = fixture
+            .login_with_token(
+                "teacher.clamp",
+                "password-one",
+                remembered,
+                fixture.now,
+                [206; 32],
+            )
+            .await
+            .unwrap();
+        let absolute = fixture.now + Duration::minutes(1);
+        sqlx::query(
+            "UPDATE auth_sessions SET idle_expires_at=$1,absolute_expires_at=$2 WHERE id=$3",
+        )
+        .bind(fixture.now + Duration::seconds(30))
+        .bind(absolute)
+        .bind(login.authenticated.session_id)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        change_password(
+            &fixture.context,
+            &login.authenticated,
+            "password-one",
+            "password-two",
+            fixture.now,
+            AuthServiceFixture::credentials([207; 32]),
+        )
+        .await
+        .unwrap();
+        let times: (DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(
+            "SELECT idle_expires_at,absolute_expires_at FROM auth_sessions WHERE id=$1",
+        )
+        .bind(login.authenticated.session_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(times, (absolute, absolute));
+    }
 }

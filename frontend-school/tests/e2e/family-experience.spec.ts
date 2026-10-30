@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
 	mockParent,
@@ -64,6 +65,7 @@ async function ownPermission(
 			lastName: 'ทดสอบ',
 			userType,
 			status: 'active',
+			session: sessionState(),
 			permissions
 		})
 	);

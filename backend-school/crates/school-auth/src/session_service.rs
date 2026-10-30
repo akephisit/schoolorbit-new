@@ -247,6 +247,10 @@ pub async fn login<G>(
 where
     G: FnOnce() -> Result<RawSessionToken, AppError>,
 {
+    let command = LoginCommand {
+        now: super::session_crypto::canonical_session_time(command.now)?,
+        ..command
+    };
     if let Err(error) = validate_login_input(command.username, command.password) {
         audit::login_rejected(
             context.tenant.tenant_id,
@@ -456,6 +460,14 @@ pub async fn activity(
         return Err(AppError::Conflict("session_changed".into()));
     }
     if session.presented_hash != Some(raw.token_hash()) {
+        return Err(authentication_required());
+    }
+    if now >= session.state.idle_expires_at || now >= session.state.absolute_expires_at {
+        audit::session_rejected(if now >= session.state.absolute_expires_at {
+            "absolute_expired"
+        } else {
+            "idle_expired"
+        });
         return Err(authentication_required());
     }
     // Fresh metadata makes duplicate non-due pulses database-free; due work revalidates under lock.

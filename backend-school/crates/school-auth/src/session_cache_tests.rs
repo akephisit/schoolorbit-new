@@ -22,7 +22,6 @@ fn snapshot(now: chrono::DateTime<Utc>, user_id: Uuid) -> MaintainedSession {
         absolute_expires_at: now + Duration::hours(12),
         replacement: None,
         has_pending: false,
-        credential_changed: false,
     }
 }
 

@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -29,6 +30,7 @@ for (const mobile of [false, true]) {
 							lastName: 'วิชาการ',
 							userType: 'staff',
 							status: 'ACTIVE',
+							session: sessionState(),
 							permissions: ['*']
 						};
 					} else if (path === '/api/academic/context/options') {

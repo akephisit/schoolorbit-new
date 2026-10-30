@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { AcademicTermChangeSet } from '../../src/lib/api/learning-delivery.js';
 
@@ -177,6 +178,7 @@ async function mockOffering(
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: options.permissions ?? ['learning_offering.read.school']
 				});
 				return;

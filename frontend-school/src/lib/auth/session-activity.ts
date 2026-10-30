@@ -19,9 +19,11 @@ export interface SessionWarning {
 
 interface ActivityDependencies {
 	now(): number;
+	wallNow(): number;
 	setTimer(callback: () => void, delay: number): ReturnType<typeof setTimeout>;
 	clearTimer(timer: ReturnType<typeof setTimeout>): void;
 	renew(session: SessionState, signal: AbortSignal): Promise<ActivityResult>;
+	resyncClock(): Promise<boolean>;
 	accept(session: SessionState): void;
 	warning(warning: SessionWarning | null): void;
 }
@@ -43,6 +45,11 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 	let failures = 0;
 	let retryAt = 0;
 	let unavailable = false;
+	let clockRecheckPending = false;
+	let clockUncertain = false;
+	let clockRecheckNeeded = false;
+	let wallReference = deps.wallNow();
+	let monotonicReference = deps.now();
 
 	const serverNow = () => serverAnchor + Math.max(0, deps.now() - anchor);
 	const stopTimer = () => {
@@ -85,8 +92,14 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 		if (expiry > now) {
 			delays.push(expiry - now > WARNING_WINDOW_MS ? expiry - now - WARNING_WINDOW_MS : 60_000);
 		}
-		if (!pending && online && freshInput()) {
-			delays.push(Math.max(0, Date.parse(session.nextRenewalAt) - now, retryAt - deps.now()));
+		if (!pending && !clockRecheckPending && online && freshInput()) {
+			delays.push(
+				Math.max(
+					0,
+					clockUncertain ? 0 : Date.parse(session.nextRenewalAt) - now,
+					retryAt - deps.now()
+				)
+			);
 		}
 		if (!delays.length) return;
 		timer = deps.setTimer(
@@ -99,11 +112,24 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 	}
 
 	async function tick() {
-		if (disposed || !session || !visible || !online || pending || !freshInput()) {
+		// A resumed timeout can be the first callback after sleep, with no focus/pageshow event.
+		if (!disposed && session && visible && online) checkClock();
+		if (
+			disposed ||
+			!session ||
+			!visible ||
+			!online ||
+			pending ||
+			clockRecheckPending ||
+			!freshInput()
+		) {
 			schedule();
 			return;
 		}
-		if (serverNow() < Date.parse(session.nextRenewalAt) || deps.now() < retryAt) {
+		if (
+			(!clockUncertain && serverNow() < Date.parse(session.nextRenewalAt)) ||
+			deps.now() < retryAt
+		) {
 			schedule();
 			return;
 		}
@@ -132,6 +158,7 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 			failures = 0;
 			retryAt = 0;
 			unavailable = false;
+			clockUncertain = false;
 			deps.accept(result.session);
 		} else if (result.kind === 'retry') {
 			failures++;
@@ -149,6 +176,37 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 		schedule();
 	}
 
+	function checkClock() {
+		const now = deps.now();
+		const wall = deps.wallNow();
+		const gap = Math.abs(wall - wallReference - (now - monotonicReference)) > 30_000;
+		wallReference = wall;
+		monotonicReference = now;
+		if (gap) clockRecheckNeeded = true;
+		if (!clockRecheckNeeded || !session || disposed) return;
+		acknowledgedSequence = inputSequence;
+		clockUncertain = true;
+		if (clockRecheckPending || !online) return;
+		clockRecheckNeeded = false;
+		const owner = ++epoch;
+		pending?.abort();
+		pending = null;
+		clockRecheckPending = true;
+		void (async () => {
+			let available = false;
+			try {
+				available = await deps.resyncClock();
+			} catch {
+				/* Preserve identity during unavailable validation. */
+			}
+			if (disposed || owner !== epoch) return;
+			clockRecheckPending = false;
+			clockUncertain = !available;
+			unavailable = !available;
+			schedule();
+		})();
+	}
+
 	return {
 		setSession(next: SessionState | null) {
 			if (disposed) return;
@@ -160,6 +218,11 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 				failures = 0;
 				retryAt = 0;
 				unavailable = false;
+				clockRecheckPending = false;
+				clockUncertain = false;
+				clockRecheckNeeded = false;
+				wallReference = deps.wallNow();
+				monotonicReference = deps.now();
 			}
 			if (
 				next &&
@@ -177,21 +240,26 @@ export function createSessionActivityController(deps: ActivityDependencies) {
 		},
 		trustedActivity() {
 			if (disposed || !session || !visible || !online) return;
+			checkClock();
 			inputSequence++;
 			lastInput = deps.now();
 			schedule();
 		},
 		setEnvironment(nextVisible: boolean, nextOnline: boolean) {
+			const wasOnline = online;
 			if (!nextVisible || !nextOnline || visible !== nextVisible || online !== nextOnline) {
 				// Returning to a page or network is not user input. Never replay offline activity.
 				acknowledgedSequence = inputSequence;
 			}
 			visible = nextVisible;
 			online = nextOnline;
+			if (online && !wasOnline) checkClock();
 			schedule();
 		},
 		wake() {
-			if (!freshInput()) acknowledgedSequence = inputSequence;
+			// Focus/pageshow is never proof that input before a suspension is still recent.
+			acknowledgedSequence = inputSequence;
+			checkClock();
 			schedule();
 		},
 		dispose() {

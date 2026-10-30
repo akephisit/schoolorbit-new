@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type {
 	CurriculumStructureRequirement,
@@ -332,6 +333,7 @@ for (const published of [false, true])
 							displayName: 'ทดสอบ อ่าน',
 							userType: 'staff',
 							status: 'ACTIVE',
+							session: sessionState(),
 							permissions: ['academic_curriculum.read.school']
 						}
 					})

@@ -779,9 +779,18 @@ async fn concurrent_same_digest_insert_is_serialized_and_pending_promotion_races
         false,
         now,
     );
+    // Different users avoid serializing the race on the per-user lock: allocation
+    // must still reject one writer through the digest advisory lock/check.
+    let competing_user = create_test_user(
+        &fixture.pool,
+        "digest-race-other@example.test",
+        "test-password",
+    )
+    .await
+    .unwrap();
     let right = new_session(
         Uuid::new_v4(),
-        fixture.user_id,
+        competing_user,
         shared.token_hash(),
         false,
         now,

@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { subjectGrade } from './fixtures/subject-catalog';
 import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -68,6 +69,7 @@ async function mockCatalog(
 					lastName: 'ทะเบียน',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: ['*']
 				});
 				return;

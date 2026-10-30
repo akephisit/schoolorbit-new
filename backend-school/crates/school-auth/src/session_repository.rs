@@ -93,7 +93,6 @@ pub struct MaintainedSession {
     pub absolute_expires_at: DateTime<Utc>,
     pub replacement: Option<RawSessionToken>,
     pub has_pending: bool,
-    pub credential_changed: bool,
 }
 
 #[derive(Clone, FromRow)]
@@ -255,7 +254,7 @@ pub async fn validate_session(
     if !accepted(&row, kind, now) {
         return Ok(None);
     }
-    Ok(Some(maintained(row, kind, None, false)))
+    Ok(Some(maintained(row, kind, None)))
 }
 
 /// Called only after origin, CSRF and the expected session fence pass. None acknowledges
@@ -379,7 +378,6 @@ pub async fn maintain_session(
             kind
         },
         replacement,
-        promoted || staged || touch,
     )))
 }
 
@@ -926,7 +924,6 @@ fn maintained(
     row: AuthenticationRow,
     presented_as: PresentedTokenKind,
     replacement: Option<RawSessionToken>,
-    credential_changed: bool,
 ) -> MaintainedSession {
     MaintainedSession {
         session_id: row.id,
@@ -940,7 +937,6 @@ fn maintained(
         absolute_expires_at: row.absolute_expires_at,
         replacement,
         has_pending: row.pending_token_hash.is_some(),
-        credential_changed,
     }
 }
 

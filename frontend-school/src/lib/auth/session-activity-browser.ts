@@ -64,9 +64,12 @@ export function mountSessionActivity(warning: (value: SessionWarning | null) => 
 	};
 	const controller = createSessionActivityController({
 		now: () => performance.now(),
+		wallNow: Date.now,
 		setTimer: (callback, delay) => setTimeout(callback, delay),
 		clearTimer: clearTimeout,
 		warning,
+		resyncClock: async () =>
+			(await authAPI.refreshCurrentUser({ silent: true })) === 'authenticated',
 		accept: (session) => {
 			authStore.updateSession(session, currentEpoch);
 			coordinator.publish(origin, session);
@@ -189,7 +192,7 @@ export function mountSessionActivity(warning: (value: SessionWarning | null) => 
 		lastPointerAt = performance.now();
 		controller.trustedActivity();
 	};
-	const events = ['pointerdown', 'keydown', 'input', 'scroll', 'wheel'] as const;
+	const events = ['pointerdown', 'click', 'keydown', 'input', 'scroll', 'wheel'] as const;
 	for (const name of events)
 		document.addEventListener(name, activity, { capture: true, passive: true });
 	document.addEventListener('pointermove', pointerMove, { capture: true, passive: true });

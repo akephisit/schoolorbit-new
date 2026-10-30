@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { SessionWarning } from '#lib/auth/session-activity.js';
 	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+	import LoadingButton from '#lib/components/app-state/LoadingButton.svelte';
 	let {
 		warning,
 		oncontinue
@@ -27,7 +27,12 @@
 					{/if}
 				</p>
 				{#if warning.kind === 'idle'}
-					<Button size="sm" disabled={warning.pending} onclick={oncontinue}>ใช้งานต่อ</Button>
+					<LoadingButton
+						size="sm"
+						loading={warning.pending}
+						loadingLabel="กำลังต่อเวลา..."
+						onclick={oncontinue}>ใช้งานต่อ</LoadingButton
+					>
 				{/if}
 			</AlertDescription>
 		</Alert>

@@ -73,7 +73,6 @@ impl CachedAuthentication {
             absolute_expires_at: self.validity.absolute_expires_at,
             replacement: None,
             has_pending: self.has_pending,
-            credential_changed: false,
         }
     }
 }

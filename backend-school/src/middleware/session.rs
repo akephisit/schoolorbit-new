@@ -24,14 +24,17 @@ pub async fn session_middleware(
     request: Request,
     next: Next,
 ) -> Response {
+    let session_response = request.uri().path().starts_with("/api/auth/");
     let mut response = match authenticate_request(&runtime, request, next).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
     };
-    response.headers_mut().insert(
-        axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("no-store"),
-    );
+    if session_response {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+    }
     response
 }
 
@@ -79,10 +82,6 @@ async fn authenticate_request(
     if method == Method::GET && path == "/api/auth/me" {
         insert_csrf_header(&mut response, &csrf_token);
     }
-    response.headers_mut().insert(
-        axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("no-store"),
-    );
 
     Ok(response)
 }

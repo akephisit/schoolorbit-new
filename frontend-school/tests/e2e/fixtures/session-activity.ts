@@ -17,11 +17,18 @@ export async function mockSessionActivity(
 	let now = activityStart;
 	let session = sessionState(now, overrides);
 	let activityStatus = 200;
+	let activityWrites = 0;
 	let release: (() => void) | null = null;
 	let hold = false;
 	let clockInstalled = false;
 	const loginPages = new WeakSet<Page>();
-	const requests: { path: string; method: string; page: Page; body: string | null }[] = [];
+	const requests: {
+		path: string;
+		method: string;
+		page: Page;
+		body: string | null;
+		sessionId?: string;
+	}[] = [];
 	const user = (): CurrentUserDto => ({
 		id: id(10),
 		username: 'session-fixture',
@@ -33,7 +40,7 @@ export async function mockSessionActivity(
 		primaryRoleName: null,
 		profileImageFileId: null,
 		permissions: [],
-		session
+		session: { ...session, serverNow: new Date(now).toISOString() }
 	});
 	const reply = (route: Route, data: unknown, status = 200) =>
 		route.fulfill({
@@ -57,7 +64,18 @@ export async function mockSessionActivity(
 				session = sessionState(now, { sessionId: '01900000-0000-7000-8000-000000000002' });
 				return reply(route, { user: user() });
 			}
-			if (path === '/api/auth/me') return reply(route, user(), loginPages.has(page) ? 401 : 200);
+			if (path === '/api/auth/me') {
+				requests[requests.length - 1].sessionId = session.sessionId;
+				return reply(
+					route,
+					user(),
+					loginPages.has(page) ||
+						now >=
+							Math.min(Date.parse(session.idleExpiresAt), Date.parse(session.absoluteExpiresAt))
+						? 401
+						: 200
+				);
+			}
 			if (path === '/api/auth/activity') {
 				if (hold)
 					await new Promise<void>((resolve) => {
@@ -66,10 +84,13 @@ export async function mockSessionActivity(
 				if (activityStatus !== 200) return reply(route, null, activityStatus);
 				if (request.postDataJSON().expectedSessionId !== session.sessionId)
 					return reply(route, null, 409);
-				session = sessionState(now, {
-					sessionId: session.sessionId,
-					absoluteExpiresAt: session.absoluteExpiresAt
-				});
+				if (now >= Date.parse(session.nextRenewalAt)) {
+					activityWrites++;
+					session = sessionState(now, {
+						sessionId: session.sessionId,
+						absoluteExpiresAt: session.absoluteExpiresAt
+					});
+				}
 				return reply(route, session);
 			}
 			if (path === '/api/notifications/stream')
@@ -102,6 +123,9 @@ export async function mockSessionActivity(
 	);
 	return {
 		requests,
+		get activityWrites() {
+			return activityWrites;
+		},
 		count(path: string, page?: Page) {
 			return requests.filter((request) => request.path === path && (!page || request.page === page))
 				.length;
@@ -131,7 +155,12 @@ export async function mockSessionActivity(
 			}
 			await page.goto(activityRoute(role));
 			await page.clock.runFor(100);
-			await page.getByRole('heading', { name: role === 'staff' ? 'ยังไม่มีตารางสอน' : 'ยังไม่มีตารางเรียน', exact: true }).waitFor();
+			await page
+				.getByRole('heading', {
+					name: role === 'staff' ? 'ยังไม่มีตารางสอน' : 'ยังไม่มีตารางเรียน',
+					exact: true
+				})
+				.waitFor();
 		}
 	};
 }

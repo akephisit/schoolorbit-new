@@ -138,7 +138,11 @@ test('default auth and menu state contain no minimized PII or duplicated permiss
 
 	assert.doesNotMatch(authStore, /nationalId|email\?:|phone\?:|createdAt/);
 	assert.doesNotMatch(authStore, /permissions\?:/);
-	assert.match(authStore, /setUser:\s*\(user:\s*User,\s*permissions:\s*string\[\]\)/);
+	assert.match(
+		authStore,
+		/setUser:\s*\(user:\s*User,\s*permissions:\s*string\[\],\s*session\?:\s*SessionState\)/
+	);
+	assert.match(authStore, /session:\s*SessionState\s*\|\s*null/);
 	assert.match(authStore, /setPermissions\(permissions\)/);
 	assert.doesNotMatch(authApi, /authStore\.user\.permissions/);
 	assert.doesNotMatch(profileMenu, /user\.email/);

@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -66,6 +67,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 					lastName: 'วิทยา',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-08-07T00:00:00Z',
 					email: null,
 					nationalId: null,
