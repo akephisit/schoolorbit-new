@@ -12,9 +12,11 @@ export const activityRoute = (role: 'staff' | 'student' | 'parent') =>
 export async function mockSessionActivity(
 	context: BrowserContext,
 	role: 'staff' | 'student' | 'parent' = 'staff',
-	overrides: Partial<SessionState> = {}
+	overrides: Partial<SessionState> = {},
+	options: { nativeTimers?: boolean; renewalIntervalMs?: number } = {}
 ) {
 	let now = activityStart;
+	const startedAt = Date.now();
 	let session = sessionState(now, overrides);
 	let activityStatus = 200;
 	let activityWrites = 0;
@@ -55,6 +57,7 @@ export async function mockSessionActivity(
 	await context.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
+			if (options.nativeTimers) now = activityStart + Date.now() - startedAt;
 			const request = route.request(),
 				path = new URL(request.url()).pathname,
 				page = request.frame().page();
@@ -88,7 +91,8 @@ export async function mockSessionActivity(
 					activityWrites++;
 					session = sessionState(now, {
 						sessionId: session.sessionId,
-						absoluteExpiresAt: session.absoluteExpiresAt
+						absoluteExpiresAt: session.absoluteExpiresAt,
+						nextRenewalAt: new Date(now + (options.renewalIntervalMs ?? 300_000)).toISOString()
 					});
 				}
 				return reply(route, session);
@@ -148,13 +152,13 @@ export async function mockSessionActivity(
 			loginPages.add(page);
 		},
 		async open(page: Page) {
-			if (!clockInstalled) {
+			if (!options.nativeTimers && !clockInstalled) {
 				await page.clock.install({ time: activityStart });
 				await page.clock.pauseAt(activityStart);
 				clockInstalled = true;
 			}
 			await page.goto(activityRoute(role));
-			await page.clock.runFor(100);
+			if (!options.nativeTimers) await page.clock.runFor(100);
 			await page
 				.getByRole('heading', {
 					name: role === 'staff' ? 'ยังไม่มีตารางสอน' : 'ยังไม่มีตารางเรียน',

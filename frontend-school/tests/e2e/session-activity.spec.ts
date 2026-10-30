@@ -3,6 +3,59 @@ import { activityStart, mockSessionActivity } from './fixtures/session-activity'
 
 test.use({ serviceWorkers: 'block', launchOptions: { args: ['--no-proxy-server'] } });
 
+test('native timers renew on trusted input, reschedule and dispose without page errors or extra reads', async ({
+	context,
+	page
+}) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	const api = await mockSessionActivity(
+		context,
+		'staff',
+		{ nextRenewalAt: new Date(activityStart).toISOString() },
+		{ nativeTimers: true, renewalIntervalMs: 2_000 }
+	);
+	await api.open(page);
+	const reads = api.requests
+		.filter((request) => request.method === 'GET')
+		.map((request) => request.path);
+	expect(api.count('/api/auth/me')).toBe(1);
+	expect(api.count('/api/auth/activity')).toBe(0);
+	await page.keyboard.press('ArrowDown');
+	expect(pageErrors).toEqual([]);
+	await expect.poll(() => api.activityWrites).toBe(1);
+	// Fresh input cancels and replaces the native timer until the returned renewal deadline.
+	await page.keyboard.press('ArrowUp');
+	await page.mouse.move(650, 350);
+	await page.mouse.wheel(0, 100);
+	await expect.poll(() => api.activityWrites).toBe(2);
+	expect(api.count('/api/auth/activity')).toBe(2);
+	expect(
+		api.requests.filter((request) => request.method === 'GET').map((request) => request.path)
+	).toEqual(reads);
+	expect(pageErrors).toEqual([]);
+	// Leave the authenticated layout in the same document while another renewal is scheduled.
+	await page.keyboard.press('ArrowDown');
+	await page.evaluate(() => {
+		document.documentElement.dataset.sessionActivityNative = 'retained';
+		const link = document.createElement('a');
+		link.href = '/privacy-policy';
+		link.textContent = 'Leave session activity fixture';
+		document.body.append(link);
+	});
+	await page.getByRole('link', { name: 'Leave session activity fixture', exact: true }).focus();
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(/\/privacy-policy$/);
+	expect(await page.evaluate(() => document.documentElement.dataset.sessionActivityNative)).toBe(
+		'retained'
+	);
+	// Let the scheduled deadline pass on the real browser clock to expose leaked callbacks.
+	await page.waitForTimeout(2_200);
+	await page.keyboard.press('ArrowDown');
+	expect(api.count('/api/auth/activity')).toBe(2);
+	expect(pageErrors).toEqual([]);
+});
+
 for (const role of ['staff', 'student', 'parent'] as const) {
 	test(`${role}: trusted input renews centrally without refetching the preloaded timetable`, async ({
 		context,
