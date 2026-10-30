@@ -44,36 +44,12 @@ pub(super) async fn prepare(
             "Draft not found in selected term".into(),
         ));
     }
-    let existing = room.members()?;
-    let user_ids = existing
-        .iter()
-        .map(|member| member.actor.user_id)
-        .chain([access.user_id])
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         &context.tenant.pool,
-        "academic_http.websockets.draft.portraits",
+        "academic_http.websockets.draft.resource_access",
     )
     .await
     .map_err(school_errors::AppError::from)?;
-    // Profile access is resolved at join; pointer and lease frames never query Staff or Files.
-    for member in &existing {
-        let portraits = state
-            .staff_directory
-            .collaboration_portraits(&mut connection, &member.actor, &user_ids)
-            .await?
-            .into_iter()
-            .collect();
-        room.set_portraits(member.connection_id, portraits)?;
-    }
-    let portraits = state
-        .staff_directory
-        .collaboration_portraits(&mut connection, &context.actor, &user_ids)
-        .await?
-        .into_iter()
-        .collect::<BTreeMap<_, _>>();
     let resource_access = Arc::new(
         school_academic_timetable::policy::resource_access_snapshot_on_connection(
             &mut connection,
@@ -91,7 +67,7 @@ pub(super) async fn prepare(
         access: access.read_access,
         manage_access: access.manage_access,
         resource_access,
-        portraits,
+        portraits: BTreeMap::new(),
         context: None,
         anchor: None,
     };
@@ -135,7 +111,7 @@ pub(super) async fn handle(
     mut sessions: broadcast::Receiver<SessionRevocationEvent>,
     mut permissions: broadcast::Receiver<PermissionChangeEvent>,
 ) {
-    let PreparedDraft { room, member } = prepared;
+    let PreparedDraft { room, mut member } = prepared;
     let connection_id = member.connection_id;
     let tenant = authenticated.tenant.subdomain.clone();
     let term_id = room.key.academic_term_id;
@@ -145,6 +121,57 @@ pub(super) async fn handle(
         .get_or_create_room(tenant.clone(), term_id);
     let mut upstream = legacy_sender.subscribe();
     let gate = room.mutation_gate().await;
+    if let Some(reason) = queued_authority(&mut sessions, &mut permissions, &authenticated) {
+        close_realtime_socket(&mut socket, &authenticated, reason).await;
+        return;
+    }
+    // Admission is serialized with other joins so each viewer's ACL is resolved against
+    // current members. Disconnect may race the lookup; set_portraits tolerates that.
+    let portraits = async {
+        let existing = room.members()?;
+        let user_ids = existing
+            .iter()
+            .map(|member| member.actor.user_id)
+            .chain([member.actor.user_id])
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let tenant = school_auth_http::tenant::resolve_tenant_context_by_subdomain(
+            &state.auth_runtime,
+            &authenticated.tenant.subdomain,
+        )
+        .await?;
+        if tenant.tenant_id != room.key.tenant_id {
+            return Err(AppError::Forbidden("Tenant changed".into()));
+        }
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &tenant.pool,
+            "academic_http.websockets.draft.portraits",
+        )
+        .await
+        .map_err(school_errors::AppError::from)?;
+        for existing_member in &existing {
+            let portraits = state
+                .staff_directory
+                .collaboration_portraits(&mut connection, &existing_member.actor, &user_ids)
+                .await?
+                .into_iter()
+                .collect();
+            room.set_portraits(existing_member.connection_id, portraits)?;
+        }
+        member.portraits = state
+            .staff_directory
+            .collaboration_portraits(&mut connection, &member.actor, &user_ids)
+            .await?
+            .into_iter()
+            .collect();
+        Ok::<(), AppError>(())
+    }
+    .await;
+    if portraits.is_err() {
+        return;
+    }
+    // Authorization can change while the portrait queries are awaiting PostgreSQL.
     if let Some(reason) = queued_authority(&mut sessions, &mut permissions, &authenticated) {
         close_realtime_socket(&mut socket, &authenticated, reason).await;
         return;

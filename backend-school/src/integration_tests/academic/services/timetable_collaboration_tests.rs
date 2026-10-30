@@ -1195,6 +1195,386 @@ async fn assigned_multi_instructor_block_is_visible_but_both_memory_and_http_den
 }
 
 #[tokio::test]
+async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and_exclusion() {
+    let fixture = Fixture::new("collaboration_sync_create_scope").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let actor_id = Uuid::parse_str(ACTOR).unwrap();
+    let scoped_actor = Uuid::parse_str("50000000-0000-0000-0000-000000000003").unwrap();
+    let version_id = fixture.version;
+    let term_id = fixture.term;
+    let year_id: Uuid =
+        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+            .bind(term_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    use school_academic_delivery::{
+        models::*,
+        services::{change_sets, groups, versions},
+    };
+    let source_id: Uuid = sqlx::query_scalar(
+        "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+    )
+    .bind(version_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let source = versions::get_version(pool, source_id).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(term_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let revision = change_sets::create_change_set(
+        pool,
+        actor_id,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: term_id,
+            reason: "เปิดกิจกรรมก่อนจัดคาบ".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    // Prepare this historical fixture's teachers on the intended publication day.
+    let revision = change_sets::update_change_set(
+        pool,
+        actor_id,
+        revision.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: revision.row_version,
+            reference_date: source.effective_from.unwrap() + chrono::Duration::days(1),
+            reason: revision.reason.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=t.start_date ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(pool).await.unwrap();
+    let (homeroom_id,grade_level_id,study_program_id):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 1").bind(year_id).fetch_one(pool).await.unwrap();
+    let changed = change_sets::upsert_change_item(
+        pool,
+        actor_id,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AddActivity {
+            change_set_row_version: revision.row_version,
+            weekly_period_target: 1,
+            offering: CreateActivityOfferingRequest {
+                create_homeroom_groups: true,
+                academic_term_id: term_id,
+                activity_version_id,
+                curriculum_activity_requirement_id: None,
+                targets: vec![OfferingTargetInput {
+                    target_kind: OfferingTargetKind::Homeroom,
+                    homeroom_id: Some(homeroom_id),
+                    grade_level_id,
+                    study_program_id,
+                }],
+                registration_type: ActivityRegistrationType::Assigned,
+                scheduling_mode: ActivitySchedulingMode::Synchronized,
+                capacity: None,
+                attendance_requirement: ActivityAttendanceRequirement {
+                    minimum_percent: None,
+                    required_sessions: None,
+                },
+                pass_criteria: ActivityPassCriteria {
+                    require_attendance: false,
+                    require_teacher_confirmation: true,
+                    outcomes: vec!["pass".into(), "fail".into()],
+                },
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let added_id = changed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            AcademicTermChangeItem::AddOffering {
+                learning_offering_id,
+                ..
+            } => Some(*learning_offering_id),
+            _ => None,
+        })
+        .unwrap();
+    for group in groups::list(pool, added_id).await.unwrap() {
+        groups::replace_teachers(
+            pool,
+            actor_id,
+            group.id,
+            ReplaceLearningGroupTeachersRequest {
+                row_version: group.row_version,
+                teachers: vec![TeacherAssignmentInput {
+                    teacher_id: scoped_actor,
+                    role: LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let preview = change_sets::preview_change_set_at(
+        pool,
+        revision.id,
+        Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        pool,
+        actor_id,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: Vec::new(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let current = school_academic_timetable::services::timetable_version_service::get_version(
+        pool,
+        version_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await
+    .unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT(homeroom_id,user_id) DO NOTHING").bind(homeroom_id).bind(scoped_actor).execute(pool).await.unwrap();
+    grant(
+        pool,
+        scoped_actor,
+        &[
+            "academic_timetable.read.assigned",
+            "academic_timetable.manage.assigned",
+        ],
+    )
+    .await;
+    let extra_teacher = actor_id;
+    let competing = timetable_block_service::create_structural_blocks(
+        pool,
+        &TimetableMutationContext::for_tests(pool, actor_id),
+        CreateStructuralTimetableBlocksRequest {
+            timetable_version_id: version_id,
+            academic_term_id: term_id,
+            structural_kind: TimetableStructuralKind::TeacherMeeting,
+            title: "Teacher conflict".into(),
+            note: None,
+            slots: vec![TimetableStructuralSlotInput {
+                day_of_week: "THU".into(),
+                bell_schedule_period_id: fixture.block.bell_schedule_period_id,
+            }],
+            homeroom_ids: vec![],
+            teacher_ids: vec![extra_teacher],
+            all_homerooms: false,
+            all_teachers: false,
+            room_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let (mut other_socket, _) = fixture.socket().await;
+    let (session, token) = fixture
+        .auth
+        .insert_session(pool, scoped_actor, 220, false)
+        .await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let (mut socket, sync) = fixture.socket_with_cookie(&cookie).await;
+    let connection = uuid(&sync["payload"]["connectionId"]);
+    let source = json!({"kind":"synchronized_offering","learningOfferingId":added_id});
+    let candidate = json!({"blockKind":"activity","learningGroupId":null,"learningOfferingId":added_id,"roomId":null,"homeroomIds":[homeroom_id],"teacherIds":[extra_teacher],"instructorIds":[]});
+    let claim = command(
+        &mut socket,
+        "ClientClaim",
+        json!({"requestId":Uuid::new_v4(),"source":source,"purpose":"drag","candidate":candidate}),
+    )
+    .await;
+    assert_eq!(claim["payload"]["accepted"], true, "{claim}");
+    let lease = uuid(&claim["payload"]["leaseToken"]);
+    let target = command(&mut socket, "ClientTarget", json!({"requestId":Uuid::new_v4(),"leaseToken":lease,"target":{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id,"blockId":null}})).await;
+    assert_eq!(target["payload"]["accepted"], true, "{target}");
+    let other_claim = command(&mut other_socket, "ClientClaim", json!({"requestId":Uuid::new_v4(),"source":{"kind":"existing_block","blockId":competing.id,"rowVersion":competing.row_version},"purpose":"drag"})).await;
+    assert_eq!(other_claim["payload"]["accepted"], true, "{other_claim}");
+    let other_target = command(&mut other_socket, "ClientTarget", json!({"requestId":Uuid::new_v4(),"leaseToken":other_claim["payload"]["leaseToken"],"target":{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id,"blockId":null}})).await;
+    assert_eq!(
+        other_target["payload"]["accepted"], false,
+        "selected teacher remains in exclusion footprint: {other_target}"
+    );
+    let payload = json!({"timetableVersionId":version_id,"academicTermId":term_id,"learningOfferingId":added_id,"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id,"intendedHomeroomIds":[homeroom_id],"roomId":null,"teacherIds":[extra_teacher],"note":null});
+    for (change, expected) in [
+        ("foreign_offering", 403_u16),
+        ("foreign_homeroom", 403_u16),
+        ("allowed", 200_u16),
+    ] {
+        let mut value = payload.clone();
+        if change == "foreign_offering" {
+            let foreign: Uuid = sqlx::query_scalar("SELECT id FROM learning_offerings WHERE academic_term_id=$1 AND id<>$2 ORDER BY id LIMIT 1").bind(term_id).bind(added_id).fetch_one(pool).await.unwrap();
+            value["learningOfferingId"] = json!(foreign);
+        } else if change == "foreign_homeroom" {
+            let foreign: Uuid = sqlx::query_scalar(
+                "SELECT id FROM homerooms WHERE academic_year_id=$1 AND id<>$2 ORDER BY id LIMIT 1",
+            )
+            .bind(year_id)
+            .bind(homeroom_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            value["intendedHomeroomIds"] = json!([foreign]);
+        }
+        let mut request = fixture
+            .request(
+                reqwest::Method::POST,
+                "/api/academic/timetable-blocks/synchronized",
+            )
+            .header("x-timetable-connection-id", connection.to_string())
+            .header("x-timetable-lease-token", lease.to_string())
+            .header("x-timetable-mutation-id", Uuid::new_v4().to_string())
+            .json(&value)
+            .build()
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("cookie", cookie.parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-csrf-token", fixture.auth.csrf(session).parse().unwrap());
+        let response = reqwest::Client::new().execute(request).await.unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            expected,
+            "{change}: {}",
+            response.text().await.unwrap()
+        );
+    }
+    socket.close(None).await.unwrap();
+    other_socket.close(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn simultaneous_gated_joins_resolve_each_viewers_peer_portraits() {
+    let fixture = Fixture::new("collaboration_concurrent_portraits").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let mut identities = Vec::new();
+    for index in 0..2_u8 {
+        let user = fixture
+            .auth
+            .insert_user(pool, &format!("portrait-race-{index}"), "active")
+            .await;
+        grant(
+            pool,
+            user,
+            &[
+                "academic_timetable.read.school",
+                "staff_profile.read.school",
+            ],
+        )
+        .await;
+        let image = crate::integration_tests::auth::profile_integration_tests::insert_ready_temporary_profile_image(pool, user).await;
+        sqlx::query("UPDATE users SET profile_image_file_id=$2 WHERE id=$1")
+            .bind(user)
+            .bind(image)
+            .execute(pool)
+            .await
+            .unwrap();
+        let (_, token) = fixture
+            .auth
+            .insert_session(pool, user, 210 + index, false)
+            .await;
+        identities.push((
+            user,
+            image,
+            format!(
+                "__Host-schoolorbit_session={}",
+                token.encode().expose_for_cookie()
+            ),
+        ));
+    }
+    let (mut warm, _) = fixture.socket().await;
+    let room = fixture.room();
+    warm.close(None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !room.members().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let gate = room.mutation_gate().await;
+    let open = |cookie: &str| {
+        let mut request = format!("ws://{}/ws/timetable?academicTermId={}&timetableVersionId={}&school_subdomain=tenant-a", fixture.address, fixture.term, fixture.version).into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("origin", "http://localhost:5173".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("cookie", cookie.parse().unwrap());
+        async move { connect_async(request).await.unwrap().0 }
+    };
+    let (mut first, mut second) = tokio::join!(open(&identities[0].2), open(&identities[1].2));
+    drop(gate);
+    let (first_sync, second_sync) = tokio::join!(
+        event(&mut first, "DraftStateSync"),
+        event(&mut second, "DraftStateSync")
+    );
+    // One joins first; its next presence event must include the newly admitted peer.
+    let check = |sync: &Value, peer: &(Uuid, Uuid, String)| {
+        sync["payload"]["users"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|user| {
+                user["userId"] == peer.0.to_string()
+                    && user["profileImageFileId"] == peer.1.to_string()
+            })
+    };
+    if check(&first_sync, &identities[1]) {
+        let presence = loop {
+            let presence = event(&mut second, "DraftPresenceChanged").await;
+            if presence["payload"]["userId"] == identities[0].0.to_string() {
+                break presence;
+            }
+        };
+        assert_eq!(
+            presence["payload"]["profileImageFileId"],
+            identities[0].1.to_string()
+        );
+    } else {
+        assert!(
+            check(&second_sync, &identities[0]),
+            "second join must see first peer portrait: {second_sync}"
+        );
+        let presence = loop {
+            let presence = event(&mut first, "DraftPresenceChanged").await;
+            if presence["payload"]["userId"] == identities[1].0.to_string() {
+                break presence;
+            }
+        };
+        assert_eq!(
+            presence["payload"]["profileImageFileId"],
+            identities[1].1.to_string()
+        );
+    }
+    first.close(None).await.unwrap();
+    second.close(None).await.unwrap();
+}
+
+#[tokio::test]
 async fn roster_portrait_reference_requires_existing_staff_profile_access_for_each_viewer() {
     let fixture = Fixture::new("collaboration_scoped_portraits").await;
     let actor = Uuid::parse_str(ACTOR).unwrap();

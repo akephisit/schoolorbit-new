@@ -1083,3 +1083,112 @@ test('an editor portal preserves the second synchronized overview row and avatar
 		await server.close();
 	}
 });
+
+test('native policy1008 refreshes unchanged auth identity, rejoins changed scope and accepts new leases and authorized partials', async ({
+	browser
+}) => {
+	const relay = createDraftRelay(),
+		context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		page = await context.newPage();
+	const blockA = makeTimetableBlock(timetableIds.blockA, timetableIds.period1),
+		blockB = makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
+			groupId: timetableIds.groupB,
+			offeringId: timetableIds.offeringB,
+			instructorIds: [timetableIds.teacherB]
+		});
+	const mock = await installTimetableMock(page, {
+		socketMode: 'native',
+		relay,
+		blocks: [blockA, blockB],
+		userId: timetableIds.teacherA
+	});
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.teacherA, 'ผู้ปรับขอบเขต');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		const id = [...relay.peers.keys()][0],
+			session = mock.getSessionState();
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await page
+			.locator(`[data-block-id="${blockA.id}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		const save = page.getByRole('dialog').getByRole('button', { name: 'บันทึก', exact: true });
+		await expect(save).toBeEnabled();
+		const oldLease = relay.peers.get(id)!.user.connections[0].activeReservationId;
+		const scoped = structuredClone(mock.workspace());
+		scoped.blocks = [blockA];
+		mock.publishWorkspace(scoped, false);
+		mock.setPermissions(['academic_timetable.read.assigned', 'academic_timetable.manage.assigned']);
+		const refresh = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/auth/me'
+		);
+		server.policyClose(id);
+		const auth = await refresh;
+		expect((await auth.json()).data.session.sessionId).toBe(session.sessionId);
+		await auth.finished();
+		await expect.poll(() => [...relay.peers.keys()][0]).not.toBe(id);
+		await waitPeers(relay, 1);
+		const next = [...relay.peers.keys()][0];
+		await expect(page.locator(`[data-block-id="${blockB.id}"]`)).toHaveCount(0);
+		await expect(save).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await page
+			.locator(`[data-block-id="${blockA.id}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		await expect(save).toBeEnabled();
+		expect(relay.peers.get(next)!.user.connections[0].activeReservationId).not.toBe(oldLease);
+		await page.keyboard.press('Escape');
+		const changed = structuredClone(scoped);
+		changed.blocks = [{ ...blockA, rowVersion: 2, note: 'ข้อมูลใหม่ตามขอบเขตที่ยืนยันแล้ว' }];
+		changed.version.rowVersion++;
+		mock.publishWorkspace(changed);
+		await page
+			.locator(`[data-block-id="${blockA.id}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		await expect(
+			page.getByRole('dialog').getByRole('textbox', { name: 'หมายเหตุ', exact: true })
+		).toHaveValue('ข้อมูลใหม่ตามขอบเขตที่ยืนยันแล้ว');
+		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.updateRequestCount()).toBe(0);
+		expect(mock.previewRequestCount()).toBe(0);
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});
+
+test('native policy1008 with refreshed read revocation lets the route stop collaboration and keeps the board closed', async ({
+	browser
+}) => {
+	const relay = createDraftRelay(),
+		context = await browser.newContext(),
+		page = await context.newPage();
+	const mock = await installTimetableMock(page, { socketMode: 'native', relay });
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ผู้ถูกถอนสิทธิ์');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		const id = [...relay.peers.keys()][0];
+		mock.setPermissions([]);
+		const refresh = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/auth/me'
+		);
+		server.policyClose(id);
+		await (await refresh).finished();
+		await expect(page.getByTestId('timetable-board-ready')).toHaveCount(0);
+		await waitPeers(relay, 0);
+		await page.evaluate(
+			() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+		);
+		expect(relay.peers.size).toBe(0);
+		expect(mock.workspaceRequestCount()).toBe(1);
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});

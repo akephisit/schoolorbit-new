@@ -894,6 +894,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		workspace,
 		relay,
 		getSessionState: () => structuredClone(currentSession),
+		setPermissions: (permissions: string[]) => {
+			options.permissions = [...permissions];
+		},
 		setSessionState: (next: SessionState) => {
 			currentSession = structuredClone(next);
 		},

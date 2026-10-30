@@ -108,7 +108,7 @@ class FakeEnvironment {
 	}
 }
 
-function createHarness(resume = async () => true) {
+function createHarness(resume = async () => true, policyRecovery) {
 	const environment = new FakeEnvironment();
 	const notifications = {
 		opens: 0,
@@ -130,6 +130,7 @@ function createHarness(resume = async () => true) {
 			removeListener: (listener) => environment.visibilityListeners.delete(listener)
 		},
 		onResume: resume,
+		onPolicyClose: policyRecovery,
 		onPause: () => {},
 		random: () => 0.5,
 		onOpen: () => {
@@ -429,4 +430,193 @@ test('logout during timetable resume cannot reconnect', async () => {
 	environment.advanceBy(60_000);
 	assert.equal(environment.sockets.length, 1);
 	assert.equal(environment.visibilityListeners.size, 0);
+});
+
+async function flushRecovery() {
+	await Promise.resolve();
+	await Promise.resolve();
+}
+
+test('authenticated policy recovery rejoins only after refresh on the still-current desired context', async () => {
+	let finish;
+	let current;
+	const { environment, runtime } = createHarness(undefined, (isCurrent) => {
+		current = isCurrent;
+		return new Promise((resolve) => {
+			finish = resolve;
+		});
+	});
+	runtime.connect({ ...termA, timetableVersionId: 'draft-a' });
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	environment.sockets[0].closeFromServer(1008);
+	assert.equal(environment.sockets[0].onmessage, null);
+	assert.equal(runtime.send('old-proof'), false);
+	assert.equal(current(), true);
+	assert.equal(environment.timers.size, 0);
+	finish('reconnect');
+	await flushRecovery();
+	assert.equal(environment.nextDelay(), 50);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets.length, 2);
+	assert.deepEqual(environment.sockets[1].params, { ...termA, timetableVersionId: 'draft-a' });
+});
+
+test('unavailable policy auth uses the existing increasing backoff to retry auth before opening a socket', async () => {
+	let attempts = 0;
+	const { environment, runtime } = createHarness(undefined, async () =>
+		++attempts < 3 ? 'retry' : 'reconnect'
+	);
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	environment.sockets[0].closeFromServer(1008);
+	await flushRecovery();
+	assert.equal(attempts, 1);
+	assert.equal(environment.nextDelay(), 1000);
+	environment.advanceBy(1000);
+	await flushRecovery();
+	assert.equal(attempts, 2);
+	assert.equal(environment.sockets.length, 1);
+	assert.equal(environment.nextDelay(), 2000);
+	environment.advanceBy(2000);
+	await flushRecovery();
+	assert.equal(attempts, 3);
+	assert.equal(environment.nextDelay(), 50);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets.length, 2);
+});
+
+test('stopped policy recovery stays stopped and retains the legacy explicit-connect escape', async () => {
+	const { environment, runtime } = createHarness(undefined, async () => 'stop');
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.sockets[0].closeFromServer(1008);
+	await flushRecovery();
+	environment.advanceBy(60000);
+	assert.equal(environment.sockets.length, 1);
+	assert.equal(environment.timers.size, 0);
+	assert.equal(environment.visibilityListeners.size, 0);
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets.length, 2);
+});
+
+for (const change of ['disconnect', 'term', 'draft', 'user', 'session replacement']) {
+	test(`late policy auth cannot resurrect its old connection after ${change}`, async () => {
+		let finish;
+		let oldIsCurrent;
+		const { environment, runtime } = createHarness(undefined, (isCurrent) => {
+			oldIsCurrent = isCurrent;
+			return new Promise((resolve) => {
+				finish = resolve;
+			});
+		});
+		runtime.connect({ ...termA, timetableVersionId: 'draft-a' });
+		environment.advanceBy(50);
+		environment.sockets[0].closeFromServer(1008);
+		if (change === 'disconnect' || change === 'session replacement') runtime.disconnect();
+		const next =
+			change === 'term'
+				? termB
+				: change === 'draft'
+					? { ...termA, timetableVersionId: 'draft-b' }
+					: change === 'user'
+						? { ...termA, currentUserId: 'user-2' }
+						: { ...termA, timetableVersionId: 'draft-a' };
+		if (change !== 'disconnect') runtime.connect(next);
+		assert.equal(oldIsCurrent(), false);
+		environment.advanceBy(50);
+		finish('reconnect');
+		await flushRecovery();
+		environment.advanceBy(60000);
+		assert.equal(environment.sockets.length, change === 'disconnect' ? 1 : 2);
+		if (change !== 'disconnect') assert.deepEqual(environment.sockets[1].params, next);
+	});
+}
+
+test('hidden pause invalidates in-flight policy recovery and resumes through the existing authenticated visibility path', async () => {
+	let finish;
+	let oldIsCurrent;
+	let resumes = 0;
+	const { environment, runtime } = createHarness(
+		async () => {
+			resumes++;
+			return true;
+		},
+		(isCurrent) => {
+			oldIsCurrent = isCurrent;
+			return new Promise((resolve) => {
+				finish = resolve;
+			});
+		}
+	);
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.sockets[0].closeFromServer(1008);
+	setHidden(environment, true);
+	environment.advanceBy(60000);
+	assert.equal(oldIsCurrent(), false);
+	finish('reconnect');
+	await flushRecovery();
+	assert.equal(environment.sockets.length, 1);
+	assert.equal(environment.timers.size, 0);
+	setHidden(environment, false);
+	await flushRecovery();
+	environment.advanceBy(50);
+	assert.equal(resumes, 1);
+	assert.equal(environment.sockets.length, 2);
+});
+
+test('offline policy close waits for the one existing online listener then revalidates auth', async () => {
+	let attempts = 0;
+	const { environment, runtime } = createHarness(undefined, async () => {
+		attempts++;
+		return 'reconnect';
+	});
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.online = false;
+	environment.sockets[0].closeFromServer(1008);
+	await flushRecovery();
+	assert.equal(attempts, 0);
+	assert.equal(environment.onlineListeners.size, 1);
+	environment.goOnline();
+	await flushRecovery();
+	environment.advanceBy(50);
+	assert.equal(attempts, 1);
+	assert.equal(environment.onlineListeners.size, 0);
+	assert.equal(environment.sockets.length, 2);
+});
+
+test('repeated policy denials retain capped backoff across TCP opens until the protocol confirms its baseline', async () => {
+	let attempts = 0;
+	const { environment, runtime } = createHarness(undefined, async () => {
+		attempts++;
+		return 'reconnect';
+	});
+	runtime.connect(termA);
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	runtime.confirmStateSync();
+	environment.sockets[0].closeFromServer(1008);
+	await flushRecovery();
+	environment.advanceBy(50);
+	assert.equal(attempts, 1);
+	for (const [index, delay] of [1000, 2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+		const socket = environment.sockets[index + 1];
+		socket.open();
+		socket.message('unvalidated traffic');
+		socket.closeFromServer(1008);
+		assert.equal(environment.nextDelay(), delay);
+		environment.advanceBy(delay);
+		await flushRecovery();
+		environment.advanceBy(50);
+	}
+	const accepted = environment.sockets.at(-1);
+	accepted.open();
+	runtime.confirmStateSync();
+	accepted.closeFromServer(1008);
+	await flushRecovery();
+	assert.equal(environment.nextDelay(), 50, 'a validated baseline starts a new recovery episode');
 });

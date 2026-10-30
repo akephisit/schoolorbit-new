@@ -12,7 +12,8 @@ test('timetable idle catches up after subscription even when restarted sequence 
 		'#lib/academic/timetable/collaboration-session.js': { createDraftCollaborationSession },
 		'#lib/academic/timetable/collaboration-decoder.js': { decodeDraftEvent },
 		'#lib/realtime/visibility-idle.js': { browserVisibilityDependencies: () => ({}) },
-		'svelte/store': { writable },
+		'svelte/store': { writable, get },
+		'#lib/stores/auth.js': { authStore: { subscribe: writable({}).subscribe, sessionEpoch: 0 } },
 		'#lib/api/client.js': {
 			BACKEND_WS_URL: 'wss://school.example',
 			getSchoolSubdomainHint: () => null
@@ -21,7 +22,7 @@ test('timetable idle catches up after subscription even when restarted sequence 
 		'#lib/utils/timetable-socket-runtime.js': {
 			createTimetableSocketRuntime: (config) => {
 				runtime = config;
-				return { connect() {}, disconnect() {} };
+				return { connect() {}, disconnect() {}, confirmStateSync() {} };
 			}
 		},
 		'#lib/api/auth.js': { authAPI: { refreshCurrentUser: async () => 'authenticated' } }

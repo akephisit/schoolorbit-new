@@ -930,6 +930,9 @@ fn require_candidate_access(
         TimetableBlockPlacementSource::SynchronizedOffering {
             learning_offering_id,
         } => {
+            // CREATE authorizes the offering and intended homerooms, while all selected
+            // teachers still participate in the reservation footprint and DB constraints.
+            resources.teacher_ids.clear();
             resources.learning_offering_ids.push(*learning_offering_id);
             resources.homeroom_ids.extend(&candidate.homeroom_ids);
         }

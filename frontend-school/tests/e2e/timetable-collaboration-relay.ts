@@ -374,6 +374,7 @@ export async function startNativeDraftRelay(
 	workspace: () => TimetableBlockWorkspace
 ) {
 	const sockets = new Set<Duplex>();
+	const policyClosers = new Map<string, () => void>();
 	const server = createServer();
 	server.on('upgrade', (request, socket, head) => {
 		const key = request.headers['sec-websocket-key'];
@@ -414,6 +415,12 @@ export async function startNativeDraftRelay(
 		const peer = relay.join(workspace(), (event) => frame(1, Buffer.from(JSON.stringify(event))), {
 			userId: url.searchParams.get('fixtureUser') ?? '51000000-0000-4000-8000-000000000211',
 			name: url.searchParams.get('fixtureName') ?? 'ผู้ร่วมจัดตาราง'
+		});
+		policyClosers.set(peer.id, () => {
+			const payload = Buffer.alloc(2);
+			payload.writeUInt16BE(1008);
+			frame(8, payload);
+			socket.end();
 		});
 		let buffered = head;
 		function read(data: Buffer) {
@@ -463,6 +470,7 @@ export async function startNativeDraftRelay(
 		socket.on('data', read);
 		socket.on('close', () => {
 			sockets.delete(socket);
+			policyClosers.delete(peer.id);
 			peer.close();
 		});
 		if (head.length) read(Buffer.alloc(0));
@@ -472,6 +480,11 @@ export async function startNativeDraftRelay(
 	if (!address || typeof address === 'string') throw new Error('Missing relay address');
 	return {
 		url: `ws://127.0.0.1:${address.port}`,
+		policyClose(connectionId: string) {
+			const close = policyClosers.get(connectionId);
+			if (!close) throw new Error('Missing controlled policy connection');
+			close();
+		},
 		async close() {
 			for (const socket of sockets) socket.destroy();
 			await new Promise<void>((resolve, reject) =>

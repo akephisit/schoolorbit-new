@@ -1,6 +1,7 @@
 import { browserVisibilityDependencies } from '#lib/realtime/visibility-idle.js';
-import { writable, type Writable } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import { BACKEND_WS_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
+import { authStore } from '#lib/stores/auth.js';
 import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
 import {
 	createDraftCollaborationSession,
@@ -21,14 +22,14 @@ import {
 
 export interface UserContext {
 	view_mode: string;
-	view_id?: string;
+	view_id?: string | null;
 }
 
 export interface UserPresence {
 	user_id: string;
 	name: string;
 	color: string;
-	context?: UserContext;
+	context?: UserContext | null;
 }
 
 type StateSyncEvent = {
@@ -40,7 +41,7 @@ type UserJoinedEvent = { type: 'UserJoined'; payload: UserPresence };
 type UserLeftEvent = { type: 'UserLeft'; payload: { user_id: string } };
 type CursorMoveEvent = {
 	type: 'CursorMove';
-	payload: { user_id: string; x: number; y: number; context?: UserContext };
+	payload: { user_id: string; x: number; y: number; context?: UserContext | null };
 };
 type AcademicCoreChangedEvent = {
 	type: 'AcademicCoreChanged';
@@ -88,7 +89,7 @@ type MutationEvent =
 
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<
-	Record<string, { x: number; y: number; context?: UserContext }>
+	Record<string, { x: number; y: number; context?: UserContext | null }>
 > = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
@@ -120,7 +121,10 @@ const draftSession = createDraftCollaborationSession({
 	clearTimer: (timer) => clearTimeout(timer),
 	onState: (state) => draftSessionState.set(state),
 	onEvent: (event) => {
-		if (event.type === 'DraftStateSync') needsResumeReconcile = false;
+		if (event.type === 'DraftStateSync') {
+			needsResumeReconcile = false;
+			timetableSocketRuntime.confirmStateSync();
+		}
 		for (const listener of draftEventListeners) listener(event);
 	},
 	onReconcile: (reason) => {
@@ -266,7 +270,53 @@ function handleMutation(event: MutationEvent & { seq?: number }) {
 	triggerReconcile();
 }
 
+function validLegacyStateSync(value: unknown): value is StateSyncEvent {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		!('type' in value) ||
+		value.type !== 'StateSync' ||
+		!('payload' in value) ||
+		!value.payload ||
+		typeof value.payload !== 'object'
+	)
+		return false;
+	const payload = value.payload;
+	if (
+		!('current_seq' in payload) ||
+		!Number.isSafeInteger(payload.current_seq) ||
+		Number(payload.current_seq) < 0 ||
+		!('users' in payload) ||
+		!Array.isArray(payload.users)
+	)
+		return false;
+	return payload.users.every(
+		(user: unknown) =>
+			user !== null &&
+			typeof user === 'object' &&
+			'user_id' in user &&
+			typeof user.user_id === 'string' &&
+			'name' in user &&
+			typeof user.name === 'string' &&
+			'color' in user &&
+			typeof user.color === 'string' &&
+			(!('context' in user) ||
+				user.context === undefined ||
+				user.context === null ||
+				(user.context !== null &&
+					typeof user.context === 'object' &&
+					'view_mode' in user.context &&
+					typeof user.context.view_mode === 'string' &&
+					(!('view_id' in user.context) ||
+						user.context.view_id === undefined ||
+						user.context.view_id === null ||
+						typeof user.context.view_id === 'string')))
+	);
+}
+
 function handleStateSync(event: StateSyncEvent) {
+	if (!validLegacyStateSync(event)) return;
+	timetableSocketRuntime.confirmStateSync();
 	activeUsers.set(event.payload.users.filter((user) => user.user_id !== currentUserId));
 	const currentSeq = event.payload.current_seq;
 	if (needsResumeReconcile || currentSeq !== lastSeq) triggerReconcile(currentSeq);
@@ -324,12 +374,41 @@ function handleMessage(event: SequencedTimetableEvent | DraftEventEnvelope) {
 	}
 }
 
-async function recoverTimetableAuth() {
+async function recoverTimetableAuth(
+	isCurrent: () => boolean
+): ReturnType<typeof realtimeAuthRecovery> {
+	const params = currentSocketParams;
+	const identity = get(authStore);
+	const epoch = authStore.sessionEpoch;
+	const sessionId = identity.session?.sessionId;
+	const ownsRecovery = () => {
+		const current = get(authStore);
+		return (
+			isCurrent() &&
+			params === currentSocketParams &&
+			epoch === authStore.sessionEpoch &&
+			current.isAuthenticated &&
+			current.user?.id === params?.currentUserId &&
+			current.session?.sessionId === sessionId
+		);
+	};
+	if (
+		!params ||
+		!identity.isAuthenticated ||
+		!sessionId ||
+		identity.user?.id !== params.currentUserId ||
+		!ownsRecovery()
+	)
+		return 'stop';
 	try {
 		const { authAPI } = await import('#lib/api/auth.js');
-		await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
-	} catch (error) {
-		console.error('Failed to refresh auth after timetable policy close', error);
+		if (!ownsRecovery()) return 'stop';
+		const result = await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
+		return ownsRecovery() ? result : 'stop';
+	} catch {
+		if (!ownsRecovery()) return 'stop';
+		console.error('Failed to refresh auth after timetable policy close');
+		return 'retry';
 	}
 }
 
@@ -386,11 +465,10 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 			console.error('Failed to parse timetable realtime event');
 		}
 	},
-	onClose: (event) => {
+	onClose: () => {
 		clearRealtimeState();
-		if (event.code !== 1008) return;
-		void recoverTimetableAuth();
 	},
+	onPolicyClose: recoverTimetableAuth,
 	onError: (error) => console.error('Timetable realtime connection failed', error)
 });
 

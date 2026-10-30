@@ -1,4 +1,5 @@
 import { createVisibilityIdle } from '../realtime/visibility-idle.ts';
+import type { realtimeAuthRecovery } from '../realtime/auth-recovery.ts';
 import { reconnectDelayMs } from './timetable-reconnect.ts';
 
 const CONNECTION_DEBOUNCE_MS = 50;
@@ -36,6 +37,7 @@ type TimetableSocketRuntimeDependencies<Timer> = {
 	};
 	onPause?(): void;
 	onResume?(isCurrent: () => boolean): Promise<boolean>;
+	onPolicyClose?(isCurrent: () => boolean): ReturnType<typeof realtimeAuthRecovery>;
 	random?: () => number;
 	onOpen(): void;
 	onMessage(data: unknown): void;
@@ -46,6 +48,8 @@ type TimetableSocketRuntimeDependencies<Timer> = {
 export type TimetableSocketRuntime = {
 	connect(params: TimetableSocketParams): void;
 	disconnect(): void;
+	/** Called by the protocol owner only after an accepted authoritative baseline. */
+	confirmStateSync(): void;
 	send(data: string): boolean;
 };
 
@@ -74,6 +78,8 @@ export function createTimetableSocketRuntime<Timer>(
 	let desiredIntentGeneration = 0;
 	let resumeGeneration = 0;
 	let resuming = false;
+	let policyRecoveryRequired = false;
+	let awaitingPolicyBaseline = false;
 	const idle = createVisibilityIdle({
 		isHidden: () => dependencies.visibility?.isHidden() ?? false,
 		addListener: (listener) => dependencies.visibility?.addListener(listener),
@@ -125,6 +131,41 @@ export function createTimetableSocketRuntime<Timer>(
 		}
 	}
 
+	async function recoverPolicy() {
+		if (!shouldReconnect || idle.paused || resuming || !desiredParams || !policyRecoveryRequired)
+			return;
+		if (!dependencies.isOnline()) {
+			scheduleReconnect();
+			return;
+		}
+		const params = desiredParams;
+		const intent = desiredIntentGeneration;
+		const generation = ++resumeGeneration;
+		resuming = true;
+		const isCurrent = () =>
+			shouldReconnect &&
+			!idle.paused &&
+			generation === resumeGeneration &&
+			intent === desiredIntentGeneration &&
+			sameParams(desiredParams, params);
+		let result: Awaited<ReturnType<typeof realtimeAuthRecovery>> = 'retry';
+		try {
+			result = await dependencies.onPolicyClose!(isCurrent);
+		} catch (error) {
+			if (isCurrent()) dependencies.onError(error);
+		}
+		if (!isCurrent()) return;
+		resuming = false;
+		if (result === 'stop') {
+			disconnect();
+			return;
+		}
+		if (result === 'reconnect') {
+			policyRecoveryRequired = false;
+			scheduleConnection(params, intent);
+		} else scheduleReconnect();
+	}
+
 	function clearReconnectTimer() {
 		if (reconnectTimer === null) return;
 		dependencies.clearTimer(reconnectTimer);
@@ -168,7 +209,10 @@ export function createTimetableSocketRuntime<Timer>(
 	function handleOnline() {
 		if (!waitingForOnline) return;
 		clearOnlineListener();
-		if (shouldReconnect && desiredParams) connect(desiredParams);
+		if (shouldReconnect && desiredParams) {
+			if (policyRecoveryRequired) void recoverPolicy();
+			else connect(desiredParams);
+		}
 	}
 
 	function scheduleReconnect() {
@@ -193,7 +237,10 @@ export function createTimetableSocketRuntime<Timer>(
 		reconnectAttempt += 1;
 		reconnectTimer = dependencies.setTimer(() => {
 			reconnectTimer = null;
-			if (shouldReconnect && desiredParams) connect(desiredParams);
+			if (shouldReconnect && desiredParams) {
+				if (policyRecoveryRequired) void recoverPolicy();
+				else connect(desiredParams);
+			}
 		}, delay);
 	}
 
@@ -233,7 +280,7 @@ export function createTimetableSocketRuntime<Timer>(
 
 		nextSocket.onopen = () => {
 			if (!ownsSocket(nextSocket, generation)) return;
-			reconnectAttempt = 0;
+			if (!awaitingPolicyBaseline) reconnectAttempt = 0;
 			clearReconnectTimer();
 			clearOnlineListener();
 			dependencies.onOpen();
@@ -255,6 +302,17 @@ export function createTimetableSocketRuntime<Timer>(
 					scheduleConnection(desiredParams, desiredIntentGeneration);
 					return;
 				}
+				if (dependencies.onPolicyClose) {
+					clearReconnectTimer();
+					clearConnectionDebounceTimer();
+					clearOnlineListener();
+					const repeatedPolicyClose = awaitingPolicyBaseline;
+					awaitingPolicyBaseline = true;
+					policyRecoveryRequired = true;
+					if (repeatedPolicyClose) scheduleReconnect();
+					else void recoverPolicy();
+					return;
+				}
 				idle.stop();
 				shouldReconnect = false;
 				desiredParams = null;
@@ -274,6 +332,13 @@ export function createTimetableSocketRuntime<Timer>(
 	}
 
 	function connect(params: TimetableSocketParams) {
+		// An explicit owner intent supersedes any async recovery of its old connection.
+		if (resuming) {
+			resumeGeneration++;
+			resuming = false;
+		}
+		policyRecoveryRequired = false;
+		awaitingPolicyBaseline = false;
 		const nextParams = { ...params };
 		connectionIntentGeneration += 1;
 		shouldReconnect = true;
@@ -297,6 +362,8 @@ export function createTimetableSocketRuntime<Timer>(
 	}
 
 	function disconnect() {
+		policyRecoveryRequired = false;
+		awaitingPolicyBaseline = false;
 		idle.stop();
 		resumeGeneration++;
 		resuming = false;
@@ -315,5 +382,10 @@ export function createTimetableSocketRuntime<Timer>(
 		return true;
 	}
 
-	return { connect, disconnect, send };
+	function confirmStateSync() {
+		if (!shouldReconnect || idle.paused || !socket || socket.readyState !== SOCKET_OPEN) return;
+		awaitingPolicyBaseline = false;
+		reconnectAttempt = 0;
+	}
+	return { connect, disconnect, confirmStateSync, send };
 }

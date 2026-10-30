@@ -191,7 +191,6 @@ pub async fn create_synchronized(
             timetable_version_ids: vec![payload.timetable_version_id],
             learning_offering_ids: vec![payload.learning_offering_id],
             homeroom_ids: payload.intended_homeroom_ids.clone(),
-            teacher_ids: payload.teacher_ids.clone(),
             room_ids: payload.room_id.into_iter().collect(),
             ..TimetableResourceSet::default()
         },
