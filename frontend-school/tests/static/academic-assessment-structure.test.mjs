@@ -247,7 +247,10 @@ test('assessment phase controls own plan editing while gradebook controls score 
 	assert.match(page, /phaseControls/);
 	assert.match(page, /togglePhaseControl/);
 	assert.match(page, /planEditingEnabled/);
-	assert.match(page, /แก้โครงสร้างคะแนนรายวิชา/);
+	assert.match(page, /แก้คะแนนเต็ม/);
+	assert.match(page, /แก้การจัดสอบและเวลาสอบ/);
+	assert.match(page, /examArrangementEditingEnabled/);
+	assert.match(page, /canEditExamArrangementPhase/);
 	assert.match(page, /canEditPlanPhase/);
 	assert.match(page, /canManageSchool/);
 	assert.match(page, /ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED/);
