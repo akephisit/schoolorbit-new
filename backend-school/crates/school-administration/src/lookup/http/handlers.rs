@@ -1,8 +1,8 @@
 use axum::{
-    Json,
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use uuid::Uuid;
 
@@ -27,9 +27,9 @@ use crate::lookup::services as lookup_service;
 #[cfg(feature = "api-docs")]
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::CurrentUserTenantContext;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::context::current_user_tenant_context_from_session;
+use school_auth_http::context::CurrentUserTenantContext;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

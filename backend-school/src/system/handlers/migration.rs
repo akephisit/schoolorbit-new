@@ -1,10 +1,10 @@
 use crate::AppState;
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use school_academic_core::reconciliation::{
-    PHASE_B_MIGRATION_VERSION, ReconciliationCheck, read_academic_core_cleanup_audit,
+    read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
 use school_academic_results::services::{
-    GRADEBOOK_RESULTS_MIGRATION_VERSION, read_gradebook_results_cutover_audit,
+    read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
 };
 use school_http::HttpError as AppError;
 use serde::Serialize;
@@ -754,8 +754,8 @@ async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
 mod tests {
     use super::*;
     use crate::integration_tests::academic::cutover_test_support::{
-        CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-        seed_academic_cutover_fixture, seed_release_two_predecessor,
+        apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+        seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
     };
     use school_test_db::create_named_test_pool;
 
@@ -971,13 +971,11 @@ mod tests {
         assert_eq!(value["migrationVersion"], 60);
         assert_eq!(value["passed"], true);
         assert!(value["checks"].as_array().unwrap().len() >= 6);
-        assert!(
-            value["checks"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|check| check["passed"] == true)
-        );
+        assert!(value["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|check| check["passed"] == true));
         for forbidden in [
             "studentId",
             "studentAcademicYearId",
@@ -992,7 +990,12 @@ mod tests {
     #[test]
     fn school_status_serializes_academic_core_cutover_in_camel_case() {
         let value = serde_json::to_value(SchoolMigrationStatus {
-            academic_context_cutover: AcademicContextCutoverStatus { status: "pendingMigration".into(), migration_version: 147, passed: None, checks: vec![] },
+            academic_context_cutover: AcademicContextCutoverStatus {
+                status: "pendingMigration".into(),
+                migration_version: 147,
+                passed: None,
+                checks: vec![],
+            },
             subdomain: "fixture".to_string(),
             migration_version: 45,
             migration_status: "migrated".to_string(),
@@ -1031,10 +1034,7 @@ mod tests {
         let internal_routes = &app_source[app_source.find("fn internal_routes").unwrap()
             ..app_source.find("fn protected_routes").unwrap()];
         assert!(!internal_routes.contains("/internal/academic-core/reconcile-all"));
-        assert!(
-            internal_routes.contains(
-                "route_layer(from_fn(middleware::internal_auth::validate_internal_secret))"
-            )
-        );
+        assert!(internal_routes
+            .contains("route_layer(from_fn(middleware::internal_auth::validate_internal_secret))"));
     }
 }

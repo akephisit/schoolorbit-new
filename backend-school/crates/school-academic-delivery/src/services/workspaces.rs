@@ -1547,7 +1547,7 @@ mod tests {
     use school_academic_core::models::RequirementKind;
     use std::sync::Arc;
     use tokio::sync::Barrier;
-    use tokio::time::{Duration, timeout};
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn central_states_require_an_open_synchronized_activity_without_applicable_groups() {
@@ -1594,11 +1594,11 @@ mod tests {
         let year = Uuid::new_v4();
         let term = Uuid::new_v4();
         let schedule = Uuid::new_v4();
-        sqlx::query("INSERT INTO academic_years (id,year,name,start_date,end_date,status) VALUES ($1,2569,'Synthetic workspace year','2026-05-01','2027-04-30','planning')")
+        sqlx::query("INSERT INTO academic_years (id,year,name,status) VALUES ($1,2569,'Synthetic workspace year','planning')")
             .bind(year).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO bell_schedules (id,academic_year_id,code,name) VALUES ($1,$2,'SYNTHETIC','Synthetic workspace schedule')")
             .bind(schedule).bind(year).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular','2026-05-01','2026-10-01',true,true,$3,'planning')")
+        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular',true,true,$3,'planning')")
             .bind(term).bind(year).bind(schedule).execute(&pool).await.unwrap();
         let filter = AcademicResourceListFilter {
             includes_school_owned: true,

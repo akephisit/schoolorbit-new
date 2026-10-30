@@ -1,4 +1,4 @@
-use school_authorization::{ActorContext, accessible_exact_units_for_permission};
+use school_authorization::{accessible_exact_units_for_permission, ActorContext};
 use school_errors::AppError;
 use school_fonts::models::{
     AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontStyle,
@@ -19,7 +19,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    access_policy::{CertificateAction, require_owner_action},
+    access_policy::{require_owner_action, CertificateAction},
     models::{
         AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CandidateMatchStatus,
         CandidateNameSource, CandidateValidationCode, CandidateValidationStatus,
@@ -975,12 +975,10 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
             .collect::<Vec<_>>(),
         vec![bold, regular]
     );
-    assert!(
-        inspected
-            .files
-            .iter()
-            .all(|file| file.status == SchoolFontUploadStatus::Ready)
-    );
+    assert!(inspected
+        .files
+        .iter()
+        .all(|file| file.status == SchoolFontUploadStatus::Ready));
     assert_eq!(inspected.files[1].font_style, Some(SchoolFontStyle::Normal));
 
     assert!(matches!(
@@ -1083,12 +1081,10 @@ async fn certificate_font_context_uses_shared_library_with_exact_template_author
     assert_eq!(attached.items.len(), 2);
     assert_eq!(attached.items[0].font_weight, 700);
     assert_eq!(attached.items[1].font_weight, 400);
-    assert!(
-        attached
-            .items
-            .iter()
-            .all(|font| font.font_style == SchoolFontStyle::Normal)
-    );
+    assert!(attached
+        .items
+        .iter()
+        .all(|font| font.font_style == SchoolFontStyle::Normal));
 
     let asset_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM certificate_template_assets WHERE template_id = $1",
@@ -1261,33 +1257,27 @@ async fn preview_manifest_preserves_exact_shared_font_style_and_omits_unused_fon
         assert_eq!(manifest.certificate_number, "ตัวอย่าง");
         assert!(manifest.qr_payload.contains("ตัวอย่าง"));
         assert_eq!(manifest.recipient_values["ชื่อโรงเรียนผู้ออก"], "โรงเรียนตัวอย่าง");
-        assert!(
-            manifest
-                .background_grant
-                .url
-                .starts_with("https://private.example.test/")
-        );
+        assert!(manifest
+            .background_grant
+            .url
+            .starts_with("https://private.example.test/"));
         assert!(manifest.background_grant.expires_at > requested_at);
         assert!(
             manifest.background_grant.expires_at <= requested_at + chrono::Duration::minutes(5)
         );
         assert_eq!(manifest.built_in_fonts.len(), 2);
-        assert!(
-            manifest
-                .built_in_fonts
-                .iter()
-                .all(|font| font.style == SchoolFontStyle::Normal)
-        );
+        assert!(manifest
+            .built_in_fonts
+            .iter()
+            .all(|font| font.style == SchoolFontStyle::Normal));
         assert_eq!(manifest.layout, local_layout);
         assert_eq!(manifest.font_grants.len(), 1);
         assert_eq!(manifest.font_grants[0].school_font_id, font.id);
         assert_eq!(manifest.font_grants[0].style, SchoolFontStyle::Italic);
-        assert!(
-            manifest
-                .font_grants
-                .iter()
-                .all(|grant| grant.school_font_id != unused_font.id)
-        );
+        assert!(manifest
+            .font_grants
+            .iter()
+            .all(|grant| grant.school_font_id != unused_font.id));
         assert_eq!(manifest.recipient_values["ชื่อ"], first_name);
         assert_eq!(manifest.recipient_values["นามสกุล"], last_name);
     }
@@ -2457,26 +2447,22 @@ async fn grant_in_unit_a_does_not_authorize_campaign_in_unit_b() {
     let fixture =
         CertificatePolicyFixture::with_position_grant("certificate_exact_unit", "head").await;
 
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_b),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_b),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -2757,16 +2743,14 @@ async fn exact_unit_grants_require_matching_position_active_membership_and_activ
     let fixture =
         CertificatePolicyFixture::with_position_grant("certificate_grant_bounds", "coordinator")
             .await;
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query(
         "UPDATE organization_members
@@ -2778,16 +2762,14 @@ async fn exact_unit_grants_require_matching_position_active_membership_and_activ
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
 
     sqlx::query(
         "UPDATE organization_members SET ended_at = CURRENT_DATE
@@ -2798,16 +2780,14 @@ async fn exact_unit_grants_require_matching_position_active_membership_and_activ
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query(
         "UPDATE organization_members
@@ -2819,58 +2799,50 @@ async fn exact_unit_grants_require_matching_position_active_membership_and_activ
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query("UPDATE organization_units SET is_active = false WHERE id = $1")
         .bind(fixture.unit_a)
         .execute(&fixture.pool)
         .await
         .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
 async fn scoped_roles_and_parent_membership_do_not_leak_to_other_or_child_units() {
     let fixture = CertificatePolicyFixture::new("certificate_role_scope").await;
     fixture.add_scoped_role(Some(fixture.unit_a), 0, None).await;
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_b),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_b),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     let child = insert_unit(
         &fixture.pool,
@@ -2878,16 +2850,14 @@ async fn scoped_roles_and_parent_membership_do_not_leak_to_other_or_child_units(
         Some(fixture.unit_a),
     )
     .await;
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(child),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(child),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query(
         "UPDATE user_roles
@@ -2899,43 +2869,37 @@ async fn scoped_roles_and_parent_membership_do_not_leak_to_other_or_child_units(
     .await
     .unwrap();
     for member_unit in [fixture.unit_a, fixture.unit_b] {
-        assert!(
-            require_owner_action(
-                &fixture.pool,
-                &fixture.actor,
-                Some(member_unit),
-                CertificateAction::Update,
-            )
-            .await
-            .is_ok()
-        );
-    }
-    assert!(
-        require_owner_action(
+        assert!(require_owner_action(
             &fixture.pool,
             &fixture.actor,
-            Some(child),
+            Some(member_unit),
             CertificateAction::Update,
         )
         .await
-        .is_err()
-    );
+        .is_ok());
+    }
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(child),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query("UPDATE user_roles SET started_at = CURRENT_DATE + 1 WHERE user_id = $1")
         .bind(fixture.actor.user_id)
         .execute(&fixture.pool)
         .await
         .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query(
         "UPDATE user_roles SET started_at = CURRENT_DATE - 2, ended_at = CURRENT_DATE
@@ -2945,16 +2909,14 @@ async fn scoped_roles_and_parent_membership_do_not_leak_to_other_or_child_units(
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(fixture.unit_a),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(fixture.unit_a),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -2982,16 +2944,14 @@ async fn exact_delegation_authorizes_non_member_only_during_its_active_window() 
     .await
     .unwrap();
 
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(delegated_unit),
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(delegated_unit),
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
     sqlx::query(
         "UPDATE organization_permission_delegations
          SET started_at = NOW() + INTERVAL '1 day', expires_at = NOW() + INTERVAL '2 days'
@@ -3001,16 +2961,14 @@ async fn exact_delegation_authorizes_non_member_only_during_its_active_window() 
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(delegated_unit),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(delegated_unit),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
     sqlx::query(
         "UPDATE organization_permission_delegations
          SET started_at = NOW() - INTERVAL '2 days', expires_at = NOW() - INTERVAL '1 day'
@@ -3020,16 +2978,14 @@ async fn exact_delegation_authorizes_non_member_only_during_its_active_window() 
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(delegated_unit),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(delegated_unit),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     sqlx::query(
         "UPDATE organization_permission_delegations
@@ -3040,16 +2996,14 @@ async fn exact_delegation_authorizes_non_member_only_during_its_active_window() 
     .execute(&fixture.pool)
     .await
     .unwrap();
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            Some(delegated_unit),
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        Some(delegated_unit),
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -3068,41 +3022,35 @@ async fn school_override_null_owner_and_list_scope_union_are_explicit() {
         units.into_iter().collect::<BTreeSet<_>>(),
         BTreeSet::from([fixture.unit_a, fixture.unit_b])
     );
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &fixture.actor,
-            None,
-            CertificateAction::Update,
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &fixture.actor,
+        None,
+        CertificateAction::Update,
+    )
+    .await
+    .is_err());
 
     let school_actor = ActorContext {
         user_id: fixture.actor.user_id,
         permissions: vec![codes::CERTIFICATE_UPDATE_SCHOOL.to_string()],
     };
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &school_actor,
-            None,
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
-    assert!(
-        require_owner_action(
-            &fixture.pool,
-            &school_actor,
-            Some(fixture.unit_b),
-            CertificateAction::Update,
-        )
-        .await
-        .is_ok()
-    );
+    assert!(require_owner_action(
+        &fixture.pool,
+        &school_actor,
+        None,
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
+    assert!(require_owner_action(
+        &fixture.pool,
+        &school_actor,
+        Some(fixture.unit_b),
+        CertificateAction::Update,
+    )
+    .await
+    .is_ok());
 }
 
 async fn insert_academic_year(pool: &PgPool, year: i32) -> Uuid {
@@ -3758,11 +3706,9 @@ async fn purge_permission_is_school_or_exact_owner_unit_only() {
     .await
     .unwrap();
 
-    assert!(
-        purge_service::impact(&fixture.pool, &actor, campaign_a_id)
-            .await
-            .is_ok()
-    );
+    assert!(purge_service::impact(&fixture.pool, &actor, campaign_a_id)
+        .await
+        .is_ok());
     let school_actor = ActorContext {
         user_id: actor.user_id,
         permissions: vec![codes::CERTIFICATE_DELETE_SCHOOL.to_string()],
@@ -4362,8 +4308,8 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
 #[tokio::test]
 async fn purge_finalize_checkout_timeout_is_durable_and_retryable() {
     use std::sync::{
-        Mutex,
         atomic::{AtomicUsize, Ordering},
+        Mutex,
     };
 
     let (pool, actor, academic_year_id) =
@@ -4888,16 +4834,14 @@ async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_re
         request_service::get_issue_request(&pool, &actor, request_id).await,
         Err(AppError::NotFound(_))
     ));
-    assert!(
-        crate::access_policy::require_template_action(
-            &pool,
-            &actor,
-            template.id,
-            CertificateAction::Read,
-        )
-        .await
-        .is_err()
-    );
+    assert!(crate::access_policy::require_template_action(
+        &pool,
+        &actor,
+        template.id,
+        CertificateAction::Read,
+    )
+    .await
+    .is_err());
     let late_file_id: Uuid = sqlx::query_scalar(
         "INSERT INTO files (
             owner_user_id, display_filename, created_by, purpose_code,
@@ -4913,17 +4857,15 @@ async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_re
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(
-        crate::file_relationships::record_template_upload(
-            &pool,
-            late_file_id,
-            template.id,
-            FilePurpose::CertificateTemplateImage,
-            actor.user_id,
-        )
-        .await
-        .is_err()
-    );
+    assert!(crate::file_relationships::record_template_upload(
+        &pool,
+        late_file_id,
+        template.id,
+        FilePurpose::CertificateTemplateImage,
+        actor.user_id,
+    )
+    .await
+    .is_err());
     let late_relation_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM certificate_template_file_uploads WHERE file_id = $1",
     )
@@ -5085,32 +5027,28 @@ async fn purging_campaign_hides_issued_surfaces_and_blocks_issue_and_revoke() {
     .unwrap_err();
     assert_eq!(public_render_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
 
-    assert!(
-        issuance_service::issue_request(
-            &pool,
-            &actor,
-            "โรงเรียนตัวอย่าง".to_string(),
-            pending_request.id,
-            IssueCertificateRequest {
-                idempotency_key: Uuid::new_v4(),
-            },
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        issuance_service::revoke_certificate(
-            &pool,
-            &actor,
-            issued.id,
-            RevokeCertificateRequest {
-                reason: "ห้ามเพิกถอนระหว่างลบ".to_string(),
-                create_replacement_candidate: true,
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(issuance_service::issue_request(
+        &pool,
+        &actor,
+        "โรงเรียนตัวอย่าง".to_string(),
+        pending_request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .is_err());
+    assert!(issuance_service::revoke_certificate(
+        &pool,
+        &actor,
+        issued.id,
+        RevokeCertificateRequest {
+            reason: "ห้ามเพิกถอนระหว่างลบ".to_string(),
+            create_replacement_candidate: true,
+        },
+    )
+    .await
+    .is_err());
     let unchanged: (i64, i64, String) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(*) FROM certificate_issue_runs WHERE request_id = $1),
@@ -5222,11 +5160,9 @@ async fn unused_template_with_draft_candidates_returns_lifecycle_conflict() {
         template_service::delete_template(&pool, &actor, template.id).await,
         Err(CertificateServiceError::Application(AppError::Conflict(_)))
     ));
-    assert!(
-        template_service::get_template(&pool, &actor, template.id)
-            .await
-            .is_ok()
-    );
+    assert!(template_service::get_template(&pool, &actor, template.id)
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
@@ -5306,17 +5242,15 @@ async fn matched_accounts_cannot_become_external_in_single_or_bulk_flows() {
     let candidate = &imported.candidates[0];
     assert_eq!(candidate.matched_user_id, Some(student_user_id));
 
-    assert!(
-        candidate_service::bulk_update(
-            &pool,
-            &actor,
-            CertificateCandidateBulkRequest::ConfirmExternal {
-                candidate_ids: vec![candidate.id],
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![candidate.id],
+        },
+    )
+    .await
+    .is_err());
 }
 
 async fn create_ready_candidate_template(
@@ -5582,11 +5516,9 @@ async fn candidate_matching_decision_table_recomputes_names_accounts_and_statuse
     let mismatch = &imported.candidates[1];
     assert_eq!(mismatch.matched_user_id, Some(staff_id));
     assert_eq!(mismatch.match_status, CandidateMatchStatus::NameMismatch);
-    assert!(
-        mismatch
-            .validation_codes
-            .contains(&CandidateValidationCode::NameSourceRequired)
-    );
+    assert!(mismatch
+        .validation_codes
+        .contains(&CandidateValidationCode::NameSourceRequired));
     let resolved = candidate_service::bulk_update(
         &pool,
         &actor,
@@ -5609,17 +5541,15 @@ async fn candidate_matching_decision_table_recomputes_names_accounts_and_statuse
     let inactive = &imported.candidates[2];
     assert_eq!(inactive.matched_user_id, Some(inactive_id));
     assert_eq!(inactive.match_status, CandidateMatchStatus::Inactive);
-    assert!(
-        candidate_service::bulk_update(
-            &pool,
-            &actor,
-            CertificateCandidateBulkRequest::ConfirmExternal {
-                candidate_ids: vec![inactive.id],
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![inactive.id],
+        },
+    )
+    .await
+    .is_err());
 
     let unmatched = &imported.candidates[3];
     let converted = candidate_service::bulk_update(
@@ -5733,21 +5663,15 @@ async fn candidate_import_keeps_row_errors_atomic_headers_duplicates_and_safe_au
     assert_eq!(imported.batch.ready_count, 0);
     assert_eq!(imported.batch.review_count, 3);
     assert_eq!(imported.batch.invalid_count, 1);
-    assert!(
-        imported.candidates[0]
-            .validation_codes
-            .contains(&CandidateValidationCode::DuplicateCandidate)
-    );
-    assert!(
-        imported.candidates[1]
-            .validation_codes
-            .contains(&CandidateValidationCode::DuplicateCandidate)
-    );
-    assert!(
-        imported.candidates[2]
-            .validation_codes
-            .contains(&CandidateValidationCode::TemplateIncompatible)
-    );
+    assert!(imported.candidates[0]
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+    assert!(imported.candidates[1]
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+    assert!(imported.candidates[2]
+        .validation_codes
+        .contains(&CandidateValidationCode::TemplateIncompatible));
     assert_eq!(
         imported.candidates[3].validation_status,
         CandidateValidationStatus::Invalid
@@ -5762,12 +5686,10 @@ async fn candidate_import_keeps_row_errors_atomic_headers_duplicates_and_safe_au
     )
     .await
     .unwrap();
-    assert!(
-        confirmed
-            .candidates
-            .iter()
-            .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready)
-    );
+    assert!(confirmed
+        .candidates
+        .iter()
+        .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready));
 
     let batch_count_before: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM certificate_import_batches WHERE campaign_id = $1",
@@ -5807,16 +5729,14 @@ async fn candidate_import_keeps_row_errors_atomic_headers_duplicates_and_safe_au
         "แบบการแข่งขันภายนอก",
     );
     forbidden_cell.award_or_role = Some("ข้อมูล 0-0000-00000-00-0".to_string());
-    assert!(
-        candidate_service::import_candidates(
-            &pool,
-            &actor,
-            campaign.id,
-            candidate_import_request(vec![forbidden_cell]),
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![forbidden_cell]),
+    )
+    .await
+    .is_err());
     let batch_count_after: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM certificate_import_batches WHERE campaign_id = $1",
     )
@@ -5882,12 +5802,10 @@ async fn soft_delete_recomputes_duplicate_status_for_remaining_candidates() {
     )
     .await
     .unwrap();
-    assert!(
-        imported
-            .candidates
-            .iter()
-            .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready)
-    );
+    assert!(imported
+        .candidates
+        .iter()
+        .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready));
 
     let changed = candidate_service::update_candidate(
         &pool,
@@ -5914,10 +5832,9 @@ async fn soft_delete_recomputes_duplicate_status_for_remaining_candidates() {
     let peer = candidate_service::get_candidate(&pool, &actor, imported.candidates[0].id)
         .await
         .unwrap();
-    assert!(
-        peer.validation_codes
-            .contains(&CandidateValidationCode::DuplicateCandidate)
-    );
+    assert!(peer
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
 
     candidate_service::delete_candidate(&pool, &actor, changed.id)
         .await
@@ -5926,11 +5843,9 @@ async fn soft_delete_recomputes_duplicate_status_for_remaining_candidates() {
     let survivor = candidate_service::get_candidate(&pool, &actor, imported.candidates[0].id)
         .await
         .unwrap();
-    assert!(
-        !survivor
-            .validation_codes
-            .contains(&CandidateValidationCode::DuplicateCandidate)
-    );
+    assert!(!survivor
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
     assert_eq!(survivor.validation_status, CandidateValidationStatus::Ready);
 }
 
@@ -5988,21 +5903,19 @@ async fn external_confirmation_rechecks_new_accounts_and_bulk_is_all_or_nothing(
     )
     .await;
 
-    assert!(
-        candidate_service::bulk_update(
-            &pool,
-            &actor,
-            CertificateCandidateBulkRequest::ConfirmExternal {
-                candidate_ids: imported
-                    .candidates
-                    .iter()
-                    .map(|candidate| candidate.id)
-                    .collect(),
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: imported
+                .candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect(),
+        },
+    )
+    .await
+    .is_err());
     let listed = candidate_service::list_candidates(
         &pool,
         &actor,
@@ -6011,18 +5924,14 @@ async fn external_confirmation_rechecks_new_accounts_and_bulk_is_all_or_nothing(
     )
     .await
     .unwrap();
-    assert!(
-        listed
-            .items
-            .iter()
-            .all(|candidate| candidate.recipient_type == RecipientType::Student)
-    );
-    assert!(
-        listed
-            .items
-            .iter()
-            .all(|candidate| candidate.match_status == CandidateMatchStatus::NotFound)
-    );
+    assert!(listed
+        .items
+        .iter()
+        .all(|candidate| candidate.recipient_type == RecipientType::Student));
+    assert!(listed
+        .items
+        .iter()
+        .all(|candidate| candidate.match_status == CandidateMatchStatus::NotFound));
 }
 
 #[tokio::test]
@@ -6375,32 +6284,27 @@ async fn candidate_edit_rechecks_authoritative_account_and_search_returns_minima
     .unwrap();
     assert_eq!(updated.match_status, CandidateMatchStatus::Matched);
     assert_eq!(updated.validation_status, CandidateValidationStatus::Ready);
-    assert!(
-        candidate_service::update_candidate(
-            &pool,
-            &actor,
-            updated.id,
-            UpdateCertificateCandidateRequest {
-                expected_updated_at: updated.updated_at,
-                template_id: Some(template.id),
-                recipient_type: RecipientType::Student,
-                student_id: Some("S-RECHECK-1".to_string()),
-                staff_username: None,
-                imported_title: None,
-                imported_first_name: "กมลชนก".to_string(),
-                imported_last_name: "สุขสวัสดิ์".to_string(),
-                selected_name_source: Some(CandidateNameSource::Account),
-                activity_item: updated.activity_item.clone(),
-                award_or_role: updated.award_or_role.clone(),
-                custom_values: BTreeMap::from([(
-                    "ตัวแปรที่ไม่เคยประกาศ".to_string(),
-                    "ค่า".to_string(),
-                )]),
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::update_candidate(
+        &pool,
+        &actor,
+        updated.id,
+        UpdateCertificateCandidateRequest {
+            expected_updated_at: updated.updated_at,
+            template_id: Some(template.id),
+            recipient_type: RecipientType::Student,
+            student_id: Some("S-RECHECK-1".to_string()),
+            staff_username: None,
+            imported_title: None,
+            imported_first_name: "กมลชนก".to_string(),
+            imported_last_name: "สุขสวัสดิ์".to_string(),
+            selected_name_source: Some(CandidateNameSource::Account),
+            activity_item: updated.activity_item.clone(),
+            award_or_role: updated.award_or_role.clone(),
+            custom_values: BTreeMap::from([("ตัวแปรที่ไม่เคยประกาศ".to_string(), "ค่า".to_string(),)]),
+        },
+    )
+    .await
+    .is_err());
 
     let accounts = candidate_service::search_accounts(
         &pool,
@@ -6435,19 +6339,17 @@ async fn candidate_edit_rechecks_authoritative_account_and_search_returns_minima
     );
     assert!(!serialized.to_string().contains("private-account"));
     assert!(!serialized.to_string().contains("0800000000"));
-    assert!(
-        candidate_service::search_accounts(
-            &pool,
-            &actor,
-            campaign.id,
-            CertificateAccountSearchQuery {
-                recipient_type: RecipientType::Student,
-                search: "0-0000-00000-00-0".to_string(),
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(candidate_service::search_accounts(
+        &pool,
+        &actor,
+        campaign.id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "0-0000-00000-00-0".to_string(),
+        },
+    )
+    .await
+    .is_err());
 
     let from_account = candidate_service::create_account_candidate(
         &pool,
@@ -7447,11 +7349,9 @@ async fn issue_request_transitions_release_locks_and_require_a_new_request_after
         .unwrap();
     assert_eq!(reviewing.status, CertificateIssueRequestStatus::Reviewing);
     assert_eq!(reviewing.reviewed_by, Some(reviewer.user_id));
-    assert!(
-        request_service::withdraw(&pool, &actor, request.id)
-            .await
-            .is_err()
-    );
+    assert!(request_service::withdraw(&pool, &actor, request.id)
+        .await
+        .is_err());
 
     for unsafe_note in [
         "พบเลขบัตรประชาชนในเอกสาร",
@@ -7505,11 +7405,9 @@ async fn issue_request_transitions_release_locks_and_require_a_new_request_after
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert!(
-        audit_metadata
-            .iter()
-            .all(|metadata| !metadata.to_string().contains("กรุณา ตรวจข้อมูลผู้รับอีกครั้ง"))
-    );
+    assert!(audit_metadata
+        .iter()
+        .all(|metadata| !metadata.to_string().contains("กรุณา ตรวจข้อมูลผู้รับอีกครั้ง")));
 
     let updated = candidate_service::update_candidate(
         &pool,
@@ -7528,11 +7426,9 @@ async fn issue_request_transitions_release_locks_and_require_a_new_request_after
         .await
         .unwrap();
     assert_eq!(withdrawn.status, CertificateIssueRequestStatus::Withdrawn);
-    assert!(
-        request_service::start_review(&pool, &reviewer, request.id)
-            .await
-            .is_err()
-    );
+    assert!(request_service::start_review(&pool, &reviewer, request.id)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -8574,30 +8470,22 @@ async fn issue_revalidation_returns_atomically_when_converted_external_gets_an_a
     let returned_candidate = candidate_service::get_candidate(&pool, &preparer, converted.id)
         .await
         .unwrap();
-    assert!(
-        returned_candidate
-            .validation_codes
-            .contains(&CandidateValidationCode::UnexpectedInternalLookup)
-    );
-    assert!(
-        !returned_candidate
-            .validation_codes
-            .contains(&CandidateValidationCode::AccountInactive)
-    );
+    assert!(returned_candidate
+        .validation_codes
+        .contains(&CandidateValidationCode::UnexpectedInternalLookup));
+    assert!(!returned_candidate
+        .validation_codes
+        .contains(&CandidateValidationCode::AccountInactive));
     let returned_deactivated =
         candidate_service::get_candidate(&pool, &preparer, deactivated_candidate.id)
             .await
             .unwrap();
-    assert!(
-        returned_deactivated
-            .validation_codes
-            .contains(&CandidateValidationCode::AccountInactive)
-    );
-    assert!(
-        !returned_deactivated
-            .validation_codes
-            .contains(&CandidateValidationCode::UnexpectedInternalLookup)
-    );
+    assert!(returned_deactivated
+        .validation_codes
+        .contains(&CandidateValidationCode::AccountInactive));
+    assert!(!returned_deactivated
+        .validation_codes
+        .contains(&CandidateValidationCode::UnexpectedInternalLookup));
     let reconciled = candidate_service::bulk_update_for_campaign(
         &pool,
         &preparer,
@@ -8717,11 +8605,9 @@ async fn issue_revalidation_returns_without_numbers_when_background_is_no_longer
     };
     assert!(issue_codes.contains(&CertificateIssueCode::AssetUnavailable));
     assert_eq!(candidate_problems.len(), 1);
-    assert!(
-        candidate_problems[0]
-            .issue_codes
-            .contains(&CertificateIssueCode::AssetUnavailable)
-    );
+    assert!(candidate_problems[0]
+        .issue_codes
+        .contains(&CertificateIssueCode::AssetUnavailable));
 
     let numbering: (Option<i32>, i32, i64, i64) = sqlx::query_as(
         "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
@@ -8865,11 +8751,9 @@ async fn issue_revalidation_returns_when_referenced_shared_font_metadata_changes
     };
     assert!(issue_codes.contains(&CertificateIssueCode::AssetUnavailable));
     assert_eq!(candidate_problems.len(), 1);
-    assert!(
-        candidate_problems[0]
-            .issue_codes
-            .contains(&CertificateIssueCode::AssetUnavailable)
-    );
+    assert!(candidate_problems[0]
+        .issue_codes
+        .contains(&CertificateIssueCode::AssetUnavailable));
 
     let numbering: (Option<i32>, i32, i64) = sqlx::query_as(
         "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
@@ -8966,13 +8850,11 @@ async fn revoked_numbers_are_never_reused_and_replacement_links_only_after_issua
         revoked.certificate.summary.certificate_number,
         original.certificate_number
     );
-    assert!(
-        revoked
-            .certificate
-            .summary
-            .replaced_by_certificate_id
-            .is_none()
-    );
+    assert!(revoked
+        .certificate
+        .summary
+        .replaced_by_certificate_id
+        .is_none());
     let replacement_candidate = revoked
         .replacement_candidate
         .expect("replacement draft should be created");

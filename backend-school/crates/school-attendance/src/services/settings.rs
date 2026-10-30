@@ -6,7 +6,7 @@ use crate::{
 use chrono::NaiveDate;
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{PgConnection, PgPool, types::Json};
+use sqlx::{types::Json, PgConnection, PgPool};
 use uuid::Uuid;
 pub async fn get(pool: &PgPool, term: Uuid) -> Result<AttendanceSettings, AppError> {
     get_on_connection(

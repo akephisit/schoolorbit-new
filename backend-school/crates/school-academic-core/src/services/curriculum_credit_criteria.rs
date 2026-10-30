@@ -4,7 +4,7 @@ use crate::models::{
 };
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 fn normalize(

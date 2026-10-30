@@ -447,29 +447,26 @@ mod tests {
     #[test]
     fn tracking_is_explicit_and_cannot_rewrite_past_dates() {
         let starts = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
-        let ends = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
+        let ends = Some(NaiveDate::from_ymd_opt(2026, 10, 31).unwrap());
         let today = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
         assert!(validate(RosterTrackingMode::Manual, None, starts, ends, today).is_ok());
-        assert!(
-            validate(
-                RosterTrackingMode::Homeroom,
-                Some(today),
-                starts,
-                ends,
-                today
-            )
-            .is_ok()
-        );
-        assert!(
-            validate(
-                RosterTrackingMode::Homeroom,
-                Some(starts),
-                starts,
-                ends,
-                today
-            )
-            .is_err()
-        );
+        assert!(validate(
+            RosterTrackingMode::Homeroom,
+            Some(today),
+            starts,
+            ends,
+            today
+        )
+        .is_ok());
+        assert!(validate(
+            RosterTrackingMode::Homeroom,
+            Some(starts),
+            starts,
+            ends,
+            today
+        )
+        .is_err());
+        assert!(validate(RosterTrackingMode::Homeroom, Some(today+chrono::Duration::days(400)), starts, None, today).is_ok());
         assert!(validate(RosterTrackingMode::Homeroom, None, starts, ends, today).is_err());
         assert!(validate(RosterTrackingMode::Manual, Some(today), starts, ends, today).is_err());
     }

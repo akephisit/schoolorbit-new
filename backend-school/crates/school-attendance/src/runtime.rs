@@ -22,7 +22,7 @@ use dashmap::DashMap;
 use school_errors::AppError;
 use school_notifications::events::TenantNotificationEvent;
 use school_tenancy::background::TenantJobKind;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use std::{
     collections::{HashMap, HashSet},
     sync::OnceLock,

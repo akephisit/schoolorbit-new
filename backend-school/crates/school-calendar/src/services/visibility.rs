@@ -11,7 +11,7 @@ use crate::models::{
 };
 use school_errors::AppError;
 
-use super::shared::{EVENT_NOT_FOUND_MESSAGE, normalized_event_range, tenant_today};
+use super::shared::{normalized_event_range, tenant_today, EVENT_NOT_FOUND_MESSAGE};
 
 const EVENT_SELECT_WITH_CATEGORY: &str = r#"
 SELECT

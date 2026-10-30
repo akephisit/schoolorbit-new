@@ -854,10 +854,10 @@ fn homeroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Op
 mod tests {
     use super::*;
     use school_test_db::create_named_test_pool;
-    use school_test_db::cutover_test_support::CutoverFixture;
     use school_test_db::cutover_test_support::apply_migrations_through;
     use school_test_db::cutover_test_support::apply_phase_b_runtime_migrations;
     use school_test_db::cutover_test_support::seed_academic_cutover_fixture;
+    use school_test_db::cutover_test_support::CutoverFixture;
 
     fn academic_query(academic_year_id: Uuid) -> AcademicLookupQuery {
         AcademicLookupQuery {

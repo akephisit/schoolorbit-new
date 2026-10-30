@@ -712,11 +712,7 @@ async fn delivery_room_scope_direct_write_serializes_with_publication_and_cancel
 pub(super) async fn seed_retained_grade(pool: &PgPool, c: &RuntimeContext, group: Uuid) {
     let student = Uuid::new_v4();
     let year = Uuid::new_v4();
-    let starts: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(c.term_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let starts:NaiveDate=sqlx::query_scalar("SELECT starts_on FROM learning_offerings WHERE id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)").bind(group).fetch_one(pool).await.unwrap();
     sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'not-a-login','Synthetic','Retained grade','student','active')").bind(student).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'active')").bind(year).bind(student).bind(c.year_id).bind(c.grade_level_id).bind(c.study_program_id).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at,published_at) VALUES($1,$2,$3,$4,$5,$6,'active','manual_add',$7,now())").bind(Uuid::new_v4()).bind(group).bind(c.term_id).bind(c.year_id).bind(year).bind(student).bind(starts).execute(pool).await.unwrap();

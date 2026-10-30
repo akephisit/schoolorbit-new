@@ -88,7 +88,7 @@ async fn year_reopening_reader_detects_successors_even_after_they_close() {
         .await
         .unwrap();
     assert!(original.can_reopen);
-    let target: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-reopen-successor',max(end_date)+1,max(end_date)+366,'MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-reopen-successor','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     assert!(
         super::get_year_reopening_workspace(&pool, &reader, year)
             .await
@@ -131,7 +131,7 @@ async fn year_reopening_command_rechecks_a_successor_started_after_preview() {
     set_closed(&pool, year).await;
     let actor = reopener(reader.user_id);
     let input = reopen_input(&pool, &actor, year).await;
-    sqlx::query("INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-late-successor',max(end_date)+1,max(end_date)+366,'MON','active' FROM academic_years").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-late-successor','MON','active' FROM academic_years").execute(&pool).await.unwrap();
     assert!(matches!(
         core::services::year_reopening::reopen_year(&pool, &actor, year, input).await,
         Err(AppError::Conflict(_))

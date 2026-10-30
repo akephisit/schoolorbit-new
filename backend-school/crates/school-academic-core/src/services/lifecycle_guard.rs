@@ -193,30 +193,24 @@ mod tests {
 
     #[test]
     fn closing_is_writable_but_closed_and_cancelled_are_not() {
-        assert!(
-            AcademicWriteState {
-                year_status: AcademicYearStatus::Closing,
-                term_status: AcademicTermStatus::Closing
-            }
-            .is_writable()
-        );
+        assert!(AcademicWriteState {
+            year_status: AcademicYearStatus::Closing,
+            term_status: AcademicTermStatus::Closing
+        }
+        .is_writable());
         for year_status in [AcademicYearStatus::Closed, AcademicYearStatus::Archived] {
-            assert!(
-                !AcademicWriteState {
-                    year_status,
-                    term_status: AcademicTermStatus::Active
-                }
-                .is_writable()
-            );
+            assert!(!AcademicWriteState {
+                year_status,
+                term_status: AcademicTermStatus::Active
+            }
+            .is_writable());
         }
         for term_status in [AcademicTermStatus::Closed, AcademicTermStatus::Cancelled] {
-            assert!(
-                !AcademicWriteState {
-                    year_status: AcademicYearStatus::Active,
-                    term_status
-                }
-                .is_writable()
-            );
+            assert!(!AcademicWriteState {
+                year_status: AcademicYearStatus::Active,
+                term_status
+            }
+            .is_writable());
         }
     }
 }

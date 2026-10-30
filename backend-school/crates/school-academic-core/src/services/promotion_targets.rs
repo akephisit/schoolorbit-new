@@ -5,7 +5,7 @@ use super::super::models::{
 use super::promotion_students::PromotionStudentContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{Postgres, Transaction, types::Json};
+use sqlx::{types::Json, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 

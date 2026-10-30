@@ -11,10 +11,10 @@ use crate::requests::{
 use crate::target_options::CalendarTargetOptions;
 use crate::target_options::{self, CalendarTargetOptionsQuery};
 use axum::{
-    Json,
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;

@@ -9,7 +9,7 @@ use school_file_platform::{
     repository::PlatformFile,
 };
 use serde::Serialize;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use std::collections::HashSet;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;

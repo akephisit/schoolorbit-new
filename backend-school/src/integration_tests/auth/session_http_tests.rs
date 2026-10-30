@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    Extension, Router,
-    body::{Body, to_bytes},
-    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
+    body::{to_bytes, Body},
+    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
+    Extension, Router,
 };
 use chrono::{Duration, Utc};
 use school_authorization::PermissionCache;
@@ -16,7 +16,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use school_auth_http::origin::{
-    SCHOOL_SUBDOMAIN_HEADER, TenantOriginPolicy, parse_realtime_tenant_hint,
+    parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER,
 };
 use school_test_db::{create_named_test_pool, run_test_migrations};
 
@@ -24,7 +24,7 @@ use school_auth::{
     config::SessionConfig,
     models::{CurrentUserResponse, LoginRequest, SessionState},
     runtime::AuthRuntime,
-    session_crypto::{RawSessionToken, SessionHmacKey, identifier_bucket, session_csrf_token},
+    session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
     session_policy::normalize_login_identifier,
     session_service::AuthenticatedSession,
 };
@@ -335,11 +335,9 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         header::COOKIE,
         HeaderValue::from_static("broken; also-broken=; auth_token=legacy.jwt"),
     )]);
-    assert!(
-        presented_session_token(&malformed)
-            .expect("malformed unrelated pairs must not panic")
-            .is_none()
-    );
+    assert!(presented_session_token(&malformed)
+        .expect("malformed unrelated pairs must not panic")
+        .is_none());
 
     let malformed_identity = HeaderMap::from_iter([(
         header::COOKIE,
@@ -349,11 +347,9 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         ))
         .expect("malformed cookie fixture must be representable"),
     )]);
-    assert!(
-        presented_session_token(&malformed_identity)
-            .expect("one malformed identity cookie must be treated as absent")
-            .is_none()
-    );
+    assert!(presented_session_token(&malformed_identity)
+        .expect("one malformed identity cookie must be treated as absent")
+        .is_none());
 
     let mut mixed = valid.clone();
     mixed.append(
@@ -609,16 +605,14 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
     );
     assert_eq!(success.status(), StatusCode::OK);
     assert_eq!(set_cookie_count(&success), 2);
-    assert!(
-        success
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .all(|value| value
-                .to_str()
-                .expect("expiry must be ASCII")
-                .contains("Max-Age=0"))
-    );
+    assert!(success
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .all(|value| value
+            .to_str()
+            .expect("expiry must be ASCII")
+            .contains("Max-Age=0")));
 
     let unavailable_session_id = Uuid::new_v4();
     let unavailable_token = fixture
@@ -885,19 +879,19 @@ pub(crate) mod protected_router {
     use std::{
         collections::HashMap,
         sync::{
-            Arc,
             atomic::{AtomicUsize, Ordering},
+            Arc,
         },
     };
 
     use axum::{
-        Json, Router,
-        body::{Body, Bytes, to_bytes},
-        extract::{DefaultBodyLimit, Extension, Path, State, rejection::JsonRejection},
-        http::{HeaderValue, Method, Request, StatusCode, header},
+        body::{to_bytes, Body, Bytes},
+        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, Path, State},
+        http::{header, HeaderValue, Method, Request, StatusCode},
         middleware::from_fn_with_state,
         response::{IntoResponse, Response},
         routing::{delete, get, patch, post, put},
+        Json, Router,
     };
     use chrono::{Duration, Utc};
     use school_authorization::PermissionCache;
@@ -912,7 +906,7 @@ pub(crate) mod protected_router {
     use school_auth::{
         config::SessionConfig,
         runtime::AuthRuntime,
-        session_crypto::{RawSessionToken, SessionHmacKey, session_csrf_token},
+        session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
         session_service::AuthenticatedSession,
     };
     use school_auth_http::http::routes::AUTH_JSON_BODY_LIMIT;
@@ -1705,13 +1699,11 @@ pub(crate) mod protected_router {
             versions::get_version(&fixture.tenant_a_pool, opening.target_delivery_version_id)
                 .await
                 .unwrap();
-        assert!(
-            version
-                .snapshot
-                .offerings
-                .iter()
-                .any(|offering| offering.id == offering_id && offering.groups.len() == 3)
-        );
+        assert!(version
+            .snapshot
+            .offerings
+            .iter()
+            .any(|offering| offering.id == offering_id && offering.groups.len() == 3));
         let unselected_before = serde_json::to_value(
             groups::get(&fixture.tenant_a_pool, group_ids[2])
                 .await

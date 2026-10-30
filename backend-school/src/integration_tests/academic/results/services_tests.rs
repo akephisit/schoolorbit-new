@@ -46,7 +46,11 @@ async fn results_lifecycle_guard_keeps_history_and_blocks_ordinary_writes() {
             .await
             .unwrap();
         sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
-            .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+            .bind(ctx.academic_term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let course = get_course_workspace(&pool, &actor, &ctx, course_group)
             .await
             .unwrap();
@@ -307,7 +311,11 @@ async fn fixture_with_obligation_groups(
             // Complete the new historical draft's children first, then validate
             // its publication preconditions. Never insert into a published group.
             let published:Option<Uuid>=sqlx::query_scalar("UPDATE learning_groups g SET status='published' FROM learning_offerings o,academic_terms term WHERE g.id=$1 AND g.status='draft' AND o.id=g.learning_offering_id AND o.status='published' AND term.id=g.academic_term_id AND (SELECT count(*) FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.role='primary' AND teacher.starts_on<=term.start_date AND (teacher.ends_on IS NULL OR teacher.ends_on>=term.start_date))=1 RETURNING g.id").bind(id).fetch_optional(&pool).await.unwrap();
-            assert_eq!(published,Some(id),"historical group publication requires a published parent and complete primary-teacher children");
+            assert_eq!(
+                published,
+                Some(id),
+                "historical group publication requires a published parent and complete primary-teacher children"
+            );
         }
         Some(id)
     } else {
@@ -326,7 +334,9 @@ async fn fixture_with_obligation_groups(
         None
     };
     // This is the live-service fixture; dedicated historical migration fixtures stay at 061.
-    apply_migrations_through(&pool, school_migrations::latest_migration_version()).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![

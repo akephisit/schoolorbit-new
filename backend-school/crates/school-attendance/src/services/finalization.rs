@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{PgConnection, Postgres, Transaction, types::Json};
+use sqlx::{types::Json, PgConnection, Postgres, Transaction};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 

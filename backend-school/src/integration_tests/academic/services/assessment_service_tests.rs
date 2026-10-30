@@ -54,8 +54,12 @@ async fn assessment_lifecycle_guard_blocks_structure_and_window_changes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(term).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(term)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         for admin in [true, false] {
             assert!(matches!(
                 assessment_adapter::save_plan(&pool, offering, actor, admin, save_payload(&before))

@@ -12,7 +12,9 @@ pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, school_migrations::latest_migration_version()).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type) VALUES('E2E-LIFECYCLE-opening','!','ฝ่ายวิชาการ','ทดสอบ','staff') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     (pool, actor)
@@ -121,7 +123,12 @@ async fn activation_context_initial_school_has_no_fabricated_predecessor_and_has
     assert!(before.issues.is_empty(), "{:?}", before.issues);
     assert!(before.students.is_empty());
     assert!(before.placements.is_empty());
-    assert_eq!(before.context.operation_date, chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive());
+    assert_eq!(
+        before.context.operation_date,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive()
+    );
     assert_eq!(
         before.source_checksum,
         inspect(&pool, year.id, term.id).await.source_checksum
@@ -254,7 +261,10 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
         NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
     )
     .await;
-    let operation_date = inspect(&pool, year.id, term.id).await.context.operation_date;
+    let operation_date = inspect(&pool, year.id, term.id)
+        .await
+        .context
+        .operation_date;
     let grade: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=1")
             .fetch_one(&pool)

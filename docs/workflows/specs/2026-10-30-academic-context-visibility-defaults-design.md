@@ -24,6 +24,8 @@ Academic identities do not define civil intervals. Existing event dates, publica
 - Lifecycle ordering uses academic year numbers and term sequences. Activation/closure retain receipts and actual operation timestamps; no closure boundary date is accepted. Dated readiness evaluates actual published facts and operation dates. Operational write guards remain enforced independently of visibility/defaults.
 - Assessment and Results use actual requested operation/as-of dates and frozen official snapshot facts, without clamping to year or term dates.
 
+Accepted lifecycle audits/readiness/checksums remain immutable; only active replay projections become date-free. Promotion preserves per-item execution dates and nullable no-placement decisions, with a run default for new/pending work. Curriculum/preparation bind the explicit offering date only to proven newly created offerings. Preparation's separately created Delivery reference dates remain independent actual facts; no new offering does not imply a no-op run. Verify original normalized preparation identities, output IDs/counts, exact creation transactions and version/audit links before cleanup.
+
 ## Migration and recovery
 
 Add forward migrations after 145; never alter applied migrations. Inspect the complete 001–145 timeline and current dependent functions/views before DDL. Retain existing context foreign keys and composite context constraints. Map a missing scoped relationship only when its original semantic date identifies exactly one existing year/term; refuse zero or multiple matches atomically. Calendar's deliberately global targets are not missing relationships.

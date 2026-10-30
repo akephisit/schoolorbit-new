@@ -270,7 +270,9 @@ pub struct AcademicTermOption {
 pub struct AcademicContextOptions {
     pub years: Vec<AcademicYearOption>,
     pub terms: Vec<AcademicTermOption>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub default_academic_year_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub default_academic_term_id: Option<Uuid>,
 }
 

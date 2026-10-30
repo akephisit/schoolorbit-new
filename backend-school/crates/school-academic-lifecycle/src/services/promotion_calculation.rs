@@ -6,8 +6,8 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::PgPool;
 use sqlx::types::Json;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[doc(hidden)]

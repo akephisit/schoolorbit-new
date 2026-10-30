@@ -1,6 +1,6 @@
 use super::super::models::*;
 use super::{
-    promotion_calculation::{ITEM_COLUMNS, evidence_checksum},
+    promotion_calculation::{evidence_checksum, ITEM_COLUMNS},
     promotion_runs::RUN_COLUMNS,
 };
 use school_academic_core::services::{
@@ -11,7 +11,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{PgPool, Postgres, Transaction, types::Json};
+use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[doc(hidden)]

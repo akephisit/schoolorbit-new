@@ -683,8 +683,18 @@ async fn promotion_execution_requires_approval_and_exact_permission_then_replays
     .await
     .unwrap();
     assert_eq!(count, 1);
-    for sql in ["UPDATE academic_promotion_execution_receipts SET source_row_version=source_row_version+1 WHERE run_id=$1","DELETE FROM academic_promotion_execution_receipts WHERE run_id=$1","DELETE FROM academic_promotion_execution_batches WHERE run_id=$1"] {
-        assert!(sqlx::query(sql).bind(calc.run.id).execute(&pool).await.is_err());
+    for sql in [
+        "UPDATE academic_promotion_execution_receipts SET source_row_version=source_row_version+1 WHERE run_id=$1",
+        "DELETE FROM academic_promotion_execution_receipts WHERE run_id=$1",
+        "DELETE FROM academic_promotion_execution_batches WHERE run_id=$1",
+    ] {
+        assert!(
+            sqlx::query(sql)
+                .bind(calc.run.id)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
     }
     input.limit = 99;
     assert!(matches!(

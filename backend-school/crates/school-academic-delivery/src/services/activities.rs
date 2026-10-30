@@ -12,8 +12,7 @@ use super::super::models::{
     StudentActivityRegistrationResult,
 };
 use super::{
-    TermContext, append_audit, invalidate_group_academic_confirmations,
-    require_writable_term,
+    append_audit, invalidate_group_academic_confirmations, require_writable_term, TermContext,
 };
 
 pub async fn list_registration_options(
@@ -662,14 +661,15 @@ async fn increment_group_revision(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::{NaiveDate, TimeZone, Utc};
 
     #[test]
     fn registration_uses_actual_bangkok_operation_day() {
-        let before=super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026,7,1,16,59,59).unwrap());
-        let after=super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026,7,1,17,0,0).unwrap());
-        assert_eq!(before,NaiveDate::from_ymd_opt(2026,7,1).unwrap());
-        assert_eq!(after,NaiveDate::from_ymd_opt(2026,7,2).unwrap());
+        let before =
+            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 16, 59, 59).unwrap());
+        let after =
+            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 17, 0, 0).unwrap());
+        assert_eq!(before, NaiveDate::from_ymd_opt(2026, 7, 1).unwrap());
+        assert_eq!(after, NaiveDate::from_ymd_opt(2026, 7, 2).unwrap());
     }
 }

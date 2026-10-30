@@ -21,12 +21,7 @@ async fn fixture(name: &str) -> Fixture {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let start: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(context.term_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let day = today.max(start);
+    let day = today;
     sqlx::query(
         "UPDATE academic_years SET status='closed' WHERE id<>$1 AND status IN ('active','closing')",
     )
@@ -34,15 +29,8 @@ async fn fixture(name: &str) -> Fixture {
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_years SET status='active',end_date=$2 WHERE id=$1")
+    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
         .bind(context.year_id)
-        .bind(day + Duration::days(180))
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET planned_end_date=$2 WHERE id=$1")
-        .bind(context.term_id)
-        .bind(day + Duration::days(60))
         .execute(&pool)
         .await
         .unwrap();
@@ -434,7 +422,7 @@ async fn room_tracking_is_opt_in_revisioned_and_switching_manual_keeps_members()
     .unwrap();
     assert_eq!(serde_json::to_value(members(&f, id).await).unwrap(), before);
     let config = roster_tracking::get(&f.pool, id).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=(SELECT academic_term_id FROM learning_groups WHERE id=$1)").bind(id).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=(SELECT academic_term_id FROM learning_groups WHERE id=$1)").bind(id).execute(&f.pool).await.unwrap();
     assert!(matches!(
         roster_tracking::update(
             &f.pool,

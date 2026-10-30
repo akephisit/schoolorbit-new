@@ -63,13 +63,25 @@ mod tests {
     }
 
     async fn enrollment_fixture(name: &str, connections: u32) -> EnrollmentFixture {
+        enrollment_fixture_through(
+            name,
+            connections,
+            school_migrations::latest_migration_version(),
+        )
+        .await
+    }
+    async fn enrollment_fixture_through(
+        name: &str,
+        connections: u32,
+        version: i64,
+    ) -> EnrollmentFixture {
         let pool = create_named_test_pool_with_max_connections(name, connections).await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
             .await
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
-        apply_migrations_through(&pool, 100).await.unwrap();
+        apply_migrations_through(&pool, version).await.unwrap();
 
         let enroller_id = create_test_user(
             &pool,
@@ -94,17 +106,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        let academic_year_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_years (
-                 year, name, start_date, end_date, school_days, status
-             ) VALUES (
-                 2570, 'ปีการศึกษาอนาคต', '2027-05-01', '2028-03-31',
-                 'MON,TUE,WED,THU,FRI', 'planning'
-             ) RETURNING id",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let year_sql = if version < 147 {
+            "INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','2027-05-01','2028-03-31','MON,TUE,WED,THU,FRI','planning') RETURNING id"
+        } else {
+            "INSERT INTO academic_years(year,name,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"
+        };
+        let academic_year_id: Uuid = sqlx::query_scalar(sqlx::AssertSqlSafe(year_sql))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         sqlx::query(
             "INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id)
              VALUES ($1, $2)",
@@ -185,7 +195,7 @@ mod tests {
 
     fn enrollment_payload() -> CompleteEnrollmentRequest {
         CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
             student_code: Some("970001".to_string()),
             form_data: None,
         }
@@ -580,9 +590,8 @@ mod tests {
     }
 
     fn guardian_enrollment_payload() -> CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
         CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
             student_code: Some("970001".into()),
             form_data: Some(serde_json::json!({
                 "father": { "phone": "0800000001", "firstName": "Guardian", "lastName": "Fixture" }
@@ -676,25 +685,58 @@ mod tests {
     #[tokio::test]
     async fn enrollment_guardian_form_and_role_database_failures_preserve_the_original_error() {
         for (stage, setup, expected_code) in [
-            ("form_write", "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected form' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON admission_enrollment_forms FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();", "23514"),
-            ("role_read", "ALTER TABLE roles RENAME COLUMN code TO unavailable_code", "42703"),
-            ("role_write", "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected role' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON user_roles FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();", "23514"),
+            (
+                "form_write",
+                "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected form' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON admission_enrollment_forms FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();",
+                "23514",
+            ),
+            (
+                "role_read",
+                "ALTER TABLE roles RENAME COLUMN code TO unavailable_code",
+                "42703",
+            ),
+            (
+                "role_write",
+                "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected role' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON user_roles FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();",
+                "23514",
+            ),
         ] {
             let fixture = enrollment_fixture(&format!("enrollment_guardian_{stage}"), 1).await;
             let users_before: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
-                .fetch_one(&fixture.pool).await.unwrap();
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
             if stage == "role_write" {
                 // The cutover fixture intentionally has no default parent role. Seed one so
                 // this fault reaches the real role INSERT rather than the optional-None branch.
                 sqlx::query("INSERT INTO roles(code,name,user_type,is_active) VALUES('PARENT','Guardian fixture','parent',true)")
                     .execute(&fixture.pool).await.unwrap();
             }
-            sqlx::raw_sql(sqlx::AssertSqlSafe(setup)).execute(&fixture.pool).await.unwrap();
-            let rosters = EnrollmentRosters { actor: fixture.enroller_id, fail: false, calls: AtomicUsize::new(0) };
-            let result = complete_enrollment(&fixture.pool, fixture.application_id,
-                guardian_enrollment_payload(), fixture.enroller_id, &rosters).await;
-            let error = result.err().unwrap_or_else(|| panic!("{stage}: critical guardian database error must propagate"));
-            assert_eq!(error.database_code().as_deref(), Some(expected_code), "{stage}: {error:?}");
+            sqlx::raw_sql(sqlx::AssertSqlSafe(setup))
+                .execute(&fixture.pool)
+                .await
+                .unwrap();
+            let rosters = EnrollmentRosters {
+                actor: fixture.enroller_id,
+                fail: false,
+                calls: AtomicUsize::new(0),
+            };
+            let result = complete_enrollment(
+                &fixture.pool,
+                fixture.application_id,
+                guardian_enrollment_payload(),
+                fixture.enroller_id,
+                &rosters,
+            )
+            .await;
+            let error = result.err().unwrap_or_else(|| {
+                panic!("{stage}: critical guardian database error must propagate")
+            });
+            assert_eq!(
+                error.database_code().as_deref(),
+                Some(expected_code),
+                "{stage}: {error:?}"
+            );
             assert_eq!(rosters.calls.load(Ordering::SeqCst), 0, "{stage}");
             assert_guardian_failure_rolled_back(&fixture, users_before).await;
         }
@@ -893,8 +935,8 @@ mod tests {
         .await
         .unwrap();
         let term: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,start_date,planned_end_date,status,included_in_year_result,blocks_year_closure,bell_schedule_id)
-             VALUES($1,'Future term',1,'1','regular','2027-05-01','2027-10-31','planning',true,true,$2) RETURNING id",
+            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,status,included_in_year_result,blocks_year_closure,bell_schedule_id)
+             VALUES($1,'Future term',1,'1','regular','planning',true,true,$2) RETURNING id",
         ).bind(fixture.academic_year_id).bind(schedule.id).fetch_one(&fixture.pool).await.unwrap();
         let rosters = std::sync::Arc::new(PausingEnrollmentRosters::default());
         let first_rosters = rosters.clone();
@@ -932,7 +974,7 @@ mod tests {
                 &fixture.pool,
                 sibling,
                 CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+                    placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
                     student_code: Some("970002".into()),
                     form_data: None,
                 },
@@ -980,7 +1022,7 @@ mod tests {
                 &pool,
                 id,
                 CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+                    placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
                     student_code: Some("ignored-replay".into()),
                     form_data: None,
                 },
@@ -1037,7 +1079,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         let payload = || CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
             student_code: None,
             form_data: None,
         };
@@ -1094,7 +1136,7 @@ mod tests {
                 .await
                 .unwrap();
         let payload = |code: &str| CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
             student_code: Some(code.into()),
             form_data: Some(serde_json::json!({
                 "father": { "phone": "0800000001", "firstName": "New", "lastName": "Parent" },
@@ -1184,7 +1226,7 @@ mod tests {
     async fn admission_number_counter_backfills_and_rolls_back_failed_or_duplicate_submissions() {
         use chrono::Datelike;
         use school_admission::applications::submit_application;
-        let fixture = enrollment_fixture("admission_number_counter_backfill", 3).await;
+        let fixture = enrollment_fixture_through("admission_number_counter_backfill", 3, 117).await;
         let (round, track) = open_submission(&fixture).await;
         let today =
             chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
@@ -1217,6 +1259,9 @@ mod tests {
             before, after,
             "counter backfill must preserve the entire application row"
         );
+        apply_migrations_through(&fixture.pool, school_migrations::latest_migration_version())
+            .await
+            .unwrap();
         let (number, application) = submit_application(
             &fixture.pool,
             round,
@@ -1409,7 +1454,7 @@ mod tests {
                 &pool,
                 id,
                 CompleteEnrollmentRequest {
-            placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027,5,1).unwrap(),
+                    placement_starts_on: chrono::NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
                     student_code: None,
                     form_data: None,
                 },

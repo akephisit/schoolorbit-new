@@ -10,7 +10,7 @@ use chrono::NaiveDate;
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgConnection, types::Json};
+use sqlx::{types::Json, FromRow, PgConnection};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 

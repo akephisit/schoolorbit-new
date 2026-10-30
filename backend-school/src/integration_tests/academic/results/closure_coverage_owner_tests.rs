@@ -34,8 +34,8 @@ async fn closure_coverage_summer_does_not_require_results_for_nonparticipants() 
         .await
         .unwrap();
     let term:Uuid=sqlx::query_scalar(
-            "INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure)
-             SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'summer-test','ภาคฤดูร้อนทดสอบ','summer',start_date,NULL,bell_schedule_id,'planning',true,true
+            "INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)
+             SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'summer-test','ภาคฤดูร้อนทดสอบ','summer',bell_schedule_id,'planning',true,true
              FROM academic_terms WHERE id=$2 RETURNING id",
         ).bind(context.academic_year_id).bind(context.academic_term_id).fetch_one(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();

@@ -1,5 +1,5 @@
 use super::{
-    cleanup_watch::{CleanupObservation, perform_cleanup_watch},
+    cleanup_watch::{perform_cleanup_watch, CleanupObservation},
     malware_scanner::{MalwareScanner, ScanOutcome},
     namespace_binding::{self, BindingError, ConfiguredNamespaces},
     platform_service::{FilePlatform, UploadCommand},
@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{mpsc, Notify};
 use url::Url;
 use uuid::Uuid;
 
@@ -455,13 +455,11 @@ async fn stale_expiry_candidate_promoted_under_file_lock_is_not_revoked() {
     .await
     .unwrap();
     promotion.commit().await.unwrap();
-    assert!(
-        !tokio::time::timeout(Duration::from_secs(3), worker)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-    );
+    assert!(!tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap());
     let state:(String,String,bool,i64)=sqlx::query_as("SELECT f.lifecycle_status,f.retention_class,w.revoked_at IS NULL,(SELECT count(*) FROM file_operations WHERE file_id=f.id AND operation_type='delete_object') FROM files f JOIN file_storage_cleanup_watches w ON w.file_id=f.id WHERE f.id=$1")
         .bind(file).fetch_one(&pool).await.unwrap();
     assert_eq!(state, ("processing".into(), "standard".into(), true, 0));
@@ -582,21 +580,17 @@ async fn claimed_watch_advances_due_order_even_when_worker_never_finishes() {
         .bind(first).execute(&pool).await.unwrap();
     let allowed = vec![provider.namespace(StorageClass::Private).unwrap()];
     let repository = SqlFileRepository::new(pool.clone());
-    assert!(
-        !repository
-            .cleanup_starting_preference(&allowed)
-            .await
-            .unwrap()
-    );
+    assert!(!repository
+        .cleanup_starting_preference(&allowed)
+        .await
+        .unwrap());
     // Discard all local sweep state: the next reconstructed sweep starts with watches.
     drop(repository);
     let repository = SqlFileRepository::new(pool.clone());
-    assert!(
-        repository
-            .cleanup_starting_preference(&allowed)
-            .await
-            .unwrap()
-    );
+    assert!(repository
+        .cleanup_starting_preference(&allowed)
+        .await
+        .unwrap());
     let claim = repository
         .claim_cleanup_watch("lost-finish", Duration::from_secs(60), &allowed)
         .await

@@ -332,12 +332,13 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
         .execute(&pool)
         .await
         .unwrap();
-    // Activation ordering follows year identity. Close intervening predecessors
-    // without changing either their identity or any dated placement fact.
-    sqlx::query("UPDATE academic_terms SET status='closed' WHERE academic_year_id IN(SELECT id FROM academic_years WHERE year<(SELECT year FROM academic_years WHERE id=$1)) AND status<>'cancelled'")
-        .bind(calculation.run.target_year_id).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE academic_years SET status='closed' WHERE year<(SELECT year FROM academic_years WHERE id=$1)")
-        .bind(calculation.run.target_year_id).execute(&pool).await.unwrap();
+    // Place unrelated synthetic planning years after the requested successor;
+    // ordering follows numeric identity without retiming placement facts.
+    let target_number:i32=sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1").bind(calculation.run.target_year_id).fetch_one(&pool).await.unwrap();
+    let intervening:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM academic_years WHERE year>(SELECT year FROM academic_years WHERE id=$1) AND year<$2 ORDER BY year,id").bind(calculation.run.source_year_id).bind(target_number).fetch_all(&pool).await.unwrap();
+    for (index,year) in intervening.into_iter().enumerate() {
+        sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(year).bind(target_number+1+index as i32).execute(&pool).await.unwrap();
+    }
     let target_start = calculation.run.target_placement_starts_on;
     let term = ready_term_for_existing_year(
         &pool,
@@ -601,7 +602,10 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
         &pool,
         actor_id,
         year.id,
-        chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive() + Duration::days(120),
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive()
+            + Duration::days(120),
     )
     .await;
     let first_workspace = get_activation_workspace(&pool, &actor, year.id, first.id)
@@ -621,13 +625,11 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
     term_transitions::transition_term(&pool, &actor, first.id, first_request.clone())
         .await
         .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1",
-    )
-    .bind(first.id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1")
+        .bind(first.id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let later_workspace = get_activation_workspace(&pool, &actor, year.id, later.id)
         .await
         .unwrap();
@@ -658,4 +660,53 @@ async fn activation_supports_a_new_school_then_a_later_term_without_reopening_en
     .await
     .unwrap();
     assert_eq!(receipts, (1, 0, 1));
+}
+
+#[tokio::test]
+async fn historical_term_transition_replays_canonical_request_without_rewriting_evidence() {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct OldRequest<'a> {
+        academic_year_id: Uuid,
+        request_id: Uuid,
+        action: TermTransitionAction,
+        expected_year_version: i64,
+        expected_term_version: i64,
+        readiness_checksum: &'a str,
+        acknowledged_warning_codes: Vec<String>,
+        closed_on: Option<chrono::NaiveDate>,
+        reason: Option<String>,
+    }
+    for action in [TermTransitionAction::Reopen,TermTransitionAction::Activate] {
+        let pool=core::services_tests::prepare_core_fixture_through(&format!("lifecycle_historical_replay_{action:?}"),145).await;
+        let (year,term,bell):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT academic_year_id,id,bell_schedule_id FROM academic_terms WHERE status='active'").fetch_one(&pool).await.unwrap();
+        let actor=ActorContext{user_id:sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap(),permissions:vec![codes::WILDCARD.into()]};
+        let request=TermTransitionRequest{academic_year_id:year,request_id:Uuid::new_v4(),action,expected_year_version:2,expected_term_version:3,readiness_checksum:"a".repeat(64),acknowledged_warning_codes:vec![],reason:if action==TermTransitionAction::Reopen{Some("แก้ไข  ผล\nวันที่จริง \"quoted\"".into())}else{None}};
+        let original=OldRequest{academic_year_id:year,request_id:request.request_id,action,expected_year_version:2,expected_term_version:3,readiness_checksum:&request.readiness_checksum,acknowledged_warning_codes:vec![],closed_on:None,reason:request.reason.clone()};
+        let checksum=school_academic_lifecycle::services::checksum(&(actor.user_id,term,&original)).unwrap();
+        let original=serde_json::to_value(original).unwrap();
+        let action_name=if action==TermTransitionAction::Activate{"activate"}else{"reopen"};
+        let outcome=serde_json::json!({"requestId":request.request_id,"action":action,"completedAt":"2025-05-01T17:30:00Z","context":{"academicYearId":year,"academicTermId":term,"yearName":"Historical year","termName":"Historical term","yearStatus":"active","termStatus":if action==TermTransitionAction::Activate{"active"}else{"closing"},"yearRowVersion":3,"termRowVersion":4,"yearStartDate":"2025-05-01","yearEndDate":"2026-04-30","termStartDate":"2025-05-01","plannedEndDate":"2025-10-31","closedOn":null,"sequence":1,"bellScheduleId":bell,"includedInYearResult":true,"blocksYearClosure":true}});
+        let accepted=serde_json::json!({"context":outcome["context"]});
+        sqlx::query("INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'2025-05-01T17:30:00Z')")
+            .bind(request.request_id).bind(year).bind(term).bind(actor.user_id).bind(action_name).bind(&checksum).bind(sqlx::types::Json(&accepted)).bind(sqlx::types::Json(&outcome)).execute(&pool).await.unwrap();
+        let audit=if action==TermTransitionAction::Activate{serde_json::json!({"request":original,"outcome":outcome,"openedYear":true,"activatedStudents":0,"activatedPlacements":0})}else{serde_json::json!([original,outcome])};
+        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES($1,'academic_term',$2,$3,$2,$4,$5)").bind(format!("academic.term.{action_name}")).bind(term).bind(year).bind(actor.user_id).bind(sqlx::types::Json(&audit)).execute(&pool).await.unwrap();
+        if action==TermTransitionAction::Activate {
+            sqlx::query("INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,created_at) VALUES($1,$2,$3,'activate',$4,$5,$6,'2025-05-01T17:30:00Z')")
+                .bind(request.request_id).bind(year).bind(actor.user_id).bind(&checksum).bind(sqlx::types::Json(&accepted)).bind(sqlx::types::Json(&outcome)).execute(&pool).await.unwrap();
+        }
+        apply_migrations_through(&pool,school_migrations::latest_migration_version()).await.unwrap();
+        let replay=term_transitions::transition_term(&pool,&actor,term,request.clone()).await.unwrap();
+        assert_eq!(replay.context.operation_date,chrono::NaiveDate::from_ymd_opt(2025,5,2).unwrap());
+        assert_eq!(replay.completed_at.to_rfc3339(),"2025-05-01T17:30:00+00:00");
+        assert_eq!(replay.request_id,request.request_id);
+        assert!(matches!(term_transitions::transition_term(&pool,&actor,Uuid::new_v4(),request.clone()).await,Err(school_errors::AppError::Conflict(_))));
+        let mut wrong_year=request.clone();wrong_year.academic_year_id=Uuid::new_v4();
+        assert!(matches!(term_transitions::transition_term(&pool,&actor,term,wrong_year).await,Err(school_errors::AppError::Conflict(_))));
+        let foreign=ActorContext{user_id:Uuid::new_v4(),permissions:actor.permissions.clone()};
+        assert!(matches!(term_transitions::transition_term(&pool,&foreign,term,request.clone()).await,Err(school_errors::AppError::Conflict(_))));
+        let saved:(String,serde_json::Value)=sqlx::query_as("SELECT request_checksum,accepted_readiness FROM academic_term_transition_receipts WHERE request_id=$1").bind(request.request_id).fetch_one(&pool).await.unwrap();assert_eq!(saved,(checksum,accepted));
+        let saved_audit:serde_json::Value=sqlx::query_scalar("SELECT payload FROM academic_audit_events WHERE event_code=$1 AND entity_id=$2").bind(format!("academic.term.{action_name}")).bind(term).fetch_one(&pool).await.unwrap();assert_eq!(saved_audit,audit);
+    }
 }

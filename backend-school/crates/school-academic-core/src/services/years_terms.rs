@@ -905,8 +905,8 @@ fn map_term_write_error(error: sqlx::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        AcademicYearStatus, ensure_term_planning_year, validate_annual_inclusion,
-        validate_term_fields,
+        ensure_term_planning_year, validate_annual_inclusion, validate_term_fields,
+        AcademicYearStatus,
     };
 
     #[test]

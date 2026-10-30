@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use sqlx::types::Json;
+use sqlx::FromRow;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;

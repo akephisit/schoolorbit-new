@@ -269,7 +269,7 @@ async fn annual_revision_preserves_zero_replays_and_invalidates_after_source_cor
     coverage_tx.rollback().await.unwrap();
     // The public Core command must enforce the owner guard too, not only
     // its direct helper. Other terms are still unstarted in this fixture.
-    sqlx::query("UPDATE academic_terms SET status=CASE WHEN id=$2 THEN 'closed' ELSE 'cancelled' END,closed_on=CASE WHEN id=$2 THEN start_date ELSE NULL END WHERE academic_year_id=$1")
+    sqlx::query("UPDATE academic_terms SET status=CASE WHEN id=$2 THEN 'closed' ELSE 'cancelled' END WHERE academic_year_id=$1")
             .bind(context.academic_year_id).bind(context.academic_term_id).execute(&pool).await.unwrap();
     let mut lifecycle_actor = actor.clone();
     lifecycle_actor.permissions.extend([
@@ -392,7 +392,7 @@ async fn annual_preview_ignores_nonparticipant_summer_but_requires_participant_r
         ],
     };
     sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),term_type='summer' WHERE academic_year_id=$1").bind(context.academic_year_id).bind(context.academic_term_id).execute(&pool).await.unwrap();
-    let empty:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'empty-summer','Empty summer','summer',start_date,bell_schedule_id,'planning',true,true FROM academic_terms WHERE id=$2 RETURNING id").bind(context.academic_year_id).bind(context.academic_term_id).fetch_one(&pool).await.unwrap();
+    let empty:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'empty-summer','Empty summer','summer',bell_schedule_id,'planning',true,true FROM academic_terms WHERE id=$2 RETURNING id").bind(context.academic_year_id).bind(context.academic_term_id).fetch_one(&pool).await.unwrap();
     let preview = preview_annual(&pool, &office, context.academic_year_id, student)
         .await
         .unwrap();

@@ -705,7 +705,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -836,14 +836,8 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)").bind(TERM).bind(date+chrono::Duration::days(2)).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     let configuration = AttendanceConfiguration {
         late_after: NaiveTime::from_hms_opt(23, 59, 59).unwrap(),
         ..Default::default()
@@ -1146,9 +1140,8 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         .unwrap();
     }
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
-        .bind(date)
         .execute(&f.pool)
         .await
         .unwrap();
@@ -1357,11 +1350,10 @@ async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope
         open(&f.pool, &actor, malformed).await,
         Err(AppError::NotFound(_))
     ));
-    let (other_term,other_date):(Uuid,NaiveDate)=sqlx::query_as("SELECT id,start_date FROM academic_terms WHERE academic_year_id<>(SELECT academic_year_id FROM academic_terms WHERE id=$1) ORDER BY start_date,id LIMIT 1")
+    let other_term:Uuid=sqlx::query_scalar("SELECT term.id FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.academic_year_id<>(SELECT academic_year_id FROM academic_terms WHERE id=$1) ORDER BY year.year,term.sequence_no,term.id LIMIT 1")
         .bind(TERM).fetch_one(&f.pool).await.unwrap();
     let mut cross_year = context.clone();
     cross_year.academic_term_id = other_term;
-    cross_year.date = other_date;
     assert!(matches!(
         open(&f.pool, &actor, cross_year).await,
         Err(AppError::NotFound(_))
@@ -2193,7 +2185,7 @@ async fn attendance_retention_drains_more_than_one_batch_after_term_closes() {
         evidence_file(&f.pool, STUDENT).await;
     }
     sqlx::query("UPDATE files SET expires_at=now()-interval '1 minute' WHERE purpose_code='attendance_evidence'").execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -2960,18 +2952,8 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
-        .bind(date + chrono::Duration::days(2))
-        .execute(&f.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     let descriptor = FaceDescriptor {
         values: vec![0.01; 128],
     };
@@ -3340,7 +3322,7 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -3454,7 +3436,7 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&pool)
         .await
@@ -3948,18 +3930,8 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
-        .bind(date + chrono::Duration::days(2))
-        .execute(&f.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("UPDATE behavior_settings SET enabled=true")
         .execute(&f.pool)
         .await
@@ -4358,7 +4330,7 @@ async fn attendance_wait_for_blocker(pool: &PgPool, blocker: i32) {
 #[tokio::test]
 async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_release() {
     let f = fixture("attendance_report_destructive_guards").await;
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -4475,7 +4447,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
 #[tokio::test]
 async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_state() {
     let f = fixture("attendance_report_queued_reset").await;
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -5005,7 +4977,7 @@ async fn attendance_notification_purge_uses_atomic_inbox_acceptance_and_keeps_pe
     )
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -5318,15 +5290,8 @@ async fn attendance_options_assigned_enrollment_and_kiosk_finish_with_one_connec
     let today = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
-        .bind(TERM).bind(today + chrono::Duration::days(2)).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(today - chrono::Duration::days(1))
-        .bind(today + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(today).execute(&f.pool).await.unwrap();
     sqlx::query("UPDATE homeroom_placements SET end_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
         .bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) SELECT homeroom_id,$2,'primary' FROM homeroom_placements WHERE student_academic_year_id=$1 AND status='current' ON CONFLICT(homeroom_id,user_id) DO NOTHING")

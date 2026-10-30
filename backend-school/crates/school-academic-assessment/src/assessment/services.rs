@@ -1393,10 +1393,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             AssessmentPhaseCode::ALL
         );
-        assert!(
-            phases
-                .iter()
-                .all(|phase| phase.id.is_none() && phase.max_score == "0.00")
-        );
+        assert!(phases
+            .iter()
+            .all(|phase| phase.id.is_none() && phase.max_score == "0.00"));
     }
 }

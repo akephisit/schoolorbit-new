@@ -557,20 +557,18 @@ mod tests {
             row_version: None,
         };
         assert!(normalize(vec![pass.clone(), pass]).is_ok());
-        assert!(
-            normalize(vec![
-                ActivityCellInput {
-                    student_academic_year_id: student,
-                    outcome: Some(ActivityOutcome::Pass),
-                    row_version: None,
-                },
-                ActivityCellInput {
-                    student_academic_year_id: student,
-                    outcome: Some(ActivityOutcome::Fail),
-                    row_version: None,
-                },
-            ])
-            .is_err()
-        );
+        assert!(normalize(vec![
+            ActivityCellInput {
+                student_academic_year_id: student,
+                outcome: Some(ActivityOutcome::Pass),
+                row_version: None,
+            },
+            ActivityCellInput {
+                student_academic_year_id: student,
+                outcome: Some(ActivityOutcome::Fail),
+                row_version: None,
+            },
+        ])
+        .is_err());
     }
 }

@@ -150,15 +150,43 @@ mod tests {
     async fn operation_date_retains_captured_day_and_requires_exact_context() {
         let pool = school_test_db::create_named_test_pool("results_operation_date_context").await;
         let mut connection = pool.acquire().await.unwrap();
-        sqlx::raw_sql("CREATE TEMP TABLE academic_terms(id uuid PRIMARY KEY,academic_year_id uuid NOT NULL)")
-            .execute(&mut *connection).await.unwrap();
-        let mut context = ResultContext { academic_year_id: Uuid::new_v4(), academic_term_id: Uuid::new_v4() };
-        sqlx::query("INSERT INTO academic_terms VALUES($1,$2)").bind(context.academic_term_id).bind(context.academic_year_id).execute(&mut *connection).await.unwrap();
-        for captured in [NaiveDate::from_ymd_opt(2025,1,1).unwrap(),NaiveDate::from_ymd_opt(2030,1,1).unwrap()] {
-            assert_eq!(operation_date(&mut connection,&context,captured).await.unwrap(),captured);
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE academic_terms(id uuid PRIMARY KEY,academic_year_id uuid NOT NULL)",
+        )
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+        let mut context = ResultContext {
+            academic_year_id: Uuid::new_v4(),
+            academic_term_id: Uuid::new_v4(),
+        };
+        sqlx::query("INSERT INTO academic_terms VALUES($1,$2)")
+            .bind(context.academic_term_id)
+            .bind(context.academic_year_id)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+        for captured in [
+            NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2030, 1, 1).unwrap(),
+        ] {
+            assert_eq!(
+                operation_date(&mut connection, &context, captured)
+                    .await
+                    .unwrap(),
+                captured
+            );
         }
-        context.academic_year_id=Uuid::new_v4();
-        assert!(matches!(operation_date(&mut connection,&context,NaiveDate::from_ymd_opt(2025,1,1).unwrap()).await,Err(AppError::ValidationError(_))));
+        context.academic_year_id = Uuid::new_v4();
+        assert!(matches!(
+            operation_date(
+                &mut connection,
+                &context,
+                NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()
+            )
+            .await,
+            Err(AppError::ValidationError(_))
+        ));
     }
 
     #[test]
@@ -189,6 +217,5 @@ mod tests {
             bangkok_day(after).unwrap(),
             NaiveDate::from_ymd_opt(2026, 10, 29).unwrap()
         );
-
     }
 }

@@ -719,12 +719,12 @@ async fn cycle_and_template_round_trip_preserves_targets_sections_items_and_step
         term_cycles.iter().filter(|row| row.id == cycle.id).count(),
         1
     );
-    assert!(term_cycles
-        .iter()
-        .all(|row| row.academic_year_id == cycle.academic_year_id
+    assert!(term_cycles.iter().all(|row| {
+        row.academic_year_id == cycle.academic_year_id
             && row
                 .academic_term_id
-                .is_none_or(|term| term == fixture.academic_term_id)));
+                .is_none_or(|term| term == fixture.academic_term_id)
+    }));
 
     let template = services::get_template(&pool, fixture.template.id)
         .await

@@ -17,7 +17,9 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 114).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     pool
 }
 
@@ -95,7 +97,9 @@ async fn insert_deferred_synchronized_offering(
 #[tokio::test]
 async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     let pool = migrated_pool("timetable_version_list_resolve_clone").await;
-    apply_migrations_through(&pool, 114).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (term_id,term_start,source_id,actor_id): (Uuid,NaiveDate,Uuid,Uuid)=sqlx::query_as("SELECT version.academic_term_id,version.effective_from,version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = timetable_version_service::get_version(&pool, source_id, term_start)
         .await
@@ -197,7 +201,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     )
     .await
     .is_ok());
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(term_id)
         .execute(&pool)
         .await
@@ -223,7 +227,9 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
 #[tokio::test]
 async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_resources() {
     let pool = migrated_pool("timetable_version_no_raw_resources").await;
-    apply_migrations_through(&pool, 114).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (source_id,term_id,year_id,actor): (Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,academic_term_id,academic_year_id,published_by FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
     let offering =
         insert_deferred_synchronized_offering(&pool, term_id, year_id, "UNPUBLISHED-REGISTRY")
@@ -386,10 +392,12 @@ async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
 #[tokio::test]
 async fn cloned_timetable_version_preserves_exact_instructor_sets() {
     let pool = migrated_pool("timetable_version_clone_exact_instructors").await;
-    apply_migrations_through(&pool, 114).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (source_id, source_row_version, _term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
-        r#"SELECT version.id, version.row_version, term.start_date
+        r#"SELECT version.id, version.row_version, version.effective_from
            FROM academic_timetable_versions version
            JOIN academic_terms term ON term.id = version.academic_term_id
            WHERE version.status = 'published' AND term.status = 'active'

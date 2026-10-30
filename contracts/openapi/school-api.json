@@ -207,7 +207,9 @@
         },
         "required": [
           "years",
-          "terms"
+          "terms",
+          "defaultAcademicYearId",
+          "defaultAcademicTermId"
         ],
         "type": "object"
       },
@@ -2810,7 +2812,9 @@
             },
             "required": [
               "years",
-              "terms"
+              "terms",
+              "defaultAcademicYearId",
+              "defaultAcademicTermId"
             ],
             "type": "object"
           },

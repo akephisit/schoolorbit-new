@@ -5,7 +5,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{Postgres, Transaction, types::Json};
+use sqlx::{types::Json, Postgres, Transaction};
 use uuid::Uuid;
 
 fn action_name(action: TermTransitionAction) -> &'static str {

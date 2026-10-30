@@ -27,8 +27,8 @@ use school_academic_core::{
 use school_errors::AppError;
 
 use super::{
-    TermContext, append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
-    validate_row_version, versions,
+    append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
+    validate_row_version, versions, TermContext,
 };
 
 #[derive(Debug, FromRow)]

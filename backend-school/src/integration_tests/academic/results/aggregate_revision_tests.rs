@@ -20,7 +20,7 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());
-    sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,closed_on=CASE WHEN id=$2 THEN start_date ELSE NULL END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
     let policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -257,7 +257,10 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
             .await
             .unwrap();
     assert_eq!(closed.context.term_status, AcademicTermStatus::Closed);
-    assert_eq!(closed.context.term_status, school_academic_core::models::AcademicTermStatus::Closed);
+    assert_eq!(
+        closed.context.term_status,
+        school_academic_core::models::AcademicTermStatus::Closed
+    );
     let mut tx = pool.begin().await.unwrap();
     assert!(
         school_academic_core::services::lifecycle_guard::require_term_write(
@@ -284,7 +287,10 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         .await
         .unwrap();
     assert_eq!(reopened.context.term_status, AcademicTermStatus::Closing);
-    assert_eq!(reopened.context.term_status, school_academic_core::models::AcademicTermStatus::Closing);
+    assert_eq!(
+        reopened.context.term_status,
+        school_academic_core::models::AcademicTermStatus::Closing
+    );
     let controls_after:String=sqlx::query_scalar("SELECT md5(jsonb_agg(to_jsonb(control) ORDER BY id)::text) FROM academic_gradebook_phase_controls control WHERE academic_term_id=$1").bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
     assert_eq!(controls_before, controls_after);
 }
@@ -669,7 +675,7 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
     );
     // Closure blocks ordinary editing, not audited corrections or a new immutable
     // aggregate revision. Reopening must never be required just to correct a result.
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(ctx.academic_term_id)
         .execute(&pool)
         .await

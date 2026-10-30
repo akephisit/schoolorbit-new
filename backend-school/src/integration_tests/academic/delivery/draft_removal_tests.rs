@@ -409,7 +409,7 @@ async fn delivery_draft_removal_rejects_stale_versions_and_closed_lifecycle() {
         ));
     }
     assert_eq!(before, preserved_facts(&pool).await);
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(context.term_id)
         .execute(&pool)
         .await
@@ -888,7 +888,9 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -900,7 +902,9 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: Some(revision.target_delivery_version_id),
@@ -952,7 +956,9 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             delivery_version_id: Some(revision.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -964,7 +970,9 @@ async fn delivery_draft_removal_explicit_curriculum_inclusion_restores_only_the_
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: Some(revision.target_delivery_version_id),
@@ -1004,7 +1012,7 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
     let activity_version_id: Uuid = sqlx::query_scalar(
         "SELECT version.id FROM activity_versions version
         JOIN academic_terms term ON term.id=$1 WHERE version.status='published'
-        AND version.scheduling_mode='synchronized' AND version.effective_from<=term.start_date
+        AND version.scheduling_mode='synchronized' AND version.effective_from<=(now() AT TIME ZONE 'Asia/Bangkok')::date
         ORDER BY version.id LIMIT 1",
     )
     .bind(context.term_id)
@@ -1030,7 +1038,9 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
             change_set_row_version: current.row_version,
             weekly_period_target: 2,
             offering: CreateActivityOfferingRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+                starts_on: chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive(),
                 academic_term_id: context.term_id,
                 activity_version_id,
                 curriculum_activity_requirement_id: None,
@@ -1397,14 +1407,16 @@ pub(super) async fn open_activity_with_catalog_target(
     mode: ActivitySchedulingMode,
     create_groups: bool,
 ) -> school_academic_delivery::models::LearningOffering {
-    let activity_version_id: Uuid = sqlx::query_scalar("SELECT activity.id FROM activity_versions activity JOIN academic_terms term ON term.id=$1 WHERE activity.status='published' AND activity.scheduling_mode=$2 AND activity.effective_from<=term.start_date ORDER BY activity.id LIMIT 1")
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT activity.id FROM activity_versions activity JOIN academic_terms term ON term.id=$1 WHERE activity.status='published' AND activity.scheduling_mode=$2 AND activity.effective_from<=(now() AT TIME ZONE 'Asia/Bangkok')::date ORDER BY activity.id LIMIT 1")
         .bind(context.term_id).bind(mode).fetch_one(pool).await.unwrap();
     offerings::create_for_delivery(
         pool,
         context.teacher_id,
         Some(target_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             create_homeroom_groups: create_groups,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -2000,7 +2012,9 @@ async fn http_pending_three_group_removal(command: &str) {
                 pending_removal_facts(&pool).await,
                 "failed HTTP removal changes no graph, revision, journal or audit facts"
             );
-            eprintln!("pending {command}: {path} returned {status}: {body}; all persisted facts unchanged");
+            eprintln!(
+                "pending {command}: {path} returned {status}: {body}; all persisted facts unchanged"
+            );
             continue;
         }
         let after = removal_request(&pool, revision.id).await;
@@ -2169,7 +2183,14 @@ async fn delivery_room_scope_last_course_group_unlinks_its_room() {
     .await
     .unwrap();
     let after = draft_version(&pool, revision.id).await;
-    assert!(after.snapshot.offerings.iter().all(|row|row.id!=offering.id),"removing the last course group must unlink its only room and omit the empty-audience offering");
+    assert!(
+        after
+            .snapshot
+            .offerings
+            .iter()
+            .all(|row| row.id != offering.id),
+        "removing the last course group must unlink its only room and omit the empty-audience offering"
+    );
 }
 
 #[tokio::test]

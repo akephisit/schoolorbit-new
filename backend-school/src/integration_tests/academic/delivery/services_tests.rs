@@ -4913,6 +4913,14 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .unwrap();
     assert_eq!(retried.offering_ids, applied.offering_ids);
     assert_eq!(retried.group_ids, applied.group_ids);
+    assert!(applied.created_offering_count>0,"the first receipt must bind a newly created offering date");
+    let changed_date=offerings::apply_from_curriculum(&pool,context.teacher_id,ApplyCurriculumOfferingsRequest{
+        starts_on:runtime_operation_date()+Duration::days(1),academic_term_id:context.term_id,
+        study_program_ids:vec![context.study_program_id],delivery_version_id:None,source_hash:preview.source_hash.clone(),
+        idempotency_key,choices:default_preparation_choices(&preview),
+    }).await;
+    assert!(matches!(changed_date,Err(AppError::Conflict(_))));
+
     assert!(!applied.group_ids.is_empty());
     let course_totals: Vec<String> = sqlx::query_scalar(
         "SELECT assessment_total_score::text FROM course_offering_details WHERE learning_offering_id = ANY($1)",
@@ -4947,6 +4955,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     let retained_choices = default_preparation_choices(&retained_preview);
+    let retained_key=Uuid::new_v4();
     let retained = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
@@ -4955,9 +4964,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
-            source_hash: retained_preview.source_hash,
-            idempotency_key: Uuid::new_v4(),
-            choices: retained_choices,
+            source_hash: retained_preview.source_hash.clone(),
+            idempotency_key: retained_key,
+            choices: retained_choices.clone(),
         },
     )
     .await
@@ -4965,6 +4974,15 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     assert_eq!(retained.created_offering_count, 0);
     assert_eq!(retained.created_group_count, 0);
     assert_eq!(retained.offering_ids, applied.offering_ids);
+
+    let facts_before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(offering) ORDER BY id) FROM learning_offerings offering WHERE id=ANY($1)").bind(&retained.offering_ids).fetch_one(&pool).await.unwrap();
+    let retained_replay=offerings::apply_from_curriculum(&pool,context.teacher_id,ApplyCurriculumOfferingsRequest{
+        starts_on:runtime_operation_date()+Duration::days(30),academic_term_id:context.term_id,
+        study_program_ids:vec![context.study_program_id],delivery_version_id:None,source_hash:retained_preview.source_hash.clone(),
+        idempotency_key:retained_key,choices:retained_choices,
+    }).await.unwrap();
+    assert_eq!(retained_replay.offering_ids,retained.offering_ids);assert_eq!(retained_replay.group_ids,retained.group_ids);
+    let facts_after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(offering) ORDER BY id) FROM learning_offerings offering WHERE id=ANY($1)").bind(&retained.offering_ids).fetch_one(&pool).await.unwrap();assert_eq!(facts_before,facts_after);
 
     let closed_term_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM academic_terms WHERE status IN ('closed', 'cancelled') ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1",

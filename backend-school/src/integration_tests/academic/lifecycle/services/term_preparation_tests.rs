@@ -17,7 +17,11 @@ use school_permissions::registry::codes;
 
 fn preparation_mappings() -> TermPreparationMappings {
     TermPreparationMappings {
-        offering_starts_on: Some(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()),
+        offering_starts_on: Some(
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
+        ),
         entities: vec![],
         dates: vec![],
     }
@@ -33,13 +37,9 @@ fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() 
     )
     .is_ok());
 
-    assert!(normalize_input(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        &[],
-        &preparation_mappings(),
-    )
-    .is_err());
+    assert!(
+        normalize_input(Uuid::new_v4(), Uuid::new_v4(), &[], &preparation_mappings(),).is_err()
+    );
     assert!(normalize_input(
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -217,13 +217,11 @@ async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1",
-    )
-    .bind(source_term_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1")
+        .bind(source_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     (pool, actor, source_term_id, target_term_id)
 }
 
@@ -239,10 +237,27 @@ async fn preparation_requires_a_future_term_in_an_open_target_year() {
         modules: vec![TermPreparationModule::Delivery],
         mappings: preparation_mappings(),
     };
-    let source_year_number: i32 = sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1").bind(source_year_id).fetch_one(&pool).await.unwrap();
-    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(target_year_id).bind(source_year_number-100).execute(&pool).await.unwrap();
-    assert!(matches!(preview(&pool,&actor,request.clone()).await,Err(school_errors::AppError::Conflict(_))));
-    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(target_year_id).bind(target_year_number).execute(&pool).await.unwrap();
+    let source_year_number: i32 = sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1")
+        .bind(source_year_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1")
+        .bind(target_year_id)
+        .bind(source_year_number - 100)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        preview(&pool, &actor, request.clone()).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1")
+        .bind(target_year_id)
+        .bind(target_year_number)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
         .bind(target_year_id)
         .execute(&pool)
@@ -459,9 +474,13 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .filter(|module| *module != TermPreparationModule::Delivery)
         .collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
-    let delivery_preview = offerings::preview_term_preparation(&mut tx, target_term_id, preparation_mappings().offering_starts_on.unwrap())
-        .await
-        .unwrap();
+    let delivery_preview = offerings::preview_term_preparation(
+        &mut tx,
+        target_term_id,
+        preparation_mappings().offering_starts_on.unwrap(),
+    )
+    .await
+    .unwrap();
     tx.rollback().await.unwrap();
     let mut entity_mappings = Vec::new();
     for requirement in &initial_workspace.mapping_requirements {
@@ -774,7 +793,11 @@ async fn delivery_preparation_preview_preserves_managed_one_connection_read_only
         .unwrap();
     let preview = tokio::time::timeout(
         Duration::from_secs(5),
-        offerings::preview_term_preparation(&mut tx, target_term_id, preparation_mappings().offering_starts_on.unwrap()),
+        offerings::preview_term_preparation(
+            &mut tx,
+            target_term_id,
+            preparation_mappings().offering_starts_on.unwrap(),
+        ),
     )
     .await
     .expect("preview must reuse the transaction's only connection")

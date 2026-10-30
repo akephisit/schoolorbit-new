@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::models::CalendarEvent;
-use crate::services::{CalendarNotificationKind, dedupe_user_ids};
+use crate::services::{dedupe_user_ids, CalendarNotificationKind};
 use school_errors::AppError;
 use school_notifications::dispatch::{self, NewNotification, NotificationSource, Presentation};
 use school_notifications::events::TenantNotificationEvent;

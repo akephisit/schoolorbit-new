@@ -675,15 +675,11 @@ mod tests {
     #[test]
     fn only_canonical_sources_enter_queries() {
         assert!(source("users", None).is_err());
-        assert!(
-            source("curriculum_levels", Some(Uuid::new_v4()))
-                .unwrap()
-                .contains("publication_id=$2")
-        );
-        assert!(
-            source("curriculum_levels", None)
-                .unwrap()
-                .contains("$2::uuid IS NULL")
-        );
+        assert!(source("curriculum_levels", Some(Uuid::new_v4()))
+            .unwrap()
+            .contains("publication_id=$2"));
+        assert!(source("curriculum_levels", None)
+            .unwrap()
+            .contains("$2::uuid IS NULL"));
     }
 }

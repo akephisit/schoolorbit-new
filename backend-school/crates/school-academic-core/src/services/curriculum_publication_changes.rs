@@ -118,20 +118,14 @@ mod tests {
         ];
         let result = changes(rows, Some(a), b);
         assert_eq!(result.len(), 3);
-        assert!(
-            result
-                .iter()
-                .any(|r| r.before.is_none() && r.after.as_deref() == Some("เพิ่ม"))
-        );
-        assert!(
-            result
-                .iter()
-                .any(|r| r.before.as_deref() == Some("ลบ") && r.after.is_none())
-        );
-        assert!(
-            result
-                .iter()
-                .any(|r| r.before.as_deref() == Some("ก่อน") && r.after.as_deref() == Some("หลัง"))
-        );
+        assert!(result
+            .iter()
+            .any(|r| r.before.is_none() && r.after.as_deref() == Some("เพิ่ม")));
+        assert!(result
+            .iter()
+            .any(|r| r.before.as_deref() == Some("ลบ") && r.after.is_none()));
+        assert!(result
+            .iter()
+            .any(|r| r.before.as_deref() == Some("ก่อน") && r.after.as_deref() == Some("หลัง")));
     }
 }

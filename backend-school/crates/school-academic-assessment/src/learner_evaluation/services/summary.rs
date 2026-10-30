@@ -1,5 +1,5 @@
 use super::*;
-use bigdecimal::{BigDecimal, num_bigint::BigInt};
+use bigdecimal::{num_bigint::BigInt, BigDecimal};
 use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
@@ -348,15 +348,13 @@ mod tests {
     use super::*;
     #[test]
     fn invalid_active_policy_does_not_silently_grade() {
-        assert!(
-            validate_bands(&[
-                (0, "0".into()),
-                (1, "1.5".into()),
-                (2, "1".into()),
-                (3, "2.5".into())
-            ])
-            .is_err()
-        );
+        assert!(validate_bands(&[
+            (0, "0".into()),
+            (1, "1.5".into()),
+            (2, "1".into()),
+            (3, "2.5".into())
+        ])
+        .is_err());
         assert!(validate_bands(&[]).is_err());
     }
 }

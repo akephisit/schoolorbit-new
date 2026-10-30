@@ -1817,11 +1817,9 @@ mod tests {
             candidates: Vec::new(),
             registration_type: None,
         };
-        assert!(
-            build_roster_preview(Uuid::new_v4(), source(), Vec::new())
-                .students
-                .is_empty()
-        );
+        assert!(build_roster_preview(Uuid::new_v4(), source(), Vec::new())
+            .students
+            .is_empty());
         let preview = build_roster_preview(Uuid::new_v4(), source(), vec![preview_current(1, 10)]);
         assert_eq!(preview.students.len(), 1);
         assert_eq!(preview.students[0].student_id, Uuid::from_u128(10));

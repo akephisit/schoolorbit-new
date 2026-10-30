@@ -7,7 +7,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 /// Atomically opens a ready term and, when it is the first term of a planning

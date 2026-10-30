@@ -84,7 +84,9 @@ pub async fn apply(
             .map(|value| mapped_date(value, dates))
             .transpose()?;
         if ends_at < starts_at {
-            return Err(AppError::ValidationError("วันสิ้นสุดรอบนิเทศต้องไม่ก่อนวันเริ่ม".into()));
+            return Err(AppError::ValidationError(
+                "วันสิ้นสุดรอบนิเทศต้องไม่ก่อนวันเริ่ม".into(),
+            ));
         }
         let id = Uuid::now_v7();
         DbSession::new(&mut **tx)

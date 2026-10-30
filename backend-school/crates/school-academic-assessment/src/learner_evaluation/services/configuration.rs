@@ -157,14 +157,12 @@ mod tests {
     use super::*;
     #[test]
     fn blank_names_are_rejected() {
-        assert!(
-            validate_criterion(&CriterionInput {
-                name: " \n ".into(),
-                display_order: 0,
-                active: true,
-                row_version: None
-            })
-            .is_err()
-        );
+        assert!(validate_criterion(&CriterionInput {
+            name: " \n ".into(),
+            display_order: 0,
+            active: true,
+            row_version: None
+        })
+        .is_err());
     }
 }

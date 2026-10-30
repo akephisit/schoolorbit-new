@@ -170,7 +170,10 @@ test('manager selects event settings before approval, with explicit enrollment-y
 	expect(api.count('/api/calendar/target-options')).toBe(0);
 	await page.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true }).click();
 	await expect(page.getByLabel('ชื่อกิจกรรม', { exact: true })).toHaveValue(pending.title);
-	await page.getByRole('button', { name: 'ไม่ระบุหมวดหมู่', exact: true }).click();
+	await page
+		.getByRole('combobox')
+		.filter({ hasText: /^\s*ไม่ระบุหมวดหมู่\s*$/ })
+		.click();
 	await page.getByRole('option', { name: 'หมวดแรก', exact: true }).click();
 	await page.getByRole('button', { name: 'อนุมัติและเพิ่มลงปฏิทิน', exact: true }).click();
 	await expect(

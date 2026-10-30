@@ -5,12 +5,12 @@ use uuid::Uuid;
 use crate::models::{CalendarEvent, CalendarEventTargetInput, UpsertCalendarEventRequest};
 use school_errors::AppError;
 
-use super::CalendarNotificationKind;
 use super::shared::{
-    EVENT_NOT_FOUND_MESSAGE, dedupe_uuid_ids, reminder_schedule, validate_event_date_time,
-    validate_targets,
+    dedupe_uuid_ids, reminder_schedule, validate_event_date_time, validate_targets,
+    EVENT_NOT_FOUND_MESSAGE,
 };
 use super::visibility::get_event_for_response;
+use super::CalendarNotificationKind;
 
 const INVALID_TAGS_MESSAGE: &str = "มีแท็กที่ไม่ถูกต้อง กรุณาเลือกแท็กใหม่";
 

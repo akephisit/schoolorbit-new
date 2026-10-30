@@ -1645,30 +1645,26 @@ mod staff_leave_tests {
             .unwrap(),
             actor.user_id
         );
-        assert!(
-            authorize_create(
-                &pool,
-                &actor,
-                FilePurpose::StaffLeaveSignature,
-                Some(Uuid::new_v4())
-            )
-            .await
-            .is_err()
-        );
+        assert!(authorize_create(
+            &pool,
+            &actor,
+            FilePurpose::StaffLeaveSignature,
+            Some(Uuid::new_v4())
+        )
+        .await
+        .is_err());
         let denied = ActorContext {
             user_id: actor.user_id,
             permissions: vec![],
         };
-        assert!(
-            authorize_create(
-                &pool,
-                &denied,
-                FilePurpose::StaffLeaveSignature,
-                Some(actor.user_id)
-            )
-            .await
-            .is_err()
-        );
+        assert!(authorize_create(
+            &pool,
+            &denied,
+            FilePurpose::StaffLeaveSignature,
+            Some(actor.user_id)
+        )
+        .await
+        .is_err());
         for purpose in [
             FilePurpose::StaffLeaveSignature,
             FilePurpose::StaffLeaveEvidence,

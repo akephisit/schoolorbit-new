@@ -124,7 +124,7 @@ async fn ready_run_cohort(
         .await
         .unwrap();
     }
-    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target',max(end_date)+1,max(end_date)+366,'MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let (grade, program): (Uuid, Uuid) = sqlx::query_as(
         "SELECT grade_level_id,study_program_id FROM student_academic_years WHERE id=$1",
     )
@@ -155,7 +155,9 @@ async fn ready_run_cohort(
         &pool,
         &actor,
         CreatePromotionRunInput {
-            target_placement_starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            target_placement_starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             request_id: Uuid::new_v4(),
             source_year_id: context.academic_year_id,
             target_year_id: target,

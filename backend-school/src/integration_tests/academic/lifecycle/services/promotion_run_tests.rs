@@ -49,7 +49,9 @@ pub(crate) async fn fixture(name: &str) -> (PgPool, ActorContext, CreatePromotio
         pool,
         actor,
         CreatePromotionRunInput {
-            target_placement_starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            target_placement_starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             request_id: Uuid::new_v4(),
             source_year_id,
             target_year_id,

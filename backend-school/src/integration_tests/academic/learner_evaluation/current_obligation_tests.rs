@@ -113,25 +113,7 @@ async fn scoped_fixture_with_catalog(
         .bind(unused).bind(group).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1")
         .bind(unused).bind(group).execute(&pool).await.unwrap();
-    apply_migrations_through(&pool, 144).await.unwrap();
-    let today: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(year)
-        .bind(today + Duration::days(60))
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date=GREATEST(planned_end_date,$2) WHERE id=$1",
-    )
-    .bind(term)
-    .bind(today + Duration::days(30))
-    .execute(&pool)
-    .await
-    .unwrap();
+    apply_migrations_through(&pool,school_migrations::latest_migration_version()).await.unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![
@@ -629,7 +611,7 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
         "current omission must keep its prior published baseline exact"
     );
     let mut connection = pool.acquire().await.unwrap();
-    let day:NaiveDate=sqlx::query_scalar("SELECT LEAST(GREATEST((now() AT TIME ZONE 'Asia/Bangkok')::date,t.start_date),COALESCE(t.closed_on,t.planned_end_date,y.end_date)) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1")
+    let day:NaiveDate=sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1")
         .bind(ctx.academic_term_id).fetch_one(&mut *connection).await.unwrap();
     let scope = school_academic_delivery::services::audiences::dated_constraint_on_connection(
         &mut connection,

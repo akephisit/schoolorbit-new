@@ -5,7 +5,7 @@ use crate::{
 use chrono::{NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 

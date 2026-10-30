@@ -7,7 +7,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{PgPool, Postgres, Transaction, types::Json};
+use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 const COLUMNS: &str = "id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,replacement_decision,reason,source_checksum,outcome,resolved_by,resolved_at";

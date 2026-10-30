@@ -22,7 +22,7 @@ use school_academic_core::models::{
 use school_academic_core::services::{
     bell_schedules, catalog, context, curriculum, curriculum_structure, ensure_draft_version,
     ensure_planning_delete, parse_row_version, progressions, student_years,
-    validate_canonical_decimal, validate_date_containment, workspaces, years_terms,
+    validate_canonical_decimal, workspaces, years_terms,
 };
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
@@ -145,7 +145,8 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, school_migrations::latest_migration_version()).await;
+    let pool =
+        prepare_core_fixture_through(name, school_migrations::latest_migration_version()).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -569,7 +570,11 @@ async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
             "cancelled",
         ] {
             sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
-                .bind(term).bind(term_status).execute(&pool).await.unwrap();
+                .bind(term)
+                .bind(term_status)
+                .execute(&pool)
+                .await
+                .unwrap();
             let mut tx = pool.begin().await.unwrap();
             let outcome = require_term_write(&mut tx, CURRENT_YEAR_ID, term).await;
             let expected = !matches!(year_status, "closed" | "archived")
@@ -655,7 +660,10 @@ async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders
     );
     next_source.rollback().await.unwrap();
     sqlx::query("UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1")
-        .bind(term).execute(&mut *transition).await.unwrap();
+        .bind(term)
+        .execute(&mut *transition)
+        .await
+        .unwrap();
     transition.commit().await.unwrap();
     let mut source = pool.begin().await.unwrap();
     assert!(require_term_write(&mut source, CURRENT_YEAR_ID, term)
@@ -1349,13 +1357,12 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
         shape(&source_workspace, source.id),
         shape(&copied_workspace, copied.id)
     );
-    assert!(copied_workspace
-        .requirements
-        .iter()
-        .all(|r| !source_workspace
+    assert!(copied_workspace.requirements.iter().all(|r| {
+        !source_workspace
             .requirements
             .iter()
-            .any(|old| old.id == r.id)));
+            .any(|old| old.id == r.id)
+    }));
     assert_eq!(
         copied_workspace.term_slots.len(),
         3,
@@ -1757,8 +1764,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let payload = json!({
         "year": 2570,
         "customName": "ปีแห่งการอ่าน",
-        "startDate": "2027-05-01",
-        "endDate": "2028-03-31",
         "schoolDays": ["MON", "TUE"],
         "rowVersion": 3
     });
@@ -1768,8 +1773,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let unknown = json!({
         "name": "ปีการศึกษา 2570",
         "year": 2570,
-        "startDate": "2027-05-01",
-        "endDate": "2028-03-31",
         "schoolDays": ["MON"],
         "rowVersion": 3,
     });
@@ -1779,8 +1782,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "academicYearId": Uuid::new_v4(),
         "termType": "regular",
         "customName": null,
-        "startDate": "2027-05-01",
-        "plannedEndDate": null,
         "includedInYearResult": true,
         "blocksYearClosure": true,
         "bellScheduleId": Uuid::new_v4()
@@ -1837,29 +1838,6 @@ fn canonical_decimal_validation_rejects_ambiguous_wire_values() {
     for invalid in ["02.50", "+2.5", "2.500", "2e1", " 2.5", "-0"] {
         assert!(validate_canonical_decimal(invalid, 2).is_err(), "{invalid}");
     }
-}
-
-#[test]
-fn child_dates_must_be_contained_by_parent_dates() {
-    let year_start = NaiveDate::from_ymd_opt(2027, 5, 1).unwrap();
-    let year_end = NaiveDate::from_ymd_opt(2028, 3, 31).unwrap();
-    let term_start = NaiveDate::from_ymd_opt(2027, 10, 1).unwrap();
-    let term_end = NaiveDate::from_ymd_opt(2028, 1, 31).unwrap();
-    assert!(validate_date_containment(year_start, year_end, term_start, term_end).is_ok());
-    assert!(validate_date_containment(
-        year_start,
-        year_end,
-        year_start.pred_opt().unwrap(),
-        term_end
-    )
-    .is_err());
-    assert!(validate_date_containment(
-        year_start,
-        year_end,
-        term_start,
-        year_end.succ_opt().unwrap()
-    )
-    .is_err());
 }
 
 #[test]
@@ -2225,9 +2203,9 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
 async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flags() {
     let historical = prepare_core_fixture_through("future_term_annual_inclusion_legacy", 60).await;
     let legacy_id: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,term_type,sequence_no,name,start_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) SELECT $1,'summer',99,'Historical inclusion','2027-04-01',true,false,id,'planning' FROM bell_schedules WHERE academic_year_id=$1 AND is_default RETURNING id").bind(FUTURE_YEAR_ID).fetch_one(&historical).await.unwrap();
-    apply_migrations_through(&historical,67).await.unwrap();
+    apply_migrations_through(&historical, 67).await.unwrap();
     let repaired: (bool,bool,i64) = sqlx::query_as("SELECT included_in_year_result,blocks_year_closure,row_version FROM academic_terms WHERE id=$1").bind(legacy_id).fetch_one(&historical).await.unwrap();
-    assert_eq!(repaired,(true,true,2));
+    assert_eq!(repaired, (true, true, 2));
     let pool = prepare_current_core_fixture("future_term_annual_inclusion").await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
@@ -6424,7 +6402,9 @@ async fn organization_learning_area_cutover_preserves_academic_owners_and_grants
             "organization_members",
             "organization_permission_grants",
         ] {
-            let sql = format!("SELECT md5(coalesce(string_agg(row_json, ',' ORDER BY row_json), '')) FROM (SELECT to_jsonb(t)::text AS row_json FROM {table} t) rows");
+            let sql = format!(
+                "SELECT md5(coalesce(string_agg(row_json, ',' ORDER BY row_json), '')) FROM (SELECT to_jsonb(t)::text AS row_json FROM {table} t) rows"
+            );
             result.push(
                 sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
                     .fetch_one(pool)

@@ -416,7 +416,6 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
 
 #[tokio::test]
 async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables() {
-    use chrono::Duration;
     use school_academic_delivery::models::{
         CreateAcademicTermChangeSetRequest, PublishAcademicTermChangeSetRequest,
         UpsertAcademicTermChangeItemRequest,
@@ -458,14 +457,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
             .unwrap();
     // Exercise an active lifecycle with the preserved historical fixture IDs.
     // Publication dates follow the current clock rather than a stale fixture date.
-    let publish_date = std::cmp::max(
-        chrono::Utc::now().date_naive(),
-        base.effective_from.unwrap() + Duration::days(1),
-    );
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(source.academic_year_id)
-        .bind(publish_date + Duration::days(30))
-        .execute(&pool)
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
         .await
         .unwrap();
     let revision = change_sets::create_change_set(
@@ -1002,7 +994,9 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         apply_migrations_through(&pool, 85).await.unwrap();
         pool
     };
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
@@ -1029,16 +1023,13 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     .unwrap();
     // Exercise an active lifecycle with the preserved historical fixture IDs.
     // Publication dates follow the current clock rather than a stale fixture date.
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let publish_date = std::cmp::max(
         chrono::Utc::now().date_naive(),
         base.effective_from.unwrap() + Duration::days(1),
     );
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(source.academic_year_id)
-        .bind(publish_date + Duration::days(30))
-        .execute(&pool)
-        .await
-        .unwrap();
     let revision = change_sets::create_change_set(
         &pool,
         actor,

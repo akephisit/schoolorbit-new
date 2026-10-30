@@ -8659,9 +8659,9 @@ export interface components {
 		};
 		AcademicContextOptions: {
 			/** Format: uuid */
-			defaultAcademicTermId?: string | null;
+			defaultAcademicTermId: string | null;
 			/** Format: uuid */
-			defaultAcademicYearId?: string | null;
+			defaultAcademicYearId: string | null;
 			terms: components['schemas']['AcademicTermOption'][];
 			years: components['schemas']['AcademicYearOption'][];
 		};
@@ -9423,9 +9423,9 @@ export interface components {
 		ApiResponse_AcademicContextOptions: {
 			data: {
 				/** Format: uuid */
-				defaultAcademicTermId?: string | null;
+				defaultAcademicTermId: string | null;
 				/** Format: uuid */
-				defaultAcademicYearId?: string | null;
+				defaultAcademicYearId: string | null;
 				terms: components['schemas']['AcademicTermOption'][];
 				years: components['schemas']['AcademicYearOption'][];
 			};

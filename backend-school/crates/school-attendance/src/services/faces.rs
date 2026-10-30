@@ -2,7 +2,7 @@ use super::{audit, lock_term, notifications, sessions, settings};
 use crate::{
     models::*,
     policy,
-    rules::{FACE_MODEL, face_distance, invalid, validate_descriptor},
+    rules::{face_distance, invalid, validate_descriptor, FACE_MODEL},
 };
 use chrono::Utc;
 use school_authorization::ActorContext;

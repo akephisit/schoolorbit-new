@@ -60,26 +60,22 @@ async fn learning_area_create_rename_and_archive_share_one_stable_owner() {
             true
         )
     );
-    assert!(
-        catalog::resolve_subject_group_owner(&pool, group.id)
-            .await
-            .is_err()
-    );
-    assert!(
-        catalog::update_subject_group(
-            &pool,
-            group.id,
-            UpdateSubjectGroupRequest {
-                name_th: "stale".into(),
-                name_en: String::new(),
-                display_order: 1,
-                is_active: Some(true),
-                row_version: group.row_version,
-            }
-        )
+    assert!(catalog::resolve_subject_group_owner(&pool, group.id)
         .await
-        .is_err()
-    );
+        .is_err());
+    assert!(catalog::update_subject_group(
+        &pool,
+        group.id,
+        UpdateSubjectGroupRequest {
+            name_th: "stale".into(),
+            name_en: String::new(),
+            display_order: 1,
+            is_active: Some(true),
+            row_version: group.row_version,
+        }
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -122,11 +118,9 @@ async fn learning_area_owner_failure_rolls_back_registry_and_counter() {
         BEGIN IF NEW.unit_type = 'subject_group' THEN RAISE EXCEPTION 'fixture rejection'; END IF; RETURN NEW; END $$;
         CREATE TRIGGER reject_learning_area_owner BEFORE INSERT ON organization_units FOR EACH ROW EXECUTE FUNCTION reject_learning_area_owner();")
         .execute(&pool).await.unwrap();
-    assert!(
-        catalog::create_subject_group(&pool, request("ต้องย้อนกลับ"))
-            .await
-            .is_err()
-    );
+    assert!(catalog::create_subject_group(&pool, request("ต้องย้อนกลับ"))
+        .await
+        .is_err());
     let after: i64 = sqlx::query_scalar("SELECT count(*) FROM subject_groups")
         .fetch_one(&pool)
         .await
@@ -195,10 +189,10 @@ async fn learning_area_in_use_and_activity_owner_cannot_be_disabled() {
 
 #[test]
 fn learning_area_creation_rejects_caller_codes() {
-    assert!(
-        serde_json::from_str::<CreateSubjectGroupRequest>(r#"{"code":"MANUAL","nameTh":"ทดสอบ"}"#)
-            .is_err()
-    );
+    assert!(serde_json::from_str::<CreateSubjectGroupRequest>(
+        r#"{"code":"MANUAL","nameTh":"ทดสอบ"}"#
+    )
+    .is_err());
     assert!(serde_json::from_str::<CreateSubjectGroupRequest>(r#"{"nameTh":"ทดสอบ"}"#).is_ok());
 }
 
@@ -292,11 +286,9 @@ async fn learning_area_migration_rejects_ambiguous_states_and_reconciles_missing
     let after: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM organization_members), (SELECT count(*) FROM organization_permission_grants), (SELECT count(*) FROM organization_units)")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(after, (before.0, before.1, before.2 + 1));
-    assert!(
-        catalog::resolve_subject_group_owner(&pool, group_id)
-            .await
-            .is_ok()
-    );
+    assert!(catalog::resolve_subject_group_owner(&pool, group_id)
+        .await
+        .is_ok());
     let misplaced: i64 = sqlx::query_scalar("SELECT count(*) FROM organization_units WHERE unit_type='subject_group' AND parent_unit_id IS DISTINCT FROM (SELECT id FROM organization_units WHERE code='SCHOOL')")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(misplaced, 0);
@@ -357,16 +349,14 @@ async fn learning_area_position_grants_do_not_cross_groups_or_administrative_tre
     assert!(tree.contains(&admin_unit));
     sqlx::query("UPDATE organization_members SET position_code='member' WHERE user_id=$1 AND organization_unit_id=$2")
         .bind(head).bind(a.organization_unit_id).execute(&pool).await.unwrap();
-    assert!(
-        accessible_exact_units_for_permission(
-            &pool,
-            head,
-            codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
-        )
-        .await
-        .unwrap()
-        .is_empty()
-    );
+    assert!(accessible_exact_units_for_permission(
+        &pool,
+        head,
+        codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
+    )
+    .await
+    .unwrap()
+    .is_empty());
 }
 
 async fn wait_until_blocked(pool: &PgPool, blocker: i32) {

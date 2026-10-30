@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::Deserialize;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 
 use crate::models::ReconciliationCheck;
 

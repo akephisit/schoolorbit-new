@@ -1,6 +1,6 @@
 use super::super::models::*;
 use super::{
-    promotion_calculation::{ITEM_COLUMNS, evidence_checksum},
+    promotion_calculation::{evidence_checksum, ITEM_COLUMNS},
     promotion_runs::RUN_COLUMNS,
 };
 use school_academic_core::services::{lifecycle_guard, promotion_students, promotion_targets};

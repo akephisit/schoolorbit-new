@@ -26,50 +26,22 @@ async fn fixture_with_effective(name: &str, current: bool) -> ScopedFixture {
         .fetch_one(&pool)
         .await
         .unwrap();
-    if current {
-        sqlx::query("UPDATE academic_years SET start_date=LEAST(start_date,$2) WHERE id=$1")
-            .bind(context.year_id)
-            .bind(today - Duration::days(60))
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE academic_terms SET start_date=$2 WHERE id=$1")
-            .bind(context.term_id)
-            .bind(today - Duration::days(30))
-            .execute(&pool)
-            .await
-            .unwrap();
-    }
-    let starts: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(context.term_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let starts = if current {
+        today - Duration::days(30)
+    } else {
+        today
+    };
     let future = if current {
         today
     } else {
         today.max(starts) + Duration::days(2)
     };
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(context.year_id)
-        .bind(future + Duration::days(90))
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date=GREATEST(planned_end_date,$2) WHERE id=$1",
-    )
-    .bind(context.term_id)
-    .bind(future + Duration::days(60))
-    .execute(&pool)
-    .await
-    .unwrap();
     let old_room = extra_room(&pool, &context, "CONSUMER-M4").await;
     let first = create_runtime_change_set(
         &pool,
         context.teacher_id,
         context.term_id,
-        1,
+        if current { -29 } else { 1 },
         "consumer-first",
     )
     .await;
@@ -104,7 +76,7 @@ async fn fixture_with_effective(name: &str, current: bool) -> ScopedFixture {
         &pool,
         context.teacher_id,
         context.term_id,
-        (future - starts).num_days(),
+        (future - today).num_days(),
         "consumer-restrict",
     )
     .await;
@@ -444,11 +416,7 @@ async fn delivery_room_scope_consumer_explicit_empty_never_falls_back_for_pinned
     let f = fixture("room_scope_consumer_empty").await;
     let pupil = student(&f, f.context.homeroom_id, f.boundary - Duration::days(1)).await;
     member(&f, f.combined, pupil, "manual_add").await;
-    let start: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(f.context.term_id)
-        .fetch_one(&f.pool)
-        .await
-        .unwrap();
+    let start=chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive();
     let revision = create_runtime_change_set(
         &f.pool,
         f.context.teacher_id,
@@ -673,17 +641,6 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
         .await
         .unwrap();
     let starts = today - Duration::days(30);
-    sqlx::query("UPDATE academic_years SET start_date=LEAST(start_date,$2),end_date=GREATEST(end_date,$3) WHERE id=$1")
-        .bind(context.year_id).bind(starts).bind(today + Duration::days(90)).execute(&pool).await.unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET start_date=$2,planned_end_date=$3,closed_on=NULL WHERE id=$1",
-    )
-    .bind(context.term_id)
-    .bind(starts)
-    .bind(today + Duration::days(60))
-    .execute(&pool)
-    .await
-    .unwrap();
     let old_room = extra_room(&pool, &context, "ACTIVITY-EXCLUDED").await;
     let opening = create_runtime_change_set(
         &pool,
@@ -701,7 +658,9 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
         context.teacher_id,
         Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive(),
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,

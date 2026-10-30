@@ -22,8 +22,8 @@ use super::super::models::{
     PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
 };
 use super::{
-    TermContext, append_audit, load_term_context, require_active_owner,
-    require_writable_offering_term, require_writable_term, stable_hash, validate_row_version,
+    append_audit, load_term_context, require_active_owner, require_writable_offering_term,
+    require_writable_term, stable_hash, validate_row_version, TermContext,
 };
 
 const OFFERING_COLUMNS: &str = r#"
@@ -2841,11 +2841,9 @@ mod pool_facade_preflight_tests {
     #[tokio::test]
     async fn pool_facade_preflight_empty_snapshot_labels_need_no_database() {
         let pool = closed_pool().await;
-        assert!(
-            super::super::version_changes::load_labels(&pool, &[])
-                .await
-                .unwrap()
-                .is_empty()
-        );
+        assert!(super::super::version_changes::load_labels(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

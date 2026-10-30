@@ -9,7 +9,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
-use sqlx::{PgConnection, PgPool, Postgres, Transaction, types::Json};
+use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub const COLUMNS: &str = "id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
 #[derive(serde::Serialize, sqlx::FromRow)]

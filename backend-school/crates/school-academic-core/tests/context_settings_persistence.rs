@@ -84,22 +84,20 @@ async fn visibility_defaults_are_atomic_revision_protected_and_independent_of_li
         context_settings::update(&pool, &actor, command(1, None, vec![])).await,
         Err(school_errors::AppError::Conflict(_))
     ));
-    assert!(
-        context_settings::update(
-            &pool,
-            &actor,
-            command(
-                2,
-                Some(year.id),
-                vec![AcademicContextVisibilityInput {
-                    id: year.id,
-                    is_visible: false
-                }]
-            )
+    assert!(context_settings::update(
+        &pool,
+        &actor,
+        command(
+            2,
+            Some(year.id),
+            vec![AcademicContextVisibilityInput {
+                id: year.id,
+                is_visible: false
+            }]
         )
-        .await
-        .is_err()
-    );
+    )
+    .await
+    .is_err());
     assert!(
         years_terms::get_year(&pool, year.id)
             .await
@@ -160,7 +158,7 @@ async fn concurrent_context_commands_accept_one_revision_and_deny_partial_permis
 #[tokio::test]
 async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filter_children() {
     let (pool, actor, year) = fixture("context_visible_term_parent").await;
-    let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(academic_year_id,code,name,status) VALUES($1,'CONTEXT','Context bell','published') RETURNING id").bind(year.id).fetch_one(&pool).await.unwrap();
+    let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,status) VALUES(gen_random_uuid(),$1,'CONTEXT','Context bell','published') RETURNING id").bind(year.id).fetch_one(&pool).await.unwrap();
     let term = years_terms::create_term(
         &pool,
         actor.user_id,
@@ -232,13 +230,11 @@ async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filte
     )
     .await
     .unwrap();
-    assert!(
-        !hidden
-            .context_options
-            .terms
-            .iter()
-            .any(|row| row.id == term.id)
-    );
+    assert!(!hidden
+        .context_options
+        .terms
+        .iter()
+        .any(|row| row.id == term.id));
     assert!(
         years_terms::get_term(&pool, term.id)
             .await
@@ -302,24 +298,22 @@ async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filte
     )
     .await
     .unwrap();
-    assert!(
-        context_settings::update(
-            &pool,
-            &actor,
-            UpdateAcademicContextSettingsRequest {
-                row_version: selected.settings.row_version,
-                default_academic_year_id: Some(year.id),
-                default_academic_term_id: Some(term.id),
-                years: vec![],
-                terms: vec![AcademicContextVisibilityInput {
-                    id: term.id,
-                    is_visible: false
-                }],
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: selected.settings.row_version,
+            default_academic_year_id: Some(year.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![],
+            terms: vec![AcademicContextVisibilityInput {
+                id: term.id,
+                is_visible: false
+            }],
+        }
+    )
+    .await
+    .is_err());
     let cleared = context_settings::update(
         &pool,
         &actor,
@@ -367,4 +361,148 @@ fn year_and_term_commands_reject_every_retired_boundary_key() {
     let mut update = term;
     update["rowVersion"] = serde_json::json!(1);
     rejects::<UpdateAcademicTermRequest>(update);
+}
+
+#[tokio::test]
+async fn scoped_options_keep_visible_enrollment_history_without_inaccessible_defaults() {
+    use school_test_db::cutover_test_support::seed_release_two_predecessor;
+    let pool = school_test_db::create_named_test_pool("context_scoped_relationships").await;
+    seed_release_two_predecessor(&pool).await.unwrap();
+    school_test_db::run_test_migrations(&pool).await;
+    let (student,year,grade,program):(Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT enrollment.student_id,enrollment.academic_year_id,enrollment.grade_level_id,enrollment.study_program_id FROM student_academic_years enrollment JOIN users student ON student.id=enrollment.student_id JOIN academic_years year ON year.id=enrollment.academic_year_id WHERE student.status='active' AND year.status='active' ORDER BY enrollment.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let historical:Uuid=sqlx::query_scalar("SELECT enrollment.academic_year_id FROM student_academic_years enrollment JOIN academic_years year ON year.id=enrollment.academic_year_id WHERE enrollment.student_id=$1 AND year.status IN('closed','archived') AND year.is_visible ORDER BY year.year LIMIT 1").bind(student).fetch_one(&pool).await.unwrap();
+    let actor_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor = ActorContext {
+        user_id: actor_id,
+        permissions: vec![codes::WILDCARD.into()],
+    };
+    let parent = Uuid::new_v4();
+    let inactive = Uuid::new_v4();
+    let unrelated = Uuid::new_v4();
+    for (id, kind, status) in [
+        (parent, "parent", "active"),
+        (inactive, "student", "inactive"),
+        (unrelated, "student", "active"),
+    ] {
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'!','Scope','Fixture',$2,$3)").bind(id).bind(kind).bind(status).execute(&pool).await.unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO student_parents(student_user_id,parent_user_id) VALUES($1,$3),($2,$3)",
+    )
+    .bind(student)
+    .bind(inactive)
+    .bind(parent)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let outside = years_terms::create_year(
+        &pool,
+        actor_id,
+        CreateAcademicYearRequest {
+            year: 2901,
+            custom_name: None,
+            school_days: vec!["MON".into()],
+        },
+    )
+    .await
+    .unwrap();
+    for child in [inactive, unrelated] {
+        sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(gen_random_uuid(),$1,$2,$3,$4,'planned')").bind(child).bind(outside.id).bind(grade).bind(program).execute(&pool).await.unwrap();
+    }
+    let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,status) VALUES(gen_random_uuid(),$1,'SCOPE','Scope bell','published') RETURNING id").bind(outside.id).fetch_one(&pool).await.unwrap();
+    let term = years_terms::create_term(
+        &pool,
+        actor_id,
+        CreateAcademicTermRequest {
+            academic_year_id: outside.id,
+            term_type: AcademicTermType::Regular,
+            custom_name: None,
+            included_in_year_result: true,
+            blocks_year_closure: true,
+            bell_schedule_id: bell,
+        },
+    )
+    .await
+    .unwrap();
+    let selected = context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: 1,
+            default_academic_year_id: Some(outside.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![AcademicContextVisibilityInput {
+                id: outside.id,
+                is_visible: true,
+            }],
+            terms: vec![AcademicContextVisibilityInput {
+                id: term.id,
+                is_visible: true,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    for options in [
+        context::list_options_for_student(&pool, student)
+            .await
+            .unwrap(),
+        context::list_options_for_parent(&pool, parent)
+            .await
+            .unwrap(),
+    ] {
+        assert!(options.years.iter().any(|row| row.id == historical));
+        assert!(!options.years.iter().any(|row| row.id == outside.id));
+        assert_eq!(options.default_academic_year_id, None);
+        assert_eq!(options.default_academic_term_id, None);
+    }
+    let historic_term:Uuid=sqlx::query_scalar("SELECT id FROM academic_terms WHERE academic_year_id=$1 AND is_visible ORDER BY sequence_no LIMIT 1").bind(historical).fetch_one(&pool).await.unwrap();
+    context_settings::update(
+        &pool,
+        &actor,
+        UpdateAcademicContextSettingsRequest {
+            row_version: selected.settings.row_version,
+            default_academic_year_id: Some(outside.id),
+            default_academic_term_id: Some(term.id),
+            years: vec![AcademicContextVisibilityInput {
+                id: year,
+                is_visible: false,
+            }],
+            terms: vec![AcademicContextVisibilityInput {
+                id: historic_term,
+                is_visible: false,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    for options in [
+        context::list_options_for_student(&pool, student)
+            .await
+            .unwrap(),
+        context::list_options_for_parent(&pool, parent)
+            .await
+            .unwrap(),
+    ] {
+        assert!(options.years.iter().any(|row| row.id == historical));
+        assert!(!options.years.iter().any(|row| row.id == year));
+        assert!(!options
+            .terms
+            .iter()
+            .any(|row| row.academic_year_id == year || row.id == historic_term));
+    }
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(student)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(context::list_options_for_parent(&pool, parent)
+        .await
+        .unwrap()
+        .years
+        .is_empty());
 }

@@ -2342,12 +2342,10 @@ mod pool_facade_tests {
     #[tokio::test]
     async fn pool_facade_preflight_empty_catalog_metadata_needs_no_database() {
         let pool = closed_pool().await;
-        assert!(
-            subject_groups_for_versions(&pool, &[])
-                .await
-                .unwrap()
-                .is_empty()
-        );
+        assert!(subject_groups_for_versions(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
     }
     #[tokio::test]
     async fn pool_facade_preflight_scope_denials_precede_checkout() {
@@ -2393,12 +2391,10 @@ mod pool_facade_tests {
         let held = pool.acquire().await.unwrap();
         let filter = school_authorization::AcademicResourceListFilter::default();
         tokio::time::timeout(std::time::Duration::from_millis(250), async {
-            assert!(
-                subject_groups_for_versions(&pool, &[])
-                    .await
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(subject_groups_for_versions(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty());
             assert!(matches!(
                 crate::services::curriculum::list(&pool, &filter).await,
                 Err(AppError::Forbidden(_))

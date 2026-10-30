@@ -1,4 +1,3 @@
-use chrono::NaiveDate;
 use school_academic_core::{
     models::{AcademicYearStatus, CreateAcademicYearRequest},
     services::years_terms,
@@ -25,8 +24,6 @@ async fn academic_year_command_persists_through_the_core_crate_boundary() {
         CreateAcademicYearRequest {
             year: 2701,
             custom_name: Some("ปีทดสอบ crate".into()),
-            start_date: NaiveDate::from_ymd_opt(2158, 5, 1).unwrap(),
-            end_date: NaiveDate::from_ymd_opt(2159, 4, 30).unwrap(),
             school_days: vec!["MON".into(), "TUE".into(), "WED".into()],
         },
     )
@@ -34,6 +31,7 @@ async fn academic_year_command_persists_through_the_core_crate_boundary() {
     .unwrap();
 
     assert_eq!(created.status, AcademicYearStatus::Planning);
+    assert!(!created.is_visible);
     assert_eq!(
         years_terms::get_year(&pool, created.id).await.unwrap().id,
         created.id

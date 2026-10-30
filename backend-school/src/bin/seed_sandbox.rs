@@ -2,8 +2,8 @@ use chrono::{Datelike, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{
-    ConnectOptions, PgPool,
     postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions, PgPool,
 };
 use std::{env, error::Error, time::Duration};
 use uuid::Uuid;
