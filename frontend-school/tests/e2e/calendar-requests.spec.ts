@@ -172,7 +172,7 @@ test('manager selects event settings before approval, with date-specific targets
 	await page
 		.getByRole('dialog')
 		.getByRole('combobox')
-		.filter({ hasText: /^ไม่ระบุหมวดหมู่$/ })
+		.filter({ hasText: /^\s*ไม่ระบุหมวดหมู่\s*$/ })
 		.click();
 	await page.getByRole('option', { name: 'หมวดแรก', exact: true }).click();
 	await page.getByRole('button', { name: 'อนุมัติและเพิ่มลงปฏิทิน', exact: true }).click();
