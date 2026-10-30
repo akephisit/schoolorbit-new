@@ -265,7 +265,12 @@ pub(super) async fn handle(
                 }
                 Some(Ok(Message::Ping(payload))) => { last_inbound = Instant::now(); if socket.send(Message::Pong(payload)).await.is_err() { break; } }
                 Some(Ok(Message::Pong(_))) => last_inbound = Instant::now(),
-                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(Message::Close(_))) => {
+                    // Reading Close queues tungstenite's reply; flush before dropping transport.
+                    if socket.flush().await.is_err() { break; }
+                    break;
+                }
+                Some(Err(_)) | None => break,
                 Some(Ok(_)) => {}
             }
         }
