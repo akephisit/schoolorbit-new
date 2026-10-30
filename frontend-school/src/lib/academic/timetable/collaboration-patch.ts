@@ -21,7 +21,13 @@ export function applyDraftPatch(
 		workspace,
 		workspace.blocks.filter((block) => !removed.has(block.id))
 	);
-	const updated = patchTimetableWorkspaceBlocks(withoutRemoved, patch.upsertedBlocks);
+	const currentById = new Map(withoutRemoved.blocks.map((block) => [block.id, block]));
+	const updated = patchTimetableWorkspaceBlocks(
+		withoutRemoved,
+		patch.upsertedBlocks.filter(
+			(block) => (currentById.get(block.id)?.rowVersion ?? 0) <= block.rowVersion
+		)
+	);
 	return {
 		...updated,
 		version: patch.version ?? workspace.version,

@@ -28,9 +28,10 @@ pub(super) async fn prepare(
         room.set_portraits(member.connection_id, portraits)?;
     }
     let portraits = state.staff_directory.collaboration_portraits(&mut connection, &context.actor, &user_ids).await?.into_iter().collect::<BTreeMap<_, _>>();
+    let resource_access = Arc::new(school_academic_timetable::policy::resource_access_snapshot_on_connection(&mut connection, &context.actor, &room.resource_inputs()?).await?);
     let member = DraftMember { connection_id: Uuid::new_v4(), actor: context.actor.clone(), session_id: session.session_id,
         name: access.display_name, color: generate_color_from_uuid(&access.user_id), access: access.read_access,
-        manage_access: access.manage_access, portraits, context: None, anchor: None };
+        manage_access: access.manage_access, resource_access, portraits, context: None, anchor: None };
     Ok(PreparedDraft { room, member })
 }
 
@@ -76,6 +77,7 @@ pub(super) async fn handle(
         return;
     }
     let sync = match room.join(member) { Ok(sync) => sync, Err(_) => return };
+    let mut sent_seq = sync.seq;
     drop(gate);
     if send(&mut socket, vec![sync]).await.is_err() { room.disconnect(connection_id); return; }
     let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + HEARTBEAT_INTERVAL, HEARTBEAT_INTERVAL);
@@ -117,10 +119,15 @@ pub(super) async fn handle(
                 }
             }
             signal = changes.recv() => {
+                if matches!(&signal, Ok(DraftSignal::Committed(seq)) if *seq <= sent_seq) { continue; }
                 let invalidated = matches!(signal, Ok(DraftSignal::Invalidated) | Err(_));
                 let signal = signal.unwrap_or(DraftSignal::Invalidated);
                 match room.signal_events(connection_id, signal) {
-                    Ok(events) => { if send(&mut socket, events).await.is_err() { break; } }
+                    Ok(events) => {
+                        let next_seq = committed_watermark(&events, sent_seq);
+                        if send(&mut socket, events).await.is_err() { break; }
+                        sent_seq = next_seq;
+                    }
                     Err(_) => break,
                 }
                 if invalidated { break; }
@@ -139,7 +146,11 @@ pub(super) async fn handle(
                         close_realtime_socket(&mut socket, &authenticated, reason).await; break;
                     }
                     match room.command(connection_id, command) {
-                        Ok(events) => { if send(&mut socket, events).await.is_err() { break; } }
+                        Ok(events) => {
+                            let next_seq = committed_watermark(&events, sent_seq);
+                            if send(&mut socket, events).await.is_err() { break; }
+                            sent_seq = next_seq;
+                        }
                         Err(_) => break,
                     }
                 }
@@ -151,4 +162,9 @@ pub(super) async fn handle(
         }
     }
     room.disconnect(connection_id);
+}
+
+fn committed_watermark(events: &[DraftEventEnvelope], previous: u64) -> u64 {
+    events.iter().filter(|event| matches!(event.event, school_academic_timetable::models::collaboration::DraftServerMessage::DraftPatched(_) | school_academic_timetable::models::collaboration::DraftServerMessage::DraftStateSync(_)))
+        .map(|event| event.seq).max().unwrap_or(previous).max(previous)
 }

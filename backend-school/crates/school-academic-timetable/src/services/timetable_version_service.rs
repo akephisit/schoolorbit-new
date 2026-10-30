@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use crate::collaboration::{CreationPermit, TimetableMutationContext, VersionMutationPermit};
 use school_database::DbSession;
 use std::collections::HashMap;
 
@@ -271,11 +273,16 @@ pub async fn resolve_version_id_for_date_on_connection(
 
 /// Start the first timetable after independently publishing its opening graph.
 /// Term serialization also makes a repeated request resume the same blank draft.
-pub async fn create_initial_draft(
+pub async fn create_initial_draft(pool: &PgPool, context: &TimetableMutationContext, request: CreateTimetableVersionRequest) -> Result<TimetableVersion, AppError> {
+    context.execute_creation(pool, move |pool, permit| async move { create_initial_draft_in_permit(&pool, permit, request).await }).await
+}
+
+async fn create_initial_draft_in_permit(
     pool: &PgPool,
-    actor: Uuid,
+    permit: Arc<CreationPermit>,
     request: CreateTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
+    let actor = permit.actor_id();
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_version_service.create_initial_draft",
@@ -323,25 +330,30 @@ pub async fn create_initial_draft(
             .bind(id).bind(year).bind(request.academic_term_id).bind(actor).bind(serde_json::json!({"deliveryVersionId":delivery})).execute().await?;
         id
     };
-    tx.commit().await?;
-    get_version(pool, id, Utc::now().date_naive()).await
+    let version = get_version_on_connection(&mut tx, id, Utc::now().date_naive()).await?;
+    permit.commit(tx).await?;
+    Ok(version)
 }
 
-pub async fn clone_draft(
-    pool: &PgPool,
-    actor_id: Uuid,
-    source_id: Uuid,
-    request: CloneTimetableVersionRequest,
-) -> Result<TimetableVersion, AppError> {
-    let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool,
-        "academic_timetable.services.timetable_version_service.clone_draft",
-    )
-    .await?;
-    let new_version_id =
-        clone_draft_in_transaction(&mut transaction, actor_id, source_id, request).await?;
-    transaction.commit().await?;
-    get_version(pool, new_version_id, Utc::now().date_naive()).await
+pub async fn clone_draft(pool: &PgPool, context: &TimetableMutationContext, source_id: Uuid, request: CloneTimetableVersionRequest) -> Result<TimetableVersion, AppError> {
+    let existing: Vec<Uuid> = {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_timetable.services.timetable_version_service.clone_draft.resolve_destination").await?;
+        DbSession::new(&mut connection).scalar("academic_timetable.services.timetable_version_service.clone_draft.resolve_destination", "SELECT id FROM academic_timetable_versions WHERE source_version_id=$1 AND status='draft' ORDER BY id").bind(source_id).fetch_all().await?
+    };
+    let target = request.resume_draft_id.or_else(|| (existing.len() == 1).then(|| existing[0]));
+    if let Some(id) = target {
+        context.execute_lifecycle(pool, id, move |pool, permit| async move { clone_draft_in_permit(&pool, VersionMutationPermit::Existing(permit), source_id, request).await }).await
+    } else {
+        context.execute_creation(pool, move |pool, permit| async move { clone_draft_in_permit(&pool, VersionMutationPermit::Creation(permit), source_id, request).await }).await
+    }
+}
+
+async fn clone_draft_in_permit(pool: &PgPool, permit: VersionMutationPermit, source_id: Uuid, request: CloneTimetableVersionRequest) -> Result<TimetableVersion, AppError> {
+    let mut transaction = school_tenancy::TenantPool::begin_observed(pool, "academic_timetable.services.timetable_version_service.clone_draft").await?;
+    let id = clone_draft_in_transaction(&mut transaction, &permit, source_id, request).await?;
+    let result = get_version_on_connection(&mut transaction, id, Utc::now().date_naive()).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
 /// Coordinate before version/block locks. Resolve immutable IDs without row
@@ -363,10 +375,11 @@ pub(crate) async fn require_version_term_write(
 
 pub async fn clone_draft_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
-    actor_id: Uuid,
+    permit: &VersionMutationPermit,
     source_id: Uuid,
     request: CloneTimetableVersionRequest,
 ) -> Result<Uuid, AppError> {
+    let actor_id = permit.actor_id();
     let source_row_version = request.source_row_version;
     if source_row_version <= 0 {
         return Err(AppError::ValidationError(
@@ -429,6 +442,7 @@ pub async fn clone_draft_in_transaction(
         None => None,
     };
     if let Some((id, revision)) = resume {
+        permit.require_existing(id)?;
         if request
             .draft_row_version
             .is_some_and(|expected| expected != revision)
@@ -445,6 +459,7 @@ pub async fn clone_draft_in_transaction(
         return Ok(id);
     }
 
+    if matches!(permit, VersionMutationPermit::Existing(_)) { return Err(AppError::Conflict("Selected draft disappeared; reload before creating another".into())); }
     let new_version_id = Uuid::now_v7();
     DbSession::new(&mut **transaction)
         .query(
@@ -704,6 +719,17 @@ pub async fn get_version(
     )
     .await?;
     get_version_on_connection(&mut connection, version_id, display_date).await
+}
+
+/// Content triggers change only these fields. Preserve the same pinned source metadata without
+/// re-reading its full immutable delivery graph for every lesson edit.
+pub(crate) async fn refresh_content_revision_on_connection(connection: &mut sqlx::PgConnection, mut version: TimetableVersion) -> Result<TimetableVersion, AppError> {
+    let (revision, updated_at): (i64, chrono::DateTime<Utc>) = DbSession::new(connection).query_as(
+        "academic_timetable.services.timetable_version_service.refresh_content_revision",
+        "SELECT row_version,updated_at FROM academic_timetable_versions WHERE id=$1",
+    ).bind(version.id).fetch_optional().await?.ok_or_else(|| AppError::NotFound("Timetable version not found".into()))?;
+    version.row_version = revision; version.updated_at = updated_at;
+    Ok(version)
 }
 
 pub async fn get_version_on_connection(

@@ -16,3 +16,6 @@ mod timetable_block_service_tests;
 mod timetable_template_service_tests;
 #[cfg(test)]
 mod timetable_version_service_tests;
+
+#[cfg(test)]
+mod timetable_collaboration_tests;

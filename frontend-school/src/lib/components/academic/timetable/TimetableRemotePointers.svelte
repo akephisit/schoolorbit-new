@@ -7,19 +7,28 @@
 		intersectRects,
 		projectPointer,
 		type ClientRect,
+		type ClientPoint,
 		type RelativePoint
 	} from '#lib/academic/timetable/collaboration-geometry.js';
 	import type { TimetableRemotePointer } from '#lib/academic/timetable/collaboration-presentation.js';
 
 	let { pointers, root }: { pointers: TimetableRemotePointer[]; root: HTMLElement | null } =
 		$props();
-	type Motion = { from: RelativePoint; to: RelativePoint; started: number; subjectKey: string };
+	type Motion = {
+		from: RelativePoint;
+		to: RelativePoint;
+		started: number;
+		subjectKey: string;
+		contextKey: string;
+		subject: HTMLElement;
+		fromClientPoint: ClientPoint | null;
+	};
 	type VisiblePointer = { pointer: TimetableRemotePointer; x: number; y: number };
 	let visible = $state.raw<VisiblePointer[]>([]);
 	const motions = new SvelteMap<string, Motion>();
 	let invalidate = () => {};
 
-	function visibleRect(element: HTMLElement): ClientRect | null {
+	function visibleRect(element: HTMLElement, includeSubject = true): ClientRect | null {
 		let clipped: ClientRect | null = {
 			left: 0,
 			top: 0,
@@ -31,6 +40,7 @@
 			parent && clipped;
 			parent = parent.parentElement
 		) {
+			if (parent === element && !includeSubject) continue;
 			const style = getComputedStyle(parent);
 			if (
 				parent !== element &&
@@ -42,6 +52,20 @@
 		return clipped;
 	}
 
+	function motionPoint(motion: Motion, now: number): ClientPoint | null {
+		const rect = motion.subject.getBoundingClientRect();
+		if (motion.fromClientPoint) {
+			const target = projectPointer(motion.to, rect);
+			if (!target) return null;
+			const progress = Math.max(0, Math.min(1, (now - motion.started) / 66));
+			return {
+				x: motion.fromClientPoint.x + (target.x - motion.fromClientPoint.x) * progress,
+				y: motion.fromClientPoint.y + (target.y - motion.fromClientPoint.y) * progress
+			};
+		}
+		return projectPointer(interpolatePointer(motion.from, motion.to, now - motion.started), rect);
+	}
+
 	$effect(() => {
 		const current = pointers;
 		untrack(() => {
@@ -50,15 +74,38 @@
 			for (const id of motions.keys()) if (!ids.has(id)) motions.delete(id);
 			for (const pointer of current) {
 				const previous = motions.get(pointer.connectionId);
+				const sameContext = previous?.contextKey === pointer.contextKey;
 				const from =
 					previous?.subjectKey === pointer.subjectKey
 						? interpolatePointer(previous.from, previous.to, now - previous.started)
 						: pointer.position;
+				const previousPoint =
+					sameContext && previous?.subject.isConnected ? motionPoint(previous, now) : null;
+				const targetPoint = projectPointer(
+					pointer.position,
+					pointer.subject.getBoundingClientRect()
+				);
+				const clipped = previous ? visibleRect(previous.subject, !previous.fromClientPoint) : null;
+				const crossing =
+					previous &&
+					(previous.subjectKey !== pointer.subjectKey || previous.fromClientPoint !== null);
+				const fromClientPoint =
+					crossing &&
+					previousPoint &&
+					targetPoint &&
+					clipped &&
+					containsPointer(clipped, previousPoint) &&
+					Math.hypot(targetPoint.x - previousPoint.x, targetPoint.y - previousPoint.y) <= 300
+						? previousPoint
+						: null;
 				motions.set(pointer.connectionId, {
 					from,
 					to: pointer.position,
 					started: now,
-					subjectKey: pointer.subjectKey
+					subjectKey: pointer.subjectKey,
+					contextKey: pointer.contextKey,
+					subject: pointer.subject,
+					fromClientPoint
 				});
 			}
 			invalidate();
@@ -68,7 +115,10 @@
 	$effect(() => {
 		const region = root;
 		const subjects = pointers.map((pointer) => pointer.subject);
-		if (!region) return;
+		if (!region) {
+			visible = [];
+			return;
+		}
 		let frame = 0;
 		let disposed = false;
 		function draw(now: number) {
@@ -80,12 +130,11 @@
 				if (!pointer.subject.isConnected || !region?.contains(pointer.subject)) continue;
 				const motion = motions.get(pointer.connectionId);
 				const elapsed = motion ? now - motion.started : 66;
-				const position = motion
-					? interpolatePointer(motion.from, motion.to, elapsed)
-					: pointer.position;
 				moving ||= elapsed < 66;
-				const point = projectPointer(position, pointer.subject.getBoundingClientRect());
-				const clipped = visibleRect(pointer.subject);
+				const point = motion
+					? motionPoint(motion, now)
+					: projectPointer(pointer.position, pointer.subject.getBoundingClientRect());
+				const clipped = visibleRect(pointer.subject, !(motion?.fromClientPoint && elapsed < 66));
 				if (point && clipped && containsPointer(clipped, point)) next.push({ pointer, ...point });
 			}
 			visible = next;
@@ -95,22 +144,32 @@
 			if (!disposed && !frame) frame = requestAnimationFrame(draw);
 		}
 		invalidate = schedule;
-		const observer = new ResizeObserver(schedule);
+		function layoutChanged() {
+			for (const [id, motion] of motions)
+				motions.set(id, {
+					...motion,
+					from: motion.to,
+					fromClientPoint: null,
+					started: performance.now() - 66
+				});
+			schedule();
+		}
+		const observer = new ResizeObserver(layoutChanged);
 		observer.observe(region);
 		for (const subject of subjects) observer.observe(subject);
-		window.addEventListener('resize', schedule);
-		window.addEventListener('scroll', schedule, true);
-		window.visualViewport?.addEventListener('resize', schedule);
-		window.visualViewport?.addEventListener('scroll', schedule);
+		window.addEventListener('resize', layoutChanged);
+		window.addEventListener('scroll', layoutChanged, true);
+		window.visualViewport?.addEventListener('resize', layoutChanged);
+		window.visualViewport?.addEventListener('scroll', layoutChanged);
 		schedule();
 		return () => {
 			disposed = true;
 			if (frame) cancelAnimationFrame(frame);
 			observer.disconnect();
-			window.removeEventListener('resize', schedule);
-			window.removeEventListener('scroll', schedule, true);
-			window.visualViewport?.removeEventListener('resize', schedule);
-			window.visualViewport?.removeEventListener('scroll', schedule);
+			window.removeEventListener('resize', layoutChanged);
+			window.removeEventListener('scroll', layoutChanged, true);
+			window.visualViewport?.removeEventListener('resize', layoutChanged);
+			window.visualViewport?.removeEventListener('scroll', layoutChanged);
 		};
 	});
 </script>
@@ -135,8 +194,8 @@
 				/></svg
 			>
 			<span
-				class="absolute left-3 top-4 max-w-44 truncate rounded-md px-2 py-0.5 text-xs text-white shadow-sm"
-				style:background-color={pointer.color}>{pointer.name}</span
+				class="absolute left-3 top-4 max-w-44 truncate rounded-md border bg-background px-2 py-0.5 text-xs text-foreground shadow-sm"
+				style:border-color={pointer.color}>{pointer.name}</span
 			>
 			{#if pointer.ghost}
 				<div

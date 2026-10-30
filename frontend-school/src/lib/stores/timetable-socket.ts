@@ -199,6 +199,15 @@ export function subscribeDraftLeaseLost(listener: (lease: OwnedDraftLease, error
 	};
 }
 
+export function requestDraftSnapshot(): boolean {
+	const params = currentSocketParams;
+	if (!params?.timetableVersionId) return false;
+	draftSession.reset(params.timetableVersionId);
+	timetableSocketRuntime.disconnect();
+	timetableSocketRuntime.connect(params);
+	return true;
+}
+
 let currentUserId: string | null = null;
 let currentAcademicTermId: string | null = null;
 let lastSeq = 0;
@@ -401,6 +410,7 @@ export function connectTimetableSocket(params: TimetableSocketParams) {
 }
 
 export function disconnectTimetableSocket() {
+	draftReconcileSignal.set(null);
 	needsResumeReconcile = false;
 	currentUserId = null;
 	currentAcademicTermId = null;

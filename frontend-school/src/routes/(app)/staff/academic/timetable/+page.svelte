@@ -35,8 +35,8 @@
 	import TimetableRemotePointers from '#lib/components/academic/timetable/TimetableRemotePointers.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
-
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+
 	import { buildAcademicTimetablePdfDownload } from '#lib/utils/academic-timetable-pdf.js';
 	import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
@@ -149,6 +149,7 @@
 		sendDraftPresence,
 		subscribeDraftEvents,
 		subscribeDraftLeaseLost,
+		requestDraftSnapshot,
 		type OwnedDraftLease
 	} from '#lib/stores/timetable-socket.js';
 	import {
@@ -274,6 +275,8 @@
 	const academicYearId = $derived(data.academicYearId);
 	const request = new LatestRequest();
 	const versionsRequest = new LatestRequest();
+	const reloadRequest = new LatestRequest();
+	let workspaceReadVersionId: string | null = null;
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
@@ -304,6 +307,7 @@
 	const pendingWaiters = new SvelteSet<() => void>();
 
 	let pendingBlockIds = $state.raw<Set<string>>(new Set());
+	let pendingPlacementSources = $state.raw<Set<string>>(new Set());
 	let pendingRemovalCellKeys = $state.raw<Set<string>>(new Set());
 	let pendingOperationCount = $state(0);
 	let reconcileAfterPending = false;
@@ -342,6 +346,7 @@
 	let workspaceRoot = $state<HTMLElement | null>(null);
 	let dragInteraction = $state.raw<LocalInteraction | null>(null);
 	let editInteraction = $state.raw<LocalInteraction | null>(null);
+	let removeInteraction = $state.raw<LocalInteraction | null>(null);
 	let interactionRevision = $state(0);
 	let currentAnchor = $state.raw<DraftAnchor | null>(null);
 	let pointerOwnerId = $state<string | null>(null);
@@ -349,6 +354,9 @@
 	let queuedDraftEvents: DraftEventEnvelope[] = [];
 	let draftQueueOverflow = false;
 	let disposed = false;
+	let jumpIntent = 0;
+	let lastPointerPoint: { x: number; y: number } | null = null;
+	let resampleSenderLayout = () => {};
 	let presenceCoalescer: ReturnType<
 		typeof createPointerCoalescer<DraftPresenceUpdate, ReturnType<typeof setTimeout>>
 	> | null = null;
@@ -368,7 +376,7 @@
 			: []
 	);
 	const remotePointers = $derived.by(() => {
-		domRevision;
+		void domRevision;
 		return workspaceRoot && controller
 			? timetableRemotePointers(
 					workspaceRoot,
@@ -380,12 +388,13 @@
 				)
 			: [];
 	});
-	const socketContextKey = $derived(
-		`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
+	const socketContextKey = $derived.by(
+		() =>
+			`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
 	);
 	const editCanEdit = $derived.by(() => {
-		interactionRevision;
-		$draftSessionState.leaseRevision;
+		void interactionRevision;
+		void $draftSessionState.leaseRevision;
 		return Boolean(
 			canEdit &&
 			editInteraction?.lease &&
@@ -400,8 +409,10 @@
 		cancelPlacement();
 		disposeInteraction(editInteraction);
 		presenceCoalescer?.dispose();
+		disposeInteraction(removeInteraction);
 		request.abort();
 		versionsRequest.abort();
+		reloadRequest.abort();
 	});
 
 	const canRead = $derived(
@@ -592,6 +603,7 @@
 				controller = null;
 				return;
 			}
+			workspaceReadVersionId = selected.id;
 			const workspace = await getTimetableBlockWorkspace(
 				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: selected.id },
 				{ signal }
@@ -622,7 +634,22 @@
 		try {
 			const loaded = await listTimetableVersions(termId, { signal });
 			if (!versionsRequest.isCurrent(revision) || academicTermId !== termId) return;
-			versions = loaded;
+			versions = loaded.map((version) =>
+				controller?.workspace.version.id === version.id &&
+				controller.workspace.version.rowVersion > version.rowVersion
+					? controller.workspace.version
+					: version
+			);
+			if (
+				controller &&
+				!loaded.some((version) => version.id === controller?.workspace.version.id) &&
+				pendingOperationCount === 0
+			) {
+				const sourceId = controller.workspace.version.sourceVersionId;
+				controller = null;
+				const next = selectPreferredBoardVersion(loaded, sourceId);
+				if (next) await loadVersion(next.id, true);
+			}
 			if (!controller) {
 				const preferred = selectPreferredBoardVersion(
 					loaded,
@@ -648,6 +675,7 @@
 
 		const { revision, signal } = request.begin();
 		workspaceRevision += 1;
+		workspaceReadVersionId = versionId;
 		await waitForSaves();
 		const retainCurrent = controller?.workspace.version.id === versionId;
 		if (!retainCurrent) {
@@ -682,15 +710,19 @@
 			if (message) toast.success(message);
 			return;
 		}
+		const { revision, signal } = reloadRequest.begin();
 		targetController.setRefreshing(true);
 		refreshError = '';
 		try {
-			const workspace = await getTimetableBlockWorkspace({
-				academicYearId,
-				academicTermId,
-				timetableVersionId: targetController.workspace.version.id
-			});
-			if (controller !== targetController) return;
+			const workspace = await getTimetableBlockWorkspace(
+				{
+					academicYearId,
+					academicTermId,
+					timetableVersionId: targetController.workspace.version.id
+				},
+				{ signal }
+			);
+			if (disposed || !reloadRequest.isCurrent(revision) || controller !== targetController) return;
 			if (pendingOperationCount > 0) {
 				reconcileAfterPending = true;
 				return;
@@ -698,6 +730,7 @@
 			targetController.setWorkspace(workspace);
 			if (message) toast.success(message);
 		} catch (error) {
+			if (disposed || !reloadRequest.isCurrent(revision) || isAbortError(error)) return;
 			if (
 				error instanceof ApiClientError &&
 				error.status === 404 &&
@@ -719,7 +752,7 @@
 				toast.error(refreshError);
 			}
 		} finally {
-			targetController.setRefreshing(false);
+			if (reloadRequest.isCurrent(revision)) targetController.setRefreshing(false);
 		}
 	}
 
@@ -748,6 +781,15 @@
 		);
 		pendingOperationCount = Math.max(0, pendingOperationCount - 1);
 		if (pendingOperationCount === 0) {
+			if (draftQueueOverflow) {
+				draftQueueOverflow = false;
+				queuedDraftEvents = [];
+				requestDraftSnapshot();
+			} else {
+				const queued = queuedDraftEvents;
+				queuedDraftEvents = [];
+				for (const event of queued) applyCanonicalDraftEvent(event);
+			}
 			for (const resolvePending of pendingWaiters) resolvePending();
 			pendingWaiters.clear();
 		}
@@ -767,6 +809,47 @@
 		void refreshVersions();
 	}
 
+	function receiveDraftEvent(event: DraftEventEnvelope): void {
+		if (event.type !== 'DraftStateSync' && event.type !== 'DraftPatched') return;
+		const versionId =
+			event.type === 'DraftStateSync'
+				? event.payload.workspace.version.id
+				: event.payload.timetableVersionId;
+		if (disposed || versionId !== controller?.workspace.version.id) return;
+		// Canonical socket state supersedes any older read of this same workspace.
+		workspaceRevision++;
+		versionsRevision++;
+		reloadRequest.abort();
+		controller.setRefreshing(false);
+		if (workspaceReadVersionId === versionId) {
+			request.abort();
+			loading = false;
+		}
+		if (pendingOperationCount > 0) {
+			// A reconnect baseline may precede an in-flight HTTP commit. Rejoin after it finishes.
+			if (event.type === 'DraftStateSync' || queuedDraftEvents.length >= 128) {
+				draftQueueOverflow = true;
+				queuedDraftEvents = [];
+			} else if (!draftQueueOverflow) queuedDraftEvents.push(event);
+			return;
+		}
+		applyCanonicalDraftEvent(event);
+	}
+
+	function applyCanonicalDraftEvent(event: DraftEventEnvelope): void {
+		if (!controller) return;
+		if (event.type === 'DraftStateSync') {
+			if (event.payload.workspace.version.id !== controller.workspace.version.id) return;
+			controller.setWorkspace(event.payload.workspace);
+			if (event.payload.workspace.version.status !== 'draft') controller.setEditing(false);
+		} else if (event.type === 'DraftPatched') {
+			if (event.payload.timetableVersionId !== controller.workspace.version.id) return;
+			controller.setWorkspace(applyDraftPatch(controller.workspace, event.payload));
+		}
+		const version = controller.workspace.version;
+		versions = versions.map((item) => (item.id === version.id ? version : item));
+	}
+
 	beforeNavigate((navigation) => {
 		if (pendingOperationCount === 0) return;
 		navigation.cancel();
@@ -784,6 +867,9 @@
 
 	function changeView(view: TimetablePageView): void {
 		if (!controller) return;
+		cancelPlacement();
+		currentAnchor = null;
+		pointerOwnerId = null;
 		activeView = view;
 		if (view !== 'wholeSchool') controller.setView(view);
 		controller.clearPlacement();
@@ -791,6 +877,8 @@
 	}
 
 	function changeOwner(ownerId: string): void {
+		cancelPlacement();
+		currentAnchor = null;
 		controller?.selectOwner(ownerId);
 		syncUrl();
 	}
@@ -882,6 +970,7 @@
 					editInteraction = null;
 					interactionRevision++;
 				}
+				if (removeInteraction === interaction) removeInteraction = null;
 				toast.error(error instanceof Error ? error.message : 'ยังจองคาบนี้ไม่ได้');
 			});
 		return interaction;
@@ -958,6 +1047,7 @@
 	}
 
 	function sourceLockLabel(source: TimetableBlockPlacementSource): string | null {
+		if (pendingPlacementSources.has(placementSourceKey(source))) return 'กำลังบันทึก';
 		const reservation = $draftSessionState.reservations.find(
 			(item) =>
 				item.ownerConnectionId !== $draftSessionState.connectionId &&
@@ -989,7 +1079,7 @@
 	}
 
 	function cellLockLabel(dayOfWeek: string, periodId: string): string | null {
-		interactionRevision;
+		void interactionRevision;
 		if (
 			dragInteraction?.targetError &&
 			dragInteraction.requestedTarget?.dayOfWeek === dayOfWeek &&
@@ -1184,10 +1274,24 @@
 	}
 
 	function applyPlacement(dayOfWeek: string, periodId: string): void {
-		if (!controller?.dragSource || !academicTermId || busy) return;
+		if (
+			!controller?.dragSource ||
+			!dragInteraction ||
+			dragInteraction.controller !== controller ||
+			!academicTermId ||
+			busy
+		)
+			return;
 		const operationController = controller;
+		const interaction = dragInteraction;
 		const dragSource: TimetableDragSource = controller.dragSource;
 		const target = targetBlock(dayOfWeek, periodId);
+		const reservedBy = cellLockLabel(dayOfWeek, periodId);
+		if (reservedBy) {
+			cancelPlacement();
+			toast.error(`${reservedBy} กรุณาเลือกช่องเวลาอื่น`);
+			return;
+		}
 
 		if (
 			pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId)) ||
@@ -1199,13 +1303,6 @@
 			toast.error('รายการนี้กำลังบันทึก กรุณาเลือกคาบอื่นก่อน');
 			return;
 		}
-		const previewPromise = requestPlacementPreview(
-			dayOfWeek,
-			periodId,
-			dragSource,
-			target,
-			operationController.workspace
-		);
 		const originalBlocks: TimetableBlock[] = [];
 		let optimisticKind: OptimisticPlacementOperation['optimisticKind'];
 		let temporaryBlockId: string | undefined;
@@ -1258,6 +1355,27 @@
 			return;
 		}
 
+		interaction.captured = true;
+		pendingPlacementSources = new Set([
+			...pendingPlacementSources,
+			placementSourceKey(interaction.source)
+		]);
+		const selectedTarget: DraftTarget = {
+			dayOfWeek,
+			bellSchedulePeriodId: periodId,
+			blockId: target?.id ?? null
+		};
+		const previewPromise = confirmInteractionTarget(interaction, selectedTarget).then((lease) => {
+			if (!ownsDraftLease(lease) || !sameDraftTarget(lease.target, selectedTarget))
+				throw new Error('สิทธิ์วางคาบเปลี่ยนไป กรุณาลองใหม่');
+			return requestPlacementPreview(
+				dayOfWeek,
+				periodId,
+				dragSource,
+				target,
+				operationController.workspace
+			);
+		});
 		const pendingIds = changedBlocks.map((block) => block.id);
 		operationController.setWorkspace(
 			patchTimetableWorkspaceBlocks(operationController.workspace, changedBlocks)
@@ -1274,7 +1392,8 @@
 			optimisticKind,
 			temporaryBlockId,
 			originalBlocks,
-			targetBlock: target
+			targetBlock: target,
+			interaction
 		});
 	}
 
@@ -1294,60 +1413,83 @@
 			) {
 				throw new Error('ข้อมูลในช่องเปลี่ยนแปลงแล้ว กรุณาลองวางใหม่');
 			}
+			const lease = await operation.interaction.claim;
+			if (
+				!sameDraftTarget(lease.target, {
+					dayOfWeek: operation.dayOfWeek,
+					bellSchedulePeriodId: operation.periodId,
+					blockId: operation.targetBlock?.id ?? null
+				})
+			)
+				throw new Error('ตำแหน่งที่จองไว้เปลี่ยนไป กรุณาลองใหม่');
+			const options = timetableMutationOptions(draftMutationIdentity(lease));
 
 			let savedBlocks: TimetableBlock[];
 			if (dragSource.source.kind === 'ordinary_demand') {
 				savedBlocks = [
-					await createOrdinaryTimetableBlock({
-						academicTermId: operation.controller.workspace.version.academicTermId,
-						timetableVersionId: operation.controller.workspace.version.id,
-						learningGroupId: dragSource.source.learningGroupId,
-						dayOfWeek: operation.dayOfWeek,
-						bellSchedulePeriodId: operation.periodId,
-						roomId: dragSource.candidate.roomId,
-						instructorIds: dragSource.candidate.instructorIds ?? [],
-						note: null
-					})
+					await createOrdinaryTimetableBlock(
+						{
+							academicTermId: operation.controller.workspace.version.academicTermId,
+							timetableVersionId: operation.controller.workspace.version.id,
+							learningGroupId: dragSource.source.learningGroupId,
+							dayOfWeek: operation.dayOfWeek,
+							bellSchedulePeriodId: operation.periodId,
+							roomId: dragSource.candidate.roomId,
+							instructorIds: dragSource.candidate.instructorIds ?? [],
+							note: null
+						},
+						options
+					)
 				];
 			} else if (dragSource.source.kind === 'synchronized_offering') {
 				savedBlocks = [
-					await createSynchronizedTimetableBlock({
-						academicTermId: operation.controller.workspace.version.academicTermId,
-						timetableVersionId: operation.controller.workspace.version.id,
-						learningOfferingId: dragSource.source.learningOfferingId,
-						intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
-						teacherIds: dragSource.candidate.teacherIds ?? [],
-						dayOfWeek: operation.dayOfWeek,
-						bellSchedulePeriodId: operation.periodId,
-						roomId: dragSource.candidate.roomId,
-						note: null
-					})
+					await createSynchronizedTimetableBlock(
+						{
+							academicTermId: operation.controller.workspace.version.academicTermId,
+							timetableVersionId: operation.controller.workspace.version.id,
+							learningOfferingId: dragSource.source.learningOfferingId,
+							intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+							teacherIds: dragSource.candidate.teacherIds ?? [],
+							dayOfWeek: operation.dayOfWeek,
+							bellSchedulePeriodId: operation.periodId,
+							roomId: dragSource.candidate.roomId,
+							note: null
+						},
+						options
+					)
 				];
 			} else if (preview.state === 'swap' && preview.targetBlockId) {
 				const other = operation.targetBlock;
 				if (!other || other.id !== preview.targetBlockId) {
 					throw new Error('ไม่พบคาบปลายทาง กรุณาลองวางใหม่');
 				}
-				const swapped = await swapTimetableBlocks({
-					timetableVersionId: operation.controller.workspace.version.id,
-					blockAId: dragSource.source.blockId,
-					blockARowVersion: dragSource.source.rowVersion,
-					blockBId: other.id,
-					blockBRowVersion: other.rowVersion
-				});
+				const swapped = await swapTimetableBlocks(
+					{
+						timetableVersionId: operation.controller.workspace.version.id,
+						blockAId: dragSource.source.blockId,
+						blockARowVersion: dragSource.source.rowVersion,
+						blockBId: other.id,
+						blockBRowVersion: other.rowVersion
+					},
+					options
+				);
 				savedBlocks = [swapped.blockA, swapped.blockB];
 			} else {
 				savedBlocks = [
-					await updateTimetableBlock(dragSource.source.blockId, {
-						timetableVersionId: operation.controller.workspace.version.id,
-						rowVersion: dragSource.source.rowVersion,
-						dayOfWeek: operation.dayOfWeek,
-						bellSchedulePeriodId: operation.periodId
-					})
+					await updateTimetableBlock(
+						dragSource.source.blockId,
+						{
+							timetableVersionId: operation.controller.workspace.version.id,
+							rowVersion: dragSource.source.rowVersion,
+							dayOfWeek: operation.dayOfWeek,
+							bellSchedulePeriodId: operation.periodId
+						},
+						options
+					)
 				];
 			}
 
-			if (controller === operation.controller) {
+			if (!disposed && controller === operation.controller) {
 				let workspace = operation.controller.workspace;
 				if (operation.temporaryBlockId) {
 					workspace = setTimetableWorkspaceBlocks(
@@ -1357,9 +1499,10 @@
 				}
 				operation.controller.setWorkspace(patchTimetableWorkspaceBlocks(workspace, savedBlocks));
 			}
-			toast.success('บันทึกตำแหน่งคาบแล้ว');
+			if (!disposed && controller === operation.controller) toast.success('บันทึกตำแหน่งคาบแล้ว');
 		} catch (error) {
-			if (controller === operation.controller) {
+			if (disposed || controller !== operation.controller) return;
+			if (!disposed && controller === operation.controller) {
 				let workspace = operation.controller.workspace;
 				if (operation.temporaryBlockId) {
 					workspace = setTimetableWorkspaceBlocks(
@@ -1377,6 +1520,13 @@
 			};
 			toast.error(saveError.message);
 		} finally {
+			pendingPlacementSources = new Set(
+				[...pendingPlacementSources].filter(
+					(key) => key !== placementSourceKey(operation.interaction.source)
+				)
+			);
+			operation.interaction.captured = false;
+			disposeInteraction(operation.interaction);
 			finishPendingOperation(operation.pendingBlockIds);
 		}
 	}
@@ -1384,6 +1534,15 @@
 	function previewPlacement(dayOfWeek: string, periodId: string): void {
 		if (!controller?.dragSource || previewCellKey === cellKey(dayOfWeek, periodId)) return;
 		previewCellKey = cellKey(dayOfWeek, periodId);
+		if (dragInteraction)
+			observeTarget(
+				dragInteraction,
+				confirmInteractionTarget(dragInteraction, {
+					dayOfWeek,
+					bellSchedulePeriodId: periodId,
+					blockId: targetBlock(dayOfWeek, periodId)?.id ?? null
+				})
+			);
 	}
 
 	async function downloadPdf(
@@ -1458,12 +1617,42 @@
 		return new Promise((resolvePending) => pendingWaiters.add(resolvePending));
 	}
 	async function savedVersion(): Promise<TimetableVersion> {
+		await releaseIdleInteractions();
 		await waitForSaves();
 		if (saveError) throw new Error(saveError.message);
 		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
 		await reload();
 		if (refreshError) throw new Error(refreshError);
 		return controller.workspace.version;
+	}
+
+	async function releaseIdleInteractions(): Promise<void> {
+		const idle = [dragInteraction, editInteraction, removeInteraction].filter(
+			(item): item is LocalInteraction => Boolean(item && !item.captured)
+		);
+		dragInteraction = null;
+		editInteraction = null;
+		removeInteraction = null;
+		controller?.clearPlacement();
+		previewCellKey = '';
+		for (const interaction of idle) {
+			interaction.cancelled = true;
+			let lease: OwnedDraftLease;
+			try {
+				lease = await interaction.claim;
+			} catch {
+				interaction.abort.abort();
+				continue;
+			}
+			try {
+				await releaseDraftLease(lease);
+			} catch {
+				if ($draftSessionState.ready)
+					throw new Error('ยังคืนสิทธิ์คาบเดิมไม่ได้ กรุณารอสักครู่แล้วลองใหม่');
+			} finally {
+				interaction.abort.abort();
+			}
+		}
 	}
 	async function startEditing(draftId?: string): Promise<void> {
 		if (!controller || busy) return;
@@ -1674,6 +1863,9 @@
 		return labels[code];
 	}
 	function openEditor(block: TimetableBlock): void {
+		cancelPlacement();
+		disposeInteraction(editInteraction);
+		editInteraction = null;
 		selectedBlockId = block.id;
 		editTitle = block.title ?? '';
 		editNote = block.note ?? '';
@@ -1683,6 +1875,12 @@
 		);
 		editTeacherIds = blockTargetTeacherIds(block);
 		editOpen = true;
+		if (canEdit && !pendingBlockIds.has(block.id) && !blockLockLabel(block.id))
+			editInteraction = createInteraction(
+				{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
+				candidateForBlock(block),
+				'edit'
+			);
 	}
 
 	function lockedTeacherTargetIds(block: TimetableBlock | null): string[] {
@@ -1726,8 +1924,17 @@
 	}
 
 	function saveBlock(): void {
-		if (!controller || !selectedBlock || busy || pendingBlockIds.has(selectedBlock.id)) return;
+		if (
+			!controller ||
+			!selectedBlock ||
+			!editInteraction ||
+			!editCanEdit ||
+			busy ||
+			pendingBlockIds.has(selectedBlock.id)
+		)
+			return;
 		const operationController = controller;
+		const interaction = editInteraction;
 		const originalBlock = selectedBlock;
 		const title = editTitle.trim() || null;
 		const note = editNote.trim() || null;
@@ -1739,6 +1946,13 @@
 				? editInstructorIds
 				: null;
 		const teacherIds = originalBlock.schedulingMode === 'synchronized' ? editTeacherIds : null;
+		interaction.candidate = {
+			...candidateForBlock(originalBlock),
+			roomId,
+			instructorIds: instructorIds ?? blockInstructorIds(originalBlock),
+			teacherIds: teacherIds ?? blockTargetTeacherIds(originalBlock)
+		};
+		interaction.captured = true;
 		const request: UpdateTimetableBlockRequest = {
 			timetableVersionId: operationController.workspace.version.id,
 			rowVersion: originalBlock.rowVersion,
@@ -1764,7 +1978,8 @@
 		void persistOptimisticBlockEdit({
 			controller: operationController,
 			originalBlock,
-			request
+			request,
+			interaction
 		});
 	}
 
@@ -1772,15 +1987,25 @@
 		operation: OptimisticBlockEditOperation
 	): Promise<void> {
 		try {
-			const saved = await updateTimetableBlock(operation.originalBlock.id, operation.request);
-			if (controller === operation.controller) {
+			const lease = await confirmInteractionTarget(operation.interaction, {
+				dayOfWeek: operation.originalBlock.dayOfWeek,
+				bellSchedulePeriodId: operation.originalBlock.bellSchedulePeriodId,
+				blockId: null
+			});
+			const saved = await updateTimetableBlock(
+				operation.originalBlock.id,
+				operation.request,
+				timetableMutationOptions(draftMutationIdentity(lease))
+			);
+			if (!disposed && controller === operation.controller) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
 				);
 			}
-			toast.success('แก้รายละเอียดคาบแล้ว');
+			if (!disposed && controller === operation.controller) toast.success('แก้รายละเอียดคาบแล้ว');
 		} catch (error) {
-			if (controller === operation.controller) {
+			if (disposed || controller !== operation.controller) return;
+			if (!disposed && controller === operation.controller) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [operation.originalBlock])
 				);
@@ -1791,6 +2016,9 @@
 			};
 			toast.error(saveError.message);
 		} finally {
+			operation.interaction.captured = false;
+			disposeInteraction(operation.interaction);
+			if (editInteraction === operation.interaction) editInteraction = null;
 			finishPendingOperation([operation.originalBlock.id]);
 		}
 	}
@@ -1836,6 +2064,17 @@
 	}
 
 	function requestRemove(block: TimetableBlock): void {
+		if (!controller || !canEdit || pendingBlockIds.has(block.id) || blockLockLabel(block.id))
+			return;
+		cancelPlacement();
+		disposeInteraction(editInteraction);
+		editInteraction = null;
+		disposeInteraction(removeInteraction);
+		removeInteraction = createInteraction(
+			{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
+			candidateForBlock(block),
+			'edit'
+		);
 		selectedBlockId = block.id;
 		removeMode =
 			currentRemovalTarget(block) && (block.blockKind !== 'course' || block.groups.length > 1)
@@ -1845,8 +2084,16 @@
 	}
 
 	function confirmRemove(): void {
-		if (!controller || !selectedBlock || busy || pendingBlockIds.has(selectedBlock.id)) return;
+		if (
+			!controller ||
+			!selectedBlock ||
+			!removeInteraction ||
+			busy ||
+			pendingBlockIds.has(selectedBlock.id)
+		)
+			return;
 		const operationController = controller;
+		const interaction = removeInteraction;
 		const block = selectedBlock;
 		const mode = removeMode;
 		const target = mode === 'target' ? currentRemovalTarget(block) : null;
@@ -1868,6 +2115,7 @@
 			return;
 		}
 		const pendingIds = originalBlocks.map((item) => item.id);
+		interaction.captured = true;
 		const pendingCells = [
 			...new Set(originalBlocks.map((item) => cellKey(item.dayOfWeek, item.bellSchedulePeriodId)))
 		];
@@ -1896,7 +2144,8 @@
 			pendingBlockIds: pendingIds,
 			pendingCellKeys: pendingCells,
 			target,
-			versionId: operationController.workspace.version.id
+			versionId: operationController.workspace.version.id,
+			interaction
 		});
 	}
 
@@ -1907,16 +2156,26 @@
 			return;
 		}
 		try {
+			if (!operation.interaction) throw new Error('ยังไม่ได้จองคาบที่จะนำออก กรุณาลองใหม่');
+			const lease = await operation.interaction.claim;
+			let identity: DraftMutationIdentity | undefined;
+			if (operation.mode === 'series') await releaseDraftLease(lease);
+			else identity = draftMutationIdentity(lease);
+			const options = timetableMutationOptions(identity);
 			if (operation.mode === 'target') {
 				if (!operation.target) throw new Error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
-				const saved = await removeTimetableBlockTarget(block.id, {
-					timetableVersionId: operation.versionId,
-					blockRowVersion: block.rowVersion,
-					targetKind: operation.target.kind,
-					targetId: operation.target.id,
-					targetRowVersion: operation.target.rowVersion
-				});
-				if (controller === operation.controller) {
+				const saved = await removeTimetableBlockTarget(
+					block.id,
+					{
+						timetableVersionId: operation.versionId,
+						blockRowVersion: block.rowVersion,
+						targetKind: operation.target.kind,
+						targetId: operation.target.id,
+						targetRowVersion: operation.target.rowVersion
+					},
+					options
+				);
+				if (!disposed && controller === operation.controller) {
 					const workspace = saved.isActive
 						? patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
 						: setTimetableWorkspaceBlocks(
@@ -1929,11 +2188,13 @@
 				if (!block.seriesId) throw new Error('คาบนี้ไม่ได้อยู่ในชุดคาบพิเศษ');
 				await deleteTimetableBlockSeries(block.seriesId, operation.versionId);
 			} else {
-				await deleteTimetableBlock(block.id, block.rowVersion, operation.versionId);
+				await deleteTimetableBlock(block.id, block.rowVersion, operation.versionId, options);
 			}
-			toast.success('นำรายการออกจากตารางแล้ว');
+			if (!disposed && controller === operation.controller)
+				toast.success('นำรายการออกจากตารางแล้ว');
 		} catch (error) {
-			if (controller === operation.controller) {
+			if (disposed || controller !== operation.controller) return;
+			if (!disposed && controller === operation.controller) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, operation.originalBlocks)
 				);
@@ -1944,6 +2205,11 @@
 			};
 			toast.error(saveError.message);
 		} finally {
+			if (operation.interaction) {
+				operation.interaction.captured = false;
+				disposeInteraction(operation.interaction);
+			}
+			if (removeInteraction === operation.interaction) removeInteraction = null;
 			finishPendingOperation(operation.pendingBlockIds, operation.pendingCellKeys);
 		}
 	}
@@ -1981,6 +2247,7 @@
 
 	async function createStructural(): Promise<void> {
 		if (!controller || !academicTermId || busy) return;
+		const operationController = controller;
 		if (!structuralForm.title.trim() || structuralForm.slots.length === 0) {
 			toast.error('กรอกชื่อและเลือกอย่างน้อย 1 ช่องเวลา');
 			return;
@@ -2005,14 +2272,17 @@
 				return { dayOfWeek, bellSchedulePeriodId };
 			})
 		};
-		workspaceRevision += 1;
-		request.abort();
-		loading = false;
+		beginPendingOperation([]);
 		busy = true;
 		try {
-			await createStructuralTimetableBlocks(body);
+			await releaseIdleInteractions();
+			const blocks = await createStructuralTimetableBlocks(body);
+			if (controller === operationController)
+				operationController.setWorkspace(
+					patchTimetableWorkspaceBlocks(operationController.workspace, blocks)
+				);
 			structuralOpen = false;
-			await reload('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
+			toast.success('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
 		} catch (error) {
 			saveError = {
 				message: error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ',
@@ -2021,6 +2291,7 @@
 			toast.error(saveError.message);
 		} finally {
 			busy = false;
+			finishPendingOperation([]);
 		}
 	}
 
@@ -2104,41 +2375,355 @@
 		};
 	});
 
-	onMount(() => {
-		let currentTermId = '';
-		let userId = '';
-		let socketKey = '';
-		const synchronize = () => {
-			const nextSocketKey = `${currentTermId}:${userId}`;
-			if (!currentTermId || !userId) {
+	function samplePointer(event: PointerEvent | DragEvent): void {
+		if (
+			event.clientX === 0 &&
+			event.clientY === 0 &&
+			(event.type.startsWith('drag') || event.type === 'drop')
+		)
+			return;
+		lastPointerPoint = { x: event.clientX, y: event.clientY };
+		samplePointerAtPoint(lastPointerPoint);
+	}
+
+	function samplePointerAtPoint(clientPoint: { x: number; y: number }): void {
+		if (!workspaceRoot || !controller) return;
+		const subject = pointerTimetableSubject(workspaceRoot, clientPoint.x, clientPoint.y);
+		const point = subject ? relativePointer(clientPoint, subject.getBoundingClientRect()) : null;
+		trackPlacementCell(subject);
+		pointerOwnerId =
+			activeView === 'wholeSchool'
+				? (subject?.dataset.timetableOwnerId ?? subject?.dataset.rowId ?? null)
+				: null;
+		if (!subject || !point) {
+			currentAnchor = null;
+			return;
+		}
+		if (subject.dataset.timetableAnchor === 'block') {
+			const block = controller.workspace.blocks.find((item) => item.id === subject.dataset.blockId);
+			currentAnchor =
+				block && !block.id.startsWith('optimistic:')
+					? { kind: 'block', blockId: block.id, ...point }
+					: null;
+		} else if (subject.dataset.timetableAnchor === 'cell') {
+			const periodId = subject.dataset.timetablePeriodId;
+			currentAnchor =
+				periodId && controller.workspace.bellPeriods.some((period) => period.id === periodId)
+					? {
+							kind: 'cell',
+							dayOfWeek: subject.dataset.timetableDay ?? 'MON',
+							bellSchedulePeriodId: periodId,
+							...point
+						}
+					: null;
+		} else {
+			const groupId = subject.dataset.timetableGroupId;
+			const offeringId = subject.dataset.timetableOfferingId;
+			const source: TimetableBlockPlacementSource | null =
+				subject.dataset.timetableSourceKind === 'ordinary_demand' &&
+				groupId &&
+				offeringId &&
+				controller.workspace.ordinaryDemands.some(
+					(item) => item.learningGroupId === groupId && item.learningOfferingId === offeringId
+				)
+					? { kind: 'ordinary_demand', learningGroupId: groupId, learningOfferingId: offeringId }
+					: offeringId &&
+						  controller.workspace.synchronizedDemands.some(
+								(item) => item.learningOfferingId === offeringId
+						  )
+						? { kind: 'synchronized_offering', learningOfferingId: offeringId }
+						: null;
+			currentAnchor = source ? { kind: 'tray', source, ...point } : null;
+		}
+	}
+
+	function trackPlacementCell(subject: HTMLElement | null): void {
+		if (!dragInteraction || dragInteraction.captured) return;
+		const cell = subject?.closest<HTMLElement>('[data-timetable-anchor="cell"]');
+		const day = cell?.dataset.timetableDay;
+		const periodId = cell?.dataset.timetablePeriodId;
+		if (day && periodId) previewPlacement(day, periodId);
+		else if (previewCellKey) {
+			previewCellKey = '';
+			observeTarget(dragInteraction, confirmInteractionTarget(dragInteraction, null));
+		}
+	}
+
+	async function jumpToCollaborator(connectionId: string): Promise<void> {
+		const intent = ++jumpIntent;
+		await waitForSaves();
+		if (intent !== jumpIntent || disposed) return;
+		if (saveError) {
+			toast.error(saveError.message);
+			return;
+		}
+		const selectedController = controller;
+		const connection = $draftSessionState.users
+			.flatMap((user) => user.connections)
+			.find((item) => item.connectionId === connectionId);
+		if (
+			!selectedController ||
+			!connection?.context ||
+			!collaborationContextLabel(selectedController.workspace, connection.context)
+		) {
+			toast.info('ผู้ร่วมจัดตารางยังไม่ได้เลือกมุมมองที่เปิดได้');
+			return;
+		}
+		const context = connection.context;
+		cancelPlacement();
+		editOpen = false;
+		disposeInteraction(editInteraction);
+		editInteraction = null;
+		activeView = context.viewMode;
+		currentAnchor = null;
+		if (context.viewMode === 'wholeSchool') {
+			if (context.dayOfWeek && days.some((day) => day.id === context.dayOfWeek))
+				overviewDay = context.dayOfWeek;
+			pointerOwnerId = context.viewId ?? null;
+		} else {
+			selectedController.setView(context.viewMode);
+			if (context.viewId) selectedController.selectOwner(context.viewId);
+			pointerOwnerId = null;
+		}
+		syncUrl();
+		await tick();
+		if (intent !== jumpIntent || controller !== selectedController || !workspaceRoot) return;
+		const anchor = connection.anchor;
+		let subject: HTMLElement | null = null;
+		if (anchor?.kind === 'block') {
+			selectedBlockId = anchor.blockId;
+			subject = findTimetableBlockElement(
+				workspaceRoot,
+				anchor.blockId,
+				context.viewMode === 'wholeSchool' ? context.viewId : null
+			);
+		} else if (anchor?.kind === 'cell')
+			subject = findTimetableCellElement(
+				workspaceRoot,
+				anchor.dayOfWeek,
+				anchor.bellSchedulePeriodId,
+				context.viewId
+			);
+		if (!subject && context.viewId)
+			subject =
+				[...workspaceRoot.querySelectorAll<HTMLElement>('[data-timetable-owner-id]')].find(
+					(element) => element.dataset.timetableOwnerId === context.viewId
+				) ?? null;
+		if (subject) {
+			for (const previous of workspaceRoot.querySelectorAll<HTMLElement>(
+				'[data-timetable-jump-target]'
+			))
+				delete previous.dataset.timetableJumpTarget;
+			subject.dataset.timetableJumpTarget = 'true';
+			subject.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
+			subject.tabIndex = -1;
+			subject.focus({ preventScroll: true });
+		}
+	}
+
+	const presenceConnectionKey = $derived(
+		$draftSessionState.ready ? ($draftSessionState.connectionId ?? '') : ''
+	);
+	const collaborationIsDraft = $derived(controller?.workspace.version.status === 'draft');
+	$effect(() => {
+		const key = socketContextKey;
+		untrack(() => {
+			const termId = academicTermId;
+			const userId = $authStore.user?.id;
+			if (!termId || !userId || !canRead) {
 				disconnectTimetableSocket();
-				socketKey = '';
 				return;
 			}
-			if (currentTermId && userId && nextSocketKey !== socketKey) {
-				disconnectTimetableSocket();
-				connectTimetableSocket({ academicTermId: currentTermId, currentUserId: userId });
-				socketKey = nextSocketKey;
-			}
-		};
-		const unsubscribeContext = academicContext.subscribe((state) => {
-			const nextTerm = state.selected.academicTermId ?? '';
-			if (nextTerm === currentTermId) return;
-			currentTermId = nextTerm;
-			synchronize();
-		});
-		const unsubscribeAuth = authStore.subscribe((state) => {
-			userId = state.user?.id ?? '';
-			synchronize();
-		});
-		const unsubscribeRefresh = refreshTrigger.subscribe((value) => {
-			if (value > 0 && controller) requestReconcile();
+			connectTimetableSocket({
+				academicTermId: termId,
+				currentUserId: userId,
+				timetableVersionId: controller?.workspace.version.id
+			});
 		});
 		return () => {
-			unsubscribeContext();
-			unsubscribeAuth();
+			if (key) disconnectTimetableSocket();
+		};
+	});
+	$effect(() => {
+		const key = presenceConnectionKey;
+		const context = collaborationContext;
+		const anchor = currentAnchor;
+		if (key && collaborationIsDraft) presenceCoalescer?.push({ context, anchor });
+		else presenceCoalescer?.cancel();
+	});
+	$effect(() => {
+		void controller?.workspace;
+		void controller?.selectedOwnerId;
+		void activeView;
+		void overviewDay;
+		const root = workspaceRoot;
+		let current = true;
+		void tick().then(() => {
+			if (current && root === workspaceRoot && !disposed) domRevision++;
+		});
+		return () => {
+			current = false;
+		};
+	});
+	$effect(() => {
+		if (!editOpen || !selectedBlock) {
+			disposeInteraction(editInteraction);
+			editInteraction = null;
+			return;
+		}
+		const interaction = editInteraction;
+		const block = selectedBlock;
+		const roomId = editRoomId === noRoomValue ? null : editRoomId;
+		const instructorIds = [...editInstructorIds];
+		const teacherIds = [...editTeacherIds];
+		if (!interaction || interaction.captured) return;
+		interaction.candidate = {
+			...candidateForBlock(block),
+			roomId,
+			instructorIds:
+				block.blockKind !== 'structural' &&
+				block.schedulingMode !== 'synchronized' &&
+				block.groups.length === 1
+					? instructorIds
+					: blockInstructorIds(block),
+			teacherIds:
+				block.schedulingMode === 'synchronized' ? teacherIds : blockTargetTeacherIds(block)
+		};
+		observeTarget(
+			interaction,
+			confirmInteractionTarget(interaction, {
+				dayOfWeek: block.dayOfWeek,
+				bellSchedulePeriodId: block.bellSchedulePeriodId,
+				blockId: null
+			})
+		);
+	});
+	$effect(() => {
+		if (!removeOpen && removeInteraction && !removeInteraction.captured) {
+			disposeInteraction(removeInteraction);
+			removeInteraction = null;
+		}
+	});
+	$effect(() => {
+		if (presenceConnectionKey) return;
+		untrack(() => {
+			if (dragInteraction?.lease && !ownsDraftLease(dragInteraction.lease)) cancelPlacement();
+			if (
+				editInteraction?.lease &&
+				!ownsDraftLease(editInteraction.lease) &&
+				!editInteraction.captured
+			)
+				editInteraction = null;
+			if (
+				removeInteraction?.lease &&
+				!ownsDraftLease(removeInteraction.lease) &&
+				!removeInteraction.captured
+			)
+				removeInteraction = null;
+		});
+	});
+
+	$effect(() => {
+		const root = workspaceRoot;
+		if (!root) return;
+		const resize = new ResizeObserver(() => resampleSenderLayout());
+		resize.observe(root);
+		const changes = new MutationObserver(() => resampleSenderLayout());
+		changes.observe(root, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['class', 'style', 'hidden', 'data-state', 'data-block-id']
+		});
+		return () => {
+			resize.disconnect();
+			changes.disconnect();
+		};
+	});
+
+	onMount(() => {
+		let senderFrame = 0;
+		resampleSenderLayout = () => {
+			if (senderFrame || !lastPointerPoint) return;
+			senderFrame = requestAnimationFrame(() => {
+				senderFrame = 0;
+				if (lastPointerPoint) samplePointerAtPoint(lastPointerPoint);
+			});
+		};
+		presenceCoalescer = createPointerCoalescer({
+			send: (value: DraftPresenceUpdate) => {
+				sendDraftPresence(value.context, value.anchor ?? null);
+			},
+			setTimer: (callback, delay) => setTimeout(callback, delay),
+			clearTimer: (timer) => clearTimeout(timer)
+		});
+		let initialRefresh = true;
+		const unsubscribeRefresh = refreshTrigger.subscribe(() => {
+			if (initialRefresh) {
+				initialRefresh = false;
+				return;
+			}
+			if (controller) requestReconcile();
+			else void refreshVersions();
+		});
+		const unsubscribeDraft = subscribeDraftEvents(receiveDraftEvent);
+		const unsubscribeReconcile = draftReconcileSignal.subscribe((signal) => {
+			if (
+				!signal ||
+				signal.versionId !== controller?.workspace.version.id ||
+				signal.reason === 'journal_gap'
+			)
+				return;
+			cancelPlacement();
+			if (!editInteraction?.captured) {
+				disposeInteraction(editInteraction);
+				editInteraction = null;
+			}
+			void refreshVersions();
+		});
+		const unsubscribeLease = subscribeDraftLeaseLost((lease, error) => {
+			if (dragInteraction?.lease === lease && !dragInteraction.captured) {
+				cancelPlacement();
+				toast.error(error.message);
+			}
+			if (editInteraction?.lease === lease && !editInteraction.captured) {
+				editInteraction = null;
+				toast.error(error.message);
+			}
+		});
+		const clearPointer = () => {
+			lastPointerPoint = null;
+			trackPlacementCell(null);
+			currentAnchor = null;
+			pointerOwnerId = null;
+		};
+		document.addEventListener('pointermove', samplePointer, { capture: true, passive: true });
+		document.addEventListener('dragover', samplePointer, { capture: true, passive: true });
+		document.addEventListener('dragstart', samplePointer, { capture: true, passive: true });
+		document.addEventListener('drop', samplePointer, { capture: true, passive: true });
+		document.addEventListener('mouseleave', clearPointer);
+		window.addEventListener('scroll', resampleSenderLayout, true);
+		window.addEventListener('resize', resampleSenderLayout);
+		window.visualViewport?.addEventListener('scroll', resampleSenderLayout);
+		window.visualViewport?.addEventListener('resize', resampleSenderLayout);
+		window.addEventListener('blur', clearPointer);
+		return () => {
 			unsubscribeRefresh();
-			disconnectTimetableSocket();
+			unsubscribeDraft();
+			unsubscribeReconcile();
+			unsubscribeLease();
+			document.removeEventListener('pointermove', samplePointer, true);
+			document.removeEventListener('dragover', samplePointer, true);
+			document.removeEventListener('dragstart', samplePointer, true);
+			document.removeEventListener('drop', samplePointer, true);
+			document.removeEventListener('mouseleave', clearPointer);
+			window.removeEventListener('scroll', resampleSenderLayout, true);
+			window.removeEventListener('resize', resampleSenderLayout);
+			window.visualViewport?.removeEventListener('scroll', resampleSenderLayout);
+			window.visualViewport?.removeEventListener('resize', resampleSenderLayout);
+			window.removeEventListener('blur', clearPointer);
+			if (senderFrame) cancelAnimationFrame(senderFrame);
+			presenceCoalescer?.dispose();
 		};
 	});
 </script>
@@ -2256,9 +2841,12 @@
 		<div
 			class="relative space-y-4 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:[&>*]:shrink-0"
 			aria-busy={loading || controller.isRefreshing}
+			bind:this={workspaceRoot}
 			data-testid="timetable-board-ready"
 		>
 			<TimetableWorkspaceHeader
+				{collaborators}
+				onJumpCollaborator={jumpToCollaborator}
 				version={controller.workspace.version}
 				view={activeView}
 				isSaving={busy || pendingOperationCount > 0}
@@ -2477,6 +3065,7 @@
 															(issue) => issue.blockId === block.id
 														)}
 														onSelect={openEditor}
+														lockedBy={blockLockLabel(block.id)}
 													/>
 												{/each}
 											</TimetableCell>
@@ -2506,6 +3095,8 @@
 								staff={controller.workspace.staff}
 								disabled={!canEdit}
 								onChooseDemand={chooseDemand}
+								{sourceLockLabel}
+								onSelectionChange={updateDemandSelection}
 								onDragStartDemand={startPlacement}
 								onCancelDrag={finishPlacementDrag}
 								onOpenStructural={openStructuralDialog}
@@ -2522,6 +3113,8 @@
 						{placementPreview}
 						{placementReasons}
 						{isBlockPending}
+						{blockLockLabel}
+						{cellLockLabel}
 						{isCellPendingRemoval}
 						onHoverIntent={previewPlacement}
 						onDropIntent={applyPlacement}
@@ -2559,7 +3152,7 @@
 						<Textarea
 							id="timetable-block-title"
 							bind:value={editTitle}
-							disabled={!canEdit}
+							disabled={!editCanEdit}
 							rows={3}
 							placeholder="กด Enter เพื่อขึ้นบรรทัดใหม่"
 						/>
@@ -2567,14 +3160,14 @@
 						<Input
 							id="timetable-block-title"
 							bind:value={editTitle}
-							disabled={!canEdit}
+							disabled={!editCanEdit}
 							placeholder={selectedBlock?.offeringName ?? 'ใช้ชื่อจากรายการเปิดสอน'}
 						/>
 					{/if}
 				</div>
 				<div class="space-y-1.5">
 					<Label>ห้องเรียน</Label>
-					<Select.Root type="single" bind:value={editRoomId} disabled={!canEdit}>
+					<Select.Root type="single" bind:value={editRoomId} disabled={!editCanEdit}>
 						<Select.Trigger class="w-full" aria-label="เลือกห้องเรียน">
 							{editRoomId === noRoomValue
 								? 'ไม่ระบุห้อง'
@@ -2593,7 +3186,7 @@
 					<TimetableInstructorPicker
 						options={instructorOptionsForBlock(selectedBlock)}
 						bind:value={editInstructorIds}
-						disabled={!canEdit}
+						disabled={!editCanEdit}
 					/>
 				{/if}
 				{#if selectedBlock?.schedulingMode === 'synchronized'}
@@ -2601,7 +3194,7 @@
 						staff={controller?.workspace.staff ?? []}
 						value={editTeacherIds}
 						lockedIds={lockedTeacherTargetIds(selectedBlock)}
-						disabled={!canEdit}
+						disabled={!editCanEdit}
 						label="ครูที่กันเวลาไว้ล่วงหน้า"
 						onValueChange={(teacherIds) => (editTeacherIds = teacherIds)}
 					/>
@@ -2618,13 +3211,18 @@
 				{/if}
 				<div class="space-y-1.5">
 					<Label for="timetable-block-note">หมายเหตุ</Label>
-					<Textarea id="timetable-block-note" bind:value={editNote} disabled={!canEdit} rows={3} />
+					<Textarea
+						id="timetable-block-note"
+						bind:value={editNote}
+						disabled={!editCanEdit}
+						rows={3}
+					/>
 				</div>
 			</div>
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (editOpen = false)}>ปิด</Button>
 				{#if canEdit}
-					<Button disabled={busy} onclick={saveBlock}>
+					<Button disabled={busy || !editCanEdit} onclick={saveBlock}>
 						{#if busy}<LoaderCircle class="size-4 animate-spin" />{/if} บันทึก
 					</Button>
 				{/if}
@@ -2996,3 +3594,12 @@
 		/>
 	{/key}
 {/if}
+
+<TimetableRemotePointers pointers={remotePointers} root={workspaceRoot} />
+
+<style>
+	:global([data-timetable-jump-target]) {
+		outline: 2px solid var(--primary);
+		outline-offset: -2px;
+	}
+</style>

@@ -868,7 +868,7 @@ async fn protected_mutation_headers_follow_committed_results() {
     assert_eq!(set_cookie_count(&unavailable), 0);
 }
 
-mod protected_router {
+pub(crate) mod protected_router {
     use std::{
         collections::HashMap,
         sync::{
@@ -926,10 +926,10 @@ mod protected_router {
         }
     }
 
-    struct ProtectedFixture {
-        runtime: AuthRuntime,
-        tenant_a_id: Uuid,
-        tenant_a_pool: sqlx::PgPool,
+    pub(crate) struct ProtectedFixture {
+        pub(crate) runtime: AuthRuntime,
+        pub(crate) tenant_a_id: Uuid,
+        pub(crate) tenant_a_pool: sqlx::PgPool,
         _tenant_b_pool: sqlx::PgPool,
         server: JoinHandle<()>,
     }
@@ -938,6 +938,11 @@ mod protected_router {
         async fn new(test_name: &str) -> Self {
             let tenant_a_pool = create_named_test_pool(&format!("{test_name}_tenant_a")).await;
             run_test_migrations(&tenant_a_pool).await;
+            Self::with_prepared_tenant_pool(test_name, tenant_a_pool).await
+        }
+
+        /// Shares the central directory/session fixture with domain-owned migrated fixtures.
+        pub(crate) async fn with_prepared_tenant_pool(test_name: &str, tenant_a_pool: sqlx::PgPool) -> Self {
             let tenant_b_pool = create_named_test_pool(&format!("{test_name}_tenant_b")).await;
             run_test_migrations(&tenant_b_pool).await;
 
@@ -1004,7 +1009,7 @@ mod protected_router {
             }
         }
 
-        async fn insert_user(&self, pool: &sqlx::PgPool, username: &str, status: &str) -> Uuid {
+        pub(crate) async fn insert_user(&self, pool: &sqlx::PgPool, username: &str, status: &str) -> Uuid {
             sqlx::query_scalar(
                 "INSERT INTO users (\
                      username, email, password_hash, first_name, last_name, user_type, status\
@@ -1019,7 +1024,7 @@ mod protected_router {
             .expect("router test user must insert")
         }
 
-        async fn insert_session(
+        pub(crate) async fn insert_session(
             &self,
             pool: &sqlx::PgPool,
             user_id: Uuid,
@@ -1053,7 +1058,7 @@ mod protected_router {
             (session_id, token)
         }
 
-        fn csrf(&self, session_id: Uuid) -> String {
+        pub(crate) fn csrf(&self, session_id: Uuid) -> String {
             session_csrf_token(self.runtime.config.hmac_key(), self.tenant_a_id, session_id)
                 .expose_for_header()
         }

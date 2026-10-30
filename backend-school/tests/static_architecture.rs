@@ -423,7 +423,7 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
             .filter_map(|parameter| parameter.split_once(':'))
             .map(|(name, _)| match name.trim() {
                 "pool" => "&context.tenant.pool",
-                "actor_id" => "context.actor.user_id",
+                "context" => "&mutation",
                 "request" => "payload",
                 "block_id" => "block_id",
                 "series_id" => "series_id",

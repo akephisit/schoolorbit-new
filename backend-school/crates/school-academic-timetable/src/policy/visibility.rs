@@ -12,6 +12,7 @@ use crate::models::timetable_block::{
 #[derive(Debug, Clone)]
 pub struct TimetableVisibility {
     pub source: DeliverySnapshot,
+    pub block_offering_owners: BTreeMap<Uuid, Uuid>,
     pub homeroom_advisors: BTreeMap<Uuid, BTreeSet<Uuid>>,
 }
 
@@ -44,25 +45,7 @@ impl TimetableVisibility {
         if access.includes_school_owned {
             return true;
         }
-        if block
-            .learning_offering_id
-            .and_then(|id| {
-                self.source
-                    .offerings
-                    .iter()
-                    .find(|offering| offering.id == id)
-            })
-            .is_some_and(|offering| {
-                access
-                    .organization_unit_ids
-                    .contains(&offering.owning_organization_unit_id)
-                    || access
-                        .organization_tree_unit_ids
-                        .contains(&offering.owning_organization_unit_id)
-            })
-        {
-            return true;
-        }
+        if block.learning_offering_id.and_then(|id| self.block_offering_owners.get(&id)).is_some_and(|owner| access.organization_unit_ids.contains(owner) || access.organization_tree_unit_ids.contains(owner)) { return true; }
         access.assigned_actor_id.is_some_and(|actor| {
             block
                 .groups

@@ -1261,7 +1261,7 @@ async fn independent_table_draft(
         .unwrap();
     timetable_version_service::clone_draft(
         pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, context.teacher_id),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -1681,7 +1681,7 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
     .unwrap();
     let draft = timetable_version_service::clone_draft(
         &pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -1750,7 +1750,7 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
     };
     let stale = teacher_handoff::apply(
         &pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
         published.id,
         ApplyTeacherHandoffRequest {
             preview_hash: "0".repeat(64),
@@ -1760,11 +1760,11 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
     .await
     .unwrap_err();
     assert!(matches!(stale, AppError::Conflict(_)));
-    let applied = teacher_handoff::apply(&pool, context.teacher_id, published.id, apply.clone())
+    let applied = teacher_handoff::apply(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), published.id, apply.clone())
         .await
         .unwrap();
     assert!(!applied.response.replayed);
-    let replayed = teacher_handoff::apply(&pool, context.teacher_id, published.id, apply)
+    let replayed = teacher_handoff::apply(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), published.id, apply)
         .await
         .unwrap();
     assert!(replayed.response.replayed);
@@ -3014,7 +3014,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
             idempotency_key: Uuid::new_v4(),
         };
     let published =
-        timetable_lifecycle::publish(&pool, context.teacher_id, draft.id, request.clone())
+        timetable_lifecycle::publish(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), draft.id, request.clone())
             .await
             .unwrap();
     assert_eq!(
@@ -3024,13 +3024,13 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
     assert_eq!(published.delivery_version_id, draft.delivery_version_id);
     assert_eq!(published.effective_from, Some(request.effective_from));
     let repeated =
-        timetable_lifecycle::publish(&pool, context.teacher_id, draft.id, request.clone())
+        timetable_lifecycle::publish(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), draft.id, request.clone())
             .await
             .unwrap();
     assert_eq!(repeated.row_version, published.row_version);
     let changed_retry = timetable_lifecycle::publish(
         &pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
         draft.id,
         school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
             effective_from: request.effective_from.succ_opt().unwrap(),
@@ -3546,7 +3546,7 @@ async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_del
     assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id)));
     let publication = school_academic_timetable::services::timetable_lifecycle::publish(
         &pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
         draft.id,
         school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
             row_version: preview.row_version,
@@ -6985,7 +6985,7 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
         academic_term_id: context.term_id,
     };
     assert!(
-        create_initial_draft(&pool, context.teacher_id, request.clone())
+        create_initial_draft(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), request.clone())
             .await
             .is_err()
     );
@@ -7075,7 +7075,7 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
     .await
     .unwrap();
     assert_eq!(count, 0);
-    let table = create_initial_draft(&pool, context.teacher_id, request.clone())
+    let table = create_initial_draft(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), request.clone())
         .await
         .unwrap();
     assert_eq!(
@@ -7085,7 +7085,7 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
     assert_eq!(table.effective_from, None);
     assert_eq!(table.source_version_id, None);
     assert_eq!(
-        create_initial_draft(&pool, context.teacher_id, request)
+        create_initial_draft(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id), request)
             .await
             .unwrap()
             .id,
@@ -7143,7 +7143,7 @@ async fn timetable_draft_deletion_serializes_with_autosave_without_partial_child
         ),
         timetable_lifecycle::delete_draft(
             &pool,
-            context.teacher_id,
+            &mutation,
             draft.id,
             DeleteTimetableDraftRequest {
                 row_version: current.row_version,
@@ -7193,10 +7193,11 @@ async fn timetable_draft_deletion_serializes_with_publication() {
     .fetch_one(&pool)
     .await
     .unwrap();
+    let mutation = school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id);
     let (published, deleted) = tokio::join!(
         timetable_lifecycle::publish(
             &pool,
-            context.teacher_id,
+            &mutation,
             draft.id,
             PublishTimetableVersionRequest {
                 row_version: preview.row_version,
@@ -7207,7 +7208,7 @@ async fn timetable_draft_deletion_serializes_with_publication() {
         ),
         timetable_lifecycle::delete_draft(
             &pool,
-            context.teacher_id,
+            &mutation,
             draft.id,
             DeleteTimetableDraftRequest {
                 row_version: preview.row_version,

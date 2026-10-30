@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Instant;
 
 use chrono::NaiveTime;
@@ -83,6 +83,8 @@ pub struct CommitPermit {
     id: Uuid,
     pub actor_id: Uuid,
     phase: AtomicU8,
+    capture_content_revision: AtomicBool,
+    committed_version: std::sync::Mutex<Option<crate::models::timetable_version::TimetableVersion>>,
 }
 
 pub(super) struct CommitRecord {
@@ -96,7 +98,14 @@ pub(super) struct CommitRecord {
 impl CommitPermit {
     pub fn require_version(&self, version_id: Uuid) -> Result<(), AppError> { if self.room.key.timetable_version_id == version_id { Ok(()) } else { Err(forbidden()) } }
     pub fn possibly_committed(&self) -> bool { self.phase.load(Ordering::Acquire) != 0 }
-    pub async fn commit(&self, transaction: school_tenancy::ObservedTransaction) -> Result<(), AppError> {
+    pub(crate) fn disable_content_revision(&self) { self.capture_content_revision.store(false, Ordering::Release); }
+    pub fn version_snapshot(&self) -> Result<Option<crate::models::timetable_version::TimetableVersion>, AppError> { Ok(self.committed_version.lock().map_err(|_| stale())?.clone()) }
+    pub async fn commit(&self, mut transaction: school_tenancy::ObservedTransaction) -> Result<(), AppError> {
+        if self.capture_content_revision.load(Ordering::Acquire) {
+            let cached = self.room.lock()?.workspace.version.clone();
+            let version = crate::services::timetable_version_service::refresh_content_revision_on_connection(&mut transaction, cached).await?;
+            *self.committed_version.lock().map_err(|_| stale())? = Some(version);
+        }
         self.phase.store(1, Ordering::Release);
         transaction.commit().await?;
         self.phase.store(2, Ordering::Release);
@@ -131,7 +140,10 @@ impl DraftRoom {
         if !state.valid {
             return Err(stale());
         }
-        let scope = resolve_scope(&state.workspace, scope)?;
+        let scope = match resolve_scope(&state.workspace, scope)? {
+            MutationScope::Placement { source, candidate, targets } => { let candidate = normalize_candidate(&state.workspace, &source, Some(candidate))?; MutationScope::Placement { source, candidate, targets } },
+            scope => scope,
+        };
         let own_token = if let Some(identity) = identity {
             let member = state
                 .members
@@ -230,6 +242,8 @@ impl DraftRoom {
             id,
             actor_id,
             phase: AtomicU8::new(0),
+            capture_content_revision: AtomicBool::new(true),
+            committed_version: std::sync::Mutex::new(None),
         })
     }
 }
@@ -447,7 +461,7 @@ fn normalize_candidate(
     {
         return Err(forbidden());
     }
-    match source {
+    let mut candidate = match source {
         TimetableBlockPlacementSource::OrdinaryDemand {
             learning_group_id,
             learning_offering_id,
@@ -480,7 +494,11 @@ fn normalize_candidate(
             learning_offering_id,
         } if candidate.learning_offering_id != Some(*learning_offering_id) => Err(forbidden()),
         _ => Ok(candidate),
-    }
+    }?;
+    candidate.homeroom_ids.sort_unstable(); candidate.homeroom_ids.dedup();
+    candidate.teacher_ids.sort_unstable(); candidate.teacher_ids.dedup();
+    candidate.instructor_ids.sort_unstable(); candidate.instructor_ids.dedup();
+    Ok(candidate)
 }
 
 fn target_footprint(
@@ -525,6 +543,19 @@ fn target_footprint(
             .collect(),
         ..Default::default()
     };
+    if let TimetableBlockPlacementSource::ExistingBlock { block_id, .. } = source {
+        let block = workspace.blocks.iter().find(|block| block.id == *block_id).ok_or_else(stale)?;
+        let mut shifted = block_footprint(block);
+        for slot in &mut shifted.slots { slot.day = target.day_of_week.clone(); slot.start = period.start_time; slot.end = period.end_time; }
+        footprint.extend(shifted);
+    }
+    if let TimetableBlockPlacementSource::SynchronizedOffering { learning_offering_id } = source {
+        for group in workspace.learning_groups.iter().filter(|group| group.learning_offering_id == *learning_offering_id) {
+            let resources = std::iter::once(Resource::Group(group.id)).chain(group.homeroom_ids.iter().copied().map(Resource::Homeroom))
+                .chain(group.eligible_instructors.iter().map(|teacher| Resource::Teacher(teacher.teacher_id))).chain(group.preferred_room_ids.first().copied().map(Resource::Room));
+            footprint.slots.extend(resources.map(|resource| Slot { resource, day: target.day_of_week.clone(), start: period.start_time, end: period.end_time }));
+        }
+    }
     if let Some(block_id) = target.block_id {
         let block = workspace
             .blocks
@@ -566,6 +597,17 @@ fn conflict(state: &RoomState, footprint: &Footprint, own_token: Option<Uuid>) -
             .any(|other| footprint.conflicts(&other.footprint))
 }
 
+fn require_candidate_access(state: &RoomState, member: &DraftMember, source: &TimetableBlockPlacementSource, candidate: &TimetableBlockPlacementCandidate) -> Result<(), AppError> {
+    let filter = member.manage_access.as_ref().ok_or_else(forbidden)?;
+    let mut resources = crate::policy::TimetableResourceSet { timetable_version_ids: vec![state.workspace.version.id], room_ids: candidate.room_id.into_iter().collect(), teacher_ids: candidate.teacher_ids.iter().chain(&candidate.instructor_ids).copied().collect(), ..Default::default() };
+    match source {
+        TimetableBlockPlacementSource::ExistingBlock { block_id, .. } => resources.include_block(state.workspace.blocks.iter().find(|block| block.id == *block_id).ok_or_else(stale)?),
+        TimetableBlockPlacementSource::OrdinaryDemand { learning_group_id, .. } => resources.learning_group_ids.push(*learning_group_id),
+        TimetableBlockPlacementSource::SynchronizedOffering { learning_offering_id } => { resources.learning_offering_ids.push(*learning_offering_id); resources.homeroom_ids.extend(&candidate.homeroom_ids); }
+    }
+    member.resource_access.require_resources(&resources, filter)
+}
+
 pub(super) fn lease_command(
     room: &DraftRoom,
     connection_id: Uuid,
@@ -575,7 +617,7 @@ pub(super) fn lease_command(
     if !state.valid {
         return Err(stale());
     }
-    state.members.get(&connection_id).ok_or_else(stale)?;
+    let member = state.members.get(&connection_id).ok_or_else(stale)?.clone();
     let projected = state.member_visibility.get(&connection_id).and_then(|indices| indices.manage.as_ref()).ok_or_else(forbidden)?;
     let (request_id, kind) = match &command {
         DraftClientMessage::ClientClaim(value) => (value.request_id, DraftCommandKind::Claim),
@@ -603,7 +645,8 @@ pub(super) fn lease_command(
             }
             let footprint = source_footprint(&state.workspace, &claim.source)?;
             let candidate = normalize_candidate(&state.workspace, &claim.source, claim.candidate)?;
-            if !projected.candidate_visible(&candidate) { return Err(forbidden()); };
+            if !projected.candidate_visible(&candidate) { return Err(forbidden()); }
+            require_candidate_access(&state, &member, &claim.source, &candidate)?;
             if state.leases.values().filter(|lease| lease.public.owner_connection_id == connection_id).count() >= 16 || state.leases.len() >= 512 {
                 result.code = Some("pending_limit".into());
             } else if conflict(&state, &footprint, None) {
@@ -651,6 +694,7 @@ pub(super) fn lease_command(
                 update.candidate.or_else(|| lease.candidate.clone()),
             )?;
             if !projected.candidate_visible(&candidate) { return Err(forbidden()); }
+            require_candidate_access(&state, &member, &source, &candidate)?;
             let mut footprint = source_footprint(&state.workspace, &source)?;
             if let Some(target) = &update.target {
                 if target

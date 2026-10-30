@@ -1,11 +1,15 @@
 import type { TimetableBlockPlacementSource } from '#lib/api/timetable.js';
 
-export function findTimetableBlockElement(root: HTMLElement, blockId: string): HTMLElement | null {
-	return (
-		[...root.querySelectorAll<HTMLElement>('[data-timetable-anchor="block"]')].find(
-			(element) => element.dataset.blockId === blockId
-		) ?? null
+export function findTimetableBlockElement(
+	root: HTMLElement,
+	blockId: string,
+	ownerId?: string | null
+): HTMLElement | null {
+	const matches = [...root.querySelectorAll<HTMLElement>('[data-timetable-anchor="block"]')].filter(
+		(element) =>
+			element.dataset.blockId === blockId && (!ownerId || element.dataset.rowId === ownerId)
 	);
+	return matches.length === 1 ? matches[0] : null;
 }
 
 export function findTimetableCellElement(

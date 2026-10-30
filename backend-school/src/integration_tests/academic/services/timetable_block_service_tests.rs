@@ -258,7 +258,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
     assert!(outcome.is_ok(), "closing must remain writable: {outcome:?}");
 }
 
-async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
+pub(super) async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     let pool = prepare_current_core_fixture(test_name).await;
     school_test_db::run_test_migrations(&pool).await;
     sqlx::query(
@@ -282,7 +282,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     pool
 }
 
-async fn draft_version(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
+pub(super) async fn draft_version(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
     let (source_id,term_id,year_id,bell_id,delivery_id):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT v.id,v.academic_term_id,v.academic_year_id,v.bell_schedule_id,v.delivery_version_id FROM academic_timetable_versions v JOIN academic_terms t ON t.id=v.academic_term_id WHERE v.status='published' AND t.status='active' ORDER BY v.effective_from,v.id LIMIT 1").fetch_one(pool).await.unwrap();
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,status,source_version_id,bell_schedule_id,delivery_version_id,created_by) VALUES($1,$2,$3,'draft',$4,$5,$6,$7)").bind(id).bind(term_id).bind(year_id).bind(source_id).bind(bell_id).bind(delivery_id).bind(Uuid::parse_str(ACTOR_ID).unwrap()).execute(pool).await.unwrap();
@@ -358,7 +358,7 @@ async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, version_id: Uuid
     )
     .await
     .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::update_source(pool,actor,version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
 }
 
 #[tokio::test]
@@ -1186,7 +1186,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     )
     .await
     .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::update_source(&pool,actor_id,version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(&pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
     let table = school_academic_timetable::services::timetable_version_service::get_version(
         &pool,
         version_id,

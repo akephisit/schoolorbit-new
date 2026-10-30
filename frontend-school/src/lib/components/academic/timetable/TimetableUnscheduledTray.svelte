@@ -369,6 +369,7 @@
 									variant="ghost"
 									class="h-auto w-full justify-start px-2 py-2 text-left"
 									aria-pressed={selectedIds.includes(teacher.teacherId)}
+									disabled={cardDisabled}
 									onclick={() => toggleInstructor(demand, teacher.teacherId)}
 								>
 									<span

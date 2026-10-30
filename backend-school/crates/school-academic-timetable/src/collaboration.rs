@@ -22,7 +22,7 @@ use crate::models::timetable_block::{
 use crate::policy::{TimetableAccessFilter, TimetableVisibility};
 
 pub use authority::{CommitPermit, MutationScope};
-pub use mutation::{MutationAuthorizationPort, TimetableMutationContext};
+pub use mutation::{CreationPermit, MutationAuthorizationPort, TimetableMutationContext, VersionMutationPermit};
 
 pub const LEASE_TTL: Duration = Duration::from_secs(10);
 const MAX_ROOMS: usize = 128;
@@ -55,6 +55,7 @@ pub struct DraftMember {
     pub color: String,
     pub access: TimetableAccessFilter,
     pub manage_access: Option<TimetableAccessFilter>,
+    pub resource_access: Arc<crate::policy::TimetableResourceAccessSnapshot>,
     /// Already authorized for this viewer by the Staff provider at join.
     pub portraits: BTreeMap<Uuid, Uuid>,
     pub context: Option<DraftContext>,
@@ -99,7 +100,14 @@ struct MemberVisibility { read: VisibilityIndex, manage: Option<VisibilityIndex>
 fn member_visibility(workspace: &TimetableBlockWorkspace, visibility: &TimetableVisibility, member: &DraftMember) -> MemberVisibility {
     MemberVisibility {
         read: VisibilityIndex::build(&crate::policy::project_workspace(workspace, visibility, &member.access)),
-        manage: member.manage_access.as_ref().map(|access| VisibilityIndex::build(&crate::policy::project_workspace(workspace, visibility, access))),
+        manage: member.manage_access.as_ref().map(|access| {
+            let mut projected = crate::policy::project_workspace(workspace, visibility, access);
+            projected.blocks.retain(|block| {
+                let mut resources = crate::policy::TimetableResourceSet::default(); resources.include_block(block);
+                member.resource_access.require_resources(&resources, access).is_ok()
+            });
+            VisibilityIndex::build(&projected)
+        }),
     }
 }
 
@@ -144,6 +152,17 @@ impl DraftRoom {
 
     pub fn subscribe(&self) -> broadcast::Receiver<DraftSignal> {
         self.signals.subscribe()
+    }
+
+    pub fn resource_inputs(&self) -> Result<crate::policy::TimetableResourceSet, AppError> {
+        let state = self.lock()?; let workspace = &state.workspace;
+        let mut resources = crate::policy::TimetableResourceSet { timetable_version_ids: vec![workspace.version.id],
+            learning_offering_ids: state.visibility.source.offerings.iter().map(|entry| entry.id).collect(),
+            learning_group_ids: workspace.learning_groups.iter().map(|entry| entry.id).collect(),
+            homeroom_ids: workspace.homerooms.iter().map(|entry| entry.id).collect(),
+            teacher_ids: workspace.staff.iter().map(|entry| entry.id).collect(), room_ids: workspace.rooms.iter().map(|entry| entry.id).collect(), requires_school_scope: false };
+        for block in &workspace.blocks { resources.include_block(block); }
+        Ok(resources)
     }
 
     pub fn members(&self) -> Result<Vec<DraftMember>, AppError> { Ok(self.lock()?.members.values().cloned().collect()) }
@@ -307,7 +326,33 @@ impl DraftRoom {
                 let member = state.members.get(&connection_id).ok_or_else(stale)?;
                 journal::events_after(&state, member, replay.epoch, replay.after_seq, None)
             }
-            command => authority::lease_command(self, connection_id, command),
+            command => {
+                let (request_id, kind) = match &command {
+                    DraftClientMessage::ClientClaim(value) => (value.request_id, DraftCommandKind::Claim),
+                    DraftClientMessage::ClientTarget(value) => (value.request_id, DraftCommandKind::Target),
+                    DraftClientMessage::ClientRenew(value) => (value.request_id, DraftCommandKind::Renew),
+                    DraftClientMessage::ClientRelease(value) => (value.request_id, DraftCommandKind::Release),
+                    _ => return Err(stale()),
+                };
+                match authority::lease_command(self, connection_id, command) {
+                    Ok(events) => Ok(events),
+                    Err(error) => {
+                        let state = self.lock()?;
+                        if !state.valid || !state.members.contains_key(&connection_id) { return Err(error); }
+                        let code = match error {
+                            AppError::Forbidden(_) => "forbidden",
+                            AppError::ValidationError(_) => "invalid_candidate",
+                            AppError::Conflict(_) | AppError::NotFound(_) => "stale_reservation",
+                            _ => return Err(error),
+                        };
+                        Ok(vec![DraftEventEnvelope { epoch: state.epoch, seq: state.seq,
+                            event: DraftServerMessage::DraftCommandResult(DraftCommandResult {
+                                request_id, command: kind, accepted: false, code: Some(code.into()),
+                                source: None, target: None, reservation_id: None, lease_token: None, expires_at: None,
+                            }) }])
+                    }
+                }
+            }
         }
     }
 }
@@ -351,11 +396,17 @@ impl TimetableCollaborationRuntime {
             .map(|(_, room)| room.clone()) {
             if room.lock()?.valid { return Ok(room); }
         }
-        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_timetable.collaboration.load_room").await?;
+        let mut connection = school_tenancy::TenantPool::begin_observed(pool, "academic_timetable.collaboration.load_room").await?;
+        // Every placement/lifecycle writer locks this version before changing its graph. A cold
+        // or uncertain-COMMIT recovery read must wait for that transaction's final outcome.
+        school_database::DbSession::new(&mut *connection).scalar::<Uuid>(
+            "academic_timetable.collaboration.load_room.version_fence", "SELECT id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+        ).bind(version_id).fetch_optional().await?.ok_or_else(|| AppError::NotFound("Timetable version not found".into()))?;
         let version = crate::services::timetable_version_service::get_version_on_connection(&mut connection, version_id, Utc::now().date_naive()).await?;
         let key = DraftKey { tenant_id, academic_term_id: version.academic_term_id, timetable_version_id: version_id };
         let query = crate::models::timetable_block::TimetableBlockWorkspaceQuery { academic_year_id: version.academic_year_id, academic_term_id: version.academic_term_id, timetable_version_id: version_id };
         let (workspace, visibility) = crate::services::timetable_block_queries::get_canonical_workspace(&mut connection, query, staff_directory).await?;
+        connection.commit().await?;
         self.install(key, workspace, visibility)
     }
 

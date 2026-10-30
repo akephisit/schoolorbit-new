@@ -2,42 +2,42 @@ import type { TimetableBlockWorkspace } from '#lib/api/timetable.js';
 import { timetableIds } from './timetable-test-harness.ts';
 
 export const sortingIds = {
-	primary: 'room-primary-2',
+	primary: '72000000-0000-4000-8000-000000000001',
 	room2: timetableIds.homeroom,
-	room10: 'room-secondary-1-10',
-	grade2: 'room-secondary-2',
-	additional: 'group-additional',
-	unknown: 'group-unknown',
-	activity: 'group-activity',
-	courseActivity: 'group-course-activity',
-	primaryBasic: 'group-primary-basic',
-	primaryAdditional: 'group-primary-additional',
-	room10Group: 'group-room-10',
-	multi: 'group-multi',
-	missing: 'group-missing',
+	room10: '72000000-0000-4000-8000-000000000002',
+	grade2: '72000000-0000-4000-8000-000000000003',
+	additional: '72000000-0000-4000-8000-000000000004',
+	unknown: '72000000-0000-4000-8000-000000000005',
+	activity: '72000000-0000-4000-8000-000000000006',
+	courseActivity: '72000000-0000-4000-8000-000000000007',
+	primaryBasic: '72000000-0000-4000-8000-000000000008',
+	primaryAdditional: '72000000-0000-4000-8000-000000000009',
+	room10Group: '72000000-0000-4000-8000-000000000010',
+	multi: '72000000-0000-4000-8000-000000000011',
+	missing: '72000000-0000-4000-8000-000000000012',
 	sync: timetableIds.offeringSync,
-	syncPrimary: 'offering-sync-primary',
-	syncGrade2: 'offering-sync-grade2'
+	syncPrimary: '72000000-0000-4000-8000-000000000013',
+	syncGrade2: '72000000-0000-4000-8000-000000000014'
 } as const;
 
 // All sixteen identities fell within 160–162 degrees under the retired independent hue hash.
 export const closeHueGroupIds = [
-	'group-color-3',
-	'group-color-200',
-	'group-color-396',
-	'group-color-541',
-	'group-color-917',
-	'group-color-1111',
-	'group-color-1592',
-	'group-color-1655',
-	'group-color-1947',
-	'group-color-1990',
-	'group-color-2003',
-	'group-color-2217',
-	'group-color-2454',
-	'group-color-2542',
-	'group-color-2662',
-	'group-color-2928'
+	'73000000-0000-4000-8000-000000000007',
+	'73000000-0000-4000-8000-000000000087',
+	'73000000-0000-4000-8000-000000000116',
+	'73000000-0000-4000-8000-000000000181',
+	'73000000-0000-4000-8000-000000000201',
+	'73000000-0000-4000-8000-000000000334',
+	'73000000-0000-4000-8000-000000000409',
+	'73000000-0000-4000-8000-000000000544',
+	'73000000-0000-4000-8000-000000000691',
+	'73000000-0000-4000-8000-000000001062',
+	'73000000-0000-4000-8000-000000001066',
+	'73000000-0000-4000-8000-000000001081',
+	'73000000-0000-4000-8000-000000001249',
+	'73000000-0000-4000-8000-000000001268',
+	'73000000-0000-4000-8000-000000001331',
+	'73000000-0000-4000-8000-000000001353'
 ];
 
 export function makeColorCohort(count = 16): TimetableBlockWorkspace['learningGroups'] {
@@ -46,8 +46,10 @@ export function makeColorCohort(count = 16): TimetableBlockWorkspace['learningGr
 	)!;
 	return Array.from({ length: count }, (_, index) => ({
 		...template,
-		id: closeHueGroupIds[index] ?? `color-overflow-${index}`,
-		learningOfferingId: `offering-color-${index}`,
+		id:
+			closeHueGroupIds[index] ??
+			`73000000-0000-4000-8000-${String(100000 + index).padStart(12, '0')}`,
+		learningOfferingId: `74000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
 		offeringCode: `ค${index + 1}`,
 		offeringName: `วิชาทดสอบสี ${index + 1}`
 	}));
@@ -66,7 +68,7 @@ export function makeSortingFixture(): Pick<
 		id,
 		code: `custom-${id}`,
 		name: `${type === 'primary' ? 'ป.' : 'ม.'}${year}/${roomNumber}`,
-		gradeLevelId: `${type}-${year}`,
+		gradeLevelId: `75000000-0000-4000-8000-${String((type === 'primary' ? 100 : 200) + year).padStart(12, '0')}`,
 		gradeLevelType: type,
 		gradeLevelYear: year,
 		roomNumber,
@@ -86,7 +88,7 @@ export function makeSortingFixture(): Pick<
 		offeringKind = 'course'
 	): TimetableBlockWorkspace['learningGroups'][number] => ({
 		id,
-		learningOfferingId: `offering-${id}`,
+		learningOfferingId: `76000000-${id.slice(9)}`,
 		code: `group-${id}`,
 		name: `${homerooms.find((room) => room.id === targets[0])?.name ?? 'ไม่ระบุห้อง'} ${code}`,
 		status: 'published',
@@ -123,7 +125,7 @@ export function makeSortingFixture(): Pick<
 		group(sortingIds.primaryAdditional, 'ADDITIONAL', 'ก1', [sortingIds.primary]),
 		group(sortingIds.room10Group, 'BASIC', 'ค2', [sortingIds.room10]),
 		group(sortingIds.multi, 'BASIC', 'ก10', [sortingIds.grade2, sortingIds.primary]),
-		group(sortingIds.missing, 'BASIC', 'ก1', ['missing-room'])
+		group(sortingIds.missing, 'BASIC', 'ก1', ['82000000-0000-4000-8000-000000000999'])
 	].reverse();
 	const ordinaryDemands = learningGroups.map((item) => ({
 		learningGroupId: item.id,

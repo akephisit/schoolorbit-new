@@ -19,13 +19,15 @@ pub(super) struct JournalEntry {
 impl DraftRoom {
     /// The caller retains the mutation gate and commit pin. Expensive projections are computed
     /// outside the memory mutex, so presence/lease frames never wait for whole-workspace copies.
-    pub fn publish_blocks(&self, blocks: Vec<TimetableBlock>, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<u64, AppError> {
+    pub fn publish_blocks(&self, blocks: Vec<TimetableBlock>, version: Option<crate::models::timetable_version::TimetableVersion>, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<u64, AppError> {
         let (before, visibility, members, previous_seq) = {
             let state = self.lock()?;
             if !state.valid { return Err(stale()); }
             (state.workspace.clone(), state.visibility.clone(), state.members.values().cloned().collect::<Vec<_>>(), state.seq)
         };
+        let changed_ids = blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
         let mut after = (*before).clone();
+        if let Some(version) = version { if version.id != self.key.timetable_version_id { return Err(stale()); } after.version = version; }
         for block in blocks {
             let existing = after.blocks.iter().position(|entry| entry.id == block.id);
             match (existing, block.is_active) {
@@ -43,12 +45,9 @@ impl DraftRoom {
         for member in members {
             let before_projection = crate::policy::project_workspace(&before, &visibility, &member.access);
             let after_projection = crate::policy::project_workspace(&after, &visibility, &member.access);
-            let patch = project_patch(&before_projection, &after_projection, origin_connection_id, mutation_id)?;
+            let patch = project_patch(&before_projection, &after_projection, &changed_ids, origin_connection_id, mutation_id)?;
             bytes = bytes.saturating_add(serde_json::to_vec(&patch).map_err(|_| stale())?.len());
-            indices.insert(member.connection_id, MemberVisibility {
-                read: VisibilityIndex::build(&after_projection),
-                manage: member.manage_access.as_ref().map(|access| VisibilityIndex::build(&crate::policy::project_workspace(&after, &visibility, access))),
-            });
+            indices.insert(member.connection_id, member_visibility(&after, &visibility, &member));
             patches.insert(member.connection_id, patch);
         }
         let after = Arc::new(after);
@@ -77,24 +76,27 @@ fn changed<T: serde::Serialize>(left: &T, right: &T) -> Result<bool, AppError> {
     Ok(serde_json::to_value(left).map_err(|_| stale())? != serde_json::to_value(right).map_err(|_| stale())?)
 }
 
-fn project_patch(before: &TimetableBlockWorkspace, after: &TimetableBlockWorkspace, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<DraftPatch, AppError> {
+fn project_patch(before: &TimetableBlockWorkspace, after: &TimetableBlockWorkspace, changed_ids: &BTreeSet<Uuid>, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<DraftPatch, AppError> {
     let before_ids = before.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
     let after_ids = after.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
+    let before_blocks = before.blocks.iter().map(|block| (block.id, block)).collect::<BTreeMap<_, _>>();
+    let before_ordinary = before.ordinary_demands.iter().map(|demand| (demand.learning_group_id, demand)).collect::<BTreeMap<_, _>>();
+    let before_synchronized = before.synchronized_demands.iter().map(|demand| (demand.learning_offering_id, demand)).collect::<BTreeMap<_, _>>();
     let mut upserted_blocks = Vec::new();
-    for block in &after.blocks {
-        if match before.blocks.iter().find(|old| old.id == block.id) { Some(old) => changed(old, block)?, None => true } { upserted_blocks.push(block.clone()); }
+    for block in after.blocks.iter().filter(|block| changed_ids.contains(&block.id)) {
+        if match before_blocks.get(&block.id) { Some(old) => changed(*old, block)?, None => true } { upserted_blocks.push(block.clone()); }
     }
     let mut ordinary_demands = Vec::new();
     for demand in &after.ordinary_demands {
-        if match before.ordinary_demands.iter().find(|old| old.learning_group_id == demand.learning_group_id) { Some(old) => changed(old, demand)?, None => true } { ordinary_demands.push(demand.clone()); }
+        if match before_ordinary.get(&demand.learning_group_id) { Some(old) => changed(*old, demand)?, None => true } { ordinary_demands.push(demand.clone()); }
     }
     let mut synchronized_demands = Vec::new();
     for demand in &after.synchronized_demands {
-        if match before.synchronized_demands.iter().find(|old| old.learning_offering_id == demand.learning_offering_id) { Some(old) => changed(old, demand)?, None => true } { synchronized_demands.push(demand.clone()); }
+        if match before_synchronized.get(&demand.learning_offering_id) { Some(old) => changed(*old, demand)?, None => true } { synchronized_demands.push(demand.clone()); }
     }
     Ok(DraftPatch { timetable_version_id: after.version.id, origin_connection_id, mutation_id, upserted_blocks,
         removed_block_ids: before_ids.difference(&after_ids).copied().collect(), ordinary_demands, synchronized_demands,
-        summary: after.summary.clone(), source_issues: after.source_issues.clone(), total_draft_block_count: after.total_draft_block_count, version: None })
+        summary: after.summary.clone(), source_issues: after.source_issues.clone(), total_draft_block_count: after.total_draft_block_count, version: Some(after.version.clone()) })
 }
 
 pub(super) fn events_after(state: &RoomState, member: &DraftMember, epoch: Uuid, after_seq: u64, through: Option<u64>) -> Result<Vec<DraftEventEnvelope>, AppError> {

@@ -1,0 +1,420 @@
+import { randomUUID, createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { Duplex } from 'node:stream';
+import type { Page, WebSocketRoute } from '@playwright/test';
+import type {
+	DraftClientMessage,
+	DraftEventEnvelope,
+	DraftParticipant,
+	DraftReservation,
+	TimetableBlockWorkspace,
+	DraftPatch
+} from '../../src/lib/api/timetable.js';
+
+type ServerMessage<T = DraftEventEnvelope> = T extends DraftEventEnvelope
+	? Omit<T, 'epoch' | 'seq'>
+	: never;
+type FixturePeer = {
+	id: string;
+	user: DraftParticipant;
+	send(value: DraftEventEnvelope): void;
+	active: string | null;
+};
+type FixtureLease = { token: string; public: DraftReservation };
+
+/** Protocol fixture, not a substitute for the real server's resource/authorization tests. */
+export function createDraftRelay() {
+	const epoch = randomUUID();
+	let seq = 0;
+	let canonical: TimetableBlockWorkspace | null = null;
+	const peers = new Map<string, FixturePeer>();
+	const leases = new Map<string, FixtureLease>();
+	const journal: DraftEventEnvelope[] = [];
+	const received: { connectionId: string; message: DraftClientMessage }[] = [];
+	let denyNextTarget = false;
+	function send(peer: FixturePeer, message: ServerMessage) {
+		peer.send({ ...message, epoch, seq });
+	}
+	function broadcast(message: ServerMessage) {
+		for (const peer of peers.values()) send(peer, message);
+	}
+	function users() {
+		const result = new Map<string, DraftParticipant>();
+		for (const peer of peers.values()) {
+			const previous = result.get(peer.user.userId);
+			if (previous) previous.connections.push(...peer.user.connections);
+			else result.set(peer.user.userId, structuredClone(peer.user));
+		}
+		return [...result.values()];
+	}
+	function presence() {
+		for (const user of users()) broadcast({ type: 'DraftPresenceChanged', payload: user });
+	}
+	function reservations() {
+		broadcast({
+			type: 'DraftReservationsChanged',
+			payload: { reservations: [...leases.values()].map((item) => item.public) }
+		});
+		presence();
+		for (const peer of peers.values()) {
+			const active = peer.active && leases.get(peer.active);
+			if (!active) continue;
+			send(peer, {
+				type: 'DraftAvailability',
+				payload: {
+					source: active.public.source,
+					context: peer.user.connections[0].context,
+					blockedCells: [...leases.values()]
+						.filter((item) => item.token !== peer.active && item.public.target)
+						.map((item) => ({
+							dayOfWeek: item.public.target!.dayOfWeek,
+							bellSchedulePeriodId: item.public.target!.bellSchedulePeriodId,
+							reservationId: item.public.reservationId,
+							ownerConnectionId: item.public.ownerConnectionId,
+							purpose: item.public.purpose
+						}))
+				}
+			});
+		}
+	}
+	function activePresence(peer: FixturePeer) {
+		peer.user.connections[0].activeReservationId = peer.active
+			? (leases.get(peer.active)?.public.reservationId ?? null)
+			: null;
+	}
+	function join(
+		workspace: TimetableBlockWorkspace,
+		output: FixturePeer['send'],
+		identity: { userId: string; name: string }
+	) {
+		canonical ??= structuredClone(workspace);
+		const id = randomUUID();
+		const peer: FixturePeer = {
+			id,
+			send: output,
+			active: null,
+			user: {
+				userId: identity.userId,
+				name: identity.name,
+				color: '#2563eb',
+				profileImageFileId: null,
+				connections: [{ connectionId: id, context: null, anchor: null, activeReservationId: null }]
+			}
+		};
+		peers.set(id, peer);
+		send(peer, {
+			type: 'DraftStateSync',
+			payload: {
+				connectionId: id,
+				workspace: canonical,
+				users: users(),
+				reservations: [...leases.values()].map((item) => item.public)
+			}
+		});
+		presence();
+		return {
+			id,
+			receive(message: DraftClientMessage) {
+				received.push({ connectionId: id, message: structuredClone(message) });
+				if (message.type === 'ClientPresenceUpdate') {
+					Object.assign(peer.user.connections[0], message.payload);
+					presence();
+					return;
+				}
+				if (message.type === 'ClientReplay') {
+					for (const event of journal) if (event.seq > message.payload.afterSeq) peer.send(event);
+					return;
+				}
+				const command = (
+					{
+						ClientClaim: 'claim',
+						ClientTarget: 'target',
+						ClientRenew: 'renew',
+						ClientRelease: 'release'
+					} as const
+				)[message.type];
+				if (message.type === 'ClientClaim') {
+					const collision = [...leases.values()].find(
+						(item) => JSON.stringify(item.public.source) === JSON.stringify(message.payload.source)
+					);
+					if (collision) {
+						send(peer, {
+							type: 'DraftCommandResult',
+							payload: {
+								requestId: message.payload.requestId,
+								command,
+								accepted: false,
+								code: 'reserved'
+							}
+						});
+						return;
+					}
+					const lease: FixtureLease = {
+						token: randomUUID(),
+						public: {
+							reservationId: randomUUID(),
+							ownerConnectionId: id,
+							purpose: message.payload.purpose,
+							source: message.payload.source,
+							target: null,
+							expiresAt: new Date(Date.now() + 10000).toISOString()
+						}
+					};
+					leases.set(lease.token, lease);
+					peer.active = lease.token;
+					activePresence(peer);
+					send(peer, {
+						type: 'DraftCommandResult',
+						payload: {
+							requestId: message.payload.requestId,
+							command,
+							accepted: true,
+							source: lease.public.source,
+							leaseToken: lease.token,
+							reservationId: lease.public.reservationId,
+							expiresAt: lease.public.expiresAt,
+							target: null
+						}
+					});
+					reservations();
+					return;
+				}
+				const lease = leases.get(message.payload.leaseToken);
+				if (!lease || lease.public.ownerConnectionId !== id) {
+					send(peer, {
+						type: 'DraftCommandResult',
+						payload: {
+							requestId: message.payload.requestId,
+							command,
+							accepted: false,
+							code: 'stale'
+						}
+					});
+					return;
+				}
+				if (message.type === 'ClientTarget' && denyNextTarget) {
+					denyNextTarget = false;
+					send(peer, {
+						type: 'DraftCommandResult',
+						payload: {
+							requestId: message.payload.requestId,
+							command,
+							accepted: false,
+							code: 'reserved',
+							leaseToken: lease.token,
+							source: lease.public.source,
+							target: message.payload.target
+						}
+					});
+					return;
+				}
+				if (message.type === 'ClientTarget') lease.public.target = message.payload.target;
+				lease.public.expiresAt = new Date(Date.now() + 10000).toISOString();
+				send(peer, {
+					type: 'DraftCommandResult',
+					payload: {
+						requestId: message.payload.requestId,
+						command,
+						accepted: true,
+						source: lease.public.source,
+						target: lease.public.target,
+						leaseToken: lease.token,
+						reservationId: lease.public.reservationId,
+						expiresAt: lease.public.expiresAt
+					}
+				});
+				if (message.type === 'ClientRelease') {
+					leases.delete(lease.token);
+					if (peer.active === lease.token) peer.active = null;
+					activePresence(peer);
+				}
+				reservations();
+			},
+			close() {
+				peers.delete(id);
+				for (const [token, lease] of leases)
+					if (lease.public.ownerConnectionId === id) leases.delete(token);
+				broadcast({ type: 'DraftPresenceLeft', payload: { connectionId: id } });
+				reservations();
+			}
+		};
+	}
+	function commit(
+		workspace: TimetableBlockWorkspace,
+		identity: { connectionId?: string; mutationId?: string } = {}
+	) {
+		const previous = canonical;
+		canonical = structuredClone(workspace);
+		const patch: DraftPatch = {
+			timetableVersionId: workspace.version.id,
+			mutationId: identity.mutationId ?? randomUUID(),
+			originConnectionId: identity.connectionId,
+			upsertedBlocks: workspace.blocks.filter(
+				(block) =>
+					JSON.stringify(previous?.blocks.find((item) => item.id === block.id)) !==
+					JSON.stringify(block)
+			),
+			removedBlockIds:
+				previous?.blocks
+					.filter((block) => !workspace.blocks.some((item) => item.id === block.id))
+					.map((block) => block.id) ?? [],
+			ordinaryDemands: workspace.ordinaryDemands,
+			synchronizedDemands: workspace.synchronizedDemands,
+			summary: workspace.summary,
+			sourceIssues: workspace.sourceIssues,
+			totalDraftBlockCount: workspace.totalDraftBlockCount,
+			version: workspace.version
+		};
+		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
+		journal.push(event);
+		for (const peer of peers.values()) peer.send(event);
+		return event;
+	}
+	return {
+		join,
+		commit,
+		received,
+		peers,
+		denyTarget() {
+			denyNextTarget = true;
+		},
+		get workspace() {
+			return canonical;
+		},
+		send(connectionId: string, event: DraftEventEnvelope) {
+			peers.get(connectionId)?.send(event);
+		},
+		reconcile() {
+			broadcast({ type: 'DraftReconcileRequired', payload: { reason: 'journal_gap' } });
+		}
+	};
+}
+export type DraftRelay = ReturnType<typeof createDraftRelay>;
+
+export async function installRoutedDraftSocket(
+	page: Page,
+	relay: DraftRelay,
+	workspace: () => TimetableBlockWorkspace,
+	identity: { userId: string; name: string }
+) {
+	await page.routeWebSocket('**/ws/timetable*', (socket: WebSocketRoute) => {
+		if (!new URL(socket.url()).searchParams.has('timetableVersionId')) {
+			socket.send(JSON.stringify({ type: 'StateSync', payload: { users: [], locks: [], seq: 0 } }));
+			return;
+		}
+		const peer = relay.join(workspace(), (event) => socket.send(JSON.stringify(event)), identity);
+		socket.onMessage((data) => peer.receive(JSON.parse(String(data)) as DraftClientMessage));
+		socket.onClose(() => peer.close());
+	});
+}
+
+/** Real RFC6455 transport used by two independent browser contexts. */
+export async function startNativeDraftRelay(
+	relay: DraftRelay,
+	workspace: () => TimetableBlockWorkspace
+) {
+	const sockets = new Set<Duplex>();
+	const server = createServer();
+	server.on('upgrade', (request, socket, head) => {
+		const key = request.headers['sec-websocket-key'];
+		if (typeof key !== 'string') {
+			socket.destroy();
+			return;
+		}
+		socket.write(
+			'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' +
+				createHash('sha1')
+					.update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
+					.digest('base64') +
+				'\r\n\r\n'
+		);
+		sockets.add(socket);
+		function frame(opcode: number, payload: Buffer) {
+			const header =
+				payload.length < 126
+					? Buffer.from([0x80 | opcode, payload.length])
+					: payload.length < 65536
+						? Buffer.from([0x80 | opcode, 126, payload.length >> 8, payload.length & 255])
+						: Buffer.from([
+								0x80 | opcode,
+								127,
+								0,
+								0,
+								0,
+								0,
+								(payload.length >>> 24) & 255,
+								(payload.length >>> 16) & 255,
+								(payload.length >>> 8) & 255,
+								payload.length & 255
+							]);
+			socket.write(Buffer.concat([header, payload]));
+		}
+		const url = new URL(request.url ?? '/', 'http://localhost');
+		const peer = relay.join(workspace(), (event) => frame(1, Buffer.from(JSON.stringify(event))), {
+			userId: url.searchParams.get('fixtureUser') ?? '51000000-0000-4000-8000-000000000211',
+			name: url.searchParams.get('fixtureName') ?? 'ผู้ร่วมจัดตาราง'
+		});
+		let buffered = head;
+		function read(data: Buffer) {
+			buffered = Buffer.concat([buffered, data]);
+			while (buffered.length >= 2) {
+				const opcode = buffered[0] & 15;
+				let length = buffered[1] & 127;
+				let offset = 2;
+				if (length === 126) {
+					if (buffered.length < 4) return;
+					length = buffered.readUInt16BE(2);
+					offset = 4;
+				} else if (length === 127) {
+					if (buffered.length < 10) return;
+					const large = buffered.readBigUInt64BE(2);
+					if (large > 1048576n) {
+						socket.destroy();
+						return;
+					}
+					length = Number(large);
+					offset = 10;
+				}
+				const masked = Boolean(buffered[1] & 128);
+				if (!masked) {
+					socket.destroy();
+					return;
+				}
+				if (buffered.length < offset + 4 + length) return;
+				const mask = buffered.subarray(offset, offset + 4);
+				offset += 4;
+				const payload = Buffer.from(buffered.subarray(offset, offset + length));
+				for (let index = 0; index < payload.length; index++) payload[index] ^= mask[index % 4];
+				buffered = buffered.subarray(offset + length);
+				if (opcode === 8) {
+					frame(8, payload);
+					socket.end();
+					return;
+				}
+				if (opcode === 9) {
+					frame(10, payload);
+					continue;
+				}
+				if (opcode === 1) peer.receive(JSON.parse(payload.toString()) as DraftClientMessage);
+			}
+		}
+		socket.on('data', read);
+		socket.on('close', () => {
+			sockets.delete(socket);
+			peer.close();
+		});
+		if (head.length) read(Buffer.alloc(0));
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const address = server.address();
+	if (!address || typeof address === 'string') throw new Error('Missing relay address');
+	return {
+		url: `ws://127.0.0.1:${address.port}`,
+		async close() {
+			for (const socket of sockets) socket.destroy();
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => (error ? reject(error) : resolve()))
+			);
+		}
+	};
+}

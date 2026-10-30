@@ -13,11 +13,14 @@ use uuid::Uuid;
 
 use crate::state::AcademicHttpState;
 
-struct SessionMutationAuthorization { runtime: AuthRuntime, session: AuthenticatedSession }
+struct SessionMutationAuthorization { runtime: AuthRuntime, session: AuthenticatedSession, permission_revision: school_authorization::PermissionCacheRevision }
 
 #[async_trait]
 impl MutationAuthorizationPort for SessionMutationAuthorization {
     async fn validate_admission(&self, accepted_actor: &ActorContext) -> Result<(), AppError> {
+        if self.runtime.permission_cache.snapshot_revision(&self.session.tenant.subdomain, accepted_actor.user_id) != self.permission_revision {
+            return Err(AppError::Forbidden("Authorization scope changed while the timetable operation was queued".into()));
+        }
         if !school_auth_http::tenant::revalidate_realtime_session(&self.runtime, &self.session).await.map_err(|_| AppError::AuthError("Session cannot be verified".into()))? {
             return Err(AppError::AuthError("Session is no longer active".into()));
         }
@@ -40,5 +43,5 @@ pub(crate) fn from_session(state: &AcademicHttpState, headers: &HeaderMap, sessi
         Some(DraftMutationIdentity { connection_id: parse(keys[0])?, lease_token: parse(keys[1])?, mutation_id: parse(keys[2])? })
     };
     Ok(TimetableMutationContext { runtime: state.collaboration.clone(), actor: context.actor.clone(), tenant_id: context.tenant.tenant_id, session_id: session.session_id,
-        identity, staff_directory: state.staff_directory, authorization: Arc::new(SessionMutationAuthorization { runtime: state.auth_runtime.clone(), session: session.clone() }), pool_lease: context.tenant.pool.clone() })
+        identity, staff_directory: state.staff_directory, authorization: Arc::new(SessionMutationAuthorization { runtime: state.auth_runtime.clone(), session: session.clone(), permission_revision: state.auth_runtime.permission_cache.snapshot_revision(&session.tenant.subdomain, context.actor.user_id) }), pool_lease: context.tenant.pool.clone() })
 }

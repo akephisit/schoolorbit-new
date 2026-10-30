@@ -37,7 +37,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .unwrap();
     let draft = timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         source_id,
         CloneTimetableVersionRequest {
             resume_draft_id: None,
@@ -72,7 +72,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     .unwrap();
     let cleared = timetable_template_service::clear_timetable(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         ClearTimetableRequest {
             timetable_version_id: draft.id,
             academic_term_id: term_id,
@@ -93,7 +93,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
 
     let applied = timetable_template_service::apply_template(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         template.template.id,
         ApplyTemplateRequest {
             timetable_version_id: draft.id,
@@ -158,7 +158,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
 
     timetable_template_service::clear_timetable(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         ClearTimetableRequest {
             timetable_version_id: draft.id,
             academic_term_id: term_id,
@@ -182,7 +182,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
             .bind(term_id).bind(term_status).execute(&pool).await.unwrap();
         let apply = timetable_template_service::apply_template(
             &pool,
-            actor_id,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
             template.template.id,
             ApplyTemplateRequest {
                 timetable_version_id: draft.id,
@@ -196,7 +196,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         );
         let clear = timetable_template_service::clear_timetable(
             &pool,
-            actor_id,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
             ClearTimetableRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: term_id,
@@ -249,7 +249,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .unwrap();
     let ineligible_result = timetable_template_service::apply_template(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         template.template.id,
         ApplyTemplateRequest {
             timetable_version_id: draft.id,
@@ -264,7 +264,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
 
     let published_apply = timetable_template_service::apply_template(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         template.template.id,
         ApplyTemplateRequest {
             timetable_version_id: source_id,

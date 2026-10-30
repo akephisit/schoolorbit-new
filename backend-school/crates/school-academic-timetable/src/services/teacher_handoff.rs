@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -121,12 +123,18 @@ pub async fn preview(
     Ok(preview)
 }
 
-pub async fn apply(
+pub async fn apply(pool: &PgPool, context: &TimetableMutationContext, change_set_id: Uuid, request: ApplyTeacherHandoffRequest) -> Result<TeacherHandoffApplyOutcome, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move { apply_in_permit(&pool, permit, change_set_id, request).await }).await
+}
+
+async fn apply_in_permit(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    permit: Arc<CommitPermit>,
     change_set_id: Uuid,
     request: ApplyTeacherHandoffRequest,
-) -> Result<TeacherHandoffApplyOutcome, AppError> {
+) -> Result<(TeacherHandoffApplyOutcome, Vec<crate::models::timetable_block::TimetableBlock>), AppError> {
+    let actor_user_id = permit.actor_id;
+    permit.require_version(request.timetable_version_id)?;
     validate_row_version(request.change_set_row_version)?;
     validate_row_version(request.target_timetable_version_row_version)?;
     if request.preview_hash.len() != 64
@@ -191,11 +199,8 @@ pub async fn apply(
             ));
         }
         response.replayed = true;
-        transaction.commit().await?;
-        return Ok(TeacherHandoffApplyOutcome {
-            response,
-            academic_term_id,
-        });
+        permit.commit(transaction).await?;
+        return Ok((TeacherHandoffApplyOutcome { response, academic_term_id }, Vec::new()));
     }
 
     // Completed retries above only return retained receipts. New mutations must
@@ -358,11 +363,10 @@ pub async fn apply(
         .bind(actor_user_id)
         .execute()
         .await?;
-    transaction.commit().await?;
-    Ok(TeacherHandoffApplyOutcome {
-        response,
-        academic_term_id: context.0,
-    })
+    let block_ids: Vec<Uuid> = DbSession::new(&mut *transaction).scalar("academic_timetable.services.teacher_handoff.apply.changed_blocks", "SELECT DISTINCT block_id FROM academic_timetable_block_groups WHERE id=ANY($1) ORDER BY block_id").bind(&entry_ids).fetch_all().await?;
+    let blocks = super::timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    permit.commit(transaction).await?;
+    Ok((TeacherHandoffApplyOutcome { response, academic_term_id: context.0 }, blocks))
 }
 
 async fn preview_in_tx(

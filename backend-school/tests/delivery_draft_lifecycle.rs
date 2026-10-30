@@ -31,7 +31,7 @@ async fn cancel_table(pool: &PgPool, source_id: Uuid, actor: Uuid) -> Uuid {
         .unwrap();
     let draft = tables::clone_draft(
         pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -157,7 +157,7 @@ async fn cancelled_cleanup_preflights_all_and_keeps_active_drafts_and_published_
     assert!(count > 0);
     let blocked = timetable_lifecycle::delete_draft(
         &pool,
-        user,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, user),
         source,
         DeleteTimetableDraftRequest {
             row_version: 1,

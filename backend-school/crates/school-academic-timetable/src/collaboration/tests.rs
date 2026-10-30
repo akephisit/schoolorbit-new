@@ -128,6 +128,7 @@ fn fixture() -> (Arc<DraftRoom>, TimetableCollaborationRuntime, Uuid) {
                 source: DeliverySnapshot {
                     offerings: Vec::new(),
                 },
+                block_offering_owners: BTreeMap::new(),
                 homeroom_advisors: BTreeMap::new(),
             },
         )
@@ -146,6 +147,7 @@ fn member(actor_id: Uuid, access: TimetableAccessFilter) -> DraftMember {
         name: "Editor".into(),
         color: "#123456".into(),
         manage_access: Some(access.clone()),
+        resource_access: Arc::new(crate::policy::TimetableResourceAccessSnapshot::default()),
         access,
         portraits: BTreeMap::new(),
         context: None,
@@ -261,7 +263,8 @@ fn wrong_tab_cannot_renew_or_release_and_expiry_frees_source() {
             lease_token: token,
         }),
     ] {
-        assert!(room.command(second.connection_id, command).is_err());
+        let response = room.command(second.connection_id, command).unwrap();
+        assert!(matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted && result.lease_token.is_none()));
     }
     room.expire(Instant::now() + LEASE_TTL);
     assert!(claim(&room, second.connection_id, source(&room)).accepted);
@@ -318,7 +321,7 @@ fn zero_subscriber_commit_advances_journal_and_snapshot_atomically() {
     let mut changed = room.lock().unwrap().workspace.blocks[0].clone();
     changed.row_version += 1;
     assert_eq!(
-        room.publish_blocks(vec![changed.clone()], None, Uuid::new_v4())
+        room.publish_blocks(vec![changed.clone()], None, None, Uuid::new_v4())
             .unwrap(),
         1
     );
@@ -349,6 +352,34 @@ fn zero_subscriber_commit_advances_journal_and_snapshot_atomically() {
         .unwrap();
     assert_eq!(replay.len(), 1);
     assert_eq!(replay[0].seq, 1);
+    assert!(matches!(replay[0].event, DraftServerMessage::DraftReconcileRequired { .. }));
+    changed.row_version += 1;
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4()).unwrap();
+    let replay = room.command(viewer.connection_id, DraftClientMessage::ClientReplay(DraftReplay { epoch, after_seq: 1 })).unwrap();
+    assert_eq!(replay.len(), 1);
+    assert!(matches!(replay[0].event, DraftServerMessage::DraftPatched(_)));
+    assert_eq!(replay[0].seq, 2);
+}
+
+#[test]
+fn unrelated_large_canonical_graph_does_not_overflow_small_patch_journal() {
+    let (room, _, actor) = fixture();
+    {
+        let mut state = room.lock().unwrap();
+        let mut workspace = (*state.workspace).clone();
+        workspace.blocks[0].note = Some("x".repeat(9 * 1024 * 1024));
+        state.workspace = Arc::new(workspace);
+    }
+    let viewer = member(actor, full_access()); room.join(viewer.clone()).unwrap();
+    let mut changed = room.lock().unwrap().workspace.blocks[1].clone();
+    changed.row_version += 1; changed.title = Some("Small changed lesson".into());
+    let changed_id = changed.id;
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4()).unwrap();
+    let events = room.signal_events(viewer.connection_id, DraftSignal::Committed(1)).unwrap();
+    let DraftServerMessage::DraftPatched(patch) = &events[0].event else { panic!("small patch must not reconcile") };
+    assert_eq!(patch.upserted_blocks.len(), 1); assert_eq!(patch.upserted_blocks[0].id, changed_id);
+    assert!(room.lock().unwrap().journal_bytes < 100_000);
+    assert!(serde_json::to_vec(&events).unwrap().len() < 100_000);
 }
 
 #[test]
@@ -366,7 +397,7 @@ fn before_after_scope_change_emits_removal_without_new_unauthorized_resource() {
     let id = changed.id;
     changed.teachers[0].teacher_id = Uuid::new_v4();
     changed.row_version += 1;
-    room.publish_blocks(vec![changed], None, Uuid::new_v4())
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4())
         .unwrap();
     let events = room
         .signal_events(viewer.connection_id, DraftSignal::Committed(1))
@@ -387,7 +418,7 @@ fn invisible_commit_still_emits_empty_sequenced_patch_and_epoch_mismatch_reconci
     room.join(viewer.clone()).unwrap();
     let mut changed = room.lock().unwrap().workspace.blocks[0].clone();
     changed.row_version += 1;
-    room.publish_blocks(vec![changed], None, Uuid::new_v4())
+    room.publish_blocks(vec![changed], None, None, Uuid::new_v4())
         .unwrap();
     let events = room
         .signal_events(viewer.connection_id, DraftSignal::Committed(1))

@@ -46,12 +46,11 @@
 	<div class="h-1 bg-primary"></div>
 	<div class="flex flex-wrap items-end gap-3 p-3 sm:p-4">
 		<div class="w-full min-w-0 space-y-2 sm:w-auto sm:min-w-72 sm:flex-1 sm:basis-72">
-			<div class="flex flex-wrap items-center gap-2">
+			<div class="flex min-h-8 flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
 				{#if version.status === 'draft'}
 					<TimetableCollaborators
 						users={collaborators}
-						disabled={isSaving}
 						onJump={(connectionId) => onJumpCollaborator?.(connectionId)}
 					/>
 				{/if}

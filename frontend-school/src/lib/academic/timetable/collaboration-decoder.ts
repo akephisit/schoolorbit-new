@@ -9,8 +9,11 @@ type Validator = (value: unknown) => boolean;
 function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+function keys(value: Record<string, unknown>, allowed: string[]): boolean {
+	return Object.keys(value).every((key) => allowed.includes(key));
+}
 function text(value: unknown): value is string {
-	return typeof value === 'string' && value.length <= 16_384;
+	return typeof value === 'string';
 }
 function uuid(value: unknown): value is string {
 	return typeof value === 'string' && uuidPattern.test(value);
@@ -41,17 +44,25 @@ function fields(
 	);
 }
 function instant(value: unknown) {
-	return typeof value === 'string' && value.length <= 64 && Number.isFinite(Date.parse(value));
+	return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 function source(value: unknown) {
 	if (!object(value)) return false;
 	switch (value.kind) {
 		case 'existing_block':
-			return uuid(value.blockId) && integer(value.rowVersion);
+			return (
+				keys(value, ['kind', 'blockId', 'rowVersion']) &&
+				uuid(value.blockId) &&
+				integer(value.rowVersion)
+			);
 		case 'ordinary_demand':
-			return uuid(value.learningGroupId) && uuid(value.learningOfferingId);
+			return (
+				keys(value, ['kind', 'learningGroupId', 'learningOfferingId']) &&
+				uuid(value.learningGroupId) &&
+				uuid(value.learningOfferingId)
+			);
 		case 'synchronized_offering':
-			return uuid(value.learningOfferingId);
+			return keys(value, ['kind', 'learningOfferingId']) && uuid(value.learningOfferingId);
 		default:
 			return false;
 	}
@@ -59,6 +70,7 @@ function source(value: unknown) {
 function context(value: unknown) {
 	return (
 		object(value) &&
+		keys(value, ['viewMode', 'viewId', 'dayOfWeek']) &&
 		['homeroom', 'teacher', 'learning_group', 'wholeSchool'].includes(String(value.viewMode)) &&
 		optional(value.viewId, uuid) &&
 		optional(value.dayOfWeek, day)
@@ -79,11 +91,15 @@ function anchor(value: unknown) {
 		return false;
 	switch (value.kind) {
 		case 'cell':
-			return day(value.dayOfWeek) && uuid(value.bellSchedulePeriodId);
+			return (
+				keys(value, ['kind', 'dayOfWeek', 'bellSchedulePeriodId', 'u', 'v']) &&
+				day(value.dayOfWeek) &&
+				uuid(value.bellSchedulePeriodId)
+			);
 		case 'block':
-			return uuid(value.blockId);
+			return keys(value, ['kind', 'blockId', 'u', 'v']) && uuid(value.blockId);
 		case 'tray':
-			return source(value.source);
+			return keys(value, ['kind', 'source', 'u', 'v']) && source(value.source);
 		default:
 			return false;
 	}
@@ -102,12 +118,14 @@ function purpose(value: unknown) {
 function participant(value: unknown) {
 	return (
 		fields(value, ['userId'], ['name', 'color']) &&
+		keys(value, ['userId', 'name', 'color', 'profileImageFileId', 'connections']) &&
 		/^#[0-9a-f]{6}$/iu.test(String(value.color)) &&
 		optional(value.profileImageFileId, uuid) &&
 		array(
 			value.connections,
 			(connection) =>
 				fields(connection, ['connectionId']) &&
+				keys(connection, ['connectionId', 'context', 'anchor', 'activeReservationId']) &&
 				optional(connection.context, context) &&
 				optional(connection.anchor, anchor) &&
 				optional(connection.activeReservationId, uuid),
@@ -118,6 +136,14 @@ function participant(value: unknown) {
 function reservation(value: unknown) {
 	return (
 		fields(value, ['reservationId', 'ownerConnectionId']) &&
+		keys(value, [
+			'reservationId',
+			'ownerConnectionId',
+			'purpose',
+			'source',
+			'target',
+			'expiresAt'
+		]) &&
 		purpose(value.purpose) &&
 		source(value.source) &&
 		optional(value.target, target) &&
@@ -385,11 +411,7 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 				optional(payload.version, version)
 			);
 		case 'DraftReconcileRequired':
-			return (
-				typeof payload.reason === 'string' &&
-				payload.reason.length > 0 &&
-				payload.reason.length <= 96
-			);
+			return typeof payload.reason === 'string' && payload.reason.length > 0;
 		default:
 			return false;
 	}

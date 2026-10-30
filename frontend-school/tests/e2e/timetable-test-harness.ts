@@ -1,4 +1,9 @@
 import type { Page, Route } from '@playwright/test';
+import {
+	createDraftRelay,
+	installRoutedDraftSocket,
+	type DraftRelay
+} from './timetable-collaboration-relay.ts';
 
 import type {
 	TimetableBlock,
@@ -64,9 +69,13 @@ export interface TimetableMockOptions {
 	failUpdate?: boolean;
 	preferredRoomIds?: string[];
 	requestedWorkspaceVersion?: boolean;
+	socketMode?: 'mock' | 'native';
+	relay?: DraftRelay;
+	userId?: string;
+	userName?: string;
 }
 
-function fulfill(route: Route, data: unknown, status = 200) {
+function fulfillResponse(route: Route, data: unknown, status = 200) {
 	return route.fulfill({
 		status,
 		contentType: 'application/json',
@@ -325,7 +334,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let lastCreateBody: Record<string, unknown> | null = null;
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
-	const workspace = (version = selectedVersion) => {
+	const workspace = (
+		version = versions.find((item) => item.id === selectedVersion.id) ?? selectedVersion
+	): TimetableBlockWorkspace => {
 		const scheduledPeriods = blocks.filter((block) =>
 			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
 		).length;
@@ -425,7 +436,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 								offeringName: 'ชุมนุม',
 								requiredPeriods: 1,
 								scheduledPeriods: synchronizedScheduledPeriods,
-								intendedHomeroomIds: [timetableIds.homeroom]
+								intendedHomeroomIds: [timetableIds.homeroom],
+								linkedGroupCount: 0,
+								pendingGroupCount: 0,
+								conflictGroupCount: 0,
+								excludedGroupCount: 0
 							}
 						]
 					: []),
@@ -442,6 +457,32 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		};
 	};
 
+	const relay = options.relay ?? createDraftRelay();
+	if (options.socketMode !== 'native')
+		await installRoutedDraftSocket(page, relay, () => workspace(), {
+			userId: options.userId ?? timetableIds.user,
+			name: options.userName ?? 'ผู้จัดตารางทดสอบ'
+		});
+	async function fulfill(route: Route, data: unknown, status = 200) {
+		const path = new URL(route.request().url()).pathname;
+		const mutation =
+			route.request().method() !== 'GET' &&
+			status < 400 &&
+			path.startsWith('/api/academic/timetable-blocks/') &&
+			!path.endsWith('/placement-preview') &&
+			!path.endsWith('/publication-preview');
+		if (mutation) {
+			const version = versions.find((item) => item.id === selectedVersion.id);
+			if (version) version.rowVersion++;
+			const headers = route.request().headers();
+			relay.commit(workspace(), {
+				connectionId: headers['x-timetable-connection-id'],
+				mutationId: headers['x-timetable-mutation-id']
+			});
+		}
+		return fulfillResponse(route, data, status);
+	}
+
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -449,7 +490,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			const method = route.request().method();
 			if (url.pathname === '/api/auth/me') {
 				await fulfill(route, {
-					id: timetableIds.user,
+					id: options.userId ?? timetableIds.user,
 					username: 'timetable-test',
 					firstName: 'ตารางสอน',
 					displayName: 'ตารางสอน ทดสอบ',
@@ -830,6 +871,8 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	);
 
 	return {
+		workspace,
+		relay,
 		workspaceRequestCount: () => workspaceRequests,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,

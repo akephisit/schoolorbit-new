@@ -2,6 +2,7 @@ use crate::delivery::handlers::require_term_change_set_access;
 use crate::policies::learning_offering_access_policy::OfferingAction;
 use crate::state::AcademicHttpState;
 use axum::{
+    http::HeaderMap,
     extract::{Extension, Path, State},
     response::{IntoResponse, Response},
     Json,
@@ -83,6 +84,7 @@ pub async fn apply_teacher_handoff(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(request): Json<ApplyTeacherHandoffRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -98,8 +100,9 @@ pub async fn apply_teacher_handoff(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let outcome =
-        teacher_handoff::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
+        teacher_handoff::apply(&context.tenant.pool, &mutation, id, request).await?;
     for entry in &outcome.response.handoff.proposed_entries {
         state.websocket_manager.broadcast_mutation(
             session.tenant.subdomain.clone(),

@@ -255,6 +255,25 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 				pending.delete(event.payload.requestId);
 				dependencies.clearTimer(command.timer);
 				command.dispose();
+				const expected = {
+					ClientClaim: 'claim',
+					ClientTarget: 'target',
+					ClientRenew: 'renew',
+					ClientRelease: 'release'
+				}[command.message.type];
+				if (event.payload.command !== expected) {
+					if (
+						event.payload.accepted &&
+						event.payload.command === 'claim' &&
+						event.payload.leaseToken
+					)
+						dependencies.send({
+							type: 'ClientRelease',
+							payload: { requestId: dependencies.uuid(), leaseToken: event.payload.leaseToken }
+						});
+					command.reject(leaseError());
+					break;
+				}
 				command.resolve(event.payload);
 				break;
 			}

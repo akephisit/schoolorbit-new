@@ -3,6 +3,7 @@ import test from 'node:test';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import { collaborationWorkspace } from './timetable-collaboration-fixture.ts';
 import { timetableIds } from '../e2e/timetable-test-harness.ts';
+import { makeTimetableBlock } from '../e2e/timetable-test-harness.ts';
 
 const epoch = 'f1000000-0000-4000-8000-000000000999';
 const participant = {
@@ -40,6 +41,25 @@ test('decoder accepts a typed authorized baseline and finite semantic presence',
 	assert.deepEqual(decodeDraftEvent(JSON.stringify(sync)), sync);
 	const presence = { epoch, seq: 0, type: 'DraftPresenceChanged', payload: participant };
 	assert.deepEqual(decodeDraftEvent(JSON.stringify(presence)), presence);
+});
+
+test('a valid persisted note longer than sixteen thousand characters remains decodable', () => {
+	const workspace = collaborationWorkspace();
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	block.note = 'หมายเหตุเดิม '.repeat(2000);
+	assert.ok(block.note.length > 16_384);
+	workspace.blocks = [block];
+	const event = decodeDraftEvent(
+		JSON.stringify({
+			epoch,
+			seq: 0,
+			type: 'DraftStateSync',
+			payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+		})
+	);
+	assert.equal(event?.type, 'DraftStateSync');
+	if (event?.type === 'DraftStateSync')
+		assert.equal(event.payload.workspace.blocks[0].note, block.note);
 });
 
 test('decoder rejects selector identities, nonfinite or outside anchors, unsafe colors and image URLs', () => {

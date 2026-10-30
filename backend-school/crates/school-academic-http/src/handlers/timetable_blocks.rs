@@ -192,6 +192,7 @@ pub async fn create_synchronized(
             timetable_version_ids: vec![payload.timetable_version_id],
             learning_offering_ids: vec![payload.learning_offering_id],
             homeroom_ids: payload.intended_homeroom_ids.clone(),
+            teacher_ids: payload.teacher_ids.clone(),
             room_ids: payload.room_id.into_iter().collect(),
             ..TimetableResourceSet::default()
         },
@@ -612,36 +613,7 @@ async fn resources_from_block(
     resources: &mut TimetableResourceSet,
 ) -> Result<(), AppError> {
     let block = timetable_block_service::get_block(&context.tenant.pool, block_id).await?;
-    resources
-        .timetable_version_ids
-        .push(block.timetable_version_id);
-    resources
-        .learning_offering_ids
-        .extend(block.learning_offering_id);
-    resources
-        .learning_group_ids
-        .extend(block.groups.iter().map(|group| group.learning_group_id));
-    resources
-        .homeroom_ids
-        .extend(block.homerooms.iter().map(|target| target.homeroom_id));
-    resources
-        .teacher_ids
-        .extend(block.teachers.iter().map(|target| target.teacher_id));
-    resources.teacher_ids.extend(
-        block
-            .groups
-            .iter()
-            .flat_map(|group| group.instructors.iter())
-            .map(|instructor| instructor.teacher_id),
-    );
-    resources.room_ids.extend(
-        block
-            .groups
-            .iter()
-            .filter_map(|group| group.room_id)
-            .chain(block.homerooms.iter().filter_map(|target| target.room_id)),
-    );
-    resources.requires_school_scope |= block.block_kind == TimetableBlockKind::Structural;
+    resources.include_block(&block);
     Ok(())
 }
 

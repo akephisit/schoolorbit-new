@@ -95,7 +95,14 @@ export function resolveCollaborationAnchor(
 	remote: DraftContext,
 	anchor: DraftAnchor
 ): HTMLElement | null {
-	if (anchor.kind === 'block') return findTimetableBlockElement(root, anchor.blockId);
+	if (anchor.kind === 'block')
+		return findTimetableBlockElement(
+			root,
+			anchor.blockId,
+			local.viewMode === 'wholeSchool' && ['homeroom', 'wholeSchool'].includes(remote.viewMode)
+				? remote.viewId
+				: null
+		);
 	if (anchor.kind === 'tray') return findTimetableDemandElement(root, anchor.source);
 	if (local.viewMode === 'wholeSchool') {
 		if (

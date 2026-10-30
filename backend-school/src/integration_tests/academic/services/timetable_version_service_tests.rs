@@ -120,7 +120,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     ));
     let cloned = timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -147,7 +147,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     );
     let resumed = timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -161,7 +161,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     assert!(matches!(
         timetable_version_service::clone_draft(
             &pool,
-            actor_id,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
             source_id,
             CloneTimetableVersionRequest {
                 source_row_version: source.row_version + 1,
@@ -179,7 +179,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
         .unwrap();
     assert!(timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -197,7 +197,7 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     assert!(matches!(
         timetable_version_service::clone_draft(
             &pool,
-            actor_id,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
             source_id,
             CloneTimetableVersionRequest {
                 source_row_version: source.row_version,
@@ -224,7 +224,7 @@ async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_re
             .unwrap();
     let cloned = timetable_version_service::clone_draft(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -270,7 +270,7 @@ async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_
     .unwrap();
     let cloned = timetable_version_service::clone_draft(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
         source_id,
         CloneTimetableVersionRequest {
             source_row_version: source.row_version,
@@ -280,7 +280,7 @@ async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_
     )
     .await
     .unwrap();
-    let failure=school_academic_timetable::services::timetable_lifecycle::update_source(&pool,actor,cloned.id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {
+    let failure=school_academic_timetable::services::timetable_lifecycle::update_source(&pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),cloned.id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {
         row_version:cloned.row_version,delivery_version_id:opening.target_delivery_version_id
     }).await.unwrap_err();
     assert!(matches!(failure, AppError::ValidationError(_)));
@@ -385,7 +385,7 @@ async fn cloned_timetable_version_preserves_exact_instructor_sets() {
     .unwrap();
     let cloned = timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         source_id,
         CloneTimetableVersionRequest {
             resume_draft_id: None,

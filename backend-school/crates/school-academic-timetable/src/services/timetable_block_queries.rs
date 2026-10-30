@@ -283,7 +283,7 @@ pub(crate) async fn get_canonical_workspace(
         .query_as::<(Uuid, String, String)>(
             "academic_timetable.services.timetable_block_queries.get_workspace",
             r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
-           FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
+           FROM user_display_names WHERE (status='active' OR id = ANY($1)) AND user_type = 'staff'
            ORDER BY 2, id LIMIT $2"#,
         )
         .bind(&staff_ids)
@@ -295,6 +295,7 @@ pub(crate) async fn get_canonical_workspace(
             "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
         ));
     }
+    let staff_ids = staff.iter().map(|(id, _, _)| *id).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
     // Assignment identity is pinned; names share the current workspace staff projection.
     let staff_names = staff
         .iter()
@@ -658,7 +659,9 @@ pub(crate) async fn get_canonical_workspace(
     ).bind(query.academic_year_id).fetch_all().await?;
     let mut homeroom_advisors = BTreeMap::<Uuid, BTreeSet<Uuid>>::new();
     for (homeroom, actor) in advisors { homeroom_advisors.entry(homeroom).or_default().insert(actor); }
-    let visibility = crate::policy::TimetableVisibility { source: source.snapshot, homeroom_advisors };
+    let offering_ids = source.snapshot.offerings.iter().map(|offering| offering.id).chain(blocks.iter().filter_map(|block| block.learning_offering_id)).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
+    let visibility = crate::policy::TimetableVisibility { source: source.snapshot, homeroom_advisors, block_offering_owners };
     Ok((TimetableBlockWorkspace {
         total_draft_block_count,
         source_issues,

@@ -32,15 +32,17 @@ use school_permissions::registry::codes;
 pub async fn create_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<CreateTimetableVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let version = timetable_version_service::create_initial_draft(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         request,
     )
     .await?;
@@ -140,15 +142,17 @@ pub async fn clone_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(source_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<CloneTimetableVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let version = timetable_version_service::clone_draft(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         source_id,
         payload,
     )
@@ -170,6 +174,7 @@ pub async fn update_delivery_source(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<UpdateTimetableDeliverySourceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -184,9 +189,10 @@ pub async fn update_delivery_source(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let version = timetable_lifecycle::update_source(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         id,
         request,
     )
@@ -208,6 +214,7 @@ pub async fn delete_draft(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<DeleteTimetableDraftRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -228,8 +235,9 @@ pub async fn delete_draft(
         chrono::Utc::now().date_naive(),
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let result =
-        timetable_lifecycle::delete_draft(&context.tenant.pool, context.actor.user_id, id, request)
+        timetable_lifecycle::delete_draft(&context.tenant.pool, &mutation, id, request)
             .await?;
     signal_version(
         &state,
@@ -273,6 +281,7 @@ pub async fn publish_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<PublishTimetableVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -286,8 +295,9 @@ pub async fn publish_version(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let version =
-        timetable_lifecycle::publish(&context.tenant.pool, context.actor.user_id, id, request)
+        timetable_lifecycle::publish(&context.tenant.pool, &mutation, id, request)
             .await?;
     signal_version(
         &state,

@@ -55,6 +55,19 @@ pub struct TimetableResourceSet {
     pub requires_school_scope: bool,
 }
 
+impl TimetableResourceSet {
+    pub fn include_block(&mut self, block: &crate::models::timetable_block::TimetableBlock) {
+        self.timetable_version_ids.push(block.timetable_version_id);
+        self.learning_offering_ids.extend(block.learning_offering_id);
+        self.learning_group_ids.extend(block.groups.iter().map(|group| group.learning_group_id));
+        self.homeroom_ids.extend(block.homerooms.iter().map(|target| target.homeroom_id));
+        self.teacher_ids.extend(block.teachers.iter().map(|target| target.teacher_id));
+        self.teacher_ids.extend(block.groups.iter().flat_map(|group| group.instructors.iter()).map(|teacher| teacher.teacher_id));
+        self.room_ids.extend(block.groups.iter().filter_map(|group| group.room_id).chain(block.homerooms.iter().filter_map(|target| target.room_id)));
+        self.requires_school_scope |= block.block_kind == crate::models::timetable_block::TimetableBlockKind::Structural;
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TimetableAccessFilter {
     pub assigned_actor_id: Option<Uuid>,
@@ -69,7 +82,7 @@ struct TimetableResourceTarget {
     actor_is_assigned: bool,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct TimetableResourceTargetRow {
     resource_kind: String,
     resource_id: Uuid,
@@ -253,19 +266,41 @@ async fn require_resources_with_filter(
     if !needs_resource_lookup(&filter, resources)? {
         return Ok(());
     }
+    let snapshot = resource_access_snapshot_on_connection(connection, actor, resources).await?;
+    snapshot.require_resources(resources, &filter)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TimetableResourceAccessSnapshot {
+    targets: std::collections::BTreeMap<(String, Uuid), TimetableResourceTargetRow>,
+}
+
+impl TimetableResourceAccessSnapshot {
+    pub fn require_resources(&self, resources: &TimetableResourceSet, filter: &TimetableAccessFilter) -> Result<(), AppError> {
+        if !needs_resource_lookup(filter, resources)? { return Ok(()); }
+        for (kind, ids) in [
+            ("version", &resources.timetable_version_ids), ("offering", &resources.learning_offering_ids),
+            ("group", &resources.learning_group_ids), ("homeroom", &resources.homeroom_ids),
+            ("teacher", &resources.teacher_ids), ("room", &resources.room_ids),
+        ] {
+            for id in normalized_ids(ids) {
+                let target = self.targets.get(&(kind.into(), id)).ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรตารางสอนบางรายการ".into()))?;
+                if !target.permission_neutral && !timetable_target_allowed(filter, &TimetableResourceTarget { owner_organization_unit_ids: target.owner_organization_unit_ids.clone(), actor_is_assigned: target.actor_is_assigned }) {
+                    return Err(AppError::Forbidden("ไม่มีสิทธิ์เข้าถึงทรัพยากรตารางสอนบางรายการ".into()));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub async fn resource_access_snapshot_on_connection(connection: &mut sqlx::PgConnection, actor: &ActorContext, resources: &TimetableResourceSet) -> Result<TimetableResourceAccessSnapshot, AppError> {
     let version_ids = normalized_ids(&resources.timetable_version_ids);
     let offering_ids = normalized_ids(&resources.learning_offering_ids);
     let group_ids = normalized_ids(&resources.learning_group_ids);
     let homeroom_ids = normalized_ids(&resources.homeroom_ids);
     let teacher_ids = normalized_ids(&resources.teacher_ids);
     let room_ids = normalized_ids(&resources.room_ids);
-    let expected_count = version_ids.len()
-        + offering_ids.len()
-        + group_ids.len()
-        + homeroom_ids.len()
-        + teacher_ids.len()
-        + room_ids.len();
-
     let targets = DbSession::new(connection).query_as::<TimetableResourceTargetRow>("academic_timetable.policy.require_timetable_resources_on_connection",
         r#"
         SELECT 'version'::text AS resource_kind,
@@ -345,27 +380,7 @@ async fn require_resources_with_filter(
     .fetch_all()
     .await?;
 
-    if targets.len() != expected_count {
-        return Err(AppError::NotFound(
-            "ไม่พบทรัพยากรตารางสอนบางรายการ".to_string(),
-        ));
-    }
-    if targets.iter().any(|target| {
-        let _identity = (&target.resource_kind, target.resource_id);
-        !target.permission_neutral
-            && !timetable_target_allowed(
-                &filter,
-                &TimetableResourceTarget {
-                    owner_organization_unit_ids: target.owner_organization_unit_ids.clone(),
-                    actor_is_assigned: target.actor_is_assigned,
-                },
-            )
-    }) {
-        return Err(AppError::Forbidden(
-            "ไม่มีสิทธิ์เข้าถึงทรัพยากรตารางสอนบางรายการ".to_string(),
-        ));
-    }
-    Ok(())
+    Ok(TimetableResourceAccessSnapshot { targets: targets.into_iter().map(|target| ((target.resource_kind.clone(), target.resource_id), target)).collect() })
 }
 
 fn timetable_target_allowed(

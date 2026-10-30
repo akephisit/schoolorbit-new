@@ -262,6 +262,7 @@ school-certificates-http = { workspace = true }
 school-academic-http = { workspace = true }
 
 [dev-dependencies]
+tokio-tungstenite = "0.29.0"
 school-academic-timetable = { workspace = true, features = ["test-support"] }
 syn = { workspace = true }
 school-notifications = { workspace = true, features = ["test-support"] }
