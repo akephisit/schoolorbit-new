@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
@@ -30,7 +30,6 @@ pub struct TermTransitionRequest {
     pub expected_term_version: i64,
     pub readiness_checksum: String,
     pub acknowledged_warning_codes: Vec<String>,
-    pub closed_on: Option<NaiveDate>,
     pub reason: Option<String>,
 }
 

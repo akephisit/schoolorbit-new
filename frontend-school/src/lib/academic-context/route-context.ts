@@ -103,19 +103,21 @@ export function academicContextualMenuPath(
 
 	const selectedYearIsValid =
 		!options || options.years.some((year) => year.id === selected.academicYearId);
-	const activeYearIsValid = options?.years.some((year) => year.id === options.activeAcademicYearId);
+	const defaultYearIsValid = options?.years.some(
+		(year) => year.id === options.defaultAcademicYearId
+	);
 	const academicYearId = selectedYearIsValid
 		? selected.academicYearId
-		: activeYearIsValid
-			? (options?.activeAcademicYearId ?? null)
+		: defaultYearIsValid
+			? (options?.defaultAcademicYearId ?? null)
 			: null;
 	const selectedTerm = options?.terms.find((term) => term.id === selected.academicTermId);
-	const activeTerm = options?.terms.find((term) => term.id === options.activeAcademicTermId);
+	const defaultTerm = options?.terms.find((term) => term.id === options.defaultAcademicTermId);
 	const academicTermId =
 		selected.academicTermId && (!options || selectedTerm?.academicYearId === academicYearId)
 			? selected.academicTermId
-			: requirement === 'term_required' && activeTerm?.academicYearId === academicYearId
-				? activeTerm.id
+			: requirement === 'term_required' && defaultTerm?.academicYearId === academicYearId
+				? defaultTerm.id
 				: null;
 
 	target.searchParams.delete('academicYearId');
@@ -169,13 +171,13 @@ export function resolveAcademicContextUrl(
 	let replaceUrl: URL | null = null;
 
 	if (academicYearId === null) {
-		const activeYearId = options.activeAcademicYearId ?? null;
-		if (!activeYearId || !options.years.some((year) => year.id === activeYearId)) {
+		const defaultYearId = options.defaultAcademicYearId ?? null;
+		if (!defaultYearId || !options.years.some((year) => year.id === defaultYearId)) {
 			return resolution(requirement, 'unavailable', emptySelection);
 		}
-		academicYearId = activeYearId;
+		academicYearId = defaultYearId;
 		replaceUrl = new URL(url);
-		replaceUrl.searchParams.set('academicYearId', activeYearId);
+		replaceUrl.searchParams.set('academicYearId', defaultYearId);
 	}
 
 	if (!options.years.some((year) => year.id === academicYearId)) {
@@ -195,9 +197,9 @@ export function resolveAcademicContextUrl(
 	}
 
 	if (academicTermId === null) {
-		const activeTermId = options.activeAcademicTermId ?? null;
-		const activeTerm = options.terms.find((term) => term.id === activeTermId);
-		if (!activeTerm || activeTerm.academicYearId !== academicYearId) {
+		const defaultTermId = options.defaultAcademicTermId ?? null;
+		const defaultTerm = options.terms.find((term) => term.id === defaultTermId);
+		if (!defaultTerm || defaultTerm.academicYearId !== academicYearId) {
 			return resolution(
 				requirement,
 				'unavailable',
@@ -205,7 +207,7 @@ export function resolveAcademicContextUrl(
 				replaceUrl
 			);
 		}
-		academicTermId = activeTerm.id;
+		academicTermId = defaultTerm.id;
 		replaceUrl ??= new URL(url);
 		replaceUrl.searchParams.set('academicTermId', academicTermId);
 	}

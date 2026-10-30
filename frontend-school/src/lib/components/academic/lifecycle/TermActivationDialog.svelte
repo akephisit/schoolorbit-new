@@ -88,7 +88,6 @@
 			expectedTermVersion: workspace.context.termRowVersion,
 			readinessChecksum: workspace.sourceChecksum,
 			acknowledgedWarningCodes: [],
-			closedOn: null,
 			reason: null
 		};
 		const key = JSON.stringify(body);

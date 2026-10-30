@@ -47,20 +47,20 @@ test('course list and selected workspace render while policy is pending; learner
 				});
 			if (url.pathname === '/api/academic/context/options')
 				return fulfill(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-03-31'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',
@@ -68,8 +68,6 @@ test('course list and selected workspace render while policy is pending; learner
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}
@@ -212,20 +210,20 @@ test('learner-only reader falls back from the default course URL to the permitte
 				});
 			if (url.pathname === '/api/academic/context/options')
 				return fulfill(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-03-31'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',
@@ -233,8 +231,6 @@ test('learner-only reader falls back from the default course URL to the permitte
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

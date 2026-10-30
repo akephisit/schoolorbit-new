@@ -31,7 +31,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 						});
 						const term =
 							context.terms.find((t) => t.id === url.searchParams.get('academicTermId')) ??
-							context.terms.find((t) => t.id === context.activeAcademicTermId) ??
+							context.terms.find((t) => t.id === context.defaultAcademicTermId) ??
 							context.terms.at(-1);
 						const children: ChildDto[] = term
 							? (await getOwnParentProfile(term.academicYearId, { requestFetch: fetch })).children

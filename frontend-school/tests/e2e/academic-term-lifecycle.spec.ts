@@ -124,28 +124,27 @@ async function mock(
 			if (path === '/api/academic/context/options') {
 				contextReads++;
 				const options: components['schemas']['AcademicContextOptions'] = {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
 						},
 						{
+ isVisible: true,
 							id: nextYear,
 							year: 2570,
 							name: 'ปีการศึกษา 2570',
 							status: 'planning',
-							startDate: '2027-05-01',
-							endDate: '2028-04-30'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: term,
 							academicYearId: year,
 							code: '1',
@@ -153,13 +152,11 @@ async function mock(
 							sequence: 1,
 							termType: 'regular',
 							status: current.context.termStatus,
-							startDate: '2026-05-16',
-							plannedEndDate: null,
-							closedOn: null,
 							includedInYearResult: true,
 							blocksYearClosure: true
 						},
 						{
+ isVisible: true,
 							id: nextTerm,
 							academicYearId: nextYear,
 							code: '1',
@@ -167,9 +164,6 @@ async function mock(
 							sequence: 1,
 							termType: 'regular',
 							status: 'planning',
-							startDate: '2027-05-16',
-							plannedEndDate: '2027-10-31',
-							closedOn: null,
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

@@ -152,19 +152,19 @@ test('personal timetable starts once in the route and clears the old term before
 	await installTimetableMock(page);
 	await page.route('**/api/academic/context/options', (route) =>
 		fulfill(route, {
-			activeAcademicYearId: timetableIds.year,
-			activeAcademicTermId: timetableIds.term,
+			defaultAcademicYearId: timetableIds.year,
+			defaultAcademicTermId: timetableIds.term,
 			years: [
 				{
+ isVisible: true,
 					id: timetableIds.year,
 					name: 'ปีการศึกษา 2569',
 					year: 2569,
 					status: 'active',
-					startDate: '2026-05-01',
-					endDate: '2027-03-31'
 				}
 			],
 			terms: [timetableIds.term, secondTermId].map((id, index) => ({
+ isVisible: true,
 				id,
 				academicYearId: timetableIds.year,
 				name: `ภาคเรียนที่ ${index + 1}`,
@@ -172,8 +172,6 @@ test('personal timetable starts once in the route and clears the old term before
 				sequence: index + 1,
 				termType: 'regular',
 				status: 'active',
-				startDate: '2026-05-01',
-				endDate: '2027-03-31',
 				includedInYearResult: true,
 				blocksYearClosure: true
 			}))

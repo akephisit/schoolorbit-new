@@ -13,3 +13,5 @@ The Senior owns Git/integration and shared-checkout coordination. Backend owns R
 7. Pause writers for a meaningful checkpoint, then continue under the new HEAD. Freeze the final candidate for independent review and QA; route repairs back to the responsible writer. Senior owns draft PR, freshness, integration and authorized delivery.
 
 Test expectation changes are intentional: old year/term date payloads now fail unknown-field validation; date containment and lifecycle-derived context defaults are replaced by explicit context/date validation, visibility filtering and independently persisted defaults. Historical migration fixtures keep their original pre-cutover shapes; current-schema fixtures use date-free academic identities plus real domain dates/calendars.
+
+Legacy visibility is mapped once from prior public discovery intent: planning years and planning/cancelled terms start hidden; other existing contexts start visible. Later lifecycle transitions never change visibility/defaults.

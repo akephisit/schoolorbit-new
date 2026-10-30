@@ -156,9 +156,6 @@ pub async fn apply(
             .get(&day.exam_date)
             .copied()
             .ok_or_else(|| AppError::Conflict(format!("ไม่พบการจับคู่วันสอบ {}", day.exam_date)))?;
-        if target_date < context.target_start_date || target_date > context.target_end_date {
-            return Err(AppError::Conflict("วันสอบเป้าหมายอยู่นอกภาคเรียน".into()));
-        }
         let id = Uuid::now_v7();
         let target_round = round_map[&day.exam_round_id];
         DbSession::new(&mut **tx)

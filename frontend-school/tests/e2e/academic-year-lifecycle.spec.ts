@@ -125,20 +125,20 @@ async function mock(
 			if (path === '/api/academic/context/options') {
 				reads++;
 				return fulfill(route, {
-					activeAcademicYearId: current.context.status === 'closed' ? null : year,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: current.context.status === 'closed' ? null : year,
+					defaultAcademicTermId: null,
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
 							status: current.context.status,
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: term,
 							academicYearId: year,
 							sequence: 2,
@@ -146,9 +146,6 @@ async function mock(
 							name: 'ภาคเรียนที่ 2',
 							termType: 'regular',
 							status: 'closed',
-							startDate: '2026-11-01',
-							plannedEndDate: null,
-							closedOn: '2027-03-20',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

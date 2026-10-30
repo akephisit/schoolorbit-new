@@ -22,17 +22,17 @@ export type Resource = keyof typeof resources;
 export const scheduleRoute = (resource: Resource, selected = term) =>
 	`/student/${resource}?academicYearId=${year}${resource === 'calendar' ? '&month=2026-10' : `&academicTermId=${selected}`}`;
 export const academicOptions: AcademicContextOptionsResponse = {
-	activeAcademicYearId: year,
-	activeAcademicTermId: term,
+	defaultAcademicYearId: year,
+	defaultAcademicTermId: term,
 	years: [year, nextYear].map((id, i) => ({
+ isVisible: true,
 		id,
 		year: 2569 + i,
 		name: String(2569 + i),
 		status: 'active',
-		startDate: '2026-05-01',
-		endDate: '2027-04-30'
 	})),
 	terms: [term, secondTerm, nextYearTerm].map((id, i) => ({
+ isVisible: true,
 		id,
 		academicYearId: i === 2 ? nextYear : year,
 		name: i === 0 ? 'ภาคหนึ่ง' : i === 1 ? 'ภาคสอง' : 'ภาคปีใหม่',
@@ -40,9 +40,6 @@ export const academicOptions: AcademicContextOptionsResponse = {
 		sequence: i + 1,
 		status: 'active',
 		termType: 'regular',
-		startDate: '2026-05-01',
-		plannedEndDate: '2027-04-30',
-		closedOn: null,
 		includedInYearResult: true,
 		blocksYearClosure: true
 	}))

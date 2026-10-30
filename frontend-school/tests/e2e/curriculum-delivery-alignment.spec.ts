@@ -157,20 +157,20 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 			}
 			if (url.pathname === '/api/academic/context/options') {
 				await fulfill(route, {
-					activeAcademicYearId: ids.year,
-					activeAcademicTermId: ids.term,
+					defaultAcademicYearId: ids.year,
+					defaultAcademicTermId: ids.term,
 					years: [
 						{
+ isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-03-31'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',
@@ -178,8 +178,6 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}
@@ -339,8 +337,10 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				createOptionsRequests += 1;
 				await fulfill(route, {
 					academicYears: [
-						{ id: ids.futureYear, name: 'ปีการศึกษา 2570', year: 2570, status: 'planning' },
-						{ id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }
+						{
+ isVisible: true, id: ids.futureYear, name: 'ปีการศึกษา 2570', year: 2570, status: 'planning' },
+						{
+ isVisible: true, id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }
 					],
 					gradeLevels: curriculumStructure().gradeLevels
 				});
@@ -1377,11 +1377,13 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 		newOptionReads = 0;
 	await page.route('**/api/academic/context/options', (route) =>
 		fulfill(route, {
-			activeAcademicYearId: navIds.year,
-			activeAcademicTermId: navIds.term,
-			years: [{ id: navIds.year, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' }],
+			defaultAcademicYearId: navIds.year,
+			defaultAcademicTermId: navIds.term,
+			years: [{
+ isVisible: true, id: navIds.year, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' }],
 			terms: [
 				{
+ isVisible: true,
 					id: navIds.term,
 					academicYearId: navIds.year,
 					name: 'ภาคเรียนที่ 2',
@@ -1391,6 +1393,7 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 					status: 'active'
 				},
 				{
+ isVisible: true,
 					id: navIds.activeTerm,
 					academicYearId: navIds.year,
 					name: 'ภาคเรียนที่ 1',

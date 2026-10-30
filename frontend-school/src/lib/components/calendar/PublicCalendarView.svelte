@@ -6,18 +6,12 @@
 	import { addMonths } from 'date-fns';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import CalendarSearchDialog from '#lib/components/calendar/CalendarSearchDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import CalendarDayTimelineDialog from '#lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
 	import { type CalendarPublicEvent, listPublicCalendarEvents } from '#lib/api/calendar.js';
-	import {
-		listPublicAcademicContextOptions,
-		type AcademicYearOption
-	} from '#lib/api/academic-context.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import type { PublicCalendarRouteData } from '#lib/calendar/public-route.js';
@@ -26,8 +20,8 @@
 		publicCalendarRange,
 		buildCalendarColorKey,
 		eventOverlapsDate,
-		formatCalendarDate,
 		formatCalendarMonth,
+		formatCalendarDate,
 		monthRange,
 		toIsoDate
 	} from '#lib/utils/calendar.js';
@@ -41,15 +35,11 @@
 		page.state.publicCalendarUrl ? new URL(page.state.publicCalendarUrl) : new URL(page.url.href)
 	);
 	const selectedMonth = $derived(calendarRouteFilters(currentUrl).month);
-	const selectedYearId = $derived(currentUrl.searchParams.get('academicYearId')?.trim() ?? '');
-	const key = $derived(`${selectedMonth}|${selectedYearId}`);
-	let events = $state.raw<CalendarPublicEvent[]>([]),
-		years = $state<AcademicYearOption[]>([]);
+	const key = $derived(selectedMonth);
+	let events = $state.raw<CalendarPublicEvent[]>([]);
 	let loading = $state(true),
 		rendered = $state(false),
-		error = $state(''),
-		yearError = $state(''),
-		yearsLoading = $state(true);
+		error = $state('');
 	let selectedDate = $state(
 			untrack(() => {
 				const today = new Intl.DateTimeFormat('en-CA', {
@@ -66,17 +56,9 @@
 	let owner = '',
 		jumpDate = '',
 		consumed: typeof data.events | null = null;
-	const request = new LatestRequest(),
-		yearRequest = new LatestRequest();
-	const selectedYear = $derived(years.find((year) => year.id === selectedYearId));
+	const request = new LatestRequest();
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
 	const colorKeyItems = $derived(buildCalendarColorKey(selectedMonth, events));
-	const canPrevious = $derived(
-		!selectedYear || selectedMonth.slice(0, 7) > selectedYear.startDate.slice(0, 7)
-	);
-	const canNext = $derived(
-		!selectedYear || selectedMonth.slice(0, 7) < selectedYear.endDate.slice(0, 7)
-	);
 	const selectedDateEvents = $derived(
 		events
 			.filter((event) => eventOverlapsDate(event, selectedDate))
@@ -103,21 +85,6 @@
 		} else error = result.error;
 	}
 	$effect.pre(() => {
-		const source = data.years;
-		untrack(() => {
-			const ticket = yearRequest.begin();
-			yearsLoading = true;
-			yearError = '';
-			void source.then((result) => {
-				if (!yearRequest.isCurrent(ticket.revision)) return;
-				yearsLoading = false;
-				if (result.ok) years = result.data;
-				else yearError = result.error;
-			});
-		});
-		return () => yearRequest.abort();
-	});
-	$effect.pre(() => {
 		const source = data.events,
 			nextKey = key;
 		untrack(() => {
@@ -130,7 +97,7 @@
 				dayDialogOpen = false;
 				if (!selectedDate.startsWith(selectedMonth.slice(0, 7))) selectedDate = selectedMonth;
 			}
-			if (nextKey === `${data.month}|${data.yearId}` && source !== consumed) {
+			if (nextKey === data.month && source !== consumed) {
 				consumed = source;
 				const ticket = request.begin();
 				loading = true;
@@ -139,76 +106,28 @@
 		});
 		return () => request.abort();
 	});
-	async function loadYears() {
-		const ticket = yearRequest.begin();
-		yearsLoading = true;
-		yearError = '';
-		const result = await captureRouteLoad(
-			listPublicAcademicContextOptions(ticket.signal),
-			'โหลดปีการศึกษาไม่สำเร็จ'
-		);
-		if (!yearRequest.isCurrent(ticket.revision)) return;
-		yearsLoading = false;
-		if (result.ok) years = result.data.years;
-		else yearError = result.error;
-	}
 	async function loadCalendar() {
-		const ticket = request.begin(),
-			month = selectedMonth,
-			id = selectedYearId;
+		const ticket = request.begin();
 		loading = true;
 		error = '';
-		if (id && !years.some((year) => year.id === id)) {
-			if (yearsLoading) {
-				const result = await data.years;
-				if (result.ok) years = result.data;
-			} else await loadYears();
-		}
-		if (!request.isCurrent(ticket.revision)) return;
-		const year = years.find((year) => year.id === id);
-		if (id && !year) {
-			loading = false;
-			error = 'ไม่พบปีการศึกษาที่เลือก กรุณาเลือกปีใหม่';
-			return;
-		}
-		const range = publicCalendarRange(month, year);
-		const result =
-			range.from > range.to
-				? { ok: true as const, data: [], error: null }
-				: await captureRouteLoad(
-						listPublicCalendarEvents(range, { signal: ticket.signal }),
-						'โหลดปฏิทินไม่สำเร็จ'
-					);
+		const result = await captureRouteLoad(
+			listPublicCalendarEvents(publicCalendarRange(selectedMonth), { signal: ticket.signal }),
+			'โหลดปฏิทินไม่สำเร็จ'
+		);
 		applyEvents(result, ticket.revision);
 	}
-	function navigate(month: string, yearId = selectedYearId) {
+	function navigate(month: string) {
 		const url = new URL(currentUrl);
 		url.searchParams.set('month', month.slice(0, 7));
-		if (yearId) url.searchParams.set('academicYearId', yearId);
-		else url.searchParams.delete('academicYearId');
+		url.searchParams.delete('academicYearId');
 		void goto(resolve(embedded ? 'calendar/embed' : 'calendar') + url.search, {
 			shallow: true,
 			state: { ...page.state, publicCalendarUrl: url.href }
 		});
 	}
 	function changeMonth(offset: number) {
-		if ((offset < 0 && !canPrevious) || (offset > 0 && !canNext)) return;
 		jumpDate = '';
 		navigate(toIsoDate(addMonths(new Date(`${monthRange(selectedMonth).from}T00:00:00`), offset)));
-	}
-	function changeYear(id: string) {
-		const year = years.find((year) => year.id === id);
-		let month = selectedMonth;
-		if (
-			year &&
-			(month.slice(0, 7) < year.startDate.slice(0, 7) ||
-				month.slice(0, 7) > year.endDate.slice(0, 7))
-		)
-			month = monthRange(year.startDate).from;
-		selectedDate =
-			year && month.slice(0, 7) === year.startDate.slice(0, 7) ? year.startDate : month;
-		jumpDate = '';
-		navigate(month, id);
 	}
 	function goToToday() {
 		const today = new Intl.DateTimeFormat('en-CA', {
@@ -219,30 +138,23 @@
 		}).format(new Date());
 		selectedDate = today;
 		jumpDate = '';
-		navigate(
-			today,
-			selectedYear && (today < selectedYear.startDate || today > selectedYear.endDate)
-				? ''
-				: selectedYearId
-		);
+		navigate(today);
 	}
 	function selectDate(date: string) {
 		selectedDate = date;
 		if (window.matchMedia('(max-width: 1023px)').matches) dayDialogOpen = true;
 	}
-	function selectSearchEvent(event: { startDate: string }, searchYearId: string) {
-		const year = years.find((year) => year.id === searchYearId);
-		selectedDate = year && event.startDate < year.startDate ? year.startDate : event.startDate;
-		if (searchYearId === selectedYearId && selectedDate.startsWith(selectedMonth.slice(0, 7)))
-			selectDate(selectedDate);
+	function selectSearchEvent(event: { startDate: string }) {
+		selectedDate = event.startDate;
+		if (selectedDate.startsWith(selectedMonth.slice(0, 7))) selectDate(selectedDate);
 		else {
 			jumpDate = selectedDate;
-			navigate(selectedDate, searchYearId);
+			navigate(selectedDate);
 		}
 	}
+
 	onDestroy(() => {
 		request.abort();
-		yearRequest.abort();
 	});
 </script>
 
@@ -281,24 +193,10 @@
 					? 'flex w-full flex-wrap items-center justify-between gap-2'
 					: 'flex flex-wrap items-center justify-between gap-2 sm:justify-end'}
 			>
-				<div class="space-y-1">
-					<Label for="public-calendar-year" class="sr-only">ปีการศึกษา</Label>
-					<Select.Root type="single" value={selectedYearId} onValueChange={changeYear}>
-						<Select.Trigger id="public-calendar-year" class="w-44" disabled={yearsLoading}
-							>{selectedYear?.name ?? 'ทุกปีการศึกษา'}</Select.Trigger
-						>
-						<Select.Content
-							><Select.Item value="">ทุกปีการศึกษา</Select.Item
-							>{#each years as year (year.id)}<Select.Item value={year.id}>{year.name}</Select.Item
-								>{/each}</Select.Content
-						>
-					</Select.Root>
-				</div>
 				<Button
 					variant="outline"
 					size="sm"
 					aria-label="ค้นหากิจกรรม"
-					disabled={yearsLoading}
 					onclick={() => (searchOpen = true)}><Search class="size-4" />ค้นหา</Button
 				>
 				<Button variant="outline" size="sm" onclick={goToToday}>วันนี้</Button>
@@ -307,7 +205,6 @@
 						variant="outline"
 						size="icon-sm"
 						onclick={() => changeMonth(-1)}
-						disabled={!canPrevious}
 						aria-label="เดือนก่อนหน้า"
 					>
 						<ChevronLeft class="h-4 w-4" />
@@ -317,7 +214,6 @@
 						variant="outline"
 						size="icon-sm"
 						onclick={() => changeMonth(1)}
-						disabled={!canNext}
 						aria-label="เดือนถัดไป"
 					>
 						<ChevronRight class="h-4 w-4" />
@@ -326,19 +222,6 @@
 			</div>
 		</header>
 
-		{#if selectedYear}<p class="shrink-0 text-xs text-muted-foreground">
-				{selectedYear.name} · {formatCalendarDate(selectedYear.startDate)} – {formatCalendarDate(
-					selectedYear.endDate
-				)}
-			</p>{/if}
-		{#if yearError}<div
-				role="alert"
-				class="flex shrink-0 flex-wrap items-center gap-2 text-sm text-destructive"
-			>
-				<span>{yearError}</span><Button size="sm" variant="outline" onclick={loadYears}
-					>ลองโหลดปีอีกครั้ง</Button
-				>
-			</div>{/if}
 		{#if loading && !rendered}
 			<div class="min-h-0 flex-1 overflow-hidden">
 				<PageSkeleton variant="detail" />
@@ -410,10 +293,4 @@
 	events={selectedDateEvents}
 />
 
-<CalendarSearchDialog
-	bind:open={searchOpen}
-	kind="public"
-	yearOptions={yearError ? undefined : years}
-	yearId={selectedYearId}
-	onselect={selectSearchEvent}
-/>
+<CalendarSearchDialog bind:open={searchOpen} kind="public" onselect={selectSearchEvent} />

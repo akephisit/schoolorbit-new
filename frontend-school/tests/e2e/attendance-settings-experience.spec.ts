@@ -67,21 +67,20 @@ async function fixture(page: Page, schoolCalendar = true, archived = false) {
 		(url) => url.pathname === '/api/academic/context/options',
 		(route) =>
 			reply(route, {
-				activeAcademicYearId: year,
-				activeAcademicTermId: term,
+				defaultAcademicYearId: year,
+				defaultAcademicTermId: term,
 				years: [
 					{
+ isVisible: true,
 						id: year,
 						name: '2569',
 						year: 2569,
 						status: 'active',
-						startDate: '2026-05-01',
-						plannedEndDate: '2027-04-30',
-						closedOn: null
 					}
 				],
 				terms: [
 					{
+ isVisible: true,
 						id: term,
 						academicYearId: year,
 						code: '1',
@@ -89,9 +88,6 @@ async function fixture(page: Page, schoolCalendar = true, archived = false) {
 						sequence: 1,
 						termType: 'regular',
 						status: 'active',
-						startDate: '2026-05-01',
-						plannedEndDate: '2026-10-31',
-						closedOn: null,
 						includedInYearResult: true,
 						blocksYearClosure: true
 					}

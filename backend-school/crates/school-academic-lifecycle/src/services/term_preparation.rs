@@ -43,15 +43,16 @@ struct ContextRow {
     source_label: String,
     source_status: String,
     source_row_version: i64,
-    source_start_date: NaiveDate,
+    source_year_number: i32,
+    source_sequence: i32,
     target_term_id: Uuid,
     target_year_id: Uuid,
     target_year_status: String,
     target_label: String,
     target_status: String,
     target_row_version: i64,
-    target_start_date: NaiveDate,
-    target_end_date: NaiveDate,
+    target_year_number: i32,
+    target_sequence: i32,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -197,15 +198,14 @@ async fn load_context(
                   source_year.name || ' · ' || source.name AS source_label,
                   source.status::text AS source_status,
                   source.row_version AS source_row_version,
-                  source.start_date AS source_start_date,
+                  source_year.year AS source_year_number,source.sequence_no AS source_sequence,
                   target.id AS target_term_id,
                   target.academic_year_id AS target_year_id,
                   target_year.status::text AS target_year_status,
                   target_year.name || ' · ' || target.name AS target_label,
                   target.status::text AS target_status,
                   target.row_version AS target_row_version,
-                  target.start_date AS target_start_date,
-                  COALESCE(target.planned_end_date, target_year.end_date) AS target_end_date
+                  target_year.year AS target_year_number,target.sequence_no AS target_sequence
            FROM academic_terms source
            JOIN academic_years source_year ON source_year.id=source.academic_year_id
            CROSS JOIN academic_terms target
@@ -232,7 +232,9 @@ async fn load_context(
             "ปีการศึกษาเป้าหมายปิดแล้วหรือเก็บถาวรแล้ว".into(),
         ));
     }
-    if context.target_start_date <= context.source_start_date {
+    if (context.target_year_number, context.target_sequence)
+        <= (context.source_year_number, context.source_sequence)
+    {
         return Err(AppError::Conflict(
             "ภาคเรียนเป้าหมายต้องเริ่มหลังภาคเรียนต้นทาง".into(),
         ));
@@ -623,8 +625,6 @@ fn finalize_workspace(
         target_year_id: context.target_year_id,
         target_label: context.target_label,
         target_status: context.target_status,
-        target_start_date: context.target_start_date,
-        target_end_date: context.target_end_date,
     };
     let source_checksum = super::checksum(&(
         normalized,
@@ -1205,27 +1205,15 @@ async fn date_requirements(
         .iter()
         .map(|mapping| (mapping.source_date, mapping.target_date))
         .collect::<HashMap<_, _>>();
-    let offset = context
-        .target_start_date
-        .signed_duration_since(context.source_start_date);
     let mut requirements = Vec::new();
     let mut findings = Vec::new();
     for (source_date, (source_label, required_by)) in seeds {
-        let suggested = source_date
-            .checked_add_signed(offset)
-            .filter(|date| *date >= context.target_start_date && *date <= context.target_end_date);
-        let selected = provided.get(&source_date).copied().or(suggested);
+        let suggested = None;
+        let selected = provided.get(&source_date).copied();
         if selected.is_none() {
             findings.push(blocking(
                 format!("mapping.date.{source_date}"),
                 format!("ยังไม่ได้จับคู่ {source_label}"),
-            ));
-        } else if selected
-            .is_some_and(|date| date < context.target_start_date || date > context.target_end_date)
-        {
-            findings.push(blocking(
-                format!("mapping.date.{source_date}.outside_target"),
-                format!("วันที่ปลายทางของ {source_label} ต้องอยู่ในภาคเรียนเป้าหมาย"),
             ));
         }
         requirements.push(TermPreparationDateRequirement {

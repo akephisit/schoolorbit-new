@@ -71,8 +71,8 @@ async function mock(
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null,
 					years: [],
 					terms: []
 				});

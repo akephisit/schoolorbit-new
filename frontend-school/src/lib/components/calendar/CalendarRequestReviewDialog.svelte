@@ -26,6 +26,10 @@
 		type CalendarTag,
 		type CreateCalendarEventRequest
 	} from '#lib/api/calendar.js';
+	import {
+		listAcademicContextOptions,
+		type AcademicYearOption
+	} from '#lib/api/academic-context.js';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -58,7 +62,8 @@
 		tags: []
 	});
 	let targetOptions = $state.raw<CalendarTargetOptions>({ gradeLevels: [], homerooms: [] });
-	let optionsDate = $state(''),
+	let targetYears = $state<AcademicYearOption[]>([]);
+	let optionsYearId = $state(''),
 		optionsLoading = $state(false),
 		optionsLoaded = $state(false),
 		optionsError = $state('');
@@ -87,7 +92,6 @@
 				initialRequest ?? (await getCalendarRequestForReview(target.id, { signal: ticket.signal }));
 			if (!current(key) || !detailRead.isCurrent(ticket.revision)) return;
 			request = result;
-			if (optionsDate !== result.startDate) changeDate(result.startDate);
 		} catch (error: unknown) {
 			if (current(key) && detailRead.isCurrent(ticket.revision))
 				detailError = error instanceof Error ? error.message : 'โหลดรายละเอียดคำร้องไม่สำเร็จ';
@@ -96,24 +100,30 @@
 		}
 	}
 	async function loadOptions() {
-		if (!open || !authorized || mode !== 'approve' || !optionsDate) return;
+		if (!open || !authorized || mode !== 'approve') return;
 		const key = identity,
 			ticket = optionsRead.begin();
 		optionsLoading = true;
 		optionsError = '';
 		try {
-			const [categories, tags, targets] = await Promise.all([
+			const [categories, tags, context] = await Promise.all([
 				initialCatalogs || catalogsLoaded
 					? Promise.resolve(initialCatalogs?.categories ?? catalogs.categories)
 					: listCalendarCategories({ signal: ticket.signal }),
 				initialCatalogs || catalogsLoaded
 					? Promise.resolve(initialCatalogs?.tags ?? catalogs.tags)
 					: listCalendarTags({ signal: ticket.signal }),
-				listCalendarTargetOptions(optionsDate, { signal: ticket.signal })
+				listAcademicContextOptions(ticket.signal)
 			]);
 			if (!current(key) || !optionsRead.isCurrent(ticket.revision)) return;
 			catalogs = { categories, tags };
 			catalogsLoaded = true;
+			targetYears = context.years;
+			optionsYearId ||= context.defaultAcademicYearId ?? '';
+			const targets = optionsYearId
+				? await listCalendarTargetOptions(optionsYearId, { signal: ticket.signal })
+				: { gradeLevels: [], homerooms: [] };
+			if (!current(key) || !optionsRead.isCurrent(ticket.revision)) return;
 			targetOptions = targets;
 			optionsLoaded = true;
 		} catch (error: unknown) {
@@ -123,9 +133,9 @@
 			if (current(key) && optionsRead.isCurrent(ticket.revision)) optionsLoading = false;
 		}
 	}
-	function changeDate(date: string) {
-		if (date === optionsDate) return;
-		optionsDate = date;
+	function changeYear(yearId: string) {
+		if (yearId === optionsYearId) return;
+		optionsYearId = yearId;
 		optionsLoaded = false;
 		void loadOptions();
 	}
@@ -142,7 +152,7 @@
 			detailError = '';
 			decisionError = '';
 			reason = '';
-			optionsDate = target.startDate;
+			optionsYearId = '';
 			optionsLoaded = false;
 			optionsError = '';
 			if (mode === 'approve') {
@@ -213,7 +223,9 @@
 		{optionsError}
 		error={decisionError}
 		onretryoptions={loadOptions}
-		ondatechange={changeDate}
+		onyearchange={changeYear}
+		targetYearId={optionsYearId}
+		{targetYears}
 		onsave={(payload) => void decide(payload)}
 		submitLabel="อนุมัติและเพิ่มลงปฏิทิน"
 	/>

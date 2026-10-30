@@ -278,9 +278,9 @@
 			{#if mode === 'homeroom'}<p class="mt-3 text-xs text-muted-foreground">
 					สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
 					โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
-					เริ่มติดตามได้ตั้งแต่วันนี้ ภายใน {formatCalendarDate(tracking.startsOn)} – {formatCalendarDate(
-						tracking.endsOn
-					)}{group.rosterStatus !== 'published'
+					เริ่มติดตามได้ตั้งแต่วันนี้ ภายใน {formatCalendarDate(tracking.startsOn)} – {tracking.endsOn
+						? formatCalendarDate(tracking.endsOn)
+						: 'ไม่กำหนดวันสิ้นสุด'}{group.rosterStatus !== 'published'
 						? ' และเริ่มปรับรายชื่ออัตโนมัติหลังเผยแพร่รายชื่อกลุ่ม'
 						: ''}
 				</p>{/if}

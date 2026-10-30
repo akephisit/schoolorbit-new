@@ -43,8 +43,8 @@ test('scoped term selection rejects foreign terms and optional calendar keeps wh
 			{ id: 'term-a', academicYearId: 'year-a' },
 			{ id: 'term-b', academicYearId: 'year-b' }
 		],
-		activeAcademicYearId: 'year-a',
-		activeAcademicTermId: 'term-b'
+		defaultAcademicYearId: 'year-a',
+		defaultAcademicTermId: 'term-b'
 	};
 	const requested = new URL(
 		'https://school.test/student/exams?academicYearId=year-a&academicTermId=term-b'

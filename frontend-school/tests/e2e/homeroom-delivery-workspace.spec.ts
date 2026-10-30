@@ -206,20 +206,20 @@ async function mockDelivery(
 			if (url.pathname === '/api/academic/context/options') {
 				await contextGate;
 				await fulfill(route, {
-					activeAcademicYearId: ids.year,
-					activeAcademicTermId: ids.term,
+					defaultAcademicYearId: ids.year,
+					defaultAcademicTermId: ids.term,
 					years: [
 						{
+ isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2570',
 							year: 2570,
 							status: 'active',
-							startDate: '2027-05-01',
-							endDate: '2028-03-31'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',
@@ -227,8 +227,6 @@ async function mockDelivery(
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2027-05-01',
-							endDate: '2027-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

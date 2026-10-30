@@ -185,11 +185,13 @@ async function mockOffering(
 			}
 			if (path === '/api/academic/context/options') {
 				await fulfill(route, {
-					activeAcademicYearId: ids.year,
-					activeAcademicTermId: ids.term,
-					years: [{ id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					defaultAcademicYearId: ids.year,
+					defaultAcademicTermId: ids.term,
+					years: [{
+ isVisible: true, id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
 					terms: [
 						{
+ isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',

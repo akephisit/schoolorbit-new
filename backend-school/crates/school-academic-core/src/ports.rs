@@ -93,8 +93,6 @@ pub struct TermPreparationContext {
     pub target_year_id: Uuid,
     pub target_label: String,
     pub target_status: String,
-    pub target_start_date: NaiveDate,
-    pub target_end_date: NaiveDate,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

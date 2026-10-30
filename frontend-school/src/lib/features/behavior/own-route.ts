@@ -26,7 +26,7 @@ export async function loadOwnBehavior(
 			: await listParentAcademicContextOptions(signal, { requestFetch, signal });
 	const term =
 		context.terms.find((t) => t.id === url.searchParams.get('academicTermId')) ??
-		context.terms.find((t) => t.id === context.activeAcademicTermId) ??
+		context.terms.find((t) => t.id === context.defaultAcademicTermId) ??
 		context.terms.at(-1);
 	const children: ChildDto[] =
 		userType === 'parent' && term

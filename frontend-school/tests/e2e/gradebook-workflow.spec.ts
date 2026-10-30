@@ -31,20 +31,20 @@ function fulfill(route: Route, data: unknown, status = 200) {
 
 function contextOptions() {
 	return {
-		activeAcademicYearId: ids.year,
-		activeAcademicTermId: ids.term,
+		defaultAcademicYearId: ids.year,
+		defaultAcademicTermId: ids.term,
 		years: [
 			{
+ isVisible: true,
 				id: ids.year,
 				name: 'ปีการศึกษา 2569',
 				year: 2569,
 				status: 'active',
-				startDate: '2026-05-01',
-				endDate: '2027-03-31'
 			}
 		],
 		terms: [
 			{
+ isVisible: true,
 				id: ids.term,
 				academicYearId: ids.year,
 				name: 'ภาคเรียนที่ 1',
@@ -52,8 +52,6 @@ function contextOptions() {
 				sequence: 1,
 				termType: 'regular',
 				status: 'active',
-				startDate: '2026-05-01',
-				endDate: '2026-10-31',
 				includedInYearResult: true,
 				blocksYearClosure: true
 			}
@@ -200,7 +198,7 @@ async function mockGradebook(
 					closedTerm
 						? {
 								...context,
-								activeAcademicTermId: null,
+								defaultAcademicTermId: null,
 								terms: context.terms.map((term) => ({ ...term, status: 'closed' }))
 							}
 						: context

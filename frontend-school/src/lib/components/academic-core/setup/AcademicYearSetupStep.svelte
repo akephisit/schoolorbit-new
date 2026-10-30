@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type {
 		AcademicYear,
 		CreateAcademicYearRequest,
@@ -13,7 +14,6 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ChevronDown, Save } from '@lucide/svelte';
@@ -44,16 +44,16 @@
 		onSaved: (year: AcademicYear) => void;
 	} = $props();
 
-	let year = $derived(existing?.year ?? suggestedYear);
-	let customName = $derived(
-		existing ? customNameFromStored(existing.name, standardAcademicYearName(existing.year)) : ''
+	let year = $state(untrack(() => existing?.year ?? suggestedYear));
+	let customName = $state(
+		untrack(() =>
+			existing ? customNameFromStored(existing.name, standardAcademicYearName(existing.year)) : ''
+		)
 	);
-	let startDate = $derived(existing?.startDate ?? '');
-	let endDate = $derived(existing?.endDate ?? '');
-	let schoolDays = $derived<AcademicWeekday[]>(
-		normalizeSchoolDays(existing?.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'])
+	let schoolDays = $state<AcademicWeekday[]>(
+		untrack(() => normalizeSchoolDays(existing?.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI']))
 	);
-	let advancedOpen = $derived(customName.length > 0);
+	let advancedOpen = $state(untrack(() => customName.length > 0));
 	let errorMessage = $state('');
 
 	const standardName = $derived(standardAcademicYearName(year));
@@ -68,14 +68,6 @@
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		errorMessage = '';
-		if (!startDate || !endDate) {
-			errorMessage = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
-			return;
-		}
-		if (startDate > endDate) {
-			errorMessage = 'วันสิ้นสุดปีการศึกษาต้องไม่อยู่ก่อนวันเริ่ม';
-			return;
-		}
 		if (schoolDays.length === 0) {
 			errorMessage = 'กรุณาเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
@@ -83,8 +75,6 @@
 		const common = {
 			year,
 			customName: customName.trim() || null,
-			startDate,
-			endDate,
 			schoolDays
 		};
 		try {
@@ -111,24 +101,6 @@
 		<div class="space-y-1.5">
 			<Label for="academic-year-value">ปีการศึกษา (พ.ศ.)</Label>
 			<Input id="academic-year-value" type="number" min="2400" bind:value={year} required />
-		</div>
-		<div class="space-y-1.5">
-			<Label for="academic-year-start">วันเริ่มปีการศึกษา</Label>
-			<DatePicker
-				id="academic-year-start"
-				bind:value={startDate}
-				ariaLabel="เลือกวันเริ่มปีการศึกษา"
-				required
-			/>
-		</div>
-		<div class="space-y-1.5 sm:col-start-2">
-			<Label for="academic-year-end">วันสิ้นสุดปีการศึกษา</Label>
-			<DatePicker
-				id="academic-year-end"
-				bind:value={endDate}
-				ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
-				required
-			/>
 		</div>
 	</div>
 

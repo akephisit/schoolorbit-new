@@ -8,6 +8,7 @@ use axum::Router;
 pub fn routes() -> Router<AcademicHttpState> {
     Router::new()
         .route("/context/options", get(handlers::list_context_options))
+        .route("/context/settings", put(handlers::update_context_settings))
         .route(
             "/setup/workspace",
             get(handlers::get_academic_setup_workspace),

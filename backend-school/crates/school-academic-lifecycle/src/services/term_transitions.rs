@@ -88,12 +88,7 @@ pub async fn transition_term(
     )
     .await?;
     let before = &workspace.context;
-    validate_request(
-        &request,
-        before.year_start_date,
-        before.year_end_date,
-        before.term_start_date,
-    )?;
+    validate_request(&request)?;
     if before.year_row_version != request.expected_year_version
         || before.term_row_version != request.expected_term_version
         || workspace.source_checksum != request.readiness_checksum
@@ -104,12 +99,7 @@ pub async fn transition_term(
     }
     let target = target_state(before.term_status, before.year_status, request.action)?;
     if request.action == TermTransitionAction::Close {
-        let closed_on = request
-            .closed_on
-            .ok_or_else(|| AppError::ValidationError("ระบุวันสุดท้ายก่อนปิดภาคเรียน".into()))?;
-        external
-            .require_attendance_delivery_complete(&mut tx, term, closed_on)
-            .await?;
+        external.require_attendance_delivery_complete(&mut tx,term,before.operation_date).await?;
         if !workspace.coverage.ready
             || workspace
                 .findings
@@ -147,8 +137,8 @@ pub async fn transition_term(
         let successor:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term",
             "SELECT EXISTS(SELECT 1 FROM academic_terms successor JOIN academic_years owner ON owner.id=successor.academic_year_id
              WHERE successor.status IN ('active','closing','closed') AND
-             ((successor.academic_year_id=$1 AND successor.sequence_no>$2) OR owner.start_date>$3))",
-        ).bind(request.academic_year_id).bind(before.sequence).bind(before.year_start_date).fetch_one().await?;
+             ((successor.academic_year_id=$1 AND successor.sequence_no>$2) OR owner.year>$3))",
+        ).bind(request.academic_year_id).bind(before.sequence).bind(before.academic_year).fetch_one().await?;
         let running:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term", "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id<>$1 AND status IN ('active','closing'))")
             .bind(term).fetch_one().await?;
         if successor || running {
@@ -157,8 +147,8 @@ pub async fn transition_term(
             ));
         }
     }
-    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN $3 WHEN $2='closing' THEN NULL ELSE closed_on END,row_version=row_version+1,updated_at=now() WHERE id=$1")
-        .bind(term).bind(target).bind(request.closed_on).execute().await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "UPDATE academic_terms SET status=$2,row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(term).bind(target).execute().await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_lifecycle.services.term_transitions.transition_term",
@@ -200,12 +190,7 @@ pub async fn transition_term(
     Ok(outcome)
 }
 
-pub(crate) fn validate_request(
-    request: &TermTransitionRequest,
-    year_start: NaiveDate,
-    year_end: NaiveDate,
-    term_start: NaiveDate,
-) -> Result<(), AppError> {
+pub(crate) fn validate_request(request: &TermTransitionRequest) -> Result<(),AppError> {
     if request.request_id.is_nil()
         || request.academic_year_id.is_nil()
         || request.expected_year_version <= 0
@@ -219,18 +204,6 @@ pub(crate) fn validate_request(
         return Err(AppError::ValidationError(
             "ข้อมูลอ้างอิงหรือรุ่นความพร้อมไม่ถูกต้อง".into(),
         ));
-    }
-    if request.action == TermTransitionAction::Close {
-        let date = request
-            .closed_on
-            .ok_or_else(|| AppError::ValidationError("กรุณาระบุวันที่ปิดภาคเรียนจริง".into()))?;
-        if date < term_start || date < year_start || date > year_end {
-            return Err(AppError::ValidationError(
-                "วันที่ปิดต้องไม่ก่อนเริ่มภาคเรียนและอยู่ในปีการศึกษา".into(),
-            ));
-        }
-    } else if request.closed_on.is_some() {
-        return Err(AppError::ValidationError("วันที่ปิดใช้เฉพาะการปิดภาคเรียน".into()));
     }
     if request
         .reason

@@ -35,17 +35,16 @@ export async function mockCalendar(
 				data: {
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
 						}
 					],
 					terms: [],
-					activeAcademicYearId: year,
-					activeAcademicTermId: null
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: null
 				}
 			}
 		})

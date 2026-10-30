@@ -15,28 +15,23 @@ const { canConfirmTransition } = await import(
 );
 
 const workspace = {
-	context: { yearStartDate: '2026-05-01', yearEndDate: '2027-04-30', termStartDate: '2026-05-16' },
+	context: {},
 	coverage: { ready: true },
 	availableActions: ['close', 'reopen', 'begin_closing'],
 	findings: [{ code: 'exams.warning', severity: 'warning', count: 1 }]
 };
 
-test('term closure needs current capability, complete coverage, valid date and exact warning acknowledgements', () => {
-	assert.equal(canConfirmTransition(workspace, 'close', '2026-09-30', '', ['exams.warning']), true);
-	for (const date of [undefined, '', '2026-05-15', '2027-05-01', '2026-02-31', '2026-13-01']) {
-		assert.equal(canConfirmTransition(workspace, 'close', date, '', ['exams.warning']), false);
-	}
+test('term closure needs current capability, complete coverage, exact warning acknowledgements', () => {
+	assert.equal(canConfirmTransition(workspace, 'close', '', ['exams.warning']), true);
 	for (const ack of [[], ['exams.warning', 'extra'], ['exams.warning', 'exams.warning']]) {
-		assert.equal(canConfirmTransition(workspace, 'close', '2026-09-30', '', ack), false);
+		assert.equal(canConfirmTransition(workspace, 'close', '', ack), false);
 	}
 	assert.equal(
-		canConfirmTransition({ ...workspace, availableActions: [] }, 'close', '2026-09-30', '', [
-			'exams.warning'
-		]),
+		canConfirmTransition({ ...workspace, availableActions: [] }, 'close', '', ['exams.warning']),
 		false
 	);
 	assert.equal(
-		canConfirmTransition({ ...workspace, coverage: { ready: false } }, 'close', '2026-09-30', '', [
+		canConfirmTransition({ ...workspace, coverage: { ready: false } }, 'close', '', [
 			'exams.warning'
 		]),
 		false
@@ -45,7 +40,6 @@ test('term closure needs current capability, complete coverage, valid date and e
 		canConfirmTransition(
 			{ ...workspace, findings: [{ code: 'delivery.blocking', severity: 'blocking' }] },
 			'close',
-			'2026-09-30',
 			'',
 			[]
 		),
@@ -55,9 +49,9 @@ test('term closure needs current capability, complete coverage, valid date and e
 
 test('begin closing does not require completed results; reopen needs a nonblank bounded reason', () => {
 	const incomplete = { ...workspace, coverage: { ready: false } };
-	assert.equal(canConfirmTransition(incomplete, 'begin_closing', undefined, '', []), true);
-	assert.equal(canConfirmTransition(workspace, 'reopen', undefined, 'ทบทวนผล', []), true);
+	assert.equal(canConfirmTransition(incomplete, 'begin_closing', '', []), true);
+	assert.equal(canConfirmTransition(workspace, 'reopen', 'ทบทวนผล', []), true);
 	for (const reason of ['', '  ', 'ก'.repeat(1001)]) {
-		assert.equal(canConfirmTransition(workspace, 'reopen', undefined, reason, []), false);
+		assert.equal(canConfirmTransition(workspace, 'reopen', reason, []), false);
 	}
 });

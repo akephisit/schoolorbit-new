@@ -316,11 +316,8 @@ describe('calendar helpers', () => {
 	});
 });
 
-it('clips public calendar reads to actual academic-year dates including partial months', () => {
-	const year = { startDate: '2026-05-14', endDate: '2027-04-09' };
-	assert.equal(publicCalendarRange('2026-05-01', year).from, year.startDate);
-	assert.equal(publicCalendarRange('2027-04-01', year).to, year.endDate);
-	assert.deepEqual(publicCalendarRange('2026-10-01'), calendarGridRange('2026-10-01'));
-	const outside = publicCalendarRange('2025-01-01', year);
-	assert.ok(outside.from > outside.to);
+it('public calendar reads the actual selected month without academic boundaries', () => {
+	for (const month of ['2026-05-01', '2027-04-01', '2025-01-01']) {
+		assert.deepEqual(publicCalendarRange(month), calendarGridRange(month));
+	}
 });

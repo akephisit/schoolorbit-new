@@ -124,8 +124,6 @@ pub enum GradeProgressionKind {
 pub struct CreateAcademicYearRequest {
     pub year: i32,
     pub custom_name: Option<String>,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
     pub school_days: Vec<String>,
 }
 
@@ -135,8 +133,6 @@ pub struct CreateAcademicYearRequest {
 pub struct UpdateAcademicYearRequest {
     pub year: i32,
     pub custom_name: Option<String>,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
     pub school_days: Vec<String>,
     pub row_version: i64,
 }
@@ -148,7 +144,6 @@ pub struct CreateAcademicTermRequest {
     pub academic_year_id: Uuid,
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
-    pub start_date: NaiveDate,
     pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
@@ -161,7 +156,6 @@ pub struct CreateAcademicTermRequest {
 pub struct UpdateAcademicTermRequest {
     pub term_type: AcademicTermType,
     pub custom_name: Option<String>,
-    pub start_date: NaiveDate,
     pub planned_end_date: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
@@ -215,9 +209,8 @@ pub struct AcademicYear {
     pub id: Uuid,
     pub year: i32,
     pub name: String,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
     pub school_days: Vec<String>,
+    pub is_visible: bool,
     pub status: AcademicYearStatus,
     pub row_version: i64,
     pub migrated: bool,
@@ -235,14 +228,10 @@ pub struct AcademicTerm {
     pub code: String,
     pub name: String,
     pub term_type: AcademicTermType,
-    pub start_date: NaiveDate,
-    #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub planned_end_date: Option<NaiveDate>,
-    #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
+    pub is_visible: bool,
     pub status: AcademicTermStatus,
     pub row_version: i64,
     pub migrated: bool,
@@ -257,8 +246,7 @@ pub struct AcademicYearOption {
     pub id: Uuid,
     pub year: i32,
     pub name: String,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
+    pub is_visible: bool,
     pub status: AcademicYearStatus,
 }
 
@@ -272,13 +260,9 @@ pub struct AcademicTermOption {
     pub code: String,
     pub name: String,
     pub term_type: AcademicTermType,
-    pub start_date: NaiveDate,
-    #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub planned_end_date: Option<NaiveDate>,
-    #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
+    pub is_visible: bool,
     pub status: AcademicTermStatus,
 }
 
@@ -288,8 +272,52 @@ pub struct AcademicTermOption {
 pub struct AcademicContextOptions {
     pub years: Vec<AcademicYearOption>,
     pub terms: Vec<AcademicTermOption>,
-    pub active_academic_year_id: Option<Uuid>,
-    pub active_academic_term_id: Option<Uuid>,
+    pub default_academic_year_id: Option<Uuid>,
+    pub default_academic_term_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicContextSettings {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub default_academic_year_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub default_academic_term_id: Option<Uuid>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcademicContextVisibilityInput {
+    pub id: Uuid,
+    pub is_visible: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateAcademicContextSettingsRequest {
+    pub row_version: i64,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable")]
+    pub default_academic_year_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable")]
+    pub default_academic_term_id: Option<Uuid>,
+    pub years: Vec<AcademicContextVisibilityInput>,
+    pub terms: Vec<AcademicContextVisibilityInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicContextSettingsMutationResponse {
+    pub settings: AcademicContextSettings,
+    pub years: Vec<AcademicYear>,
+    pub terms: Vec<AcademicTerm>,
+    pub context_options: AcademicContextOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1205,6 +1233,7 @@ pub struct ReplaceCurriculumStructureRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicSetupWorkspace {
+    pub context_settings: AcademicContextSettings,
     pub years: Vec<AcademicYear>,
     pub terms: Vec<AcademicTerm>,
     pub bell_schedules: Vec<BellSchedule>,
@@ -1552,4 +1581,12 @@ pub struct MutateHomeroomRosterRequest {
     pub effective_date: NaiveDate,
     pub target_homeroom_id: Option<Uuid>,
     pub reason: String,
+}
+
+fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }

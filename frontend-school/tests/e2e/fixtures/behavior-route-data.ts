@@ -151,6 +151,8 @@ export const settings: BehaviorSettings = {
 	dailyMeritCap: null,
 	dailyDeductionCap: null,
 	meritReset: 'monthly',
+	meritResetDates: [],
+	deductionResetDates: [],
 	deductionReset: 'monthly',
 	rowVersion: 1
 };
@@ -196,30 +198,26 @@ export async function mockBehavior(
 			].includes(url.pathname),
 		(route) =>
 			reply(route, {
-				activeAcademicYearId: year,
-				activeAcademicTermId: behaviorTerm,
+				defaultAcademicYearId: year,
+				defaultAcademicTermId: behaviorTerm,
 				years: [
 					{
+ isVisible: true,
 						id: year,
 						name: '2569',
 						year: 2569,
 						status: 'open',
-						startDate: '2026-05-01',
-						plannedEndDate: '2027-04-30',
-						closedOn: null
 					}
 				],
 				terms: [
 					{
+ isVisible: true,
 						id: behaviorTerm,
 						academicYearId: year,
 						name: '1',
 						code: '1',
 						sequence: 1,
 						status: 'open',
-						startDate: '2026-05-01',
-						plannedEndDate: '2027-04-30',
-						closedOn: null,
 						includedInYearResult: true,
 						blocksYearClosure: true
 					}

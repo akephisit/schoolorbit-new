@@ -24,18 +24,16 @@ test('closes the embedded calendar day dialog when its overlay is tapped', async
 				data: {
 					years: [
 						{
+ isVisible: true,
 							id: year,
 							name: '2569',
 							year: 2569,
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-09',
-							closedOn: null
 						}
 					],
 					terms: [],
-					activeAcademicYearId: year,
-					activeAcademicTermId: null
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: null
 				}
 			}
 		})

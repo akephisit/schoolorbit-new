@@ -61,22 +61,20 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 				await fulfillJson(route, {
 					years: [
 						{
+ isVisible: true,
 							id: academicYearId,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							startDate: '2026-05-01',
-							endDate: '2027-03-31',
 							status: 'active'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: academicTermId,
 							academicYearId,
 							name: 'ภาคเรียนที่ 1',
 							code: '1',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
@@ -84,8 +82,8 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 							blocksYearClosure: true
 						}
 					],
-					activeAcademicYearId: academicYearId,
-					activeAcademicTermId: academicTermId
+					defaultAcademicYearId: academicYearId,
+					defaultAcademicTermId: academicTermId
 				});
 				return;
 			}

@@ -19,6 +19,7 @@
 		CalendarTag,
 		CreateCalendarEventRequest
 	} from '#lib/api/calendar.js';
+	import type { AcademicYearOption } from '#lib/api/academic-context.js';
 	import { cn } from '#lib/utils.js';
 
 	type GradeLevelOption = { id: string; name: string };
@@ -34,7 +35,9 @@
 		initialDate = '',
 		request = null,
 		submitLabel = 'บันทึกและเผยแพร่',
-		ondatechange,
+		onyearchange,
+		targetYears = [],
+		targetYearId = '',
 		saving = false,
 		optionsLoading = false,
 		optionsLoaded = true,
@@ -52,7 +55,9 @@
 		initialDate?: string;
 		request?: import('#lib/api/calendar.js').CalendarEventRequest | null;
 		submitLabel?: string;
-		ondatechange?: (date: string) => void;
+		onyearchange?: (academicYearId: string) => void;
+		targetYears?: AcademicYearOption[];
+		targetYearId?: string;
 		saving?: boolean;
 		optionsLoading?: boolean;
 		optionsLoaded?: boolean;
@@ -141,10 +146,6 @@
 	}
 
 	loadEvent(untrack(() => event));
-	$effect(() => {
-		if (startDate) ondatechange?.(startDate);
-	});
-
 	function toggleTag(tagId: string) {
 		selectedTagIds = selectedTagIds.includes(tagId)
 			? selectedTagIds.filter((id) => id !== tagId)
@@ -230,8 +231,9 @@
 		targetAudienceSelected &&
 			optionsLoaded &&
 			!optionsLoading &&
-			((!!selectedGradeLevelId &&
-				!gradeLevels.some((grade) => grade.id === selectedGradeLevelId)) ||
+			(((!!selectedGradeLevelId || !!selectedHomeroomId) && !targetYearId) ||
+				(!!selectedGradeLevelId &&
+					!gradeLevels.some((grade) => grade.id === selectedGradeLevelId)) ||
 				(!!selectedHomeroomId && !homerooms.some((room) => room.id === selectedHomeroomId)))
 	);
 
@@ -261,7 +263,11 @@
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
 			gradeLevelId: targetGradeLevelId(audienceType),
-			homeroomId: targetHomeroomId(audienceType)
+			homeroomId: targetHomeroomId(audienceType),
+			academicYearId:
+				targetGradeLevelId(audienceType) || targetHomeroomId(audienceType)
+					? targetYearId || null
+					: null
 		}));
 
 		onsave?.({
@@ -297,6 +303,35 @@
 		</Dialog.Header>
 
 		<section data-testid="calendar-target-options" aria-busy={optionsLoading}>
+			<div class="space-y-1.5 px-6 py-3">
+				<Label for="calendar-target-year">ปีการศึกษาของชั้นและห้องเป้าหมาย</Label>
+				<Select.Root
+					type="single"
+					value={targetYearId}
+					disabled={saving}
+					onValueChange={(value) => {
+						selectedGradeLevelId = '';
+						selectedHomeroomId = '';
+						onyearchange?.(value);
+					}}
+				>
+					<Select.Trigger id="calendar-target-year" class="w-full"
+						>{targetYears.find((year) => year.id === targetYearId)?.name ??
+							(targetYearId
+								? 'ปีการศึกษาของเป้าหมายเดิม'
+								: 'เลือกปีเมื่อต้องการระบุชั้นหรือห้อง')}</Select.Trigger
+					>
+					<Select.Content
+						>{#each targetYears as year (year.id)}<Select.Item value={year.id}
+								>{year.name}</Select.Item
+							>{/each}</Select.Content
+					>
+				</Select.Root>
+				<p class="text-xs text-muted-foreground">
+					ใช้เลือกนักเรียนตามปีที่ลงทะเบียน วันที่กิจกรรมระบุแยกในแบบฟอร์ม
+				</p>
+			</div>
+
 			{#if optionsError}<PageState
 					variant="error"
 					title="โหลดตัวเลือกชั้นเรียนไม่สำเร็จ"

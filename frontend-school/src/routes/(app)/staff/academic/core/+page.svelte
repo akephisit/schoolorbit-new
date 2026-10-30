@@ -3,6 +3,9 @@
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
+		updateAcademicContextSettings,
+		type AcademicContextSettings,
+		type UpdateAcademicContextSettingsRequest,
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
@@ -16,6 +19,8 @@
 		updateAcademicYear,
 		updateBellSchedule
 	} from '#lib/api/academic-core.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 	import AcademicYearTermEditor from '#lib/components/academic-core/AcademicYearTermEditor.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -31,7 +36,9 @@
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let loading = $state(true);
 	let workspaceReady = $state(false);
-	let busy = $state(false);
+	let busy = $state('');
+	let contextSettings = $state<AcademicContextSettings | null>(null);
+	const academicContext = getAcademicContextStore();
 	let errorMessage = $state('');
 	let mutationRevision = 0;
 	const canRead = $derived(
@@ -69,6 +76,7 @@
 						termsByYear.clear();
 						for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
 						bellSchedules = workspace.bellSchedules;
+						contextSettings = workspace.contextSettings;
 						workspaceReady = true;
 					} else if (!result.ok) errorMessage = result.error;
 					loading = false;
@@ -80,8 +88,28 @@
 		};
 	});
 
+	async function saveContextSettings(draft: UpdateAcademicContextSettingsRequest) {
+		const identity = appIdentityKey();
+		const result = await updateAcademicContextSettings(draft);
+		if (identity !== appIdentityKey()) return result;
+		mutationRevision += 1;
+		contextSettings = result.settings;
+		const changedYears = new Map(result.years.map((year) => [year.id, year]));
+		years = years.map((year) => changedYears.get(year.id) ?? year);
+		for (const term of result.terms) {
+			termsByYear.set(
+				term.academicYearId,
+				(termsByYear.get(term.academicYearId) ?? []).map((current) =>
+					current.id === term.id ? term : current
+				)
+			);
+		}
+		academicContext.replaceOptions(result.contextOptions);
+		return result;
+	}
+
 	async function addYear(draft: Parameters<typeof createAcademicYear>[0]) {
-		busy = true;
+		busy = 'year';
 		try {
 			const created = await createAcademicYear(draft);
 			mutationRevision += 1;
@@ -89,12 +117,12 @@
 			termsByYear.set(created.id, []);
 			return created;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
 	async function addTerm(draft: Parameters<typeof createAcademicTerm>[0]) {
-		busy = true;
+		busy = 'term';
 		try {
 			const created = await createAcademicTerm(draft);
 			mutationRevision += 1;
@@ -106,12 +134,12 @@
 			);
 			return created;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
 	async function editYear(id: string, draft: Parameters<typeof updateAcademicYear>[1]) {
-		busy = true;
+		busy = 'year';
 		try {
 			const updated = await updateAcademicYear(id, draft);
 			mutationRevision += 1;
@@ -120,12 +148,12 @@
 				.sort((a, b) => b.year - a.year);
 			return updated;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
 	async function editTerm(id: string, draft: Parameters<typeof updateAcademicTerm>[1]) {
-		busy = true;
+		busy = 'term';
 		try {
 			const updated = await updateAcademicTerm(id, draft);
 			mutationRevision += 1;
@@ -137,24 +165,24 @@
 			);
 			return updated;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
 	async function addBellSchedule(draft: Parameters<typeof createBellSchedule>[0]) {
-		busy = true;
+		busy = 'schedule';
 		try {
 			const created = await createBellSchedule(draft);
 			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
 	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
-		busy = true;
+		busy = 'schedule';
 		try {
 			const updated = await updateBellSchedule(id, draft);
 			mutationRevision += 1;
@@ -165,7 +193,7 @@
 			];
 			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 
@@ -173,7 +201,7 @@
 		id: string,
 		draft: Parameters<typeof replaceBellSchedulePeriods>[1]
 	) {
-		busy = true;
+		busy = 'periods';
 		try {
 			const periods = await replaceBellSchedulePeriods(id, draft);
 			mutationRevision += 1;
@@ -187,7 +215,7 @@
 			}
 			return periods;
 		} finally {
-			busy = false;
+			busy = '';
 		}
 	}
 </script>
@@ -224,6 +252,9 @@
 				{termsByYear}
 				{bellSchedules}
 				{canManage}
+				{contextSettings}
+				onUpdateContextSettings={saveContextSettings}
+				onReloadContextSettings={loadWorkspace}
 				{busy}
 				onCreateYear={addYear}
 				onUpdateYear={editYear}

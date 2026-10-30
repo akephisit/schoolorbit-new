@@ -153,9 +153,9 @@ async function cleanup(context: BrowserContext) {
 }
 function selection(options: Schemas['AcademicContextOptions']): Selection {
 	const year =
-		options.years.find((row) => row.id === options.activeAcademicYearId) ?? options.years[0];
+		options.years.find((row) => row.id === options.defaultAcademicYearId) ?? options.years[0];
 	const terms = options.terms.filter((row) => row.academicYearId === year?.id);
-	const term = terms.find((row) => row.id === options.activeAcademicTermId) ?? terms[0];
+	const term = terms.find((row) => row.id === options.defaultAcademicTermId) ?? terms[0];
 	return { academicYearId: year?.id, academicTermId: term?.id };
 }
 async function measure(page: Page, representative: Representative, selected: Selection) {

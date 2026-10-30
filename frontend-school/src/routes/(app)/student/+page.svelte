@@ -55,7 +55,7 @@
 	const termId = $derived(
 		contextOptions?.terms.find(
 			(term) =>
-				term.academicYearId === selectedYearId && term.id === contextOptions?.activeAcademicTermId
+				term.academicYearId === selectedYearId && term.id === contextOptions?.defaultAcademicTermId
 		)?.id ??
 			contextOptions?.terms.find((term) => term.academicYearId === selectedYearId)?.id ??
 			''

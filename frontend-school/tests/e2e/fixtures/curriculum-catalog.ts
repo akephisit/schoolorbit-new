@@ -439,8 +439,8 @@ export async function installCurriculumCatalog(
 				return reply(route, {
 					years: [],
 					terms: [],
-					activeAcademicYearId: null,
-					activeAcademicTermId: null
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null
 				});
 			if (path === '/api/school/public/appearance') return reply(route, appearance);
 			if (path === '/api/school/public') return reply(route, { schoolName: 'โรงเรียนทดสอบ' });

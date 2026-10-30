@@ -284,13 +284,13 @@ export async function rejectCalendarRequest(
 	);
 }
 export async function listCalendarTargetOptions(
-	date: string,
+	academicYearId: string,
 	options: ApiRequestOptions = {}
 ): Promise<CalendarTargetOptions> {
 	return requireApiData(
 		await apiClient.get<CalendarTargetOptions>('/api/calendar/target-options', {
 			...options,
-			query: { date }
+			query: { academicYearId } satisfies NonNullable<operations['listCalendarTargetOptions']['parameters']['query']>
 		}),
 		'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
 	);

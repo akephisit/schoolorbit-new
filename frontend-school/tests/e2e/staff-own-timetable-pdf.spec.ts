@@ -82,22 +82,20 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 				await fulfillJson(route, {
 					years: [
 						{
+ isVisible: true,
 							id: '20000000-0000-4000-8000-000000000001',
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							startDate: '2026-05-01',
-							endDate: '2027-03-31',
 							status: 'active'
 						}
 					],
 					terms: [
 						{
+ isVisible: true,
 							id: '30000000-0000-4000-8000-000000000001',
 							academicYearId: '20000000-0000-4000-8000-000000000001',
 							name: 'ภาคเรียนที่ 1',
 							code: '1',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
@@ -105,8 +103,8 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 							blocksYearClosure: true
 						}
 					],
-					activeAcademicYearId: '20000000-0000-4000-8000-000000000001',
-					activeAcademicTermId: '30000000-0000-4000-8000-000000000001'
+					defaultAcademicYearId: '20000000-0000-4000-8000-000000000001',
+					defaultAcademicTermId: '30000000-0000-4000-8000-000000000001'
 				});
 				return;
 			}

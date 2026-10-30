@@ -20,36 +20,34 @@ const ids = {
 };
 
 const contextOptions = {
-	activeAcademicYearId: ids.activeYear,
-	activeAcademicTermId: ids.activeTerm,
+	defaultAcademicYearId: ids.activeYear,
+	defaultAcademicTermId: ids.activeTerm,
 	years: [
 		{
+ isVisible: true,
 			id: ids.activeYear,
 			name: 'ปีการศึกษา 2570',
 			year: 2570,
 			status: 'active',
-			startDate: '2027-05-01',
-			endDate: '2028-03-31'
 		},
 		{
+ isVisible: true,
 			id: ids.planningYear,
 			name: 'ปีการศึกษา 2571',
 			year: 2571,
 			status: 'planning',
-			startDate: '2028-05-01',
-			endDate: '2029-04-30'
 		},
 		{
+ isVisible: true,
 			id: ids.closedYear,
 			name: 'ปีการศึกษา 2569',
 			year: 2569,
 			status: 'closed',
-			startDate: '2026-05-01',
-			endDate: '2027-03-31'
 		}
 	],
 	terms: [
 		{
+ isVisible: true,
 			id: ids.activeTerm,
 			academicYearId: ids.activeYear,
 			name: 'ภาคเรียนที่ 1',
@@ -57,12 +55,11 @@ const contextOptions = {
 			sequence: 1,
 			termType: 'regular',
 			status: 'active',
-			startDate: '2027-05-01',
-			endDate: '2027-10-31',
 			includedInYearResult: true,
 			blocksYearClosure: true
 		},
 		{
+ isVisible: true,
 			id: ids.readyTerm,
 			academicYearId: ids.activeYear,
 			name: 'ภาคเรียนที่ 2',
@@ -70,12 +67,11 @@ const contextOptions = {
 			sequence: 2,
 			termType: 'regular',
 			status: 'ready',
-			startDate: '2027-11-01',
-			endDate: '2028-03-31',
 			includedInYearResult: true,
 			blocksYearClosure: true
 		},
 		{
+ isVisible: true,
 			id: ids.planningTerm,
 			academicYearId: ids.planningYear,
 			name: 'ภาคฤดูร้อน',
@@ -83,8 +79,6 @@ const contextOptions = {
 			sequence: 1,
 			termType: 'summer',
 			status: 'planning',
-			startDate: '2029-03-01',
-			endDate: '2029-04-15',
 			includedInYearResult: false,
 			blocksYearClosure: true
 		}

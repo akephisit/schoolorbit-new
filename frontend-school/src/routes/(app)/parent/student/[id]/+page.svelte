@@ -183,7 +183,7 @@
 	const parentHref = $derived(`${resolve('parent')}${academicYearQuery}`);
 	const termId = $derived(
 		contextOptions?.terms.find(
-			(t) => t.academicYearId === selectedYearId && t.id === contextOptions?.activeAcademicTermId
+			(t) => t.academicYearId === selectedYearId && t.id === contextOptions?.defaultAcademicTermId
 		)?.id ??
 			contextOptions?.terms.find((t) => t.academicYearId === selectedYearId)?.id ??
 			''

@@ -16,7 +16,6 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -50,8 +49,6 @@
 	let editing = $state<AcademicTerm | null>(null);
 	let termType = $state<AcademicTermType>('regular');
 	let customName = $state('');
-	let startDate = $state('');
-	let plannedEndDate = $state('');
 	let bellScheduleId = $derived(
 		schedules.find((schedule) => schedule.isDefault)?.id ?? schedules[0]?.id ?? ''
 	);
@@ -74,8 +71,6 @@
 		editing = null;
 		termType = 'regular';
 		customName = '';
-		startDate = '';
-		plannedEndDate = '';
 		bellScheduleId = schedules.find((schedule) => schedule.isDefault)?.id ?? schedules[0]?.id ?? '';
 		includedInYearResult = true;
 		blocksYearClosure = true;
@@ -87,8 +82,6 @@
 		editing = term;
 		termType = term.termType;
 		customName = customNameFromStored(term.name, standardTermName(term.termType, term.sequence));
-		startDate = term.startDate;
-		plannedEndDate = term.plannedEndDate ?? '';
 		bellScheduleId = term.bellScheduleId;
 		includedInYearResult = term.includedInYearResult;
 		blocksYearClosure = term.blocksYearClosure;
@@ -100,25 +93,19 @@
 		event.preventDefault();
 		if (!canPlan || busy) return;
 		errorMessage = '';
-		if (!startDate || !bellScheduleId) {
-			errorMessage = 'กรุณาเลือกวันเริ่มและตารางเวลาให้ครบ';
-			return;
-		}
-		if (plannedEndDate && startDate > plannedEndDate) {
-			errorMessage = 'วันที่คาดว่าจะปิดภาคเรียนต้องไม่อยู่ก่อนวันเริ่ม';
+		if (!bellScheduleId) {
+			errorMessage = 'กรุณาเลือกตารางเวลา';
 			return;
 		}
 		const common = {
 			termType,
 			customName: customName.trim() || null,
-			startDate,
-			plannedEndDate: plannedEndDate || null,
 			...termAnnualFlags(includedInYearResult, blocksYearClosure),
 			bellScheduleId
 		};
 		try {
 			const saved = editing
-				? await onUpdate(editing.id, { ...common, rowVersion: editing.rowVersion })
+				? await onUpdate(editing.id, { ...common, rowVersion: terms.find((term) => term.id === editing?.id)?.rowVersion ?? editing.rowVersion })
 				: await onCreate({ academicYearId: year.id, ...common });
 			onSaved(saved);
 			resetDraft();
@@ -142,11 +129,8 @@
 						>
 					</div>
 					<p class="mt-1 text-xs text-muted-foreground">
-						เริ่ม {term.startDate} · คาดว่าจะปิด {term.plannedEndDate ?? 'ยังไม่กำหนด'}
-						{#if term.closedOn}
-							· ปิดจริง {term.closedOn}{/if} · {schedules.find(
-							(schedule) => schedule.id === term.bellScheduleId
-						)?.name ?? 'ไม่พบตารางเวลาที่อ้างอิง'}
+						{schedules.find((schedule) => schedule.id === term.bellScheduleId)?.name ??
+							'ไม่พบตารางเวลาที่อ้างอิง'}
 					</p>
 				</div>
 				{#if term.status === 'planning' && canPlan}
@@ -177,7 +161,7 @@
 						ระบบจัดลำดับและสร้างชื่อมาตรฐานให้เอง: <strong>{previewName}</strong>
 					</p>
 					<p class="mt-1 text-xs text-muted-foreground">
-						บันทึกเป็นร่าง ไม่เปลี่ยนภาคเรียนปัจจุบันและไม่เปิดกรอกคะแนน
+						สร้างเป็นร่างที่ซ่อนจากตัวเลือก แสดงในตัวเลือกและตั้งค่าเริ่มต้นได้แยกกัน
 					</p>
 				</div>
 				{#if editing}
@@ -207,29 +191,6 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-			</div>
-
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="space-y-1.5">
-					<Label for="term-start">วันเริ่มภาคเรียน</Label>
-					<DatePicker
-						id="term-start"
-						bind:value={startDate}
-						ariaLabel="เลือกวันเริ่มภาคเรียน"
-						required
-					/>
-				</div>
-				<div class="space-y-1.5">
-					<Label for="term-end">วันที่คาดว่าจะปิดภาคเรียน (ไม่บังคับ)</Label>
-					<DatePicker
-						id="term-end"
-						bind:value={plannedEndDate}
-						ariaLabel="เลือกวันที่คาดว่าจะปิดภาคเรียน"
-					/>
-					<p class="text-xs text-muted-foreground">
-						เว้นว่างได้ ระบบจะบันทึกวันที่ปิดจริงเมื่อดำเนินการปิดภาคเรียน
-					</p>
-				</div>
 			</div>
 
 			<div class="space-y-1.5">

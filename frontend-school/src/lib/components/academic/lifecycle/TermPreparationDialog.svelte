@@ -15,6 +15,11 @@
 		type TermPreparationModule,
 		type TermPreparationWorkspace
 	} from '#lib/api/academic-lifecycle.js';
+	import {
+		listAcademicYears,
+		listAcademicTerms,
+		type AcademicTerm
+	} from '#lib/api/academic-core.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
@@ -86,7 +91,8 @@
 	let busy = $state(false);
 	let targetTermId = $state('');
 	let modules = $state<TermPreparationModule[]>(['delivery']);
-	let mappings = $state<TermPreparationMappings>({ entities: [], dates: [] });
+	let mappings = $state<TermPreparationMappings>({ entities: [], dates: [], offeringStartsOn: null });
+	let offeringStartsOn = $state('');
 	let workspace = $state.raw<TermPreparationWorkspace | null>(null);
 	let previewStale = $state(false);
 	let errorMessage = $state('');
@@ -95,13 +101,13 @@
 	const sourceTerm = $derived(
 		$academicContext.options?.terms.find((term) => term.id === sourceTermId) ?? null
 	);
+	let managementTerms = $state<AcademicTerm[]>([]);
+	const targetReads = new LatestRequest();
 	const targetTerms = $derived(
-		($academicContext.options?.terms ?? [])
-			.filter((term) => term.id !== sourceTermId && term.status === 'planning')
-			.toSorted((left, right) => left.startDate.localeCompare(right.startDate))
+		managementTerms.filter((term) => term.id !== sourceTermId && term.status === 'planning')
 	);
 	const canPreview = $derived(
-		canManage && !disabled && !loading && !busy && !!targetTermId && modules.length > 0
+		canManage && !disabled && !loading && !busy && !!targetTermId && modules.length > 0 && (!modules.includes('delivery') || !!offeringStartsOn)
 	);
 	const canApply = $derived(
 		canPreview && !previewStale && !!workspace?.canApply && workspace.sourceChecksum.length === 64
@@ -121,10 +127,33 @@
 		if (value) {
 			targetTermId = targetTerms[0]?.id ?? '';
 			modules = ['delivery'];
-			mappings = { entities: [], dates: [] };
+			mappings = { entities: [], dates: [], offeringStartsOn: null };
+		offeringStartsOn = '';
 			resetPreview();
+			void loadTargets();
 		} else {
+			targetReads.abort();
 			latest.abort();
+		}
+	}
+
+	async function loadTargets() {
+		const { revision, signal } = targetReads.begin();
+		loading = true;
+		try {
+			const years = (await listAcademicYears({ signal })).toSorted((a, b) => a.year - b.year);
+			const terms = await Promise.all(years.map((year) => listAcademicTerms(year.id, { signal })));
+			if (!alive || !targetReads.isCurrent(revision)) return;
+			managementTerms = terms.flatMap((items) => items.toSorted((a, b) => a.sequence - b.sequence));
+			targetTermId = targetTerms[0]?.id ?? '';
+		} catch (cause) {
+			if (!isAbortError(cause) && targetReads.isCurrent(revision))
+				errorMessage =
+					cause instanceof Error
+						? cause.message
+						: 'โหลดภาคเรียนร่างไม่สำเร็จ กรุณาตรวจสิทธิ์อ่านปีและภาคเรียน';
+		} finally {
+			if (targetReads.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -132,7 +161,8 @@
 		modules = checked
 			? [...modules, module].filter((item, index, values) => values.indexOf(item) === index)
 			: modules.filter((item) => item !== module);
-		mappings = { entities: [], dates: [] };
+		mappings = { entities: [], dates: [], offeringStartsOn: null };
+		offeringStartsOn = '';
 		resetPreview();
 	}
 
@@ -147,7 +177,7 @@
 					sourceTermId,
 					targetTermId,
 					modules: [...modules],
-					mappings
+					mappings: { ...mappings, offeringStartsOn: offeringStartsOn || null }
 				},
 				{ signal }
 			);
@@ -217,7 +247,7 @@
 			sourceTermId,
 			targetTermId,
 			modules: [...modules],
-			mappings
+			mappings: { ...mappings, offeringStartsOn: offeringStartsOn || null }
 		};
 		const key = JSON.stringify(body);
 		if (pending?.key !== key) {
@@ -250,6 +280,7 @@
 		);
 		return () => {
 			alive = false;
+			targetReads.abort();
 			latest.abort();
 			unregister();
 		};
@@ -259,7 +290,7 @@
 <Button
 	variant="outline"
 	class="w-full justify-start"
-	disabled={disabled || !canManage || sourceTerm?.status !== 'closed' || targetTerms.length === 0}
+	disabled={disabled || !canManage || sourceTerm?.status !== 'closed'}
 	onclick={() => changeOpen(true)}
 >
 	<Layers3 class="size-4" />เตรียมภาคเรียนถัดไป
@@ -296,7 +327,8 @@
 						disabled={busy || loading}
 						onValueChange={(value) => {
 							targetTermId = value;
-							mappings = { entities: [], dates: [] };
+							mappings = { entities: [], dates: [], offeringStartsOn: null };
+		offeringStartsOn = '';
 							resetPreview();
 						}}
 					>
@@ -305,12 +337,16 @@
 						</Select.Trigger>
 						<Select.Content>
 							{#each targetTerms as term (term.id)}
-								<Select.Item value={term.id}>{term.name} · {term.startDate}</Select.Item>
+								<Select.Item value={term.id}>{term.name} · ลำดับ {term.sequence}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
 				</div>
 			</section>
+
+			{#if modules.includes('delivery')}
+				<div class="space-y-2"><Label for="preparation-offerings-start">วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม</Label><DatePicker id="preparation-offerings-start" bind:value={offeringStartsOn} ariaLabel="วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม" required disabled={busy} onValueChange={() => resetPreview()} /></div>
+			{/if}
 
 			<section aria-labelledby="term-preparation-modules">
 				<div class="mb-3 flex items-end justify-between gap-3">

@@ -23,7 +23,7 @@ export function resolveScopedAcademicYearUrl(
 	if (valid) return { academicYearId: valid, replaceUrl: null };
 
 	const selected =
-		options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
+		options.years.find((year) => year.id === options.defaultAcademicYearId)?.id ??
 		options.years[0].id;
 	return { academicYearId: selected, replaceUrl: urlWithAcademicYear(url, selected) };
 }
@@ -41,7 +41,7 @@ export function resolveScopedAcademicContextUrl(
 	const academicTermId =
 		terms.find((term) => term.id === requested)?.id ??
 		(termRequired
-			? (terms.find((term) => term.id === options.activeAcademicTermId)?.id ?? terms[0]?.id ?? '')
+			? (terms.find((term) => term.id === options.defaultAcademicTermId)?.id ?? terms[0]?.id ?? '')
 			: '');
 	const next = new URL(year.replaceUrl ?? url);
 	if (academicTermId) next.searchParams.set('academicTermId', academicTermId);

@@ -1,45 +1,9 @@
 use school_database::DbSession;
-use sqlx::{types::Json, PgPool};
-use std::collections::HashSet;
+use school_errors::AppError;
+use sqlx::{types::Json, PgConnection, PgPool};
 use uuid::Uuid;
 
-use school_errors::AppError;
-
-use super::super::models::{
-    AcademicContextOptions, AcademicTermOption, AcademicTermStatus, AcademicYearOption,
-    AcademicYearStatus,
-};
-
-pub async fn list_public_options(pool: &PgPool) -> Result<AcademicContextOptions, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_core.services.context.list_public_options",
-    )
-    .await?;
-    list_public_options_on_connection(&mut connection).await
-}
-
-pub async fn list_public_options_on_connection(
-    connection: &mut sqlx::PgConnection,
-) -> Result<AcademicContextOptions, AppError> {
-    let mut options = list_options_on_connection(connection).await?;
-    options
-        .years
-        .retain(|year| year.status != AcademicYearStatus::Planning);
-    let public_year_ids = options
-        .years
-        .iter()
-        .map(|year| year.id)
-        .collect::<HashSet<_>>();
-    options.terms.retain(|term| {
-        public_year_ids.contains(&term.academic_year_id)
-            && !matches!(
-                term.status,
-                AcademicTermStatus::Planning | AcademicTermStatus::Cancelled
-            )
-    });
-    Ok(options)
-}
+use crate::models::{AcademicContextOptions, AcademicTermOption, AcademicYearOption};
 
 pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -51,71 +15,19 @@ pub async fn list_options(pool: &PgPool) -> Result<AcademicContextOptions, AppEr
 }
 
 pub async fn list_options_on_connection(
-    connection: &mut sqlx::PgConnection,
+    connection: &mut PgConnection,
 ) -> Result<AcademicContextOptions, AppError> {
-    let (years, terms, active_academic_year_id, active_academic_term_id): (
-        Json<Vec<AcademicYearOption>>,
-        Json<Vec<AcademicTermOption>>,
-        Option<Uuid>,
-        Option<Uuid>,
-    ) = DbSession::new(connection)
-        .query_as(
-            "academic_core.services.context.list_options_on_connection",
-            r#"
-        SELECT
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', year.id,
-                        'year', year.year,
-                        'name', year.name,
-                        'startDate', year.start_date,
-                        'endDate', year.end_date,
-                        'status', year.status
-                    ) ORDER BY year.year DESC, year.start_date DESC, year.id
-                )
-                FROM academic_years year
-            ), '[]'::jsonb),
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', term.id,
-                        'academicYearId', term.academic_year_id,
-                        'sequence', term.sequence_no,
-                        'code', term.code,
-                        'name', term.name,
-                        'termType', term.term_type,
-                        'startDate', term.start_date,
-                        'plannedEndDate', term.planned_end_date,
-                        'closedOn', term.closed_on,
-                        'includedInYearResult', term.included_in_year_result,
-                        'blocksYearClosure', term.blocks_year_closure,
-                        'status', term.status
-                    ) ORDER BY year.year DESC, term.sequence_no, term.start_date, term.id
-                )
-                FROM academic_terms term
-                JOIN academic_years year ON year.id = term.academic_year_id
-            ), '[]'::jsonb),
-            (SELECT year.id FROM academic_years year WHERE year.status IN ('active', 'closing')),
-            (SELECT term.id FROM academic_terms term WHERE term.status IN ('active', 'closing'))
-        "#,
-        )
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                reason = "academic_context_options_query_failed",
-                error_class = school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถโหลดตัวเลือกปีและภาคเรียนได้".to_string())
-        })?;
+    scoped_options(connection, 0, None).await
+}
 
-    Ok(AcademicContextOptions {
-        years: years.0,
-        terms: terms.0,
-        active_academic_year_id,
-        active_academic_term_id,
-    })
+pub async fn list_public_options(pool: &PgPool) -> Result<AcademicContextOptions, AppError> {
+    list_options(pool).await
+}
+
+pub async fn list_public_options_on_connection(
+    connection: &mut PgConnection,
+) -> Result<AcademicContextOptions, AppError> {
+    list_options_on_connection(connection).await
 }
 
 pub async fn list_options_for_student(
@@ -131,105 +43,10 @@ pub async fn list_options_for_student(
 }
 
 pub async fn list_options_for_student_on_connection(
-    connection: &mut sqlx::PgConnection,
+    connection: &mut PgConnection,
     student_id: Uuid,
 ) -> Result<AcademicContextOptions, AppError> {
-    let (years, terms, active_academic_year_id, active_academic_term_id): (
-        Json<Vec<AcademicYearOption>>,
-        Json<Vec<AcademicTermOption>>,
-        Option<Uuid>,
-        Option<Uuid>,
-    ) = DbSession::new(connection)
-        .query_as(
-            "academic_core.services.context.list_options_for_student_on_connection",
-            r#"
-        SELECT
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', year.id,
-                        'year', year.year,
-                        'name', year.name,
-                        'startDate', year.start_date,
-                        'endDate', year.end_date,
-                        'status', year.status
-                    ) ORDER BY year.year DESC, year.start_date DESC, year.id
-                )
-                FROM academic_years year
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM student_academic_years student_year
-                    WHERE student_year.academic_year_id = year.id
-                      AND student_year.student_id = $1
-                )
-            ), '[]'::jsonb),
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', term.id,
-                        'academicYearId', term.academic_year_id,
-                        'sequence', term.sequence_no,
-                        'code', term.code,
-                        'name', term.name,
-                        'termType', term.term_type,
-                        'startDate', term.start_date,
-                        'plannedEndDate', term.planned_end_date,
-                        'closedOn', term.closed_on,
-                        'includedInYearResult', term.included_in_year_result,
-                        'blocksYearClosure', term.blocks_year_closure,
-                        'status', term.status
-                    ) ORDER BY year.year DESC, term.sequence_no, term.start_date, term.id
-                )
-                FROM academic_terms term
-                JOIN academic_years year ON year.id = term.academic_year_id
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM student_academic_years student_year
-                    WHERE student_year.academic_year_id = term.academic_year_id
-                      AND student_year.student_id = $1
-                )
-            ), '[]'::jsonb),
-            (
-                SELECT year.id
-                FROM academic_years year
-                WHERE year.status IN ('active', 'closing')
-                  AND EXISTS (
-                      SELECT 1
-                      FROM student_academic_years student_year
-                      WHERE student_year.academic_year_id = year.id
-                        AND student_year.student_id = $1
-                  )
-            ),
-            (
-                SELECT term.id
-                FROM academic_terms term
-                WHERE term.status IN ('active', 'closing')
-                  AND EXISTS (
-                      SELECT 1
-                      FROM student_academic_years student_year
-                      WHERE student_year.academic_year_id = term.academic_year_id
-                        AND student_year.student_id = $1
-                  )
-            )
-        "#,
-        )
-        .bind(student_id)
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                reason = "student_academic_context_options_query_failed",
-                error_class = school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถโหลดประวัติปีและภาคเรียนได้".to_string())
-        })?;
-
-    Ok(AcademicContextOptions {
-        years: years.0,
-        terms: terms.0,
-        active_academic_year_id,
-        active_academic_term_id,
-    })
+    scoped_options(connection, 1, Some(student_id)).await
 }
 
 pub async fn list_options_for_parent(
@@ -245,89 +62,58 @@ pub async fn list_options_for_parent(
 }
 
 pub async fn list_options_for_parent_on_connection(
-    connection: &mut sqlx::PgConnection,
+    connection: &mut PgConnection,
     parent_id: Uuid,
 ) -> Result<AcademicContextOptions, AppError> {
-    let (years, terms, active_academic_year_id, active_academic_term_id): (
-        Json<Vec<AcademicYearOption>>,
-        Json<Vec<AcademicTermOption>>,
-        Option<Uuid>,
-        Option<Uuid>,
-    ) = DbSession::new(connection)
-        .query_as(
-            "academic_core.services.context.list_options_for_parent_on_connection",
-            r#"
-        WITH linked_years AS (
-            SELECT DISTINCT
-                year.id, year.year, year.name, year.start_date, year.end_date, year.status
-            FROM student_parents parent_link
-            JOIN users student
-              ON student.id = parent_link.student_user_id
-             AND student.user_type = 'student'
-             AND student.status = 'active'
-            JOIN student_academic_years student_year
-              ON student_year.student_id = student.id
-            JOIN academic_years year ON year.id = student_year.academic_year_id
-            WHERE parent_link.parent_user_id = $1
-        ),
-        linked_terms AS (
-            SELECT term.*
-            FROM academic_terms term
-            JOIN linked_years year ON year.id = term.academic_year_id
+    scoped_options(connection, 2, Some(parent_id)).await
+}
+
+// One statement keeps visibility, relationships and defaults in the same snapshot.
+// Scope values are internal constants; request IDs never select their own access scope.
+async fn scoped_options(
+    connection: &mut PgConnection,
+    scope: i16,
+    actor: Option<Uuid>,
+) -> Result<AcademicContextOptions, AppError> {
+    let (years, terms, default_academic_year_id, default_academic_term_id):
+        (Json<Vec<AcademicYearOption>>, Json<Vec<AcademicTermOption>>, Option<Uuid>, Option<Uuid>) =
+        DbSession::new(connection).query_as("academic_core.services.context.scoped_options", r#"
+        WITH allowed_years AS (
+            SELECT year.* FROM academic_years year
+            WHERE year.is_visible AND ($1::smallint=0 OR EXISTS (
+                SELECT 1 FROM student_academic_years enrollment
+                WHERE enrollment.academic_year_id=year.id AND (
+                    ($1=1 AND enrollment.student_id=$2) OR ($1=2 AND EXISTS (
+                        SELECT 1 FROM student_parents link JOIN users student
+                          ON student.id=link.student_user_id AND student.user_type='student' AND student.status='active'
+                        WHERE link.parent_user_id=$2 AND link.student_user_id=enrollment.student_id
+                    ))
+                )
+            ))
+        ), allowed_terms AS (
+            SELECT term.* FROM academic_terms term JOIN allowed_years year ON year.id=term.academic_year_id
+            WHERE term.is_visible
         )
         SELECT
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', year.id,
-                        'year', year.year,
-                        'name', year.name,
-                        'startDate', year.start_date,
-                        'endDate', year.end_date,
-                        'status', year.status
-                    ) ORDER BY year.year DESC, year.start_date DESC, year.id
-                )
-                FROM linked_years year
-            ), '[]'::jsonb),
-            COALESCE((
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'id', term.id,
-                        'academicYearId', term.academic_year_id,
-                        'sequence', term.sequence_no,
-                        'code', term.code,
-                        'name', term.name,
-                        'termType', term.term_type,
-                        'startDate', term.start_date,
-                        'plannedEndDate', term.planned_end_date,
-                        'closedOn', term.closed_on,
-                        'includedInYearResult', term.included_in_year_result,
-                        'blocksYearClosure', term.blocks_year_closure,
-                        'status', term.status
-                    ) ORDER BY year.year DESC, term.sequence_no, term.start_date, term.id
-                )
-                FROM linked_terms term
-                JOIN linked_years year ON year.id = term.academic_year_id
-            ), '[]'::jsonb),
-            (SELECT id FROM linked_years WHERE status IN ('active', 'closing')),
-            (SELECT id FROM linked_terms WHERE status IN ('active', 'closing'))
-        "#,
-        )
-        .bind(parent_id)
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                reason = "parent_academic_context_options_query_failed",
-                error_class = school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถโหลดประวัติปีและภาคเรียนของบุตรหลานได้".to_string())
-        })?;
-
+          COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id',year.id,'year',year.year,'name',year.name,'isVisible',year.is_visible,'status',year.status
+          ) ORDER BY year.year DESC,year.id) FROM allowed_years year),'[]'::jsonb),
+          COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id',term.id,'academicYearId',term.academic_year_id,'sequence',term.sequence_no,
+            'code',term.code,'name',term.name,'termType',term.term_type,'isVisible',term.is_visible,
+            'includedInYearResult',term.included_in_year_result,'blocksYearClosure',term.blocks_year_closure,'status',term.status
+          ) ORDER BY year.year DESC,term.sequence_no,term.id) FROM allowed_terms term
+            JOIN allowed_years year ON year.id=term.academic_year_id),'[]'::jsonb),
+          (SELECT year.id FROM allowed_years year JOIN academic_context_settings settings
+             ON settings.default_academic_year_id=year.id WHERE settings.singleton),
+          (SELECT term.id FROM allowed_terms term JOIN academic_context_settings settings
+             ON settings.default_academic_term_id=term.id AND settings.default_academic_year_id=term.academic_year_id
+             WHERE settings.singleton)
+        "#).bind(scope).bind(actor).fetch_one().await?;
     Ok(AcademicContextOptions {
         years: years.0,
         terms: terms.0,
-        active_academic_year_id,
-        active_academic_term_id,
+        default_academic_year_id,
+        default_academic_term_id,
     })
 }

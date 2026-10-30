@@ -15,13 +15,13 @@ test('academic core is a four-step planning path with focused shadcn controls', 
 		assert.match(orchestrator, new RegExp(component));
 	}
 	assert.match(orchestrator, /ฉบับเตรียมการ/);
-	assert.match(orchestrator, /การเปิดใช้.*การปิด.*การเลื่อนชั้น/s);
+	assert.match(orchestrator, /ตั้งค่าเริ่มต้น.*การปิด.*การเลื่อนชั้น/s);
 
 	const yearStep = read('src/lib/components/academic-core/setup/AcademicYearSetupStep.svelte');
 	assert.match(yearStep, /ui\/checkbox/);
 	assert.match(yearStep, /ui\/collapsible/);
 	assert.match(yearStep, /standardAcademicYearName/);
-	assert.match(yearStep, /startDate\s*>\s*endDate/);
+	assert.doesNotMatch(yearStep, /startDate|endDate|DatePicker/);
 	assert.doesNotMatch(yearStep, /<input[^>]+type=["']checkbox["']/);
 
 	const periodStep = read('src/lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte');
@@ -33,7 +33,7 @@ test('academic core is a four-step planning path with focused shadcn controls', 
 	assert.match(termStep, /ui\/collapsible/);
 	assert.match(termStep, /standardTermName/);
 	assert.match(termStep, /editing\?\.sequence\s*\?\?\s*nextSequence/);
-	assert.match(termStep, /plannedEndDate\s*&&\s*startDate\s*>\s*plannedEndDate/);
+	assert.doesNotMatch(termStep, /startDate|endDate|plannedEndDate|closedOn|DatePicker/);
 	assert.doesNotMatch(termStep, /term-(code|sequence)/);
 });
 

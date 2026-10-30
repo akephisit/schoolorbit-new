@@ -303,8 +303,8 @@ export async function installSubjectCatalog(
 				return replySubject(route, {
 					years: [],
 					terms: [],
-					activeAcademicYearId: null,
-					activeAcademicTermId: null
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null
 				});
 			if (path === '/api/school/public/appearance') return replySubject(route, appearance);
 			if (path === '/api/school/public')

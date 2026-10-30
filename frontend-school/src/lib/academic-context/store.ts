@@ -60,13 +60,33 @@ export function createAcademicContextStore({
 	let latestUrl: URL | null = null;
 	let revision = 0;
 	let sessionGeneration = 0;
+	let optionsRevision = 0;
 
 	function optionsForSession(): Promise<AcademicContextOptionsResponse> {
-		cachedOptions ??= loadOptions().catch((error: unknown) => {
-			cachedOptions = null;
-			throw error;
-		});
-		return cachedOptions;
+		if (cachedOptions) return cachedOptions;
+		const currentGeneration = sessionGeneration;
+		const currentOptionsRevision = optionsRevision;
+		const request = loadOptions().then(
+			(options) =>
+				currentGeneration === sessionGeneration && currentOptionsRevision !== optionsRevision
+					? optionsForSession()
+					: options,
+			(error: unknown) => {
+				if (currentGeneration === sessionGeneration && currentOptionsRevision !== optionsRevision)
+					return optionsForSession();
+				if (cachedOptions === request) cachedOptions = null;
+				throw error;
+			}
+		);
+		cachedOptions = request;
+		return request;
+	}
+
+	function replaceOptions(options: AcademicContextOptionsResponse): void {
+		optionsRevision += 1;
+		cachedOptions = Promise.resolve(options);
+		// School settings never navigate an existing form or replace its explicit context.
+		state.update((current) => ({ ...current, options }));
 	}
 
 	async function primeOptions(): Promise<void> {
@@ -186,6 +206,7 @@ export function createAcademicContextStore({
 	function reset(): void {
 		revision += 1;
 		sessionGeneration += 1;
+		optionsRevision += 1;
 		cachedOptions = null;
 		latestRouteId = null;
 		latestUrl = null;
@@ -196,6 +217,7 @@ export function createAcademicContextStore({
 	return {
 		subscribe: state.subscribe,
 		primeOptions,
+		replaceOptions,
 		sync,
 		selectYear,
 		selectTerm,

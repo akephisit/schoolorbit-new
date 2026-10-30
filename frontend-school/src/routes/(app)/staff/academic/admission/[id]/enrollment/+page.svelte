@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
@@ -62,6 +63,7 @@
 	let showEnrollDialog = $state(false);
 	let enrollingApp = $state<EnrollRow | null>(null);
 	let studentCode = $state('');
+	let placementStartsOn = $state('');
 	let enrolling = $state(false);
 
 	let enrollFormData = $state<EnrollmentFormFields>({
@@ -76,6 +78,7 @@
 	function resetDialog() {
 		enrollingApp = null;
 		studentCode = '';
+		placementStartsOn = '';
 		enrollFormData = {
 			bloodType: '',
 			medicalConditions: '',
@@ -210,14 +213,19 @@
 	}
 
 	async function handleEnroll() {
-		if (!enrollingApp || !canEnrollAdmission) return;
+		if (!enrollingApp || !canEnrollAdmission || !placementStartsOn) return;
 		const sourceId = id;
 		const applicationId = enrollingApp.id;
 		enrolling = true;
 		try {
 			const fd = needsForm ? enrollFormData : undefined;
 
-			const res = await completeEnrollment(enrollingApp.id, studentCode || undefined, fd);
+			const res = await completeEnrollment(
+				enrollingApp.id,
+				placementStartsOn,
+				studentCode || undefined,
+				fd
+			);
 			if (sourceId !== id) return;
 			pendingRequest.abort();
 			pendingLoading = false;
@@ -462,6 +470,17 @@
 				</div>
 				<div class="text-xs text-muted-foreground bg-muted rounded p-2 space-y-0.5">
 					<p>Username และ Password เริ่มต้น: รหัสนักเรียน (ที่กรอกด้านบน หรือที่ระบบสร้างให้)</p>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="enrollment-placement-start">วันที่เริ่มจัดนักเรียนในห้อง</Label>
+					<DatePicker
+						id="enrollment-placement-start"
+						bind:value={placementStartsOn}
+						ariaLabel="วันที่เริ่มจัดนักเรียนในห้อง"
+						required
+						disabled={enrolling}
+					/>
 				</div>
 
 				{#if enrollingApp?.preSubmitted && enrollingApp?.formData}
@@ -771,7 +790,7 @@
 						resetDialog();
 					}}>ยกเลิก</Button
 				>
-				<Button onclick={handleEnroll} disabled={enrolling || !formValid()}>
+				<Button onclick={handleEnroll} disabled={enrolling || !placementStartsOn || !formValid()}>
 					{#if enrolling}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
 					{enrolling ? 'กำลังสร้าง Account...' : 'ยืนยันมอบตัว'}
 				</Button>

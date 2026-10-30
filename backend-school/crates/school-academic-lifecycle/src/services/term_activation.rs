@@ -97,12 +97,7 @@ pub(crate) async fn activate_term(
         term_id,
     )
     .await?;
-    super::term_transitions::validate_request(
-        &request,
-        workspace.context.year_start_date,
-        workspace.context.year_end_date,
-        workspace.context.term_start_date,
-    )?;
+    super::term_transitions::validate_request(&request)?;
     if workspace.context.year_row_version != request.expected_year_version
         || workspace.context.term_row_version != request.expected_term_version
         || workspace.source_checksum != request.readiness_checksum
@@ -192,7 +187,7 @@ pub(crate) async fn activate_term(
         ));
     }
     let term_update = DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
-        "UPDATE academic_terms SET status='active',closed_on=NULL,row_version=row_version+1,updated_at=now()
+        "UPDATE academic_terms SET status='active',row_version=row_version+1,updated_at=now()
          WHERE id=$1 AND academic_year_id=$2 AND row_version=$3 AND status='ready'",
     )
     .bind(term_id)
@@ -283,8 +278,7 @@ fn validate_activation_shape(
             "ข้อมูลอ้างอิงหรือรุ่นความพร้อมเปิดใช้ไม่ถูกต้อง".into(),
         ));
     }
-    if request.closed_on.is_some()
-        || request.reason.is_some()
+    if request.reason.is_some()
         || !request.acknowledged_warning_codes.is_empty()
     {
         return Err(AppError::ValidationError(

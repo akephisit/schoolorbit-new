@@ -7,8 +7,6 @@ pub struct YearLifecycleContext {
     pub academic_year_id: Uuid,
     pub year: i32,
     pub name: String,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
     pub status: AcademicYearStatus,
     pub row_version: i64,
 }

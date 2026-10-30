@@ -191,15 +191,14 @@ async function mock(
 				} satisfies Schema['CurrentUserResponse']);
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: id(1),
-					activeAcademicTermId: null,
+					defaultAcademicYearId: id(1),
+					defaultAcademicTermId: null,
 					terms: [],
 					years: [current.sourceYear, current.targetYear].map((year) => ({
+ isVisible: true,
 						id: year.academicYearId,
 						year: year.year,
 						name: year.name,
-						startDate: year.startDate,
-						endDate: year.endDate,
 						status: year.status
 					}))
 				});

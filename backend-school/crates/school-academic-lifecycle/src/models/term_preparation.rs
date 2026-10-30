@@ -32,6 +32,7 @@ pub struct TermPreparationDateMapping {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TermPreparationMappings {
+    pub offering_starts_on: Option<NaiveDate>,
     #[serde(default)]
     pub entities: Vec<TermPreparationEntityMapping>,
     #[serde(default)]

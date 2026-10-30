@@ -89,11 +89,13 @@ async function installShell(page: Page, permissions = ['*']) {
 		}
 		if (pathname === '/api/academic/context/options') {
 			await fulfill(route, {
-				activeAcademicYearId: yearId,
-				activeAcademicTermId: termId,
-				years: [{ id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+				defaultAcademicYearId: yearId,
+				defaultAcademicTermId: termId,
+				years: [{
+ isVisible: true, id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
 				terms: [
 					{
+ isVisible: true,
 						id: termId,
 						academicYearId: yearId,
 						name: 'ภาคเรียนที่ 1',
@@ -101,8 +103,6 @@ async function installShell(page: Page, permissions = ['*']) {
 						sequence: 1,
 						termType: 'regular',
 						status: 'active',
-						startDate: '2026-05-01',
-						endDate: '2027-03-31',
 						includedInYearResult: true,
 						blocksYearClosure: true
 					}
