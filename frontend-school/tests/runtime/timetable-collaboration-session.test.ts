@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDraftCollaborationSession } from '../../src/lib/academic/timetable/collaboration-session.ts';
+import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import type {
 	DraftClientMessage,
 	DraftCommandResult,
@@ -114,6 +115,50 @@ function patch(seq: number): DraftEventEnvelope {
 	};
 	return { epoch: 'epoch-one', seq, type: 'DraftPatched', payload };
 }
+
+test('a decoded combined-null metadata baseline makes the session ready and admits an owned claim', async () => {
+	const h = harness();
+	h.session.reset(timetableIds.draftVersion);
+	assert.equal(h.session.state.ready, false);
+	const workspace = collaborationWorkspace();
+	workspace.version.createdBy = null;
+	workspace.homerooms[0].roomNumber = null;
+	workspace.rooms = [{ id: timetableIds.room, code: null, name: 'ห้องเรียน', status: 'ACTIVE' }];
+	const epoch = timetableIds.blockA;
+	const decoded = decodeDraftEvent(
+		JSON.stringify({
+			epoch,
+			seq: 0,
+			type: 'DraftStateSync',
+			payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
+		})
+	);
+	assert.ok(decoded);
+	h.session.apply(decoded);
+	assert.equal(h.session.state.ready, true);
+	const claimed = h.session.claim(source, candidate, 'drag');
+	const request = h.sent.at(-1);
+	assert.ok(request?.type === 'ClientClaim');
+	h.session.apply({
+		epoch,
+		seq: 0,
+		type: 'DraftCommandResult',
+		payload: {
+			requestId: request.payload.requestId,
+			command: 'claim',
+			accepted: true,
+			source,
+			leaseToken: timetableIds.groupA,
+			reservationId: timetableIds.groupB,
+			expiresAt: '2030-01-01T00:00:00Z'
+		}
+	});
+	const lease = await claimed;
+	assert.equal(h.session.owns(lease), true);
+	assert.equal(lease.proof.connectionId, timetableIds.teacherA);
+	assert.deepEqual(h.reconciles, []);
+	h.session.reset(null);
+});
 
 test('sequence gaps request one replay, apply patches in order and ignore stale snapshots/duplicates', () => {
 	const h = harness();

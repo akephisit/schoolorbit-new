@@ -674,6 +674,10 @@ complete build/push/deployment time.
 
 ### Timetable draft collaboration
 
+The cross-language native-frame regression requires the Node version pinned in the root
+`.node-version` on `PATH`. It imports the actual TypeScript decoder using built-in type stripping;
+no npm install is needed for this focused backend test.
+
 Run the domain memory authority tests and real PostgreSQL/session/HTTP/native WebSocket fixture
 from the repository root. Use the configured pinned Rust toolchain and the owned disposable runner:
 

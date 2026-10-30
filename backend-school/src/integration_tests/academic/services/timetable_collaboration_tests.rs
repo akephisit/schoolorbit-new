@@ -2806,3 +2806,261 @@ async fn standalone_websocket_smoke_completes_term_and_draft_close_handshakes() 
     .await
     .expect("term and draft Close must remove their memberships");
 }
+
+async fn native_frame_wire(socket: &mut Socket, kind: &str) -> String {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match socket
+                .next()
+                .await
+                .expect("native socket remains open")
+                .expect("native frame")
+            {
+                Message::Text(wire) => {
+                    let value: Value = serde_json::from_str(&wire).unwrap();
+                    assert_ne!(
+                        value["type"], "DraftReconcileRequired",
+                        "fixture must retain its authorized baseline"
+                    );
+                    if value["type"] == kind {
+                        return wire.to_string();
+                    }
+                }
+                Message::Ping(payload) => socket.send(Message::Pong(payload)).await.unwrap(),
+                Message::Close(_) => panic!("native socket closed before expected frame"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("bounded native frame capture")
+}
+
+async fn native_socket_wire(fixture: &Fixture, cookie: &str) -> (Socket, String) {
+    let mut request = format!(
+        "ws://{}/ws/timetable?academicTermId={}&timetableVersionId={}&school_subdomain=tenant-a",
+        fixture.address, fixture.term, fixture.version
+    )
+    .into_client_request()
+    .unwrap();
+    request
+        .headers_mut()
+        .insert("origin", "http://localhost:5173".parse().unwrap());
+    request
+        .headers_mut()
+        .insert("cookie", cookie.parse().unwrap());
+    let (mut socket, _) = connect_async(request)
+        .await
+        .expect("real authenticated native upgrade");
+    let wire = native_frame_wire(&mut socket, "DraftStateSync").await;
+    (socket, wire)
+}
+
+async fn frontend_accepts_native_wire(wire: &str) -> bool {
+    use tokio::io::AsyncWriteExt;
+    let decoder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend-school/src/lib/academic/timetable/collaboration-decoder.ts");
+    // This cross-language contract test uses the repository-pinned Node on PATH. Its built-in
+    // type stripping imports the real consumer; no npm install, substitute decoder or payload log.
+    let script = r#"
+import { pathToFileURL } from 'node:url';
+if (Number(process.versions.node.split('.')[0]) !== 24) process.exit(2);
+const { decodeDraftEvent } = await import(pathToFileURL(process.argv[1]).href);
+let wire = '';
+process.stdin.setEncoding('utf8');
+for await (const chunk of process.stdin) wire += chunk;
+process.stdout.write(decodeDraftEvent(wire) === null ? 'rejected' : 'accepted');
+"#;
+    let mut child = tokio::process::Command::new("node")
+        .args([
+            "--experimental-strip-types",
+            "--input-type=module",
+            "-e",
+            script,
+        ])
+        .arg(decoder)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").expect("pinned Node PATH"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("repository-pinned Node must be on PATH");
+    let mut stdin = child.stdin.take().unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(10), async move {
+        stdin.write_all(wire.as_bytes()).await.unwrap();
+        stdin.shutdown().await.unwrap();
+        drop(stdin);
+        child.wait_with_output().await.unwrap()
+    })
+    .await
+    .expect("bounded actual frontend decoder");
+    assert!(
+        output.status.success(),
+        "Node24 decoder process must complete; private stderr suppressed"
+    );
+    assert!(
+        output.stdout == b"accepted" || output.stdout == b"rejected",
+        "fixed decoder outcome only"
+    );
+    output.stdout == b"accepted"
+}
+
+#[tokio::test]
+async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
+    let mut outcomes = Vec::new();
+    for field in ["room_code", "homeroom_number", "version_creator"] {
+        let fixture = Fixture::new(&format!("native_nullable_{field}")).await;
+        let pool = &fixture.auth.tenant_a_pool;
+        let path = format!("/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.block.academic_year_id, fixture.term, fixture.version);
+        let baseline = fixture
+            .request(reqwest::Method::GET, &path)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(baseline.status(), 200);
+        let baseline = baseline.json::<Value>().await.unwrap();
+        let before = &baseline["data"];
+        assert!(!before["rooms"].as_array().unwrap().is_empty());
+        assert!(!before["homerooms"].as_array().unwrap().is_empty());
+        assert!(!before["blocks"].as_array().unwrap().is_empty());
+        assert!(before["rooms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|room| room["code"].is_string()));
+        assert!(before["homerooms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|room| room["roomNumber"].is_string()));
+        assert!(before["version"]["createdBy"].is_string());
+        let teacher = fixture
+            .auth
+            .insert_user(pool, "nullable-lookup-teacher", "active")
+            .await;
+        grant(pool, teacher, &["academic_timetable.read.assigned"]).await;
+        let (_, token) = fixture.auth.insert_session(pool, teacher, 196, false).await;
+        let scoped_cookie = format!(
+            "__Host-schoolorbit_session={}",
+            token.encode().expose_for_cookie()
+        );
+        match field {
+            "room_code" => {
+                sqlx::query("UPDATE rooms SET code=NULL WHERE status='ACTIVE'")
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
+            "homeroom_number" => {
+                sqlx::query("UPDATE homerooms SET room_number=NULL WHERE academic_year_id=$1")
+                    .bind(fixture.block.academic_year_id)
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
+            "version_creator" => {
+                sqlx::query("UPDATE academic_timetable_versions SET created_by=NULL WHERE id=$1")
+                    .bind(fixture.version)
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let response = fixture
+            .request(reqwest::Method::GET, &path)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            200,
+            "nullable metadata remains valid protected HTTP data"
+        );
+        let response = response.json::<Value>().await.unwrap();
+        let workspace = &response["data"];
+        match field {
+            "room_code" => assert!(workspace["rooms"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|room| room.get("code").is_some_and(Value::is_null))),
+            "homeroom_number" => assert!(workspace["homerooms"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|room| room.get("roomNumber").is_some_and(Value::is_null))),
+            "version_creator" => assert!(workspace["version"]
+                .get("createdBy")
+                .is_some_and(Value::is_null)),
+            _ => unreachable!(),
+        }
+        let (mut manager, sync_wire) = native_socket_wire(&fixture, &fixture.cookie).await;
+        let sync: Value = serde_json::from_str(&sync_wire).unwrap();
+        assert!(
+            sync["payload"]["workspace"] == *workspace,
+            "native snapshot must equal the authorized HTTP producer projection"
+        );
+        outcomes.push((
+            field,
+            "state_sync",
+            frontend_accepts_native_wire(&sync_wire).await,
+        ));
+        if field == "version_creator" {
+            let update = fixture
+                .update(None, "nullable creator patch")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(update.status(), 200);
+            let patch_wire = native_frame_wire(&mut manager, "DraftPatched").await;
+            let patch: Value = serde_json::from_str(&patch_wire).unwrap();
+            assert!(patch["payload"]["version"]
+                .get("createdBy")
+                .is_some_and(Value::is_null));
+            outcomes.push((
+                field,
+                "version_patch",
+                frontend_accepts_native_wire(&patch_wire).await,
+            ));
+        } else {
+            let (mut scoped, _) = native_socket_wire(&fixture, &scoped_cookie).await;
+            let room_id = uuid(&workspace["rooms"][0]["id"]);
+            let created = fixture.request(reqwest::Method::POST, "/api/academic/timetable-blocks/structural").json(&json!({
+                "timetableVersionId":fixture.version,"academicTermId":fixture.term,"structuralKind":"other","title":"Nullable lookup gain",
+                "slots":[{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id}],
+                "homeroomIds":[],"teacherIds":[teacher],"allHomerooms":true,"allTeachers":false,"roomId":room_id
+            })).send().await.unwrap();
+            assert_eq!(created.status(), 200);
+            let patch_wire = native_frame_wire(&mut scoped, "DraftPatched").await;
+            let patch: Value = serde_json::from_str(&patch_wire).unwrap();
+            let changes = &patch["payload"]["lookupChanges"];
+            assert!(!changes["upsertedRooms"].as_array().unwrap().is_empty());
+            assert!(!changes["upsertedHomerooms"].as_array().unwrap().is_empty());
+            if field == "room_code" {
+                assert!(changes["upsertedRooms"][0]
+                    .get("code")
+                    .is_some_and(Value::is_null));
+            } else {
+                assert!(changes["upsertedHomerooms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|room| room.get("roomNumber").is_some_and(Value::is_null)));
+            }
+            outcomes.push((
+                field,
+                "lookup_patch",
+                frontend_accepts_native_wire(&patch_wire).await,
+            ));
+            scoped.close(None).await.unwrap();
+        }
+        manager.close(None).await.unwrap();
+    }
+    assert!(
+        outcomes.iter().all(|(_, _, accepted)| *accepted),
+        "actual native frame decoder field/event/accepted: {outcomes:?}"
+    );
+}

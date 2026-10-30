@@ -1,11 +1,130 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
+import { applyDraftPatch } from '../../src/lib/academic/timetable/collaboration-patch.ts';
 import { collaborationWorkspace, emptyLookupChanges } from './timetable-collaboration-fixture.ts';
 import { timetableIds } from '../e2e/timetable-test-harness.ts';
 import { makeTimetableBlock } from '../e2e/timetable-test-harness.ts';
 
 const epoch = 'f1000000-0000-4000-8000-000000000999';
+
+const nullableRoom = { id: timetableIds.room, code: null, name: 'ห้องเรียน', status: 'ACTIVE' };
+const metadataCases = [
+	{
+		name: 'version.createdBy',
+		valid: timetableIds.user,
+		workspace(value: unknown) {
+			const workspace = collaborationWorkspace();
+			return { ...workspace, version: { ...workspace.version, createdBy: value } };
+		}
+	},
+	{
+		name: 'homeroom.roomNumber',
+		valid: '1',
+		workspace(value: unknown) {
+			const workspace = collaborationWorkspace();
+			return { ...workspace, homerooms: [{ ...workspace.homerooms[0], roomNumber: value }] };
+		}
+	},
+	{
+		name: 'room.code',
+		valid: 'ROOM-1',
+		workspace(value: unknown) {
+			return { ...collaborationWorkspace(), rooms: [{ ...nullableRoom, code: value }] };
+		}
+	}
+];
+for (const field of metadataCases) {
+	test(`required nullable ${field.name} accepts explicit null and its declared non-null type`, () => {
+		for (const value of [null, field.valid]) {
+			const event = {
+				epoch,
+				seq: 0,
+				type: 'DraftStateSync',
+				payload: {
+					connectionId: timetableIds.teacherA,
+					workspace: field.workspace(value),
+					users: [],
+					reservations: []
+				}
+			};
+			assert.deepEqual(decodeDraftEvent(JSON.stringify(event)), event);
+		}
+	});
+	test(`required nullable ${field.name} still rejects missing and malformed non-null metadata`, () => {
+		for (const value of [
+			undefined,
+			1,
+			false,
+			{},
+			[],
+			...(field.name === 'version.createdBy' ? ['not-a-uuid'] : [])
+		]) {
+			assert.equal(
+				decodeDraftEvent(
+					JSON.stringify({
+						epoch,
+						seq: 0,
+						type: 'DraftStateSync',
+						payload: {
+							connectionId: timetableIds.teacherA,
+							workspace: field.workspace(value),
+							users: [],
+							reservations: []
+						}
+					})
+				),
+				null
+			);
+		}
+	});
+}
+
+test('nullable lookup metadata and patch version decode and retain explicit nulls through the shared patch consumer', () => {
+	const workspace = collaborationWorkspace();
+	const homeroom = { ...workspace.homerooms[0], roomNumber: null };
+	const patch = {
+		epoch,
+		seq: 1,
+		type: 'DraftPatched',
+		payload: {
+			timetableVersionId: workspace.version.id,
+			mutationId: timetableIds.blockA,
+			upsertedBlocks: [],
+			removedBlockIds: [],
+			ordinaryDemands: [],
+			synchronizedDemands: [],
+			summary: workspace.summary,
+			sourceIssues: [],
+			version: { ...workspace.version, createdBy: null },
+			lookupChanges: {
+				...emptyLookupChanges(),
+				upsertedRooms: [nullableRoom],
+				roomOrder: [nullableRoom.id],
+				upsertedHomerooms: [homeroom],
+				homeroomOrder: [homeroom.id]
+			}
+		}
+	};
+	const decoded = decodeDraftEvent(JSON.stringify(patch));
+	assert.equal(decoded?.type, 'DraftPatched');
+	if (decoded?.type !== 'DraftPatched') return;
+	const updated = applyDraftPatch(workspace, decoded.payload);
+	assert.equal(updated.version.createdBy, null);
+	assert.equal(updated.homerooms[0].roomNumber, null);
+	assert.equal(updated.rooms[0].code, null);
+	for (const lookupChanges of [
+		{
+			...patch.payload.lookupChanges,
+			upsertedRooms: [{ id: nullableRoom.id, name: 'ห้องเรียน', status: 'ACTIVE' }]
+		},
+		{ ...patch.payload.lookupChanges, upsertedHomerooms: [{ ...homeroom, roomNumber: 1 }] }
+	])
+		assert.equal(
+			decodeDraftEvent(JSON.stringify({ ...patch, payload: { ...patch.payload, lookupChanges } })),
+			null
+		);
+});
 
 test('decoder validates optional private room options and rejects invalid or duplicated room identities', () => {
 	const payload = {
