@@ -911,3 +911,327 @@ fn idle_cache_eviction_does_not_split_an_externally_held_draft_authority() {
         "truly unreferenced idle rooms remain evictable"
     );
 }
+
+#[test]
+fn public_staff_cap_reconciles_only_overflowing_viewer_and_requires_a_fresh_baseline() {
+    let (room, _, actor) = fixture();
+    // All identities exist privately before publication, including not-yet-referenced staff.
+    {
+        let mut state = room.lock().unwrap();
+        let workspace = Arc::make_mut(&mut state.workspace);
+        workspace
+            .staff
+            .extend((0..1999).map(|_| TimetableBlockWorkspaceStaff {
+                id: Uuid::new_v4(),
+                display_name: "Additional teacher".into(),
+                status: "active".into(),
+                subject_groups: Vec::new(),
+            }));
+    }
+    let school = member(actor, full_access());
+    let mut assigned = member(
+        actor,
+        TimetableAccessFilter {
+            assigned_actor_id: Some(actor),
+            ..Default::default()
+        },
+    );
+    // Manage indices can be broader than the public read scope without public caps.
+    assigned.manage_access = Some(full_access());
+    room.join(school.clone()).unwrap();
+    room.join(assigned.clone()).unwrap();
+    let original = room.lock().unwrap().workspace.blocks[1].clone();
+    let mut changed = original.clone();
+    {
+        let state = room.lock().unwrap();
+        changed.teachers = state
+            .workspace
+            .staff
+            .iter()
+            .filter(|teacher| teacher.id != actor)
+            .map(|teacher| TimetableBlockTeacher {
+                id: Uuid::new_v4(),
+                teacher_id: teacher.id,
+                display_name: teacher.display_name.clone(),
+                row_version: 1,
+                is_active: true,
+            })
+            .collect();
+    }
+    assert_eq!(changed.teachers.len(), 2000);
+    // Exactly 2000 public identities remains valid, regardless of private directory size.
+    let mut boundary = changed.clone();
+    boundary.teachers.pop();
+    room.publish_blocks(vec![boundary], None, None, Uuid::new_v4())
+        .unwrap();
+    let school_at_limit = member(actor, full_access());
+    let sync = room.join(school_at_limit.clone()).unwrap();
+    let DraftServerMessage::DraftStateSync(sync) = sync.event else {
+        panic!("sync")
+    };
+    assert_eq!(sync.workspace.staff.len(), 2000);
+    room.disconnect(school_at_limit.connection_id);
+    let grant = claim(&room, school.connection_id, source(&room));
+    assert!(grant.accepted);
+    let token = grant.lease_token.unwrap();
+    let seq = room
+        .publish_blocks(vec![changed], None, None, Uuid::new_v4())
+        .unwrap();
+    let fresh_school = member(actor, full_access());
+    assert!(matches!(
+        room.join(fresh_school.clone()),
+        Err(AppError::ValidationError(_))
+    ));
+    {
+        let state = room.lock().unwrap();
+        assert!(state.valid);
+        assert_eq!(state.workspace.staff.len(), 2001);
+        assert!(!state.members.contains_key(&fresh_school.connection_id));
+        assert!(!state
+            .member_visibility
+            .contains_key(&fresh_school.connection_id));
+        let school_index = &state.member_visibility[&school.connection_id];
+        assert!(school_index.requires_reconcile);
+        assert!(school_index.read.staff.is_empty());
+        assert!(school_index.manage.is_none());
+        assert!(!state.leases.contains_key(&token));
+        assert!(!state.active_leases.contains_key(&school.connection_id));
+    }
+    let events = room
+        .signal_events(school.connection_id, DraftSignal::Committed(seq))
+        .unwrap();
+    assert!(
+        matches!(&events[0].event, DraftServerMessage::DraftReconcileRequired {reason} if reason == "workspace_limit")
+    );
+    let events = room
+        .signal_events(assigned.connection_id, DraftSignal::Committed(seq))
+        .unwrap();
+    assert!(matches!(
+        events[0].event,
+        DraftServerMessage::DraftPatched(_)
+    ));
+    assert!(!claim(&room, school.connection_id, source(&room)).accepted);
+    assert!(claim(&room, assigned.connection_id, source(&room)).accepted);
+    // Shrinking again cannot revive a stale recipient or its cleared reservations.
+    let seq = room
+        .publish_blocks(vec![original], None, None, Uuid::new_v4())
+        .unwrap();
+    let events = room
+        .signal_events(school.connection_id, DraftSignal::Committed(seq))
+        .unwrap();
+    assert!(
+        matches!(&events[0].event, DraftServerMessage::DraftReconcileRequired {reason} if reason == "workspace_limit")
+    );
+    let epoch = room.lock().unwrap().epoch;
+    let replay = room
+        .command(
+            school.connection_id,
+            DraftClientMessage::ClientReplay(DraftReplay {
+                epoch,
+                after_seq: 0,
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(&replay[0].event, DraftServerMessage::DraftReconcileRequired {reason} if reason == "workspace_limit")
+    );
+    room.disconnect(school.connection_id);
+    room.join(fresh_school).unwrap();
+    assert!(!room.lock().unwrap().leases.contains_key(&token));
+}
+
+fn room_group(room: Uuid) -> TimetableBlockGroup {
+    TimetableBlockGroup {
+        id: Uuid::new_v4(),
+        learning_group_id: Uuid::new_v4(),
+        learning_offering_id: Uuid::new_v4(),
+        code: "ROOM".into(),
+        name: "Room assignment".into(),
+        homeroom_ids: Vec::new(),
+        homeroom_names: Vec::new(),
+        room_id: Some(room),
+        room_code: None,
+        room_name: None,
+        instructors: Vec::new(),
+        sync_status: None,
+        row_version: 1,
+        is_active: true,
+    }
+}
+
+fn edit_rooms(room: &DraftRoom, member: &DraftMember) -> DraftRoomOptions {
+    authority::availability(&room.lock().unwrap(), member)
+        .unwrap()
+        .room_options
+        .unwrap()
+}
+
+#[test]
+fn edit_room_options_use_interval_occupancy_and_keep_own_inactive_room_without_leaking_peer_tokens()
+{
+    let (room, _, actor) = fixture();
+    let ids = (0..5).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
+    let (own_block, peer_block, period) = {
+        let mut state = room.lock().unwrap();
+        let workspace = Arc::make_mut(&mut state.workspace);
+        workspace.rooms = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| TimetableBlockWorkspaceRoom {
+                id: *id,
+                code: None,
+                name: format!("Room {i}"),
+                status: if i == 0 || i == 4 {
+                    "INACTIVE"
+                } else {
+                    "ACTIVE"
+                }
+                .into(),
+            })
+            .collect();
+        workspace.blocks[0].groups = vec![room_group(ids[0])];
+        workspace.blocks[1].groups = vec![room_group(ids[1])];
+        // A distinct period still overlaps the source's 08:00–09:00 interval.
+        workspace.blocks[1].bell_schedule_period_id = Uuid::new_v4();
+        workspace.blocks[1].start_time = "08:30".parse().unwrap();
+        workspace.blocks[1].end_time = "09:30".parse().unwrap();
+        let mut adjacent = workspace.blocks[1].clone();
+        adjacent.id = Uuid::new_v4();
+        adjacent.groups = vec![room_group(ids[2])];
+        adjacent.start_time = "09:00".parse().unwrap();
+        adjacent.end_time = "10:00".parse().unwrap();
+        adjacent.bell_schedule_period_id = Uuid::new_v4();
+        let result = (
+            workspace.blocks[0].clone(),
+            adjacent.clone(),
+            workspace.bell_periods[0].id,
+        );
+        workspace.blocks.push(adjacent);
+        result
+    };
+    let owner = member(actor, full_access());
+    let peer = member(actor, full_access());
+    room.join(owner.clone()).unwrap();
+    room.join(peer.clone()).unwrap();
+    let owned = claim_with_purpose(
+        &room,
+        owner.connection_id,
+        source(&room),
+        DraftReservationPurpose::Edit,
+    );
+    assert!(owned.accepted);
+    let options = edit_rooms(&room, &owner);
+    assert_eq!(options.reservation_id, owned.reservation_id.unwrap());
+    assert_eq!(
+        options.available_room_ids,
+        vec![ids[0], ids[2], ids[3]],
+        "self is ignored, unchanged inactive retained, overlap excluded, adjacent interval free"
+    );
+    let peer_source = TimetableBlockPlacementSource::ExistingBlock {
+        block_id: peer_block.id,
+        row_version: 1,
+    };
+    let peer_grant = claim_with_purpose(
+        &room,
+        peer.connection_id,
+        peer_source.clone(),
+        DraftReservationPurpose::Drag,
+    );
+    assert!(peer_grant.accepted);
+    assert!(authority::availability(&room.lock().unwrap(), &peer)
+        .unwrap()
+        .room_options
+        .is_none());
+    let token = peer_grant.lease_token.unwrap();
+    let mut candidate = authority::candidate_from_block(&peer_block);
+    candidate.room_id = Some(ids[3]);
+    let target = DraftTarget {
+        day_of_week: own_block.day_of_week.clone(),
+        bell_schedule_period_id: period,
+        block_id: None,
+    };
+    let response = room
+        .command(
+            peer.connection_id,
+            DraftClientMessage::ClientTarget(DraftTargetUpdate {
+                request_id: Uuid::new_v4(),
+                lease_token: token,
+                target: Some(target.clone()),
+                candidate: Some(candidate.clone()),
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(&response[0].event, DraftServerMessage::DraftCommandResult(result) if result.accepted)
+    );
+    assert_eq!(
+        edit_rooms(&room, &owner).available_room_ids,
+        vec![ids[0]],
+        "peer target footprint reserves both shifted original and proposed rooms"
+    );
+    let identity = DraftMutationIdentity {
+        connection_id: peer.connection_id,
+        lease_token: token,
+        mutation_id: Uuid::new_v4(),
+    };
+    let permit = room
+        .begin_commit(
+            actor,
+            peer.session_id,
+            Some(&identity),
+            MutationScope::Placement {
+                source: peer_source,
+                candidate,
+                targets: vec![target],
+            },
+        )
+        .unwrap();
+    room.disconnect(peer.connection_id);
+    assert_eq!(
+        edit_rooms(&room, &owner).available_room_ids,
+        vec![ids[0]],
+        "committing interval remains occupied after disconnect"
+    );
+    drop(permit);
+    assert_eq!(
+        edit_rooms(&room, &owner).available_room_ids,
+        vec![ids[0], ids[2], ids[3]]
+    );
+    let mut invalid = authority::candidate_from_block(&own_block);
+    invalid.room_id = Some(ids[4]);
+    let rejected = room
+        .command(
+            owner.connection_id,
+            DraftClientMessage::ClientTarget(DraftTargetUpdate {
+                request_id: Uuid::new_v4(),
+                lease_token: owned.lease_token.unwrap(),
+                target: None,
+                candidate: Some(invalid),
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(&rejected[0].event, DraftServerMessage::DraftCommandResult(result) if !result.accepted)
+    );
+    assert!(
+        matches!(&rejected[1].event, DraftServerMessage::DraftAvailability(availability) if availability.room_options.as_ref().unwrap().available_room_ids == vec![ids[0], ids[2], ids[3]])
+    );
+    let wire = serde_json::to_string(
+        &room
+            .signal_events(owner.connection_id, DraftSignal::Reservations)
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(!wire.contains(&token.to_string()));
+    assert!(!wire.contains("candidate"));
+    let mut changed = room.lock().unwrap().workspace.blocks[1].clone();
+    changed.groups[0].room_id = Some(ids[3]);
+    changed.row_version += 1;
+    let seq = room
+        .publish_blocks(vec![changed], None, None, Uuid::new_v4())
+        .unwrap();
+    let committed = room
+        .signal_events(owner.connection_id, DraftSignal::Committed(seq))
+        .unwrap();
+    assert!(committed.iter().any(|event| matches!(&event.event, DraftServerMessage::DraftAvailability(availability) if availability.room_options.as_ref().unwrap().available_room_ids == vec![ids[0], ids[1], ids[2]])), "canonical commit refreshes existing edit room options");
+}

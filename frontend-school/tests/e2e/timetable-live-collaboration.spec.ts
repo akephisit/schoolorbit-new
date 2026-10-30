@@ -165,6 +165,201 @@ const cell = (period: string, day = 'MON') =>
 	`td[data-timetable-day="${day}"][data-timetable-period-id="${period}"]`;
 
 test.use({ serviceWorkers: 'block' });
+test('placed-block room choices wait for private availability, update on canonical conflicts and retain invalid or historical selections', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	relay.setRoomOptionsPaused(true);
+	const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	const page = await context.newPage();
+	const original = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	const occupied = makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
+		groupId: timetableIds.groupB,
+		offeringId: timetableIds.offeringB,
+		roomId: timetableIds.roomB,
+		code: 'อ21101',
+		name: 'ภาษาอังกฤษ'
+	});
+	const mock = await installTimetableMock(page, {
+		socketMode: 'native',
+		relay,
+		blocks: [original, occupied]
+	});
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ผู้แก้ไขห้อง');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const openEditor = () =>
+			page
+				.locator(`[data-timetable-anchor="block"][data-block-id="${original.id}"]`)
+				.getByRole('button', { name: /ดูรายละเอียด/ })
+				.click();
+		await openEditor();
+		const dialog = page.getByRole('dialog');
+		const picker = dialog.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+		const save = dialog.getByRole('button', { name: 'บันทึก', exact: true });
+		await expect(picker).toHaveText('ห้องคณิตศาสตร์');
+		await expect(picker).toBeDisabled();
+		await expect(save).toBeDisabled();
+		await expect(dialog.getByRole('status')).toHaveText('กำลังตรวจสอบห้องว่าง…');
+		relay.setRoomOptionsPaused(false);
+		await expect(save).toBeEnabled();
+		const initialGets = mock.workspaceRequestCount();
+		await picker.click();
+		await expect(page.getByRole('option', { name: 'ห้องคณิตศาสตร์', exact: true })).toBeVisible();
+		await expect(page.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toHaveCount(
+			0
+		);
+		await expect(page.getByRole('option', { name: 'ไม่ระบุห้อง', exact: true })).toBeVisible();
+		const next = mock.workspace();
+		next.blocks = [
+			original,
+			makeTimetableBlock(occupied.id, timetableIds.period2, {
+				groupId: timetableIds.groupB,
+				offeringId: timetableIds.offeringB,
+				roomId: timetableIds.roomB,
+				code: 'อ21101',
+				name: 'ภาษาอังกฤษ'
+			})
+		];
+		mock.publishWorkspace(next);
+		await page.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true }).click();
+		await expect(picker).toHaveText('ห้องปฏิบัติการ 2');
+		await expect(save).toBeEnabled();
+		const conflicted = mock.workspace();
+		conflicted.blocks = [original, occupied];
+		mock.publishWorkspace(conflicted);
+		await expect(save).toBeDisabled();
+		await expect(picker).toHaveText('ห้องปฏิบัติการ 2');
+		await expect(dialog.getByRole('status')).toContainText('กรุณาเลือกห้องใหม่');
+		await picker.click();
+		await expect(page.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toHaveCount(
+			0
+		);
+		await page.getByRole('option', { name: 'ไม่ระบุห้อง', exact: true }).click();
+		await expect(save).toBeEnabled();
+		const freed = mock.workspace();
+		freed.blocks = [original];
+		mock.publishWorkspace(freed);
+		await picker.click();
+		await expect(page.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await dialog.getByRole('button', { name: 'ปิด', exact: true }).click();
+		const inactive = mock.workspace();
+		inactive.rooms = inactive.rooms.map((room) => ({ ...room, status: 'INACTIVE' }));
+		mock.publishWorkspace(inactive);
+		await openEditor();
+		await expect(picker).toHaveText('ห้องคณิตศาสตร์');
+		await expect(save).toBeEnabled();
+		await expect(dialog.getByRole('status')).toContainText('ไม่มีห้องว่าง');
+		await picker.click();
+		await expect(page.getByRole('option', { name: 'ห้องคณิตศาสตร์', exact: true })).toHaveCount(0);
+		await expect(page.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toHaveCount(
+			0
+		);
+		await page.getByRole('option', { name: 'ไม่ระบุห้อง', exact: true }).click();
+		await expect(save).toBeEnabled();
+		const previousConnection = [...relay.peers.keys()][0];
+		relay.setRoomOptionsPaused(true);
+		relay.reconcile();
+		await expect.poll(() => [...relay.peers.keys()][0]).not.toBe(previousConnection);
+		await waitPeers(relay, 1);
+		await expect(dialog).toBeVisible();
+		await expect(save).toBeDisabled();
+		await expect(picker).toBeDisabled();
+		await expect(picker).toHaveText('ไม่ระบุห้อง');
+		await expect(dialog.getByRole('status')).toHaveText('กำลังตรวจสอบห้องว่าง…');
+		await dialog.getByRole('button', { name: 'ปิด', exact: true }).click();
+		relay.setRoomOptionsPaused(false);
+		await openEditor();
+		await expect(save).toBeEnabled();
+		await expect(picker).toHaveText('ห้องคณิตศาสตร์');
+		expect(mock.workspaceRequestCount()).toBe(initialGets);
+		expect(mock.previewRequestCount()).toBe(0);
+		expect(mock.updateRequestCount()).toBe(0);
+		await page.screenshot({
+			path: `${artifacts}/private-room-options-empty.png`,
+			animations: 'disabled'
+		});
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});
+
+test('private room choices react to another native editor reservation without exposing its candidate to peers', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	const first = await browser.newContext(),
+		second = await browser.newContext();
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const blocks = [
+		makeTimetableBlock(timetableIds.blockA, timetableIds.period1),
+		makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
+			groupId: timetableIds.groupB,
+			offeringId: timetableIds.offeringB,
+			roomId: null,
+			name: 'ภาษาอังกฤษ'
+		})
+	];
+	const mockA = await installTimetableMock(a, { socketMode: 'native', relay, blocks });
+	const mockB = await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks,
+		userId: secondUser
+	});
+	const server = await startNativeDraftRelay(relay, mockA.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ครูหนึ่ง');
+		await redirectSocket(second, server.url, secondUser, 'ครูสอง');
+		await a.goto(url());
+		await b.goto(url());
+		await waitPeers(relay, 2);
+		for (const page of [a, b])
+			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await a
+			.locator(`[data-timetable-anchor="block"][data-block-id="${timetableIds.blockA}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		await b
+			.locator(`[data-timetable-anchor="block"][data-block-id="${timetableIds.blockB}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		const pickerA = a
+			.getByRole('dialog')
+			.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+		const pickerB = b
+			.getByRole('dialog')
+			.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+		await expect(pickerA).toBeEnabled();
+		await pickerB.click();
+		await b.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true }).click();
+		await pickerA.click();
+		await expect(a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toHaveCount(0);
+		await pickerB.click();
+		await b.getByRole('option', { name: 'ไม่ระบุห้อง', exact: true }).click();
+		await expect(a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toBeVisible();
+		await a.keyboard.press('Escape');
+		for (const mock of [mockA, mockB]) {
+			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.previewRequestCount()).toBe(0);
+			expect(mock.updateRequestCount()).toBe(0);
+		}
+		for (const peer of relay.peers.values()) {
+			expect(peer.user.connections[0]).not.toHaveProperty('candidate');
+		}
+	} finally {
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
 test('native sockets preserve semantic cursor geometry, stationary sender resampling, ghost and partial commits', async ({
 	browser
 }) => {

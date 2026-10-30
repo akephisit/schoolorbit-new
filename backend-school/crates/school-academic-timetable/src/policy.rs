@@ -8,6 +8,7 @@ use school_errors::AppError;
 use school_permissions::registry::codes;
 
 mod visibility;
+pub(crate) use visibility::project_visibility;
 pub use visibility::{project_workspace, recompute_workspace, TimetableVisibility};
 
 const READ_ASSIGNED_PERMISSIONS: &[&str] = &[

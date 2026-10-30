@@ -224,10 +224,20 @@ pub struct DraftBlockedCell {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
+pub struct DraftRoomOptions {
+    pub reservation_id: Uuid,
+    pub available_room_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
 pub struct DraftAvailability {
     pub source: TimetableBlockPlacementSource,
     pub context: Option<DraftContext>,
     pub blocked_cells: Vec<DraftBlockedCell>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub room_options: Option<DraftRoomOptions>,
 }
 
 #[derive(Debug, Clone, Serialize)]

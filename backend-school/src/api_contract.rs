@@ -2011,6 +2011,7 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         DraftCommandResult,
         DraftBlockedCell,
         DraftAvailability,
+        DraftRoomOptions,
         DraftStateSync,
         DraftPatch,
         DraftLookupChanges,

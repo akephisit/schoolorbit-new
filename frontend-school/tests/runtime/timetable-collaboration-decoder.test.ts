@@ -6,6 +6,35 @@ import { timetableIds } from '../e2e/timetable-test-harness.ts';
 import { makeTimetableBlock } from '../e2e/timetable-test-harness.ts';
 
 const epoch = 'f1000000-0000-4000-8000-000000000999';
+
+test('decoder validates optional private room options and rejects invalid or duplicated room identities', () => {
+	const payload = {
+		source: { kind: 'existing_block', blockId: timetableIds.blockA, rowVersion: 1 },
+		blockedCells: [],
+		roomOptions: { reservationId: timetableIds.teacherA, availableRoomIds: [timetableIds.room] }
+	};
+	const decode = (roomOptions: unknown) =>
+		decodeDraftEvent(
+			JSON.stringify({
+				epoch,
+				seq: 0,
+				type: 'DraftAvailability',
+				payload: { ...payload, roomOptions }
+			})
+		);
+	assert.ok(decode(payload.roomOptions));
+	assert.ok(decode(undefined));
+	assert.ok(decode(null));
+	assert.ok(decode({ ...payload.roomOptions, availableRoomIds: [] }));
+	for (const invalid of [
+		{ ...payload.roomOptions, reservationId: 'invalid' },
+		{ ...payload.roomOptions, availableRoomIds: [timetableIds.room, timetableIds.room] },
+		{ ...payload.roomOptions, availableRoomIds: ['invalid'] },
+		{ reservationId: timetableIds.teacherA },
+		{ ...payload.roomOptions, hiddenConflict: timetableIds.blockB }
+	])
+		assert.equal(decode(invalid), null);
+});
 const participant = {
 	userId: timetableIds.user,
 	name: 'ผู้ร่วมจัดตาราง',

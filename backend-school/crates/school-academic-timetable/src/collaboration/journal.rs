@@ -26,7 +26,7 @@ impl DraftRoom {
         origin_connection_id: Option<Uuid>,
         mutation_id: Uuid,
     ) -> Result<u64, AppError> {
-        let (before, visibility, members, previous_seq) = {
+        let (before, visibility, members, mut reconcile, previous_seq) = {
             let state = self.lock()?;
             if !state.valid {
                 return Err(stale());
@@ -35,6 +35,11 @@ impl DraftRoom {
                 state.workspace.clone(),
                 state.visibility.clone(),
                 state.members.values().cloned().collect::<Vec<_>>(),
+                state
+                    .member_visibility
+                    .iter()
+                    .filter_map(|(id, index)| index.requires_reconcile.then_some(*id))
+                    .collect::<BTreeSet<_>>(),
                 state.seq,
             )
         };
@@ -68,10 +73,22 @@ impl DraftRoom {
         let mut indices = BTreeMap::new();
         let mut bytes = 32usize;
         for member in members {
-            let before_projection =
-                crate::policy::project_workspace(&before, &visibility, &member.access);
+            // Once a viewer misses a public projection it must rejoin, even if later writes
+            // shrink the workspace again. Never resume deltas from an unseen baseline.
+            if reconcile.contains(&member.connection_id) {
+                continue;
+            }
             let after_projection =
-                crate::policy::project_workspace(&after, &visibility, &member.access);
+                match crate::policy::project_workspace(&after, &visibility, &member.access) {
+                    Ok(workspace) => workspace,
+                    Err(AppError::ValidationError(_)) => {
+                        reconcile.insert(member.connection_id);
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+            let before_projection =
+                crate::policy::project_workspace(&before, &visibility, &member.access)?;
             let patch = project_patch(
                 &before_projection,
                 &after_projection,
@@ -82,7 +99,7 @@ impl DraftRoom {
             bytes = bytes.saturating_add(serde_json::to_vec(&patch).map_err(|_| stale())?.len());
             indices.insert(
                 member.connection_id,
-                member_visibility(&after, &visibility, &member),
+                member_visibility(&after, &visibility, &member, &after_projection),
             );
             patches.insert(member.connection_id, patch);
         }
@@ -97,6 +114,27 @@ impl DraftRoom {
         for (connection, index) in indices {
             state.member_visibility.insert(connection, index);
             state.projection_rebuilds += 1;
+        }
+        let pinned = state
+            .committing
+            .values()
+            .filter_map(|record| record.lease_token)
+            .collect::<BTreeSet<_>>();
+        for connection in reconcile {
+            if let Some(index) = state.member_visibility.get_mut(&connection) {
+                *index = MemberVisibility {
+                    requires_reconcile: true,
+                    ..Default::default()
+                };
+            }
+            if let Some(member) = state.members.get_mut(&connection) {
+                member.context = None;
+                member.anchor = None;
+            }
+            state.active_leases.remove(&connection);
+            state.leases.retain(|token, lease| {
+                lease.public.owner_connection_id != connection || pinned.contains(token)
+            });
         }
         state.seq = state.seq.checked_add(1).ok_or_else(stale)?;
         let seq = state.seq;
@@ -307,6 +345,19 @@ pub(super) fn events_after(
     after_seq: u64,
     through: Option<u64>,
 ) -> Result<Vec<DraftEventEnvelope>, AppError> {
+    if state
+        .member_visibility
+        .get(&member.connection_id)
+        .is_some_and(|index| index.requires_reconcile)
+    {
+        return Ok(vec![DraftEventEnvelope {
+            epoch: state.epoch,
+            seq: state.seq,
+            event: DraftServerMessage::DraftReconcileRequired {
+                reason: "workspace_limit".into(),
+            },
+        }]);
+    }
     let reconcile = || {
         vec![DraftEventEnvelope {
             epoch: state.epoch,

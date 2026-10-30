@@ -134,11 +134,7 @@ pub(crate) async fn get_workspace(
 ) -> Result<TimetableBlockWorkspace, AppError> {
     let (workspace, visibility) =
         get_canonical_workspace(connection, query, staff_directory).await?;
-    Ok(crate::policy::project_workspace(
-        &workspace,
-        &visibility,
-        access,
-    ))
+    crate::policy::project_workspace(&workspace, &visibility, access)
 }
 
 pub(crate) async fn get_canonical_workspace(
@@ -150,10 +146,8 @@ pub(crate) async fn get_canonical_workspace(
         includes_school_owned: true,
         ..Default::default()
     };
-    const MAX_GROUPS: i64 = 2_000;
-    const MAX_HOMEROOMS: i64 = 500;
-    const MAX_ROOMS: i64 = 2_000;
-    const MAX_STAFF: i64 = 2_000;
+    // Canonical metadata is private authority state. Public workspace limits belong after
+    // viewer projection; unrelated school resources must neither reject nor truncate it.
 
     let mut version = super::timetable_version_service::get_version_on_connection(
         connection,
@@ -265,11 +259,7 @@ pub(crate) async fn get_canonical_workspace(
             .iter()
             .any(|offering| offering.id == target.learning_offering_id)
     });
-    if source_group_ids.len() > MAX_GROUPS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
-        ));
-    }
+
     let staff_ids =
         visible_offerings
             .iter()
@@ -292,17 +282,12 @@ pub(crate) async fn get_canonical_workspace(
             "academic_timetable.services.timetable_block_queries.get_workspace",
             r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
            FROM user_display_names WHERE (status='active' OR id = ANY($1)) AND user_type = 'staff'
-           ORDER BY 2, id LIMIT $2"#,
+           ORDER BY 2, id"#,
         )
         .bind(&staff_ids)
-        .bind(MAX_STAFF + 1)
         .fetch_all()
         .await?;
-    if staff.len() > MAX_STAFF as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
-        ));
-    }
+
     let staff_ids = staff
         .iter()
         .map(|(id, _, _)| *id)
@@ -515,20 +500,14 @@ pub(crate) async fn get_canonical_workspace(
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            WHERE homeroom.academic_year_id = $1
              AND (($2 AND homeroom.is_active) OR homeroom.id = ANY($3))
-           ORDER BY grade.level_type, grade.year, homeroom.room_number, homeroom.code
-           LIMIT $4"#,
+           ORDER BY grade.level_type, grade.year, homeroom.room_number, homeroom.code"#,
         )
         .bind(query.academic_year_id)
         .bind(access.includes_school_owned)
         .bind(&relevant_homeroom_ids)
-        .bind(MAX_HOMEROOMS + 1)
         .fetch_all()
         .await?;
-    if homerooms.len() > MAX_HOMEROOMS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนห้องประจำชั้นในพื้นที่จัดตารางเกิน 500 ห้อง".to_string(),
-        ));
-    }
+
     let homerooms = homerooms
         .into_iter()
         .map(|row| TimetableBlockWorkspaceHomeroom {
@@ -565,18 +544,13 @@ pub(crate) async fn get_canonical_workspace(
             "academic_timetable.services.timetable_block_queries.get_workspace",
             r#"SELECT id, code, name_th, status::text FROM rooms
            WHERE ($1 AND status = 'ACTIVE') OR id = ANY($2)
-           ORDER BY coalesce(code, ''), name_th, id LIMIT $3"#,
+           ORDER BY coalesce(code, ''), name_th, id"#,
         )
         .bind(access.includes_school_owned)
         .bind(&referenced_room_ids)
-        .bind(MAX_ROOMS + 1)
         .fetch_all()
         .await?;
-    if rooms.len() > MAX_ROOMS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนห้องเรียนในพื้นที่จัดตารางเกิน 2000 ห้อง".to_string(),
-        ));
-    }
+
     let rooms = rooms
         .into_iter()
         .map(|row| TimetableBlockWorkspaceRoom {

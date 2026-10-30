@@ -33,6 +33,12 @@ struct Slot {
     end: NaiveTime,
 }
 
+impl Slot {
+    fn overlaps(&self, day: &str, start: NaiveTime, end: NaiveTime) -> bool {
+        self.day == day && self.start < end && start < self.end
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct Footprint {
     whole_draft: bool,
@@ -48,9 +54,7 @@ impl Footprint {
             || self.slots.iter().any(|left| {
                 other.slots.iter().any(|right| {
                     left.resource == right.resource
-                        && left.day == right.day
-                        && left.start < right.end
-                        && right.start < left.end
+                        && left.overlaps(&right.day, right.start, right.end)
                 })
             })
     }
@@ -1118,6 +1122,92 @@ fn grant_result(result: &mut DraftCommandResult, lease: &Lease) {
     result.expires_at = Some(lease.public.expires_at);
 }
 
+fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<DraftRoomOptions> {
+    if own.public.purpose != DraftReservationPurpose::Edit {
+        return None;
+    }
+    let TimetableBlockPlacementSource::ExistingBlock {
+        block_id,
+        row_version,
+    } = own.public.source
+    else {
+        return None;
+    };
+    let block = state.workspace.blocks.iter().find(|block| {
+        block.id == block_id && block.is_active && block.row_version == row_version
+    })?;
+    let access = member.manage_access.as_ref()?;
+    let visible = &state
+        .member_visibility
+        .get(&member.connection_id)?
+        .read
+        .rooms;
+    let original_room = candidate_from_block(block).room_id;
+    let mut occupied = BTreeSet::new();
+    let mut collect = |footprint: &Footprint| {
+        for slot in &footprint.slots {
+            if let Resource::Room(id) = slot.resource {
+                if slot.overlaps(&block.day_of_week, block.start_time, block.end_time) {
+                    occupied.insert(id);
+                }
+            }
+        }
+    };
+    // Scan authority footprints once, including blocks outside this viewer's read scope.
+    for other in state
+        .workspace
+        .blocks
+        .iter()
+        .filter(|other| other.is_active && other.id != block.id)
+    {
+        collect(&block_footprint(other));
+    }
+    let mut whole_draft = false;
+    for footprint in state
+        .leases
+        .values()
+        .filter(|lease| lease.token != own.token)
+        .map(|lease| &lease.footprint)
+        .chain(
+            state
+                .committing
+                .values()
+                .filter(|record| record.lease_token != Some(own.token))
+                .map(|record| &record.footprint),
+        )
+    {
+        whole_draft |= footprint.whole_draft;
+        collect(footprint);
+    }
+    let available_room_ids = state
+        .workspace
+        .rooms
+        .iter()
+        .filter(|room| {
+            // Existing edits may retain their original inactive room, as normalize_candidate does.
+            (room.status == "ACTIVE" || original_room == Some(room.id))
+                && visible.contains(&room.id)
+                && !whole_draft
+                && !occupied.contains(&room.id)
+                && member
+                    .resource_access
+                    .require_resources(
+                        &crate::policy::TimetableResourceSet {
+                            room_ids: vec![room.id],
+                            ..Default::default()
+                        },
+                        access,
+                    )
+                    .is_ok()
+        })
+        .map(|room| room.id)
+        .collect();
+    Some(DraftRoomOptions {
+        reservation_id: own.public.reservation_id,
+        available_room_ids,
+    })
+}
+
 pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<DraftAvailability> {
     let own = state
         .leases
@@ -1165,6 +1255,7 @@ pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<Dr
         source: own.public.source.clone(),
         context: member.context.clone(),
         blocked_cells,
+        room_options: room_options(state, member, own),
     })
 }
 

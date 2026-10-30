@@ -2,6 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use school_academic_delivery::models::versions::DeliverySnapshot;
+use school_errors::AppError;
 use uuid::Uuid;
 
 use super::TimetableAccessFilter;
@@ -81,7 +82,40 @@ impl TimetableVisibility {
     }
 }
 
+/// The single public projection boundary for HTTP, initial sync and committed deltas.
 pub fn project_workspace(
+    canonical: &TimetableBlockWorkspace,
+    visibility: &TimetableVisibility,
+    access: &TimetableAccessFilter,
+) -> Result<TimetableBlockWorkspace, AppError> {
+    let result = project_visibility(canonical, visibility, access);
+    for (count, limit, message) in [
+        (
+            result.learning_groups.len(),
+            2_000,
+            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม",
+        ),
+        (result.staff.len(), 2_000, "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน"),
+        (
+            result.homerooms.len(),
+            500,
+            "จำนวนห้องประจำชั้นในพื้นที่จัดตารางเกิน 500 ห้อง",
+        ),
+        (
+            result.rooms.len(),
+            2_000,
+            "จำนวนห้องเรียนในพื้นที่จัดตารางเกิน 2000 ห้อง",
+        ),
+    ] {
+        if count > limit {
+            return Err(AppError::ValidationError(message.into()));
+        }
+    }
+    Ok(result)
+}
+
+/// Internal authorization indices may have a broader scope than the public read workspace.
+pub(crate) fn project_visibility(
     canonical: &TimetableBlockWorkspace,
     visibility: &TimetableVisibility,
     access: &TimetableAccessFilter,

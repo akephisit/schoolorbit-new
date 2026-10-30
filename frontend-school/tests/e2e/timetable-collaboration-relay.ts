@@ -9,7 +9,8 @@ import type {
 	DraftReservation,
 	TimetableBlockWorkspace,
 	DraftPatch,
-	DraftLookupChanges
+	DraftLookupChanges,
+	TimetableBlockPlacementCandidate
 } from '../../src/lib/api/timetable.js';
 
 type ServerMessage<T = DraftEventEnvelope> = T extends DraftEventEnvelope
@@ -21,7 +22,11 @@ type FixturePeer = {
 	send(value: DraftEventEnvelope): void;
 	active: string | null;
 };
-type FixtureLease = { token: string; public: DraftReservation };
+type FixtureLease = {
+	token: string;
+	public: DraftReservation;
+	candidate: TimetableBlockPlacementCandidate | null;
+};
 
 function lookupDelta<T>(before: readonly T[], after: readonly T[], key: (value: T) => string) {
 	const previous = new Map(before.map((value) => [key(value), value]));
@@ -78,6 +83,53 @@ export function createDraftRelay() {
 	const journal: DraftEventEnvelope[] = [];
 	const received: { connectionId: string; message: DraftClientMessage }[] = [];
 	let denyNextTarget = false;
+	let roomOptionsPaused = false;
+	function editRoomOptions(active: FixtureLease) {
+		const source = active.public.source;
+		if (roomOptionsPaused || active.public.purpose !== 'edit' || source.kind !== 'existing_block')
+			return undefined;
+		const block = canonical?.blocks.find((item) => item.id === source.blockId);
+		if (!block || !canonical) return undefined;
+		const overlaps = (day: string, start: string, end: string) =>
+			day === block.dayOfWeek && start < block.endTime && end > block.startTime;
+		const busy = new Set<string>();
+		for (const other of canonical.blocks) {
+			if (
+				other.id === block.id ||
+				!other.isActive ||
+				!overlaps(other.dayOfWeek, other.startTime, other.endTime)
+			)
+				continue;
+			for (const room of [...other.groups, ...other.homerooms])
+				if (room.roomId) busy.add(room.roomId);
+		}
+		for (const other of leases.values()) {
+			if (other === active || !other.candidate?.roomId) continue;
+			const target = other.public.target;
+			const source = other.public.source;
+			const original =
+				source.kind === 'existing_block'
+					? canonical.blocks.find((item) => item.id === source.blockId)
+					: null;
+			const period = target
+				? canonical.bellPeriods.find((item) => item.id === target.bellSchedulePeriodId)
+				: original;
+			const day = target?.dayOfWeek ?? original?.dayOfWeek;
+			if (period && day && overlaps(day, period.startTime, period.endTime))
+				busy.add(other.candidate.roomId);
+		}
+		return {
+			reservationId: active.public.reservationId,
+			availableRoomIds: canonical.rooms
+				.filter(
+					(room) =>
+						(room.status.toUpperCase() === 'ACTIVE' ||
+							room.id === (block.groups[0]?.roomId ?? block.homerooms[0]?.roomId)) &&
+						!busy.has(room.id)
+				)
+				.map((room) => room.id)
+		};
+	}
 	function send(peer: FixturePeer, message: ServerMessage) {
 		peer.send({ ...message, epoch, seq });
 	}
@@ -110,6 +162,7 @@ export function createDraftRelay() {
 				payload: {
 					source: active.public.source,
 					context: peer.user.connections[0].context,
+					roomOptions: editRoomOptions(active),
 					blockedCells: [...leases.values()]
 						.filter((item) => item.token !== peer.active && item.public.target)
 						.map((item) => ({
@@ -197,6 +250,7 @@ export function createDraftRelay() {
 					}
 					const lease: FixtureLease = {
 						token: randomUUID(),
+						candidate: message.payload.candidate ?? null,
 						public: {
 							reservationId: randomUUID(),
 							ownerConnectionId: id,
@@ -254,7 +308,10 @@ export function createDraftRelay() {
 					});
 					return;
 				}
-				if (message.type === 'ClientTarget') lease.public.target = message.payload.target;
+				if (message.type === 'ClientTarget') {
+					lease.public.target = message.payload.target;
+					lease.candidate = message.payload.candidate ?? null;
+				}
 				lease.public.expiresAt = new Date(Date.now() + 10000).toISOString();
 				send(peer, {
 					type: 'DraftCommandResult',
@@ -316,6 +373,7 @@ export function createDraftRelay() {
 		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
 		journal.push(event);
 		if (publish) for (const peer of peers.values()) peer.send(event);
+		if (publish) reservations();
 		return event;
 	}
 	return {
@@ -323,6 +381,10 @@ export function createDraftRelay() {
 		commit,
 		received,
 		peers,
+		setRoomOptionsPaused(value: boolean) {
+			roomOptionsPaused = value;
+			reservations();
+		},
 		denyTarget() {
 			denyNextTarget = true;
 		},

@@ -35,6 +35,7 @@
 		timetableRemotePointers
 	} from '#lib/academic/timetable/collaboration-view.js';
 	import { sameDraftTarget } from '#lib/academic/timetable/collaboration-session.js';
+	import { timetableEditRoomOptions } from '#lib/academic/timetable/collaboration-presentation.js';
 	import TimetableRemotePointers from '#lib/components/academic/timetable/TimetableRemotePointers.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
@@ -327,6 +328,7 @@
 	let editTitle = $state('');
 	let editNote = $state('');
 	let editRoomId = $state(noRoomValue);
+	let editRoomLabel = $state('');
 	let editInstructorIds = $state<string[]>([]);
 	let editTeacherIds = $state<string[]>([]);
 	let removeOpen = $state(false);
@@ -438,6 +440,28 @@
 			editInteraction.source.blockId === selectedBlockId
 		);
 	});
+	const editRoomOptions = $derived.by(() => {
+		void interactionRevision;
+		return timetableEditRoomOptions(
+			controller?.workspace.rooms ?? [],
+			selectedBlock
+				? {
+						kind: 'existing_block',
+						blockId: selectedBlock.id,
+						rowVersion: selectedBlock.rowVersion
+					}
+				: null,
+			editCanEdit ? (editInteraction?.lease ?? null) : null,
+			$draftSessionState.availability,
+			selectedBlock ? roomIdForBlockEdit(selectedBlock) : null
+		);
+	});
+	const editRoomSelectionValid = $derived(
+		editRoomOptions.ready &&
+			(editRoomId === noRoomValue ||
+				editRoomOptions.retainedRoomId === editRoomId ||
+				editRoomOptions.rooms.some((room) => room.id === editRoomId))
+	);
 	onDestroy(() => {
 		disposed = true;
 		cancelPlacement();
@@ -1942,6 +1966,11 @@
 		editTitle = block.title ?? '';
 		editNote = block.note ?? '';
 		editRoomId = roomIdForBlockEdit(block) ?? noRoomValue;
+		editRoomLabel =
+			workspace?.rooms.find((room) => room.id === editRoomId)?.name.trim() ||
+			block.groups.find((group) => group.roomId === editRoomId)?.roomName ||
+			block.homerooms.find((row) => row.roomId === editRoomId)?.roomName ||
+			'ไม่พบชื่อห้อง';
 		editInstructorIds = block.groups.flatMap((group) =>
 			group.instructors.map((teacher) => teacher.teacherId)
 		);
@@ -2001,6 +2030,7 @@
 			!selectedBlock ||
 			!editInteraction ||
 			!editCanEdit ||
+			!editRoomSelectionValid ||
 			busy ||
 			pendingBlockIds.has(selectedBlock.id)
 		)
@@ -3263,20 +3293,46 @@
 				</div>
 				<div class="space-y-1.5">
 					<Label>ห้องเรียน</Label>
-					<Select.Root type="single" bind:value={editRoomId} disabled={!editCanEdit}>
-						<Select.Trigger class="w-full" aria-label="เลือกห้องเรียน">
+					<Select.Root
+						type="single"
+						value={editRoomId}
+						disabled={!editCanEdit || !editRoomOptions.ready}
+						onValueChange={(value) => {
+							editRoomId = value;
+							editRoomLabel =
+								controller?.workspace.rooms.find((room) => room.id === value)?.name.trim() ||
+								'ไม่พบชื่อห้อง';
+						}}
+					>
+						<Select.Trigger
+							class="w-full"
+							aria-label="เลือกห้องเรียน"
+							aria-describedby={canEdit ? 'timetable-edit-room-status' : undefined}
+							aria-busy={canEdit && !editRoomOptions.ready}
+						>
 							{editRoomId === noRoomValue
 								? 'ไม่ระบุห้อง'
 								: controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name.trim() ||
-									'ไม่พบชื่อห้อง'}
+									editRoomLabel}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
-							{#each controller?.workspace.rooms ?? [] as room (room.id)}
+							{#each editRoomOptions.rooms as room (room.id)}
 								<Select.Item value={room.id}>{room.name.trim() || 'ไม่พบชื่อห้อง'}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
+					{#if canEdit}
+						<p id="timetable-edit-room-status" class="text-xs text-muted-foreground" role="status">
+							{#if !editRoomOptions.ready}
+								กำลังตรวจสอบห้องว่าง…
+							{:else if !editRoomSelectionValid}
+								ห้องที่เลือกไม่ว่างหรือใช้งานไม่ได้แล้ว กรุณาเลือกห้องใหม่หรือไม่ระบุห้อง
+							{:else if editRoomOptions.rooms.length === 0}
+								ไม่มีห้องว่างในช่วงเวลานี้ สามารถเลือกไม่ระบุห้องได้
+							{/if}
+						</p>
+					{/if}
 				</div>
 				{#if selectedBlock?.blockKind !== 'structural' && selectedBlock?.schedulingMode !== 'synchronized' && selectedBlock?.groups.length === 1}
 					<TimetableInstructorPicker
@@ -3318,7 +3374,7 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (editOpen = false)}>ปิด</Button>
 				{#if canEdit}
-					<Button disabled={busy || !editCanEdit} onclick={saveBlock}>
+					<Button disabled={busy || !editCanEdit || !editRoomSelectionValid} onclick={saveBlock}>
 						{#if busy}<LoaderCircle class="size-4 animate-spin" />{/if} บันทึก
 					</Button>
 				{/if}

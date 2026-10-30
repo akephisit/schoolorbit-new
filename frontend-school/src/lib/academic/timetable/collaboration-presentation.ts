@@ -24,3 +24,43 @@ export function collaboratorInitials(name: string): string {
 	return parts.length > 1 ? `${parts[0][0]}${parts.at(-1)![0]}` : (parts[0] ?? '?').slice(0, 2);
 }
 import type { RelativePoint } from './collaboration-geometry.js';
+import type {
+	DraftAvailability,
+	TimetableBlockPlacementSource,
+	TimetableBlockWorkspaceRoom
+} from '../../api/timetable.js';
+import { sameDraftSource, type OwnedDraftLease } from './collaboration-session.ts';
+
+/** Private room availability is useful only for the exact currently owned edit. */
+export function timetableEditRoomOptions(
+	rooms: TimetableBlockWorkspaceRoom[],
+	source: TimetableBlockPlacementSource | null,
+	lease: OwnedDraftLease | null,
+	availability: DraftAvailability | null,
+	originalRoomId: string | null = null
+): { ready: boolean; rooms: TimetableBlockWorkspaceRoom[]; retainedRoomId: string | null } {
+	if (
+		!source ||
+		source.kind !== 'existing_block' ||
+		!lease?.valid ||
+		lease.purpose !== 'edit' ||
+		!sameDraftSource(source, lease.source) ||
+		!availability?.roomOptions ||
+		!sameDraftSource(source, availability.source) ||
+		availability.roomOptions.reservationId !== lease.reservationId
+	)
+		return { ready: false, rooms: [], retainedRoomId: null };
+	const availableIds = new Set(availability.roomOptions.availableRoomIds);
+	return {
+		ready: true,
+		retainedRoomId:
+			originalRoomId &&
+			availableIds.has(originalRoomId) &&
+			rooms.some((room) => room.id === originalRoomId)
+				? originalRoomId
+				: null,
+		rooms: rooms.filter(
+			(room) => room.status.toUpperCase() === 'ACTIVE' && availableIds.has(room.id)
+		)
+	};
+}

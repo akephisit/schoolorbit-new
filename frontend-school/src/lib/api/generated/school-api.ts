@@ -20993,6 +20993,7 @@ export interface components {
 		DraftAvailability: {
 			blockedCells: components['schemas']['DraftBlockedCell'][];
 			context?: components['schemas']['DraftContext'] | null;
+			roomOptions?: components['schemas']['DraftRoomOptions'] | null;
 			source: components['schemas']['TimetableBlockPlacementSource'];
 		};
 		DraftBlockedCell: {
@@ -21167,6 +21168,11 @@ export interface components {
 		};
 		/** @enum {string} */
 		DraftReservationPurpose: 'drag' | 'edit';
+		DraftRoomOptions: {
+			availableRoomIds: string[];
+			/** Format: uuid */
+			reservationId: string;
+		};
 		DraftServerMessage:
 			| {
 					payload: components['schemas']['DraftStateSync'];

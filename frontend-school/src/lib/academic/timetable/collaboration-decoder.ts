@@ -442,6 +442,14 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 			return (
 				source(payload.source) &&
 				optional(payload.context, context) &&
+				optional(
+					payload.roomOptions,
+					(value) =>
+						object(value) &&
+						keys(value, ['reservationId', 'availableRoomIds']) &&
+						uuid(value.reservationId) &&
+						uniqueIds(value.availableRoomIds)
+				) &&
 				array(
 					payload.blockedCells,
 					(cell) =>

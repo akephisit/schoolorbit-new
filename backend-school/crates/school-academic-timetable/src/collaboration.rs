@@ -74,6 +74,7 @@ struct VisibilityIndex {
     staff: HashSet<Uuid>,
     groups: HashSet<Uuid>,
     periods: HashSet<Uuid>,
+    rooms: HashSet<Uuid>,
 }
 
 impl VisibilityIndex {
@@ -97,6 +98,7 @@ impl VisibilityIndex {
                 .iter()
                 .map(|entry| entry.id)
                 .collect(),
+            rooms: workspace.rooms.iter().map(|entry| entry.id).collect(),
             periods: workspace
                 .bell_periods
                 .iter()
@@ -106,7 +108,9 @@ impl VisibilityIndex {
     }
 }
 
+#[derive(Default)]
 struct MemberVisibility {
+    requires_reconcile: bool,
     read: VisibilityIndex,
     manage: Option<VisibilityIndex>,
 }
@@ -115,15 +119,13 @@ fn member_visibility(
     workspace: &TimetableBlockWorkspace,
     visibility: &TimetableVisibility,
     member: &DraftMember,
+    read_workspace: &TimetableBlockWorkspace,
 ) -> MemberVisibility {
     MemberVisibility {
-        read: VisibilityIndex::build(&crate::policy::project_workspace(
-            workspace,
-            visibility,
-            &member.access,
-        )),
+        requires_reconcile: false,
+        read: VisibilityIndex::build(read_workspace),
         manage: member.manage_access.as_ref().map(|access| {
-            let mut projected = crate::policy::project_workspace(workspace, visibility, access);
+            let mut projected = crate::policy::project_visibility(workspace, visibility, access);
             projected.blocks.retain(|block| {
                 let mut resources = crate::policy::TimetableResourceSet::default();
                 resources.include_block(block);
@@ -241,12 +243,15 @@ impl DraftRoom {
             return Err(AppError::Conflict("Draft connection limit reached".into()));
         }
         let connection_id = member.connection_id;
-        let indices = member_visibility(&state.workspace, &state.visibility, &member);
+        // Reject an over-cap public workspace before adding any membership or indices.
+        let projected =
+            crate::policy::project_workspace(&state.workspace, &state.visibility, &member.access)?;
+        let indices = member_visibility(&state.workspace, &state.visibility, &member, &projected);
         state.member_visibility.insert(connection_id, indices);
         state.projection_rebuilds += 1;
         state.members.insert(connection_id, member);
         state.empty_since = None;
-        let event = state_sync(&state, connection_id)?;
+        let event = state_sync(&state, connection_id, projected)?;
         drop(state);
         let _ = self.signals.send(DraftSignal::Presence(connection_id));
         Ok(event)
@@ -371,13 +376,19 @@ impl DraftRoom {
                 }
                 Ok(events)
             }
-            DraftSignal::Committed(seq) => journal::events_after(
-                &state,
-                member,
-                state.epoch,
-                seq.saturating_sub(1),
-                Some(seq),
-            ),
+            DraftSignal::Committed(seq) => {
+                let mut events = journal::events_after(
+                    &state,
+                    member,
+                    state.epoch,
+                    seq.saturating_sub(1),
+                    Some(seq),
+                )?;
+                if let Some(availability) = authority::availability(&state, member) {
+                    events.push(event(DraftServerMessage::DraftAvailability(availability)));
+                }
+                Ok(events)
+            }
             DraftSignal::Invalidated => {
                 Ok(vec![event(DraftServerMessage::DraftReconcileRequired {
                     reason: "draft_invalidated".into(),
@@ -431,7 +442,7 @@ impl DraftRoom {
                             AppError::Conflict(_) | AppError::NotFound(_) => "stale_reservation",
                             _ => return Err(error),
                         };
-                        Ok(vec![DraftEventEnvelope {
+                        let mut events = vec![DraftEventEnvelope {
                             epoch: state.epoch,
                             seq: state.seq,
                             event: DraftServerMessage::DraftCommandResult(DraftCommandResult {
@@ -445,7 +456,18 @@ impl DraftRoom {
                                 lease_token: None,
                                 expires_at: None,
                             }),
-                        }])
+                        }];
+                        // A rejected picker candidate must not strand an existing edit lease.
+                        if let Some(availability) =
+                            authority::availability(&state, &state.members[&connection_id])
+                        {
+                            events.push(DraftEventEnvelope {
+                                epoch: state.epoch,
+                                seq: state.seq,
+                                event: DraftServerMessage::DraftAvailability(availability),
+                            });
+                        }
+                        Ok(events)
                     }
                 }
             }
@@ -684,7 +706,11 @@ impl TimetableCollaborationRuntime {
     }
 }
 
-fn state_sync(state: &RoomState, connection_id: Uuid) -> Result<DraftEventEnvelope, AppError> {
+fn state_sync(
+    state: &RoomState,
+    connection_id: Uuid,
+    workspace: TimetableBlockWorkspace,
+) -> Result<DraftEventEnvelope, AppError> {
     let member = state.members.get(&connection_id).ok_or_else(stale)?;
     let users = state
         .members
@@ -699,11 +725,7 @@ fn state_sync(state: &RoomState, connection_id: Uuid) -> Result<DraftEventEnvelo
         seq: state.seq,
         event: DraftServerMessage::DraftStateSync(DraftStateSync {
             connection_id,
-            workspace: crate::policy::project_workspace(
-                &state.workspace,
-                &state.visibility,
-                &member.access,
-            ),
+            workspace,
             users,
             reservations: reservations(state, member),
         }),

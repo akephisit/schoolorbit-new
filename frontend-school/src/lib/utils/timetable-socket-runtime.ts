@@ -108,8 +108,10 @@ export function createTimetableSocketRuntime<Timer>(
 			const ready = await (dependencies.onResume?.(isCurrent) ?? Promise.resolve(true));
 			if (!isCurrent()) return;
 			resuming = false;
-			if (ready && desiredParams) connect(desiredParams);
-			else
+			if (ready && desiredParams) {
+				policyRecoveryRequired = false;
+				scheduleConnection(desiredParams, desiredIntentGeneration);
+			} else
 				reconnectTimer = dependencies.setTimer(
 					() => {
 						reconnectTimer = null;
@@ -211,7 +213,7 @@ export function createTimetableSocketRuntime<Timer>(
 		clearOnlineListener();
 		if (shouldReconnect && desiredParams) {
 			if (policyRecoveryRequired) void recoverPolicy();
-			else connect(desiredParams);
+			else scheduleConnection(desiredParams, desiredIntentGeneration);
 		}
 	}
 
@@ -239,7 +241,7 @@ export function createTimetableSocketRuntime<Timer>(
 			reconnectTimer = null;
 			if (shouldReconnect && desiredParams) {
 				if (policyRecoveryRequired) void recoverPolicy();
-				else connect(desiredParams);
+				else scheduleConnection(desiredParams, desiredIntentGeneration);
 			}
 		}, delay);
 	}
@@ -339,6 +341,7 @@ export function createTimetableSocketRuntime<Timer>(
 		}
 		policyRecoveryRequired = false;
 		awaitingPolicyBaseline = false;
+		reconnectAttempt = 0;
 		const nextParams = { ...params };
 		connectionIntentGeneration += 1;
 		shouldReconnect = true;

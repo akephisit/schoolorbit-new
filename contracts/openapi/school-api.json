@@ -45556,6 +45556,16 @@
               }
             ]
           },
+          "roomOptions": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftRoomOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source": {
             "$ref": "#/components/schemas/TimetableBlockPlacementSource"
           }
@@ -46294,6 +46304,26 @@
           "edit"
         ],
         "type": "string"
+      },
+      "DraftRoomOptions": {
+        "properties": {
+          "availableRoomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reservationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservationId",
+          "availableRoomIds"
+        ],
+        "type": "object"
       },
       "DraftServerMessage": {
         "oneOf": [

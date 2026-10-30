@@ -2310,3 +2310,374 @@ async fn scoped_lookup_gain_and_loss_match_fresh_authorized_http_projection() {
     manager.close(None).await.unwrap();
     scoped.close(None).await.unwrap();
 }
+
+async fn workspace_cap_fixture(kind: &str) {
+    let fixture = Fixture::new(&format!("collaboration_workspace_cap_{kind}")).await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let teacher = fixture
+        .auth
+        .insert_user(pool, "zzzz-cap-teacher", "active")
+        .await;
+    sqlx::query("UPDATE users SET first_name='zzzz',last_name='Visible teacher' WHERE id=$1")
+        .bind(teacher)
+        .execute(pool)
+        .await
+        .unwrap();
+    grant(
+        pool,
+        teacher,
+        &[
+            "academic_timetable.read.assigned",
+            "academic_timetable.manage.assigned",
+        ],
+    )
+    .await;
+    let (_, token) = fixture.auth.insert_session(pool, teacher, 199, false).await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let block = timetable_block_service::create_structural_blocks(
+        pool,
+        &TimetableMutationContext::for_tests(pool, Uuid::parse_str(ACTOR).unwrap()),
+        CreateStructuralTimetableBlocksRequest {
+            timetable_version_id: fixture.version,
+            academic_term_id: fixture.term,
+            structural_kind: TimetableStructuralKind::Other,
+            title: "Scoped cap fixture".into(),
+            note: None,
+            slots: vec![TimetableStructuralSlotInput {
+                day_of_week: "WED".into(),
+                bell_schedule_period_id: fixture.block.bell_schedule_period_id,
+            }],
+            homeroom_ids: vec![],
+            teacher_ids: vec![teacher],
+            all_homerooms: false,
+            all_teachers: false,
+            room_id: None,
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let path = format!("/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.block.academic_year_id, fixture.term, fixture.version);
+    let before = reqwest::Client::new()
+        .get(format!("http://{}{}", fixture.address, path))
+        .header("origin", "http://localhost:5173")
+        .header("x-school-subdomain", "tenant-a")
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(before.status(), 200, "{}", before.text().await.unwrap());
+    let before = before.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(before["staff"].as_array().unwrap().len(), 1);
+    assert_eq!(before["staff"][0]["id"], teacher.to_string());
+    for field in ["rooms", "homerooms", "learningGroups"] {
+        assert_eq!(before[field], json!([]));
+    }
+    match kind {
+        "staff" => {
+            sqlx::query("INSERT INTO users(username,email,password_hash,first_name,last_name,user_type,status) SELECT 'cap-staff-'||n,'cap-staff-'||n||'@example.invalid','unused-cap-fixture','AAAA','Unrelated '||n,'staff','active' FROM generate_series(1,2001) n")
+                .execute(pool).await.unwrap();
+        }
+        "rooms" => {
+            sqlx::query("INSERT INTO rooms(id,code,name_th,room_type,capacity,status) SELECT gen_random_uuid(),'CAP-ROOM-'||n,'Unrelated room '||n,'GENERAL',40,'ACTIVE' FROM generate_series(1,2001) n")
+                .execute(pool).await.unwrap();
+        }
+        "homerooms" => {
+            sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,room_number,capacity,is_active) SELECT gen_random_uuid(),'CAP-HOME-'||n,'Unrelated homeroom '||n,h.academic_year_id,h.grade_level_id,h.study_program_id,(10000+n)::text,40,true FROM (SELECT * FROM homerooms WHERE academic_year_id=$1 LIMIT 1) h CROSS JOIN generate_series(1,501) n")
+                .bind(fixture.block.academic_year_id).execute(pool).await.unwrap();
+        }
+        "groups" => {
+            // Build a new immutable source fixture; never rewrite an existing published snapshot.
+            let (source_id, mut snapshot): (Uuid, Value) = sqlx::query_as("SELECT source.id,source.snapshot FROM academic_timetable_versions timetable JOIN academic_delivery_versions source ON source.id=timetable.delivery_version_id WHERE timetable.id=$1")
+                .bind(fixture.version).fetch_one(pool).await.unwrap();
+            let offering = uuid(&snapshot["offerings"][0]["id"]);
+            let groups: Vec<Uuid> = sqlx::query_scalar("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT gen_random_uuid(),$1,$2,$3,'CAP-GROUP-'||n,'Unrelated group '||n,'draft','draft' FROM generate_series(1,2001) n RETURNING id")
+                .bind(offering).bind(fixture.term).bind(fixture.block.academic_year_id).fetch_all(pool).await.unwrap();
+            let extra = groups.into_iter().map(|id| json!({"id":id,"code":format!("CAP-{id}"),"name":"Unrelated source group","description":null,"capacity":null,"homeroomIds":[],"preferredRoomIds":[],"teachers":[]}));
+            snapshot["offerings"][0]["groups"]
+                .as_array_mut()
+                .unwrap()
+                .extend(extra);
+            let next = Uuid::new_v4();
+            sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,academic_term_id,academic_year_id,id,effective_from+1,reference_date,'published',$2,published_by,now(),gen_random_uuid(),repeat('0',64) FROM academic_delivery_versions WHERE id=$3")
+                .bind(next).bind(snapshot).bind(source_id).execute(pool).await.unwrap();
+            sqlx::query(
+                "UPDATE academic_timetable_versions SET delivery_version_id=$1 WHERE id=$2",
+            )
+            .bind(next)
+            .bind(fixture.version)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        _ => unreachable!(),
+    }
+    let response = reqwest::Client::new()
+        .get(format!("http://{}{}", fixture.address, path))
+        .header("origin", "http://localhost:5173")
+        .header("x-school-subdomain", "tenant-a")
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "unrelated {kind} must not reject a valid scoped workspace: {}",
+        response.text().await.unwrap()
+    );
+    let workspace = response.json::<Value>().await.unwrap()["data"].clone();
+    for field in ["staff", "rooms", "homerooms", "learningGroups", "blocks"] {
+        assert_eq!(
+            workspace[field], before[field],
+            "exact scoped {field} survives unrelated {kind}"
+        );
+    }
+    let school = fixture
+        .request(reqwest::Method::GET, &path)
+        .send()
+        .await
+        .unwrap();
+    if kind == "staff" {
+        assert_eq!(
+            school.status(),
+            200,
+            "school public Staff remains referenced only: {}",
+            school.text().await.unwrap()
+        );
+        let school = school.json::<Value>().await.unwrap();
+        assert!(school["data"]["staff"].as_array().unwrap().len() < 2000);
+        assert!(school["data"]["staff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["id"] == teacher.to_string()));
+    } else {
+        assert_eq!(
+            school.status(),
+            422,
+            "school projection retains its {kind} cap: {}",
+            school.text().await.unwrap()
+        );
+    }
+    let (mut socket, sync) = fixture.socket_with_cookie(&cookie).await;
+    for field in ["staff", "rooms", "homerooms", "learningGroups", "blocks"] {
+        assert_eq!(sync["payload"]["workspace"][field], workspace[field]);
+    }
+    let resources = fixture.room().resource_inputs().unwrap();
+    let count = match kind {
+        "staff" => resources.teacher_ids.len(),
+        "rooms" => resources.room_ids.len(),
+        "homerooms" => resources.homeroom_ids.len(),
+        "groups" => resources.learning_group_ids.len(),
+        _ => unreachable!(),
+    };
+    assert!(
+        count > if kind == "homerooms" { 500 } else { 2000 },
+        "private canonical identities must not truncate"
+    );
+    fixture.auth.tenant_a_pool.close().await;
+    let claim = command(&mut socket, "ClientClaim", json!({"requestId":Uuid::new_v4(),"source":{"kind":"existing_block","blockId":block.id,"rowVersion":block.row_version},"purpose":"edit"})).await;
+    assert_eq!(
+        claim["payload"]["accepted"], false,
+        "structural mutation remains school-only"
+    );
+    assert_eq!(claim["payload"]["code"], "forbidden");
+    socket
+        .send(Message::Text(
+            json!({"type":"ClientPresenceUpdate","payload":{
+                "context":{"viewMode":"teacher","viewId":teacher,"dayOfWeek":"WED"},
+                "anchor":{"kind":"block","blockId":block.id,"u":0.5,"v":0.5}
+            }})
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let presence = event(&mut socket, "DraftPresenceChanged").await;
+    assert_eq!(
+        presence["payload"]["connections"][0]["context"]["viewId"],
+        teacher.to_string(),
+        "hot scope retains the full teacher identity without PostgreSQL"
+    );
+    socket.close(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn workspace_cap_unrelated_active_staff() {
+    workspace_cap_fixture("staff").await;
+}
+#[tokio::test]
+async fn workspace_cap_unrelated_active_rooms() {
+    workspace_cap_fixture("rooms").await;
+}
+#[tokio::test]
+async fn workspace_cap_unrelated_active_homerooms() {
+    workspace_cap_fixture("homerooms").await;
+}
+#[tokio::test]
+async fn workspace_cap_unrelated_source_groups() {
+    workspace_cap_fixture("groups").await;
+}
+
+async fn room_options_event(socket: &mut Socket, reservation: &Value, expected: &[Uuid]) -> Value {
+    for _ in 0..10 {
+        let availability = event(socket, "DraftAvailability").await;
+        let options = &availability["payload"]["roomOptions"];
+        let mut actual = options["availableRoomIds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(uuid)
+            .collect::<Vec<_>>();
+        let mut wanted = expected.to_vec();
+        actual.sort_unstable();
+        wanted.sort_unstable();
+        if options["reservationId"] == *reservation && actual == wanted {
+            return options.clone();
+        }
+    }
+    panic!("edit room availability did not reach expected authoritative state");
+}
+
+#[tokio::test]
+async fn native_edit_room_options_hide_occupied_rooms_and_refresh_without_postgres() {
+    let fixture = Fixture::new("collaboration_edit_room_options").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let teacher = fixture
+        .auth
+        .insert_user(pool, "room-options-teacher", "active")
+        .await;
+    grant(
+        pool,
+        teacher,
+        &[
+            "academic_timetable.read.assigned",
+            "academic_timetable.manage.assigned",
+        ],
+    )
+    .await;
+    let (_, token) = fixture.auth.insert_session(pool, teacher, 198, false).await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let room_ids: Vec<Uuid> = sqlx::query_scalar("INSERT INTO rooms(id,code,name_th,room_type,capacity,status) SELECT gen_random_uuid(),'EDIT-OPTION-'||n,'Edit option '||n,'GENERAL',40,'ACTIVE' FROM generate_series(1,3) n RETURNING id")
+        .fetch_all(pool).await.unwrap();
+    let (offering, year, starts): (Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as("SELECT id,academic_year_id,starts_on FROM learning_offerings WHERE academic_term_id=$1 AND kind='course' ORDER BY id LIMIT 1")
+        .bind(fixture.term).fetch_one(pool).await.unwrap();
+    let group = Uuid::new_v4();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,'EDIT-OPTIONS','Edit options','draft','draft')")
+        .bind(group).bind(offering).bind(fixture.term).bind(year).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_by,updated_by) VALUES(gen_random_uuid(),$1,$2,$3,$4,'primary',$5,$6,$6)")
+        .bind(group).bind(fixture.term).bind(year).bind(teacher).bind(starts).bind(Uuid::parse_str(ACTOR).unwrap()).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_preferred_rooms(learning_group_id,academic_term_id,academic_year_id,room_id,rank) SELECT $1,$2,$3,id,ordinality::int FROM unnest($4::uuid[]) WITH ORDINALITY AS ids(id,ordinality)")
+        .bind(group).bind(fixture.term).bind(year).bind(&room_ids).execute(pool).await.unwrap();
+    super::timetable_block_service_tests::publish_updated_opening_for_draft(pool, fixture.version)
+        .await;
+    let context = TimetableMutationContext::for_tests(pool, Uuid::parse_str(ACTOR).unwrap());
+    let own = timetable_block_service::create_ordinary_block(
+        pool,
+        &context,
+        CreateOrdinaryTimetableBlockRequest {
+            timetable_version_id: fixture.version,
+            academic_term_id: fixture.term,
+            learning_group_id: group,
+            day_of_week: "WED".into(),
+            bell_schedule_period_id: fixture.block.bell_schedule_period_id,
+            room_id: Some(room_ids[0]),
+            instructor_ids: vec![teacher],
+            note: None,
+        },
+    )
+    .await
+    .unwrap();
+    let mut hidden = Vec::new();
+    for (day, room_id) in [("WED", room_ids[1]), ("THU", room_ids[2])] {
+        hidden.push(
+            timetable_block_service::create_structural_blocks(
+                pool,
+                &context,
+                CreateStructuralTimetableBlocksRequest {
+                    timetable_version_id: fixture.version,
+                    academic_term_id: fixture.term,
+                    structural_kind: TimetableStructuralKind::Other,
+                    title: "Outside assigned reader scope".into(),
+                    note: None,
+                    slots: vec![TimetableStructuralSlotInput {
+                        day_of_week: day.into(),
+                        bell_schedule_period_id: fixture.block.bell_schedule_period_id,
+                    }],
+                    homeroom_ids: vec![],
+                    teacher_ids: vec![],
+                    all_homerooms: true,
+                    all_teachers: false,
+                    room_id: Some(room_id),
+                },
+            )
+            .await
+            .unwrap()
+            .remove(0),
+        );
+    }
+    let (mut scoped, sync) = fixture.socket_with_cookie(&cookie).await;
+    for hidden in &hidden {
+        assert!(!sync["payload"]["workspace"]["blocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["id"] == hidden.id.to_string()));
+    }
+    let visible_rooms = sync["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|room| uuid(&room["id"]))
+        .collect::<Vec<_>>();
+    assert_eq!(visible_rooms.len(), 3);
+    let (mut peer, _) = fixture.socket().await;
+    let claim = command(&mut scoped, "ClientClaim", json!({"requestId":Uuid::new_v4(),"purpose":"edit","source":{"kind":"existing_block","blockId":own.id,"rowVersion":own.row_version}})).await;
+    assert_eq!(claim["payload"]["accepted"], true, "{claim}");
+    let reservation = &claim["payload"]["reservationId"];
+    let options = room_options_event(&mut scoped, reservation, &[room_ids[0], room_ids[2]]).await;
+    assert_eq!(
+        options["availableRoomIds"],
+        json!(visible_rooms
+            .iter()
+            .filter(|id| **id != room_ids[1])
+            .collect::<Vec<_>>()),
+        "public room order retained"
+    );
+    let peer_claim = command(&mut peer, "ClientClaim", json!({"requestId":Uuid::new_v4(),"purpose":"drag","source":{"kind":"existing_block","blockId":hidden[1].id,"rowVersion":hidden[1].row_version}})).await;
+    assert_eq!(peer_claim["payload"]["accepted"], true, "{peer_claim}");
+    // All remaining interaction and room-option updates must use the existing memory authority.
+    fixture.auth.tenant_a_pool.close().await;
+    let target = command(&mut peer, "ClientTarget", json!({"requestId":Uuid::new_v4(),"leaseToken":peer_claim["payload"]["leaseToken"],"target":{"dayOfWeek":"WED","bellSchedulePeriodId":fixture.block.bell_schedule_period_id,"blockId":null}})).await;
+    assert_eq!(target["payload"]["accepted"], true, "{target}");
+    let reserved = room_options_event(&mut scoped, reservation, &[room_ids[0]]).await;
+    assert!(!reserved.to_string().contains(&hidden[0].id.to_string()));
+    assert!(!reserved
+        .to_string()
+        .contains(peer_claim["payload"]["leaseToken"].as_str().unwrap()));
+    let release = command(
+        &mut peer,
+        "ClientRelease",
+        json!({"requestId":Uuid::new_v4(),"leaseToken":peer_claim["payload"]["leaseToken"]}),
+    )
+    .await;
+    assert_eq!(release["payload"]["accepted"], true);
+    room_options_event(&mut scoped, reservation, &[room_ids[0], room_ids[2]]).await;
+    let renew = command(
+        &mut scoped,
+        "ClientRenew",
+        json!({"requestId":Uuid::new_v4(),"leaseToken":claim["payload"]["leaseToken"]}),
+    )
+    .await;
+    assert_eq!(renew["payload"]["accepted"], true);
+    room_options_event(&mut scoped, reservation, &[room_ids[0], room_ids[2]]).await;
+    scoped.close(None).await.unwrap();
+    peer.close(None).await.unwrap();
+}
