@@ -12,6 +12,7 @@ use school_errors::AppError;
 
 type HmacSha256 = Hmac<Sha256>;
 
+const PENDING_DOMAIN: &[u8] = b"schoolorbit/session/pending/v1";
 const CSRF_DOMAIN: &[u8] = b"schoolorbit/session/csrf/v1";
 const IDENTIFIER_DOMAIN: &[u8] = b"schoolorbit/login/identifier/v1";
 const SOURCE_DOMAIN: &[u8] = b"schoolorbit/login/source/v1";
@@ -99,6 +100,32 @@ impl fmt::Debug for RawSessionToken {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("RawSessionToken([REDACTED])")
     }
+}
+
+/// PostgreSQL persists microseconds. Derivation always uses that same canonical precision.
+pub fn canonical_session_time(
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<chrono::DateTime<chrono::Utc>, AppError> {
+    chrono::DateTime::from_timestamp_micros(now.timestamp_micros())
+        .ok_or_else(|| AppError::ServiceUnavailable("session_time".into()))
+}
+
+pub fn pending_session_token(
+    key: &SessionHmacKey,
+    tenant_id: Uuid,
+    session_id: Uuid,
+    current: &RawSessionToken,
+    pending_created_at: chrono::DateTime<chrono::Utc>,
+) -> RawSessionToken {
+    let mut mac = key.hmac();
+    mac.update(PENDING_DOMAIN);
+    mac.update(tenant_id.as_bytes());
+    mac.update(session_id.as_bytes());
+    mac.update(current.as_bytes());
+    mac.update(&pending_created_at.timestamp_micros().to_be_bytes());
+    let mut bytes = [0_u8; 32];
+    bytes.copy_from_slice(&mac.finalize().into_bytes());
+    RawSessionToken(bytes)
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
@@ -406,5 +433,51 @@ mod tests {
             source_bucket(&key, tenant, "203.0.113.9".parse().unwrap()),
             source_bucket(&key, tenant, "::ffff:203.0.113.9".parse().unwrap())
         );
+    }
+}
+
+#[cfg(test)]
+mod pending_derivation_tests {
+    use super::*;
+    #[test]
+    fn pending_derivation_is_reproducible_at_database_precision_and_domain_bound() {
+        let key = SessionHmacKey::for_tests([61; 32]);
+        let raw = RawSessionToken::from_bytes([62; 32]);
+        let tenant = Uuid::new_v4();
+        let session = Uuid::new_v4();
+        let now = chrono::DateTime::from_timestamp(1_800_000_000, 123_456_789).unwrap();
+        let persisted = canonical_session_time(now).unwrap();
+        let original = pending_session_token(&key, tenant, session, &raw, now).token_hash();
+        assert_eq!(
+            original,
+            pending_session_token(&key, tenant, session, &raw, persisted).token_hash()
+        );
+        for different in [
+            pending_session_token(&key, Uuid::new_v4(), session, &raw, persisted),
+            pending_session_token(&key, tenant, Uuid::new_v4(), &raw, persisted),
+            pending_session_token(
+                &key,
+                tenant,
+                session,
+                &RawSessionToken::from_bytes([63; 32]),
+                persisted,
+            ),
+            pending_session_token(
+                &SessionHmacKey::for_tests([64; 32]),
+                tenant,
+                session,
+                &raw,
+                persisted,
+            ),
+            pending_session_token(
+                &key,
+                tenant,
+                session,
+                &raw,
+                persisted + chrono::Duration::microseconds(1),
+            ),
+        ] {
+            assert_ne!(original, different.token_hash());
+        }
     }
 }

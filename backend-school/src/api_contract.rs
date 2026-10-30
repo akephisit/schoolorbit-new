@@ -44,7 +44,7 @@ use school_admission::http::handlers::portal::{PortalDocumentMultipart, PortalUp
 use school_auth::consent::models::{ConsentRecordResponse, UserConsentStatus};
 use school_auth::models::{
     ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, ProfileResponse,
-    SessionListData, SessionResponse, UpdateProfileRequest,
+    SessionActivityRequest, SessionListData, SessionResponse, SessionState, UpdateProfileRequest,
 };
 use school_calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag,
@@ -303,6 +303,7 @@ use utoipa::OpenApi;
         school_auth_http::http::session_handlers::login,
         school_auth_http::http::session_handlers::logout,
         school_auth_http::http::session_handlers::me,
+        school_auth_http::http::session_handlers::activity,
         school_auth_http::http::handlers::get_profile,
         school_auth_http::http::handlers::update_profile,
         school_auth_http::http::session_handlers::change_password,
@@ -971,6 +972,9 @@ struct SchoolApiDoc;
         UpdateProfileRequest,
         ChangePasswordRequest,
         CurrentUserResponse,
+        SessionState,
+        SessionActivityRequest,
+        ApiResponse<SessionState>,
         SessionResponse,
         SessionListData,
         ApiResponse<CurrentUserResponse>,
@@ -2691,6 +2695,7 @@ mod tests {
                 "lastName",
                 "permissions",
                 "profileImageFileId",
+                "session",
                 "status",
                 "userType",
                 "username",
@@ -2725,6 +2730,33 @@ mod tests {
             assert!(!schemas[schema].is_null(), "missing schema {schema}");
         }
 
+        assert_eq!(
+            required(&schemas["SessionState"]),
+            vec![
+                "absoluteExpiresAt",
+                "idleExpiresAt",
+                "nextRenewalAt",
+                "serverNow",
+                "sessionId"
+            ]
+        );
+        assert_eq!(
+            required(&schemas["SessionActivityRequest"]),
+            vec!["expectedSessionId"]
+        );
+        assert_eq!(
+            schemas["SessionActivityRequest"]["additionalProperties"],
+            false
+        );
+        let activity = &document["paths"]["/api/auth/activity"]["post"];
+        assert_eq!(activity["operationId"], "renewSessionActivity");
+        assert_eq!(
+            activity["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_SessionState"
+        );
+        for status in ["400", "401", "403", "409", "503"] {
+            assert!(!activity["responses"][status].is_null());
+        }
         let current_user = &schemas["CurrentUserResponse"];
         assert_eq!(
             required(current_user),
@@ -2735,6 +2767,7 @@ mod tests {
                 "lastName",
                 "permissions",
                 "profileImageFileId",
+                "session",
                 "status",
                 "userType",
                 "username",

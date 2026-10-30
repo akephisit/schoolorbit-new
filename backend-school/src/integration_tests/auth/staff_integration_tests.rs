@@ -6,7 +6,6 @@ use school_auth::{
     events::SessionRevocationEvent,
     session_cache::SessionCache,
     session_crypto::{RawSessionToken, SessionHmacKey},
-    session_repository::SessionMaintenanceMode,
     session_service::{authenticate, login, revalidate, LoginCommand, SessionServiceContext},
 };
 use school_authorization::PermissionCache;
@@ -61,16 +60,10 @@ async fn soft_deleted_staff_cannot_reuse_a_warm_session_after_root_invalidation(
     .await
     .expect("active staff should log in");
 
-    assert!(authenticate(
-        &context,
-        token_hash,
-        now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("fresh session must not rotate"),
-    )
-    .await
-    .expect("warm authentication should succeed")
-    .is_some());
+    assert!(authenticate(&context, token_hash, now,)
+        .await
+        .expect("warm authentication should succeed")
+        .is_some());
     assert!(revalidate(&login.authenticated, now)
         .await
         .expect("warm realtime validation should succeed"));
@@ -81,16 +74,10 @@ async fn soft_deleted_staff_cannot_reuse_a_warm_session_after_root_invalidation(
     identity_cache.invalidate_identity_user(&tenant.subdomain, user_id);
     permission_cache.invalidate_user(&tenant.subdomain, user_id);
 
-    assert!(authenticate(
-        &context,
-        token_hash,
-        now,
-        SessionMaintenanceMode::RotateAndTouch,
-        || panic!("inactive staff session must not rotate"),
-    )
-    .await
-    .expect("inactive account should be rejected without a store failure")
-    .is_none());
+    assert!(authenticate(&context, token_hash, now,)
+        .await
+        .expect("inactive account should be rejected without a store failure")
+        .is_none());
     assert!(!revalidate(&login.authenticated, now)
         .await
         .expect("inactive realtime session should be rejected"));

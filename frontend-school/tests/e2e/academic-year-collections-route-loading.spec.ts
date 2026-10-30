@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -56,6 +57,7 @@ async function mockYearCollections(
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: ['*']
 				});
 				return;

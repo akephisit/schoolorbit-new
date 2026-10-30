@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -81,6 +82,7 @@ async function installShell(page: Page, permissions = ['*']) {
 				lastName: 'ตารางสอบ',
 				userType: 'staff',
 				status: 'ACTIVE',
+				session: sessionState(),
 				permissions
 			});
 			return;

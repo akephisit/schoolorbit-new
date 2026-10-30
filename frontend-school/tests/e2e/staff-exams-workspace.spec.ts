@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { mkdir } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
@@ -133,6 +134,7 @@ async function install(page: Page, mode: 'light' | 'dark' = 'light', values = ro
 					displayName: 'ทดสอบ ตารางสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: []
 				});
 			} else if (pathname === '/api/academic/context/options') {

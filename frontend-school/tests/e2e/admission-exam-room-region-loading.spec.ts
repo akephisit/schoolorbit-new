@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -80,6 +81,7 @@ async function mock(page: Page, manager = true, validContext = false) {
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
+					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
 					permissions: manager ? ['admission.manage.all'] : []

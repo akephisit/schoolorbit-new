@@ -6,21 +6,15 @@ use axum::{
 };
 use chrono::Utc;
 use school_http::HttpError as AppError;
-use uuid::Uuid;
 
 use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
     runtime::AuthRuntime,
-    session_crypto::RawSessionToken,
-    session_repository::SessionMaintenanceMode,
     session_service,
 };
 use school_auth_http::{
-    cookies::{
-        append_response_cookie, csrf_response_header, presented_session_token, set_session_cookie,
-        validate_csrf,
-    },
+    cookies::{csrf_response_header, presented_session_token, validate_csrf},
     origin::parse_realtime_tenant_hint,
     tenant::resolve_auth_tenant_context,
 };
@@ -30,10 +24,18 @@ pub async fn session_middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    match authenticate_request(&runtime, request, next).await {
+    let session_response = request.uri().path().starts_with("/api/auth/");
+    let mut response = match authenticate_request(&runtime, request, next).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
+    };
+    if session_response {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
     }
+    response
 }
 
 async fn authenticate_request(
@@ -53,15 +55,9 @@ async fn authenticate_request(
         .map_err(audit_origin_rejection)?;
     let token = presented_session_token(request.headers())?.ok_or_else(authentication_required)?;
     let context = runtime.service_context(tenant);
-    let authentication = session_service::authenticate(
-        &context,
-        token.token_hash(),
-        Utc::now(),
-        maintenance_mode(&method, &path),
-        RawSessionToken::generate,
-    )
-    .await?
-    .ok_or_else(authentication_required)?;
+    let authentication = session_service::authenticate(&context, token.token_hash(), Utc::now())
+        .await?
+        .ok_or_else(authentication_required)?;
 
     if is_unsafe_method(&method) {
         validate_csrf(request.headers(), &authentication.csrf_token).map_err(|error| {
@@ -73,48 +69,21 @@ async fn authenticate_request(
         })?;
     }
 
+    // Activity checks expectedSessionId in its owning handler before any promotion/touch.
+    let authenticated = if method == Method::POST && path == "/api/auth/activity" {
+        authentication.authenticated
+    } else {
+        session_service::acknowledge(&context, &authentication.authenticated, Utc::now()).await?
+    };
     let csrf_token = authentication.csrf_token;
-    let replacement = authentication.replacement;
-    request
-        .extensions_mut()
-        .insert(authentication.authenticated);
+    request.extensions_mut().insert(authenticated);
     let mut response = next.run(request).await;
 
-    if let Some(replacement) = replacement {
-        let encoded = replacement.encoded();
-        append_response_cookie(
-            &mut response,
-            set_session_cookie(
-                encoded.expose_for_cookie(),
-                replacement.cookie_max_age_seconds,
-            ),
-        );
-        insert_csrf_header(&mut response, &csrf_token);
-    } else if method == Method::GET && path == "/api/auth/me" {
+    if method == Method::GET && path == "/api/auth/me" {
         insert_csrf_header(&mut response, &csrf_token);
     }
 
     Ok(response)
-}
-
-pub(crate) fn maintenance_mode(method: &Method, path: &str) -> SessionMaintenanceMode {
-    let must_defer_rotation = (method == Method::GET && path == "/api/notifications/stream")
-        || (method == Method::POST && path == "/api/auth/logout-all")
-        || (method == Method::POST && path == "/api/auth/me/change-password")
-        || is_session_revoke_route(method, path);
-    if must_defer_rotation {
-        SessionMaintenanceMode::TouchOnly
-    } else {
-        SessionMaintenanceMode::RotateAndTouch
-    }
-}
-
-fn is_session_revoke_route(method: &Method, path: &str) -> bool {
-    method == Method::DELETE
-        && path
-            .strip_prefix("/api/auth/sessions/")
-            .and_then(|value| value.parse::<Uuid>().ok())
-            .is_some()
 }
 
 fn is_unsafe_method(method: &Method) -> bool {

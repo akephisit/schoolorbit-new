@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { RoutePerformanceProbe, summarizeFiveWarmRuns } from './helpers/route-performance';
 
@@ -124,6 +125,7 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 						lastName: 'การโหลด',
 						userType: 'staff',
 						status: 'ACTIVE',
+						session: sessionState(),
 						permissions: ['*']
 					});
 					return;

@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
 	ids,
@@ -148,6 +149,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					profileImageFileId: null,
 					permissions: options.permissions ?? ['*']
 				});

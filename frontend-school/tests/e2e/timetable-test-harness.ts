@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import type { Page, Route } from '@playwright/test';
 
 import type {
@@ -456,6 +457,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
+					session: sessionState(),
 					profileImageFileId: null,
 					permissions: options.permissions ?? ['*']
 				});

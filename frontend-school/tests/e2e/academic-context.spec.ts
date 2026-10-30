@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 declare global {
@@ -123,6 +124,7 @@ async function mockAcademicContextApis(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-08-24T00:00:00Z',
 					email: null,
 					nationalId: null,

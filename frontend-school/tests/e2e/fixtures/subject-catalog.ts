@@ -1,3 +1,4 @@
+import { sessionState } from './session-state';
 import { expect, type Page, type Route } from '@playwright/test';
 import type {
 	CatalogSubjectOverview,
@@ -184,6 +185,7 @@ export async function installSubjectCatalog(
 					displayName: 'ทดสอบ รายวิชา',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: options.readOnly
 						? [PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL]
 						: [

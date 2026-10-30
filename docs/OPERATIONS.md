@@ -1333,7 +1333,7 @@ Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity
 
 ## School Session Runtime and Cutover
 
-`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments. Replacing it invalidates every current school session. Keep it independent of other service credentials.
+`SESSION_HMAC_KEY` is the stable backend-school owner for domain-separated CSRF HMACs and reproducible pending session credentials. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments and restarts. A key change requires explicit session-revocation recovery because it changes CSRF and pending derivation. Keep it independent of other service credentials.
 
 `BASE_DOMAIN` owns the production tenant-domain boundary. `TRUSTED_PROXY_CIDRS` must contain only the networks of proxies that are allowed to supply forwarded client addresses; broad or unverified networks let clients spoof rate-limit identity. `SCHOOL_ALLOWED_DEV_ORIGINS` is only for explicit local origins such as `http://localhost:5173` and `http://127.0.0.1:5173`; leave it empty in production. Nginx must allow credentials and expose `X-CSRF-Token` while preserving exact tenant-origin validation.
 
@@ -1341,15 +1341,19 @@ Session policy is fixed in backend-school:
 
 - normal sessions: two-hour idle and twelve-hour absolute lifetime;
 - remembered sessions: seven-day idle and thirty-day (30-day) absolute lifetime;
-- credential rotation: every 15 minutes with a 60-second previous-token grace window;
-- last-seen/idle touch interval: five minutes;
+- credential rotation: activity stages one pending credential after 15 minutes; first valid use promotes it and starts a 60-second previous-token grace window and the next rotation interval;
+- human activity/idle renewal interval: five minutes; ordinary HTTP, SSE and WebSocket traffic never renew idle;
 - revoked or expired session retention: 30 days.
 
-Replacement cookies never outlive the remaining absolute lifetime. SSE and WebSocket authentication use touch-only maintenance; the next ordinary request performs any due credential rotation. Login, creation, revocation, rotation failure, CSRF/origin rejection, and realtime disconnect logs use structured event/reason fields. Never log passwords, raw session credentials, cookies, CSRF values, request bodies, or database URLs.
+Login creates the initial deadline; an explicit password change retains its existing atomic idle refresh, credential replacement and other-session revocation, clamped to the original absolute expiry, while clearing pending. Replacement cookies never outlive the remaining absolute lifetime. `POST /api/auth/activity` is the sole periodic replacement-cookie owner. A lost stage reply leaves the current credential valid; a repeated activity request reproduces the same pending value from the stable key and its persisted microsecond timestamp. Pending is bounded by session expiry, revocation and active account status, with no separate short expiry. Any valid request may acknowledge pending after its required origin/CSRF checks; acknowledgment never extends idle. Login, staging/promotion, revocation, rejection and realtime disconnect logs use structured event/reason fields. Session rejection distinguishes known idle/absolute expiry, revocation, inactive accounts, expired previous credentials and unknown credentials without exposing credentials or hashes. Never log passwords, raw session credentials, cookies, CSRF values, request bodies, or database URLs.
+
+Login and `/auth/me` supply `sessionId`, server time, idle/absolute deadlines and the next five-minute renewal time using already loaded session metadata. The central authenticated-page controller reports recent human input only when due; background auth/realtime recovery does not count as input. Activity fences its expected session ID before maintenance. A 409 `session_changed` tells the client to reconcile `/me` once without clearing the new session cookie. Session responses are no-store.
+
+Migration 145 expands the existing session row without changing applied migration 034 or backfilling credentials. Before the first pending credential is staged, older binaries can read existing rows. Once staging is active, recovery must roll forward with an acknowledged-rotation-capable backend and matching frontend: older binaries do not clear pending during immediate rotation and cannot implement this lifecycle. Keep universal maintenance and the single-process deployment boundary during cutover. No downmigration or second live School process is part of recovery. A very delayed older-generation Set-Cookie response across multiple completed rotations remains a bounded delivery race; the short coalesced activity endpoint reduces exposure but does not guarantee arbitrary response ordering.
 
 Run exactly one backend-school process: [the session cache](../backend-school/crates/school-auth/src/session_cache.rs)
 and revocation/permission events are process-local. API authentication reuses a successful database
-check for up to 60 seconds, bounded by session expiry and due maintenance. Realtime connections
+check for up to 60 seconds, bounded by session expiry. Guarded activity publishes final metadata with synchronous session cache fences, so duplicate non-due current-credential pulses without pending rotation reuse the new deadlines without another session read. Pending staging/promotion and explicit security transitions may write separately from the five-minute idle update. Realtime connections
 share database validation for up to five minutes per tenant/session/user; their 30-second heartbeat
 continues checking cached expiry without extending idle lifetime. Normal authenticated API reads
 also seed realtime validation. Logout, password change, and application-driven identity/permission

@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -36,6 +37,7 @@ test('course list and selected workspace render while policy is pending; learner
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-09-01T00:00:00Z',
 					email: null,
 					nationalId: null,
@@ -200,6 +202,7 @@ test('learner-only reader falls back from the default course URL to the permitte
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-09-01T00:00:00Z',
 					email: null,
 					nationalId: null,

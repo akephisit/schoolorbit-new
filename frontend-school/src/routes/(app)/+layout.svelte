@@ -9,6 +9,9 @@
 	import { createAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
 	import { workStore } from '#lib/stores/work.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { mountSessionActivity } from '#lib/auth/session-activity-browser.js';
+	import type { SessionWarning as SessionWarningState } from '#lib/auth/session-activity.js';
+	import SessionWarning from '#lib/components/layout/SessionWarning.svelte';
 	import {
 		createAcademicContextStore,
 		setAcademicContextStore
@@ -66,6 +69,8 @@
 	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
 	let authStatus = $state<AuthStatus>('checking');
+	let sessionWarning = $state<SessionWarningState | null>(null);
+	let sessionActivity: ReturnType<typeof mountSessionActivity> | undefined;
 	const academicContext = createAcademicContextStore({
 		navigate: goto
 	});
@@ -149,10 +154,14 @@
 	}
 
 	onMount(async () => {
+		sessionActivity = mountSessionActivity((warning) => {
+			sessionWarning = warning;
+		});
 		await authenticate(true);
 	});
 
 	onDestroy(() => {
+		sessionActivity?.dispose();
 		academicContext.reset();
 		appMenu.reset();
 		workStore.reset();
@@ -204,6 +213,10 @@
 		>
 			<!-- Fixed Header - ไม่ scroll -->
 			<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
+			<SessionWarning
+				warning={sessionWarning}
+				oncontinue={(event) => sessionActivity?.continueSession(event)}
+			/>
 
 			<!-- Main Content - scroll อยู่ที่นี่ -->
 			<main class="flex-1 min-h-0 overflow-y-auto">

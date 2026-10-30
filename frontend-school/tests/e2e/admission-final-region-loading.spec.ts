@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -59,6 +60,7 @@ async function mock(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
+					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
 					permissions: options.permissions ?? [

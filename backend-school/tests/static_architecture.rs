@@ -6533,7 +6533,8 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
     assert!(handler.contains("parse_realtime_tenant_hint("));
     assert!(handler.contains("session_events.subscribe()"));
     assert!(handler.contains("permission_events.subscribe()"));
-    assert!(handler.contains("SessionMaintenanceMode::TouchOnly"));
+    assert!(handler.contains("session_service::acknowledge("));
+    assert!(!handler.contains("session_service::activity("));
     assert!(handler.contains("session_service::authenticate("));
     assert!(handler.contains("session_service::revalidate("));
     assert!(
@@ -6907,12 +6908,19 @@ fn public_and_protected_routes_are_explicitly_partitioned() {
     assert!(app.contains("admission_staff_routes()"));
     assert!(app.contains("/internal/migrate-all"));
     assert!(application_route_source().contains("/api/admin/routes/sync"));
-    assert_eq!(
-        read_source(manifest_dir().join("crates/school-auth-http/src/http/routes.rs"))
-            .matches("DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)")
-            .count(),
-        2
-    );
+    let auth = read_source(workspace_crate_dir("school-auth-http").join("src/http/routes.rs"));
+    let compact: String = auth
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    for handler in ["login", "activity", "change_password"] {
+        assert!(compact.contains(&format!("post(session_handlers::{handler}).layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT))")),
+            "{handler} must retain its own bounded JSON body");
+    }
+    let public = extract_braced_block(&auth, "pub fn public_routes", false);
+    let protected = extract_braced_block(&auth, "pub fn protected_routes", false);
+    assert!(!public.contains("session_handlers::activity"));
+    assert!(protected.contains("session_handlers::activity"));
     assert!(app.contains("DefaultBodyLimit::max(APPLICATION_BODY_LIMIT)"));
 }
 

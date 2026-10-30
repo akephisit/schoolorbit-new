@@ -1,3 +1,4 @@
+import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 import type {
 	DeliveryVersion,
@@ -386,6 +387,7 @@ export async function mockDeliveryNavigation(
 					displayName: 'ทดสอบ การเปิดสอน',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: options.manager ? ['*'] : ['learning_offering.read.school']
 				});
 			if (path === '/api/menu/user') return reply(route, { groups: [] });

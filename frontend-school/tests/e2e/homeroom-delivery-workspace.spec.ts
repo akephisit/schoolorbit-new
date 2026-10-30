@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
 	DeliveryManagementOptions,
@@ -192,6 +193,7 @@ async function mockDelivery(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					createdAt: '2026-08-29T00:00:00Z',
 					email: null,
 					nationalId: null,
@@ -899,6 +901,7 @@ async function mockDraftLifecycle(
 				lastName: 'อย่างเดียว',
 				userType: 'staff',
 				status: 'ACTIVE',
+				session: sessionState(),
 				permissions: ['learning_offering.read.school']
 			})
 		);
@@ -1347,6 +1350,7 @@ test('read-only activity viewer has no creation actions or lazy management reque
 			lastName: 'อย่างเดียว',
 			userType: 'staff',
 			status: 'ACTIVE',
+			session: sessionState(),
 			permissions: ['learning_offering.read.school']
 		})
 	);

@@ -698,6 +698,17 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 The session-auth HTTP target also exercises encrypted Student Care data. Generate a fresh
 test-only key for that command as shown; never use a production encryption key.
 
+The auth tests cover side-effect-free validation, no idle extension from ordinary/realtime checks,
+idle-deadline/last-seen updates no more than once per five minutes, no redundant validation read after guarded
+metadata publication, absolute clamping, unknown/idle/absolute/revoked/inactive denial, and
+CSRF/tenant/expected-session fences before any touch, staging or pending promotion. Rotation
+regressions retain a valid current credential after a lost reply, resend the same pending credential,
+round-trip PostgreSQL microsecond timestamps, accept quiet pending sessions, promote once under
+concurrency, enforce the exact 60-second previous grace, invalidate warm old-current cache entries,
+clear pending during password/revocation operations and roll back three-column digest collisions.
+Cache tests independently count read closures and fence late fills, publication, permission changes,
+journal overflow, tenant boundaries and local expiry. These fixtures use synthetic users only.
+
 From `frontend-school`, verify the browser security boundary and client state:
 
 ```bash
@@ -708,6 +719,8 @@ E2E_SESSION_USERNAME='dedicated-disposable-account' \
 E2E_SESSION_PASSWORD='provided-at-runtime' \
 npx playwright test --list tests/e2e/login.spec.ts tests/e2e/session-security.spec.ts
 ```
+
+Activity browser tests use trusted input and synthetic session deadlines; retain existing auth/realtime checks and timetable read counts. Regenerate and verify wire types using the [API-contract recipe](#api-contract). Mocked browser tests do not establish deployed authentication or TLS.
 
 The destructive `session-security.spec.ts` account must be dedicated and disposable because the suite intentionally revokes a selected browser and then logs out every session. Never fall back to `SMOKE_*`, normal `E2E_USERNAME`/`E2E_PASSWORD`, or an operator account for that file.
 

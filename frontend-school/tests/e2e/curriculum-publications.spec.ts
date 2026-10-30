@@ -1,3 +1,4 @@
+import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
 	ids,
@@ -105,6 +106,7 @@ async function mock(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',
+					session: sessionState(),
 					permissions: options.readOnly ? ['academic_curriculum.read.school'] : ['*']
 				});
 			if (path === '/api/menu/user') return respond(route, { groups: [] });
