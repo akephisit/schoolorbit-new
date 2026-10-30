@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import { sessionState } from './fixtures/session-state.ts';
@@ -168,12 +168,35 @@ const cell = (period: string, day = 'MON') =>
 test.use({ serviceWorkers: 'block' });
 test('native visible and hidden presence bursts keep four-peer roster avatars downloaded once and continuously visible', async ({
 	browser
-}) => {
+}, testInfo) => {
 	const relay = createDraftRelay();
+	const lifecycle: unknown[] = [];
+	const browserBaselines = new Map<string, string>();
+	const extraBaselines: string[] = [];
 	const first = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
 		second = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 	const a = await first.newPage(),
 		b = await second.newPage();
+	for (const [name, page] of [
+		['a', a],
+		['b', b]
+	] as const)
+		page.on('websocket', (socket) => {
+			if (!new URL(socket.url()).searchParams.has('timetableVersionId')) return;
+			socket.on('framereceived', ({ payload }) => {
+				const event = decodeDraftEvent(String(payload));
+				if (event?.type === 'DraftStateSync') {
+					browserBaselines.set(name, event.payload.connectionId);
+					lifecycle.push({
+						event: 'browser-baseline',
+						name,
+						id: event.payload.connectionId,
+						at: Date.now()
+					});
+				}
+			});
+			socket.on('close', () => lifecycle.push({ event: 'browser-close', name, at: Date.now() }));
+		});
 	const mock = await installTimetableMock(a, { socketMode: 'native', relay });
 	await installTimetableMock(b, { socketMode: 'native', relay, userId: secondUser });
 	const grants: string[] = [],
@@ -212,6 +235,12 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 		await redirectSocket(second, server.url, secondUser, 'ผู้ขยับเมาส์');
 		await a.goto(url());
 		await b.goto(url());
+		await expect
+			.poll(() => [...relay.peers.values()].map((peer) => peer.user.userId).sort())
+			.toEqual([timetableIds.user, secondUser].sort());
+		await expect.poll(() => [...browserBaselines.keys()].sort()).toEqual(['a', 'b']);
+		await expect(a.getByRole('button', { name: /ไปยัง ผู้ขยับเมาส์/ })).toBeEnabled();
+		await expect(b.getByRole('button', { name: /ไปยัง ผู้ดูรูป/ })).toBeEnabled();
 		for (let index = 0; index < 3; index++) {
 			const address = new URL(server.url);
 			address.searchParams.set('academicTermId', timetableIds.term);
@@ -222,15 +251,45 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 			);
 			address.searchParams.set('fixtureName', `ผู้ร่วม ${index}`);
 			const socket = new WebSocket(address);
+			socket.onclose = (event) =>
+				lifecycle.push({
+					event: 'extra-close',
+					index,
+					code: event.code,
+					reason: event.reason,
+					at: Date.now()
+				});
 			extraSockets.push(socket);
 			await new Promise<void>((resolve, reject) => {
 				socket.onmessage = (event) => {
-					if (decodeDraftEvent(String(event.data))?.type === 'DraftStateSync') resolve();
+					const decoded = decodeDraftEvent(String(event.data));
+					if (decoded?.type === 'DraftStateSync') {
+						extraBaselines[index] = decoded.payload.connectionId;
+						lifecycle.push({
+							event: 'extra-baseline',
+							index,
+							id: decoded.payload.connectionId,
+							at: Date.now()
+						});
+						resolve();
+					}
 				};
 				socket.onerror = () => reject(new Error('native extra peer failed'));
 			});
 		}
-		await waitPeers(relay, 5);
+		await expect
+			.poll(() => [...relay.peers.values()].map((peer) => peer.user.userId).sort())
+			.toEqual(
+				[
+					timetableIds.user,
+					secondUser,
+					...[220, 221, 222].map((id) => `51000000-0000-4000-8000-${String(id).padStart(12, '0')}`)
+				].sort()
+			);
+		expect([...relay.peers.keys()].sort()).toEqual(
+			[...browserBaselines.values(), ...extraBaselines].sort()
+		);
+		for (const socket of extraSockets) expect(socket.readyState).toBe(WebSocket.OPEN);
 		for (const peer of relay.peers.values()) peer.user.profileImageFileId = timetableIds.room;
 		relay.commit(mock.workspace());
 		const images = a.locator('[data-timetable-roster] img');
@@ -245,6 +304,10 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 			.evaluateAll((values) =>
 				values.map((node) => node.getAttribute('data-timetable-collaborator'))
 			);
+		expect(membership).toEqual([
+			secondUser,
+			...[220, 221].map((id) => `51000000-0000-4000-8000-${String(id).padStart(12, '0')}`)
+		]);
 		expect(grants).toHaveLength(3);
 		expect(blobs).toHaveLength(3);
 		await a.locator('[data-timetable-roster]').evaluate((roster) => {
@@ -309,10 +372,34 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 		expect(mock.workspaceRequestCount()).toBe(1);
 		expect(mock.previewRequestCount()).toBe(0);
 	} finally {
-		for (const socket of extraSockets) socket.close();
-		await first.close();
-		await second.close();
-		await server.close();
+		try {
+			await mkdir(artifacts, { recursive: true });
+			await writeFile(
+				`${artifacts}/avatar-peer-lifecycle-${testInfo.repeatEachIndex}.json`,
+				JSON.stringify(
+					{
+						lifecycle,
+						peers: [...relay.peers.values()].map((peer) => ({
+							id: peer.id,
+							userId: peer.user.userId
+						}))
+					},
+					null,
+					2
+				)
+			);
+		} finally {
+			for (const socket of extraSockets) socket.close();
+			try {
+				await first.close();
+			} finally {
+				try {
+					await second.close();
+				} finally {
+					await server.close();
+				}
+			}
+		}
 	}
 });
 

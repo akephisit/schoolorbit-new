@@ -84,6 +84,30 @@ function harnessPlugin(): Plugin {
 				});
 			`;
 		},
+		transform(source, id) {
+			// Observe the actual provider result; production download and abort behavior stay intact.
+			if (id.split('?')[0] !== path.join(frontendRoot, 'src/lib/api/files.ts')) return;
+			const declaration = 'export async function downloadFile(';
+			if (!source.includes(declaration))
+				throw new Error('Private image provider probe must wrap the actual downloadFile export');
+			return (
+				source.replace(declaration, 'async function observedDownloadFile(') +
+				`
+				export async function downloadFile(fileId: string, resourceId?: string, signal?: AbortSignal): Promise<Blob> {
+					try { return await observedDownloadFile(fileId, resourceId, signal); }
+					finally {
+						if (fileId === 'test-file') {
+							// Let the awaiting component's continuation run before publishing completion.
+							queueMicrotask(() => queueMicrotask(() => {
+								document.documentElement.dataset.oldDownloadSettled = 'true';
+								document.documentElement.dataset.oldDownloadAborted = String(signal?.aborted);
+							}));
+						}
+					}
+				}
+			`
+			);
+		},
 		configureServer(server) {
 			server.middlewares.use((request, response, next) => {
 				const pathname = new URL(request.url ?? '/', 'http://test').pathname;
@@ -170,6 +194,7 @@ async function delivery(
 ) {
 	const grants: string[] = [],
 		blobs: string[] = [];
+	const oldResponse = gate();
 	await page.route('https://school-api.schoolorbit.app/api/files/**/download*', async (route) => {
 		const id = new URL(route.request().url()).pathname.split('/').at(-2)!;
 		grants.push(route.request().url());
@@ -190,6 +215,7 @@ async function delivery(
 						}
 			)
 		});
+		if (id === 'test-file' && held?.phase === 'grant') oldResponse.release();
 	});
 	await page.route(`${baseUrl}/__blob/**`, async (route) => {
 		blobs.push(route.request().url());
@@ -199,8 +225,39 @@ async function delivery(
 		)
 			await held.wait;
 		await route.fulfill({ status: 200, contentType: 'image/png', body: png });
+		if (
+			new URL(route.request().url()).pathname.endsWith('/test-file.png') &&
+			held?.phase === 'blob'
+		)
+			oldResponse.release();
 	});
-	return { grants, blobs };
+	return { grants, blobs, oldResponse: oldResponse.wait };
+}
+
+async function oldDownloadSettled(page: Page) {
+	await page.waitForFunction(() => document.documentElement.dataset.oldDownloadSettled === 'true');
+	expect(await page.evaluate(() => document.documentElement.dataset.oldDownloadAborted)).toBe(
+		'true'
+	);
+}
+
+async function deliverOldBlobDespiteAbort(page: Page) {
+	// Force a late transport fulfillment so the component's post-await abort guard is exercised.
+	await page.addInitScript(() => {
+		const fetch = globalThis.fetch;
+		globalThis.fetch = (input, init) => {
+			const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+			if (url.pathname === '/__blob/test-file.png') {
+				init?.signal?.addEventListener('abort', () => {
+					document.documentElement.dataset.oldBlobAbortObserved = 'true';
+				});
+				const options = { ...init };
+				delete options.signal;
+				return fetch(input, options);
+			}
+			return fetch(input, init);
+		};
+	});
 }
 
 test('keeps a private image hidden until the downloaded blob loads', async ({ page }) => {
@@ -327,6 +384,7 @@ for (const phase of ['grant', 'blob'] as const) {
 	}) => {
 		const held = gate();
 		const requests = await delivery(page, { phase, wait: held.wait });
+		if (phase === 'blob') await deliverOldBlobDespiteAbort(page);
 		try {
 			await page.goto(`${baseUrl}${harnessPath}`);
 			await expect
@@ -336,8 +394,16 @@ for (const phase of ['grant', 'blob'] as const) {
 			const image = page.locator('img[alt="Profile"]');
 			await expect(image).toHaveCSS('visibility', 'visible');
 			const current = await image.getAttribute('src');
+			expect(
+				await page.evaluate(() => document.documentElement.dataset.oldDownloadSettled)
+			).toBeUndefined();
+			if (phase === 'blob')
+				expect(
+					await page.evaluate(() => document.documentElement.dataset.oldBlobAbortObserved)
+				).toBe('true');
 			held.release();
-			await action(page, 'refresh');
+			await requests.oldResponse;
+			await oldDownloadSettled(page);
 			await expect(image).toHaveAttribute('src', current!);
 			expect(await metrics(page)).toEqual({ created: 1, revoked: 0 });
 			expect(requests.blobs).toHaveLength(phase === 'grant' ? 1 : 2);
@@ -358,8 +424,12 @@ test('unmount during a pending grant never downloads or reveals its stale image'
 		await page.goto(`${baseUrl}${harnessPath}`);
 		await expect.poll(() => requests.grants.length).toBe(1);
 		await action(page, 'unmount');
+		expect(
+			await page.evaluate(() => document.documentElement.dataset.oldDownloadSettled)
+		).toBeUndefined();
 		held.release();
-		await action(page, 'refresh');
+		await requests.oldResponse;
+		await oldDownloadSettled(page);
 		await expect(page.locator('img')).toHaveCount(0);
 		expect(requests.blobs).toHaveLength(0);
 		expect(await metrics(page)).toEqual({ created: 0, revoked: 0 });
