@@ -48,12 +48,7 @@
 		<div class="w-full min-w-0 space-y-2 sm:w-auto sm:min-w-72 sm:flex-1 sm:basis-72">
 			<div class="flex min-h-8 flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
-				{#if version.status === 'draft'}
-					<TimetableCollaborators
-						users={collaborators}
-						onJump={(connectionId) => onJumpCollaborator?.(connectionId)}
-					/>
-				{/if}
+
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
 					{version.status === 'draft'
 						? editing
@@ -61,6 +56,12 @@
 							: 'แบบร่าง · โหมดดู'
 						: 'เผยแพร่แล้ว · โหมดดู'}
 				</Badge>
+				{#if version.status === 'draft' && collaborators.length > 0}
+					<TimetableCollaborators
+						users={collaborators}
+						onJump={(connectionId) => onJumpCollaborator?.(connectionId)}
+					/>
+				{/if}
 			</div>
 			<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
 				<span class="inline-flex items-center gap-1.5">

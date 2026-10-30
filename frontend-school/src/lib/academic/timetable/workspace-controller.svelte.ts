@@ -16,7 +16,10 @@ export interface TimetableDragSource {
 	candidate: TimetableBlockPlacementCandidate;
 }
 
+export type TimetableOwnerSelections = Partial<Record<TimetableBoardView, string | null>>;
+
 class TimetableWorkspaceController {
+	private rememberedOwners: TimetableOwnerSelections = {};
 	workspace!: TimetableBlockWorkspace;
 	view = $state<TimetableBoardView>('homeroom');
 	selectedOwnerId!: string | null;
@@ -34,27 +37,52 @@ class TimetableWorkspaceController {
 		if (!editing) this.clearPlacement();
 	};
 
-	constructor(workspace: TimetableBlockWorkspace) {
+	constructor(workspace: TimetableBlockWorkspace, selections: TimetableOwnerSelections = {}) {
 		this.workspace = $state.raw(workspace);
-		this.selectedOwnerId = $state(this.initialOwnerId('homeroom'));
+		this.rememberedOwners = { ...selections };
+		this.repairRememberedOwners();
+		this.selectedOwnerId = $state(this.rememberedOwners.homeroom ?? null);
 	}
 
 	setWorkspace = (workspace: TimetableBlockWorkspace) => {
-		this.workspace = workspace;
-		if (!this.rows.some((row) => row.id === this.selectedOwnerId)) {
-			this.selectedOwnerId = this.initialOwnerId(this.view);
+		const previous = this.workspace.version;
+		const next = workspace.version;
+		if (
+			previous.id !== next.id ||
+			previous.academicYearId !== next.academicYearId ||
+			previous.academicTermId !== next.academicTermId
+		) {
+			this.rememberedOwners = {};
 		}
+		this.workspace = workspace;
+		this.repairRememberedOwners();
+		this.selectedOwnerId = this.rememberedOwners[this.view] ?? null;
 	};
 
 	setView = (view: TimetableBoardView) => {
 		this.view = view;
-		this.selectedOwnerId = this.initialOwnerId(view);
+		this.selectedOwnerId = this.rememberedOwners[view] ?? this.initialOwnerId(view);
+		this.rememberedOwners[view] = this.selectedOwnerId;
 		this.clearPlacement();
 	};
 
 	selectOwner = (ownerId: string) => {
-		if (this.rows.some((row) => row.id === ownerId)) this.selectedOwnerId = ownerId;
+		if (this.rows.some((row) => row.id === ownerId)) {
+			this.selectedOwnerId = ownerId;
+			this.rememberedOwners[this.view] = ownerId;
+		}
 	};
+
+	ownerSelections = (): TimetableOwnerSelections => ({ ...this.rememberedOwners });
+
+	private repairRememberedOwners(): void {
+		for (const view of ['homeroom', 'teacher', 'learning_group'] as const) {
+			const rows = rowsForTimetableView(this.board, view);
+			if (!rows.some((row) => row.id === this.rememberedOwners[view])) {
+				this.rememberedOwners[view] = this.initialOwnerId(view);
+			}
+		}
+	}
 
 	startPlacement = (
 		source: TimetableBlockPlacementSource,
@@ -101,8 +129,11 @@ class TimetableWorkspaceController {
 	}
 }
 
-export function createTimetableWorkspaceController(workspace: TimetableBlockWorkspace) {
-	return new TimetableWorkspaceController(workspace);
+export function createTimetableWorkspaceController(
+	workspace: TimetableBlockWorkspace,
+	selections?: TimetableOwnerSelections
+) {
+	return new TimetableWorkspaceController(workspace, selections);
 }
 
 export type { TimetableWorkspaceController };

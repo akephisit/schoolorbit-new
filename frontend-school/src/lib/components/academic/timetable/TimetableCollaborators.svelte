@@ -22,7 +22,7 @@
 </script>
 
 <div
-	class="inline-flex h-8 w-36 shrink-0 items-center gap-0.5"
+	class="inline-flex h-8 shrink-0 items-center gap-0.5"
 	aria-label="ผู้ร่วมจัดตาราง"
 	data-timetable-roster
 >

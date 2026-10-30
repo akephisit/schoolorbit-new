@@ -157,7 +157,6 @@
 		type OwnedDraftLease
 	} from '#lib/stores/timetable-socket.js';
 	import {
-		AlertTriangle,
 		Check,
 		FileSpreadsheet,
 		Download,
@@ -293,7 +292,6 @@
 	let workspaceRevision = 0;
 	let boardRetryVersionId = '';
 	let busy = $state(false);
-	let lifecycleError = $state('');
 	let draftChoiceOpen = $state(false);
 	let draftChoiceId = $state('');
 	let publishOpen = $state(false);
@@ -304,7 +302,7 @@
 		count: number;
 		label: string;
 	} | null>(null);
-	let saveError = $state<{ message: string; presentation: 'toast' | 'banner' } | null>(null);
+	let saveError = $state<{ message: string } | null>(null);
 	let publicationDate = $state('');
 	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
 	let publicationKey = '';
@@ -610,7 +608,7 @@
 	}
 
 	function requestedView(): TimetablePageView {
-		const value = page.url.searchParams.get('view');
+		const value = (page.shallow?.url ?? page.url).searchParams.get('view');
 		return value === 'teacher' || value === 'learning_group' || value === 'wholeSchool'
 			? value
 			: 'homeroom';
@@ -629,20 +627,27 @@
 	}
 
 	function initializeController(workspace: TimetableBlockWorkspace): void {
-		const keepEditing =
-			controller?.workspace.version.id === workspace.version.id && controller.editing;
-		const next = createTimetableWorkspaceController(workspace);
+		const previous = controller?.workspace.version;
+		const sameWorkspace =
+			previous?.id === workspace.version.id &&
+			previous.academicYearId === workspace.version.academicYearId &&
+			previous.academicTermId === workspace.version.academicTermId;
+		const keepEditing = sameWorkspace && controller?.editing;
+		const next = createTimetableWorkspaceController(
+			workspace,
+			sameWorkspace ? controller?.ownerSelections() : undefined
+		);
 		next.setEditing(Boolean(keepEditing));
 		activeView = requestedView();
 		next.setView(activeView === 'wholeSchool' ? 'homeroom' : activeView);
-		const ownerId = page.url.searchParams.get('ownerId');
+		const ownerId = (page.shallow?.url ?? page.url).searchParams.get('ownerId');
 		if (ownerId && activeView !== 'wholeSchool') next.selectOwner(ownerId);
 		controller = next;
 	}
 
 	function syncUrl(): void {
 		if (!controller) return;
-		const next = new URL(page.url.href);
+		const next = new URL((page.shallow?.url ?? page.url).href);
 		next.searchParams.set('timetableVersionId', controller.workspace.version.id);
 		next.searchParams.set('view', activeView);
 		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
@@ -654,6 +659,24 @@
 			shallow: true,
 			replace: true,
 			state: page.state
+		});
+	}
+
+	function notifyReadFailure(message: string, retry: () => void | Promise<void>): void {
+		const contextKey = activeContextKey;
+		const versionId = controller?.workspace.version.id ?? boardRetryVersionId;
+		toast.error(message, {
+			action: {
+				label: 'ลองใหม่',
+				onClick: () => {
+					if (
+						!disposed &&
+						activeContextKey === contextKey &&
+						(controller?.workspace.version.id ?? boardRetryVersionId) === versionId
+					)
+						void retry();
+				}
+			}
 		});
 	}
 
@@ -672,7 +695,7 @@
 			versionsLoading = false;
 			const selected = selectPreferredBoardVersion(
 				loadedVersions,
-				page.url.searchParams.get('timetableVersionId')
+				(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
 			);
 			if (!selected) {
 				controller = null;
@@ -690,6 +713,7 @@
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
+				notifyReadFailure(errorMessage, () => loadContext(termId, yearId));
 			}
 		} finally {
 			if (request.isCurrent(revision)) {
@@ -728,13 +752,16 @@
 			if (!controller) {
 				const preferred = selectPreferredBoardVersion(
 					loaded,
-					boardRetryVersionId || page.url.searchParams.get('timetableVersionId')
+					boardRetryVersionId ||
+						(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
 				);
 				if (preferred) void loadVersion(preferred.id, true);
 			}
 		} catch (error) {
-			if (!isAbortError(error) && versionsRequest.isCurrent(revision))
+			if (!isAbortError(error) && versionsRequest.isCurrent(revision)) {
 				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+				notifyReadFailure(versionsError, refreshVersions);
+			}
 		} finally {
 			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
@@ -770,14 +797,14 @@
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ';
-				toast.error(errorMessage);
+				notifyReadFailure(errorMessage, () => loadVersion(versionId, true));
 			}
 		} finally {
 			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
-	async function reload(message?: string): Promise<void> {
+	async function reload(message?: string, notifyFailure = true): Promise<void> {
 		if (!controller || !academicTermId || !academicYearId) return;
 		const targetController = controller;
 		if (pendingOperationCount > 0) {
@@ -802,7 +829,14 @@
 				reconcileAfterPending = true;
 				return;
 			}
+			const previousOwnerId = targetController.selectedOwnerId;
 			targetController.setWorkspace(workspace);
+			if (previousOwnerId !== targetController.selectedOwnerId) {
+				cancelPlacement();
+				currentAnchor = null;
+				pointerOwnerId = null;
+				syncUrl();
+			}
 			if (message) toast.success(message);
 		} catch (error) {
 			if (disposed || !reloadRequest.isCurrent(revision) || isAbortError(error)) return;
@@ -824,7 +858,7 @@
 			}
 			if (controller === targetController) {
 				refreshError = error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ';
-				toast.error(refreshError);
+				if (notifyFailure) notifyReadFailure(refreshError, () => reload());
 			}
 		} finally {
 			if (reloadRequest.isCurrent(revision)) targetController.setRefreshing(false);
@@ -949,7 +983,7 @@
 			const destination = navigation.to.url.href;
 			void waitForSaves().then(() => {
 				if (saveError) {
-					lifecycleError = saveError.message;
+					if (!disposed) toast.error(saveError.message);
 					return;
 				}
 				void goto(destination);
@@ -1442,8 +1476,7 @@
 		} catch (error) {
 			cancelPlacement();
 			saveError = {
-				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ',
-				presentation: 'toast'
+				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ'
 			};
 			toast.error(saveError.message);
 			return;
@@ -1609,8 +1642,7 @@
 				);
 			}
 			saveError = {
-				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ',
-				presentation: 'toast'
+				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ'
 			};
 			toast.error(saveError.message);
 		} finally {
@@ -1691,17 +1723,32 @@
 		}
 	}
 
+	function lifecycleFailureReporter(): (error: unknown, fallback: string) => void {
+		const contextKey = activeContextKey;
+		const targetController = controller;
+		return (error, fallback) => {
+			if (
+				disposed ||
+				isAbortError(error) ||
+				activeContextKey !== contextKey ||
+				controller !== targetController
+			)
+				return;
+			toast.error(error instanceof Error ? error.message : fallback);
+		};
+	}
+
 	async function createFirstTable(): Promise<void> {
 		if (!academicTermId || busy || !canManageSchool) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			const version = await createTimetableVersion({ academicTermId });
 			await refreshVersions();
 			await loadVersion(version.id, true);
 			controller?.setEditing(true);
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ';
+			reportFailure(error, 'สร้างตารางสอนไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1715,7 +1762,7 @@
 		await waitForSaves();
 		if (saveError) throw new Error(saveError.message);
 		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
-		await reload();
+		await reload(undefined, false);
 		if (refreshError) throw new Error(refreshError);
 		return controller.workspace.version;
 	}
@@ -1750,6 +1797,7 @@
 	}
 	async function startEditing(draftId?: string): Promise<void> {
 		if (!controller || busy) return;
+		const reportFailure = lifecycleFailureReporter();
 		if (controller.workspace.version.status === 'draft') {
 			if (!canManage) return;
 			if (
@@ -1758,7 +1806,6 @@
 					controller.workspace.version.deliveryVersionId
 			) {
 				busy = true;
-				lifecycleError = '';
 				try {
 					const version = await savedVersion();
 					await updateTimetableDeliverySource(version.id, {
@@ -1769,8 +1816,7 @@
 					await loadVersion(version.id, true);
 					controller?.setEditing(true);
 				} catch (error) {
-					lifecycleError =
-						error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนก่อนแก้ไขไม่สำเร็จ';
+					reportFailure(error, 'อัปเดตข้อมูลเปิดสอนก่อนแก้ไขไม่สำเร็จ');
 				} finally {
 					busy = false;
 				}
@@ -1784,7 +1830,6 @@
 			return;
 		}
 		busy = true;
-		lifecycleError = '';
 		try {
 			const source = await savedVersion();
 			const resume = draftId
@@ -1800,7 +1845,7 @@
 			if (controller?.workspace.version.id === draft.id) controller.setEditing(true);
 			draftChoiceOpen = false;
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'เปิดแบบร่างไม่สำเร็จ';
+			reportFailure(error, 'เปิดแบบร่างไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1808,12 +1853,12 @@
 	async function finishEditing(): Promise<void> {
 		if (!controller || busy) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			await savedVersion();
 			controller?.setEditing(false);
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'บันทึกตารางไม่สำเร็จ';
+			reportFailure(error, 'บันทึกตารางไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1821,7 +1866,7 @@
 	async function updateDeliverySource(): Promise<void> {
 		if (!controller?.editing || !canManageSchool || busy) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			const version = await savedVersion();
 			const latest = controller?.workspace.latestDeliveryVersionId;
@@ -1830,11 +1875,12 @@
 				rowVersion: version.rowVersion,
 				deliveryVersionId: latest
 			});
-			await reload();
+			await reload(undefined, false);
+			if (refreshError) throw new Error(refreshError);
 			await refreshVersions();
 			toast.success('อัปเดตข้อมูลเปิดสอนแล้ว กรุณาตรวจคาบที่มีเครื่องหมาย');
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนไม่สำเร็จ';
+			reportFailure(error, 'อัปเดตข้อมูลเปิดสอนไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1842,7 +1888,7 @@
 	async function openPublication(): Promise<void> {
 		if (!canPublish || busy) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			await savedVersion();
 			const now = new Date();
@@ -1851,7 +1897,7 @@
 			publicationKey = crypto.randomUUID();
 			publishOpen = true;
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'โหลดตารางไม่สำเร็จ';
+			reportFailure(error, 'โหลดตารางไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1859,7 +1905,7 @@
 	async function checkPublication(): Promise<void> {
 		if (!controller || busy || !publicationDate) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		publicationPreview = null;
 		try {
 			const version = await savedVersion();
@@ -1868,7 +1914,7 @@
 				effectiveFrom: publicationDate
 			});
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ';
+			reportFailure(error, 'ตรวจความพร้อมไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1876,7 +1922,7 @@
 	async function publishVersion(): Promise<void> {
 		if (!publicationPreview?.canPublish || !controller || busy || !canPublish) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			await waitForSaves();
 			const preview = publicationPreview;
@@ -1892,7 +1938,7 @@
 			await loadVersion(version.id, true);
 			toast.success('เผยแพร่เวอร์ชันตารางสอนใหม่แล้ว');
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'เผยแพร่ตารางสอนไม่สำเร็จ';
+			reportFailure(error, 'เผยแพร่ตารางสอนไม่สำเร็จ');
 			publicationPreview = null;
 		} finally {
 			busy = false;
@@ -1901,7 +1947,7 @@
 	async function openDeleteDraft(): Promise<void> {
 		if (!controller || busy || !canManageSchool) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			const version = await savedVersion();
 			const count = controller?.workspace.totalDraftBlockCount;
@@ -1914,7 +1960,7 @@
 			};
 			deleteDraftOpen = true;
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'ตรวจแบบร่างไม่สำเร็จ';
+			reportFailure(error, 'ตรวจแบบร่างไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -1922,7 +1968,7 @@
 	async function confirmDeleteDraft(): Promise<void> {
 		if (!controller || busy || !canManageSchool || !deleteDraftConfirmation) return;
 		busy = true;
-		lifecycleError = '';
+		const reportFailure = lifecycleFailureReporter();
 		try {
 			await waitForSaves();
 			const confirmation = deleteDraftConfirmation;
@@ -1938,7 +1984,7 @@
 			if (source) await loadVersion(source, true);
 			toast.success('ลบแบบร่างแล้ว');
 		} catch (error) {
-			lifecycleError = error instanceof Error ? error.message : 'ลบแบบร่างไม่สำเร็จ';
+			reportFailure(error, 'ลบแบบร่างไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
@@ -2130,8 +2176,7 @@
 				);
 			}
 			saveError = {
-				message: error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ',
-				presentation: 'banner'
+				message: error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ'
 			};
 			toast.error(saveError.message);
 		} finally {
@@ -2319,8 +2364,7 @@
 				);
 			}
 			saveError = {
-				message: error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ',
-				presentation: 'banner'
+				message: error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ'
 			};
 			toast.error(saveError.message);
 		} finally {
@@ -2403,9 +2447,9 @@
 			structuralOpen = false;
 			toast.success('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
 		} catch (error) {
+			if (disposed || controller !== operationController || isAbortError(error)) return;
 			saveError = {
-				message: error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ',
-				presentation: 'banner'
+				message: error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ'
 			};
 			toast.error(saveError.message);
 		} finally {
@@ -2473,7 +2517,10 @@
 							);
 							boardRetryVersionId ||=
 								selectPreferredBoardVersion(result.data, requestedVersionId)?.id ?? '';
-						} else versionsError = result.error;
+						} else {
+							versionsError = result.error;
+							notifyReadFailure(result.error, refreshVersions);
+						}
 						versionsLoading = false;
 					}
 				});
@@ -2488,7 +2535,13 @@
 							initializeController(result.data);
 							boardRetryVersionId = result.data.version.id;
 							syncUrl();
-						} else if (!result.ok) errorMessage = result.error;
+						} else if (!result.ok) {
+							errorMessage = result.error;
+							notifyReadFailure(result.error, () => {
+								if (boardRetryVersionId) return loadVersion(boardRetryVersionId, true);
+								if (termId && yearId) return loadContext(termId, yearId);
+							});
+						}
 						loading = false;
 					}
 				});
@@ -2935,10 +2988,6 @@
 			สรุปคาบ XLSX
 		</Button>
 	{/snippet}
-
-	{#if lifecycleError && !controller}<p role="alert" class="text-sm text-destructive">
-			{lifecycleError}
-		</p>{/if}
 	{#if !canRead}
 		<PageState
 			variant="permission"
@@ -2957,7 +3006,7 @@
 		<PageState
 			variant="error"
 			title="โหลดตารางสอนไม่สำเร็จ"
-			description={errorMessage}
+			description="ลองอีกครั้งเพื่อโหลดข้อมูลตารางสอน"
 			actionLabel="ลองอีกครั้ง"
 			onaction={() =>
 				boardRetryVersionId
@@ -2968,7 +3017,7 @@
 		<PageState
 			variant="error"
 			title="โหลดรุ่นตารางสอนไม่สำเร็จ"
-			description={versionsError}
+			description="ลองอีกครั้งเพื่อโหลดรุ่นตารางสอน"
 			actionLabel="ลองอีกครั้ง"
 			onaction={refreshVersions}
 		/>
@@ -3059,52 +3108,6 @@
 				{/snippet}
 			</TimetableWorkspaceHeader>
 
-			{#if versionsError}
-				<div
-					role="alert"
-					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					<span>{versionsError}</span>
-					<Button variant="outline" size="sm" onclick={refreshVersions}>ลองใหม่</Button>
-				</div>
-			{/if}
-			{#if errorMessage}
-				<div
-					role="alert"
-					class="flex flex-wrap items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					<AlertTriangle class="mt-0.5 size-4 shrink-0" />
-					<span>{errorMessage}</span>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							if (controller) void loadVersion(controller.workspace.version.id, true);
-						}}>ลองใหม่</Button
-					>
-				</div>
-			{/if}
-			{#if saveError?.presentation === 'banner'}<p
-					role="alert"
-					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					บันทึกไม่สำเร็จ: {saveError.message} กรุณาลองดำเนินการอีกครั้ง
-				</p>{/if}
-			{#if refreshError}
-				<div
-					role="alert"
-					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					<span>{refreshError}</span>
-					<Button variant="outline" size="sm" onclick={() => reload()}>ลองใหม่</Button>
-				</div>
-			{/if}
-			{#if lifecycleError}<div
-					role="alert"
-					class="rounded-xl border border-destructive/30 p-3 text-sm text-destructive"
-				>
-					{lifecycleError}
-				</div>{/if}
 			{#if draftHasNewDelivery}
 				<div
 					role="status"
@@ -3684,7 +3687,6 @@
 						>{/each}</Select.Content
 				></Select.Root
 			>
-			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
 			<Dialog.Footer
 				><Button variant="outline" disabled={busy} onclick={() => (draftChoiceOpen = false)}
 					>ยกเลิก</Button
@@ -3726,7 +3728,6 @@
 								{finding.message}
 							</p>{/each}{/if}
 				</div>{/if}
-			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
 			<Dialog.Footer
 				><Button variant="outline" disabled={busy} onclick={() => (publishOpen = false)}
 					>ยกเลิก</Button
@@ -3744,7 +3745,6 @@
 						0} คาบ การลบนี้ย้อนกลับไม่ได้</AlertDialog.Description
 				></AlertDialog.Header
 			>
-			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
 			<AlertDialog.Footer
 				><AlertDialog.Cancel disabled={busy}>ยกเลิก</AlertDialog.Cancel><Button
 					variant="destructive"
