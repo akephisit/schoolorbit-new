@@ -496,6 +496,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			const headers = route.request().headers();
 			relay.commit(workspace(), {
 				connectionId: headers['x-timetable-connection-id'],
+				leaseToken: headers['x-timetable-lease-token'],
 				mutationId: headers['x-timetable-mutation-id']
 			});
 		}

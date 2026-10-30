@@ -214,10 +214,11 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 		switch (event.type) {
 			case 'DraftPresenceChanged':
 				publish({
-					users: [
-						...state.users.filter((user) => user.userId !== event.payload.userId),
-						event.payload
-					]
+					users: state.users.some((user) => user.userId === event.payload.userId)
+						? state.users.map((user) =>
+								user.userId === event.payload.userId ? event.payload : user
+							)
+						: [...state.users, event.payload]
 				});
 				break;
 			case 'DraftPresenceLeft':
@@ -423,7 +424,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			type: 'ClientRelease',
 			payload: { requestId: dependencies.uuid(), leaseToken: lease.proof.leaseToken }
 		});
-		if (!result.accepted && result.code !== 'stale') throw leaseError(result.code);
+		if (!result.accepted && result.code !== 'stale_reservation') throw leaseError(result.code);
 	}
 	function presence(
 		context: DraftContext,

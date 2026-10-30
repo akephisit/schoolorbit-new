@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
 import { sessionState } from './fixtures/session-state.ts';
@@ -165,6 +165,278 @@ const cell = (period: string, day = 'MON') =>
 	`td[data-timetable-day="${day}"][data-timetable-period-id="${period}"]`;
 
 test.use({ serviceWorkers: 'block' });
+test('shared structural and synchronized anchors stay within the selected owner while avatar jumps and overview row/day bridges work', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	const first = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		second = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const otherRoom = '81000000-0000-4000-8000-000000000211';
+	const structural = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		'คาบร่วม',
+		[timetableIds.teacherA, timetableIds.teacherB]
+	);
+	const synchronized = makeSynchronizedTimetableBlock(timetableIds.blockB, timetableIds.period2, [
+		timetableIds.teacherA,
+		timetableIds.teacherB
+	]);
+	for (const block of [structural, synchronized])
+		block.homerooms.push({
+			...block.homerooms[0],
+			id: 'f1000000-0000-4000-8000-000000000211',
+			homeroomId: otherRoom,
+			code: 'M1-2',
+			name: 'ม.1/2'
+		});
+	const mockA = await installTimetableMock(a, {
+		socketMode: 'native',
+		relay,
+		blocks: [structural, synchronized],
+		includeSynchronizedDemand: true
+	});
+	const workspace = mockA.workspace();
+	workspace.homerooms.push({
+		...workspace.homerooms[0],
+		id: otherRoom,
+		code: 'M1-2',
+		name: 'ม.1/2',
+		roomNumber: '2'
+	});
+	workspace.synchronizedDemands[0].intendedHomeroomIds = [timetableIds.homeroom, otherRoom];
+	mockA.publishWorkspace(workspace, false);
+	const mockB = await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks: workspace.blocks,
+		homerooms: workspace.homerooms,
+		synchronizedDemands: workspace.synchronizedDemands,
+		userId: secondUser
+	});
+	const server = await startNativeDraftRelay(relay, mockA.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ครูผู้ชี้');
+		await redirectSocket(second, server.url, secondUser, 'ครูผู้ดู');
+		await a.goto(url('teacher', timetableIds.teacherA));
+		await b.goto(url('teacher', timetableIds.teacherA));
+		await waitPeers(relay, 2);
+		for (const page of [a, b])
+			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const id = [...relay.peers.values()].find((peer) => peer.user.userId === timetableIds.user)!.id;
+		const remote = b.locator(`[data-timetable-remote-cursor="${id}"]`);
+		const blockSelector = (blockId: string) =>
+			`[data-timetable-anchor="block"][data-block-id="${blockId}"]`;
+		async function owner(label: string) {
+			const selector = b.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
+			await selector.click();
+			await b.getByRole('option', { name: label, exact: true }).click();
+			await expect(selector).toContainText(label);
+		}
+		for (const block of [structural, synchronized]) {
+			await hoverPoint(a, blockSelector(block.id));
+			await cursorNear(b, id, blockSelector(block.id), 0.65, 0.4);
+			await owner('ครูคณิตศาสตร์ B');
+			await expect(b.locator(blockSelector(block.id))).toBeVisible();
+			await expect(remote).toHaveCount(0);
+			await b.getByRole('button', { name: /ไปยัง ครูผู้ชี้/ }).click();
+			await cursorNear(b, id, blockSelector(block.id), 0.65, 0.4);
+		}
+		for (const page of [a, b])
+			await page.getByRole('button', { name: 'ชั้น', exact: true }).click();
+		for (const block of [structural, synchronized]) {
+			await hoverPoint(a, blockSelector(block.id));
+			await cursorNear(b, id, blockSelector(block.id), 0.65, 0.4);
+			await owner('ม.1/2');
+			await expect(b.locator(blockSelector(block.id))).toBeVisible();
+			await expect(remote).toHaveCount(0);
+			await owner('ม.1/1');
+		}
+		const tray = 'aside article[data-timetable-source-kind="synchronized_offering"]';
+		await hoverPoint(a, tray);
+		await cursorNear(b, id, tray, 0.65, 0.4);
+		await owner('ม.1/2');
+		await expect(b.locator(tray)).toBeVisible();
+		await expect(remote).toHaveCount(0);
+		await b.getByRole('button', { name: /ไปยัง ครูผู้ชี้/ }).click();
+		await cursorNear(b, id, tray, 0.65, 0.4);
+		await hoverPoint(a, blockSelector(synchronized.id));
+		await b.getByRole('button', { name: 'โรงเรียน', exact: true }).click();
+		await hoverPoint(
+			b,
+			`td[data-timetable-owner-id="${otherRoom}"][data-timetable-period-id="${timetableIds.period3}"]`
+		);
+		await cursorNear(
+			b,
+			id,
+			`${blockSelector(synchronized.id)}[data-row-id="${timetableIds.homeroom}"]`,
+			0.65,
+			0.4
+		);
+		await a.getByRole('button', { name: 'โรงเรียน', exact: true }).click();
+		await hoverPoint(a, `${blockSelector(synchronized.id)}[data-row-id="${otherRoom}"]`);
+		await cursorNear(
+			b,
+			id,
+			`${blockSelector(synchronized.id)}[data-row-id="${otherRoom}"]`,
+			0.65,
+			0.4
+		);
+		await b.getByRole('combobox', { name: 'เลือกวันดูภาพรวม', exact: true }).click();
+		await b.getByRole('option', { name: 'วันอังคาร', exact: true }).click();
+		await expect(remote).toHaveCount(0);
+		await b.getByRole('combobox', { name: 'เลือกวันดูภาพรวม', exact: true }).click();
+		await b.getByRole('option', { name: 'วันจันทร์', exact: true }).click();
+		await cursorNear(
+			b,
+			id,
+			`${blockSelector(synchronized.id)}[data-row-id="${otherRoom}"]`,
+			0.65,
+			0.4
+		);
+		for (const mock of [mockA, mockB]) {
+			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.previewRequestCount()).toBe(0);
+		}
+	} finally {
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
+test('committed native saves release consumed proofs without warnings while an unrelated pending save keeps its lease', async ({
+	browser
+}) => {
+	let releaseCreate!: () => void;
+	const createGate = new Promise<void>((resolve) => {
+		releaseCreate = resolve;
+	});
+	const relay = createDraftRelay();
+	const first = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
+		second = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const block = makeTimetableBlock(timetableIds.blockB, timetableIds.period3, {
+		groupId: timetableIds.groupB,
+		offeringId: timetableIds.offeringB,
+		code: 'ว21101',
+		name: 'วิทยาศาสตร์พื้นฐาน',
+		instructorIds: [timetableIds.teacherB]
+	});
+	const mock = await installTimetableMock(a, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		createGate,
+		requiredPeriods: 2
+	});
+	await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		userId: secondUser,
+		requiredPeriods: 2
+	});
+	const warnings: string[] = [],
+		writes: number[] = [];
+	a.on('console', (message) => {
+		if (
+			message.type() === 'error' &&
+			message.text().includes('Unable to release timetable interaction; its lease will expire')
+		)
+			warnings.push(message.text());
+	});
+	a.on('response', (response) => {
+		if (
+			/\/api\/academic\/timetable-blocks\/(ordinary|[0-9a-f-]{36})$/.test(
+				new URL(response.url()).pathname
+			) &&
+			['POST', 'PUT'].includes(response.request().method())
+		)
+			writes.push(response.status());
+	});
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ครูผู้บันทึก');
+		await redirectSocket(second, server.url, secondUser, 'ผู้สังเกต');
+		await a.goto(url());
+		await b.goto(url());
+		await waitPeers(relay, 2);
+		for (const page of [a, b])
+			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		async function drop(source: Locator, period: string) {
+			const from = await source.boundingBox(),
+				to = await a.locator(cell(period)).boundingBox();
+			if (!from || !to) throw new Error('missing native drag geometry');
+			await a.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+			await a.mouse.down();
+			await a.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 18 });
+			await a.mouse.up();
+		}
+		const demand = (page: Page) =>
+			page
+				.locator(`aside article[data-timetable-source-kind="ordinary_demand"]`)
+				.filter({ hasText: 'คณิตศาสตร์พื้นฐาน' });
+		await drop(demand(a), timetableIds.period1);
+		await expect.poll(mock.createRequestCount).toBe(1);
+		await expect(demand(b)).toHaveAttribute('draggable', 'false');
+		const card = (page: Page) =>
+			page.locator(`[data-timetable-anchor="block"][data-block-id="${block.id}"]`);
+		await drop(card(a), timetableIds.period2);
+		await expect.poll(mock.updateRequestCount).toBe(1);
+		await expect(
+			b.locator(cell(timetableIds.period2)).locator(`[data-block-id="${block.id}"]`)
+		).toBeVisible();
+		await drop(card(a), timetableIds.period3);
+		await expect.poll(mock.updateRequestCount).toBe(2);
+		await expect(
+			b.locator(cell(timetableIds.period3)).locator(`[data-block-id="${block.id}"]`)
+		).toBeVisible();
+		await card(a)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		const dialog = a.getByRole('dialog');
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true }).click();
+		await a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true }).click();
+		await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+		await expect(card(b)).toContainText('ห้องปฏิบัติการ 2');
+		// A no-proof publication must not consume the other captured create lease either.
+		relay.commit(mock.workspace());
+		await expect
+			.poll(() => relay.received.filter((entry) => entry.message.type === 'ClientRenew').length)
+			.toBeGreaterThan(0);
+		await expect(demand(b)).toHaveAttribute('draggable', 'false');
+		releaseCreate();
+		await expect(
+			b.locator(`[data-timetable-anchor="block"][data-block-id="${timetableIds.createdBlock}"]`)
+		).toBeVisible();
+		await expect(a.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toHaveCount(0);
+		await expect(demand(b)).toHaveAttribute('draggable', 'true');
+		// The next successful claim orders its reply after the prior terminal release replies.
+		await expect(dialog).toHaveCount(0);
+		await card(a)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		expect(warnings).toEqual([]);
+		expect(writes).toEqual([200, 200, 200, 200]);
+		expect(mock.createRequestCount()).toBe(1);
+		expect(mock.updateRequestCount()).toBe(3);
+		expect(mock.previewRequestCount()).toBe(3);
+		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(relay.workspace?.blocks).toHaveLength(2);
+	} finally {
+		releaseCreate();
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
 test('two unready native drops time out without writes and only an explicit retry after baseline creates one block', async ({
 	browser
 }) => {

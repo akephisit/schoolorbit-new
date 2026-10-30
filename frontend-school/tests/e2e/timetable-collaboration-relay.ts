@@ -308,7 +308,7 @@ export function createDraftRelay() {
 							requestId: message.payload.requestId,
 							command,
 							accepted: false,
-							code: 'stale'
+							code: 'stale_reservation'
 						}
 					});
 					return;
@@ -365,7 +365,7 @@ export function createDraftRelay() {
 	}
 	function commit(
 		workspace: TimetableBlockWorkspace,
-		identity: { connectionId?: string; mutationId?: string } = {},
+		identity: { connectionId?: string; leaseToken?: string; mutationId?: string } = {},
 		publish = true
 	) {
 		const previous = canonical;
@@ -394,6 +394,15 @@ export function createDraftRelay() {
 		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
 		journal.push(event);
 		if (publish) for (const peer of peers.values()) peer.send(event);
+		const consumed = identity.leaseToken ? leases.get(identity.leaseToken) : null;
+		if (consumed && consumed.public.ownerConnectionId === identity.connectionId) {
+			leases.delete(consumed.token);
+			const peer = peers.get(consumed.public.ownerConnectionId);
+			if (peer?.active === consumed.token) {
+				peer.active = null;
+				activePresence(peer);
+			}
+		}
 		if (publish) reservations();
 		return event;
 	}
