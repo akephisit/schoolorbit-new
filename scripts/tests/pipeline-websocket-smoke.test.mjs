@@ -142,7 +142,10 @@ async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragm
       if (mode === 'no-pong') continue;
       socket.write(frame(10, payload));
      } else if (opcode === 10) observations.pongs++;
-     else if (opcode === 8) { observations.closes++; socket.end(frame(8, payload)); }
+     else if (opcode === 8) {
+      observations.closes++;
+      socket.end(mode === 'close-without-reply' ? undefined : frame(8, payload));
+     }
      else assert.fail('Unexpected client frame');
     }
    } catch (error) { observations.errors.push(error.message); socket.destroy(); }
@@ -200,6 +203,30 @@ test('standalone smoke rejects declared frame and cumulative event overflow befo
    assert.doesNotMatch(result.stdout + result.stderr, /synthetic-private|00000000|Traceback|localhost/);
    assert.equal(observations.waitedForOversizedPayload, false, 'must refuse the header before the fixture payload guard fires');
    assert.equal(observations.commands.length, 0);
+   assert.deepEqual(observations.errors, []);
+  });
+ }
+});
+
+test('standalone smoke requires the close reply and reports only bounded failure phases', async t => {
+ const directory = temporary(t);
+ for (const [mode, phase, status] of [
+  ['reject', 'handshake_status', ' status=403'],
+  ['bad-handshake', 'handshake_headers', ''],
+  ['invalid-state', 'state', ''],
+  ['no-pong', 'pong', ''],
+  ['close-without-reply', 'close', '']
+ ]) {
+  await t.test(mode, async child => {
+   const { port, observations } = await fixtureServer(child, { mode });
+   const result = await runProbe(directory, `http://localhost:${port}`, { timeout: '0.4' });
+   assert.equal(result.status, 1);
+   assert.equal(result.stderr, `WebSocket acceptance failed phase=${phase}${status}\n`);
+   assert.doesNotMatch(result.stdout + result.stderr, /synthetic-private|00000000|Traceback|leaseToken|Synthetic staff|localhost/);
+   if (mode === 'close-without-reply') {
+    assert.equal(observations.pings, 1);
+    assert.equal(observations.closes, 1, 'EOF after the client close must not count as the server close reply');
+   }
    assert.deepEqual(observations.errors, []);
   });
  }

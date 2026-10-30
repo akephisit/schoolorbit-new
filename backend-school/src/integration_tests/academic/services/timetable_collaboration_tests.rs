@@ -2681,3 +2681,128 @@ async fn native_edit_room_options_hide_occupied_rooms_and_refresh_without_postgr
     scoped.close(None).await.unwrap();
     peer.close(None).await.unwrap();
 }
+
+#[tokio::test]
+async fn standalone_websocket_smoke_completes_term_and_draft_close_handshakes() {
+    use std::io::Write;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+    struct PrivateProbeDirectory(std::path::PathBuf);
+    impl Drop for PrivateProbeDirectory {
+        fn drop(&mut self) {
+            if self.0.exists() {
+                std::fs::remove_dir_all(&self.0).expect("remove private probe fixture files");
+            }
+        }
+    }
+    let fixture = Fixture::new("standalone_websocket_close_handshakes").await;
+    let directory = PrivateProbeDirectory(
+        std::env::temp_dir().join(format!("schoolorbit-native-ws-probe-{}", Uuid::new_v4())),
+    );
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&directory.0)
+        .unwrap();
+    let write_private = |name: &str, bytes: &[u8]| {
+        let path = directory.0.join(name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        file.write_all(bytes).unwrap();
+        path
+    };
+    let session = fixture
+        .cookie
+        .strip_prefix("__Host-schoolorbit_session=")
+        .unwrap();
+    let cookie_path = write_private("cookies", format!("# Netscape HTTP Cookie File\n#HttpOnly_127.0.0.1\tFALSE\t/\tTRUE\t0\t__Host-schoolorbit_session\t{session}\n").as_bytes());
+    let response = fixture.request(reqwest::Method::GET, &format!("/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.block.academic_year_id, fixture.term, fixture.version)).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let workspace_path = write_private("workspace", &response.bytes().await.unwrap());
+    let script = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/smoke_test.sh"),
+    )
+    .unwrap();
+    let probe = script
+        .split_once("timetable_websocket_smoke() {")
+        .unwrap()
+        .1
+        .split_once("# Timetable WebSocket read-only smoke end")
+        .unwrap()
+        .0;
+    // Execute the acceptance owner's exact inline client, with real opaque-session middleware.
+    let shell = format!("pass() {{ :; }}; fail() {{ return 1; }}\ntimetable_websocket_smoke() {{{probe}\ncookie_jar=$1\ntimetable_websocket_smoke fixture \"$2\" \"$3\" \"$4\" \"$5\"\n");
+    let mut outcomes = Vec::new();
+    for (mode, version) in [
+        ("term", String::new()),
+        ("draft", fixture.version.to_string()),
+    ] {
+        let output = tokio::time::timeout(
+            Duration::from_secs(20),
+            tokio::process::Command::new("bash")
+                .args(["-euc", &shell, "native-websocket-probe"])
+                .arg(&cookie_path)
+                .arg(fixture.block.academic_year_id.to_string())
+                .arg(fixture.term.to_string())
+                .arg(version)
+                .arg(&workspace_path)
+                .env_clear()
+                .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+                .env("SMOKE_API_URL", format!("http://{}", fixture.address))
+                .env("SMOKE_ORIGIN", "http://localhost:5173")
+                .env("SMOKE_SUBDOMAIN", "tenant-a")
+                .env("SMOKE_DIRECT_BACKEND", "true")
+                .env("SMOKE_RESOLVE_IP", "")
+                .env("SMOKE_CA_CERT", "")
+                .env("SMOKE_RELEASE_PROBE_TOKEN", "")
+                .env("SMOKE_TIMEOUT_SECONDS", "5")
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .expect("bounded standalone probe")
+        .unwrap();
+        // Never put raw stderr, frames, URLs or session values in assertion output.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let phase = [
+            "input",
+            "cookie",
+            "connect",
+            "tls",
+            "handshake_status",
+            "handshake_headers",
+            "state",
+            "pong",
+            "close",
+        ]
+        .into_iter()
+        .find(|phase| stderr.trim() == format!("WebSocket acceptance failed phase={phase}"))
+        .unwrap_or(if output.status.success() {
+            "complete"
+        } else {
+            "unexpected_diagnostic"
+        });
+        outcomes.push((mode, output.status.success(), phase));
+    }
+    drop(directory);
+    assert!(
+        outcomes.iter().all(|(_, success, _)| *success),
+        "standalone acceptance mode/success/phase: {outcomes:?}"
+    );
+    let room = fixture.room();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !fixture
+            .manager
+            .get_state_snapshot("tenant-a".into(), fixture.term)
+            .is_empty()
+            || !room.members().unwrap().is_empty()
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("term and draft Close must remove their memberships");
+}

@@ -9,7 +9,7 @@ use axum::{
 };
 use chrono::Utc;
 use dashmap::DashMap;
-use futures::stream::StreamExt;
+use futures::{SinkExt, StreamExt};
 use school_academic_timetable::services::timetable_realtime_service::{
     authorize_socket, TimetableSocketAccess,
 };
@@ -1139,7 +1139,14 @@ async fn handle_socket(
                             break;
                         }
                     }
-                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Ok(Message::Close(_))) => {
+                        // Reading Close queues tungstenite's reply; flush before dropping transport.
+                        if socket.flush().await.is_err() {
+                            break;
+                        }
+                        break;
+                    }
+                    Some(Err(_)) | None => break,
                     Some(Ok(_)) => {
                         last_inbound = Instant::now();
                     }

@@ -412,6 +412,8 @@ import uuid
 
 # Match the browser decoder's complete UTF-8 event budget, including JSON overhead.
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+phase = "input"
+http_status = None
 
 def require(condition):
     if not condition:
@@ -438,6 +440,7 @@ def workspace(value, year_id, term_id, version_id):
     require("totalDraftBlockCount" in value and (count is None or type(count) is int and count >= 0))
 
 def run():
+    global phase, http_status
     cookie_path, year_id, term_id, version_id, workspace_path = sys.argv[1:]
     canonical_uuid(year_id)
     canonical_uuid(term_id)
@@ -453,6 +456,7 @@ def run():
     direct = os.environ["SMOKE_DIRECT_BACKEND"] == "true"
     require(url.scheme == "https" or direct and url.hostname in ("localhost", "127.0.0.1", "::1"))
     port = url.port or (443 if url.scheme == "https" else 80)
+    phase = "cookie"
     jar = http.cookiejar.MozillaCookieJar(cookie_path)
     jar.load(ignore_discard=True, ignore_expires=True)
     cookies = [cookie for cookie in jar if cookie.name == "__Host-schoolorbit_session"
@@ -484,11 +488,14 @@ def run():
     timeout = min(float(os.environ["SMOKE_TIMEOUT_SECONDS"]), 120)
     require(timeout > 0)
     deadline = time.monotonic() + timeout
+    phase = "connect"
     connection = socket.create_connection((os.environ["SMOKE_RESOLVE_IP"] or url.hostname, port), timeout)
     try:
         if url.scheme == "https":
+            phase = "tls"
             context = ssl.create_default_context(cafile=os.environ["SMOKE_CA_CERT"] or None)
             connection = context.wrap_socket(connection, server_hostname=url.hostname)
+        phase = "handshake_status"
         connection.sendall(("GET " + request_path + " HTTP/1.1\r\n" + "".join(
             name + ": " + value + "\r\n" for name, value in headers.items()) + "\r\n").encode("ascii"))
         buffered = bytearray()
@@ -510,7 +517,11 @@ def run():
             require(len(response) < 16384)
             response.extend(receive(1))
         lines = response.decode("ascii").split("\r\n")
+        status_parts = lines[0].split(" ")
+        if len(status_parts) >= 2 and len(status_parts[1]) == 3 and status_parts[1].isascii() and status_parts[1].isdigit():
+            http_status = int(status_parts[1])
         require(lines[0].split(" ")[:2] == ["HTTP/1.1", "101"])
+        phase = "handshake_headers"
         response_headers = {}
         for line in lines[1:-2]:
             name, value = line.split(":", 1)
@@ -579,6 +590,7 @@ def run():
                     return message
             raise ValueError("Missing realtime state")
 
+        phase = "state"
         sync = initial_sync()
         if version_id:
             require(sync.get("type") == "DraftStateSync")
@@ -616,6 +628,7 @@ def run():
             require(isinstance(sync["payload"].get("users"), list))
             sequence(sync["payload"].get("current_seq"))
         # Replay at the current sequence can legitimately emit no text response.
+        phase = "pong"
         ping = os.urandom(12)
         send(9, ping)
         for _ in range(128):
@@ -633,6 +646,7 @@ def run():
                 } and isinstance(message.get("payload"), dict))
         else:
             raise ValueError("Missing realtime pong")
+        phase = "close"
         send(8, struct.pack("!H", 1000))
         for _ in range(64):
             opcode, _ = text_or_control()
@@ -647,6 +661,10 @@ try:
     run()
 except Exception:
     # Never print response bodies, full URLs, session cookies or transport errors.
+    diagnostic = "WebSocket acceptance failed phase=" + phase
+    if phase == "handshake_status" and http_status is not None:
+        diagnostic += " status=" + str(http_status)
+    sys.stderr.write(diagnostic + "\n")
     sys.exit(1)
 PY
         pass "$name state sync, read-only frames and ping/pong"
