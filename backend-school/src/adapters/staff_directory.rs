@@ -10,6 +10,16 @@ pub(crate) static STAFF_DIRECTORY: ApplicationStaffDirectory = ApplicationStaffD
 
 #[async_trait]
 impl StaffDirectoryPort for ApplicationStaffDirectory {
+    async fn collaboration_portraits(
+        &self,
+        connection: &mut PgConnection,
+        viewer: &school_authorization::ActorContext,
+        user_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+        school_staff::services::collaboration_portraits_on_connection(connection, viewer, user_ids)
+            .await
+    }
+
     async fn subject_groups_for_users(
         &self,
         connection: &mut PgConnection,

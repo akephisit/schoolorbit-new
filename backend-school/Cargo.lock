@@ -847,6 +847,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-cron-scheduler",
+ "tokio-tungstenite",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -4003,6 +4004,7 @@ dependencies = [
 name = "school-academic-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "chrono",
  "chrono-tz",

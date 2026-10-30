@@ -132,10 +132,22 @@ pub(crate) async fn get_workspace(
     access: &TimetableAccessFilter,
     staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
-    const MAX_GROUPS: i64 = 2_000;
-    const MAX_HOMEROOMS: i64 = 500;
-    const MAX_ROOMS: i64 = 2_000;
-    const MAX_STAFF: i64 = 2_000;
+    let (workspace, visibility) =
+        get_canonical_workspace(connection, query, staff_directory).await?;
+    crate::policy::project_workspace(&workspace, &visibility, access)
+}
+
+pub(crate) async fn get_canonical_workspace(
+    connection: &mut sqlx::PgConnection,
+    query: TimetableBlockWorkspaceQuery,
+    staff_directory: &dyn crate::ports::StaffDirectoryPort,
+) -> Result<(TimetableBlockWorkspace, crate::policy::TimetableVisibility), AppError> {
+    let access = &TimetableAccessFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    // Canonical metadata is private authority state. Public workspace limits belong after
+    // viewer projection; unrelated school resources must neither reject nor truncate it.
 
     let mut version = super::timetable_version_service::get_version_on_connection(
         connection,
@@ -247,11 +259,7 @@ pub(crate) async fn get_workspace(
             .iter()
             .any(|offering| offering.id == target.learning_offering_id)
     });
-    if source_group_ids.len() > MAX_GROUPS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
-        ));
-    }
+
     let staff_ids =
         visible_offerings
             .iter()
@@ -273,18 +281,19 @@ pub(crate) async fn get_workspace(
         .query_as::<(Uuid, String, String)>(
             "academic_timetable.services.timetable_block_queries.get_workspace",
             r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
-           FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
-           ORDER BY 2, id LIMIT $2"#,
+           FROM user_display_names WHERE (status='active' OR id = ANY($1)) AND user_type = 'staff'
+           ORDER BY 2, id"#,
         )
         .bind(&staff_ids)
-        .bind(MAX_STAFF + 1)
         .fetch_all()
         .await?;
-    if staff.len() > MAX_STAFF as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
-        ));
-    }
+
+    let staff_ids = staff
+        .iter()
+        .map(|(id, _, _)| *id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     // Assignment identity is pinned; names share the current workspace staff projection.
     let staff_names = staff
         .iter()
@@ -491,20 +500,14 @@ pub(crate) async fn get_workspace(
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            WHERE homeroom.academic_year_id = $1
              AND (($2 AND homeroom.is_active) OR homeroom.id = ANY($3))
-           ORDER BY grade.level_type, grade.year, homeroom.room_number, homeroom.code
-           LIMIT $4"#,
+           ORDER BY grade.level_type, grade.year, homeroom.room_number, homeroom.code"#,
         )
         .bind(query.academic_year_id)
         .bind(access.includes_school_owned)
         .bind(&relevant_homeroom_ids)
-        .bind(MAX_HOMEROOMS + 1)
         .fetch_all()
         .await?;
-    if homerooms.len() > MAX_HOMEROOMS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนห้องประจำชั้นในพื้นที่จัดตารางเกิน 500 ห้อง".to_string(),
-        ));
-    }
+
     let homerooms = homerooms
         .into_iter()
         .map(|row| TimetableBlockWorkspaceHomeroom {
@@ -541,18 +544,13 @@ pub(crate) async fn get_workspace(
             "academic_timetable.services.timetable_block_queries.get_workspace",
             r#"SELECT id, code, name_th, status::text FROM rooms
            WHERE ($1 AND status = 'ACTIVE') OR id = ANY($2)
-           ORDER BY coalesce(code, ''), name_th, id LIMIT $3"#,
+           ORDER BY coalesce(code, ''), name_th, id"#,
         )
         .bind(access.includes_school_owned)
         .bind(&referenced_room_ids)
-        .bind(MAX_ROOMS + 1)
         .fetch_all()
         .await?;
-    if rooms.len() > MAX_ROOMS as usize {
-        return Err(AppError::ValidationError(
-            "จำนวนห้องเรียนในพื้นที่จัดตารางเกิน 2000 ห้อง".to_string(),
-        ));
-    }
+
     let rooms = rooms
         .into_iter()
         .map(|row| TimetableBlockWorkspaceRoom {
@@ -642,22 +640,48 @@ pub(crate) async fn get_workspace(
     } else {
         None
     };
-    Ok(TimetableBlockWorkspace {
-        total_draft_block_count,
-        source_issues,
-        latest_delivery_version_id,
-        version,
-        bell_periods,
-        blocks,
-        ordinary_demands,
-        synchronized_demands,
-        learning_groups,
-        homerooms,
-        rooms,
-        staff,
-        offering_subject_groups,
-        summary,
-    })
+    let advisors: Vec<(Uuid, Uuid)> = DbSession::new(connection).query_as(
+        "academic_timetable.services.timetable_block_queries.get_canonical_workspace.advisors",
+        "SELECT advisor.homeroom_id,advisor.user_id FROM homeroom_advisors advisor JOIN homerooms homeroom ON homeroom.id=advisor.homeroom_id WHERE homeroom.academic_year_id=$1",
+    ).bind(query.academic_year_id).fetch_all().await?;
+    let mut homeroom_advisors = BTreeMap::<Uuid, BTreeSet<Uuid>>::new();
+    for (homeroom, actor) in advisors {
+        homeroom_advisors.entry(homeroom).or_default().insert(actor);
+    }
+    let offering_ids = source
+        .snapshot
+        .offerings
+        .iter()
+        .map(|offering| offering.id)
+        .chain(blocks.iter().filter_map(|block| block.learning_offering_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
+    let visibility = crate::policy::TimetableVisibility {
+        source: source.snapshot,
+        homeroom_advisors,
+        block_offering_owners,
+    };
+    Ok((
+        TimetableBlockWorkspace {
+            total_draft_block_count,
+            source_issues,
+            latest_delivery_version_id,
+            version,
+            bell_periods,
+            blocks,
+            ordinary_demands,
+            synchronized_demands,
+            learning_groups,
+            homerooms,
+            rooms,
+            staff,
+            offering_subject_groups,
+            summary,
+        },
+        visibility,
+    ))
 }
 
 pub(crate) async fn get_block(

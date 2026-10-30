@@ -1478,9 +1478,13 @@ async fn apply_timetable(
     context: &TermPreparationContext,
     mappings: &ResolvedMappings,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
+    let permit = school_academic_timetable::collaboration::CreationPermit::term_preparation(
+        tx, actor, context,
+    )
+    .await?;
     school_academic_timetable::services::timetable_version_service::apply_term_preparation(
         tx,
-        actor,
+        &permit,
         context,
         &mappings.entities,
     )

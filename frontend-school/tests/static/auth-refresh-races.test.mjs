@@ -304,7 +304,7 @@ for (const action of ['logout', 'logoutAll', 'revokeSession']) {
 	});
 }
 
-async function transportHarness() {
+async function transportHarness(securityOverrides = {}) {
 	const h = await harness();
 	const captured = [];
 	const { apiClient } = await load('../../src/lib/api/client.ts', {
@@ -320,7 +320,8 @@ async function transportHarness() {
 			},
 			clearSessionSecurity() {},
 			retryAfterSeconds() {},
-			withSessionSecurityHeaders: (_method, headers) => headers
+			withSessionSecurityHeaders: (_method, headers) => headers,
+			...securityOverrides
 		},
 		'#lib/api/query.js': { appendApiQuery: (endpoint) => endpoint },
 		'#lib/api/school-subdomain.js': { normalizeSchoolSubdomain: (value) => value ?? null },
@@ -337,6 +338,51 @@ async function transportHarness() {
 		}
 	};
 }
+
+test('JSON request headers carry lease proof without replacing session, tenant or content defaults', async () => {
+	const security = await import('../../src/lib/api/session-security.ts');
+	security.captureSessionSecurityHeaders(new Headers({ 'X-CSRF-Token': 'authoritative-csrf' }));
+	const h = await transportHarness(security);
+	const caller = new Headers({
+		'X-Timetable-Connection-Id': 'connection-one',
+		'X-Timetable-Lease-Token': 'lease-one',
+		'X-Timetable-Mutation-Id': 'mutation-one',
+		'X-CSRF-Token': 'untrusted-csrf',
+		'X-School-Subdomain': 'untrusted-school',
+		'Content-Type': 'text/plain'
+	});
+	const captured = [];
+	const options = {
+		headers: caller,
+		requestFetch: async (_url, init) => {
+			captured.push(init);
+			return new Response(JSON.stringify({ success: true, data: {} }), {
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+	};
+	await h.apiClient.get('/api/example', options);
+	await h.apiClient.post('/api/example', { title: 'example' }, options);
+	await h.apiClient.put('/api/example', {}, options);
+	await h.apiClient.patch('/api/example', {}, options);
+	await h.apiClient.delete('/api/example', options);
+	await h.apiClient.deleteWithBody('/api/example', {}, options);
+	for (const request of captured) {
+		assert.equal(request.credentials, 'include');
+		assert.equal(request.headers.get('X-Timetable-Connection-Id'), 'connection-one');
+		assert.equal(request.headers.get('X-Timetable-Lease-Token'), 'lease-one');
+		assert.equal(request.headers.get('X-Timetable-Mutation-Id'), 'mutation-one');
+		assert.equal(request.headers.has('X-School-Subdomain'), false);
+		assert.equal(
+			request.headers.get('X-CSRF-Token'),
+			request.method === 'GET' ? null : 'authoritative-csrf'
+		);
+		if (request.body !== undefined)
+			assert.equal(request.headers.get('Content-Type'), 'application/json');
+	}
+	assert.equal(caller.get('X-CSRF-Token'), 'untrusted-csrf', 'caller headers stay immutable');
+	security.clearSessionSecurity();
+});
 for (const status of [200, 401]) {
 	test(`late ${status} cannot change CSRF or identity after same-user reauthentication`, async () => {
 		const h = await transportHarness();

@@ -672,6 +672,40 @@ toolchain/host/release flags and at least two source-changing samples for both t
 Staff service. Record rebuilt packages as well as wall time; warm Cargo results do not measure
 complete build/push/deployment time.
 
+### Timetable draft collaboration
+
+Run the domain memory authority tests and real PostgreSQL/session/HTTP/native WebSocket fixture
+from the repository root. Use the configured pinned Rust toolchain and the owned disposable runner:
+
+```bash
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetable --features api-docs collaboration -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --nocapture --test-threads=2
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture --test-threads=2
+cargo test --manifest-path backend-school/Cargo.toml -p school-auth-http context::tests -- --nocapture
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http websockets::security_tests -- --nocapture
+```
+
+The dedicated transport fixture uses the original protected-router directory/session owner with
+prepared academic databases, actual opaque cookies and CSRF, two native socket tabs, and exactly
+the runtime injected into HTTP. It covers proof bypass/cross-tab refusal, scoped claim denial,
+changed-block patches with database-trigger version revisions, publication preview without a
+workspace reload, hot interaction after closing PostgreSQL, queued authorization generation,
+pinned commit cancellation/disconnect/TTL, initial-sync watermark, no-member upstream invalidation,
+postcommit failure, deferred COMMIT timeout, cold version-row/cache-fill fencing, real Facility/Staff
+producer invalidation, and scoped lookup gain/loss matching fresh HTTP metadata and producer order. Domain cases separately
+cover cross-view footprints/swaps, private candidate ownership, filtered sequence watermarks,
+replay/expiry and bounded tiny deltas for a workspace larger than the journal limit's half size.
+Use only runner-owned disposable databases, never a live or customer tenant. A fixture's isolated test context does not substitute for
+shared-runtime HTTP/socket authority acceptance.
+
+The three `X-Timetable-Connection-Id`, `X-Timetable-Lease-Token` and `X-Timetable-Mutation-Id`
+headers form one optional HTTP ownership proof. Keep their CORS proxy checks and the direct and
+reverse-proxy WebSocket smoke recipes below when changing this boundary. Frontend decoding and
+standalone smoke use a 64 MiB UTF-8 budget per complete JSON event; server incoming interaction
+commands have a separate 64 KiB limit. This does not impose a note/schema cap or claim server
+outbound enforcement. Backend tests establish
+transport behavior locally; they do not replace deployed proxy acceptance or browser interaction.
+
 ### School session authentication
 
 Session changes require the schema, repository, service, HTTP/middleware, and realtime
@@ -1434,7 +1468,7 @@ These focused tests use test-only keys. Never put a real national ID, `ENCRYPTIO
 
 ## Smoke Tests
 
-The repository smoke script checks frontend reachability, backend liveness/readiness, CORS and CSRF preflight, legacy-cookie rejection, opaque-session login, `/api/auth/me`, the active-session list, realtime SSE, optional private files, and current-session logout.
+The repository smoke script checks frontend reachability, backend liveness/readiness, CORS and CSRF preflight, legacy-cookie rejection, opaque-session login, `/api/auth/me`, the active-session list, realtime SSE, optional private files, and current-session logout. Academic context mode also performs read-only timetable WebSocket acceptance.
 
 ```bash
 SMOKE_SUBDOMAIN=sandbox \
@@ -1462,6 +1496,19 @@ VPS-loopback smoke input; never add a public maintenance bypass or open traffic 
 test. The workflow alone sets `SMOKE_DIRECT_BACKEND=true`; that mode skips only Nginx-owned
 CORS/preflight assertions while login, session, CSRF, readiness, and every selected academic read
 remain required.
+
+For each selected authorized term, academic context mode opens `/ws/timetable` without legacy
+identity parameters, validates term state sync, exchanges RFC ping/pong, and closes cleanly. It
+separately selects an existing draft from that term's version list, reads its authorized HTTP
+workspace, and validates the draft socket's `DraftStateSync` envelope, epoch/sequence, connection,
+workspace scope, participants and reservations. It sends only `ClientPresenceUpdate`, read-only
+`ClientReplay`, and transport control frames; current-sequence replay needs no acknowledgement.
+It never creates a draft, claims a reservation, or changes timetable/account data. Missing credentials,
+term context or an existing draft is an explicit `SKIP` with that coverage unrun. Published workspace
+HTTP acceptance remains independent. Response bodies, cookies and identity payloads are never printed.
+The inline Python standard-library client keeps the smoke script self-contained for verified private
+copies. It preserves the intended hostname and TLS SNI while `SMOKE_RESOLVE_IP` selects the connection
+address, using system CA trust or the explicitly supplied synthetic `SMOKE_CA_CERT`.
 
 The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
 
@@ -1662,6 +1709,26 @@ When WebSocket identity, proxying, or authentication changes:
 5. Confirm ping/pong heartbeat, stale-client cleanup, reconnect backoff, and permission-change disconnect/refresh behavior through the reverse proxy.
 
 Do not log tokens, cookies, identity query values, or full request URIs during rollout checks.
+
+Run the focused executable acceptance guards from the repository root:
+
+```bash
+node --test scripts/tests/pipeline-websocket-smoke.test.mjs scripts/tests/pipeline-academic-smoke.test.mjs scripts/tests/pipeline-proxy.test.mjs scripts/tests/pipeline-maintenance.test.mjs scripts/tests/pipeline-api-tls.test.mjs
+shellcheck -x scripts/smoke_test.sh
+shfmt -d -i 4 -ci scripts/smoke_test.sh
+```
+
+The synthetic socket fixtures exercise actual masked frames, fragmentation, heartbeat, replay without
+an acknowledgement, clean close, invalid state/scope/frames, missing authentication, bounded timeouts,
+and verified TLS hostname/address separation. The real Nginx fixture verifies both normal `/ws/` and
+private maintenance-probe upgrades, rejects unauthenticated traffic, retains public maintenance and
+ordinary HTTP semantics, and checks query-safe logging. These are local synthetic proofs, separate
+from authenticated deployment acceptance. Existing direct-backend `school-verify-academic.sh` and
+HTTPS maintenance `school-verify-release.sh`/`maintenance.sh` run the same academic-context smoke.
+Keep the release's private probe token, intended hostname, system trust and loopback resolution;
+never open public traffic or create production fixtures for acceptance. When no deployed draft exists,
+report draft rollout coverage unrun and use disposable authenticated Axum/database transport fixtures
+for the full draft protocol.
 
 ## Ubuntu 26.04 Playwright
 

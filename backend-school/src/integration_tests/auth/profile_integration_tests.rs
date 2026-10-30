@@ -4,7 +4,10 @@ use school_test_db::{create_named_test_pool, create_test_user, run_test_migratio
 use sqlx::PgPool;
 use uuid::Uuid;
 
-async fn insert_ready_temporary_profile_image(pool: &PgPool, owner_user_id: Uuid) -> Uuid {
+pub(crate) async fn insert_ready_temporary_profile_image(
+    pool: &PgPool,
+    owner_user_id: Uuid,
+) -> Uuid {
     let file_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
     let mut transaction = pool.begin().await.expect("fixture should begin");

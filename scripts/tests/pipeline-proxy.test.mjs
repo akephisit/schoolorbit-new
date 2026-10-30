@@ -36,6 +36,8 @@ test('real Nginx preserves maintenance, authorization, socket reuse and privacy-
  const conf=path.join(temp,'conf'),ssl=path.join(temp,'ssl');mkdirSync(conf);mkdirSync(ssl);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(ssl,'schoolorbit-origin.key'),'-out',path.join(ssl,'schoolorbit-origin.pem'),'-days','1','-subj','/CN=example.test','-addext','subjectAltName=DNS:school-api.example.test,DNS:admin-api.example.test,DNS:admin.example.test'],{stdio:'ignore'});
  const probe='e'.repeat(64);
+ const timetableHeaders=['X-Timetable-Connection-Id','X-Timetable-Lease-Token','X-Timetable-Mutation-Id'];
+ const timetableRequested=timetableHeaders.join(',').toLowerCase();
  for(const part of ['school','admin'])execFileSync('bash',['scripts/render_nginx_config.sh',`nginx-configs/${part}-api.maintenance.conf.template`,path.join(conf,`${part}.conf`),'example.test','a'.repeat(40),'maintenance',probe]);
  docker('run','-d','--name',proxy,'--network',network,'-p','127.0.0.1::443','--entrypoint','sh',image,'-c','while [ ! -f /etc/nginx/ssl/schoolorbit-origin.pem ]; do sleep 0.1; done; exec nginx -g "daemon off;"');
  docker('cp',conf+'/.',`${proxy}:/etc/nginx/conf.d/`);docker('cp',ssl,`${proxy}:/etc/nginx/ssl`);
@@ -51,12 +53,16 @@ test('real Nginx preserves maintenance, authorization, socket reuse and privacy-
   assert.match(request(part,'/api/private',['-H',`X-Schoolorbit-Release-Probe: ${probe}`]),/"error":"unauthorized"[\s\S]*\n401$/);
   for (const headers of [[], ['-H','X-Schoolorbit-Release-Probe: wrong'], ['-H',`X-Schoolorbit-Release-Probe: ${probe}`]]) {
    const origin=part==='school'?'https://sandbox.example.test':'https://example.test';
-   const response=request(part,'/api/private',['-X','OPTIONS','-H',`Origin: ${origin}`,'-H','Access-Control-Request-Method: POST','-H','Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token','-i',...headers]);
+   const response=request(part,'/api/private',['-X','OPTIONS','-H',`Origin: ${origin}`,'-H','Access-Control-Request-Method: POST','-H',`Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token${part==='school'?','+timetableRequested:''}`,'-i',...headers]);
    assert.ok(response.toLowerCase().includes(`access-control-allow-origin: ${origin}`));
    assert.match(response,/\n204$/);
    assert.match(response,/Access-Control-Allow-Headers: [^\r\n]*X-School-Subdomain[^\r\n]*X-CSRF-Token/i);
+   assert.match(response,/Access-Control-Allow-Credentials: true/i);
+   if(part==='school')for(const header of timetableHeaders)assert.ok(response.toLowerCase().match(/access-control-allow-headers: ([^\r\n]*)/)[1].split(',').includes(header.toLowerCase()));
   }
  }
+ const maintenanceUntrusted=request('school','/api/academic/timetable-blocks',['-X','OPTIONS','-H','Origin: https://untrusted.invalid','-H',`Access-Control-Request-Headers: ${timetableRequested}`,'-i']);
+ assert.match(maintenanceUntrusted,/\n204$/);assert.doesNotMatch(maintenanceUntrusted,/Access-Control-Allow-Origin:/i);
  assert.match(request('admin','/internal/schools'),/"error":"unauthorized"[\s\S]*\n401$/);
  const assertRetired=()=>{
   const response=requestHost('admin.example.test','/login',['-i']);
@@ -169,9 +175,18 @@ test('real Nginx preserves maintenance, authorization, socket reuse and privacy-
   const invalid=request('school',url,['-i','-H','X-SchoolOrbit-Diagnostic-Id: private-header-secret']);
   assert.match(invalid,/x-fixture-diagnostic-id: -/i);
  }
- const preflight=request('school','/api/proxy-fixture',['-X','OPTIONS','-H','Origin: https://alpha.example.test','-H','Access-Control-Request-Headers: x-schoolorbit-diagnostic-id','-i']);
+ const preflight=request('school','/api/proxy-fixture',['-X','OPTIONS','-H','Origin: https://alpha.example.test','-H',`Access-Control-Request-Headers: x-schoolorbit-diagnostic-id,${timetableRequested}`,'-i']);
  assert.match(preflight,/Access-Control-Allow-Headers: [^\r\n]*X-SchoolOrbit-Diagnostic-Id/i);
  assert.match(preflight,/\n204$/);
+ for(const url of ['/api/academic/timetable-blocks','/api/files/fixture','/api/admission/portal/upload','/api/notifications/stream']){
+  for(const origin of ['https://alpha.example.test','https://untrusted.invalid']){
+   const response=request('school',url,['-X','OPTIONS','-H',`Origin: ${origin}`,'-H','Access-Control-Request-Method: POST','-H',`Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token,${timetableRequested}`,'-i']);
+   assert.match(response,/\n204$/);assert.match(response,/Access-Control-Allow-Credentials: true/i);
+   for(const header of ['X-School-Subdomain','X-CSRF-Token',...timetableHeaders])assert.ok(response.toLowerCase().match(/access-control-allow-headers: ([^\r\n]*)/)[1].split(',').includes(header.toLowerCase()));
+   if(origin==='https://alpha.example.test')assert.match(response,/Access-Control-Allow-Origin: https:\/\/alpha\.example\.test/i);
+   else assert.doesNotMatch(response,/Access-Control-Allow-Origin:/i);
+  }
+ }
  // The real Nginx parser and request path validate maps, JSON escaping and numeric fields.
  const events=docker('logs',proxy).split('\n').flatMap(line=>{
   try {const event=JSON.parse(line);return event.operation==='school_proxy_request'?[event]:[];} catch{return [];}

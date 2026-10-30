@@ -188,7 +188,7 @@ test('keeps the requested report version while its lazy module loads', async ({ 
 	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'สรุปคาบ XLSX', exact: true }).click();
 	await started;
-	await page.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เลือกรุ่นตารางสอน', exact: true }).click();
 	await page.getByRole('option', { name: /เผยแพร่/ }).click();
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	release();
@@ -218,7 +218,8 @@ test('keeps a long teacher name within its fixed-width control and searchable li
 	const option = page.getByRole('option', { name, exact: true });
 	await expect(option).toBeVisible();
 	const panel = page.locator('[data-slot="popover-content"]');
-	const panelBox = (await panel.boundingBox())!;
-	expect(Math.abs(panelBox.width - ownerBox.width)).toBeLessThanOrEqual(1);
+	await expect
+		.poll(async () => Math.abs((await panel.boundingBox())!.width - ownerBox.width))
+		.toBeLessThanOrEqual(1);
 	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

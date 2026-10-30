@@ -12,6 +12,73 @@ pub struct TimetableSocketAccess {
     pub can_manage: bool,
 }
 
+pub struct TimetableDraftSocketAccess {
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub read_access: crate::policy::TimetableAccessFilter,
+    pub manage_access: Option<crate::policy::TimetableAccessFilter>,
+}
+
+pub async fn authorize_draft_socket(
+    pool: &PgPool,
+    actor: &ActorContext,
+    academic_term_id: Uuid,
+    version_id: Uuid,
+) -> Result<TimetableDraftSocketAccess, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_realtime_service.authorize_draft_socket",
+    )
+    .await?;
+    let user = DbSession::new(&mut connection)
+        .query_as::<RealtimeUser>(
+            "academic_timetable.services.timetable_realtime_service.authorize_draft_socket.user",
+            "SELECT display_name FROM user_display_names WHERE id=$1 AND status='active'",
+        )
+        .bind(actor.user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::AuthError("Active user required".into()))?;
+    let read_access = crate::policy::require_timetable_list_access_on_connection(
+        &mut connection,
+        actor,
+        crate::policy::TimetableAction::Read,
+    )
+    .await?;
+    let version = super::timetable_version_service::get_version_on_connection(
+        &mut connection,
+        version_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await?;
+    if version.academic_term_id != academic_term_id {
+        return Err(AppError::NotFound(
+            "Draft not found in selected term".into(),
+        ));
+    }
+    let manage_access = match crate::policy::require_timetable_list_access_on_connection(
+        &mut connection,
+        actor,
+        crate::policy::TimetableAction::Manage,
+    )
+    .await
+    {
+        Ok(access)
+            if version.status == school_academic_core::models::TimetableVersionStatus::Draft =>
+        {
+            Some(access)
+        }
+        Ok(_) | Err(AppError::Forbidden(_)) => None,
+        Err(error) => return Err(error),
+    };
+    Ok(TimetableDraftSocketAccess {
+        user_id: actor.user_id,
+        display_name: user.display_name,
+        read_access,
+        manage_access,
+    })
+}
+
 #[derive(sqlx::FromRow)]
 struct RealtimeUser {
     display_name: String,

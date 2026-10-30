@@ -783,6 +783,8 @@ async fn delivery_preparation_preview_preserves_managed_one_connection_read_only
 
     let (fixture, _, _, target_term_id) =
         delivery_preparation_fixture("term_preparation_managed_read_only").await;
+    // Managed pools enforce the current verified schema, unlike historical cutover fixtures.
+    school_test_db::run_test_migrations(&fixture).await;
     let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
         .fetch_one(&fixture)
         .await
@@ -849,6 +851,8 @@ async fn preparation_database_failures_preserve_cause_and_release_managed_connec
 
     let (fixture, actor, source_term_id, target_term_id) =
         delivery_preparation_fixture("term_preparation_database_failure").await;
+    // Managed pools enforce the current verified schema, unlike historical cutover fixtures.
+    school_test_db::run_test_migrations(&fixture).await;
     let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
         .fetch_one(&fixture)
         .await

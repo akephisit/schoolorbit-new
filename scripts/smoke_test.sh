@@ -388,6 +388,274 @@ PY
     fi
 }
 
+# Timetable WebSocket read-only smoke start
+# Kept inline: the DNS verification owner hashes/copies this script alone.
+timetable_websocket_smoke() {
+    local name="$1" year_id="$2" term_id="$3" version_id="$4" workspace_body="$5"
+    if SMOKE_API_URL="$SMOKE_API_URL" SMOKE_ORIGIN="$SMOKE_ORIGIN" \
+        SMOKE_SUBDOMAIN="$SMOKE_SUBDOMAIN" SMOKE_TIMEOUT_SECONDS="$SMOKE_TIMEOUT_SECONDS" \
+        SMOKE_DIRECT_BACKEND="$SMOKE_DIRECT_BACKEND" SMOKE_RESOLVE_IP="$SMOKE_RESOLVE_IP" \
+        SMOKE_CA_CERT="$SMOKE_CA_CERT" SMOKE_RELEASE_PROBE_TOKEN="${SMOKE_RELEASE_PROBE_TOKEN-}" \
+        python3 - "$cookie_jar" "$year_id" "$term_id" "$version_id" "$workspace_body" <<'PY'; then
+import base64
+import hashlib
+import http.cookiejar
+import json
+import os
+import socket
+import ssl
+import struct
+import sys
+import time
+import urllib.parse
+import uuid
+
+# Match the browser decoder's complete UTF-8 event budget, including JSON overhead.
+MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+
+def require(condition):
+    if not condition:
+        raise ValueError("Invalid realtime acceptance response")
+
+def canonical_uuid(value):
+    require(isinstance(value, str) and str(uuid.UUID(value)) == value)
+    return value
+
+def sequence(value):
+    require(type(value) is int and 0 <= value <= 2**64 - 1)
+
+def workspace(value, year_id, term_id, version_id):
+    require(isinstance(value, dict) and isinstance(value.get("version"), dict))
+    version = value["version"]
+    require(version.get("id") == version_id and version.get("academicTermId") == term_id)
+    require(version.get("academicYearId") == year_id and version.get("status") == "draft")
+    for key in ("sourceIssues", "bellPeriods", "blocks", "ordinaryDemands", "synchronizedDemands",
+                "learningGroups", "homerooms", "rooms", "staff", "offeringSubjectGroups"):
+        require(isinstance(value.get(key), list))
+    require(isinstance(value.get("summary"), dict))
+    canonical_uuid(value.get("latestDeliveryVersionId"))
+    count = value.get("totalDraftBlockCount")
+    require("totalDraftBlockCount" in value and (count is None or type(count) is int and count >= 0))
+
+def run():
+    cookie_path, year_id, term_id, version_id, workspace_path = sys.argv[1:]
+    canonical_uuid(year_id)
+    canonical_uuid(term_id)
+    if version_id:
+        canonical_uuid(version_id)
+        with open(workspace_path, encoding="utf-8") as handle:
+            authoritative = json.load(handle)
+        require(authoritative.get("success") is True)
+        workspace(authoritative.get("data"), year_id, term_id, version_id)
+    url = urllib.parse.urlsplit(os.environ["SMOKE_API_URL"])
+    require(url.scheme in ("http", "https") and url.hostname and not url.username and not url.password)
+    require(not url.query and not url.fragment and url.path in ("", "/"))
+    direct = os.environ["SMOKE_DIRECT_BACKEND"] == "true"
+    require(url.scheme == "https" or direct and url.hostname in ("localhost", "127.0.0.1", "::1"))
+    port = url.port or (443 if url.scheme == "https" else 80)
+    jar = http.cookiejar.MozillaCookieJar(cookie_path)
+    jar.load(ignore_discard=True, ignore_expires=True)
+    cookies = [cookie for cookie in jar if cookie.name == "__Host-schoolorbit_session"
+               and cookie.domain.lstrip(".") in (url.hostname, url.hostname + ".local")
+               and cookie.path == "/" and cookie.secure
+               and (cookie.expires in (None, 0) or not cookie.is_expired())]
+    require(len(cookies) == 1)
+    query = {"academicTermId": term_id}
+    if version_id:
+        query["timetableVersionId"] = version_id
+    request_path = "/ws/timetable?" + urllib.parse.urlencode(query)
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    headers = {
+        "Host": url.netloc,
+        "Upgrade": "websocket",
+        "Connection": "Upgrade",
+        "Sec-WebSocket-Key": key,
+        "Sec-WebSocket-Version": "13",
+        "Origin": os.environ["SMOKE_ORIGIN"],
+        "X-School-Subdomain": os.environ["SMOKE_SUBDOMAIN"],
+        "Cookie": "__Host-schoolorbit_session=" + cookies[0].value,
+    }
+    probe = os.environ.get("SMOKE_RELEASE_PROBE_TOKEN")
+    if probe:
+        require(len(probe) == 64 and all(c in "0123456789abcdef" for c in probe))
+        require(os.environ["SMOKE_RESOLVE_IP"] == "127.0.0.1")
+        headers["X-Schoolorbit-Release-Probe"] = probe
+    require(all("\r" not in value and "\n" not in value for value in headers.values()))
+    timeout = min(float(os.environ["SMOKE_TIMEOUT_SECONDS"]), 120)
+    require(timeout > 0)
+    deadline = time.monotonic() + timeout
+    connection = socket.create_connection((os.environ["SMOKE_RESOLVE_IP"] or url.hostname, port), timeout)
+    try:
+        if url.scheme == "https":
+            context = ssl.create_default_context(cafile=os.environ["SMOKE_CA_CERT"] or None)
+            connection = context.wrap_socket(connection, server_hostname=url.hostname)
+        connection.sendall(("GET " + request_path + " HTTP/1.1\r\n" + "".join(
+            name + ": " + value + "\r\n" for name, value in headers.items()) + "\r\n").encode("ascii"))
+        buffered = bytearray()
+
+        def receive(count):
+            while len(buffered) < count:
+                remaining = deadline - time.monotonic()
+                require(remaining > 0)
+                connection.settimeout(remaining)
+                chunk = connection.recv(min(65536, max(count - len(buffered), 1)))
+                require(bool(chunk))
+                buffered.extend(chunk)
+            result = bytes(buffered[:count])
+            del buffered[:count]
+            return result
+
+        response = bytearray()
+        while not response.endswith(b"\r\n\r\n"):
+            require(len(response) < 16384)
+            response.extend(receive(1))
+        lines = response.decode("ascii").split("\r\n")
+        require(lines[0].split(" ")[:2] == ["HTTP/1.1", "101"])
+        response_headers = {}
+        for line in lines[1:-2]:
+            name, value = line.split(":", 1)
+            name = name.lower()
+            require(name not in response_headers)
+            response_headers[name] = value.strip()
+        expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        require(response_headers.get("sec-websocket-accept") == expected)
+        require(response_headers.get("upgrade", "").lower() == "websocket")
+        require("upgrade" in response_headers.get("connection", "").lower().split(","))
+
+        def send(opcode, payload):
+            require(len(payload) <= 65535)
+            mask = os.urandom(4)
+            length = bytes([0x80 | len(payload)]) if len(payload) < 126 else b"\xfe" + struct.pack("!H", len(payload))
+            encoded = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+            connection.sendall(bytes([0x80 | opcode]) + length + mask + encoded)
+
+        def frame():
+            first, second = receive(2)
+            require(first & 0x70 == 0 and second & 0x80 == 0)
+            opcode, length = first & 15, second & 127
+            if length == 126:
+                length = struct.unpack("!H", receive(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", receive(8))[0]
+            require(length <= MAX_MESSAGE_BYTES)
+            if opcode >= 8:
+                require(bool(first & 0x80) and length <= 125)
+            else:
+                # Refuse an oversized fragmented event before receiving its next payload.
+                require(length <= MAX_MESSAGE_BYTES - len(fragments))
+            return bool(first & 0x80), opcode, receive(length)
+
+        fragments = bytearray()
+        fragmented = False
+
+        def text_or_control():
+            nonlocal fragmented
+
+            for _ in range(512):
+                final, opcode, payload = frame()
+                if opcode == 9:
+                    send(10, payload)
+                    continue
+                if opcode in (8, 10):
+                    require(not fragmented or opcode == 10)
+                    return opcode, payload
+                require(opcode == (0 if fragmented else 1))
+                fragments.extend(payload)
+                require(len(fragments) <= MAX_MESSAGE_BYTES)
+                if final:
+                    message = json.loads(fragments.decode("utf-8"))
+                    fragments.clear()
+                    fragmented = False
+                    return 1, message
+                fragmented = True
+            raise ValueError("Too many realtime frames")
+
+        def initial_sync():
+            for _ in range(64):
+                opcode, message = text_or_control()
+                require(opcode != 8)
+                if opcode == 1:
+                    require(isinstance(message, dict))
+                    return message
+            raise ValueError("Missing realtime state")
+
+        sync = initial_sync()
+        if version_id:
+            require(sync.get("type") == "DraftStateSync")
+            epoch = canonical_uuid(sync.get("epoch"))
+            sequence(sync.get("seq"))
+            payload = sync.get("payload")
+            require(isinstance(payload, dict))
+            connection_id = canonical_uuid(payload.get("connectionId"))
+            workspace(payload.get("workspace"), year_id, term_id, version_id)
+            for field in ("users", "reservations"):
+                require(isinstance(payload.get(field), list))
+            own_connection = False
+            for user in payload["users"]:
+                require(isinstance(user, dict) and isinstance(user.get("name"), str) and isinstance(user.get("color"), str))
+                canonical_uuid(user.get("userId"))
+                require(isinstance(user.get("connections"), list))
+                for presence in user["connections"]:
+                    require(isinstance(presence, dict) and "context" in presence and "anchor" in presence)
+                    own_connection |= canonical_uuid(presence.get("connectionId")) == connection_id
+            require(own_connection)
+            for reservation in payload["reservations"]:
+                require(isinstance(reservation, dict) and "leaseToken" not in reservation)
+                canonical_uuid(reservation.get("reservationId"))
+                canonical_uuid(reservation.get("ownerConnectionId"))
+                require(reservation.get("purpose") in ("drag", "edit"))
+                require(isinstance(reservation.get("source"), dict) and isinstance(reservation.get("expiresAt"), str))
+            commands = [
+                {"type": "ClientPresenceUpdate", "payload": {"context": {"viewMode": "wholeSchool", "viewId": None, "dayOfWeek": None}, "anchor": None}},
+                {"type": "ClientReplay", "payload": {"epoch": epoch, "afterSeq": sync["seq"]}},
+            ]
+            for command in commands:
+                send(1, json.dumps(command, separators=(",", ":")).encode())
+        else:
+            require(sync.get("type") == "StateSync" and isinstance(sync.get("payload"), dict))
+            require(isinstance(sync["payload"].get("users"), list))
+            sequence(sync["payload"].get("current_seq"))
+        # Replay at the current sequence can legitimately emit no text response.
+        ping = os.urandom(12)
+        send(9, ping)
+        for _ in range(128):
+            opcode, message = text_or_control()
+            require(opcode != 8)
+            if opcode == 10 and message == ping:
+                break
+            if opcode == 1 and version_id:
+                require(isinstance(message, dict))
+                require(message.get("epoch") == sync["epoch"])
+                sequence(message.get("seq"))
+                require(message.get("type") in {
+                    "DraftStateSync", "DraftPresenceChanged", "DraftPresenceLeft",
+                    "DraftReservationsChanged", "DraftAvailability", "DraftPatched", "DraftReconcileRequired",
+                } and isinstance(message.get("payload"), dict))
+        else:
+            raise ValueError("Missing realtime pong")
+        send(8, struct.pack("!H", 1000))
+        for _ in range(64):
+            opcode, _ = text_or_control()
+            if opcode == 8:
+                break
+        else:
+            raise ValueError("Missing realtime close")
+    finally:
+        connection.close()
+
+try:
+    run()
+except Exception:
+    # Never print response bodies, full URLs, session cookies or transport errors.
+    sys.exit(1)
+PY
+        pass "$name state sync, read-only frames and ping/pong"
+    else
+        fail "$name handshake, state sync or bounded frame exchange failed"
+    fi
+}
+# Timetable WebSocket read-only smoke end
+
 # Academic Core maintenance read-only smoke start
 academic_context_get() {
     local key="$1"
@@ -416,6 +684,7 @@ run_academic_context_smoke() {
     local year_id
     local term_id
     local timetable_version_id
+    local draft_version_id
     local year_index=0
     local term_index=0
 
@@ -551,9 +820,44 @@ PY
         else
             printf 'SKIP academic timetable context %s: no published timetable version.\n' "$term_index"
         fi
+        timetable_websocket_smoke "academic term WebSocket context $term_index" "$year_id" "$term_id" "" ""
+        if ! draft_version_id="$(
+            python3 - "$tmp_dir/academic-timetable-versions-$term_index.body" "$term_id" <<'PYDRAFT'
+import json
+import sys
+import uuid
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+versions = payload.get("data") if isinstance(payload, dict) else None
+if not isinstance(versions, list):
+    raise SystemExit(1)
+for version in versions:
+    if not isinstance(version, dict) or version.get("status") != "draft":
+        continue
+    try:
+        version_id = str(uuid.UUID(version.get("id")))
+        term_id = str(uuid.UUID(version.get("academicTermId")))
+    except (AttributeError, TypeError, ValueError):
+        continue
+    if term_id == sys.argv[2]:
+        print(version_id)
+        break
+PYDRAFT
+        )"; then
+            fail "academic draft context $term_index expected valid timetable versions"
+        elif [[ -n $draft_version_id ]]; then
+            academic_context_get "draft-$term_index" "academic draft workspace context $term_index" "/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableVersionId=$draft_version_id"
+            timetable_websocket_smoke "academic draft WebSocket context $term_index" "$year_id" "$term_id" "$draft_version_id" "$tmp_dir/academic-draft-$term_index.body"
+        else
+            printf 'SKIP academic draft WebSocket context %s: no existing draft; draft protocol unrun.\n' "$term_index"
+        fi
         academic_context_get "exams-$term_index" "exam schedules context $term_index" "/api/academic/exam-schedules?academicTermId=$term_id"
         academic_context_get "supervision-$term_index" "supervision observations context $term_index" "/api/supervision/observations?academicYearId=$year_id&academicTermId=$term_id"
     done <"$selected_terms"
+    if [[ $term_index -eq 0 ]]; then
+        printf 'SKIP timetable WebSocket acceptance: no authorized academic term; term and draft protocols unrun.\n'
+    fi
 }
 # Academic Core maintenance read-only smoke end
 
@@ -645,6 +949,7 @@ if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
         fail "authenticated checks are required but smoke credentials are missing"
     else
         printf '\nSKIP authenticated checks: set SMOKE_USERNAME and SMOKE_PASSWORD to test login.\n'
+        printf 'SKIP timetable WebSocket acceptance: credentials unavailable; term and draft protocols unrun.\n'
     fi
 else
     login_payload="$tmp_dir/login.json"

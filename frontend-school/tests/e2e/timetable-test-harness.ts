@@ -1,5 +1,11 @@
-import { sessionState } from './fixtures/session-state';
+import type { SessionState } from '../../src/lib/api/auth.js';
+import { sessionState } from './fixtures/session-state.ts';
 import type { Page, Route } from '@playwright/test';
+import {
+	createDraftRelay,
+	installRoutedDraftSocket,
+	type DraftRelay
+} from './timetable-collaboration-relay.ts';
 
 import type {
 	TimetableBlock,
@@ -48,6 +54,8 @@ export interface TimetableMockOptions {
 	learningGroups?: TimetableBlockWorkspace['learningGroups'];
 	homerooms?: TimetableBlockWorkspace['homerooms'];
 	staff?: TimetableBlockWorkspace['staff'];
+	rooms?: TimetableBlockWorkspace['rooms'];
+	bellPeriods?: TimetableBlockWorkspace['bellPeriods'];
 	offeringSubjectGroups?: TimetableBlockWorkspace['offeringSubjectGroups'];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
@@ -65,9 +73,13 @@ export interface TimetableMockOptions {
 	failUpdate?: boolean;
 	preferredRoomIds?: string[];
 	requestedWorkspaceVersion?: boolean;
+	socketMode?: 'mock' | 'native';
+	relay?: DraftRelay;
+	userId?: string;
+	userName?: string;
 }
 
-function fulfill(route: Route, data: unknown, status = 200) {
+function fulfillResponse(route: Route, data: unknown, status = 200) {
 	return route.fulfill({
 		status,
 		contentType: 'application/json',
@@ -304,6 +316,7 @@ function periods(count = 3) {
 }
 
 export async function installTimetableMock(page: Page, options: TimetableMockOptions = {}) {
+	let currentSession = sessionState();
 	const status = options.status ?? 'draft';
 	const selectedVersion = makeTimetableVersion(status);
 	let versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
@@ -326,7 +339,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let lastCreateBody: Record<string, unknown> | null = null;
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
-	const workspace = (version = selectedVersion) => {
+	const workspace = (
+		version = versions.find((item) => item.id === selectedVersion.id) ?? selectedVersion
+	): TimetableBlockWorkspace => {
 		const scheduledPeriods = blocks.filter((block) =>
 			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
 		).length;
@@ -338,7 +353,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
 			latestDeliveryVersionId,
-			bellPeriods: periods(options.periodCount),
+			bellPeriods: options.bellPeriods ?? periods(options.periodCount),
 			blocks,
 			learningGroups: options.learningGroups ?? [
 				{
@@ -384,7 +399,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					isActive: true
 				}
 			],
-			rooms: [
+			rooms: options.rooms ?? [
 				{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' },
 				{ id: timetableIds.roomB, code: 'LAB-2', name: 'ห้องปฏิบัติการ 2', status: 'ACTIVE' }
 			],
@@ -417,7 +432,16 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				}
 			],
 			synchronizedDemands:
-				options.synchronizedDemands ??
+				options.synchronizedDemands?.map((demand) => ({
+					...demand,
+					scheduledPeriods:
+						demand.scheduledPeriods +
+						blocks.filter((block) => block.learningOfferingId === demand.learningOfferingId)
+							.length -
+						(options.blocks ?? []).filter(
+							(block) => block.learningOfferingId === demand.learningOfferingId
+						).length
+				})) ??
 				(options.includeSynchronizedDemand
 					? [
 							{
@@ -426,7 +450,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 								offeringName: 'ชุมนุม',
 								requiredPeriods: 1,
 								scheduledPeriods: synchronizedScheduledPeriods,
-								intendedHomeroomIds: [timetableIds.homeroom]
+								intendedHomeroomIds: [timetableIds.homeroom],
+								linkedGroupCount: 0,
+								pendingGroupCount: 0,
+								conflictGroupCount: 0,
+								excludedGroupCount: 0
 							}
 						]
 					: []),
@@ -443,6 +471,37 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		};
 	};
 
+	const relay = options.relay ?? createDraftRelay();
+	if (options.socketMode !== 'native')
+		await installRoutedDraftSocket(
+			page,
+			relay,
+			(versionId) => workspace(versions.find((version) => version.id === versionId)),
+			{
+				userId: options.userId ?? timetableIds.user,
+				name: options.userName ?? 'ผู้จัดตารางทดสอบ'
+			}
+		);
+	async function fulfill(route: Route, data: unknown, status = 200) {
+		const path = new URL(route.request().url()).pathname;
+		const mutation =
+			route.request().method() !== 'GET' &&
+			status < 400 &&
+			path.startsWith('/api/academic/timetable-blocks/') &&
+			!path.endsWith('/placement-preview') &&
+			!path.endsWith('/publication-preview');
+		if (mutation) {
+			const version = versions.find((item) => item.id === selectedVersion.id);
+			if (version) version.rowVersion++;
+			const headers = route.request().headers();
+			relay.commit(workspace(), {
+				connectionId: headers['x-timetable-connection-id'],
+				mutationId: headers['x-timetable-mutation-id']
+			});
+		}
+		return fulfillResponse(route, data, status);
+	}
+
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -450,14 +509,14 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			const method = route.request().method();
 			if (url.pathname === '/api/auth/me') {
 				await fulfill(route, {
-					id: timetableIds.user,
+					id: options.userId ?? timetableIds.user,
 					username: 'timetable-test',
 					firstName: 'ตารางสอน',
 					displayName: 'ตารางสอน ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
-					session: sessionState(),
+					session: currentSession,
 					profileImageFileId: null,
 					permissions: options.permissions ?? ['*']
 				});
@@ -832,6 +891,29 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	);
 
 	return {
+		workspace,
+		relay,
+		getSessionState: () => structuredClone(currentSession),
+		setPermissions: (permissions: string[]) => {
+			options.permissions = [...permissions];
+		},
+		setSessionState: (next: SessionState) => {
+			currentSession = structuredClone(next);
+		},
+		publishWorkspace: (next: TimetableBlockWorkspace, publish = true) => {
+			blocks = structuredClone(next.blocks);
+			versions = versions.map((version) =>
+				version.id === next.version.id ? structuredClone(next.version) : version
+			);
+			latestDeliveryVersionId = next.latestDeliveryVersionId;
+			sourceIssues = structuredClone(next.sourceIssues);
+			options.staff = structuredClone(next.staff);
+			options.homerooms = structuredClone(next.homerooms);
+			options.rooms = structuredClone(next.rooms);
+			options.bellPeriods = structuredClone(next.bellPeriods);
+			options.offeringSubjectGroups = structuredClone(next.offeringSubjectGroups);
+			return relay.commit(next, {}, publish);
+		},
 		workspaceRequestCount: () => workspaceRequests,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,

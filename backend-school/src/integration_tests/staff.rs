@@ -1,3 +1,3 @@
-mod career_integration_tests;
+pub(crate) mod career_integration_tests;
 mod dashboard_integration_tests;
 mod profile_integration_tests;

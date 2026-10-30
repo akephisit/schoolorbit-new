@@ -1,5 +1,7 @@
+use crate::collaboration::{CommitPermit, TimetableMutationContext};
 use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
 use school_academic_core::models::TimetableVersionStatus;
@@ -54,10 +56,25 @@ async fn lock_draft(
 
 pub async fn update_source(
     pool: &PgPool,
-    actor: Uuid,
+    context: &TimetableMutationContext,
     id: Uuid,
     request: UpdateTimetableDeliverySourceRequest,
 ) -> Result<TimetableVersion, AppError> {
+    context
+        .execute_lifecycle(pool, id, move |pool, permit| async move {
+            update_source_in_permit(&pool, permit, id, request).await
+        })
+        .await
+}
+
+async fn update_source_in_permit(
+    pool: &PgPool,
+    permit: Arc<CommitPermit>,
+    id: Uuid,
+    request: UpdateTimetableDeliverySourceRequest,
+) -> Result<TimetableVersion, AppError> {
+    let actor = permit.actor_id;
+    permit.require_version(id)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_lifecycle.update_source",
@@ -75,38 +92,118 @@ pub async fn update_source(
             .bind(id).bind(source.id).execute().await?;
         audit(&mut tx,actor,id,&context,"academic_timetable_version.source_updated",serde_json::json!({"previousDeliveryVersionId":context.delivery_version_id,"deliveryVersionId":source.id})).await?;
     }
-    tx.commit().await?;
-    timetable_version_service::get_version(pool, id, Utc::now().date_naive()).await
+    let result =
+        timetable_version_service::get_version_on_connection(&mut tx, id, Utc::now().date_naive())
+            .await?;
+    permit.commit(tx).await?;
+    Ok(result)
 }
 
 pub async fn delete_draft(
     pool: &PgPool,
-    actor: Uuid,
+    context: &TimetableMutationContext,
     id: Uuid,
     request: DeleteTimetableDraftRequest,
 ) -> Result<DeletedTimetableDraft, AppError> {
+    context
+        .execute_lifecycle(pool, id, move |pool, permit| async move {
+            delete_draft_in_permit(&pool, permit, id, request).await
+        })
+        .await
+}
+
+async fn delete_draft_in_permit(
+    pool: &PgPool,
+    permit: Arc<CommitPermit>,
+    id: Uuid,
+    request: DeleteTimetableDraftRequest,
+) -> Result<DeletedTimetableDraft, AppError> {
+    permit.require_version(id)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_lifecycle.delete_draft",
     )
     .await?;
-    let result = delete_in_transaction(&mut tx, actor, id, &request, true).await?;
-    tx.commit().await?;
+    let deletion = TimetableDeletionPermit::from_commit(permit.clone(), id)?;
+    let result = delete_in_transaction(&mut tx, &deletion, id, &request, true).await?;
+    permit.commit(tx).await?;
     Ok(result)
+}
+
+/// Only an admitted draft commit or a database-proven immutable cancelled draft may be deleted.
+pub struct TimetableDeletionPermit {
+    version_id: Uuid,
+    actor_id: Uuid,
+    commit: Option<Arc<CommitPermit>>,
+    cancelled_only: bool,
+}
+
+impl TimetableDeletionPermit {
+    fn from_commit(commit: Arc<CommitPermit>, version_id: Uuid) -> Result<Self, AppError> {
+        commit.require_version(version_id)?;
+        Ok(Self {
+            version_id,
+            actor_id: commit.actor_id,
+            commit: Some(commit),
+            cancelled_only: false,
+        })
+    }
+
+    pub async fn cancelled_cleanup(
+        tx: &mut Transaction<'_, Postgres>,
+        actor_id: Uuid,
+        version_id: Uuid,
+    ) -> Result<Self, AppError> {
+        timetable_version_service::require_version_term_write(tx, version_id).await?;
+        let cancelled: bool = DbSession::new(&mut **tx)
+            .scalar(
+                "academic_timetable.services.timetable_lifecycle.cancelled_cleanup_permit",
+                "SELECT status='cancelled' FROM academic_timetable_versions WHERE id=$1 FOR UPDATE",
+            )
+            .bind(version_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("Cancelled timetable not found".into()))?;
+        if !cancelled {
+            return Err(AppError::Conflict(
+                "Operator cleanup only accepts a proven cancelled timetable".into(),
+            ));
+        }
+        Ok(Self {
+            version_id,
+            actor_id,
+            commit: None,
+            cancelled_only: true,
+        })
+    }
 }
 
 pub async fn delete_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
-    actor: Uuid,
+    permit: &TimetableDeletionPermit,
     id: Uuid,
     request: &DeleteTimetableDraftRequest,
     apply: bool,
 ) -> Result<DeletedTimetableDraft, AppError> {
+    if permit.version_id != id {
+        return Err(AppError::Forbidden(
+            "Deletion permit does not cover this timetable".into(),
+        ));
+    }
+    if let Some(commit) = &permit.commit {
+        commit.require_version(id)?;
+    }
+    let actor = permit.actor_id;
     if request.row_version <= 0 {
         return Err(AppError::ValidationError("rowVersion ต้องมากกว่าศูนย์".into()));
     }
     timetable_version_service::require_version_term_write(tx, id).await?;
     let context:DraftContext=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.delete_in_transaction", "SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("รุ่นตารางถูกลบแล้ว".into()))?;
+    if permit.cancelled_only && context.status != TimetableVersionStatus::Cancelled {
+        return Err(AppError::Conflict(
+            "Cancelled cleanup eligibility changed".into(),
+        ));
+    }
     if !matches!(
         context.status,
         TimetableVersionStatus::Draft | TimetableVersionStatus::Cancelled
@@ -208,10 +305,25 @@ pub async fn preview(
 
 pub async fn publish(
     pool: &PgPool,
-    actor: Uuid,
+    context: &TimetableMutationContext,
     id: Uuid,
     request: PublishTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
+    context
+        .execute_lifecycle(pool, id, move |pool, permit| async move {
+            publish_in_permit(&pool, permit, id, request).await
+        })
+        .await
+}
+
+async fn publish_in_permit(
+    pool: &PgPool,
+    permit: Arc<CommitPermit>,
+    id: Uuid,
+    request: PublishTimetableVersionRequest,
+) -> Result<TimetableVersion, AppError> {
+    let actor = permit.actor_id;
+    permit.require_version(id)?;
     let request_hash = hash(&(
         id,
         &request.row_version,
@@ -231,8 +343,14 @@ pub async fn publish(
         if published_id != id || stored_hash != request_hash {
             return Err(AppError::Conflict("idempotencyKey ถูกใช้กับคำขออื่นแล้ว".into()));
         }
-        tx.commit().await?;
-        return timetable_version_service::get_version(pool, id, Utc::now().date_naive()).await;
+        let result = timetable_version_service::get_version_on_connection(
+            &mut tx,
+            id,
+            Utc::now().date_naive(),
+        )
+        .await?;
+        permit.commit(tx).await?;
+        return Ok(result);
     }
     let context = lock_draft(&mut tx, id, request.row_version).await?;
     let preview = build_preview(&mut tx, id, &context, request.effective_from).await?;
@@ -254,8 +372,11 @@ pub async fn publish(
         ));
     }
     audit(&mut tx,actor,id,&context,"academic_timetable_version.published",serde_json::json!({"deliveryVersionId":context.delivery_version_id,"effectiveFrom":request.effective_from,"previewHash":preview.preview_hash,"idempotencyKey":request.idempotency_key})).await?;
-    tx.commit().await?;
-    timetable_version_service::get_version(pool, id, Utc::now().date_naive()).await
+    let result =
+        timetable_version_service::get_version_on_connection(&mut tx, id, Utc::now().date_naive())
+            .await?;
+    permit.commit(tx).await?;
+    Ok(result)
 }
 
 async fn blocks(

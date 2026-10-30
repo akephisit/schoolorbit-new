@@ -20959,6 +20959,292 @@ export interface components {
 			qualityLevel?: number | null;
 			subjects: components['schemas']['SubjectEvaluationSummary'][];
 		};
+		DraftAnchor:
+			| {
+					/** Format: uuid */
+					bellSchedulePeriodId: string;
+					dayOfWeek: string;
+					/** @enum {string} */
+					kind: 'cell';
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  }
+			| {
+					/** Format: uuid */
+					blockId: string;
+					/** @enum {string} */
+					kind: 'block';
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'tray';
+					source: components['schemas']['TimetableBlockPlacementSource'];
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  };
+		DraftAvailability: {
+			blockedCells: components['schemas']['DraftBlockedCell'][];
+			context?: components['schemas']['DraftContext'] | null;
+			roomOptions?: components['schemas']['DraftRoomOptions'] | null;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+		};
+		DraftBlockedCell: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			/** Format: uuid */
+			ownerConnectionId: string;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			reservationId: string;
+		};
+		DraftClaim: {
+			candidate?: components['schemas']['TimetableBlockPlacementCandidate'] | null;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			requestId: string;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+		};
+		DraftClientMessage:
+			| {
+					payload: components['schemas']['DraftPresenceUpdate'];
+					/** @enum {string} */
+					type: 'ClientPresenceUpdate';
+			  }
+			| {
+					payload: components['schemas']['DraftClaim'];
+					/** @enum {string} */
+					type: 'ClientClaim';
+			  }
+			| {
+					payload: components['schemas']['DraftTargetUpdate'];
+					/** @enum {string} */
+					type: 'ClientTarget';
+			  }
+			| {
+					payload: components['schemas']['DraftLeaseCommand'];
+					/** @enum {string} */
+					type: 'ClientRenew';
+			  }
+			| {
+					payload: components['schemas']['DraftLeaseCommand'];
+					/** @enum {string} */
+					type: 'ClientRelease';
+			  }
+			| {
+					payload: components['schemas']['DraftReplay'];
+					/** @enum {string} */
+					type: 'ClientReplay';
+			  };
+		/** @enum {string} */
+		DraftCommandKind: 'claim' | 'target' | 'renew' | 'release';
+		DraftCommandResult: {
+			accepted: boolean;
+			code?: string | null;
+			command: components['schemas']['DraftCommandKind'];
+			/** Format: date-time */
+			expiresAt?: string | null;
+			/** Format: uuid */
+			leaseToken?: string | null;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			reservationId?: string | null;
+			source?: components['schemas']['TimetableBlockPlacementSource'] | null;
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		DraftConnectionPresence: {
+			/** Format: uuid */
+			activeReservationId?: string | null;
+			anchor?: components['schemas']['DraftAnchor'] | null;
+			/** Format: uuid */
+			connectionId: string;
+			context?: components['schemas']['DraftContext'] | null;
+		};
+		DraftContext: {
+			dayOfWeek?: string | null;
+			/** Format: uuid */
+			viewId?: string | null;
+			viewMode: components['schemas']['DraftViewMode'];
+		};
+		DraftEventEnvelope: components['schemas']['DraftServerMessage'] & {
+			/** Format: uuid */
+			epoch: string;
+			/**
+			 * Format: int64
+			 * @description Snapshot sequence for state sync; committed journal sequence for patches.
+			 */
+			seq: number;
+		};
+		DraftLeaseCommand: {
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			requestId: string;
+		};
+		/** @description Recipient-specific lookup membership/metadata changes caused by a normal block mutation. */
+		DraftLookupChanges: {
+			bellPeriodOrder?: string[] | null;
+			homeroomOrder?: string[] | null;
+			removedBellPeriodIds: string[];
+			removedHomeroomIds: string[];
+			removedRoomIds: string[];
+			removedStaffIds: string[];
+			removedSubjectGroupOfferingIds: string[];
+			roomOrder?: string[] | null;
+			staffOrder?: string[] | null;
+			subjectGroupOfferingOrder?: string[] | null;
+			upsertedBellPeriods: components['schemas']['BellSchedulePeriod'][];
+			upsertedHomerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+			upsertedOfferingSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
+			upsertedRooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+			upsertedStaff: components['schemas']['TimetableBlockWorkspaceStaff'][];
+		};
+		/** @description Optional HTTP ownership proof. Actor/session identity always comes from authentication. */
+		DraftMutationIdentity: {
+			/** Format: uuid */
+			connectionId: string;
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			mutationId: string;
+		};
+		DraftParticipant: {
+			color: string;
+			connections: components['schemas']['DraftConnectionPresence'][];
+			name: string;
+			/** Format: uuid */
+			profileImageFileId?: string | null;
+			/** Format: uuid */
+			userId: string;
+		};
+		DraftPatch: {
+			lookupChanges?: components['schemas']['DraftLookupChanges'] | null;
+			/** Format: uuid */
+			mutationId: string;
+			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+			/** Format: uuid */
+			originConnectionId?: string | null;
+			removedBlockIds: string[];
+			sourceIssues: components['schemas']['TimetableSourceIssue'][];
+			summary: components['schemas']['TimetableBlockSummary'];
+			synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+			/** Format: uuid */
+			timetableVersionId: string;
+			/** Format: int64 */
+			totalDraftBlockCount?: number | null;
+			upsertedBlocks: components['schemas']['TimetableBlock'][];
+			version?: components['schemas']['TimetableVersion'] | null;
+		};
+		DraftPresenceUpdate: {
+			anchor?: components['schemas']['DraftAnchor'] | null;
+			context: components['schemas']['DraftContext'];
+		};
+		DraftReplay: {
+			/** Format: int64 */
+			afterSeq: number;
+			/** Format: uuid */
+			epoch: string;
+		};
+		/** @description Public lease identity is distinct from its private ownership token. */
+		DraftReservation: {
+			/** Format: date-time */
+			expiresAt: string;
+			/** Format: uuid */
+			ownerConnectionId: string;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			reservationId: string;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		/** @enum {string} */
+		DraftReservationPurpose: 'drag' | 'edit';
+		DraftRoomOptions: {
+			availableRoomIds: string[];
+			/** Format: uuid */
+			reservationId: string;
+		};
+		DraftServerMessage:
+			| {
+					payload: components['schemas']['DraftStateSync'];
+					/** @enum {string} */
+					type: 'DraftStateSync';
+			  }
+			| {
+					payload: components['schemas']['DraftParticipant'];
+					/** @enum {string} */
+					type: 'DraftPresenceChanged';
+			  }
+			| {
+					payload: {
+						/** Format: uuid */
+						connectionId: string;
+					};
+					/** @enum {string} */
+					type: 'DraftPresenceLeft';
+			  }
+			| {
+					payload: components['schemas']['DraftCommandResult'];
+					/** @enum {string} */
+					type: 'DraftCommandResult';
+			  }
+			| {
+					payload: {
+						reservations: components['schemas']['DraftReservation'][];
+					};
+					/** @enum {string} */
+					type: 'DraftReservationsChanged';
+			  }
+			| {
+					payload: components['schemas']['DraftAvailability'];
+					/** @enum {string} */
+					type: 'DraftAvailability';
+			  }
+			| {
+					payload: components['schemas']['DraftPatch'];
+					/** @enum {string} */
+					type: 'DraftPatched';
+			  }
+			| {
+					payload: {
+						reason: string;
+					};
+					/** @enum {string} */
+					type: 'DraftReconcileRequired';
+			  };
+		DraftStateSync: {
+			/** Format: uuid */
+			connectionId: string;
+			reservations: components['schemas']['DraftReservation'][];
+			users: components['schemas']['DraftParticipant'][];
+			workspace: components['schemas']['TimetableBlockWorkspace'];
+		};
+		DraftTarget: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			/** Format: uuid */
+			blockId?: string | null;
+			dayOfWeek: string;
+		};
+		DraftTargetUpdate: {
+			candidate?: components['schemas']['TimetableBlockPlacementCandidate'] | null;
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			requestId: string;
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		/** @enum {string} */
+		DraftViewMode: 'homeroom' | 'teacher' | 'learning_group' | 'wholeSchool';
 		EffectiveResult: {
 			corrections: components['schemas']['ResultCorrectionRecord'][];
 			effective: components['schemas']['EffectiveResultValue'];
@@ -42066,7 +42352,14 @@ export interface operations {
 	applyTeacherHandoff: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				/** @description Published opening revision ID */
 				id: string;
@@ -43288,7 +43581,14 @@ export interface operations {
 	updateTimetableBlock: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				block_id: string;
 			};
@@ -43362,7 +43662,14 @@ export interface operations {
 				rowVersion: number;
 				timetableVersionId: string;
 			};
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				block_id: string;
 			};
@@ -43393,7 +43700,14 @@ export interface operations {
 	restoreTimetableBlockGroup: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				block_id: string;
 			};
@@ -43428,7 +43742,14 @@ export interface operations {
 	retryTimetableBlockSync: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				block_id: string;
 			};
@@ -43463,7 +43784,14 @@ export interface operations {
 	removeTimetableBlockTarget: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				block_id: string;
 			};
@@ -43534,7 +43862,14 @@ export interface operations {
 	clearTimetable: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -43585,7 +43920,14 @@ export interface operations {
 	createOrdinaryTimetableBlock: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -43707,7 +44049,14 @@ export interface operations {
 			query: {
 				timetableVersionId: string;
 			};
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				series_id: string;
 			};
@@ -43738,7 +44087,14 @@ export interface operations {
 	createStructuralTimetableBlocks: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -43798,7 +44154,14 @@ export interface operations {
 	swapTimetableBlocks: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -43831,7 +44194,14 @@ export interface operations {
 	createSynchronizedTimetableBlock: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -44203,7 +44573,14 @@ export interface operations {
 	applyTimetableTemplate: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				/** @description Timetable template ID */
 				template_id: string;
@@ -44357,7 +44734,14 @@ export interface operations {
 	createTimetableVersion: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path?: never;
 			cookie?: never;
 		};
@@ -44426,7 +44810,14 @@ export interface operations {
 	cloneTimetableVersion: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				/** @description Published timetable version ID */
 				source_id: string;
@@ -44498,7 +44889,14 @@ export interface operations {
 	deleteTimetableDraft: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				version_id: string;
 			};
@@ -44560,7 +44958,14 @@ export interface operations {
 	updateTimetableDeliverySource: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				version_id: string;
 			};
@@ -44702,7 +45107,14 @@ export interface operations {
 	publishTimetableVersion: {
 		parameters: {
 			query?: never;
-			header?: never;
+			header?: {
+				/** @description Server-issued tab connection ID; requires the lease and mutation headers together. */
+				'X-Timetable-Connection-Id'?: string | null;
+				/** @description Private confirmed lease token. Never broadcast this value to peers. */
+				'X-Timetable-Lease-Token'?: string | null;
+				/** @description Client mutation identity, echoed in the committed draft delta. */
+				'X-Timetable-Mutation-Id'?: string | null;
+			};
 			path: {
 				version_id: string;
 			};

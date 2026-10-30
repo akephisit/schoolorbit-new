@@ -3,6 +3,7 @@ use crate::policies::learning_offering_access_policy::OfferingAction;
 use crate::state::AcademicHttpState;
 use axum::{
     extract::{Extension, Path, State},
+    http::HeaderMap,
     response::{IntoResponse, Response},
     Json,
 };
@@ -68,7 +69,7 @@ pub async fn preview_teacher_handoff(
     path = "/api/academic/teacher-handoffs/{id}/apply",
     operation_id = "applyTeacherHandoff",
     tag = "academic",
-    params(("id" = Uuid, Path, description = "Published opening revision ID")),
+    params(crate::mutation::TimetableMutationHeaders, ("id" = Uuid, Path, description = "Published opening revision ID")),
     request_body = ApplyTeacherHandoffRequest,
     responses(
         (status = 200, description = "Teacher timetable handoff applied", body = ApiResponse<ApplyTeacherHandoffResponse>),
@@ -83,6 +84,7 @@ pub async fn apply_teacher_handoff(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(request): Json<ApplyTeacherHandoffRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -98,8 +100,8 @@ pub async fn apply_teacher_handoff(
         },
     )
     .await?;
-    let outcome =
-        teacher_handoff::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
+    let outcome = teacher_handoff::apply(&context.tenant.pool, &mutation, id, request).await?;
     for entry in &outcome.response.handoff.proposed_entries {
         state.websocket_manager.broadcast_mutation(
             session.tenant.subdomain.clone(),

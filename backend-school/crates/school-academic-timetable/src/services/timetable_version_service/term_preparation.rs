@@ -91,10 +91,11 @@ fn reserve_resource_slot(
 
 pub async fn apply(
     tx: &mut Transaction<'_, Postgres>,
-    actor: Uuid,
+    permit: &crate::collaboration::CreationPermit,
     context: &TermPreparationContext,
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
+    let actor = permit.actor_id();
     let source: Option<SourceVersion> = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1",
     )

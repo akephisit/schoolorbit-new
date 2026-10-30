@@ -1,7 +1,20 @@
 import { browserVisibilityDependencies } from '#lib/realtime/visibility-idle.js';
-import { writable, type Writable } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import { BACKEND_WS_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
+import { authStore } from '#lib/stores/auth.js';
 import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
+import {
+	createDraftCollaborationSession,
+	type DraftSessionState,
+	type OwnedDraftLease
+} from '#lib/academic/timetable/collaboration-session.js';
+import type {
+	DraftEventEnvelope,
+	DraftReservationPurpose,
+	TimetableBlockPlacementCandidate,
+	TimetableBlockPlacementSource
+} from '#lib/api/timetable.js';
+import { decodeDraftEvent } from '#lib/academic/timetable/collaboration-decoder.js';
 import {
 	createTimetableSocketRuntime,
 	type TimetableSocketParams
@@ -9,14 +22,14 @@ import {
 
 export interface UserContext {
 	view_mode: string;
-	view_id?: string;
+	view_id?: string | null;
 }
 
 export interface UserPresence {
 	user_id: string;
 	name: string;
 	color: string;
-	context?: UserContext;
+	context?: UserContext | null;
 }
 
 type StateSyncEvent = {
@@ -28,7 +41,7 @@ type UserJoinedEvent = { type: 'UserJoined'; payload: UserPresence };
 type UserLeftEvent = { type: 'UserLeft'; payload: { user_id: string } };
 type CursorMoveEvent = {
 	type: 'CursorMove';
-	payload: { user_id: string; x: number; y: number; context?: UserContext };
+	payload: { user_id: string; x: number; y: number; context?: UserContext | null };
 };
 type AcademicCoreChangedEvent = {
 	type: 'AcademicCoreChanged';
@@ -76,10 +89,128 @@ type MutationEvent =
 
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<
-	Record<string, { x: number; y: number; context?: UserContext }>
+	Record<string, { x: number; y: number; context?: UserContext | null }>
 > = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
+export const draftSessionState = writable<DraftSessionState>({
+	versionId: null,
+	connectionId: null,
+	epoch: null,
+	seq: 0,
+	ready: false,
+	users: [],
+	reservations: [],
+	availability: null,
+	leaseRevision: 0
+});
+export const draftReconcileSignal = writable<{
+	versionId: string;
+	reason: string;
+	revision: number;
+} | null>(null);
+const draftEventListeners = new Set<(event: DraftEventEnvelope) => void>();
+const draftLeaseLostListeners = new Set<(lease: OwnedDraftLease, error: Error) => void>();
+let currentSocketParams: TimetableSocketParams | null = null;
+let invalidDraftMessages = 0;
+
+const draftSession = createDraftCollaborationSession({
+	send: (message) => timetableSocketRuntime.send(JSON.stringify(message)),
+	uuid: () => crypto.randomUUID(),
+	setTimer: (callback, delay) => setTimeout(callback, delay),
+	clearTimer: (timer) => clearTimeout(timer),
+	onState: (state) => draftSessionState.set(state),
+	onEvent: (event) => {
+		if (event.type === 'DraftStateSync') {
+			needsResumeReconcile = false;
+			timetableSocketRuntime.confirmStateSync();
+		}
+		for (const listener of draftEventListeners) listener(event);
+	},
+	onReconcile: (reason) => {
+		const params = currentSocketParams;
+		if (!params?.timetableVersionId) return;
+		draftSession.reset(params.timetableVersionId);
+		timetableSocketRuntime.disconnect();
+		timetableSocketRuntime.connect(params);
+		draftReconcileSignal.update((previous) => ({
+			versionId: params.timetableVersionId!,
+			reason,
+			revision: (previous?.revision ?? 0) + 1
+		}));
+	},
+	onLeaseLost: (lease, error) => {
+		for (const listener of draftLeaseLostListeners) listener(lease, error);
+	}
+});
+
+export async function claimDraftLease(
+	versionId: string,
+	source: TimetableBlockPlacementSource,
+	candidate: TimetableBlockPlacementCandidate,
+	purpose: DraftReservationPurpose,
+	signal?: AbortSignal
+): Promise<OwnedDraftLease> {
+	if (draftSession.state.versionId && draftSession.state.versionId !== versionId)
+		throw new Error('รุ่นตารางสอนเปลี่ยนไป กรุณาเลือกคาบใหม่');
+	if (!draftSession.state.ready || draftSession.state.versionId !== versionId) {
+		await new Promise<void>((resolve, reject) => {
+			let finished = false;
+			let unsubscribe = () => {};
+			const timer = setTimeout(() => finish(false), 4000);
+			function finish(ready: boolean) {
+				if (finished) return;
+				finished = true;
+				clearTimeout(timer);
+				unsubscribe();
+				signal?.removeEventListener('abort', abort);
+				if (ready) resolve();
+				else reject(new Error('ยังเชื่อมต่อผู้ร่วมจัดตารางไม่ได้ กรุณาลองใหม่'));
+			}
+			function abort() {
+				finish(false);
+			}
+			if (signal?.aborted) {
+				finish(false);
+				return;
+			}
+			signal?.addEventListener('abort', abort, { once: true });
+			unsubscribe = draftSessionState.subscribe((state) => {
+				if (state.versionId === versionId && state.ready) finish(true);
+				else if (state.versionId && state.versionId !== versionId) finish(false);
+			});
+		});
+	}
+	return draftSession.claim(source, candidate, purpose, signal);
+}
+export const targetDraftLease = draftSession.target;
+export const releaseDraftLease = draftSession.release;
+export const ownsDraftLease = draftSession.owns;
+export const draftMutationIdentity = draftSession.mutation;
+export const sendDraftPresence = draftSession.presence;
+export type { OwnedDraftLease };
+
+export function subscribeDraftEvents(listener: (event: DraftEventEnvelope) => void) {
+	draftEventListeners.add(listener);
+	return () => {
+		draftEventListeners.delete(listener);
+	};
+}
+export function subscribeDraftLeaseLost(listener: (lease: OwnedDraftLease, error: Error) => void) {
+	draftLeaseLostListeners.add(listener);
+	return () => {
+		draftLeaseLostListeners.delete(listener);
+	};
+}
+
+export function requestDraftSnapshot(): boolean {
+	const params = currentSocketParams;
+	if (!params?.timetableVersionId) return false;
+	draftSession.reset(params.timetableVersionId);
+	timetableSocketRuntime.disconnect();
+	timetableSocketRuntime.connect(params);
+	return true;
+}
 
 let currentUserId: string | null = null;
 let currentAcademicTermId: string | null = null;
@@ -94,6 +225,7 @@ function clearRealtimeState() {
 	isConnected.set(false);
 	activeUsers.set([]);
 	remoteCursors.set({});
+	draftSession.reset(currentSocketParams?.timetableVersionId ?? null);
 }
 
 function triggerReconcile(currentSeq?: number) {
@@ -138,14 +270,64 @@ function handleMutation(event: MutationEvent & { seq?: number }) {
 	triggerReconcile();
 }
 
+function validLegacyStateSync(value: unknown): value is StateSyncEvent {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		!('type' in value) ||
+		value.type !== 'StateSync' ||
+		!('payload' in value) ||
+		!value.payload ||
+		typeof value.payload !== 'object'
+	)
+		return false;
+	const payload = value.payload;
+	if (
+		!('current_seq' in payload) ||
+		!Number.isSafeInteger(payload.current_seq) ||
+		Number(payload.current_seq) < 0 ||
+		!('users' in payload) ||
+		!Array.isArray(payload.users)
+	)
+		return false;
+	return payload.users.every(
+		(user: unknown) =>
+			user !== null &&
+			typeof user === 'object' &&
+			'user_id' in user &&
+			typeof user.user_id === 'string' &&
+			'name' in user &&
+			typeof user.name === 'string' &&
+			'color' in user &&
+			typeof user.color === 'string' &&
+			(!('context' in user) ||
+				user.context === undefined ||
+				user.context === null ||
+				(user.context !== null &&
+					typeof user.context === 'object' &&
+					'view_mode' in user.context &&
+					typeof user.context.view_mode === 'string' &&
+					(!('view_id' in user.context) ||
+						user.context.view_id === undefined ||
+						user.context.view_id === null ||
+						typeof user.context.view_id === 'string')))
+	);
+}
+
 function handleStateSync(event: StateSyncEvent) {
+	if (!validLegacyStateSync(event)) return;
+	timetableSocketRuntime.confirmStateSync();
 	activeUsers.set(event.payload.users.filter((user) => user.user_id !== currentUserId));
 	const currentSeq = event.payload.current_seq;
 	if (needsResumeReconcile || currentSeq !== lastSeq) triggerReconcile(currentSeq);
 	needsResumeReconcile = false;
 }
 
-function handleMessage(event: SequencedTimetableEvent) {
+function handleMessage(event: SequencedTimetableEvent | DraftEventEnvelope) {
+	if ('epoch' in event) {
+		draftSession.apply(event);
+		return;
+	}
 	if (isMutationEvent(event)) {
 		handleMutation(event);
 		return;
@@ -192,12 +374,41 @@ function handleMessage(event: SequencedTimetableEvent) {
 	}
 }
 
-async function recoverTimetableAuth() {
+async function recoverTimetableAuth(
+	isCurrent: () => boolean
+): ReturnType<typeof realtimeAuthRecovery> {
+	const params = currentSocketParams;
+	const identity = get(authStore);
+	const epoch = authStore.sessionEpoch;
+	const sessionId = identity.session?.sessionId;
+	const ownsRecovery = () => {
+		const current = get(authStore);
+		return (
+			isCurrent() &&
+			params === currentSocketParams &&
+			epoch === authStore.sessionEpoch &&
+			current.isAuthenticated &&
+			current.user?.id === params?.currentUserId &&
+			current.session?.sessionId === sessionId
+		);
+	};
+	if (
+		!params ||
+		!identity.isAuthenticated ||
+		!sessionId ||
+		identity.user?.id !== params.currentUserId ||
+		!ownsRecovery()
+	)
+		return 'stop';
 	try {
 		const { authAPI } = await import('#lib/api/auth.js');
-		await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
-	} catch (error) {
-		console.error('Failed to refresh auth after timetable policy close', error);
+		if (!ownsRecovery()) return 'stop';
+		const result = await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
+		return ownsRecovery() ? result : 'stop';
+	} catch {
+		if (!ownsRecovery()) return 'stop';
+		console.error('Failed to refresh auth after timetable policy close');
+		return 'retry';
 	}
 }
 
@@ -207,6 +418,9 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 		currentAcademicTermId = params.academicTermId;
 		const url = new URL('/ws/timetable', BACKEND_WS_URL);
 		url.searchParams.set('academicTermId', String(params.academicTermId));
+		if (params.timetableVersionId) {
+			url.searchParams.set('timetableVersionId', params.timetableVersionId);
+		}
 		const schoolSubdomain = getSchoolSubdomainHint();
 		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
 		return new WebSocket(url);
@@ -232,33 +446,54 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 	},
 	onOpen: () => isConnected.set(true),
 	onMessage: (data) => {
+		if (currentSocketParams?.timetableVersionId) {
+			const event = decodeDraftEvent(data);
+			if (event) {
+				draftSession.apply(event);
+				return;
+			}
+			const params = currentSocketParams;
+			invalidDraftMessages++;
+			timetableSocketRuntime.disconnect();
+			clearRealtimeState();
+			if (invalidDraftMessages === 1) timetableSocketRuntime.connect(params);
+			return;
+		}
 		try {
 			handleMessage(JSON.parse(String(data)) as SequencedTimetableEvent);
-		} catch (error) {
-			console.error('Failed to parse timetable realtime event', error);
+		} catch {
+			console.error('Failed to parse timetable realtime event');
 		}
 	},
-	onClose: (event) => {
+	onClose: () => {
 		clearRealtimeState();
-		if (event.code !== 1008) return;
-		void recoverTimetableAuth();
 	},
+	onPolicyClose: recoverTimetableAuth,
 	onError: (error) => console.error('Timetable realtime connection failed', error)
 });
 
 export function connectTimetableSocket(params: TimetableSocketParams) {
-	if (currentAcademicTermId !== params.academicTermId) {
+	if (
+		currentAcademicTermId !== params.academicTermId ||
+		currentUserId !== params.currentUserId ||
+		currentSocketParams?.timetableVersionId !== params.timetableVersionId
+	) {
 		lastSeq = 0;
+		invalidDraftMessages = 0;
+		currentSocketParams = { ...params };
 		clearRealtimeState();
 	}
+	currentSocketParams = { ...params };
 	timetableSocketRuntime.connect(params);
 }
 
 export function disconnectTimetableSocket() {
+	draftReconcileSignal.set(null);
 	needsResumeReconcile = false;
 	currentUserId = null;
 	currentAcademicTermId = null;
 	lastSeq = 0;
+	currentSocketParams = null;
 	timetableSocketRuntime.disconnect();
 	clearRealtimeState();
 }

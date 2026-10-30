@@ -1331,6 +1331,27 @@ Preserve:
 
 Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity through the same proxy path clients use.
 
+Timetable draft collaboration uses the supported single backend process. The application composes
+one domain runtime for HTTP writes and version-scoped sockets; legacy term observers remain
+separate consumers. Reservations expire after ten seconds and are renewed by active clients.
+Cursor, drag, target and renewal traffic stays in memory. No database migration, reservation table,
+worker, external broker or new runtime environment setting is required.
+
+Accepted writes keep their resource exclusion through COMMIT and scoped patch publication even
+when the initiating request or socket disconnects. The version's database revision and constraints
+remain authoritative. A failed/ambiguous COMMIT or unavailable publication invalidates the cached
+draft and asks clients to reconcile; never retry a possibly committed create automatically. Cold
+recovery waits on the version row before reading its canonical graph. Upstream source and central
+permission changes invalidate retained rooms even when they have no members.
+
+A process restart discards roster, leases and replay history and creates a new epoch. Clients join
+with a fresh authorized snapshot; committed timetable data is preserved in PostgreSQL. Do not scale
+this runtime to multiple backend processes without a separately designed shared authority. Keep
+proxy acceptance and the direct HTTP/WebSocket fixture recipes in [testing](./TESTING.md).
+The frontend decoder and standalone smoke acceptance support at most 64 MiB of UTF-8 bytes per
+complete JSON event; this is a client/acceptance transport budget, not a per-note/schema limit or
+a server outbound enforcement claim. Server incoming interaction commands remain limited to 64 KiB.
+
 ## School Session Runtime and Cutover
 
 `SESSION_HMAC_KEY` is the stable backend-school owner for domain-separated CSRF HMACs and reproducible pending session credentials. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments and restarts. A key change requires explicit session-revocation recovery because it changes CSRF and pending derivation. Keep it independent of other service credentials.

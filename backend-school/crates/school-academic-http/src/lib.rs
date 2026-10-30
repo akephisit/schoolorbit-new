@@ -4,6 +4,7 @@ pub mod gradebook;
 pub mod handlers;
 pub mod learner_evaluation;
 pub mod lifecycle;
+mod mutation;
 pub mod policies;
 pub mod realtime;
 pub mod results;

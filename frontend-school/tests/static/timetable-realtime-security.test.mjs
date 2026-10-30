@@ -96,10 +96,11 @@ test('canonical store delegates socket ownership, timers, and network listeners 
 });
 
 test('policy close refreshes auth without clearing or blindly reconnecting', () => {
-	assert.match(onCloseContract, /onClose:\s*\(event\)/);
+	assert.match(onCloseContract, /onClose:\s*\(\)/);
 	assert.match(onCloseContract, /clearRealtimeState\(\)/);
-	assert.match(onCloseContract, /event\.code\s*!==\s*1008/);
-	assert.match(onCloseContract, /recoverTimetableAuth\(\)/);
+	assert.match(onCloseContract, /onPolicyClose:\s*recoverTimetableAuth/);
+	assert.match(runtime, /dependencies\.onPolicyClose/);
+	assert.match(store, /epoch === authStore\.sessionEpoch/);
 	assert.match(
 		store,
 		/realtimeAuthRecovery\(\(\)\s*=>\s*authAPI\.refreshCurrentUser\(\{\s*silent:\s*true\s*\}\)\)/

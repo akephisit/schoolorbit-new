@@ -423,7 +423,7 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
             .filter_map(|parameter| parameter.split_once(':'))
             .map(|(name, _)| match name.trim() {
                 "pool" => "&context.tenant.pool",
-                "actor_id" => "context.actor.user_id",
+                "context" => "&mutation",
                 "request" => "payload",
                 "block_id" => "block_id",
                 "series_id" => "series_id",
@@ -443,6 +443,47 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
             .filter(|argument| !argument.is_empty())
             .collect();
         assert_eq!(actual, expected, "{operation} must preserve identity roles");
+    }
+}
+
+#[test]
+fn timetable_isolated_test_context_cannot_enter_production_dependency_or_call_paths() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    let production = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .unwrap()
+        .split("[dev-dependencies]")
+        .next()
+        .unwrap();
+    assert!(!production.lines().any(
+        |line| line.starts_with("school-academic-timetable =") && line.contains("test-support")
+    ));
+    let domain = read_source(workspace_crate_dir("school-academic-timetable").join("Cargo.toml"));
+    assert!(domain.contains("test-support = []"));
+    assert!(!domain
+        .lines()
+        .any(|line| line.trim_start().starts_with("default =") && line.contains("test-support")));
+    let context = read_source(
+        workspace_crate_dir("school-academic-timetable").join("src/collaboration/mutation.rs"),
+    );
+    assert!(
+        context.contains("#[cfg(any(test, feature = \"test-support\"))]\n    pub fn for_tests(")
+    );
+    for source in list_files(manifest_dir().join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        if source
+            .components()
+            .any(|part| part.as_os_str() == "integration_tests")
+        {
+            continue;
+        }
+        assert!(
+            !read_source(&source).contains("TimetableMutationContext::for_tests"),
+            "production cannot create isolated collaboration authority: {}",
+            source.display()
+        );
     }
 }
 
@@ -9581,11 +9622,20 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
             .unwrap()
             .is_match(&get_blocks)
     );
-    let clear_timetable = extract_braced_block(&templates, "pub async fn clear_timetable", false);
-    assert!(clear_timetable.contains("get_blocks_on_connection(&mut completion, &ids)"));
+    let clear_entry = extract_braced_block(&templates, "pub async fn clear_timetable", false);
     assert!(
-        clear_timetable.find("transaction.commit()").unwrap()
-            < clear_timetable.find("get_blocks_on_connection(").unwrap()
+        Regex::new(r"context\s*\.\s*execute")
+            .unwrap()
+            .is_match(&clear_entry)
+            && clear_entry.contains("MutationScope::WholeDraft")
+    );
+    let clear_timetable =
+        extract_braced_block(&templates, "async fn clear_timetable_in_permit", false);
+    assert!(clear_timetable.contains("get_blocks_on_connection("));
+    assert!(
+        clear_timetable.find("get_blocks_on_connection(").unwrap()
+            < clear_timetable.find("permit.commit(transaction)").unwrap(),
+        "the one batched hydration must precede COMMIT so failure cannot hide committed changes"
     );
     assert!(
         !Regex::new(r"(?s)for\s+id\s+in\s+ids.*?get_block(?:_on_connection)?\(")

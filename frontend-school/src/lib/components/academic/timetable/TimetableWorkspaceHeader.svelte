@@ -6,12 +6,16 @@
 
 	import type { TimetablePageView } from '#lib/academic/timetable/board-state.js';
 	import TimetableViewSelector from './TimetableViewSelector.svelte';
+	import TimetableCollaborators from './TimetableCollaborators.svelte';
+	import type { TimetableCollaborator } from '#lib/academic/timetable/collaboration-presentation.js';
 
 	let {
 		version,
 		view,
 		isSaving = false,
 		editing = false,
+		collaborators = [],
+		onJumpCollaborator,
 		controls,
 		onViewChange
 	}: {
@@ -19,6 +23,8 @@
 		view: TimetablePageView;
 		isSaving?: boolean;
 		editing?: boolean;
+		collaborators?: TimetableCollaborator[];
+		onJumpCollaborator?: (connectionId: string) => void;
 		controls: Snippet;
 		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
@@ -40,8 +46,14 @@
 	<div class="h-1 bg-primary"></div>
 	<div class="flex flex-wrap items-end gap-3 p-3 sm:p-4">
 		<div class="w-full min-w-0 space-y-2 sm:w-auto sm:min-w-72 sm:flex-1 sm:basis-72">
-			<div class="flex flex-wrap items-center gap-2">
+			<div class="flex min-h-8 flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
+				{#if version.status === 'draft'}
+					<TimetableCollaborators
+						users={collaborators}
+						onJump={(connectionId) => onJumpCollaborator?.(connectionId)}
+					/>
+				{/if}
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
 					{version.status === 'draft'
 						? editing

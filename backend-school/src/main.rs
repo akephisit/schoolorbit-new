@@ -227,6 +227,10 @@ async fn run() -> Result<(), StartupError> {
         permission_events: permission_event_tx.clone(),
     };
 
+    let _timetable_authority_events = websocket_manager
+        .clone()
+        .spawn_authority_invalidation_task(auth_runtime.permission_events.subscribe());
+
     let state = AppState {
         admin_client,
         pool_manager,

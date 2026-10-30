@@ -9,6 +9,7 @@ use school_tenancy::TenantContext;
 pub struct ActorTenantContext {
     pub tenant: TenantContext,
     pub actor: ActorContext,
+    pub permission_revision: school_authorization::PermissionCacheRevision,
 }
 
 pub struct CurrentUserTenantContext {
@@ -21,6 +22,9 @@ pub async fn actor_tenant_context_from_session(
     session: &AuthenticatedSession,
 ) -> Result<ActorTenantContext, AppError> {
     let tenant = session.tenant.clone();
+    let permission_revision = runtime
+        .permission_cache
+        .snapshot_revision(&tenant.subdomain, session.user_id);
     let actor = load_actor_context_for_session(
         session.user_id,
         &tenant.subdomain,
@@ -29,7 +33,20 @@ pub async fn actor_tenant_context_from_session(
     )
     .await?;
 
-    Ok(ActorTenantContext { tenant, actor })
+    if runtime
+        .permission_cache
+        .snapshot_revision(&tenant.subdomain, session.user_id)
+        != permission_revision
+    {
+        return Err(AppError::ServiceUnavailable(
+            "Authorization changed during resolution; retry the request".into(),
+        ));
+    }
+    Ok(ActorTenantContext {
+        tenant,
+        actor,
+        permission_revision,
+    })
 }
 
 pub fn current_user_tenant_context_from_session(

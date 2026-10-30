@@ -31,6 +31,8 @@
 		placementPreview,
 		placementReasons,
 		isBlockPending,
+		blockLockLabel,
+		cellLockLabel,
 		isCellPendingRemoval,
 		onSelectBlock,
 		onDragStart,
@@ -50,6 +52,8 @@
 		placementReasons?: (dayOfWeek: string, periodId: string) => TimetablePlacementReasons | null;
 		placementPreview?: (dayOfWeek: string, periodId: string) => TimetablePlacementCard | null;
 		isBlockPending?: (blockId: string) => boolean;
+		blockLockLabel?: (blockId: string) => string | null;
+		cellLockLabel?: (dayOfWeek: string, periodId: string) => string | null;
 		isCellPendingRemoval?: (dayOfWeek: string, periodId: string) => boolean;
 		onSelectBlock?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
@@ -81,6 +85,8 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <section
+	data-timetable-board-view={view}
+	data-timetable-owner-id={row.id}
 	class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-background"
 	aria-label={`ตารางของ ${rowLabel}`}
 >
@@ -128,11 +134,13 @@
 								bellSchedulePeriodId: period.id
 							})}
 							<TimetableCell
+								rowId={row.id}
 								dayOfWeek={day.id}
 								periodId={period.id}
 								dayLabel={day.label}
 								periodLabel={periodLabel(period)}
 								state={currentCellState}
+								lockedBy={cellLockLabel?.(day.id, period.id) ?? null}
 								disabled={!canEdit}
 								placementReasons={placementReasons?.(day.id, period.id) ?? null}
 								placementCard={placementPreview?.(day.id, period.id) ?? null}
@@ -155,6 +163,7 @@
 										selected={selectedBlockId === block.id}
 										canEdit={canEdit && !pending}
 										{pending}
+										lockedBy={blockLockLabel?.(block.id) ?? null}
 										onSelect={onSelectBlock}
 										{onDragStart}
 										onDragEnd={onCancelDrag}

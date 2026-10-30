@@ -526,11 +526,13 @@ fn academic_router(
         actor,
         "staff",
     );
+    let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     let state = school_academic_http::state::AcademicHttpState {
         staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
         placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
         auth_runtime: runtime,
-        websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+        websocket_manager: websocket_manager.clone(),
+        collaboration: websocket_manager.collaboration(),
         result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
         lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
     };
@@ -2209,7 +2211,9 @@ async fn timetable_placement_preview_http_authorizes_persisted_source_resources(
         .bind(bell).fetch_one(&pool).await.unwrap();
     let block = timetable_block_service::create_structural_blocks(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
         CreateStructuralTimetableBlocksRequest {
             timetable_version_id: version,
             academic_term_id: term,

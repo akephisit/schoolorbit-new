@@ -6,6 +6,51 @@ use uuid::Uuid;
 
 pub(super) const CURRENT_SUBJECT_GROUPS: &str = "SELECT DISTINCT om.user_id,sg.id,sg.name_th AS name FROM organization_members om JOIN organization_units ou ON ou.id=om.organization_unit_id AND ou.is_active AND ou.unit_type='subject_group' JOIN subject_groups sg ON sg.id=ou.subject_group_id AND sg.is_active WHERE om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)";
 
+/// Bounded private portrait references; authorization matches the Staff profile/Files reader.
+pub async fn collaboration_portraits_on_connection(
+    connection: &mut sqlx::PgConnection,
+    viewer: &school_authorization::ActorContext,
+    user_ids: &[Uuid],
+) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+    use school_authorization::resource_access_policy::UserResourceListAccess;
+    if user_ids.len() > 128 {
+        return Err(AppError::ValidationError(
+            "Too many collaboration portrait targets".into(),
+        ));
+    }
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut result = DbSession::new(connection).query_as::<(Uuid, Uuid)>(
+        "staff.services.staff_directory_query.collaboration_portraits.self",
+        "SELECT u.id,u.profile_image_file_id FROM users u JOIN files file ON file.id=u.profile_image_file_id AND file.owner_user_id=u.id AND file.purpose_code='profile_image' AND file.lifecycle_status='ready' AND file.deleted_at IS NULL WHERE u.id=$1 AND u.id=ANY($2) AND u.user_type='staff' AND u.status='active'",
+    ).bind(viewer.user_id).bind(user_ids).fetch_all().await?;
+    let access = match crate::staff_access_policy::resolve_staff_profile_list_access(viewer) {
+        Ok(UserResourceListAccess::School) => StaffListAccess::School,
+        Ok(UserResourceListAccess::OrganizationUnit(id)) => StaffListAccess::OrganizationUnit(id),
+        Ok(UserResourceListAccess::OrganizationTree(id)) => StaffListAccess::OrganizationTree(id),
+        Ok(UserResourceListAccess::Own(_))
+        | Ok(UserResourceListAccess::Assigned(_))
+        | Err(AppError::Forbidden(_)) => return Ok(result),
+        Err(error) => return Err(error),
+    };
+    let mut query = QueryBuilder::<Postgres>::new("SELECT u.id,u.profile_image_file_id FROM users u JOIN files file ON file.id=u.profile_image_file_id AND file.owner_user_id=u.id AND file.purpose_code='profile_image' AND file.lifecycle_status='ready' AND file.deleted_at IS NULL WHERE u.user_type='staff' AND u.status='active' AND u.id=ANY(");
+    query.push_bind(user_ids).push(")");
+    push_staff_access_filter(&mut query, access);
+    result.extend(
+        DbSession::new(connection)
+            .prepared_query_as(
+                "staff.services.staff_directory_query.collaboration_portraits.scoped",
+                query.build_query_as::<(Uuid, Uuid)>(),
+            )
+            .fetch_all()
+            .await?,
+    );
+    result.sort_unstable();
+    result.dedup();
+    Ok(result)
+}
+
 pub(super) fn validate_directory_filters(filter: &StaffListFilter) -> Result<(), AppError> {
     let invalid = || AppError::BadRequest("ตัวกรองบุคลากรไม่ถูกต้อง".into());
     for (value, missing) in [

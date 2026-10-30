@@ -10,7 +10,14 @@
 	import type { TimetableBlock } from '#lib/api/timetable.js';
 	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { AlertTriangle, DoorOpen, LoaderCircle, Trash2, Users } from '@lucide/svelte';
+	import {
+		AlertTriangle,
+		DoorOpen,
+		LoaderCircle,
+		LockKeyhole,
+		Trash2,
+		Users
+	} from '@lucide/svelte';
 
 	let {
 		block,
@@ -21,6 +28,7 @@
 		selected = false,
 		canEdit = false,
 		pending = false,
+		lockedBy = null,
 		needsReview = false,
 		onSelect,
 		onDragStart,
@@ -35,6 +43,7 @@
 		selected?: boolean;
 		canEdit?: boolean;
 		pending?: boolean;
+		lockedBy?: string | null;
 		needsReview?: boolean;
 		onSelect?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
@@ -88,7 +97,10 @@
 	}
 
 	function dragStart(event: DragEvent): void {
-		if (!canEdit) return;
+		if (!canEdit || lockedBy) {
+			event.preventDefault();
+			return;
+		}
 		event.dataTransfer?.setData('text/plain', block.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 		if (event.currentTarget instanceof HTMLElement) {
@@ -99,18 +111,20 @@
 </script>
 
 <article
+	data-timetable-anchor="block"
 	data-timetable-lesson-card
 	data-lesson-color={colorKey ?? undefined}
 	style={timetableLessonColorStyle(colorKey, colors)}
 	data-block-id={block.id}
 	data-row-id={rowId}
 	data-pending={pending ? 'true' : undefined}
-	draggable={canEdit}
+	data-timetable-locked-by={lockedBy ?? undefined}
+	draggable={canEdit && !lockedBy}
 	class={[
 		'group relative flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
 		colorKey && 'timetable-lesson-fill',
 		needsReview && 'border-destructive/60',
-		canEdit && 'cursor-grab active:cursor-grabbing',
+		canEdit && !lockedBy && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
 	]}
 	aria-label={accessibleLabel}
@@ -118,6 +132,14 @@
 	ondragstart={dragStart}
 	ondragend={() => onDragEnd?.()}
 >
+	{#if lockedBy}
+		<span
+			class="pointer-events-none absolute bottom-1 right-1 z-30 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-1 rounded border bg-background/95 px-1 text-[10px]"
+			title={`${lockedBy} กำลังใช้คาบนี้`}
+		>
+			<LockKeyhole class="size-3 shrink-0" /><span class="truncate">{lockedBy}</span>
+		</span>
+	{/if}
 	<div class="flex min-w-0 items-start">
 		<button
 			type="button"
@@ -175,7 +197,7 @@
 			</p>
 		{/if}
 	</div>
-	{#if canEdit}
+	{#if canEdit && !lockedBy}
 		<Button
 			type="button"
 			size="icon"

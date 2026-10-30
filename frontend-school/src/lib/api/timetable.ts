@@ -9,6 +9,34 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 
+export type DraftAnchor = Schemas['DraftAnchor'];
+export type DraftAvailability = Schemas['DraftAvailability'];
+export type DraftClientMessage = Schemas['DraftClientMessage'];
+export type DraftCommandResult = Schemas['DraftCommandResult'];
+export type DraftContext = Schemas['DraftContext'];
+export type DraftEventEnvelope = Schemas['DraftEventEnvelope'];
+export type DraftLookupChanges = Schemas['DraftLookupChanges'];
+export type DraftMutationIdentity = Schemas['DraftMutationIdentity'];
+export type DraftParticipant = Schemas['DraftParticipant'];
+export type DraftPatch = Schemas['DraftPatch'];
+export type DraftPresenceUpdate = Schemas['DraftPresenceUpdate'];
+export type DraftReservation = Schemas['DraftReservation'];
+export type DraftReservationPurpose = Schemas['DraftReservationPurpose'];
+export type DraftStateSync = Schemas['DraftStateSync'];
+export type DraftTarget = Schemas['DraftTarget'];
+
+export function timetableMutationOptions(identity?: DraftMutationIdentity): ApiRequestOptions {
+	return identity
+		? {
+				headers: {
+					'X-Timetable-Connection-Id': identity.connectionId,
+					'X-Timetable-Lease-Token': identity.leaseToken,
+					'X-Timetable-Mutation-Id': identity.mutationId
+				}
+			}
+		: {};
+}
+
 export type TimetableBlock = Schemas['TimetableBlock'];
 export type TimetableBlockKind = Schemas['TimetableBlockKind'];
 export type TimetableBlockGroup = Schemas['TimetableBlockGroup'];
@@ -257,15 +285,21 @@ export const deleteTimetableDraft = (id: string, body: Schemas['DeleteTimetableD
 		'ลบแบบร่างไม่สำเร็จ'
 	);
 
-export const createOrdinaryTimetableBlock = (body: CreateOrdinaryTimetableBlockRequest) =>
+export const createOrdinaryTimetableBlock = (
+	body: CreateOrdinaryTimetableBlockRequest,
+	options: ApiRequestOptions = {}
+) =>
 	timetableData(
-		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/ordinary', body),
+		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/ordinary', body, options),
 		'สร้างคาบในตารางไม่สำเร็จ'
 	);
 
-export const createSynchronizedTimetableBlock = (body: CreateSynchronizedTimetableBlockRequest) =>
+export const createSynchronizedTimetableBlock = (
+	body: CreateSynchronizedTimetableBlockRequest,
+	options: ApiRequestOptions = {}
+) =>
 	timetableData(
-		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/synchronized', body),
+		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/synchronized', body, options),
 		'สร้างช่วงกิจกรรมพร้อมกันไม่สำเร็จ'
 	);
 
@@ -275,16 +309,25 @@ export const createStructuralTimetableBlocks = (body: CreateStructuralTimetableB
 		'เพิ่มคาบพิเศษไม่สำเร็จ'
 	);
 
-export const updateTimetableBlock = (id: string, body: UpdateTimetableBlockRequest) =>
+export const updateTimetableBlock = (
+	id: string,
+	body: UpdateTimetableBlockRequest,
+	options: ApiRequestOptions = {}
+) =>
 	timetableData(
-		apiClient.put<TimetableBlock>(`/api/academic/timetable-blocks/${encodeURIComponent(id)}`, body),
+		apiClient.put<TimetableBlock>(
+			`/api/academic/timetable-blocks/${encodeURIComponent(id)}`,
+			body,
+			options
+		),
 		'แก้ไขคาบในตารางไม่สำเร็จ'
 	);
 
 export const deleteTimetableBlock = (
 	id: string,
 	rowVersion: number,
-	timetableVersionId: string
+	timetableVersionId: string,
+	options: ApiRequestOptions = {}
 ) => {
 	const query = {
 		rowVersion,
@@ -296,7 +339,8 @@ export const deleteTimetableBlock = (
 	});
 	return timetableData(
 		apiClient.delete<TimetableBlock>(
-			`/api/academic/timetable-blocks/${encodeURIComponent(id)}?${params.toString()}`
+			`/api/academic/timetable-blocks/${encodeURIComponent(id)}?${params.toString()}`,
+			options
 		),
 		'ลบคาบในตารางไม่สำเร็จ'
 	);
@@ -317,12 +361,14 @@ export const deleteTimetableBlockSeries = (seriesId: string, timetableVersionId:
 
 export const removeTimetableBlockTarget = (
 	blockId: string,
-	body: RemoveTimetableBlockTargetRequest
+	body: RemoveTimetableBlockTargetRequest,
+	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
 		apiClient.deleteWithBody<TimetableBlock>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/targets`,
-			body
+			body,
+			options
 		),
 		'นำห้องหรือครูออกจากคาบไม่สำเร็จ'
 	);
@@ -348,9 +394,16 @@ export const restoreTimetableBlockGroup = (
 		'คืนกลุ่มกิจกรรมเข้าคาบไม่สำเร็จ'
 	);
 
-export const swapTimetableBlocks = (body: SwapTimetableBlocksRequest) =>
+export const swapTimetableBlocks = (
+	body: SwapTimetableBlocksRequest,
+	options: ApiRequestOptions = {}
+) =>
 	timetableData(
-		apiClient.post<SwapTimetableBlocksResponse>('/api/academic/timetable-blocks/swap', body),
+		apiClient.post<SwapTimetableBlocksResponse>(
+			'/api/academic/timetable-blocks/swap',
+			body,
+			options
+		),
 		'สลับคาบไม่สำเร็จ'
 	);
 
