@@ -19,6 +19,7 @@
 </script>
 
 <script lang="ts">
+	import { MediaQuery } from 'svelte/reactivity';
 	import { cn } from '#lib/utils.js';
 	import {
 		CALENDAR_WEEKDAY_LABELS,
@@ -56,8 +57,23 @@
 	const fallbackColor = '#64748b';
 	const todayDate = toIsoDate(new Date());
 
+	const desktop = new MediaQuery('(min-width: 640px)');
+	let weeksHeight = $state(0);
+	const visibleLaneCount = $derived(
+		fillHeight && weeksHeight
+			? Math.max(
+					1,
+					Math.min(
+						3,
+						Math.floor(
+							(weeksHeight / 6 - (desktop.current ? 52 : 40)) / (desktop.current ? 20 : 11)
+						)
+					)
+				)
+			: 3
+	);
 	let displayEvents = $derived([...events, ...pendingRequests]);
-	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents));
+	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents, visibleLaneCount));
 
 	function eventsForDate(date: string) {
 		return events.filter((event) => eventOverlapsDate(event, date));
@@ -79,7 +95,7 @@
 <div
 	class={cn(
 		'overflow-hidden rounded-xl border bg-card shadow-sm',
-		fillHeight && 'flex h-full min-h-0 flex-col'
+		fillHeight && 'flex h-full min-h-[22rem] flex-col sm:min-h-[28rem]'
 	)}
 >
 	<div
@@ -89,7 +105,7 @@
 			<div class="flex items-center justify-center px-2">{day}</div>
 		{/each}
 	</div>
-	<div class={cn(fillHeight && 'grid min-h-0 flex-1 grid-rows-6')}>
+	<div bind:clientHeight={weeksHeight} class={cn(fillHeight && 'grid min-h-0 flex-1 grid-rows-6')}>
 		{#each weeks as week, weekIndex (week.cells[0]?.date ?? weekIndex)}
 			<div class={cn('relative grid grid-cols-7', fillHeight && 'min-h-0')}>
 				{#each week.cells as cell, dayIndex (cell.date)}
