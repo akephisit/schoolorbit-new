@@ -299,18 +299,12 @@ function version(value: unknown) {
 	return (
 		fields(
 			value,
-			[
-				'id',
-				'academicTermId',
-				'academicYearId',
-				'bellScheduleId',
-				'deliveryVersionId',
-				'createdBy'
-			],
+			['id', 'academicTermId', 'academicYearId', 'bellScheduleId', 'deliveryVersionId'],
 			[],
 			['rowVersion']
 		) &&
 		['draft', 'published', 'cancelled'].includes(String(value.status)) &&
+		(value.createdBy === null || uuid(value.createdBy)) &&
 		optional(value.sourceVersionId, uuid) &&
 		optional(value.publishedBy, uuid) &&
 		instant(value.createdAt) &&
@@ -344,16 +338,13 @@ function bellPeriod(value: unknown) {
 }
 function homeroom(value: unknown) {
 	return (
-		fields(
-			value,
-			['id', 'gradeLevelId'],
-			['code', 'name', 'gradeLevelType', 'roomNumber'],
-			['gradeLevelYear']
-		) && typeof value.isActive === 'boolean'
+		fields(value, ['id', 'gradeLevelId'], ['code', 'name', 'gradeLevelType'], ['gradeLevelYear']) &&
+		(value.roomNumber === null || text(value.roomNumber)) &&
+		typeof value.isActive === 'boolean'
 	);
 }
 function room(value: unknown) {
-	return fields(value, ['id'], ['code', 'name', 'status']);
+	return fields(value, ['id'], ['name', 'status']) && (value.code === null || text(value.code));
 }
 function subjectGroup(value: unknown) {
 	return (

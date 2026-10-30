@@ -86,6 +86,8 @@ export function createDraftRelay() {
 	let denyNextClaim = false;
 	let holdNextClaim = false;
 	let heldClaim: (() => void) | null = null;
+	let holdNextStateSync = false;
+	let heldStateSync: (() => void) | null = null;
 	let roomOptionsPaused = false;
 	function editRoomOptions(active: FixtureLease) {
 		const source = active.public.source;
@@ -134,6 +136,11 @@ export function createDraftRelay() {
 		};
 	}
 	function send(peer: FixturePeer, message: ServerMessage) {
+		if (holdNextStateSync && message.type === 'DraftStateSync') {
+			holdNextStateSync = false;
+			heldStateSync = () => send(peer, message);
+			return;
+		}
 		if (
 			holdNextClaim &&
 			message.type === 'DraftCommandResult' &&
@@ -407,6 +414,14 @@ export function createDraftRelay() {
 		},
 		holdClaim() {
 			holdNextClaim = true;
+		},
+		holdStateSync() {
+			holdNextStateSync = true;
+		},
+		releaseStateSync() {
+			const sync = heldStateSync;
+			heldStateSync = null;
+			sync?.();
 		},
 		releaseClaim() {
 			const grant = heldClaim;

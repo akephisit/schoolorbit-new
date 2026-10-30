@@ -165,6 +165,166 @@ const cell = (period: string, day = 'MON') =>
 	`td[data-timetable-day="${day}"][data-timetable-period-id="${period}"]`;
 
 test.use({ serviceWorkers: 'block' });
+test('two unready native drops time out without writes and only an explicit retry after baseline creates one block', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	relay.holdStateSync();
+	const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	const page = await context.newPage();
+	const mock = await installTimetableMock(page, { socketMode: 'native', relay });
+	const server = await startNativeDraftRelay(relay, mock.workspace);
+	try {
+		await redirectSocket(context, server.url, timetableIds.user, 'ครูรอการเชื่อมต่อ');
+		await page.goto(url());
+		await waitPeers(relay, 1);
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const source = page.locator('aside article').first();
+		const target = page.locator(cell(timetableIds.period1));
+		async function drop() {
+			const sourceBox = await source.boundingBox(),
+				targetBox = await target.boundingBox();
+			if (!sourceBox || !targetBox) throw new Error('missing native drag geometry');
+			await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+			await page.mouse.down();
+			await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+				steps: 18
+			});
+			await page.mouse.up();
+		}
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await drop();
+			await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible();
+			await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
+			await expect(
+				page.getByText('ยังเชื่อมต่อผู้ร่วมจัดตารางไม่ได้ กรุณาลองใหม่', { exact: true }).last()
+			).toBeVisible();
+			expect(relay.received.filter((entry) => entry.message.type === 'ClientClaim')).toHaveLength(
+				0
+			);
+			expect(mock.previewRequestCount()).toBe(0);
+			expect(mock.createRequestCount()).toBe(0);
+			expect(mock.updateRequestCount()).toBe(0);
+			await expect(source).toHaveAttribute('draggable', 'true');
+		}
+		relay.releaseStateSync();
+		await expect
+			.poll(() => relay.received.some((entry) => entry.message.type === 'ClientPresenceUpdate'))
+			.toBe(true);
+		expect(mock.createRequestCount()).toBe(0);
+		expect(mock.previewRequestCount()).toBe(0);
+		await drop();
+		await expect.poll(mock.createRequestCount).toBe(1);
+		await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toHaveCount(0);
+		await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(1);
+		expect(mock.blocks()).toHaveLength(1);
+		expect(relay.workspace?.blocks).toHaveLength(1);
+		expect(mock.previewRequestCount()).toBe(1);
+		expect(mock.createRequestCount()).toBe(1);
+		expect(mock.updateRequestCount()).toBe(0);
+		expect(mock.workspaceRequestCount()).toBe(1);
+	} finally {
+		await context.close();
+		await server.close();
+	}
+});
+
+test('native draft joins, edits and patches preserve valid nullable metadata without reconnecting or reloading', async ({
+	browser
+}) => {
+	const relay = createDraftRelay();
+	const first = await browser.newContext(),
+		second = await browser.newContext();
+	const a = await first.newPage(),
+		b = await second.newPage();
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	block.groups[0].roomCode = null;
+	const mockA = await installTimetableMock(a, { socketMode: 'native', relay, blocks: [block] });
+	const mockB = await installTimetableMock(b, {
+		socketMode: 'native',
+		relay,
+		blocks: [block],
+		userId: secondUser
+	});
+	const workspace = mockA.workspace();
+	workspace.version.createdBy = null;
+	workspace.homerooms[0].roomNumber = null;
+	workspace.rooms[0].code = null;
+	mockA.publishWorkspace(workspace, false);
+	mockB.publishWorkspace(workspace, false);
+	const draftSocketsA: string[] = [],
+		draftSocketsB: string[] = [];
+	a.on('websocket', (socket) => {
+		if (new URL(socket.url()).searchParams.has('timetableVersionId'))
+			draftSocketsA.push(socket.url());
+	});
+	b.on('websocket', (socket) => {
+		if (new URL(socket.url()).searchParams.has('timetableVersionId'))
+			draftSocketsB.push(socket.url());
+	});
+	const server = await startNativeDraftRelay(relay, mockA.workspace);
+	try {
+		await redirectSocket(first, server.url, timetableIds.user, 'ครูหนึ่ง');
+		await redirectSocket(second, server.url, secondUser, 'ครูสอง');
+		await a.goto(url());
+		await b.goto(url());
+		await waitPeers(relay, 2);
+		await expect(a.getByRole('button', { name: /ไปยัง ครูสอง/ })).toBeVisible();
+		await expect(b.getByRole('button', { name: /ไปยัง ครูหนึ่ง/ })).toBeVisible();
+		const connectionIds = [...relay.peers.keys()].sort();
+		await a.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const card = (page: Page) =>
+			page.locator(`[data-timetable-anchor="block"][data-block-id="${block.id}"]`);
+		await card(a)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		const dialog = a.getByRole('dialog');
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true }).click();
+		await a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true }).click();
+		await dialog
+			.getByRole('textbox', { name: 'หมายเหตุ', exact: true })
+			.fill('บันทึกผ่านข้อมูลที่อนุญาตให้เป็น null');
+		await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+		await expect(card(b)).toContainText('ห้องปฏิบัติการ 2');
+		const updated = mockA.workspace();
+		updated.rooms[0].name = 'ห้องคณิตศาสตร์ใหม่';
+		updated.homerooms[0].name = 'ม.1/1 ปรับปรุง';
+		updated.version.rowVersion++;
+		mockA.publishWorkspace(updated);
+		await expect(
+			b.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง', exact: true })
+		).toContainText('ม.1/1 ปรับปรุง');
+		await card(a)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true }).click();
+		await expect(a.getByRole('option', { name: 'ห้องคณิตศาสตร์ใหม่', exact: true })).toBeVisible();
+		expect(relay.workspace?.version.createdBy).toBeNull();
+		expect(relay.workspace?.homerooms[0].roomNumber).toBeNull();
+		expect(relay.workspace?.rooms[0].code).toBeNull();
+		expect([...relay.peers.keys()].sort()).toEqual(connectionIds);
+		expect(draftSocketsA).toHaveLength(1);
+		expect(draftSocketsB).toHaveLength(1);
+		for (const mock of [mockA, mockB]) {
+			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.previewRequestCount()).toBe(0);
+		}
+		expect(mockA.updateRequestCount()).toBe(1);
+		await expect(
+			a.getByText('ยังเชื่อมต่อผู้ร่วมจัดตารางไม่ได้ กรุณาลองใหม่', { exact: true })
+		).toHaveCount(0);
+		await a.screenshot({
+			path: `${artifacts}/nullable-metadata-joined.png`,
+			animations: 'disabled'
+		});
+	} finally {
+		await first.close();
+		await second.close();
+		await server.close();
+	}
+});
+
 test('room feedback distinguishes pending claims from locked, denied, lost and saving editors', async ({
 	browser
 }) => {
