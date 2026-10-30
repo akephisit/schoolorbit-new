@@ -8,6 +8,8 @@ test('delivery links the exact edition, level, program and delivery context', as
 	const workspace = await read(
 		'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'
 	);
+	const presentation = await read('src/lib/academic/homeroom-delivery.ts');
+	assert.match(workspace, /deliveryAlignmentLabels as alignmentLabels/);
 	for (const text of [
 		'ตรงกับหลักสูตร',
 		'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
@@ -15,7 +17,7 @@ test('delivery links the exact edition, level, program and delivery context', as
 		'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
 		'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	])
-		assert.ok(workspace.includes(text));
+		assert.ok(`${workspace}\n${presentation}`.includes(text), text);
 	for (const field of [
 		'room.studyProgram.editionId',
 		'room.curriculumLevelId',

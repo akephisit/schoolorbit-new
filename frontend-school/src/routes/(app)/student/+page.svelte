@@ -56,9 +56,7 @@
 		contextOptions?.terms.find(
 			(term) =>
 				term.academicYearId === selectedYearId && term.id === contextOptions?.defaultAcademicTermId
-		)?.id ??
-			contextOptions?.terms.find((term) => term.academicYearId === selectedYearId)?.id ??
-			''
+		)?.id ?? ''
 	);
 	const termQuery = $derived(
 		`${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`

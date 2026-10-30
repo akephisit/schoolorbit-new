@@ -230,11 +230,18 @@ async function mockEditor(
 				return fulfill(route, {
 					defaultAcademicYearId: ids.year,
 					defaultAcademicTermId: ids.term,
-					years: [{
- isVisible: true, id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					years: [
+						{
+							isVisible: true,
+							id: ids.year,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						}
+					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',

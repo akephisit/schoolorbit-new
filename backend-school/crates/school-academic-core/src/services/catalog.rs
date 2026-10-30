@@ -20,10 +20,8 @@ use super::super::models::{
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
-const SUBJECT_COLUMNS: &str =
-    "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
-const ACTIVITY_COLUMNS: &str =
-    "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+const SUBJECT_COLUMNS: &str = "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+const ACTIVITY_COLUMNS: &str = "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 
 // Owned links (draft grades and default teachers) are removed with the catalog entry.
 // All downstream references, including publication snapshots without catalog FKs, refuse deletion.
@@ -2344,10 +2342,12 @@ mod pool_facade_tests {
     #[tokio::test]
     async fn pool_facade_preflight_empty_catalog_metadata_needs_no_database() {
         let pool = closed_pool().await;
-        assert!(subject_groups_for_versions(&pool, &[])
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            subject_groups_for_versions(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
     #[tokio::test]
     async fn pool_facade_preflight_scope_denials_precede_checkout() {
@@ -2393,10 +2393,12 @@ mod pool_facade_tests {
         let held = pool.acquire().await.unwrap();
         let filter = school_authorization::AcademicResourceListFilter::default();
         tokio::time::timeout(std::time::Duration::from_millis(250), async {
-            assert!(subject_groups_for_versions(&pool, &[])
-                .await
-                .unwrap()
-                .is_empty());
+            assert!(
+                subject_groups_for_versions(&pool, &[])
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
             assert!(matches!(
                 crate::services::curriculum::list(&pool, &filter).await,
                 Err(AppError::Forbidden(_))

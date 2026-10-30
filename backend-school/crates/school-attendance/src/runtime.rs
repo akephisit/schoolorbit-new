@@ -22,7 +22,7 @@ use dashmap::DashMap;
 use school_errors::AppError;
 use school_notifications::events::TenantNotificationEvent;
 use school_tenancy::background::TenantJobKind;
-use sqlx::{types::Json, PgPool};
+use sqlx::{PgPool, types::Json};
 use std::{
     collections::{HashMap, HashSet},
     sync::OnceLock,
@@ -62,7 +62,7 @@ pub async fn touch(
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(&pool, "attendance.runtime.touch")
             .await?;
-    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all().await?;
+    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT s.academic_term_id,calendar.starts_on,calendar.ends_on,s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id JOIN (SELECT academic_term_id,min(date) AS starts_on,max(date) AS ends_on FROM attendance_days GROUP BY academic_term_id) calendar ON calendar.academic_term_id=t.id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all().await?;
     let ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
     let day_rows: Vec<(Uuid,NaiveDate,bool,String)> = DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT academic_term_id,date,counted,note FROM attendance_days WHERE academic_term_id=ANY($1) ORDER BY academic_term_id,date")
         .bind(&ids).fetch_all().await?;

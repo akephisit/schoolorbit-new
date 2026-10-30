@@ -11,7 +11,13 @@
 	import BehaviorFormSection from './BehaviorFormSection.svelte';
 	import { Settings2 } from '@lucide/svelte';
 	let { initial }: { initial: BehaviorSettings } = $props();
-	let draft = $state(untrack(() => ({ ...initial, meritResetDates: [...initial.meritResetDates], deductionResetDates: [...initial.deductionResetDates] })));
+	let draft = $state(
+		untrack(() => ({
+			...initial,
+			meritResetDates: [...initial.meritResetDates],
+			deductionResetDates: [...initial.deductionResetDates]
+		}))
+	);
 	let meritCap = $state(untrack(() => initial.dailyMeritCap ?? ''));
 	let deductionCap = $state(untrack(() => initial.dailyDeductionCap ?? ''));
 	let pending = $state(false);
@@ -109,9 +115,16 @@
 					/>
 				</div>
 			</div>
-			{#if draft.meritReset === 'scheduled'}<BehaviorResetDates id="merit-reset-dates" label="วันที่สิ้นสุดรอบคะแนนความดี" bind:dates={draft.meritResetDates} />{/if}
-			{#if draft.deductionReset === 'scheduled'}<BehaviorResetDates id="deduction-reset-dates" label="วันที่สิ้นสุดรอบคะแนนหัก" bind:dates={draft.deductionResetDates} />{/if}
-
+			{#if draft.meritReset === 'scheduled'}<BehaviorResetDates
+					id="merit-reset-dates"
+					label="วันที่สิ้นสุดรอบคะแนนความดี"
+					bind:dates={draft.meritResetDates}
+				/>{/if}
+			{#if draft.deductionReset === 'scheduled'}<BehaviorResetDates
+					id="deduction-reset-dates"
+					label="วันที่สิ้นสุดรอบคะแนนหัก"
+					bind:dates={draft.deductionResetDates}
+				/>{/if}
 		</fieldset>
 		<div class="flex justify-end border-t pt-4">
 			<LoadingButton type="submit" loading={pending}>บันทึกการตั้งค่า</LoadingButton>

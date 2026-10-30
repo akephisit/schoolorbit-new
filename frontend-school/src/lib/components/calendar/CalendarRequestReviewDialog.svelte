@@ -27,7 +27,7 @@
 		type CreateCalendarEventRequest
 	} from '#lib/api/calendar.js';
 	import {
-		listAcademicContextOptions,
+		listPublicAcademicContextOptions,
 		type AcademicYearOption
 	} from '#lib/api/academic-context.js';
 	import { toast } from 'svelte-sonner';
@@ -113,7 +113,7 @@
 				initialCatalogs || catalogsLoaded
 					? Promise.resolve(initialCatalogs?.tags ?? catalogs.tags)
 					: listCalendarTags({ signal: ticket.signal }),
-				listAcademicContextOptions(ticket.signal)
+				listPublicAcademicContextOptions(ticket.signal)
 			]);
 			if (!current(key) || !optionsRead.isCurrent(ticket.revision)) return;
 			catalogs = { categories, tags };

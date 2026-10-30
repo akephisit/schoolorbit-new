@@ -290,7 +290,9 @@ export async function listCalendarTargetOptions(
 	return requireApiData(
 		await apiClient.get<CalendarTargetOptions>('/api/calendar/target-options', {
 			...options,
-			query: { academicYearId } satisfies NonNullable<operations['listCalendarTargetOptions']['parameters']['query']>
+			query: { academicYearId } satisfies NonNullable<
+				operations['listCalendarTargetOptions']['parameters']['query']
+			>
 		}),
 		'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
 	);

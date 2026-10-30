@@ -68,10 +68,17 @@ async function installShell(page: Page) {
 				await fulfill(route, {
 					defaultAcademicYearId: yearId,
 					defaultAcademicTermId: termOne,
-					years: [{
- isVisible: true, id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					years: [
+						{
+							isVisible: true,
+							id: yearId,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						}
+					],
 					terms: [termOne, termTwo].map((id, index) => ({
- isVisible: true,
+						isVisible: true,
 						id,
 						academicYearId: yearId,
 						name: `ภาคเรียนที่ ${index + 1}`,

@@ -91,8 +91,11 @@ async fn project(
 ) -> Result<(Vec<AttendanceExpectedSummary>, Vec<AttendanceHistoryItem>), AppError> {
     let term = context.settings.academic_term_id;
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
-    let (term_start,term_end,coverage_start):(NaiveDate,NaiveDate,NaiveDate)=DbSession::new(&mut *connection).query_as("attendance.application.projection.project", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),m.coverage_start FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m WHERE t.id=$1 AND m.singleton")
+    let (term_start,term_end,coverage_start):(Option<NaiveDate>,Option<NaiveDate>,NaiveDate)=DbSession::new(&mut *connection).query_as("attendance.application.projection.calendar", "SELECT min(day.date),max(day.date),module.coverage_start FROM academic_terms term CROSS JOIN attendance_module_state module LEFT JOIN attendance_days day ON day.academic_term_id=term.id WHERE term.id=$1 AND module.singleton GROUP BY module.coverage_start")
         .bind(term).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบภาคเรียน".into()))?;
+    let (Some(term_start), Some(term_end)) = (term_start, term_end) else {
+        return Ok((vec![], vec![]));
+    };
     let start = term_start
         .max(coverage_start)
         .max(range.map(|r| r.0).unwrap_or(term_start));

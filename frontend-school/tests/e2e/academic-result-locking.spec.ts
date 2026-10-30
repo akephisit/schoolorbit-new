@@ -62,16 +62,16 @@ async function mockLockQueue(
 					defaultAcademicTermId: ids.term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',

@@ -199,6 +199,7 @@ export function createAcademicContextStore({
 	}
 
 	async function retry(): Promise<void> {
+		optionsRevision += 1;
 		cachedOptions = null;
 		if (latestUrl) await sync(latestRouteId, latestUrl);
 	}

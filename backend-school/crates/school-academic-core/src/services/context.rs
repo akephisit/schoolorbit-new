@@ -1,6 +1,6 @@
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{types::Json, PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, types::Json};
 use uuid::Uuid;
 
 use crate::models::{AcademicContextOptions, AcademicTermOption, AcademicYearOption};

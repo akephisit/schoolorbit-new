@@ -98,12 +98,14 @@
 		preparationRevision += 1;
 		addKind = requestedKind;
 		mode = requestedKind ? 'manual' : 'curriculum';
-		if (requestedKind) startsOn = '';
-		draft = {
-			...draft,
-			kind: requestedKind === 'activity' ? 'activity' : 'course',
-			catalogVersionId: ''
-		};
+		if (requestedKind) {
+			startsOn = '';
+			draft = {
+				...draft,
+				kind: requestedKind === 'activity' ? 'activity' : 'course',
+				catalogVersionId: ''
+			};
+		}
 		open = true;
 		if (options || optionsLoading) return;
 		optionsLoading = true;

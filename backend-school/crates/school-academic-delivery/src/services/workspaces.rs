@@ -1302,10 +1302,10 @@ pub async fn delivery_management_options_on_connection(
     filter: &AcademicResourceListFilter,
     curriculum_filter: &AcademicResourceListFilter,
 ) -> Result<DeliveryManagementOptions, AppError> {
-    let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) = DbSession::new(connection)
+    let (academic_year_id, catalog_date): (Uuid, chrono::NaiveDate) = DbSession::new(connection)
         .query_as(
             "academic_delivery.services.workspaces.delivery_management_options_on_connection",
-            "SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1",
+            "SELECT academic_year_id, (now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms WHERE id = $1",
         )
         .bind(academic_term_id)
         .fetch_optional()
@@ -1339,7 +1339,7 @@ pub async fn delivery_management_options_on_connection(
         LIMIT $4
         "#,
     )
-    .bind(term_start)
+    .bind(catalog_date)
     .bind(filter.includes_school_owned)
     .bind(&owner_ids)
     .bind((MAX_CATALOG_OPTIONS + 1) as i64)
@@ -1547,7 +1547,7 @@ mod tests {
     use school_academic_core::models::RequirementKind;
     use std::sync::Arc;
     use tokio::sync::Barrier;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[test]
     fn central_states_require_an_open_synchronized_activity_without_applicable_groups() {

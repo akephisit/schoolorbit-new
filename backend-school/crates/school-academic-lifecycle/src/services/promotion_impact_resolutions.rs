@@ -7,7 +7,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction, types::Json};
 use uuid::Uuid;
 
 const COLUMNS: &str = "id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,replacement_decision,reason,source_checksum,outcome,resolved_by,resolved_at";
@@ -199,12 +199,21 @@ async fn adjusted_outcome(
     let owned_target_student_year_id =
         resolved_target_student_year_id.or(receipt_target_student_year_id);
     let owned_target_placement_id = resolved_target_placement_id.or(receipt_target_placement_id);
+    let placement_starts_on: chrono::NaiveDate = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_impact_resolutions.placement_intent",
+            "SELECT target_placement_starts_on FROM academic_promotion_runs WHERE id=$1",
+        )
+        .bind(run_id)
+        .fetch_one()
+        .await?;
     let core_decision = decision.core_command();
     let adjusted = promotion_reconciliation::reconcile_decision(
         tx,
         actor_user_id,
         source_year_id,
         target_year_id,
+        placement_starts_on,
         source_student_year_id,
         owned_target_student_year_id,
         owned_target_placement_id,

@@ -133,11 +133,18 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 					await fulfill(route, {
 						defaultAcademicYearId: yearId,
 						defaultAcademicTermId: termId,
-						years: [{
- isVisible: true, id: yearId, name: 'ปีทดสอบ', year: 2570, status: 'active' }],
+						years: [
+							{
+								isVisible: true,
+								id: yearId,
+								name: 'ปีทดสอบ',
+								year: 2570,
+								status: 'active'
+							}
+						],
 						terms: [
 							{
- isVisible: true,
+								isVisible: true,
 								id: termId,
 								academicYearId: yearId,
 								name: 'ภาคเรียนทดสอบ',
@@ -147,7 +154,7 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 								status: 'active'
 							},
 							{
- isVisible: true,
+								isVisible: true,
 								id: nextTermId,
 								academicYearId: yearId,
 								name: 'ภาคเรียนใหม่',

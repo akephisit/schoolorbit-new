@@ -23,7 +23,6 @@ pub mod promotion_execution;
 pub mod promotion_reconciliation;
 pub mod promotion_students;
 pub mod promotion_targets;
-pub mod score_calendar;
 pub mod student_year_batch;
 pub mod student_years;
 pub mod workspaces;

@@ -24,30 +24,30 @@ const contextOptions = {
 	defaultAcademicTermId: ids.activeTerm,
 	years: [
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.activeYear,
 			name: 'ปีการศึกษา 2570',
 			year: 2570,
-			status: 'active',
+			status: 'active'
 		},
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.planningYear,
 			name: 'ปีการศึกษา 2571',
 			year: 2571,
-			status: 'planning',
+			status: 'planning'
 		},
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.closedYear,
 			name: 'ปีการศึกษา 2569',
 			year: 2569,
-			status: 'closed',
+			status: 'closed'
 		}
 	],
 	terms: [
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.activeTerm,
 			academicYearId: ids.activeYear,
 			name: 'ภาคเรียนที่ 1',
@@ -59,7 +59,7 @@ const contextOptions = {
 			blocksYearClosure: true
 		},
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.readyTerm,
 			academicYearId: ids.activeYear,
 			name: 'ภาคเรียนที่ 2',
@@ -71,7 +71,7 @@ const contextOptions = {
 			blocksYearClosure: true
 		},
 		{
- isVisible: true,
+			isVisible: true,
 			id: ids.planningTerm,
 			academicYearId: ids.planningYear,
 			name: 'ภาคฤดูร้อน',
@@ -136,6 +136,21 @@ async function mockAcademicContextApis(
 				} else {
 					await fulfillJson(route, contextOptions);
 				}
+				return;
+			}
+
+			if (url.pathname === '/api/academic/delivery-versions') {
+				await fulfillJson(route, []);
+				return;
+			}
+			if (
+				[
+					'/api/supervision/cycles',
+					'/api/supervision/templates/summaries',
+					'/api/supervision/observations'
+				].includes(url.pathname)
+			) {
+				await fulfillJson(route, { items: [] });
 				return;
 			}
 
@@ -206,7 +221,7 @@ async function openDelivery(page: Page, query = '') {
 	await expect(page.getByTestId('academic-context-switcher')).toBeVisible();
 }
 
-test('missing required IDs use active defaults with replaceState and no mutation', async ({
+test('missing required IDs use explicit school defaults with replaceState and no mutation', async ({
 	page
 }) => {
 	await page.addInitScript(() => {
@@ -304,7 +319,12 @@ test('dirty sources require confirmation and cancelling preserves the context', 
 	await mockAcademicContextApis(page);
 	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
 	await page.evaluate(async () => {
-		const modulePath = '/src/lib/academic-context/store.ts';
+		const modulePath =
+			performance
+				.getEntriesByType('resource')
+				.map((entry) => entry.name)
+				.find((name) => new URL(name).pathname === '/src/lib/academic-context/store.ts') ??
+			'/src/lib/academic-context/store.ts';
 		const { registerAcademicContextDirtySource } = await import(/* @vite-ignore */ modulePath);
 		registerAcademicContextDirtySource('playwright-draft', () => true);
 	});

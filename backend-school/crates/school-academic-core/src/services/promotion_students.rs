@@ -76,12 +76,8 @@ pub async fn validate_run_years(
         .iter()
         .find(|year| year.academic_year_id == target_year)
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษาปลายทาง".into()))?;
-    if source_year == target_year
-        || target.year <= source.year
-    {
-        return Err(AppError::ValidationError(
-            "ปีปลายทางต้องอยู่หลังปีต้นทาง".into(),
-        ));
+    if source_year == target_year || target.year <= source.year {
+        return Err(AppError::ValidationError("ปีปลายทางต้องอยู่หลังปีต้นทาง".into()));
     }
     if !matches!(
         source.status,

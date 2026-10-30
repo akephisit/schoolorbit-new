@@ -1,5 +1,4 @@
 use super::super::models::{TermTransitionAction, TermTransitionOutcome, TermTransitionRequest};
-use chrono::NaiveDate;
 use school_academic_core::models::{AcademicTermStatus, AcademicYearStatus, TermLifecycleContext};
 use school_academic_core::services::{lifecycle_context, lifecycle_guard, years_terms};
 use school_authorization::ActorContext;

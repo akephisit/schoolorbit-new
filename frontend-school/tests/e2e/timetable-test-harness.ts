@@ -529,16 +529,16 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					defaultAcademicTermId: timetableIds.term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: timetableIds.year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: timetableIds.term,
 							academicYearId: timetableIds.year,
 							name: 'ภาคเรียนที่ 1',

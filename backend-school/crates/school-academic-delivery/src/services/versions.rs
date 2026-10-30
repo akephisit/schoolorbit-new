@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
 use school_authorization::{
-    academic_resource_access_for, AcademicResourceAccess, AcademicResourceListFilter,
+    AcademicResourceAccess, AcademicResourceListFilter, academic_resource_access_for,
 };
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -688,9 +688,11 @@ mod tests {
                 DeliveryReadinessCode::MissingPrimaryTeacher
             );
             snapshot.offerings[0].targets.clear();
-            assert!(readiness(&snapshot)
-                .iter()
-                .any(|finding| finding.code == DeliveryReadinessCode::MissingTargets));
+            assert!(
+                readiness(&snapshot)
+                    .iter()
+                    .any(|finding| finding.code == DeliveryReadinessCode::MissingTargets)
+            );
             snapshot.offerings[0].groups.clear();
             assert_eq!(
                 readiness(&snapshot)
@@ -702,8 +704,8 @@ mod tests {
     }
 
     #[test]
-    fn independent_activities_and_courses_still_require_groups_and_existing_groups_require_primary_teachers(
-    ) {
+    fn independent_activities_and_courses_still_require_groups_and_existing_groups_require_primary_teachers()
+     {
         let mut independent = central_snapshot();
         if let LearningOfferingSnapshot::Activity(activity) = &mut independent.offerings[0].catalog
         {

@@ -91,11 +91,18 @@ async function installShell(page: Page, permissions = ['*']) {
 			await fulfill(route, {
 				defaultAcademicYearId: yearId,
 				defaultAcademicTermId: termId,
-				years: [{
- isVisible: true, id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+				years: [
+					{
+						isVisible: true,
+						id: yearId,
+						name: 'ปีการศึกษา 2569',
+						year: 2569,
+						status: 'active'
+					}
+				],
 				terms: [
 					{
- isVisible: true,
+						isVisible: true,
 						id: termId,
 						academicYearId: yearId,
 						name: 'ภาคเรียนที่ 1',

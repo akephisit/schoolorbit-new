@@ -170,11 +170,11 @@ export async function mock(
 							]
 						: [],
 					years: [year, nextYear].map((value, index) => ({
- isVisible: true,
+						isVisible: true,
 						id: value,
 						year: 2569 + index,
 						name: String(2569 + index),
-						status: 'open',
+						status: 'open'
 					}))
 				});
 			if (resource === '/api/menu/user') return reply(route, { groups: [] });

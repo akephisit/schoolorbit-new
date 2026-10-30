@@ -550,17 +550,7 @@ async fn build_preview(
         true
     };
     let mut findings = readiness(&source.snapshot, &blocks);
-    let (start,end,closed,duplicate): (NaiveDate,NaiveDate,Option<NaiveDate>,bool)=DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.build_preview", "SELECT term.start_date,year.end_date,term.closed_on,EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=term.id AND status='published' AND effective_from=$2) FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.id=$1")
-        .bind(context.academic_term_id).bind(date).fetch_one().await?;
-    if date < start || date > end || closed.is_some_and(|last| date > last) {
-        findings.push(finding(
-            TimetablePublicationFindingCode::InvalidDate,
-            "วันที่เริ่มใช้ต้องอยู่ในช่วงภาคเรียนและปีการศึกษา",
-            None,
-            None,
-            None,
-        ));
-    }
+    let duplicate:bool=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.publication_date","SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' AND effective_from=$2)").bind(context.academic_term_id).bind(date).fetch_one().await?;
     if !delivery::contains_date(&source, date) {
         findings.push(finding(
             TimetablePublicationFindingCode::DeliveryDateMismatch,
@@ -638,9 +628,6 @@ async fn build_preview(
         (&teacher_states, &resource_evidence),
         &findings,
         &source_issues,
-        start,
-        end,
-        closed,
         duplicate,
     ))?;
     Ok(TimetablePublicationPreview {

@@ -60,22 +60,26 @@ async fn learning_area_create_rename_and_archive_share_one_stable_owner() {
             true
         )
     );
-    assert!(catalog::resolve_subject_group_owner(&pool, group.id)
+    assert!(
+        catalog::resolve_subject_group_owner(&pool, group.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        catalog::update_subject_group(
+            &pool,
+            group.id,
+            UpdateSubjectGroupRequest {
+                name_th: "stale".into(),
+                name_en: String::new(),
+                display_order: 1,
+                is_active: Some(true),
+                row_version: group.row_version,
+            }
+        )
         .await
-        .is_err());
-    assert!(catalog::update_subject_group(
-        &pool,
-        group.id,
-        UpdateSubjectGroupRequest {
-            name_th: "stale".into(),
-            name_en: String::new(),
-            display_order: 1,
-            is_active: Some(true),
-            row_version: group.row_version,
-        }
-    )
-    .await
-    .is_err());
+        .is_err()
+    );
 }
 
 #[tokio::test]
@@ -118,9 +122,11 @@ async fn learning_area_owner_failure_rolls_back_registry_and_counter() {
         BEGIN IF NEW.unit_type = 'subject_group' THEN RAISE EXCEPTION 'fixture rejection'; END IF; RETURN NEW; END $$;
         CREATE TRIGGER reject_learning_area_owner BEFORE INSERT ON organization_units FOR EACH ROW EXECUTE FUNCTION reject_learning_area_owner();")
         .execute(&pool).await.unwrap();
-    assert!(catalog::create_subject_group(&pool, request("ต้องย้อนกลับ"))
-        .await
-        .is_err());
+    assert!(
+        catalog::create_subject_group(&pool, request("ต้องย้อนกลับ"))
+            .await
+            .is_err()
+    );
     let after: i64 = sqlx::query_scalar("SELECT count(*) FROM subject_groups")
         .fetch_one(&pool)
         .await
@@ -189,10 +195,10 @@ async fn learning_area_in_use_and_activity_owner_cannot_be_disabled() {
 
 #[test]
 fn learning_area_creation_rejects_caller_codes() {
-    assert!(serde_json::from_str::<CreateSubjectGroupRequest>(
-        r#"{"code":"MANUAL","nameTh":"ทดสอบ"}"#
-    )
-    .is_err());
+    assert!(
+        serde_json::from_str::<CreateSubjectGroupRequest>(r#"{"code":"MANUAL","nameTh":"ทดสอบ"}"#)
+            .is_err()
+    );
     assert!(serde_json::from_str::<CreateSubjectGroupRequest>(r#"{"nameTh":"ทดสอบ"}"#).is_ok());
 }
 
@@ -220,22 +226,61 @@ async fn learning_area_migration_rejects_ambiguous_states_and_reconciles_missing
     let pool = pre_separation_fixture("learning_area_migration").await;
     let migration = include_str!("../../../../migrations/116_organization_learning_areas.sql");
     for (setup, expected) in [
-        ("UPDATE organization_units SET is_active=false WHERE code='SCHOOL'", "ROOT_INVALID"),
-        ("UPDATE subject_groups SET is_active=NULL WHERE id=(SELECT id FROM subject_groups LIMIT 1)", "STATUS_CONFLICT"),
-        ("INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'BAD-TYPE','ประเภทผิด','division',id,false FROM subject_groups LIMIT 1", "UNMAPPED_UNIT"),
-        ("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'WRONG-OWNER','WRONG-OWNER',g.id,u.id FROM subject_groups g CROSS JOIN organization_units u WHERE u.code='SCHOOL' LIMIT 1", "SUBJECT_OWNER_CONFLICT"),
-        ("UPDATE subject_groups SET is_active=false WHERE id=(SELECT subject_group_id FROM organization_units WHERE code='SUBJ-MA'); UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'; INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'INACTIVE-OWNER','INACTIVE-OWNER',subject_group_id,id FROM organization_units WHERE code='SUBJ-MA'", "SUBJECT_OWNER_CONFLICT"),
-        ("UPDATE subject_groups SET name_th='' WHERE id=(SELECT id FROM subject_groups LIMIT 1)", "NAME_INVALID"),
-        ("INSERT INTO organization_units(code,name,unit_type) VALUES ('LOOSE','ไม่เชื่อม','subject_group')", "UNMAPPED_UNIT"),
-        ("INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'DUP','ซ้ำ','subject_group',subject_group_id,false FROM organization_units WHERE unit_type='subject_group' LIMIT 1", "DUPLICATE_MAPPING"),
-        ("UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'", "STATUS_CONFLICT"),
-        ("UPDATE organization_units SET subject_group_id=NULL WHERE code='ACAD-ACT'", "ACTIVITY_MAPPING_INVALID"),
-        ("INSERT INTO organization_units(code,name,parent_unit_id) SELECT 'CHILD','หน่วยงานลูก',id FROM organization_units WHERE code='SUBJ-MA'", "SUBJECT_GROUP_HAS_CHILDREN"),
+        (
+            "UPDATE organization_units SET is_active=false WHERE code='SCHOOL'",
+            "ROOT_INVALID",
+        ),
+        (
+            "UPDATE subject_groups SET is_active=NULL WHERE id=(SELECT id FROM subject_groups LIMIT 1)",
+            "STATUS_CONFLICT",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'BAD-TYPE','ประเภทผิด','division',id,false FROM subject_groups LIMIT 1",
+            "UNMAPPED_UNIT",
+        ),
+        (
+            "INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'WRONG-OWNER','WRONG-OWNER',g.id,u.id FROM subject_groups g CROSS JOIN organization_units u WHERE u.code='SCHOOL' LIMIT 1",
+            "SUBJECT_OWNER_CONFLICT",
+        ),
+        (
+            "UPDATE subject_groups SET is_active=false WHERE id=(SELECT subject_group_id FROM organization_units WHERE code='SUBJ-MA'); UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'; INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'INACTIVE-OWNER','INACTIVE-OWNER',subject_group_id,id FROM organization_units WHERE code='SUBJ-MA'",
+            "SUBJECT_OWNER_CONFLICT",
+        ),
+        (
+            "UPDATE subject_groups SET name_th='' WHERE id=(SELECT id FROM subject_groups LIMIT 1)",
+            "NAME_INVALID",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type) VALUES ('LOOSE','ไม่เชื่อม','subject_group')",
+            "UNMAPPED_UNIT",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'DUP','ซ้ำ','subject_group',subject_group_id,false FROM organization_units WHERE unit_type='subject_group' LIMIT 1",
+            "DUPLICATE_MAPPING",
+        ),
+        (
+            "UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'",
+            "STATUS_CONFLICT",
+        ),
+        (
+            "UPDATE organization_units SET subject_group_id=NULL WHERE code='ACAD-ACT'",
+            "ACTIVITY_MAPPING_INVALID",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,parent_unit_id) SELECT 'CHILD','หน่วยงานลูก',id FROM organization_units WHERE code='SUBJ-MA'",
+            "SUBJECT_GROUP_HAS_CHILDREN",
+        ),
     ] {
         let mut tx = pool.begin().await.unwrap();
         sqlx::raw_sql(setup).execute(&mut *tx).await.unwrap();
-        let error = sqlx::raw_sql(migration).execute(&mut *tx).await.unwrap_err();
-        assert!(error.to_string().contains(expected), "expected {expected}: {error}");
+        let error = sqlx::raw_sql(migration)
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains(expected),
+            "expected {expected}: {error}"
+        );
         tx.rollback().await.unwrap();
     }
     let before: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM organization_members), (SELECT count(*) FROM organization_permission_grants), (SELECT count(*) FROM organization_units)")
@@ -247,9 +292,11 @@ async fn learning_area_migration_rejects_ambiguous_states_and_reconciles_missing
     let after: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM organization_members), (SELECT count(*) FROM organization_permission_grants), (SELECT count(*) FROM organization_units)")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(after, (before.0, before.1, before.2 + 1));
-    assert!(catalog::resolve_subject_group_owner(&pool, group_id)
-        .await
-        .is_ok());
+    assert!(
+        catalog::resolve_subject_group_owner(&pool, group_id)
+            .await
+            .is_ok()
+    );
     let misplaced: i64 = sqlx::query_scalar("SELECT count(*) FROM organization_units WHERE unit_type='subject_group' AND parent_unit_id IS DISTINCT FROM (SELECT id FROM organization_units WHERE code='SCHOOL')")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(misplaced, 0);
@@ -310,14 +357,16 @@ async fn learning_area_position_grants_do_not_cross_groups_or_administrative_tre
     assert!(tree.contains(&admin_unit));
     sqlx::query("UPDATE organization_members SET position_code='member' WHERE user_id=$1 AND organization_unit_id=$2")
         .bind(head).bind(a.organization_unit_id).execute(&pool).await.unwrap();
-    assert!(accessible_exact_units_for_permission(
-        &pool,
-        head,
-        codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
-    )
-    .await
-    .unwrap()
-    .is_empty());
+    assert!(
+        accessible_exact_units_for_permission(
+            &pool,
+            head,
+            codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
 }
 
 async fn wait_until_blocked(pool: &PgPool, blocker: i32) {

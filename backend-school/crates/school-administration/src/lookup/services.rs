@@ -6,7 +6,7 @@ use school_errors::AppError;
 
 use super::models::{
     AcademicLookupQuery, HomeroomLookupItem, LookupItem, LookupQuery, OrganizationUnitLookupItem,
-    RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    RoleLookupItem, StaffLookupItem, StudentLookupItem, SubjectLookupQuery,
 };
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
@@ -683,7 +683,7 @@ pub async fn lookup_rooms_on_connection(
 
 pub async fn lookup_subjects(
     pool: &PgPool,
-    query: AcademicLookupQuery,
+    query: SubjectLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_subjects")
@@ -693,7 +693,7 @@ pub async fn lookup_subjects(
 
 pub async fn lookup_subjects_on_connection(
     connection: &mut sqlx::PgConnection,
-    query: AcademicLookupQuery,
+    query: SubjectLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
@@ -704,12 +704,11 @@ pub async fn lookup_subjects_on_connection(
                  FROM subject_version_grade_levels mapping
                  WHERE mapping.subject_id = version.id) AS grade_level_ids
          FROM subjects subject
-         JOIN academic_years year ON year.id = $1
          JOIN LATERAL (
              SELECT candidate.*
              FROM subject_versions candidate
              WHERE candidate.subject_id = subject.id
-               AND candidate.effective_from <= year.end_date",
+               AND candidate.effective_from <= (now() AT TIME ZONE 'Asia/Bangkok')::date",
     );
 
     if active_only {
@@ -722,7 +721,7 @@ pub async fn lookup_subjects_on_connection(
          WHERE 1=1",
     );
 
-    let mut param_idx: i32 = 2;
+    let mut param_idx: i32 = 1;
     let mut bind_subject_type: Option<String> = None;
     let mut bind_search: Option<String> = None;
 
@@ -745,8 +744,7 @@ pub async fn lookup_subjects_on_connection(
         limit
     ));
 
-    let mut query_builder =
-        sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
+    let mut query_builder = sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref subject_type) = bind_subject_type {
         query_builder = query_builder.bind(subject_type);
     }
@@ -856,10 +854,10 @@ fn homeroom_grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Op
 mod tests {
     use super::*;
     use school_test_db::create_named_test_pool;
+    use school_test_db::cutover_test_support::CutoverFixture;
     use school_test_db::cutover_test_support::apply_migrations_through;
     use school_test_db::cutover_test_support::apply_phase_b_runtime_migrations;
     use school_test_db::cutover_test_support::seed_academic_cutover_fixture;
-    use school_test_db::cutover_test_support::CutoverFixture;
 
     fn academic_query(academic_year_id: Uuid) -> AcademicLookupQuery {
         AcademicLookupQuery {

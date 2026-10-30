@@ -1,7 +1,7 @@
 use super::*;
 use crate::models::{
-    versions::DeliverySnapshot, ActivitySchedulingMode, LearningOfferingSnapshot,
-    RemoveDeliveryDraftResourceRequest,
+    ActivitySchedulingMode, LearningOfferingSnapshot, RemoveDeliveryDraftResourceRequest,
+    versions::DeliverySnapshot,
 };
 
 pub async fn remove_draft_offering(

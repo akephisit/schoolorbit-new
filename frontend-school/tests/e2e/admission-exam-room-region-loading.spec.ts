@@ -93,11 +93,11 @@ async function mock(page: Page, manager = true, validContext = false) {
 					years: validContext
 						? [
 								{
- isVisible: true,
+									isVisible: true,
 									id: yearId,
 									year: 2569,
 									name: '2569',
-									status: 'active',
+									status: 'active'
 								}
 							]
 						: [],

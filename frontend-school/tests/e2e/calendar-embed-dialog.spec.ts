@@ -24,11 +24,11 @@ test('closes the embedded calendar day dialog when its overlay is tapped', async
 				data: {
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							name: '2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [],

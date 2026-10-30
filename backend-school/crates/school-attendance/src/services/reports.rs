@@ -3,7 +3,7 @@ use crate::{models::*, rules::invalid};
 use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::repository::SqlFileRepository;
-use sqlx::{types::Json, PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, types::Json};
 use uuid::Uuid;
 // Participants are immutable session metadata. Missing results are read-time unchecked coverage.
 pub(crate) const SUMMARY_SQL: &str = r#"WITH eligible AS (

@@ -2,7 +2,7 @@ use super::{audit, lock_term};
 use crate::{models::*, rules::invalid};
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{types::Json, PgPool};
+use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
 pub async fn audiences(
     pool: &PgPool,

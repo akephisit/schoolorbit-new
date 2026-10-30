@@ -397,13 +397,23 @@ export async function mockDeliveryNavigation(
 					defaultAcademicTermId: navigationIds.activeTerm,
 					years: [
 						{
- isVisible: true, id: navigationIds.activeYear, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' },
+							isVisible: true,
+							id: navigationIds.activeYear,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						},
 						{
- isVisible: true, id: navigationIds.year, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' }
+							isVisible: true,
+							id: navigationIds.year,
+							name: 'ปีการศึกษา 2570',
+							year: 2570,
+							status: 'active'
+						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: navigationIds.activeTerm,
 							academicYearId: navigationIds.activeYear,
 							name: 'ภาคเรียนที่ 1',
@@ -413,7 +423,7 @@ export async function mockDeliveryNavigation(
 							status: 'active'
 						},
 						{
- isVisible: true,
+							isVisible: true,
 							id: navigationIds.term,
 							academicYearId: navigationIds.year,
 							name: 'ภาคเรียนที่ 2',

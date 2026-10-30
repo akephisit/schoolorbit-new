@@ -96,9 +96,7 @@
 											(term) =>
 												term.academicYearId === year &&
 												term.id === context.options?.defaultAcademicTermId
-										)?.id ??
-											context.options?.terms.find((term) => term.academicYearId === year)?.id ??
-											''
+										)?.id ?? ''
 									)}
 								><Select.Trigger id="child-attendance-year" class="w-full"
 									>{context.options?.years.find((year) => year.id === context.academicYearId)

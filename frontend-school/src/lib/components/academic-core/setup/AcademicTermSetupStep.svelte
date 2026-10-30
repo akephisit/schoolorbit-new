@@ -105,7 +105,11 @@
 		};
 		try {
 			const saved = editing
-				? await onUpdate(editing.id, { ...common, rowVersion: terms.find((term) => term.id === editing?.id)?.rowVersion ?? editing.rowVersion })
+				? await onUpdate(editing.id, {
+						...common,
+						rowVersion:
+							terms.find((term) => term.id === editing?.id)?.rowVersion ?? editing.rowVersion
+					})
 				: await onCreate({ academicYearId: year.id, ...common });
 			onSaved(saved);
 			resetDraft();

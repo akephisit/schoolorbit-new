@@ -11,10 +11,10 @@ use crate::requests::{
 use crate::target_options::CalendarTargetOptions;
 use crate::target_options::{self, CalendarTargetOptionsQuery};
 use axum::{
+    Json,
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -187,6 +187,6 @@ pub async fn list_target_options(
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
     Ok(Json(ApiResponse::ok(
-        target_options::list_target_options(&context.tenant.pool, query.date).await?,
+        target_options::list_target_options(&context.tenant.pool, query.academic_year_id).await?,
     )))
 }

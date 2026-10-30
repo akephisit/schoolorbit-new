@@ -196,11 +196,11 @@ pub(super) async fn begin_scope<'a>(
         o.owning_organization_unit_id,c.score_entry_enabled,
         EXISTS(SELECT 1 FROM academic_course_result_locks l WHERE l.subject_id=d.subject_id AND l.academic_term_id=g.academic_term_id) AS locked,
         EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-          AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-          AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned,
+          AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+          AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS assigned,
         EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4 AND teacher.role='primary'
-          AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-          AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS primary_teacher
+          AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+          AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS primary_teacher
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_terms t ON t.id=g.academic_term_id
         JOIN academic_years y ON y.id=g.academic_year_id
@@ -293,8 +293,8 @@ async fn list_subjects_in_tx(
     Ok(DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.list_subjects_in_tx", r#"WITH groups AS (
       SELECT o.id AS learning_offering_id,d.subject_id,o.code_snapshot AS code,o.name_snapshot AS name,g.id AS learning_group_id,g.name AS group_name,o.owning_organization_unit_id,
       EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$3
-        AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
-        AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))) AS assigned
+        AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+        AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS assigned
       FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id
       WHERE g.academic_term_id=$1 AND g.academic_year_id=$2)
       SELECT learning_offering_id,subject_id,code,name,learning_group_id,group_name,assigned,

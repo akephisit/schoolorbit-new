@@ -490,22 +490,26 @@ mod tests {
         ];
         assert!(validate_numbers(&students, &swap).is_ok());
         assert!(validate_numbers(&students, &swap[..1]).is_err());
-        assert!(validate_numbers(
-            &students,
-            &[HomeroomNumberInput {
-                placement_id: Uuid::new_v4(),
-                class_number: 3
-            }]
-        )
-        .is_err());
-        assert!(validate_numbers(
-            &students,
-            &[HomeroomNumberInput {
-                placement_id: a,
-                class_number: 0
-            }]
-        )
-        .is_err());
+        assert!(
+            validate_numbers(
+                &students,
+                &[HomeroomNumberInput {
+                    placement_id: Uuid::new_v4(),
+                    class_number: 3
+                }]
+            )
+            .is_err()
+        );
+        assert!(
+            validate_numbers(
+                &students,
+                &[HomeroomNumberInput {
+                    placement_id: a,
+                    class_number: 0
+                }]
+            )
+            .is_err()
+        );
         assert!(validate_numbers(&students, &[swap[0].clone(), swap[0].clone()]).is_err());
         assert!(numbering_inputs(&students, i32::MAX).is_err());
         assert_eq!(numbering_inputs(&students, 5).unwrap()[1].class_number, 6);

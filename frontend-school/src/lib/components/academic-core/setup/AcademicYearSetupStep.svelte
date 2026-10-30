@@ -67,6 +67,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (busy) return;
 		errorMessage = '';
 		if (schoolDays.length === 0) {
 			errorMessage = 'กรุณาเลือกวันเรียนอย่างน้อย 1 วัน';

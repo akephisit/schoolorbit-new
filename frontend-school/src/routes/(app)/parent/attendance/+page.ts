@@ -1,3 +1,4 @@
+import { resolveScopedAcademicTerm } from '#lib/academic-context/scoped-year.js';
 import type { PageLoad } from './$types';
 import { currentAttendanceDate, attendanceReport } from '#lib/api/attendance.js';
 import { listParentAcademicContextOptions } from '#lib/api/academic-context.js';
@@ -29,10 +30,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 						const context = await listParentAcademicContextOptions(undefined, {
 							requestFetch: fetch
 						});
-						const term =
-							context.terms.find((t) => t.id === url.searchParams.get('academicTermId')) ??
-							context.terms.find((t) => t.id === context.defaultAcademicTermId) ??
-							context.terms.at(-1);
+						const term = resolveScopedAcademicTerm(context, url);
 						const children: ChildDto[] = term
 							? (await getOwnParentProfile(term.academicYearId, { requestFetch: fetch })).children
 							: [];

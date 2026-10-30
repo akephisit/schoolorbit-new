@@ -88,8 +88,15 @@ export async function mockCampaigns(
 			if (options.fail === kind && ordinal === (options.failAt ?? 1))
 				return reply(route, 'ส่วนนี้ไม่พร้อม', 503);
 			if (path === yearsPath)
-				return reply(route, [{
- isVisible: true, id: year, year: 2569, name: 'ปีการศึกษา 2569', status: 'active' }]);
+				return reply(route, [
+					{
+						isVisible: true,
+						id: year,
+						year: 2569,
+						name: 'ปีการศึกษา 2569',
+						status: 'active'
+					}
+				]);
 			if (path === ownersPath)
 				return reply(route, [
 					{ id: id(252), code: 'ACADEMIC', name: 'ฝ่ายวิชาการ', display_order: 0, is_active: true }

@@ -68,9 +68,19 @@ async function mockYearCollections(
 					defaultAcademicTermId: null,
 					years: [
 						{
- isVisible: true, id: yearId, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' },
+							isVisible: true,
+							id: yearId,
+							name: 'ปีการศึกษา 2570',
+							year: 2570,
+							status: 'active'
+						},
 						{
- isVisible: true, id: nextYearId, name: 'ปีการศึกษา 2571', year: 2571, status: 'planning' }
+							isVisible: true,
+							id: nextYearId,
+							name: 'ปีการศึกษา 2571',
+							year: 2571,
+							status: 'planning'
+						}
 					],
 					terms: []
 				});

@@ -16,8 +16,6 @@ function workspace(ready = true): Workspace {
 			academicYearId: year,
 			year: 2569,
 			name: 'ปีการศึกษา 2569',
-			startDate: '2026-05-01',
-			endDate: '2027-04-30',
 			status: 'closing',
 			rowVersion: 4
 		},
@@ -129,16 +127,16 @@ async function mock(
 					defaultAcademicTermId: null,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: current.context.status,
+							status: current.context.status
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							sequence: 2,

@@ -444,16 +444,16 @@ async function mockAttendance(
 				defaultAcademicTermId: term,
 				years: [
 					{
- isVisible: true,
+						isVisible: true,
 						id: year,
 						name: '2569',
 						year: 2569,
-						status: 'active',
+						status: 'active'
 					}
 				],
 				terms: [
 					{
- isVisible: true,
+						isVisible: true,
 						id: term,
 						academicYearId: year,
 						code: '1',

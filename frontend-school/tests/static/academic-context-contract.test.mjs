@@ -79,23 +79,23 @@ function contextOptions() {
 		defaultAcademicTermId: 'term-active',
 		years: [
 			{
- isVisible: true,
+				isVisible: true,
 				id: 'year-active',
 				name: 'ปีการศึกษา 2570',
 				year: 2570,
-				status: 'active',
+				status: 'active'
 			},
 			{
- isVisible: true,
+				isVisible: true,
 				id: 'year-planning',
 				name: 'ปีการศึกษา 2571',
 				year: 2571,
-				status: 'planning',
+				status: 'planning'
 			}
 		],
 		terms: [
 			{
- isVisible: true,
+				isVisible: true,
 				id: 'term-active',
 				academicYearId: 'year-active',
 				name: 'ภาคเรียนที่ 1',
@@ -107,7 +107,7 @@ function contextOptions() {
 				blocksYearClosure: true
 			},
 			{
- isVisible: true,
+				isVisible: true,
 				id: 'term-planning',
 				academicYearId: 'year-planning',
 				name: 'ภาคฤดูร้อน',
@@ -122,7 +122,7 @@ function contextOptions() {
 	};
 }
 
-test('scoped academic year resolver repairs missing and unauthorized URLs', async () => {
+test('scoped academic year resolver initializes missing URLs and preserves invalid explicit URLs', async () => {
 	const { resolveScopedAcademicYearUrl } = await importScopedYear();
 	const options = contextOptions();
 
@@ -134,9 +134,7 @@ test('scoped academic year resolver repairs missing and unauthorized URLs', asyn
 		options,
 		new URL('https://school.test/student?academicYearId=year-other&academicTermId=term-other')
 	);
-	assert.equal(unauthorized.academicYearId, 'year-active');
-	assert.equal(unauthorized.replaceUrl?.searchParams.get('academicYearId'), 'year-active');
-	assert.equal(unauthorized.replaceUrl?.searchParams.has('academicTermId'), false);
+	assert.deepEqual(unauthorized, { academicYearId: null, replaceUrl: null });
 
 	const empty = resolveScopedAcademicYearUrl(
 		{ ...options, defaultAcademicYearId: null, defaultAcademicTermId: null, years: [], terms: [] },
@@ -891,4 +889,52 @@ test('settings response supersedes an older pending options read and preserves e
 	unregister();
 	unsubscribe();
 	store.reset();
+});
+
+test('scoped selectors leave missing defaults and invalid explicit parent-term contexts unselected', async () => {
+	const {
+		resolveScopedAcademicYearUrl,
+		resolveScopedAcademicContextUrl,
+		resolveScopedAcademicTerm
+	} = await importScopedYear();
+	const options = contextOptions();
+	for (const defaultId of [null, 'year-inaccessible']) {
+		const noDefault = { ...options, defaultAcademicYearId: defaultId, defaultAcademicTermId: null };
+		assert.deepEqual(
+			resolveScopedAcademicYearUrl(noDefault, new URL('https://school.test/student')),
+			{ academicYearId: null, replaceUrl: null }
+		);
+		assert.equal(
+			resolveScopedAcademicTerm(noDefault, new URL('https://school.test/student/behavior')),
+			undefined
+		);
+	}
+	const noTermDefault = { ...options, defaultAcademicTermId: null };
+	assert.equal(
+		resolveScopedAcademicContextUrl(
+			noTermDefault,
+			new URL('https://school.test/student/timetable?academicYearId=year-active'),
+			true
+		).academicTermId,
+		''
+	);
+	for (const value of ['term-missing', 'term-planning']) {
+		const invalid = new URL(
+			`https://school.test/student/timetable?academicYearId=year-active&academicTermId=${value}`
+		);
+		assert.deepEqual(resolveScopedAcademicContextUrl(options, invalid, true), {
+			academicYearId: '',
+			academicTermId: '',
+			replaceUrl: null
+		});
+		assert.equal(resolveScopedAcademicTerm(options, invalid), undefined);
+	}
+	const older = new URL(
+		'https://school.test/student/timetable?academicYearId=year-planning&academicTermId=term-planning'
+	);
+	assert.equal(
+		resolveScopedAcademicContextUrl(options, older, true).academicTermId,
+		'term-planning'
+	);
+	assert.equal(resolveScopedAcademicTerm(options, older)?.id, 'term-planning');
 });

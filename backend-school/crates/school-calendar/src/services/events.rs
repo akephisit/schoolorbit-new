@@ -5,12 +5,12 @@ use uuid::Uuid;
 use crate::models::{CalendarEvent, CalendarEventTargetInput, UpsertCalendarEventRequest};
 use school_errors::AppError;
 
+use super::CalendarNotificationKind;
 use super::shared::{
-    dedupe_uuid_ids, reminder_schedule, validate_event_date_time, validate_targets,
-    EVENT_NOT_FOUND_MESSAGE,
+    EVENT_NOT_FOUND_MESSAGE, dedupe_uuid_ids, reminder_schedule, validate_event_date_time,
+    validate_targets,
 };
 use super::visibility::get_event_for_response;
-use super::CalendarNotificationKind;
 
 const INVALID_TAGS_MESSAGE: &str = "มีแท็กที่ไม่ถูกต้อง กรุณาเลือกแท็กใหม่";
 
@@ -126,7 +126,7 @@ async fn replace_event_configuration(
     event_id: Uuid,
     payload: &UpsertCalendarEventRequest,
 ) -> Result<(), AppError> {
-    replace_event_targets(transaction, event_id, payload.start_date, &payload.targets).await?;
+    replace_event_targets(transaction, event_id, &payload.targets).await?;
     replace_event_tags(transaction, event_id, &dedupe_uuid_ids(&payload.tag_ids)).await?;
     replace_pending_event_reminders(
         transaction,
@@ -223,7 +223,6 @@ pub async fn soft_delete_event(
 async fn replace_event_targets(
     transaction: &mut Transaction<'_, Postgres>,
     event_id: Uuid,
-    event_date: NaiveDate,
     targets: &[CalendarEventTargetInput],
 ) -> Result<(), AppError> {
     school_database::DbSession::new(&mut **transaction)
@@ -239,59 +238,26 @@ async fn replace_event_targets(
         return Ok(());
     }
 
-    let year_ids: Vec<Uuid> = school_database::DbSession::new(&mut **transaction)
-        .scalar(
-            "calendar.services.events.replace_event_targets",
-            "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 ORDER BY id",
-        )
-        .bind(event_date)
-        .fetch_all()
-        .await?;
-    let mut scoped_targets = Vec::new();
-    for target in targets {
-        let year = if let Some(room) = target.homeroom_id {
-            Some(
-                school_database::DbSession::new(&mut **transaction).scalar::<Uuid>("calendar.services.events.replace_event_targets",
-                    "SELECT room.academic_year_id FROM homerooms room JOIN academic_years year ON year.id=room.academic_year_id WHERE room.id=$1 AND room.is_active AND year.start_date <= $2 AND year.end_date >= $2",
-                )
-                .bind(room)
-                .bind(event_date)
-                .fetch_optional()
-                .await?
-                .ok_or_else(|| AppError::BadRequest("ห้องเรียนไม่พร้อมใช้งาน".into()))?,
-            )
-        } else if let Some(grade) = target.grade_level_id {
-            let valid: bool = school_database::DbSession::new(&mut **transaction)
-                .scalar(
-                    "calendar.services.events.replace_event_targets",
-                    "SELECT EXISTS(SELECT 1 FROM grade_levels WHERE id=$1 AND is_active)",
-                )
-                .bind(grade)
-                .fetch_one()
-                .await?;
-            if !valid {
-                return Err(AppError::BadRequest(
-                    "ไม่พบปีของระดับชั้นในวันที่กิจกรรม กรุณาเลือกห้องเรียนหรือทุกระดับชั้น".into(),
-                ));
-            }
-            if year_ids.len() == 1 {
-                year_ids.first().copied()
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        scoped_targets.push((target, year));
+    let invalid:bool=school_database::DbSession::new(&mut **transaction).scalar("calendar.services.events.validate_target_contexts",r#"
+        SELECT EXISTS(SELECT 1 FROM jsonb_to_recordset($1) target("academicYearId" uuid,"gradeLevelId" uuid,"homeroomId" uuid)
+        WHERE ((target."gradeLevelId" IS NOT NULL OR target."homeroomId" IS NOT NULL) AND target."academicYearId" IS NULL)
+           OR (target."academicYearId" IS NOT NULL AND NOT EXISTS(SELECT 1 FROM academic_years WHERE id=target."academicYearId"))
+           OR (target."gradeLevelId" IS NOT NULL AND NOT EXISTS(SELECT 1 FROM grade_levels WHERE id=target."gradeLevelId" AND is_active))
+           OR (target."homeroomId" IS NOT NULL AND NOT EXISTS(SELECT 1 FROM homerooms room WHERE room.id=target."homeroomId" AND room.is_active AND room.academic_year_id=target."academicYearId")))
+    "#).bind(sqlx::types::Json(targets)).fetch_one().await?;
+    if invalid {
+        return Err(AppError::BadRequest(
+            "ระบุปีของกลุ่มเป้าหมายให้ตรงกับระดับชั้นหรือห้องเรียน".into(),
+        ));
     }
     let mut builder = QueryBuilder::<Postgres>::new(
         "INSERT INTO calendar_event_targets (
             event_id, academic_year_id, audience_type, grade_level_id, homeroom_id
         ) ",
     );
-    builder.push_values(scoped_targets, |mut row, (target, year)| {
+    builder.push_values(targets, |mut row, target| {
         row.push_bind(event_id)
-            .push_bind(year)
+            .push_bind(target.academic_year_id)
             .push_bind(target.audience_type.as_str())
             .push_bind(target.grade_level_id)
             .push_bind(target.homeroom_id);

@@ -51,16 +51,16 @@ test('course list and selected workspace render while policy is pending; learner
 					defaultAcademicTermId: term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',
@@ -214,16 +214,16 @@ test('learner-only reader falls back from the default course URL to the permitte
 					defaultAcademicTermId: term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',

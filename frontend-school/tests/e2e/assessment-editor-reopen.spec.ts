@@ -134,16 +134,16 @@ async function mockAssessmentApis(
 					defaultAcademicTermId: academicTermId,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: academicYearId,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: academicTermId,
 							academicYearId,
 							name: 'ภาคเรียนที่ 1',

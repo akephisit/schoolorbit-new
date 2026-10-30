@@ -5,7 +5,7 @@ use super::super::models::{
 use super::promotion_students::PromotionStudentContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{types::Json, Postgres, Transaction};
+use sqlx::{Postgres, Transaction, types::Json};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -256,7 +256,7 @@ fn validate_reference(
         _ => {
             return Err(AppError::ValidationError(
                 "ระบุระดับชั้นและแผนปลายทางให้ครบ".into(),
-            ))
+            ));
         }
     };
     if (decision.outcome == Outcome::Repeat && grade != source.grade_level_id)

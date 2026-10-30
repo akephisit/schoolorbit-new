@@ -141,11 +141,18 @@ async function install(page: Page, mode: 'light' | 'dark' = 'light', values = ro
 				await fulfill(route, {
 					defaultAcademicYearId: year,
 					defaultAcademicTermId: term,
-					years: [{
- isVisible: true, id: year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					years: [
+						{
+							isVisible: true,
+							id: year,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						}
+					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',

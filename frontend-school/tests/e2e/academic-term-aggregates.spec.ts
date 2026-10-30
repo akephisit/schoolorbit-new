@@ -125,16 +125,16 @@ async function mock(page: Page, manager = false, conflict = false) {
 					defaultAcademicTermId: term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							code: '1',

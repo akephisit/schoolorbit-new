@@ -12,8 +12,8 @@ use super::super::models::{
     StudentActivityRegistrationResult,
 };
 use super::{
-    append_audit, bangkok_today, invalidate_group_academic_confirmations, require_writable_term,
-    TermContext,
+    TermContext, append_audit, invalidate_group_academic_confirmations,
+    require_writable_term,
 };
 
 pub async fn list_registration_options(
@@ -53,13 +53,8 @@ pub async fn list_registration_options_on_connection(
                    FROM homeroom_placements candidate
                    WHERE candidate.student_academic_year_id = student_year.id
                      AND candidate.status IN ('current', 'planned')
-                     AND candidate.start_date <= COALESCE(
-                         selected_term.closed_on,
-                         selected_term.planned_end_date,
-                         selected_year.end_date
-                     )
-                     AND (candidate.end_date IS NULL
-                          OR candidate.end_date >= selected_term.start_date)
+                     AND candidate.start_date <= (now() AT TIME ZONE 'Asia/Bangkok')::date
+                     AND (candidate.end_date IS NULL OR candidate.end_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)
                    ORDER BY (candidate.status = 'current') DESC,
                             candidate.start_date DESC,
                             candidate.id
@@ -73,11 +68,7 @@ pub async fn list_registration_options_on_connection(
                   offering.academic_term_id,
                   offering.academic_year_id,
                   learner.homeroom_id,
-                  GREATEST(selected_term.start_date, LEAST(
-                      (now() AT TIME ZONE 'Asia/Bangkok')::date,
-                      COALESCE(selected_term.closed_on, selected_term.planned_end_date,
-                          (SELECT end_date FROM academic_years WHERE id=selected_term.academic_year_id))
-                  )) AS registration_date,
+                  (now() AT TIME ZONE 'Asia/Bangkok')::date AS registration_date,
                   offering.code_snapshot AS offering_code,
                   offering.name_snapshot AS offering_name,
                   activity.activity_type,
@@ -589,8 +580,8 @@ async fn require_eligible_student(
              AND student_year.status IN ('planned', 'active')"#,
         )
         .bind(student_id)
-        .bind(term.start_date)
-        .bind(term.date_upper_bound())
+        .bind(term.operation_date)
+        .bind(term.operation_date)
         .bind(context.academic_year_id)
         .fetch_optional()
         .await?
@@ -650,15 +641,7 @@ async fn require_eligible_student(
 }
 
 fn registration_date(term: &TermContext) -> chrono::NaiveDate {
-    bounded_registration_date(bangkok_today(), term.start_date, term.date_upper_bound())
-}
-
-fn bounded_registration_date(
-    today: chrono::NaiveDate,
-    start: chrono::NaiveDate,
-    end: chrono::NaiveDate,
-) -> chrono::NaiveDate {
-    today.max(start).min(end)
+    term.operation_date
 }
 
 async fn increment_group_revision(
@@ -683,28 +666,10 @@ mod tests {
     use chrono::{NaiveDate, TimeZone, Utc};
 
     #[test]
-    fn registration_dates_use_bangkok_midnight_and_preserve_term_bounds() {
-        let july_1 = NaiveDate::from_ymd_opt(2026, 7, 1).unwrap();
-        let july_2 = NaiveDate::from_ymd_opt(2026, 7, 2).unwrap();
-        let july_3 = NaiveDate::from_ymd_opt(2026, 7, 3).unwrap();
-        let before_midnight =
-            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 16, 59, 59).unwrap());
-        let midnight =
-            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 17, 0, 0).unwrap());
-        assert_eq!(
-            bounded_registration_date(before_midnight, july_1, july_3),
-            july_1
-        );
-        assert_eq!(bounded_registration_date(midnight, july_1, july_3), july_2);
-        assert_eq!(
-            bounded_registration_date(before_midnight, july_2, july_3),
-            july_2
-        );
-        let after_term =
-            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 3, 17, 0, 0).unwrap());
-        assert_eq!(
-            bounded_registration_date(after_term, july_1, july_3),
-            july_3
-        );
+    fn registration_uses_actual_bangkok_operation_day() {
+        let before=super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026,7,1,16,59,59).unwrap());
+        let after=super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026,7,1,17,0,0).unwrap());
+        assert_eq!(before,NaiveDate::from_ymd_opt(2026,7,1).unwrap());
+        assert_eq!(after,NaiveDate::from_ymd_opt(2026,7,2).unwrap());
     }
 }

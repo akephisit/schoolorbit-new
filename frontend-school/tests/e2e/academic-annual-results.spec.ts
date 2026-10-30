@@ -211,16 +211,16 @@ async function mock(
 					defaultAcademicTermId: term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							code: '1',
@@ -347,18 +347,18 @@ test('switching years ignores a late roster from the previous year', async ({ pa
 			defaultAcademicTermId: term,
 			years: [
 				{
- isVisible: true,
+					isVisible: true,
 					id: year,
 					year: 2569,
 					name: 'ปีการศึกษา 2569',
-					status: 'active',
+					status: 'active'
 				},
 				{
- isVisible: true,
+					isVisible: true,
 					id: nextYear,
 					year: 2570,
 					name: 'ปีการศึกษา 2570',
-					status: 'planning',
+					status: 'planning'
 				}
 			],
 			terms: []

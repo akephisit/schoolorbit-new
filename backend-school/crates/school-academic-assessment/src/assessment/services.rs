@@ -1148,14 +1148,10 @@ async fn load_coordinator_candidates(
             AND learning_group.status <> 'closed'
            JOIN learning_group_teachers teacher
              ON teacher.learning_group_id = learning_group.id
-            AND teacher.starts_on <= LEAST(
-                GREATEST(current_date, term.start_date), term.planned_end_date
-            )
+            AND teacher.starts_on <= (now() AT TIME ZONE 'Asia/Bangkok')::date
             AND (
                 teacher.ends_on IS NULL
-                OR teacher.ends_on >= LEAST(
-                    GREATEST(current_date, term.start_date), term.planned_end_date
-                )
+                OR teacher.ends_on >= (now() AT TIME ZONE 'Asia/Bangkok')::date
             )
            JOIN user_display_names user_account
              ON user_account.id = teacher.teacher_id
@@ -1201,14 +1197,10 @@ async fn load_candidate_ids_in_tx(
             AND learning_group.status <> 'closed'
            JOIN learning_group_teachers teacher
              ON teacher.learning_group_id = learning_group.id
-            AND teacher.starts_on <= LEAST(
-                GREATEST(current_date, term.start_date), term.planned_end_date
-            )
+            AND teacher.starts_on <= (now() AT TIME ZONE 'Asia/Bangkok')::date
             AND (
                 teacher.ends_on IS NULL
-                OR teacher.ends_on >= LEAST(
-                    GREATEST(current_date, term.start_date), term.planned_end_date
-                )
+                OR teacher.ends_on >= (now() AT TIME ZONE 'Asia/Bangkok')::date
             )
            JOIN user_display_names user_account
              ON user_account.id = teacher.teacher_id
@@ -1401,8 +1393,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             AssessmentPhaseCode::ALL
         );
-        assert!(phases
-            .iter()
-            .all(|phase| phase.id.is_none() && phase.max_score == "0.00"));
+        assert!(
+            phases
+                .iter()
+                .all(|phase| phase.id.is_none() && phase.max_score == "0.00")
+        );
     }
 }

@@ -359,7 +359,7 @@ fn ensure_workspace_size(actual: usize, maximum: usize, label: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_workspace_size, workspace_grade_level_item, WorkspaceGradeLevelRow};
+    use super::{WorkspaceGradeLevelRow, ensure_workspace_size, workspace_grade_level_item};
     use uuid::Uuid;
     #[test]
     fn level_grade_choices_have_human_names_and_secondary_order() {

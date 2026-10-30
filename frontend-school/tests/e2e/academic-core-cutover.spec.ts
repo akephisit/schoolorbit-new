@@ -1,3 +1,7 @@
+import {
+	mockDeliveryNavigation,
+	navigationOverviewPath
+} from './fixtures/delivery-navigation-route-data';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { UpdateAcademicTermRequest } from '../../src/lib/api/academic-core';
@@ -70,16 +74,16 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 					defaultAcademicTermId: ids.term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2570',
 							year: 2570,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',
@@ -124,7 +128,7 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 }
 
 const year = {
- isVisible: true,
+	isVisible: true,
 	id: ids.year,
 	year: 2570,
 	name: 'ปีการศึกษา 2570',
@@ -136,7 +140,7 @@ const year = {
 	updatedAt: '2026-08-24T00:00:00Z'
 };
 const term = {
- isVisible: true,
+	isVisible: true,
 	id: ids.term,
 	academicYearId: ids.year,
 	sequence: 1,
@@ -170,7 +174,13 @@ test('future term form keeps annual flags consistent and resets editing when swi
 				years: [
 					{ ...year, status: 'active' },
 					{
- isVisible: true, ...year, id: ids.futureYear, year: 2569, name: 'ปีการศึกษา 2569', status: 'closed' }
+						isVisible: true,
+						...year,
+						id: ids.futureYear,
+						year: 2569,
+						name: 'ปีการศึกษา 2569',
+						status: 'closed'
+					}
 				],
 				terms: [
 					draft,
@@ -203,7 +213,7 @@ test('future term form keeps annual flags consistent and resets editing when swi
 	});
 	await page.goto('/staff/academic/core');
 	await expect(
-		page.getByText('บันทึกเป็นร่าง ไม่เปลี่ยนภาคเรียนปัจจุบันและไม่เปิดกรอกคะแนน')
+		page.getByText('สร้างเป็นร่างที่ซ่อนจากตัวเลือก แสดงในตัวเลือกและตั้งค่าเริ่มต้นได้แยกกัน')
 	).toBeVisible();
 	const termSection = page
 		.getByRole('article')
@@ -293,7 +303,9 @@ test('creates a future planning year and configurable regular, summer, and custo
 	await expect(page.getByText('รอบพิเศษ')).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มปีการศึกษา' }).click();
 	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2571');
-	await expect(page.getByRole('button', { name: /เลือกวันเริ่มปีการศึกษา|เลือกวันสิ้นสุดปีการศึกษา/ })).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: /เลือกวันเริ่มปีการศึกษา|เลือกวันสิ้นสุดปีการศึกษา/ })
+	).toHaveCount(0);
 	await page.getByRole('button', { name: 'สร้างปีสำหรับวางแผน' }).click();
 	await expect(page.getByRole('heading', { name: 'ปีการศึกษา 2571', exact: true })).toBeVisible();
 	expect(createYearBody).toMatchObject({
@@ -397,7 +409,7 @@ test('creates future placement without changing the active-year placement timeli
 			await fulfill(route, []);
 			return true;
 		}
-		if (url.pathname === '/api/academic/homerooms') {
+		if (url.pathname === '/api/academic/homerooms' || url.pathname === '/api/academic/placements') {
 			await fulfill(route, []);
 			return true;
 		}
@@ -412,25 +424,33 @@ test('creates future placement without changing the active-year placement timeli
 		return false;
 	});
 	await page.goto(`/staff/academic/student-years?academicYearId=${ids.year}`);
-	await expect(page.getByText('ยังไม่มีข้อมูลนักเรียนในปีที่เลือก')).toBeVisible();
+	await expect(page.getByText('ยังไม่มีนักเรียนในปีที่เลือก')).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
 });
 
-test('creates course and activity offerings and exposes roster review before publication', async ({
+test('delivery opens curriculum and manual creation with an explicit actual opening date', async ({
 	page
 }) => {
-	await mockShell(page, async (route, url) => {
-		if (url.pathname === '/api/academic/offerings') {
-			await fulfill(route, []);
-			return true;
-		}
-		return false;
-	});
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-	await expect(page.getByText('สร้างชุดการเรียนเอง')).toBeVisible();
-	await expect(page.getByLabel('ชนิด')).toContainText('รายวิชา');
-	await expect(page.getByLabel('ชนิด')).toContainText('กิจกรรมพัฒนาผู้เรียน');
-	await expect(page.getByText('สร้างชุดการเรียนจากหลักสูตร')).toBeVisible();
+	const api = await mockDeliveryNavigation(page, { manager: true });
+	await page.goto(`${navigationOverviewPath()}&view=offerings`);
+	await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(
+		dialog.getByRole('button', {
+			name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร',
+			exact: true
+		})
+	).toBeVisible();
+	await dialog.getByRole('button', { name: /เพิ่มรายการเอง/ }).click();
+	await expect(
+		dialog.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริง', exact: true })
+	).toBeVisible();
+	await dialog.getByRole('combobox', { name: 'ประเภท', exact: true }).click();
+	await expect(page.getByRole('option', { name: 'รายวิชา', exact: true })).toBeVisible();
+	await expect(
+		page.getByRole('option', { name: 'กิจกรรมพัฒนาผู้เรียน', exact: true })
+	).toBeVisible();
+	expect(api.creations).toEqual([]);
 });
 
 test('preserves a subject-version draft after a stale row conflict', async ({ page }) => {
@@ -463,29 +483,72 @@ test('preserves a subject-version draft after a stale row conflict', async ({ pa
 	expect(requests.pageErrors).toEqual([]);
 });
 
-
-test('hidden drafts expose separate visibility and default actions and retain an open year draft', async ({ page }) => {
-	const future = { ...year, id: ids.futureYear, year: 2571, name: 'ปีการศึกษา 2571', isVisible: false };
+test('hidden drafts expose separate visibility and default actions and retain an open year draft', async ({
+	page
+}) => {
+	const future = {
+		...year,
+		id: ids.futureYear,
+		year: 2571,
+		name: 'ปีการศึกษา 2571',
+		isVisible: false
+	};
 	const draftTerm = { ...term, academicYearId: ids.futureYear, isVisible: false };
 	const previous = { ...year, status: 'active', isVisible: true };
-	let settings = { rowVersion: 1, defaultAcademicYearId: ids.year, defaultAcademicTermId: null as string | null };
+	let settings = {
+		rowVersion: 1,
+		defaultAcademicYearId: ids.year,
+		defaultAcademicTermId: null as string | null
+	};
 	let failOnce = true;
-	const writes: Array<{ years: Array<{id: string; isVisible: boolean}>; terms: Array<{id: string; isVisible: boolean}>; defaultAcademicYearId: string; defaultAcademicTermId: string | null }> = [];
+	const writes: Array<{
+		years: Array<{ id: string; isVisible: boolean }>;
+		terms: Array<{ id: string; isVisible: boolean }>;
+		defaultAcademicYearId: string;
+		defaultAcademicTermId: string | null;
+	}> = [];
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
-			await fulfill(route, { years: [previous, future], terms: [draftTerm], bellSchedules: [], contextSettings: settings });
+			await fulfill(route, {
+				years: [previous, future],
+				terms: [draftTerm],
+				bellSchedules: [],
+				contextSettings: settings
+			});
 			return true;
 		}
 		if (url.pathname === '/api/academic/context/settings') {
 			const body = route.request().postDataJSON();
 			writes.push(body);
-			if (failOnce) { failOnce = false; await fulfill(route, 'ข้อมูลเปลี่ยนแปลง กรุณาตรวจสอบอีกครั้ง', 409); return true; }
-			for (const item of body.years) if (item.id === future.id) { future.isVisible = item.isVisible; future.rowVersion += 1; }
-			for (const item of body.terms) if (item.id === draftTerm.id) { draftTerm.isVisible = item.isVisible; draftTerm.rowVersion += 1; }
-			settings = { rowVersion: settings.rowVersion + 1, defaultAcademicYearId: body.defaultAcademicYearId, defaultAcademicTermId: body.defaultAcademicTermId };
+			if (failOnce) {
+				failOnce = false;
+				await fulfill(route, 'ข้อมูลเปลี่ยนแปลง กรุณาตรวจสอบอีกครั้ง', 409);
+				return true;
+			}
+			for (const item of body.years)
+				if (item.id === future.id) {
+					future.isVisible = item.isVisible;
+					future.rowVersion += 1;
+				}
+			for (const item of body.terms)
+				if (item.id === draftTerm.id) {
+					draftTerm.isVisible = item.isVisible;
+					draftTerm.rowVersion += 1;
+				}
+			settings = {
+				rowVersion: settings.rowVersion + 1,
+				defaultAcademicYearId: body.defaultAcademicYearId,
+				defaultAcademicTermId: body.defaultAcademicTermId
+			};
 			await fulfill(route, {
-				settings, years: [future], terms: [draftTerm],
-				contextOptions: { ...settings, years: [previous, ...(future.isVisible ? [future] : [])], terms: future.isVisible && draftTerm.isVisible ? [draftTerm] : [] }
+				settings,
+				years: [future],
+				terms: [draftTerm],
+				contextOptions: {
+					...settings,
+					years: [previous, ...(future.isVisible ? [future] : [])],
+					terms: future.isVisible && draftTerm.isVisible ? [draftTerm] : []
+				}
 			});
 			return true;
 		}
@@ -502,13 +565,19 @@ test('hidden drafts expose separate visibility and default actions and retain an
 	await expect(controls.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนแปลง');
 	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
 	await yearControls.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
-	await expect(yearControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })).toBeEnabled();
+	await expect(
+		yearControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })
+	).toBeEnabled();
 	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
 	await termControls.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
 	await expect(termControls.getByRole('button', { name: 'ตั้งเป็นค่าเริ่มต้น' })).toBeEnabled();
 	await termControls.getByRole('button', { name: 'ตั้งเป็นค่าเริ่มต้น' }).click();
-	await expect(termControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })).toBeDisabled();
-	await expect(yearControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })).toBeDisabled();
+	await expect(
+		termControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })
+	).toBeDisabled();
+	await expect(
+		yearControls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })
+	).toBeDisabled();
 	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
 	expect(writes.map((body) => ({ years: body.years, terms: body.terms }))).toEqual([
 		{ years: [{ id: future.id, isVisible: true }], terms: [] },
@@ -516,5 +585,8 @@ test('hidden drafts expose separate visibility and default actions and retain an
 		{ years: [], terms: [{ id: draftTerm.id, isVisible: true }] },
 		{ years: [], terms: [] }
 	]);
-	expect(writes.at(-1)).toMatchObject({ defaultAcademicYearId: future.id, defaultAcademicTermId: draftTerm.id });
+	expect(writes.at(-1)).toMatchObject({
+		defaultAcademicYearId: future.id,
+		defaultAcademicTermId: draftTerm.id
+	});
 });

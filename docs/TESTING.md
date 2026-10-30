@@ -925,6 +925,46 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-home-regi
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-management-region-loading.spec.ts tests/e2e/supervision-queues-region-loading.spec.ts tests/e2e/supervision-detail-region-loading.spec.ts --project=chromium --workers=2
 ```
 
+Academic context visibility and school defaults are independent of operational lifecycle status.
+The focused cases below cover explicit defaults, invalid parent/term selection, preserving existing
+URLs and open drafts, stale option reads after an authoritative settings response, separate
+visibility/default actions, and date-free year/term contracts. Run static/type checks before browser
+fixtures; do not overlap Vite instances, generation, or the self-hosted public calendar suite.
+
+```bash
+cd frontend-school
+node --test tests/static/academic-context-contract.test.mjs tests/static/academic-core-cutover-contract.test.mjs tests/static/academic-lifecycle-presentation.test.mjs tests/static/academic-foundation-clarity.test.mjs tests/static/calendar-utils.test.mjs
+```
+
+For the Core and Topbar mocked acceptance, run a local dev server with
+`PUBLIC_BACKEND_URL=http://127.0.0.1:4173 npm run dev -- --host 127.0.0.1 --port 4173`.
+The Topbar dirty-form case imports the loaded dev-store module to register its synthetic draft.
+Then, from another terminal in `frontend-school`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-core-cutover.spec.ts tests/e2e/academic-context.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-navigation.spec.ts --grep 'creating an activity with groups' --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-requests.spec.ts tests/e2e/behavior-workflow.spec.ts tests/e2e/academic-term-lifecycle.spec.ts --grep 'enrollment year|direct event defaults|manager selects event settings|scheduled behavior cutoffs|final closure|closed term prepares' --project=chromium --workers=1
+```
+
+Actual event, offering, placement and Behavior cutoff dates stay in their owning forms. Calendar targeting selects an enrollment year explicitly; a cutoff is the final inclusive
+day of a Behavior cycle, with the next cycle starting the following day. After stopping the dev
+server, run the public calendar fixture alone; it owns its API and Vite servers and checks
+unrestricted actual month navigation, cross-month search, focused retry and mobile/desktop themes:
+
+```bash
+npx playwright test tests/e2e/public-calendar-year-search.spec.ts --project=chromium --workers=1
+```
+
+From the repository root, disposable Core integration recipes cover atomic settings/revisions,
+concurrent writes, denied permissions and hidden planning defaults, plus populated migration
+preservation, explicit attendance dates/notes, scoped target links, refusal and retry:
+
+```bash
+./scripts/test_backend_school.sh --package school-academic-core --test context_settings_persistence -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-core --test context_migration_preservation -- --nocapture
+```
+
 The facility fixtures cover building-to-room navigation, deep links/history and retained academic
 context, lazy and cancelled region reads, separate unassigned rooms, name-only filtering before
 client pagination, exact mutation permissions, failure/retry and stale-draft ownership. Room and

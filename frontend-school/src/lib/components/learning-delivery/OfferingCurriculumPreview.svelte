@@ -214,7 +214,7 @@
 	}
 
 	async function buildPreview() {
-		if (studyProgramIds.length === 0) return;
+		if (!startsOn || studyProgramIds.length === 0) return;
 		busy = true;
 		errorMessage = '';
 		try {
@@ -387,7 +387,7 @@
 			variant="outline"
 			loading={busy}
 			loadingLabel="กำลังตรวจ"
-			disabled={studyProgramIds.length === 0}
+			disabled={!startsOn || studyProgramIds.length === 0}
 			onclick={buildPreview}><Eye class="size-4" /> ตรวจและจัดกลุ่มก่อน</LoadingButton
 		>
 	</div>

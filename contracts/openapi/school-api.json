@@ -178,14 +178,14 @@
       },
       "AcademicContextOptions": {
         "properties": {
-          "activeAcademicTermId": {
+          "defaultAcademicTermId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
           },
-          "activeAcademicYearId": {
+          "defaultAcademicYearId": {
             "format": "uuid",
             "type": [
               "string",
@@ -208,6 +208,80 @@
         "required": [
           "years",
           "terms"
+        ],
+        "type": "object"
+      },
+      "AcademicContextSettings": {
+        "properties": {
+          "defaultAcademicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultAcademicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultAcademicYearId",
+          "defaultAcademicTermId",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AcademicContextSettingsMutationResponse": {
+        "properties": {
+          "contextOptions": {
+            "$ref": "#/components/schemas/AcademicContextOptions"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AcademicContextSettings"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicTerm"
+            },
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicYear"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "settings",
+          "years",
+          "terms",
+          "contextOptions"
+        ],
+        "type": "object"
+      },
+      "AcademicContextVisibilityInput": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isVisible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "isVisible"
         ],
         "type": "object"
       },
@@ -346,6 +420,9 @@
             },
             "type": "array"
           },
+          "contextSettings": {
+            "$ref": "#/components/schemas/AcademicContextSettings"
+          },
           "terms": {
             "items": {
               "$ref": "#/components/schemas/AcademicTerm"
@@ -360,6 +437,7 @@
           }
         },
         "required": [
+          "contextSettings",
           "years",
           "terms",
           "bellSchedules"
@@ -379,13 +457,6 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "closedOn": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "code": {
             "type": "string"
           },
@@ -400,18 +471,14 @@
           "includedInYearResult": {
             "type": "boolean"
           },
+          "isVisible": {
+            "type": "boolean"
+          },
           "migrated": {
             "type": "boolean"
           },
           "name": {
             "type": "string"
-          },
-          "plannedEndDate": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "rowVersion": {
             "format": "int64",
@@ -420,10 +487,6 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
-          },
-          "startDate": {
-            "format": "date",
-            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/AcademicTermStatus"
@@ -443,12 +506,10 @@
           "code",
           "name",
           "termType",
-          "startDate",
-          "plannedEndDate",
-          "closedOn",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
+          "isVisible",
           "status",
           "rowVersion",
           "migrated",
@@ -1072,13 +1133,6 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "closedOn": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "code": {
             "type": "string"
           },
@@ -1089,23 +1143,15 @@
           "includedInYearResult": {
             "type": "boolean"
           },
+          "isVisible": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
-          },
-          "plannedEndDate": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "sequence": {
             "format": "int32",
             "type": "integer"
-          },
-          "startDate": {
-            "format": "date",
-            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/AcademicTermStatus"
@@ -1121,11 +1167,9 @@
           "code",
           "name",
           "termType",
-          "startDate",
-          "plannedEndDate",
-          "closedOn",
           "includedInYearResult",
           "blocksYearClosure",
+          "isVisible",
           "status"
         ],
         "type": "object"
@@ -1156,13 +1200,12 @@
             "format": "date-time",
             "type": "string"
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "isVisible": {
+            "type": "boolean"
           },
           "migrated": {
             "type": "boolean"
@@ -1180,10 +1223,6 @@
             },
             "type": "array"
           },
-          "startDate": {
-            "format": "date",
-            "type": "string"
-          },
           "status": {
             "$ref": "#/components/schemas/AcademicYearStatus"
           },
@@ -1200,9 +1239,8 @@
           "id",
           "year",
           "name",
-          "startDate",
-          "endDate",
           "schoolDays",
+          "isVisible",
           "status",
           "rowVersion",
           "migrated",
@@ -1239,19 +1277,14 @@
       },
       "AcademicYearOption": {
         "properties": {
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "id": {
             "format": "uuid",
             "type": "string"
           },
-          "name": {
-            "type": "string"
+          "isVisible": {
+            "type": "boolean"
           },
-          "startDate": {
-            "format": "date",
+          "name": {
             "type": "string"
           },
           "status": {
@@ -1266,8 +1299,7 @@
           "id",
           "year",
           "name",
-          "startDate",
-          "endDate",
+          "isVisible",
           "status"
         ],
         "type": "object"
@@ -2749,14 +2781,14 @@
         "properties": {
           "data": {
             "properties": {
-              "activeAcademicTermId": {
+              "defaultAcademicTermId": {
                 "format": "uuid",
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "activeAcademicYearId": {
+              "defaultAcademicYearId": {
                 "format": "uuid",
                 "type": [
                   "string",
@@ -2779,6 +2811,50 @@
             "required": [
               "years",
               "terms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicContextSettingsMutationResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "contextOptions": {
+                "$ref": "#/components/schemas/AcademicContextOptions"
+              },
+              "settings": {
+                "$ref": "#/components/schemas/AcademicContextSettings"
+              },
+              "terms": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicTerm"
+                },
+                "type": "array"
+              },
+              "years": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicYear"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "settings",
+              "years",
+              "terms",
+              "contextOptions"
             ],
             "type": "object"
           },
@@ -2897,6 +2973,9 @@
                 },
                 "type": "array"
               },
+              "contextSettings": {
+                "$ref": "#/components/schemas/AcademicContextSettings"
+              },
               "terms": {
                 "items": {
                   "$ref": "#/components/schemas/AcademicTerm"
@@ -2911,6 +2990,7 @@
               }
             },
             "required": [
+              "contextSettings",
               "years",
               "terms",
               "bellSchedules"
@@ -2945,13 +3025,6 @@
               "blocksYearClosure": {
                 "type": "boolean"
               },
-              "closedOn": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "code": {
                 "type": "string"
               },
@@ -2966,18 +3039,14 @@
               "includedInYearResult": {
                 "type": "boolean"
               },
+              "isVisible": {
+                "type": "boolean"
+              },
               "migrated": {
                 "type": "boolean"
               },
               "name": {
                 "type": "string"
-              },
-              "plannedEndDate": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
-                ]
               },
               "rowVersion": {
                 "format": "int64",
@@ -2986,10 +3055,6 @@
               "sequence": {
                 "format": "int32",
                 "type": "integer"
-              },
-              "startDate": {
-                "format": "date",
-                "type": "string"
               },
               "status": {
                 "$ref": "#/components/schemas/AcademicTermStatus"
@@ -3009,12 +3074,10 @@
               "code",
               "name",
               "termType",
-              "startDate",
-              "plannedEndDate",
-              "closedOn",
               "includedInYearResult",
               "blocksYearClosure",
               "bellScheduleId",
+              "isVisible",
               "status",
               "rowVersion",
               "migrated",
@@ -3256,13 +3319,12 @@
                 "format": "date-time",
                 "type": "string"
               },
-              "endDate": {
-                "format": "date",
-                "type": "string"
-              },
               "id": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "isVisible": {
+                "type": "boolean"
               },
               "migrated": {
                 "type": "boolean"
@@ -3280,10 +3342,6 @@
                 },
                 "type": "array"
               },
-              "startDate": {
-                "format": "date",
-                "type": "string"
-              },
               "status": {
                 "$ref": "#/components/schemas/AcademicYearStatus"
               },
@@ -3300,9 +3358,8 @@
               "id",
               "year",
               "name",
-              "startDate",
-              "endDate",
               "schoolDays",
+              "isVisible",
               "status",
               "rowVersion",
               "migrated",
@@ -5188,11 +5245,25 @@
               "deductionReset": {
                 "$ref": "#/components/schemas/BehaviorResetSchedule"
               },
+              "deductionResetDates": {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "enabled": {
                 "type": "boolean"
               },
               "meritReset": {
                 "$ref": "#/components/schemas/BehaviorResetSchedule"
+              },
+              "meritResetDates": {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
               },
               "rowVersion": {
                 "format": "int64",
@@ -5206,7 +5277,9 @@
               "dailyMeritCap",
               "dailyDeductionCap",
               "meritReset",
+              "meritResetDates",
               "deductionReset",
+              "deductionResetDates",
               "rowVersion"
             ],
             "type": "object"
@@ -9287,9 +9360,14 @@
               },
               "sourceHash": {
                 "type": "string"
+              },
+              "startsOn": {
+                "format": "date",
+                "type": "string"
               }
             },
             "required": [
+              "startsOn",
               "curriculumSources",
               "academicTermId",
               "sourceHash",
@@ -12763,7 +12841,10 @@
               },
               "endsOn": {
                 "format": "date",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "groupRowVersion": {
                 "format": "int64",
@@ -12780,8 +12861,7 @@
             "required": [
               "mode",
               "groupRowVersion",
-              "startsOn",
-              "endsOn"
+              "startsOn"
             ],
             "type": "object"
           },
@@ -14941,6 +15021,10 @@
               "status": {
                 "$ref": "#/components/schemas/PromotionRunStatus"
               },
+              "targetPlacementStartsOn": {
+                "format": "date",
+                "type": "string"
+              },
               "targetYearId": {
                 "format": "uuid",
                 "type": "string"
@@ -14954,6 +15038,7 @@
               "id",
               "sourceYearId",
               "targetYearId",
+              "targetPlacementStartsOn",
               "policyId",
               "status",
               "rowVersion",
@@ -20021,13 +20106,6 @@
                 "blocksYearClosure": {
                   "type": "boolean"
                 },
-                "closedOn": {
-                  "format": "date",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "code": {
                   "type": "string"
                 },
@@ -20042,18 +20120,14 @@
                 "includedInYearResult": {
                   "type": "boolean"
                 },
+                "isVisible": {
+                  "type": "boolean"
+                },
                 "migrated": {
                   "type": "boolean"
                 },
                 "name": {
                   "type": "string"
-                },
-                "plannedEndDate": {
-                  "format": "date",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
                 },
                 "rowVersion": {
                   "format": "int64",
@@ -20062,10 +20136,6 @@
                 "sequence": {
                   "format": "int32",
                   "type": "integer"
-                },
-                "startDate": {
-                  "format": "date",
-                  "type": "string"
                 },
                 "status": {
                   "$ref": "#/components/schemas/AcademicTermStatus"
@@ -20085,12 +20155,10 @@
                 "code",
                 "name",
                 "termType",
-                "startDate",
-                "plannedEndDate",
-                "closedOn",
                 "includedInYearResult",
                 "blocksYearClosure",
                 "bellScheduleId",
+                "isVisible",
                 "status",
                 "rowVersion",
                 "migrated",
@@ -20336,13 +20404,12 @@
                   "format": "date-time",
                   "type": "string"
                 },
-                "endDate": {
-                  "format": "date",
-                  "type": "string"
-                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "isVisible": {
+                  "type": "boolean"
                 },
                 "migrated": {
                   "type": "boolean"
@@ -20360,10 +20427,6 @@
                   },
                   "type": "array"
                 },
-                "startDate": {
-                  "format": "date",
-                  "type": "string"
-                },
                 "status": {
                   "$ref": "#/components/schemas/AcademicYearStatus"
                 },
@@ -20380,9 +20443,8 @@
                 "id",
                 "year",
                 "name",
-                "startDate",
-                "endDate",
                 "schoolDays",
+                "isVisible",
                 "status",
                 "rowVersion",
                 "migrated",
@@ -28934,6 +28996,10 @@
           "sourceHash": {
             "type": "string"
           },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "studyProgramIds": {
             "items": {
               "format": "uuid",
@@ -28943,6 +29009,7 @@
           }
         },
         "required": [
+          "startsOn",
           "academicTermId",
           "studyProgramIds",
           "sourceHash",
@@ -31421,8 +31488,7 @@
         "enum": [
           "manual",
           "monthly",
-          "term",
-          "year"
+          "scheduled"
         ],
         "type": "string"
       },
@@ -31518,11 +31584,25 @@
           "deductionReset": {
             "$ref": "#/components/schemas/BehaviorResetSchedule"
           },
+          "deductionResetDates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "enabled": {
             "type": "boolean"
           },
           "meritReset": {
             "$ref": "#/components/schemas/BehaviorResetSchedule"
+          },
+          "meritResetDates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "type": "array"
           },
           "rowVersion": {
             "format": "int64",
@@ -31536,7 +31616,9 @@
           "dailyMeritCap",
           "dailyDeductionCap",
           "meritReset",
+          "meritResetDates",
           "deductionReset",
+          "deductionResetDates",
           "rowVersion"
         ],
         "type": "object"
@@ -34213,6 +34295,13 @@
       },
       "CalendarEventTarget": {
         "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "audienceType": {
             "type": "string"
           },
@@ -34236,6 +34325,7 @@
           }
         },
         "required": [
+          "academicYearId",
           "id",
           "audienceType",
           "gradeLevelId",
@@ -34245,6 +34335,13 @@
       },
       "CalendarEventTargetInput": {
         "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "audienceType": {
             "$ref": "#/components/schemas/CalendarAudienceType"
           },
@@ -38494,6 +38591,10 @@
           "formData": {
             "description": "ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit)"
           },
+          "placementStartsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "studentCode": {
             "description": "รหัสนักเรียน (student_id field ใน student_info)",
             "type": [
@@ -38502,6 +38603,9 @@
             ]
           }
         },
+        "required": [
+          "placementStartsOn"
+        ],
         "type": "object"
       },
       "ConfirmationInput": {
@@ -39911,10 +40015,6 @@
               "null"
             ]
           },
-          "startDate": {
-            "format": "date",
-            "type": "string"
-          },
           "termType": {
             "$ref": "#/components/schemas/AcademicTermType"
           }
@@ -39922,7 +40022,6 @@
         "required": [
           "academicYearId",
           "termType",
-          "startDate",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId"
@@ -39938,19 +40037,11 @@
               "null"
             ]
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "schoolDays": {
             "items": {
               "type": "string"
             },
             "type": "array"
-          },
-          "startDate": {
-            "format": "date",
-            "type": "string"
           },
           "year": {
             "format": "int32",
@@ -39959,8 +40050,6 @@
         },
         "required": [
           "year",
-          "startDate",
-          "endDate",
           "schoolDays"
         ],
         "type": "object"
@@ -40082,6 +40171,10 @@
           "schedulingMode": {
             "$ref": "#/components/schemas/ActivitySchedulingMode"
           },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "targets": {
             "items": {
               "$ref": "#/components/schemas/OfferingTargetInput"
@@ -40090,6 +40183,7 @@
           }
         },
         "required": [
+          "startsOn",
           "academicTermId",
           "activityVersionId",
           "targets",
@@ -40686,6 +40780,10 @@
               "null"
             ]
           },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "subjectVersionId": {
             "format": "uuid",
             "type": "string"
@@ -40698,6 +40796,7 @@
           }
         },
         "required": [
+          "startsOn",
           "academicTermId",
           "subjectVersionId",
           "targets",
@@ -41371,6 +41470,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "targetPlacementStartsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "targetYearId": {
             "format": "uuid",
             "type": "string"
@@ -41380,6 +41483,7 @@
           "requestId",
           "sourceYearId",
           "targetYearId",
+          "targetPlacementStartsOn",
           "policyId"
         ],
         "type": "object"
@@ -43035,9 +43139,14 @@
           },
           "sourceHash": {
             "type": "string"
+          },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
           }
         },
         "required": [
+          "startsOn",
           "curriculumSources",
           "academicTermId",
           "sourceHash",
@@ -51735,7 +51844,10 @@
           },
           "endsOn": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "groupRowVersion": {
             "format": "int64",
@@ -51752,8 +51864,7 @@
         "required": [
           "mode",
           "groupRowVersion",
-          "startsOn",
-          "endsOn"
+          "startsOn"
         ],
         "type": "object"
       },
@@ -54956,6 +55067,10 @@
               "null"
             ]
           },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "studyProgramIds": {
             "items": {
               "format": "uuid",
@@ -54965,6 +55080,7 @@
           }
         },
         "required": [
+          "startsOn",
           "academicTermId",
           "studyProgramIds"
         ],
@@ -56489,6 +56605,10 @@
           "status": {
             "$ref": "#/components/schemas/PromotionRunStatus"
           },
+          "targetPlacementStartsOn": {
+            "format": "date",
+            "type": "string"
+          },
           "targetYearId": {
             "format": "uuid",
             "type": "string"
@@ -56502,6 +56622,7 @@
           "id",
           "sourceYearId",
           "targetYearId",
+          "targetPlacementStartsOn",
           "policyId",
           "status",
           "rowVersion",
@@ -67057,6 +67178,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "academicYear": {
+            "format": "int32",
+            "type": "integer"
+          },
           "academicYearId": {
             "format": "uuid",
             "type": "string"
@@ -67068,22 +67193,12 @@
           "blocksYearClosure": {
             "type": "boolean"
           },
-          "closedOn": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "includedInYearResult": {
             "type": "boolean"
           },
-          "plannedEndDate": {
+          "operationDate": {
             "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "sequence": {
             "format": "int32",
@@ -67096,16 +67211,8 @@
             "format": "int64",
             "type": "integer"
           },
-          "termStartDate": {
-            "format": "date",
-            "type": "string"
-          },
           "termStatus": {
             "$ref": "#/components/schemas/AcademicTermStatus"
-          },
-          "yearEndDate": {
-            "format": "date",
-            "type": "string"
           },
           "yearName": {
             "type": "string"
@@ -67113,10 +67220,6 @@
           "yearRowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "yearStartDate": {
-            "format": "date",
-            "type": "string"
           },
           "yearStatus": {
             "$ref": "#/components/schemas/AcademicYearStatus"
@@ -67131,9 +67234,8 @@
           "termStatus",
           "yearRowVersion",
           "termRowVersion",
-          "yearStartDate",
-          "yearEndDate",
-          "termStartDate",
+          "academicYear",
+          "operationDate",
           "sequence",
           "bellScheduleId",
           "includedInYearResult",
@@ -67203,15 +67305,7 @@
             "format": "uuid",
             "type": "string"
           },
-          "targetEndDate": {
-            "format": "date",
-            "type": "string"
-          },
           "targetLabel": {
-            "type": "string"
-          },
-          "targetStartDate": {
-            "format": "date",
             "type": "string"
           },
           "targetStatus": {
@@ -67234,9 +67328,7 @@
           "targetTermId",
           "targetYearId",
           "targetLabel",
-          "targetStatus",
-          "targetStartDate",
-          "targetEndDate"
+          "targetStatus"
         ],
         "type": "object"
       },
@@ -67407,6 +67499,13 @@
               "$ref": "#/components/schemas/TermPreparationEntityMapping"
             },
             "type": "array"
+          },
+          "offeringStartsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -67692,13 +67791,6 @@
           },
           "action": {
             "$ref": "#/components/schemas/TermTransitionAction"
-          },
-          "closedOn": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "expectedTermVersion": {
             "format": "int64",
@@ -69770,6 +69862,49 @@
         ],
         "type": "object"
       },
+      "UpdateAcademicContextSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultAcademicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultAcademicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicContextVisibilityInput"
+            },
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicContextVisibilityInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "defaultAcademicYearId",
+          "defaultAcademicTermId",
+          "years",
+          "terms"
+        ],
+        "type": "object"
+      },
       "UpdateAcademicTermChangeSetRequest": {
         "additionalProperties": false,
         "properties": {
@@ -69822,17 +69957,12 @@
             "format": "int64",
             "type": "integer"
           },
-          "startDate": {
-            "format": "date",
-            "type": "string"
-          },
           "termType": {
             "$ref": "#/components/schemas/AcademicTermType"
           }
         },
         "required": [
           "termType",
-          "startDate",
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
@@ -69849,10 +69979,6 @@
               "null"
             ]
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -69863,10 +69989,6 @@
             },
             "type": "array"
           },
-          "startDate": {
-            "format": "date",
-            "type": "string"
-          },
           "year": {
             "format": "int32",
             "type": "integer"
@@ -69874,8 +69996,6 @@
         },
         "required": [
           "year",
-          "startDate",
-          "endDate",
           "schoolDays",
           "rowVersion"
         ],
@@ -72624,20 +72744,12 @@
             "format": "uuid",
             "type": "string"
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
           "name": {
             "type": "string"
           },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "startDate": {
-            "format": "date",
-            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/AcademicYearStatus"
@@ -72651,8 +72763,6 @@
           "academicYearId",
           "year",
           "name",
-          "startDate",
-          "endDate",
           "status",
           "rowVersion"
         ],
@@ -75863,6 +75973,86 @@
               }
             },
             "description": "Academic context read permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/context/settings": {
+      "put": {
+        "operationId": "updateAcademicContextSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAcademicContextSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicContextSettingsMutationResponse"
+                }
+              }
+            },
+            "description": "Academic visibility and defaults updated atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid visible default or visibility command"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Year and term management permissions required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic context not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic context settings revision conflict"
           }
         },
         "tags": [
@@ -105681,10 +105871,10 @@
         "parameters": [
           {
             "in": "query",
-            "name": "date",
+            "name": "academicYearId",
             "required": true,
             "schema": {
-              "format": "date",
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -111538,17 +111728,6 @@
         "operationId": "lookupSubjects",
         "parameters": [
           {
-            "description": "Academic year selected by the caller. The server never infers the active year.",
-            "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Filter for active items only (default: true)",
             "in": "query",
             "name": "activeOnly",
             "required": false,
@@ -111557,7 +111736,6 @@
             }
           },
           {
-            "description": "Search term",
             "in": "query",
             "name": "search",
             "required": false,
@@ -111566,7 +111744,6 @@
             }
           },
           {
-            "description": "Maximum items to return (default: 100)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -111576,16 +111753,6 @@
             }
           },
           {
-            "description": "Filter by level type (kindergarten, primary, secondary)",
-            "in": "query",
-            "name": "levelType",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Filter by course or activity subject type",
             "in": "query",
             "name": "subjectType",
             "required": false,

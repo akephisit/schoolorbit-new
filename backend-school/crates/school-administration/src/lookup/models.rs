@@ -123,3 +123,14 @@ pub struct AcademicLookupQuery {
     /// Filter by course or activity subject type
     pub subject_type: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature="api-docs",into_params(parameter_in=Query))]
+pub struct SubjectLookupQuery {
+    pub active_only: Option<bool>,
+    pub search: Option<String>,
+    pub limit: Option<i32>,
+    pub subject_type: Option<String>,
+}

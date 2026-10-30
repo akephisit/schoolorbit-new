@@ -4,7 +4,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{types::Json, PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, types::Json};
 use uuid::Uuid;
 
 use super::{context, lifecycle_guard, parse_row_version, years_terms};
@@ -223,13 +223,15 @@ mod tests {
         assert!(validate_changes(&[], 100).is_ok());
         assert!(validate_changes(std::slice::from_ref(&change), 100).is_ok());
         assert!(validate_changes(&[change.clone(), change], 100).is_err());
-        assert!(validate_changes(
-            &[AcademicContextVisibilityInput {
-                id: Uuid::nil(),
-                is_visible: false
-            }],
-            100
-        )
-        .is_err());
+        assert!(
+            validate_changes(
+                &[AcademicContextVisibilityInput {
+                    id: Uuid::nil(),
+                    is_visible: false
+                }],
+                100
+            )
+            .is_err()
+        );
     }
 }

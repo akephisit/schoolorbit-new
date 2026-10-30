@@ -10,7 +10,7 @@ use chrono::NaiveDate;
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
-use sqlx::{types::Json, FromRow, PgConnection};
+use sqlx::{FromRow, PgConnection, types::Json};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -195,7 +195,7 @@ pub async fn replace_attendance_day(
             )
         })
         .collect();
-    let blocked:Vec<(BehaviorSide,BehaviorSource)>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all().await?;
+    let blocked:Vec<(BehaviorSide,BehaviorSource)>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT DISTINCT side,source FROM behavior_suppressions WHERE (start_date IS NULL OR $1 BETWEEN start_date AND end_date) AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all().await?;
     let blocked: BTreeSet<_> = blocked.into_iter().collect();
     let daily_absent: BTreeSet<_> = day
         .facts

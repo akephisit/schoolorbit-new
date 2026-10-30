@@ -216,7 +216,9 @@ pub(super) async fn get_terms_by_ids(
     connection: &mut sqlx::PgConnection,
     ids: &[Uuid],
 ) -> Result<Vec<AcademicTerm>, AppError> {
-    let sql=format!("SELECT {TERM_COLUMNS} FROM academic_terms WHERE id=ANY($1) ORDER BY academic_year_id,sequence_no,id");
+    let sql = format!(
+        "SELECT {TERM_COLUMNS} FROM academic_terms WHERE id=ANY($1) ORDER BY academic_year_id,sequence_no,id"
+    );
     let rows = DbSession::new(connection)
         .query_as::<AcademicTermRow>(
             "academic_core.services.years_terms.get_terms_by_ids",
@@ -341,7 +343,7 @@ pub async fn update_year(
         None => {
             return Err(
                 classify_year_update_failure(&mut transaction, id, request.row_version).await?,
-            )
+            );
         }
     };
     append_audit(
@@ -614,7 +616,7 @@ pub async fn update_term(
         None => {
             return Err(
                 classify_term_update_failure(&mut transaction, id, request.row_version).await?,
-            )
+            );
         }
     };
     append_audit(
@@ -903,8 +905,8 @@ fn map_term_write_error(error: sqlx::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_term_planning_year, validate_annual_inclusion, validate_term_fields,
-        AcademicYearStatus,
+        AcademicYearStatus, ensure_term_planning_year, validate_annual_inclusion,
+        validate_term_fields,
     };
 
     #[test]

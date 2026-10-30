@@ -280,8 +280,8 @@ pub async fn search_effective_results(
                    OR ($6 AND EXISTS(SELECT 1 FROM learning_group_teachers teacher
                        JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
                        WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)))))
+                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))))
             UNION ALL
             SELECT 'activity'::text,result.id,result.student_academic_year_id,student_info.student_id,
                    concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name),
@@ -307,8 +307,8 @@ pub async fn search_effective_results(
                    OR ($6 AND EXISTS(SELECT 1 FROM learning_group_teachers teacher
                        JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
                        WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)))))
+                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))))
             UNION ALL
             SELECT 'learner_evaluation'::text,result.id,result.student_academic_year_id,student_info.student_id,
                    concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name),
@@ -337,8 +337,8 @@ pub async fn search_effective_results(
                    OR ($9 AND (EXISTS(SELECT 1 FROM learning_group_teachers teacher
                        JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
                        WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,term.start_date),term.planned_end_date)))
+                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))
                        OR EXISTS(SELECT 1 FROM course_assessment_plans plan
                            JOIN course_offering_details detail ON detail.learning_offering_id=plan.learning_offering_id
                            WHERE detail.subject_id=result.subject_id AND plan.academic_term_id=result.academic_term_id

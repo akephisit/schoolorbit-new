@@ -61,7 +61,7 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 				await fulfillJson(route, {
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: academicYearId,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
@@ -70,7 +70,7 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: academicTermId,
 							academicYearId,
 							name: 'ภาคเรียนที่ 1',

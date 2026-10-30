@@ -1,7 +1,7 @@
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::de::DeserializeOwned;
-use sqlx::{types::Json, Postgres, Transaction};
+use sqlx::{Postgres, Transaction, types::Json};
 use uuid::Uuid;
 
 /// Call under the tenant transition lock. Check identity before decoding:

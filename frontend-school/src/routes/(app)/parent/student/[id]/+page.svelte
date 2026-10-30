@@ -184,9 +184,7 @@
 	const termId = $derived(
 		contextOptions?.terms.find(
 			(t) => t.academicYearId === selectedYearId && t.id === contextOptions?.defaultAcademicTermId
-		)?.id ??
-			contextOptions?.terms.find((t) => t.academicYearId === selectedYearId)?.id ??
-			''
+		)?.id ?? ''
 	);
 	const timetableHref = $derived(
 		`${resolve(`parent/student/${studentId}/timetable`)}${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`

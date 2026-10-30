@@ -311,30 +311,82 @@ async fn module_source_fingerprint(
             ));
             let source_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.module_source_fingerprint", "SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
                 .bind(term_id).fetch_optional().await?;
-            let target_source=school_academic_delivery::services::versions::latest_published_source(tx,term_id).await?;
-            let mut source_checks=Vec::new();
-            if let Some(id)=source_id {source_checks.push(school_academic_delivery::services::versions::published_source_evidence(tx,id,term_id).await?);}
-            if let Some(version)=target_source {source_checks.push(school_academic_delivery::services::versions::published_source_evidence(tx,version.id,term_id).await?);}
-            tables.push(("deliverySource",source_checks));
+            let target_source =
+                school_academic_delivery::services::versions::latest_published_source(tx, term_id)
+                    .await?;
+            let mut source_checks = Vec::new();
+            if let Some(id) = source_id {
+                source_checks.push(
+                    school_academic_delivery::services::versions::published_source_evidence(
+                        tx, id, term_id,
+                    )
+                    .await?,
+                );
+            }
+            if let Some(version) = target_source {
+                source_checks.push(
+                    school_academic_delivery::services::versions::published_source_evidence(
+                        tx, version.id, term_id,
+                    )
+                    .await?,
+                );
+            }
+            tables.push(("deliverySource", source_checks));
             for (name, sql) in [
-                ("blocks", "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active ORDER BY block.id"),
-                ("groups", "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id"),
-                ("instructors", "SELECT to_jsonb(instructor)::text FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY instructor.id"),
-                ("homerooms", "SELECT to_jsonb(homeroom)::text FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id"),
-                ("teachers", "SELECT to_jsonb(teacher)::text FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND teacher.is_active ORDER BY teacher.id"),
+                (
+                    "blocks",
+                    "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active ORDER BY block.id",
+                ),
+                (
+                    "groups",
+                    "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id",
+                ),
+                (
+                    "instructors",
+                    "SELECT to_jsonb(instructor)::text FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY instructor.id",
+                ),
+                (
+                    "homerooms",
+                    "SELECT to_jsonb(homeroom)::text FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id",
+                ),
+                (
+                    "teachers",
+                    "SELECT to_jsonb(teacher)::text FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND teacher.is_active ORDER BY teacher.id",
+                ),
             ] {
                 tables.push((name, json_rows(tx, sql, term_id).await?));
             }
         }
         TermPreparationModule::Exams => {
             for (name, sql) in [
-                ("rounds", "SELECT to_jsonb(exam_round)::text FROM academic_exam_rounds exam_round WHERE exam_round.academic_term_id=$1 ORDER BY exam_round.id"),
-                ("days", "SELECT to_jsonb(day)::text FROM academic_exam_days day WHERE day.academic_term_id=$1 ORDER BY day.id"),
-                ("gradeLevels", "SELECT to_jsonb(grade)::text FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.academic_term_id=$1 ORDER BY grade.exam_day_id,grade.grade_level_id"),
-                ("blockedWindows", "SELECT to_jsonb(blocked_window)::text FROM academic_exam_day_blocked_windows blocked_window JOIN academic_exam_days day ON day.id=blocked_window.exam_day_id WHERE day.academic_term_id=$1 ORDER BY blocked_window.id"),
-                ("roomAssignments", "SELECT to_jsonb(assignment)::text FROM academic_exam_day_room_assignments assignment WHERE assignment.academic_term_id=$1 ORDER BY assignment.id"),
-                ("items", "SELECT to_jsonb(item)::text FROM academic_exam_schedule_items item WHERE item.academic_term_id=$1 ORDER BY item.id"),
-                ("sessions", "SELECT to_jsonb(session)::text FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id WHERE item.academic_term_id=$1 ORDER BY session.id"),
+                (
+                    "rounds",
+                    "SELECT to_jsonb(exam_round)::text FROM academic_exam_rounds exam_round WHERE exam_round.academic_term_id=$1 ORDER BY exam_round.id",
+                ),
+                (
+                    "days",
+                    "SELECT to_jsonb(day)::text FROM academic_exam_days day WHERE day.academic_term_id=$1 ORDER BY day.id",
+                ),
+                (
+                    "gradeLevels",
+                    "SELECT to_jsonb(grade)::text FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.academic_term_id=$1 ORDER BY grade.exam_day_id,grade.grade_level_id",
+                ),
+                (
+                    "blockedWindows",
+                    "SELECT to_jsonb(blocked_window)::text FROM academic_exam_day_blocked_windows blocked_window JOIN academic_exam_days day ON day.id=blocked_window.exam_day_id WHERE day.academic_term_id=$1 ORDER BY blocked_window.id",
+                ),
+                (
+                    "roomAssignments",
+                    "SELECT to_jsonb(assignment)::text FROM academic_exam_day_room_assignments assignment WHERE assignment.academic_term_id=$1 ORDER BY assignment.id",
+                ),
+                (
+                    "items",
+                    "SELECT to_jsonb(item)::text FROM academic_exam_schedule_items item WHERE item.academic_term_id=$1 ORDER BY item.id",
+                ),
+                (
+                    "sessions",
+                    "SELECT to_jsonb(session)::text FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id WHERE item.academic_term_id=$1 ORDER BY session.id",
+                ),
             ] {
                 tables.push((name, json_rows(tx, sql, term_id).await?));
             }
@@ -388,7 +440,15 @@ async fn build_workspace(
                     context.target_term_id,
                 )
                 .await?;
-                match offerings::preview_term_preparation(tx, context.target_term_id).await {
+                match offerings::preview_term_preparation(
+                    tx,
+                    context.target_term_id,
+                    normalized.mappings.offering_starts_on.ok_or_else(|| {
+                        AppError::ValidationError("ระบุวันเริ่มเปิดสอนจริงสำหรับรายการที่จะเตรียม".into())
+                    })?,
+                )
+                .await
+                {
                     Ok(preview) => {
                         let drafts = preview.proposals.len();
                         for proposal in &preview.proposals {
@@ -559,17 +619,25 @@ async fn build_workspace(
     // prospective deterministic Delivery IDs are valid mapping options before
     // the rows are inserted.
     if delivery_preview.is_none()
+        && normalized.mappings.offering_starts_on.is_some()
         && normalized
             .modules
             .iter()
             .any(|module| *module != TermPreparationModule::Delivery)
     {
-        delivery_preview =
-            match offerings::preview_term_preparation(tx, context.target_term_id).await {
-                Ok(preview) => Some(preview),
-                Err(error @ AppError::DbError(_)) => return Err(error),
-                Err(_) => None,
-            };
+        delivery_preview = match offerings::preview_term_preparation(
+            tx,
+            context.target_term_id,
+            normalized.mappings.offering_starts_on.ok_or_else(|| {
+                AppError::ValidationError("ระบุวันเริ่มเปิดสอนจริงสำหรับรายการที่จะเตรียม".into())
+            })?,
+        )
+        .await
+        {
+            Ok(preview) => Some(preview),
+            Err(error @ AppError::DbError(_)) => return Err(error),
+            Err(_) => None,
+        };
     }
     let prospective =
         prospective_delivery_options(context.target_term_id, delivery_preview.as_ref());

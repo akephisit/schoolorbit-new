@@ -337,8 +337,8 @@ pub(super) async fn clear_omitted_group_commands(
 mod tests {
     use super::*;
     use crate::models::{
-        versions::DeliveryVersionGroup, CourseOfferingSnapshot, LearningOfferingKind,
-        LearningOfferingSnapshot,
+        CourseOfferingSnapshot, LearningOfferingKind, LearningOfferingSnapshot,
+        versions::DeliveryVersionGroup,
     };
 
     fn offering(group: Uuid, room: Uuid) -> DeliveryVersionOffering {
@@ -422,8 +422,10 @@ mod tests {
                 offering: None,
             },
         );
-        assert!(batch
-            .constraint_for_group(group)
-            .is_some_and(|constraint| !constraint.allows_group(group)));
+        assert!(
+            batch
+                .constraint_for_group(group)
+                .is_some_and(|constraint| !constraint.allows_group(group))
+        );
     }
 }

@@ -161,16 +161,16 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					defaultAcademicTermId: ids.term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',
@@ -338,9 +338,19 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				await fulfill(route, {
 					academicYears: [
 						{
- isVisible: true, id: ids.futureYear, name: 'ปีการศึกษา 2570', year: 2570, status: 'planning' },
+							isVisible: true,
+							id: ids.futureYear,
+							name: 'ปีการศึกษา 2570',
+							year: 2570,
+							status: 'planning'
+						},
 						{
- isVisible: true, id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }
+							isVisible: true,
+							id: ids.year,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						}
 					],
 					gradeLevels: curriculumStructure().gradeLevels
 				});
@@ -1379,11 +1389,18 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 		fulfill(route, {
 			defaultAcademicYearId: navIds.year,
 			defaultAcademicTermId: navIds.term,
-			years: [{
- isVisible: true, id: navIds.year, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' }],
+			years: [
+				{
+					isVisible: true,
+					id: navIds.year,
+					name: 'ปีการศึกษา 2570',
+					year: 2570,
+					status: 'active'
+				}
+			],
 			terms: [
 				{
- isVisible: true,
+					isVisible: true,
 					id: navIds.term,
 					academicYearId: navIds.year,
 					name: 'ภาคเรียนที่ 2',
@@ -1393,7 +1410,7 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 					status: 'active'
 				},
 				{
- isVisible: true,
+					isVisible: true,
 					id: navIds.activeTerm,
 					academicYearId: navIds.year,
 					name: 'ภาคเรียนที่ 1',

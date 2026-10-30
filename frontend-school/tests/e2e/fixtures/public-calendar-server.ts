@@ -8,11 +8,11 @@ import { year } from './staff-home-route-data';
 export const publicYears = {
 	years: [
 		{
- isVisible: true,
+			isVisible: true,
 			id: year,
 			year: 2569,
 			name: 'ปีการศึกษา 2569',
-			status: 'active',
+			status: 'active'
 		}
 	],
 	terms: [],

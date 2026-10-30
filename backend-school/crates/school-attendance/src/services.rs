@@ -8,7 +8,6 @@ pub mod score_changes;
 pub mod sessions;
 pub mod settings;
 pub mod specials;
-use crate::rules::invalid;
 use chrono::NaiveDate;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -111,13 +110,20 @@ pub async fn validate_date(pool: &PgPool, term: Uuid, date: NaiveDate) -> Result
 pub(crate) async fn validate_date_on_connection(
     connection: &mut sqlx::PgConnection,
     term: Uuid,
-    date: NaiveDate,
+    _date: NaiveDate,
 ) -> Result<(), AppError> {
-    let valid:bool=DbSession::new(&mut *connection).scalar("attendance.src.services.validate_date_on_connection", "SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND $2 BETWEEN t.start_date AND COALESCE(t.closed_on,t.planned_end_date,y.end_date))").bind(term).bind(date).fetch_one().await?;
-    if valid {
+    let exists: bool = DbSession::new(connection)
+        .scalar(
+            "attendance.services.validate_context",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1)",
+        )
+        .bind(term)
+        .fetch_one()
+        .await?;
+    if exists {
         Ok(())
     } else {
-        Err(invalid("วันที่อยู่นอกภาคเรียน"))
+        Err(AppError::NotFound("ไม่พบภาคเรียน".into()))
     }
 }
 pub async fn audit(

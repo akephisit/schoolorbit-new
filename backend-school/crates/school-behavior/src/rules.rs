@@ -98,6 +98,7 @@ pub fn reset_boundary(
     starts: NaiveDate,
     today: NaiveDate,
     readiness: &BehaviorResetReadiness,
+    scheduled_dates: &[NaiveDate],
 ) -> Option<NaiveDate> {
     let end = match schedule {
         BehaviorResetSchedule::Manual => None,
@@ -109,17 +110,10 @@ pub fn reset_boundary(
             };
             next.and_then(|d| d.pred_opt())
         }
-        BehaviorResetSchedule::Term => readiness
-            .term_ends
+        BehaviorResetSchedule::Scheduled => scheduled_dates
             .iter()
             .copied()
-            .filter(|d| *d >= starts)
-            .min(),
-        BehaviorResetSchedule::Year => readiness
-            .year_ends
-            .iter()
-            .copied()
-            .filter(|d| *d >= starts)
+            .filter(|date| *date >= starts)
             .min(),
     }?;
     (end < today && end <= readiness.finalized_through && end <= readiness.delivered_through)
@@ -144,16 +138,14 @@ mod tests {
         let mut ready = BehaviorResetReadiness {
             finalized_through: end,
             delivered_through: end.pred_opt().unwrap(),
-            term_ends: vec![],
-            year_ends: vec![],
         };
         assert_eq!(
-            reset_boundary(BehaviorResetSchedule::Monthly, start, today, &ready),
+            reset_boundary(BehaviorResetSchedule::Monthly, start, today, &ready, &[]),
             None
         );
         ready.delivered_through = end;
         assert_eq!(
-            reset_boundary(BehaviorResetSchedule::Monthly, start, today, &ready),
+            reset_boundary(BehaviorResetSchedule::Monthly, start, today, &ready, &[]),
             Some(end)
         );
     }

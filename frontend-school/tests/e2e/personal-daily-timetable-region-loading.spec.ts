@@ -156,15 +156,15 @@ test('personal timetable starts once in the route and clears the old term before
 			defaultAcademicTermId: timetableIds.term,
 			years: [
 				{
- isVisible: true,
+					isVisible: true,
 					id: timetableIds.year,
 					name: 'ปีการศึกษา 2569',
 					year: 2569,
-					status: 'active',
+					status: 'active'
 				}
 			],
 			terms: [timetableIds.term, secondTermId].map((id, index) => ({
- isVisible: true,
+				isVisible: true,
 				id,
 				academicYearId: timetableIds.year,
 				name: `ภาคเรียนที่ ${index + 1}`,

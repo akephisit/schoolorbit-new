@@ -33,7 +33,7 @@
 	import CalendarRequestReviewDialog from '#lib/components/calendar/CalendarRequestReviewDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import {
-		listAcademicContextOptions,
+		listPublicAcademicContextOptions,
 		type AcademicYearOption
 	} from '#lib/api/academic-context.js';
 	import CalendarSearchDialog from '#lib/components/calendar/CalendarSearchDialog.svelte';
@@ -938,7 +938,7 @@
 		manageOptionsError = '';
 		const result = await captureRouteLoad(
 			(async () => {
-				const context = await listAcademicContextOptions(ticket.signal);
+				const context = await listPublicAcademicContextOptions(ticket.signal);
 				if (!optionsRequest.isCurrent(ticket.revision))
 					throw new DOMException('Aborted', 'AbortError');
 				targetYears = context.years;

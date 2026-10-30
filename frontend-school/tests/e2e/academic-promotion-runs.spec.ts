@@ -16,6 +16,7 @@ function fixture(): Schema['PromotionRunWorkspace'] {
 			sourceYearId: id(1),
 			targetYearId: id(2),
 			policyId: id(6),
+			targetPlacementStartsOn: '2027-05-16',
 			status: 'calculated',
 			rowVersion: 2,
 			createdBy: id(20),
@@ -33,8 +34,6 @@ function fixture(): Schema['PromotionRunWorkspace'] {
 			academicYearId: id(1),
 			year: 2569,
 			name: 'ปีการศึกษา 2569',
-			startDate: '2026-05-01',
-			endDate: '2027-04-30',
 			status: 'active',
 			rowVersion: 1
 		},
@@ -42,8 +41,6 @@ function fixture(): Schema['PromotionRunWorkspace'] {
 			academicYearId: id(2),
 			year: 2570,
 			name: 'ปีการศึกษา 2570',
-			startDate: '2027-05-01',
-			endDate: '2028-04-30',
 			status: 'planning',
 			rowVersion: 1
 		},
@@ -180,6 +177,7 @@ async function mock(
 					primaryRoleName: null,
 					permissions: [
 						'academic_promotion.read.school',
+						...(level === 'manager' ? ['academic_year.read.school'] : []),
 						...(level === 'reader'
 							? []
 							: level === 'corrector'
@@ -195,13 +193,15 @@ async function mock(
 					defaultAcademicTermId: null,
 					terms: [],
 					years: [current.sourceYear, current.targetYear].map((year) => ({
- isVisible: true,
+						isVisible: true,
 						id: year.academicYearId,
 						year: year.year,
 						name: year.name,
 						status: year.status
 					}))
 				});
+			if (path === '/api/academic/years') return reply(route, [current.sourceYear, current.targetYear].map((year) => ({ id: year.academicYearId, year: year.year, name: year.name, status: year.status, rowVersion: year.rowVersion, isVisible: true, schoolDays: ['MON'], migrated: false, createdAt: time, updatedAt: time })));
+
 			if (path === '/api/academic/lifecycle/promotion-policies/options')
 				return reply(route, {
 					grades: [
@@ -716,12 +716,16 @@ test('list creates a run only for the chosen source and future planning year', a
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('ปีการศึกษาปลายทาง', { exact: true }).click();
 	await page.getByRole('option', { name: 'ปีการศึกษา 2570', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: 'สร้างรอบ', exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'วันที่เริ่มจัดนักเรียนในห้องปลายทาง', exact: true }).click();
+	await page.locator('[data-calendar-day]:not([data-outside-month])').filter({ hasText: /^15$/ }).click();
 	await dialog.getByRole('button', { name: 'สร้างรอบ', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`/promotion/${id(3)}$`));
 	expect(observed.writes[0].body).toMatchObject({
 		sourceYearId: id(1),
 		targetYearId: id(2),
-		policyId: id(6)
+		policyId: id(6),
+		targetPlacementStartsOn: expect.stringMatching(/^\d{4}-\d{2}-15$/)
 	});
 });
 

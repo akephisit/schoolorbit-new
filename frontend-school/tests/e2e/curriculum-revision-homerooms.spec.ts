@@ -37,8 +37,15 @@ for (const mobile of [false, true]) {
 						data = {
 							defaultAcademicYearId: yearId,
 							defaultAcademicTermId: null,
-							years: [{
- isVisible: true, id: yearId, name: 'ปีการศึกษา 2572', year: 2572, status: 'planning' }],
+							years: [
+								{
+									isVisible: true,
+									id: yearId,
+									name: 'ปีการศึกษา 2572',
+									year: 2572,
+									status: 'planning'
+								}
+							],
 							terms: []
 						};
 					} else if (path === '/api/menu/user') data = { groups: [] };

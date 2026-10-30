@@ -144,7 +144,9 @@ async fn placement_spans_scoped(
     end: NaiveDate,
     student: Option<Uuid>,
 ) -> Result<Vec<AttendancePlacementSpan>, AppError> {
-    let mut query = QueryBuilder::<Postgres>::new("SELECT y.student_id,y.id student_academic_year_id,p.homeroom_id,p.class_number,p.start_date,p.end_date FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE t.id=");
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT y.student_id,y.id student_academic_year_id,p.homeroom_id,p.class_number,p.start_date,p.end_date FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE t.id=",
+    );
     query
         .push_bind(term)
         .push(" AND p.status IN ('current','ended') AND p.start_date<=")

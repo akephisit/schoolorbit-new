@@ -6,7 +6,7 @@ use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
 
-pub(super) const RUN_COLUMNS: &str = "id,source_year_id,target_year_id,policy_id,status,row_version,created_by,created_at,updated_at,reviewed_by,reviewed_at,approved_by,approved_at,approval_id,executed_by,executed_at";
+pub(super) const RUN_COLUMNS: &str = "id,source_year_id,target_year_id,target_placement_starts_on,policy_id,status,row_version,created_by,created_at,updated_at,reviewed_by,reviewed_at,approved_by,approved_at,approval_id,executed_by,executed_at";
 
 /// Validate the immutable receipt's action and actor-bound intent before decoding
 /// its action-specific outcome. A nonce collision is a conflict, not a JSON error.
@@ -123,9 +123,9 @@ pub async fn create_run(
     if !exists {
         return Err(AppError::NotFound("ไม่พบเกณฑ์เลื่อนชั้นที่ยืนยันแล้ว".into()));
     }
-    let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_runs.create_run", sqlx::AssertSqlSafe(format!("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING {RUN_COLUMNS}")))
+    let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_runs.create_run", sqlx::AssertSqlSafe(format!("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by,target_placement_starts_on) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING {RUN_COLUMNS}")))
         .bind(input.source_year_id).bind(input.target_year_id).bind(input.policy_id)
-        .bind(input.request_id).bind(checksum).bind(actor.user_id).fetch_one().await?;
+        .bind(input.request_id).bind(checksum).bind(actor.user_id).bind(input.target_placement_starts_on).fetch_one().await?;
     DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_runs.create_run", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.created','promotion_run',$1,$2,$3)")
         .bind(run.id).bind(actor.user_id).bind(sqlx::types::Json(serde_json::json!({"sourceYearId":input.source_year_id,"targetYearId":input.target_year_id,"policyId":input.policy_id})))
         .execute().await?;

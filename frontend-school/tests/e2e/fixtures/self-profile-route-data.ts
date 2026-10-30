@@ -85,11 +85,11 @@ export async function mockSelfProfile(
 					years: options.empty
 						? []
 						: [year, nextYear].map((id, i) => ({
- isVisible: true,
+								isVisible: true,
 								id,
 								year: 2569 + i,
 								name: String(2569 + i),
-								status: 'open',
+								status: 'open'
 							})),
 					terms: []
 				});

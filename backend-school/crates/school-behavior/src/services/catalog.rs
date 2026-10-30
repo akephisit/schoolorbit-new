@@ -97,7 +97,7 @@ pub async fn save_item(
         Some(points) if points != p.points => {
             return Err(AppError::Conflict(
                 "เกณฑ์วันที่นี้มีแล้ว ใช้วันเริ่มใช้ใหม่เพื่อรักษาประวัติ".into(),
-            ))
+            ));
         }
         Some(_) => {}
         None => {
@@ -151,7 +151,7 @@ pub async fn save_rule(
 pub async fn settings_on_connection(
     connection: &mut PgConnection,
 ) -> Result<BehaviorSettings, AppError> {
-    Ok(DbSession::new(connection).query_as("behavior.services.catalog.settings_on_connection", "SELECT enabled,count_absent_lessons,count_special,daily_merit_cap,daily_deduction_cap,merit_reset,deduction_reset,row_version FROM behavior_settings WHERE singleton").fetch_one().await?)
+    Ok(DbSession::new(connection).query_as("behavior.services.catalog.settings_on_connection", "SELECT enabled,count_absent_lessons,count_special,daily_merit_cap,daily_deduction_cap,merit_reset,deduction_reset,ARRAY(SELECT resets_on FROM behavior_reset_dates WHERE side='merit' ORDER BY resets_on) AS merit_reset_dates,ARRAY(SELECT resets_on FROM behavior_reset_dates WHERE side='deduction' ORDER BY resets_on) AS deduction_reset_dates,row_version FROM behavior_settings WHERE singleton").fetch_one().await?)
 }
 pub async fn settings(pool: &PgPool) -> Result<BehaviorSettings, AppError> {
     settings_on_connection(
@@ -175,6 +175,18 @@ pub async fn save_settings(
     {
         return Err(invalid("เพดานคะแนนไม่ถูกต้อง"));
     }
+    for dates in [&s.merit_reset_dates, &s.deduction_reset_dates] {
+        if dates.len() > 1000
+            || dates
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != dates.len()
+        {
+            return Err(invalid("วันสิ้นสุดรอบคะแนนซ้ำหรือเกินขอบเขต"));
+        }
+    }
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "behavior.catalog.save_settings").await?;
     lock(&mut tx).await?;
@@ -182,6 +194,15 @@ pub async fn save_settings(
     if affected != 1 {
         return Err(AppError::Conflict("การตั้งค่าเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
+    DbSession::new(&mut *tx)
+        .query(
+            "behavior.services.catalog.replace_reset_dates",
+            "DELETE FROM behavior_reset_dates",
+        )
+        .execute()
+        .await?;
+    DbSession::new(&mut *tx).query("behavior.services.catalog.save_reset_dates", "INSERT INTO behavior_reset_dates(side,resets_on) SELECT 'merit',unnest($1::date[]) UNION ALL SELECT 'deduction',unnest($2::date[])")
+        .bind(&s.merit_reset_dates).bind(&s.deduction_reset_dates).execute().await?;
     bump(&mut tx).await?;
     let result = settings_on_connection(&mut tx).await?;
     tx.commit().await?;

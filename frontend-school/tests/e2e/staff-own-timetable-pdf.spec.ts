@@ -82,7 +82,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 				await fulfillJson(route, {
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: '20000000-0000-4000-8000-000000000001',
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
@@ -91,7 +91,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: '30000000-0000-4000-8000-000000000001',
 							academicYearId: '20000000-0000-4000-8000-000000000001',
 							name: 'ภาคเรียนที่ 1',

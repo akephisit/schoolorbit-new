@@ -140,13 +140,9 @@ async fn reset_readiness(
         .ok_or_else(|| AppError::ValidationError("วันที่เกินขอบเขตงานรีเซ็ตคะแนน".into()))?;
     let delivered_through =
         score_changes::delivered_through_on_connection(connection, tomorrow).await?;
-    let (term_ends, year_ends) =
-        school_academic_core::services::score_calendar::reset_boundaries(connection).await?;
     Ok(BehaviorResetReadiness {
         finalized_through,
         delivered_through,
-        term_ends,
-        year_ends,
     })
 }
 

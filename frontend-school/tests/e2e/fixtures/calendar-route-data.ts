@@ -35,11 +35,11 @@ export async function mockCalendar(
 				data: {
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [],
@@ -79,7 +79,7 @@ export async function mockCalendar(
 		endTime: null,
 		allDay: true,
 		isPublic: true,
-		targets: [{ id: id(113), audienceType: 'all', gradeLevelId: null, homeroomId: null }],
+		targets: [{ id: id(113), audienceType: 'all', gradeLevelId: null, homeroomId: null, academicYearId: null }],
 		tags: tags.map((tag) => ({ id: tag.id, name: tag.name })),
 		reminders: [],
 		createdBy: null,
@@ -208,7 +208,8 @@ export function makeApprovedCalendarEvent(payload: CreateCalendarEventRequest): 
 			id: id(150 + index),
 			audienceType: target.audienceType,
 			gradeLevelId: target.gradeLevelId ?? null,
-			homeroomId: target.homeroomId ?? null
+			homeroomId: target.homeroomId ?? null,
+			academicYearId: target.academicYearId ?? null
 		})),
 		tags: (payload.tagIds ?? []).map((tagId) => ({ id: tagId, name: 'แท็กแรก' })),
 		reminders: [],

@@ -6,8 +6,12 @@ ALTER TABLE academic_terms ADD COLUMN is_visible boolean NOT NULL DEFAULT false;
 
 -- Preserve the old public endpoint's unpublished intent once, then never couple
 -- visibility to lifecycle again. Managers retain explicit access to hidden rows.
+ALTER TABLE academic_years DISABLE TRIGGER update_academic_years_updated_at;
+ALTER TABLE academic_terms DISABLE TRIGGER update_academic_semesters_updated_at;
 UPDATE academic_years SET is_visible = status <> 'planning';
 UPDATE academic_terms SET is_visible = status NOT IN ('planning','cancelled');
+ALTER TABLE academic_years ENABLE TRIGGER update_academic_years_updated_at;
+ALTER TABLE academic_terms ENABLE TRIGGER update_academic_semesters_updated_at;
 
 CREATE TABLE academic_context_settings (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),

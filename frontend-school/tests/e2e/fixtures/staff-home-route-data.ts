@@ -85,11 +85,11 @@ export async function mockStaffHome(
 					defaultAcademicYearId: year,
 					defaultAcademicTermId: null,
 					years: [year, nextYear].map((value, index) => ({
- isVisible: true,
+						isVisible: true,
 						id: value,
 						name: String(2569 + index),
 						year: 2569 + index,
-						status: 'open',
+						status: 'open'
 					})),
 					terms: []
 				});

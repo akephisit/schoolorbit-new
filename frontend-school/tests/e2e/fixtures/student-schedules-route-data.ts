@@ -25,14 +25,14 @@ export const academicOptions: AcademicContextOptionsResponse = {
 	defaultAcademicYearId: year,
 	defaultAcademicTermId: term,
 	years: [year, nextYear].map((id, i) => ({
- isVisible: true,
+		isVisible: true,
 		id,
 		year: 2569 + i,
 		name: String(2569 + i),
-		status: 'active',
+		status: 'active'
 	})),
 	terms: [term, secondTerm, nextYearTerm].map((id, i) => ({
- isVisible: true,
+		isVisible: true,
 		id,
 		academicYearId: i === 2 ? nextYear : year,
 		name: i === 0 ? 'ภาคหนึ่ง' : i === 1 ? 'ภาคสอง' : 'ภาคปีใหม่',

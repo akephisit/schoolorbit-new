@@ -1,6 +1,6 @@
 use crate::models::{
-    versions::{DeliveryChangeKind, DeliverySnapshot, DeliveryVersionChange},
     LearningOfferingKind, LearningTeacherRole,
+    versions::{DeliveryChangeKind, DeliverySnapshot, DeliveryVersionChange},
 };
 use school_database::DbSession;
 use school_errors::AppError;

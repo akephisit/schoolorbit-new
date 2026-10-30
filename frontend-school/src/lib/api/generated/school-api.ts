@@ -389,6 +389,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/context/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateAcademicContextSettings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curricula': {
 		parameters: {
 			query?: never;
@@ -8643,11 +8659,30 @@ export interface components {
 		};
 		AcademicContextOptions: {
 			/** Format: uuid */
-			activeAcademicTermId?: string | null;
+			defaultAcademicTermId?: string | null;
 			/** Format: uuid */
-			activeAcademicYearId?: string | null;
+			defaultAcademicYearId?: string | null;
 			terms: components['schemas']['AcademicTermOption'][];
 			years: components['schemas']['AcademicYearOption'][];
+		};
+		AcademicContextSettings: {
+			/** Format: uuid */
+			defaultAcademicTermId: string | null;
+			/** Format: uuid */
+			defaultAcademicYearId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		AcademicContextSettingsMutationResponse: {
+			contextOptions: components['schemas']['AcademicContextOptions'];
+			settings: components['schemas']['AcademicContextSettings'];
+			terms: components['schemas']['AcademicTerm'][];
+			years: components['schemas']['AcademicYear'][];
+		};
+		AcademicContextVisibilityInput: {
+			/** Format: uuid */
+			id: string;
+			isVisible: boolean;
 		};
 		AcademicMenuTemplateApplyResult: {
 			/** Format: int64 */
@@ -8687,6 +8722,7 @@ export interface components {
 		};
 		AcademicSetupWorkspace: {
 			bellSchedules: components['schemas']['BellSchedule'][];
+			contextSettings: components['schemas']['AcademicContextSettings'];
 			terms: components['schemas']['AcademicTerm'][];
 			years: components['schemas']['AcademicYear'][];
 		};
@@ -8696,24 +8732,19 @@ export interface components {
 			/** Format: uuid */
 			bellScheduleId: string;
 			blocksYearClosure: boolean;
-			/** Format: date */
-			closedOn: string | null;
 			code: string;
 			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
 			id: string;
 			includedInYearResult: boolean;
+			isVisible: boolean;
 			migrated: boolean;
 			name: string;
-			/** Format: date */
-			plannedEndDate: string | null;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: int32 */
 			sequence: number;
-			/** Format: date */
-			startDate: string;
 			status: components['schemas']['AcademicTermStatus'];
 			termType: components['schemas']['AcademicTermType'];
 			/** Format: date-time */
@@ -8929,19 +8960,14 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			blocksYearClosure: boolean;
-			/** Format: date */
-			closedOn: string | null;
 			code: string;
 			/** Format: uuid */
 			id: string;
 			includedInYearResult: boolean;
+			isVisible: boolean;
 			name: string;
-			/** Format: date */
-			plannedEndDate: string | null;
 			/** Format: int32 */
 			sequence: number;
-			/** Format: date */
-			startDate: string;
 			status: components['schemas']['AcademicTermStatus'];
 			termType: components['schemas']['AcademicTermType'];
 		};
@@ -8952,17 +8978,14 @@ export interface components {
 		AcademicYear: {
 			/** Format: date-time */
 			createdAt: string;
-			/** Format: date */
-			endDate: string;
 			/** Format: uuid */
 			id: string;
+			isVisible: boolean;
 			migrated: boolean;
 			name: string;
 			/** Format: int64 */
 			rowVersion: number;
 			schoolDays: string[];
-			/** Format: date */
-			startDate: string;
 			status: components['schemas']['AcademicYearStatus'];
 			/** Format: date-time */
 			updatedAt: string;
@@ -8979,13 +9002,10 @@ export interface components {
 			year: number;
 		};
 		AcademicYearOption: {
-			/** Format: date */
-			endDate: string;
 			/** Format: uuid */
 			id: string;
+			isVisible: boolean;
 			name: string;
-			/** Format: date */
-			startDate: string;
 			status: components['schemas']['AcademicYearStatus'];
 			/** Format: int32 */
 			year: number;
@@ -9403,11 +9423,21 @@ export interface components {
 		ApiResponse_AcademicContextOptions: {
 			data: {
 				/** Format: uuid */
-				activeAcademicTermId?: string | null;
+				defaultAcademicTermId?: string | null;
 				/** Format: uuid */
-				activeAcademicYearId?: string | null;
+				defaultAcademicYearId?: string | null;
 				terms: components['schemas']['AcademicTermOption'][];
 				years: components['schemas']['AcademicYearOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicContextSettingsMutationResponse: {
+			data: {
+				contextOptions: components['schemas']['AcademicContextOptions'];
+				settings: components['schemas']['AcademicContextSettings'];
+				terms: components['schemas']['AcademicTerm'][];
+				years: components['schemas']['AcademicYear'][];
 			};
 			message?: string;
 			success: boolean;
@@ -9440,6 +9470,7 @@ export interface components {
 		ApiResponse_AcademicSetupWorkspace: {
 			data: {
 				bellSchedules: components['schemas']['BellSchedule'][];
+				contextSettings: components['schemas']['AcademicContextSettings'];
 				terms: components['schemas']['AcademicTerm'][];
 				years: components['schemas']['AcademicYear'][];
 			};
@@ -9453,24 +9484,19 @@ export interface components {
 				/** Format: uuid */
 				bellScheduleId: string;
 				blocksYearClosure: boolean;
-				/** Format: date */
-				closedOn: string | null;
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				id: string;
 				includedInYearResult: boolean;
+				isVisible: boolean;
 				migrated: boolean;
 				name: string;
-				/** Format: date */
-				plannedEndDate: string | null;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: int32 */
 				sequence: number;
-				/** Format: date */
-				startDate: string;
 				status: components['schemas']['AcademicTermStatus'];
 				termType: components['schemas']['AcademicTermType'];
 				/** Format: date-time */
@@ -9545,17 +9571,14 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
-				/** Format: date */
-				endDate: string;
 				/** Format: uuid */
 				id: string;
+				isVisible: boolean;
 				migrated: boolean;
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
 				schoolDays: string[];
-				/** Format: date */
-				startDate: string;
 				status: components['schemas']['AcademicYearStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -10079,8 +10102,10 @@ export interface components {
 				/** Format: int32 */
 				dailyMeritCap: number | null;
 				deductionReset: components['schemas']['BehaviorResetSchedule'];
+				deductionResetDates: string[];
 				enabled: boolean;
 				meritReset: components['schemas']['BehaviorResetSchedule'];
+				meritResetDates: string[];
 				/** Format: int64 */
 				rowVersion: number;
 			};
@@ -11148,6 +11173,8 @@ export interface components {
 				curriculumSources: components['schemas']['CurriculumPublicationSource'][];
 				proposals: components['schemas']['CurriculumPreparationProposal'][];
 				sourceHash: string;
+				/** Format: date */
+				startsOn: string;
 			};
 			message?: string;
 			success: boolean;
@@ -12092,7 +12119,7 @@ export interface components {
 				/** Format: date */
 				effectiveFrom?: string | null;
 				/** Format: date */
-				endsOn: string;
+				endsOn?: string | null;
 				/** Format: int64 */
 				groupRowVersion: number;
 				mode: components['schemas']['RosterTrackingMode'];
@@ -12677,6 +12704,8 @@ export interface components {
 				/** Format: uuid */
 				sourceYearId: string;
 				status: components['schemas']['PromotionRunStatus'];
+				/** Format: date */
+				targetPlacementStartsOn: string;
 				/** Format: uuid */
 				targetYearId: string;
 				/** Format: date-time */
@@ -14033,24 +14062,19 @@ export interface components {
 				/** Format: uuid */
 				bellScheduleId: string;
 				blocksYearClosure: boolean;
-				/** Format: date */
-				closedOn: string | null;
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				id: string;
 				includedInYearResult: boolean;
+				isVisible: boolean;
 				migrated: boolean;
 				name: string;
-				/** Format: date */
-				plannedEndDate: string | null;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: int32 */
 				sequence: number;
-				/** Format: date */
-				startDate: string;
 				status: components['schemas']['AcademicTermStatus'];
 				termType: components['schemas']['AcademicTermType'];
 				/** Format: date-time */
@@ -14126,17 +14150,14 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
-				/** Format: date */
-				endDate: string;
 				/** Format: uuid */
 				id: string;
+				isVisible: boolean;
 				migrated: boolean;
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
 				schoolDays: string[];
-				/** Format: date */
-				startDate: string;
 				status: components['schemas']['AcademicYearStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -16453,6 +16474,8 @@ export interface components {
 			/** Format: uuid */
 			idempotencyKey: string;
 			sourceHash: string;
+			/** Format: date */
+			startsOn: string;
 			studyProgramIds: string[];
 		};
 		ApplyCurriculumOfferingsResult: {
@@ -17170,7 +17193,7 @@ export interface components {
 			total: number;
 		};
 		/** @enum {string} */
-		BehaviorResetSchedule: 'manual' | 'monthly' | 'term' | 'year';
+		BehaviorResetSchedule: 'manual' | 'monthly' | 'scheduled';
 		/** @enum {string} */
 		BehaviorScoreAction: 'none' | 'merit' | 'deduction';
 		BehaviorScoreTotals: {
@@ -17198,8 +17221,10 @@ export interface components {
 			/** Format: int32 */
 			dailyMeritCap: number | null;
 			deductionReset: components['schemas']['BehaviorResetSchedule'];
+			deductionResetDates: string[];
 			enabled: boolean;
 			meritReset: components['schemas']['BehaviorResetSchedule'];
+			meritResetDates: string[];
 			/** Format: int64 */
 			rowVersion: number;
 		};
@@ -17938,6 +17963,8 @@ export interface components {
 			name: string;
 		};
 		CalendarEventTarget: {
+			/** Format: uuid */
+			academicYearId: string | null;
 			audienceType: string;
 			/** Format: uuid */
 			gradeLevelId: string | null;
@@ -17947,6 +17974,8 @@ export interface components {
 			id: string;
 		};
 		CalendarEventTargetInput: {
+			/** Format: uuid */
+			academicYearId?: string | null;
 			audienceType: components['schemas']['CalendarAudienceType'];
 			/** Format: uuid */
 			gradeLevelId?: string | null;
@@ -19116,6 +19145,8 @@ export interface components {
 		CompleteEnrollmentRequest: {
 			/** @description ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit) */
 			formData?: unknown;
+			/** Format: date */
+			placementStartsOn: string;
 			/** @description รหัสนักเรียน (student_id field ใน student_info) */
 			studentCode?: string | null;
 		};
@@ -19485,17 +19516,11 @@ export interface components {
 			includedInYearResult: boolean;
 			/** Format: date */
 			plannedEndDate?: string | null;
-			/** Format: date */
-			startDate: string;
 			termType: components['schemas']['AcademicTermType'];
 		};
 		CreateAcademicYearRequest: {
 			customName?: string | null;
-			/** Format: date */
-			endDate: string;
 			schoolDays: string[];
-			/** Format: date */
-			startDate: string;
 			/** Format: int32 */
 			year: number;
 		};
@@ -19534,6 +19559,8 @@ export interface components {
 			passCriteria: components['schemas']['ActivityPassCriteria'];
 			registrationType: components['schemas']['ActivityRegistrationType'];
 			schedulingMode: components['schemas']['ActivitySchedulingMode'];
+			/** Format: date */
+			startsOn: string;
 			targets: components['schemas']['OfferingTargetInput'][];
 		};
 		CreateActivityVersionRequest: {
@@ -19694,6 +19721,8 @@ export interface components {
 			assessmentTotalScore: string;
 			/** Format: uuid */
 			curriculumCourseRequirementId?: string | null;
+			/** Format: date */
+			startsOn: string;
 			/** Format: uuid */
 			subjectVersionId: string;
 			targets: components['schemas']['OfferingTargetInput'][];
@@ -19865,6 +19894,8 @@ export interface components {
 			requestId: string;
 			/** Format: uuid */
 			sourceYearId: string;
+			/** Format: date */
+			targetPlacementStartsOn: string;
 			/** Format: uuid */
 			targetYearId: string;
 		};
@@ -20289,6 +20320,8 @@ export interface components {
 			curriculumSources: components['schemas']['CurriculumPublicationSource'][];
 			proposals: components['schemas']['CurriculumPreparationProposal'][];
 			sourceHash: string;
+			/** Format: date */
+			startsOn: string;
 		};
 		CurriculumOverview: {
 			items: components['schemas']['CurriculumOverviewItem'][];
@@ -22723,7 +22756,7 @@ export interface components {
 			/** Format: date */
 			effectiveFrom?: string | null;
 			/** Format: date */
-			endsOn: string;
+			endsOn?: string | null;
 			/** Format: int64 */
 			groupRowVersion: number;
 			mode: components['schemas']['RosterTrackingMode'];
@@ -23614,6 +23647,8 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			deliveryVersionId?: string | null;
+			/** Format: date */
+			startsOn: string;
 			studyProgramIds: string[];
 		};
 		PreviewTeacherHandoffRequest: {
@@ -24048,6 +24083,8 @@ export interface components {
 			/** Format: uuid */
 			sourceYearId: string;
 			status: components['schemas']['PromotionRunStatus'];
+			/** Format: date */
+			targetPlacementStartsOn: string;
 			/** Format: uuid */
 			targetYearId: string;
 			/** Format: date-time */
@@ -26959,31 +26996,25 @@ export interface components {
 		TermLifecycleContext: {
 			/** Format: uuid */
 			academicTermId: string;
+			/** Format: int32 */
+			academicYear: number;
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
 			bellScheduleId: string;
 			blocksYearClosure: boolean;
-			/** Format: date */
-			closedOn?: string | null;
 			includedInYearResult: boolean;
 			/** Format: date */
-			plannedEndDate?: string | null;
+			operationDate: string;
 			/** Format: int32 */
 			sequence: number;
 			termName: string;
 			/** Format: int64 */
 			termRowVersion: number;
-			/** Format: date */
-			termStartDate: string;
 			termStatus: components['schemas']['AcademicTermStatus'];
-			/** Format: date */
-			yearEndDate: string;
 			yearName: string;
 			/** Format: int64 */
 			yearRowVersion: number;
-			/** Format: date */
-			yearStartDate: string;
 			yearStatus: components['schemas']['AcademicYearStatus'];
 		};
 		TermLifecycleQuery: {
@@ -27004,11 +27035,7 @@ export interface components {
 			sourceTermId: string;
 			/** Format: uuid */
 			sourceYearId: string;
-			/** Format: date */
-			targetEndDate: string;
 			targetLabel: string;
-			/** Format: date */
-			targetStartDate: string;
 			targetStatus: string;
 			/** Format: uuid */
 			targetTermId: string;
@@ -27067,6 +27094,8 @@ export interface components {
 		TermPreparationMappings: {
 			dates?: components['schemas']['TermPreparationDateMapping'][];
 			entities?: components['schemas']['TermPreparationEntityMapping'][];
+			/** Format: date */
+			offeringStartsOn?: string | null;
 		};
 		/** @enum {string} */
 		TermPreparationModule: 'delivery' | 'assessments' | 'timetable' | 'exams' | 'supervision';
@@ -27149,8 +27178,6 @@ export interface components {
 			academicYearId: string;
 			acknowledgedWarningCodes: string[];
 			action: components['schemas']['TermTransitionAction'];
-			/** Format: date */
-			closedOn?: string | null;
 			/** Format: int64 */
 			expectedTermVersion: number;
 			/** Format: int64 */
@@ -27730,6 +27757,16 @@ export interface components {
 			reason: string;
 			resourceKind: components['schemas']['LearningOfferingKind'];
 		};
+		UpdateAcademicContextSettingsRequest: {
+			/** Format: uuid */
+			defaultAcademicTermId: string | null;
+			/** Format: uuid */
+			defaultAcademicYearId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			terms: components['schemas']['AcademicContextVisibilityInput'][];
+			years: components['schemas']['AcademicContextVisibilityInput'][];
+		};
 		UpdateAcademicTermChangeSetRequest: {
 			reason: string;
 			/** Format: date */
@@ -27747,19 +27784,13 @@ export interface components {
 			plannedEndDate?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
-			/** Format: date */
-			startDate: string;
 			termType: components['schemas']['AcademicTermType'];
 		};
 		UpdateAcademicYearRequest: {
 			customName?: string | null;
-			/** Format: date */
-			endDate: string;
 			/** Format: int64 */
 			rowVersion: number;
 			schoolDays: string[];
-			/** Format: date */
-			startDate: string;
 			/** Format: int32 */
 			year: number;
 		};
@@ -28433,13 +28464,9 @@ export interface components {
 		YearLifecycleContext: {
 			/** Format: uuid */
 			academicYearId: string;
-			/** Format: date */
-			endDate: string;
 			name: string;
 			/** Format: int64 */
 			rowVersion: number;
-			/** Format: date */
-			startDate: string;
 			status: components['schemas']['AcademicYearStatus'];
 			/** Format: int32 */
 			year: number;
@@ -30921,6 +30948,75 @@ export interface operations {
 			};
 			/** @description Academic context read permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAcademicContextSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateAcademicContextSettingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Academic visibility and defaults updated atomically */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicContextSettingsMutationResponse'];
+				};
+			};
+			/** @description Invalid visible default or visibility command */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Year and term management permissions required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context settings revision conflict */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -52965,7 +53061,7 @@ export interface operations {
 	listCalendarTargetOptions: {
 		parameters: {
 			query: {
-				date: string;
+				academicYearId: string;
 			};
 			header?: never;
 			path?: never;
@@ -57399,18 +57495,10 @@ export interface operations {
 	};
 	lookupSubjects: {
 		parameters: {
-			query: {
-				/** @description Academic year selected by the caller. The server never infers the active year. */
-				academicYearId: string;
-				/** @description Filter for active items only (default: true) */
+			query?: {
 				activeOnly?: boolean;
-				/** @description Filter by level type (kindergarten, primary, secondary) */
-				levelType?: string;
-				/** @description Maximum items to return (default: 100) */
 				limit?: number;
-				/** @description Search term */
 				search?: string;
-				/** @description Filter by course or activity subject type */
 				subjectType?: string;
 			};
 			header?: never;

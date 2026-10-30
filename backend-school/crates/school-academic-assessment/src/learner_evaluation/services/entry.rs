@@ -275,13 +275,15 @@ mod tests {
             row_version: None,
         };
         assert!(normalize(vec![a.clone(), a.clone()]).is_ok());
-        assert!(normalize(vec![
-            a.clone(),
-            ResponseInput {
-                quality_level: None,
-                ..a
-            }
-        ])
-        .is_err());
+        assert!(
+            normalize(vec![
+                a.clone(),
+                ResponseInput {
+                    quality_level: None,
+                    ..a
+                }
+            ])
+            .is_err()
+        );
     }
 }

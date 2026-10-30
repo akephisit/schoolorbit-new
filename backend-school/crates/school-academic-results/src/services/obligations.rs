@@ -18,19 +18,28 @@ fn bangkok_day(now: DateTime<Utc>) -> Result<NaiveDate, AppError> {
             AppError::InternalServerError("Could not resolve Bangkok operation date".into())
         })
 }
-fn clamp_day(day: NaiveDate, start: NaiveDate, end: NaiveDate) -> NaiveDate {
-    day.max(start).min(end)
-}
 pub(super) async fn operation_date(
     connection: &mut PgConnection,
     context: &ResultContext,
     captured: NaiveDate,
 ) -> Result<NaiveDate, AppError> {
-    let (start,end): (NaiveDate,NaiveDate)=DbSession::new(connection).query_as("academic_results.services.obligations.operation_date", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND y.id=$2")
-        .bind(context.academic_term_id).bind(context.academic_year_id).fetch_optional().await?
-        .ok_or_else(||AppError::ValidationError("Academic term does not belong to selected year".into()))?;
-    Ok(clamp_day(captured, start, end))
+    let belongs: bool = DbSession::new(connection)
+        .scalar(
+            "academic_results.services.obligations.operation_date",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
+        )
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_one()
+        .await?;
+    if !belongs {
+        return Err(AppError::ValidationError(
+            "Academic term does not belong to selected year".into(),
+        ));
+    }
+    Ok(captured)
 }
+
 pub(super) fn require_scan_budget(count: usize) -> Result<(), AppError> {
     if count > CURRENT_OBLIGATION_GROUP_SCAN_LIMIT {
         return Err(AppError::ValidationError(format!(

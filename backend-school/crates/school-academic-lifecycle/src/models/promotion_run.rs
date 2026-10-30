@@ -24,6 +24,7 @@ pub struct CreatePromotionRunInput {
     pub request_id: Uuid,
     pub source_year_id: Uuid,
     pub target_year_id: Uuid,
+    pub target_placement_starts_on: chrono::NaiveDate,
     pub policy_id: Uuid,
 }
 
@@ -43,6 +44,7 @@ pub struct PromotionRun {
     pub id: Uuid,
     pub source_year_id: Uuid,
     pub target_year_id: Uuid,
+    pub target_placement_starts_on: chrono::NaiveDate,
     pub policy_id: Uuid,
     pub status: PromotionRunStatus,
     pub row_version: i64,

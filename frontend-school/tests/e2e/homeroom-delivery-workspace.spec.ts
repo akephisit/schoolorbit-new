@@ -210,16 +210,16 @@ async function mockDelivery(
 					defaultAcademicTermId: ids.term,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2570',
 							year: 2570,
-							status: 'active',
+							status: 'active'
 						}
 					],
 					terms: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',

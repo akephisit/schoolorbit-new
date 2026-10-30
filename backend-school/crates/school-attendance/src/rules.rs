@@ -1,5 +1,5 @@
 use crate::models::*;
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use school_errors::AppError;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -25,8 +25,12 @@ pub fn validate_configuration(c: &AttendanceConfiguration) -> Result<(), AppErro
     }
     Ok(())
 }
-pub fn counted(c: &AttendanceConfiguration, date: NaiveDate, day: Option<bool>) -> bool {
-    day.unwrap_or_else(|| c.weekdays.contains(&date.weekday().number_from_monday()))
+pub fn counted(
+    _configuration: &AttendanceConfiguration,
+    _date: NaiveDate,
+    day: Option<bool>,
+) -> bool {
+    day.unwrap_or(false)
 }
 pub fn validate_inputs(inputs: &[AttendanceResultInput], roster: &[Uuid]) -> Result<(), AppError> {
     if inputs.is_empty()
@@ -118,37 +122,45 @@ mod tests {
     fn removed_ceremony_kind_and_placeholder_results_are_rejected() {
         assert!(serde_json::from_str::<AttendanceKind>("\"flag\"").is_err());
         let id = Uuid::new_v4();
-        assert!(validate_inputs(
-            &[AttendanceResultInput {
-                student_id: id,
-                result: AttendanceResult::Unchecked,
-            }],
-            &[id]
-        )
-        .is_err());
-        assert!(serde_json::from_str::<AttendanceResult>("\"leave\"").is_err());
-        for code in ["skipped", "sick_leave", "personal_leave"] {
-            let result: AttendanceResult = serde_json::from_str(&format!("\"{code}\"")).unwrap();
-            assert!(validate_inputs(
+        assert!(
+            validate_inputs(
                 &[AttendanceResultInput {
                     student_id: id,
-                    result
+                    result: AttendanceResult::Unchecked,
                 }],
                 &[id]
             )
-            .is_ok());
+            .is_err()
+        );
+        assert!(serde_json::from_str::<AttendanceResult>("\"leave\"").is_err());
+        for code in ["skipped", "sick_leave", "personal_leave"] {
+            let result: AttendanceResult = serde_json::from_str(&format!("\"{code}\"")).unwrap();
+            assert!(
+                validate_inputs(
+                    &[AttendanceResultInput {
+                        student_id: id,
+                        result
+                    }],
+                    &[id]
+                )
+                .is_ok()
+            );
         }
     }
     #[test]
     fn face_vectors_reject_nonfinite_or_wrong_model_dimensions() {
-        assert!(validate_descriptor(&FaceDescriptor {
-            values: vec![f32::NAN; 128]
-        })
-        .is_err());
-        assert!(validate_descriptor(&FaceDescriptor {
-            values: vec![0.0; 127]
-        })
-        .is_err());
+        assert!(
+            validate_descriptor(&FaceDescriptor {
+                values: vec![f32::NAN; 128]
+            })
+            .is_err()
+        );
+        assert!(
+            validate_descriptor(&FaceDescriptor {
+                values: vec![0.0; 127]
+            })
+            .is_err()
+        );
         let d = FaceDescriptor {
             values: vec![0.0; 128],
         };

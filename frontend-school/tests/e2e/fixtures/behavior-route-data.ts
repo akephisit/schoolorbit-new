@@ -202,16 +202,16 @@ export async function mockBehavior(
 				defaultAcademicTermId: behaviorTerm,
 				years: [
 					{
- isVisible: true,
+						isVisible: true,
 						id: year,
 						name: '2569',
 						year: 2569,
-						status: 'open',
+						status: 'open'
 					}
 				],
 				terms: [
 					{
- isVisible: true,
+						isVisible: true,
 						id: behaviorTerm,
 						academicYearId: year,
 						name: '1',

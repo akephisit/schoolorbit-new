@@ -40,7 +40,7 @@
 		termsByYear,
 		bellSchedules = [],
 		canManage = false,
-		busy = '',
+		busy = { year: false, term: false, schedule: false, periods: false },
 		contextSettings,
 		onUpdateContextSettings,
 		onReloadContextSettings,
@@ -57,7 +57,7 @@
 		termsByYear: Map<string, AcademicTerm[]>;
 		bellSchedules?: BellSchedule[];
 		canManage?: boolean;
-		busy?: string;
+		busy?: { year: boolean; term: boolean; schedule: boolean; periods: boolean };
 		contextSettings: AcademicContextSettings | null;
 		onReloadContextSettings: () => Promise<void>;
 		onUpdateContextSettings: (
@@ -263,7 +263,7 @@
 						<AcademicYearSetupStep
 							existing={creatingYear ? null : selectedYear}
 							{suggestedYear}
-							busy={busy === 'year'}
+							busy={busy.year}
 							onCreate={onCreateYear}
 							onUpdate={onUpdateYear}
 							onSaved={handleYearSaved}
@@ -313,7 +313,7 @@
 					<BellScheduleSetupStep
 						year={selectedYear}
 						schedules={selectedSchedules}
-						busy={busy === 'schedule'}
+						busy={busy.schedule}
 						onCreate={onCreateBellSchedule}
 						onUpdate={onUpdateBellSchedule}
 						onSaved={handleScheduleSaved}
@@ -357,7 +357,7 @@
 					<BellSchedulePeriodsStep
 						year={selectedYear}
 						schedules={selectedSchedules}
-						busy={busy === 'periods'}
+						busy={busy.periods}
 						onLoad={onLoadBellSchedulePeriods}
 						onReplace={onReplaceBellSchedulePeriods}
 						onSaved={handlePeriodsSaved}
@@ -399,7 +399,7 @@
 							year={selectedYear}
 							schedules={selectedSchedules}
 							terms={selectedTerms}
-							busy={busy === 'term'}
+							busy={busy.term}
 							onCreate={onCreateTerm}
 							onUpdate={onUpdateTerm}
 							onSaved={handleTermSaved}

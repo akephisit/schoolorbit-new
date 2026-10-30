@@ -456,7 +456,7 @@ test('academic smoke reads the canonical timetable workspace with its selected y
 					defaultAcademicTermId: termId,
 					years: [
 						{
- isVisible: true,
+							isVisible: true,
 							id: yearId,
 							year: 2569,
 							name: '2569',
@@ -464,7 +464,7 @@ test('academic smoke reads the canonical timetable workspace with its selected y
 						}
 					],
 					terms: [termId, otherTermId].map((id, index) => ({
- isVisible: true,
+						isVisible: true,
 						id,
 						academicYearId: yearId,
 						sequence: index + 1,

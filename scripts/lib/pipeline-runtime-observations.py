@@ -492,7 +492,7 @@ def tenant_probe():
         try:
             context, _, _ = client.request("GET", "/api/academic/context/options")
             if isinstance(context, dict) and isinstance(context.get("years"), list):
-                active = context.get("activeAcademicYearId")
+                active = context.get("defaultAcademicYearId")
                 if isinstance(active, str) and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", active) and any(isinstance(row, dict) and row.get("id") == active for row in context["years"]):
                     year = active
         except ProbeFailure as error:

@@ -42,8 +42,6 @@ struct GroupContext {
     offering_status: LearningOfferingStatus,
     starts_on: NaiveDate,
     ends_on: Option<NaiveDate>,
-    academic_year_start: NaiveDate,
-    academic_year_end: NaiveDate,
 }
 
 const MEMBERSHIP_SELECT: &str = r#"
@@ -385,9 +383,7 @@ async fn lock_group_context(
                   learning_group.academic_term_id, learning_group.academic_year_id,
                   learning_group.status, learning_group.roster_status,
                   learning_group.row_version, offering.status AS offering_status,
-                  offering.starts_on, offering.ends_on,
-                  year.start_date AS academic_year_start,
-                  year.end_date AS academic_year_end
+                  offering.starts_on, offering.ends_on
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
            JOIN academic_years year ON year.id = learning_group.academic_year_id
@@ -419,11 +415,6 @@ fn require_published_roster(group: &GroupContext, row_version: i64) -> Result<()
 }
 
 fn validate_membership_date(group: &GroupContext, date: NaiveDate) -> Result<(), AppError> {
-    if date < group.academic_year_start || date > group.academic_year_end {
-        return Err(AppError::ValidationError(
-            "วันที่เปลี่ยนรายชื่อต้องอยู่ในปีการศึกษาของนักเรียน".to_string(),
-        ));
-    }
     if date < group.starts_on || group.ends_on.is_some_and(|end| date > end) {
         return Err(AppError::ValidationError(
             "วันที่เปลี่ยนรายชื่อต้องอยู่ในช่วงที่รายการเปิดสอนใช้งาน".to_string(),

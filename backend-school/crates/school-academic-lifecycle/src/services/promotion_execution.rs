@@ -1,6 +1,6 @@
 use super::super::models::*;
 use super::{
-    promotion_calculation::{evidence_checksum, ITEM_COLUMNS},
+    promotion_calculation::{ITEM_COLUMNS, evidence_checksum},
     promotion_runs::RUN_COLUMNS,
 };
 use school_academic_core::services::{
@@ -11,7 +11,7 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction, types::Json};
 use uuid::Uuid;
 
 #[doc(hidden)]
@@ -281,6 +281,7 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
         batch.actor_user_id,
         run.source_year_id,
         run.target_year_id,
+        run.target_placement_starts_on,
         &source,
         &core_decision,
     )

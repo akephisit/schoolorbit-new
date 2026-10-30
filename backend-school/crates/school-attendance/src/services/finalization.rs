@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{types::Json, PgConnection, Postgres, Transaction};
+use sqlx::{PgConnection, Postgres, Transaction, types::Json};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
@@ -66,8 +66,15 @@ pub(crate) async fn finalize_guarded(
     if !date_is_due(date, start.max(coverage), processed_at) {
         return Err(invalid("วันที่นี้ยังไม่ถึงกำหนดปิดยอดอัตโนมัติ"));
     }
-    let valid: bool = DbSession::new(&mut **tx).scalar("attendance.services.finalization.finalize_guarded", "SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND $2 BETWEEN t.start_date AND COALESCE(t.planned_end_date,y.end_date))")
-        .bind(term).bind(date).fetch_one().await?;
+    let valid: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "attendance.services.finalization.finalize_guarded",
+            "SELECT EXISTS(SELECT 1 FROM attendance_days WHERE academic_term_id=$1 AND date=$2)",
+        )
+        .bind(term)
+        .bind(date)
+        .fetch_one()
+        .await?;
     if !valid {
         return Err(invalid("วันปิดยอดไม่อยู่ในภาคเรียน"));
     }
@@ -166,7 +173,7 @@ pub(crate) async fn finalize_guarded(
     Ok(outcome)
 }
 
-/// Called under the lifecycle transition's locks, with its requested closed_on.
+/// Called under lifecycle locks with the actual closure operation date.
 pub async fn require_finalized_through(
     connection: &mut PgConnection,
     term: Uuid,
@@ -183,7 +190,7 @@ pub async fn require_finalized_through(
     if !configured {
         return Ok(());
     }
-    let pending: bool = DbSession::new(&mut *connection).scalar("attendance.services.finalization.require_finalized_through", "SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m CROSS JOIN LATERAL generate_series(GREATEST(t.start_date,m.auto_finalize_from,m.coverage_start)::timestamp,LEAST($2::date,COALESCE(t.planned_end_date,y.end_date))::timestamp,interval '1 day') d(date) WHERE t.id=$1 AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=d.date::date))")
+    let pending: bool = DbSession::new(&mut *connection).scalar("attendance.services.finalization.require_finalized_through", "SELECT EXISTS(SELECT 1 FROM attendance_days day CROSS JOIN attendance_module_state module WHERE day.academic_term_id=$1 AND ((day.counted AND day.date>$2) OR (day.date BETWEEN GREATEST(module.auto_finalize_from,module.coverage_start) AND $2 AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates finalized WHERE finalized.generation=module.generation AND finalized.academic_term_id=day.academic_term_id AND finalized.date=day.date))))")
         .bind(term).bind(date).fetch_one().await?;
     if pending {
         return Err(AppError::Conflict(
@@ -207,7 +214,7 @@ pub async fn due_dates_on_connection(
         .date_naive()
         .pred_opt()
         .ok_or_else(|| invalid("วันที่ปิดยอดไม่ถูกต้อง"))?;
-    Ok(DbSession::new(&mut *connection).query_as("attendance.services.finalization.due_dates_on_connection", "SELECT t.id,d.date::date,m.generation FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id CROSS JOIN attendance_module_state m CROSS JOIN LATERAL generate_series(GREATEST(t.start_date,m.auto_finalize_from,m.coverage_start)::timestamp,LEAST(COALESCE(t.planned_end_date,y.end_date),$1)::timestamp,interval '1 day') d(date) WHERE t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=d.date::date) ORDER BY d.date,t.id LIMIT $2")
+    Ok(DbSession::new(&mut *connection).query_as("attendance.services.finalization.due_dates_on_connection", "SELECT t.id,day.date,m.generation FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id JOIN attendance_days day ON day.academic_term_id=t.id CROSS JOIN attendance_module_state m WHERE day.date BETWEEN GREATEST(m.auto_finalize_from,m.coverage_start) AND $1 AND t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=day.date) ORDER BY day.date,t.id LIMIT $2")
         .bind(yesterday).bind(limit).fetch_all().await?)
 }
 
@@ -216,7 +223,7 @@ pub async fn ready_through_on_connection(
     today: NaiveDate,
 ) -> Result<NaiveDate, AppError> {
     let yesterday = today.pred_opt().ok_or_else(|| invalid("วันที่ไม่ถูกต้อง"))?;
-    let earliest: Option<NaiveDate> = DbSession::new(&mut *connection).scalar("attendance.services.finalization.ready_through_on_connection", "SELECT min(d.date::date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id CROSS JOIN attendance_module_state m CROSS JOIN LATERAL generate_series(GREATEST(t.start_date,m.auto_finalize_from,m.coverage_start)::timestamp,LEAST(COALESCE(t.planned_end_date,y.end_date),$1)::timestamp,interval '1 day') d(date) WHERE t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=d.date::date)")
+    let earliest: Option<NaiveDate> = DbSession::new(&mut *connection).scalar("attendance.services.finalization.ready_through_on_connection", "SELECT min(day.date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id JOIN attendance_days day ON day.academic_term_id=t.id CROSS JOIN attendance_module_state m WHERE day.date BETWEEN GREATEST(m.auto_finalize_from,m.coverage_start) AND $1 AND t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=day.date)")
         .bind(yesterday).fetch_one().await?;
     Ok(earliest
         .and_then(|d| d.pred_opt())

@@ -91,7 +91,11 @@
 	let busy = $state(false);
 	let targetTermId = $state('');
 	let modules = $state<TermPreparationModule[]>(['delivery']);
-	let mappings = $state<TermPreparationMappings>({ entities: [], dates: [], offeringStartsOn: null });
+	let mappings = $state<TermPreparationMappings>({
+		entities: [],
+		dates: [],
+		offeringStartsOn: null
+	});
 	let offeringStartsOn = $state('');
 	let workspace = $state.raw<TermPreparationWorkspace | null>(null);
 	let previewStale = $state(false);
@@ -107,7 +111,13 @@
 		managementTerms.filter((term) => term.id !== sourceTermId && term.status === 'planning')
 	);
 	const canPreview = $derived(
-		canManage && !disabled && !loading && !busy && !!targetTermId && modules.length > 0 && (!modules.includes('delivery') || !!offeringStartsOn)
+		canManage &&
+			!disabled &&
+			!loading &&
+			!busy &&
+			!!targetTermId &&
+			modules.length > 0 &&
+			(!modules.includes('delivery') || !!offeringStartsOn)
 	);
 	const canApply = $derived(
 		canPreview && !previewStale && !!workspace?.canApply && workspace.sourceChecksum.length === 64
@@ -128,7 +138,7 @@
 			targetTermId = targetTerms[0]?.id ?? '';
 			modules = ['delivery'];
 			mappings = { entities: [], dates: [], offeringStartsOn: null };
-		offeringStartsOn = '';
+			offeringStartsOn = '';
 			resetPreview();
 			void loadTargets();
 		} else {
@@ -328,7 +338,7 @@
 						onValueChange={(value) => {
 							targetTermId = value;
 							mappings = { entities: [], dates: [], offeringStartsOn: null };
-		offeringStartsOn = '';
+							offeringStartsOn = '';
 							resetPreview();
 						}}
 					>
@@ -345,7 +355,17 @@
 			</section>
 
 			{#if modules.includes('delivery')}
-				<div class="space-y-2"><Label for="preparation-offerings-start">วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม</Label><DatePicker id="preparation-offerings-start" bind:value={offeringStartsOn} ariaLabel="วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม" required disabled={busy} onValueChange={() => resetPreview()} /></div>
+				<div class="space-y-2">
+					<Label for="preparation-offerings-start">วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม</Label
+					><DatePicker
+						id="preparation-offerings-start"
+						bind:value={offeringStartsOn}
+						ariaLabel="วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม"
+						required
+						disabled={busy}
+						onValueChange={() => resetPreview()}
+					/>
+				</div>
 			{/if}
 
 			<section aria-labelledby="term-preparation-modules">

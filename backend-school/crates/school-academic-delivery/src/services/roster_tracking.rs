@@ -22,8 +22,8 @@ impl PlacementRosterPort for RoomRosterTracking {
 }
 
 const TRACKING_COLUMNS: &str = r#"COALESCE(config.mode,'manual') AS mode, config.effective_from,
-    g.row_version AS group_row_version, GREATEST(t.start_date,o.starts_on) AS starts_on,
-    LEAST(COALESCE(t.closed_on,t.planned_end_date,y.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,y.end_date))) AS ends_on"#;
+    g.row_version AS group_row_version, o.starts_on AS starts_on,
+    o.ends_on AS ends_on"#;
 const TRACKING_FROM: &str = r#"FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
     JOIN learning_offerings o ON o.id=g.learning_offering_id
     JOIN academic_years y ON y.id=g.academic_year_id
@@ -87,13 +87,13 @@ fn validate(
     mode: RosterTrackingMode,
     date: Option<NaiveDate>,
     starts: NaiveDate,
-    ends: NaiveDate,
+    ends: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Result<(), AppError> {
     match (mode, date) {
         (RosterTrackingMode::Manual, None) => Ok(()),
         (RosterTrackingMode::Homeroom, Some(date))
-            if date >= today && date >= starts && date <= ends =>
+            if date >= today && date >= starts && ends.is_none_or(|end| date <= end) =>
         {
             Ok(())
         }
@@ -164,7 +164,7 @@ pub(super) async fn configuration_conflicts(
                         JOIN users u ON u.id=sy.student_id AND u.status='active'
                         WHERE p.student_academic_year_id=m.student_academic_year_id
                             AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
-                            AND p.end_date IS NULL AND p.start_date<=LEAST(COALESCE(t.closed_on,t.planned_end_date,ay.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,ay.end_date))))) AS extra_members
+                            AND p.end_date IS NULL AND (o.ends_on IS NULL OR p.start_date<=o.ends_on))) AS extra_members
             FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
             JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
             WHERE g.id=ANY($1) AND o.id=$2
@@ -314,7 +314,7 @@ pub async fn sync_group(
     if !enabled {
         return Ok(());
     }
-    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,t.start_date,o.starts_on)) AS joined,p.homeroom_id
+    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,o.starts_on)) AS joined,p.homeroom_id
         FROM learning_groups g JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id
         JOIN academic_terms t ON t.id=g.academic_term_id JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_years y ON y.id=g.academic_year_id
@@ -323,11 +323,11 @@ pub async fn sync_group(
         JOIN users u ON u.id=sy.student_id AND u.status='active'
         WHERE g.id=$1 AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND sy.status IN ('active','planned')
             AND ($2::uuid[] IS NULL OR sy.id=ANY($2))
-            AND GREATEST(p.start_date,config.effective_from,t.start_date,o.starts_on)<=LEAST(COALESCE(t.closed_on,t.planned_end_date,y.end_date),COALESCE(o.ends_on,COALESCE(t.closed_on,t.planned_end_date,y.end_date)))
+            AND (o.ends_on IS NULL OR GREATEST(p.start_date,config.effective_from,o.starts_on)<=o.ends_on)
         GROUP BY sy.id,sy.student_id,p.homeroom_id"#).bind(id).bind(ids).fetch_all().await?;
     let desired: Vec<_> = rows.iter().map(|row| row.0).collect();
     let old: Vec<(Uuid,Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT m.id,m.student_academic_year_id,m.joined_at,
-        LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date),COALESCE(o.ends_on,y.end_date),COALESCE(t.closed_on,t.planned_end_date,y.end_date))
+        LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date),o.ends_on)
         FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id
         JOIN student_academic_years sy ON sy.id=m.student_academic_year_id
         JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
@@ -450,22 +450,26 @@ mod tests {
         let ends = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
         let today = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
         assert!(validate(RosterTrackingMode::Manual, None, starts, ends, today).is_ok());
-        assert!(validate(
-            RosterTrackingMode::Homeroom,
-            Some(today),
-            starts,
-            ends,
-            today
-        )
-        .is_ok());
-        assert!(validate(
-            RosterTrackingMode::Homeroom,
-            Some(starts),
-            starts,
-            ends,
-            today
-        )
-        .is_err());
+        assert!(
+            validate(
+                RosterTrackingMode::Homeroom,
+                Some(today),
+                starts,
+                ends,
+                today
+            )
+            .is_ok()
+        );
+        assert!(
+            validate(
+                RosterTrackingMode::Homeroom,
+                Some(starts),
+                starts,
+                ends,
+                today
+            )
+            .is_err()
+        );
         assert!(validate(RosterTrackingMode::Homeroom, None, starts, ends, today).is_err());
         assert!(validate(RosterTrackingMode::Manual, Some(today), starts, ends, today).is_err());
     }

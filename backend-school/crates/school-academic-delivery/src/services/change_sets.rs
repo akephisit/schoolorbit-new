@@ -27,8 +27,8 @@ use school_academic_core::{
 use school_errors::AppError;
 
 use super::{
-    append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
-    validate_row_version, versions, TermContext,
+    TermContext, append_audit, bangkok_today, offerings, require_writable_term, stable_hash,
+    validate_row_version, versions,
 };
 
 #[derive(Debug, FromRow)]
@@ -831,7 +831,9 @@ async fn build_preview_in_transaction(
     }
     let target_id =
         required_version_id(revision.target_delivery_version_id, "ไม่พบรุ่นเปิดสอนเป้าหมาย")?;
-    let query = format!("SELECT snapshot,row_version,COALESCE(effective_from,reference_date),status,academic_term_id FROM academic_delivery_versions WHERE id=$1 {lock}");
+    let query = format!(
+        "SELECT snapshot,row_version,COALESCE(effective_from,reference_date),status,academic_term_id FROM academic_delivery_versions WHERE id=$1 {lock}"
+    );
     let (snapshot, target_row_version, effective_from, status, term_id): (
         sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
         i64,
@@ -907,11 +909,9 @@ async fn build_preview_in_transaction(
             Some(term_id),
         ));
     }
-    if effective_from < term.start_date
-        || effective_from > term.academic_year_end_date
-        || (candidate_date.is_some()
-            && term_status == AcademicTermStatus::Active
-            && effective_from < bangkok_today())
+    if candidate_date.is_some()
+        && term_status == AcademicTermStatus::Active
+        && effective_from < bangkok_today()
     {
         findings.push(change_finding(
             AcademicChangeFindingCode::EffectiveDateInvalid,
@@ -1375,15 +1375,11 @@ pub async fn create_change_set_in_transaction(
         .bind(term.id).fetch_optional().await?;
     let latest_date: Option<NaiveDate>=DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT max(effective_from) FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
         .bind(term.id).fetch_one().await?;
-    let reference_date = term
-        .start_date
-        .max(bangkok_today())
-        .max(
-            latest_date
-                .and_then(|d| d.succ_opt())
-                .unwrap_or(term.start_date),
-        )
-        .min(term.academic_year_end_date);
+    let reference_date = bangkok_today().max(
+        latest_date
+            .and_then(|date| date.succ_opt())
+            .unwrap_or_else(bangkok_today),
+    );
     let revision_id = Uuid::now_v7();
     let target_id = Uuid::now_v7();
     DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
@@ -2988,11 +2984,6 @@ fn normalized_reason(reason: &str) -> Result<String, AppError> {
 }
 
 fn validate_effective_date(term: &TermContext, effective_from: NaiveDate) -> Result<(), AppError> {
-    if effective_from < term.start_date || effective_from > term.academic_year_end_date {
-        return Err(AppError::ValidationError(
-            "วันที่เริ่มใช้ต้องอยู่ตั้งแต่วันเปิดภาคเรียนถึงวันสิ้นสุดปีการศึกษา".to_string(),
-        ));
-    }
     if term.status == "active" && effective_from < bangkok_today() {
         return Err(AppError::ValidationError(
             "ภาคเรียนที่เปิดใช้งานแล้วไม่สามารถกำหนดวันที่เริ่มใช้ย้อนหลังได้".to_string(),

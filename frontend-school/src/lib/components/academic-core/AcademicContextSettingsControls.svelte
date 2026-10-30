@@ -63,7 +63,11 @@
 			ข้อมูลและแบบฟอร์มที่เปิดอยู่ยังใช้ปีและภาคเรียนเดิม
 		</p>
 	</div>
-	<div class="flex flex-wrap items-center justify-between gap-3" role="group" aria-label={year.name}>
+	<div
+		class="flex flex-wrap items-center justify-between gap-3"
+		role="group"
+		aria-label={year.name}
+	>
 		<div class="flex flex-wrap items-center gap-2">
 			<strong class="text-sm">{year.name}</strong>
 			<Badge variant="outline">{year.isVisible ? 'แสดงในตัวเลือก' : 'ซ่อนจากตัวเลือก'}</Badge>
@@ -75,23 +79,23 @@
 					type="button"
 					size="sm"
 					variant="outline"
-					loading={pending === 'year-visibility'}
+					loading={pending === `year-visibility:${year.id}`}
 					loadingLabel="กำลังบันทึก..."
 					disabled={!!pending || yearIsDefault}
 					title={yearIsDefault ? 'เปลี่ยนค่าเริ่มต้นก่อนซ่อนปีนี้' : undefined}
 					onclick={() =>
-						save('year-visibility', { years: [{ id: year.id, isVisible: !year.isVisible }] })}
+						save(`year-visibility:${year.id}`, { years: [{ id: year.id, isVisible: !year.isVisible }] })}
 					>{year.isVisible ? 'ซ่อนจากตัวเลือก' : 'แสดงในตัวเลือก'}</LoadingButton
 				>
 				<LoadingButton
 					type="button"
 					size="sm"
 					variant="outline"
-					loading={pending === 'year-default'}
+					loading={pending === `year-default:${year.id}`}
 					loadingLabel="กำลังตั้งค่า..."
 					disabled={!!pending || !year.isVisible || yearIsDefault}
 					onclick={() =>
-						save('year-default', { defaultAcademicYearId: year.id, defaultAcademicTermId: null })}
+						save(`year-default:${year.id}`, { defaultAcademicYearId: year.id, defaultAcademicTermId: null })}
 					>ตั้งเป็นค่าเริ่มต้น</LoadingButton
 				>
 			</div>
@@ -103,11 +107,15 @@
 		</p>
 	{/if}
 	{#each terms as term (term.id)}
-		<div class="flex flex-wrap items-center justify-between gap-3 border-t pt-3" role="group" aria-label={term.name}>
+		<div
+			class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+			role="group"
+			aria-label={term.name}
+		>
 			<div class="flex flex-wrap items-center gap-2 text-sm">
 				<span>{term.name}</span>
 				<Badge variant="outline"
-					>{term.isVisible && year.isVisible ? 'แสดงในตัวเลือก' : 'ซ่อนจากตัวเลือก'}</Badge
+					>{!year.isVisible ? 'ซ่อนตามปีการศึกษา' : term.isVisible ? 'แสดงในตัวเลือก' : 'ซ่อนจากตัวเลือก'}</Badge
 				>
 				{#if settings.defaultAcademicTermId === term.id}<Badge variant="secondary"
 						>ค่าเริ่มต้นของโรงเรียน</Badge
@@ -156,5 +164,7 @@
 		>
 			{error}
 		</p>
-		<Button type="button" size="sm" variant="outline" disabled={!!pending} onclick={onreload}>โหลดข้อมูลล่าสุด</Button>{/if}
+		<Button type="button" size="sm" variant="outline" disabled={!!pending} onclick={onreload}
+			>โหลดข้อมูลล่าสุด</Button
+		>{/if}
 </section>

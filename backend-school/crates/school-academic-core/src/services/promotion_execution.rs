@@ -20,6 +20,7 @@ pub async fn execute_decision(
     actor: Uuid,
     source_year: Uuid,
     target_year: Uuid,
+    placement_starts_on: chrono::NaiveDate,
     source: &PromotionStudentContext,
     decision: &PromotionDestinationCommand,
 ) -> Result<PromotionWriteOutcome, AppError> {
@@ -95,8 +96,8 @@ pub async fn execute_decision(
             result.target_student_year_id = Some(id);
             if let Some(room) = decision.target_homeroom_id {
                 let placement = Uuid::now_v7();
-                DbSession::new(&mut **tx).query("academic_core.services.promotion_execution.execute_decision", "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,'planned','promotion' FROM academic_years WHERE id=$3")
-                    .bind(placement).bind(id).bind(target_year).bind(room).execute().await?;
+                DbSession::new(&mut **tx).query("academic_core.services.promotion_execution.execute_decision", "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES($1,$2,$3,$4,$5,'planned','promotion')")
+                    .bind(placement).bind(id).bind(target_year).bind(room).bind(placement_starts_on).execute().await?;
                 result.target_placement_id = Some(placement);
             }
         }
