@@ -152,9 +152,10 @@ pub async fn create_ordinary(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::create_ordinary_block(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         payload,
     )
     .await?;
@@ -196,9 +197,10 @@ pub async fn create_synchronized(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::create_synchronized_block(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         payload,
     )
     .await?;
@@ -241,9 +243,10 @@ pub async fn create_structural(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let blocks = timetable_block_service::create_structural_blocks(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         payload,
     )
     .await?;
@@ -291,9 +294,10 @@ pub async fn update_block(
         &resources,
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::update_block(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         block_id,
         payload,
     )
@@ -343,9 +347,10 @@ pub async fn remove_target(
         &resources,
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::remove_target(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         block_id,
         payload,
     )
@@ -372,9 +377,10 @@ pub async fn retry_sync(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::retry_sync(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         block_id,
         payload,
     )
@@ -401,9 +407,10 @@ pub async fn restore_group(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::restore_group(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         block_id,
         payload,
     )
@@ -429,9 +436,10 @@ pub async fn delete_block(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_existing_block_manage_access(&context, block_id, query.timetable_version_id).await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::deactivate_block(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         block_id,
         query.timetable_version_id,
         query.row_version,
@@ -468,9 +476,10 @@ pub async fn delete_series(
         },
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let blocks = timetable_block_service::deactivate_series(
         &context.tenant.pool,
-        context.actor.user_id,
+        &mutation,
         series_id,
         query.timetable_version_id,
     )
@@ -512,8 +521,9 @@ pub async fn swap_blocks(
         &resources,
     )
     .await?;
+    let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let result =
-        timetable_block_service::swap_blocks(&context.tenant.pool, context.actor.user_id, payload)
+        timetable_block_service::swap_blocks(&context.tenant.pool, &mutation, payload)
             .await?;
     broadcast_changed(&state, &headers, context.actor.user_id, &result.block_a);
     broadcast_changed(&state, &headers, context.actor.user_id, &result.block_b);

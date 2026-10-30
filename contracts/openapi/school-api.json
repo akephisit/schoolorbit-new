@@ -45389,6 +45389,991 @@
         ],
         "type": "object"
       },
+      "DraftAnchor": {
+        "oneOf": [
+          {
+            "properties": {
+              "bellSchedulePeriodId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "dayOfWeek": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "cell"
+                ],
+                "type": "string"
+              },
+              "u": {
+                "format": "double",
+                "type": "number"
+              },
+              "v": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "dayOfWeek",
+              "bellSchedulePeriodId",
+              "u",
+              "v",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "blockId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "block"
+                ],
+                "type": "string"
+              },
+              "u": {
+                "format": "double",
+                "type": "number"
+              },
+              "v": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "blockId",
+              "u",
+              "v",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tray"
+                ],
+                "type": "string"
+              },
+              "source": {
+                "$ref": "#/components/schemas/TimetableBlockPlacementSource"
+              },
+              "u": {
+                "format": "double",
+                "type": "number"
+              },
+              "v": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "source",
+              "u",
+              "v",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DraftAvailability": {
+        "properties": {
+          "blockedCells": {
+            "items": {
+              "$ref": "#/components/schemas/DraftBlockedCell"
+            },
+            "type": "array"
+          },
+          "context": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/TimetableBlockPlacementSource"
+          }
+        },
+        "required": [
+          "source",
+          "blockedCells"
+        ],
+        "type": "object"
+      },
+      "DraftBlockedCell": {
+        "properties": {
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "ownerConnectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/DraftReservationPurpose"
+          },
+          "reservationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dayOfWeek",
+          "bellSchedulePeriodId",
+          "reservationId",
+          "ownerConnectionId",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "DraftClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimetableBlockPlacementCandidate",
+                "description": "Private configuration, used only for the server's resource footprint."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/DraftReservationPurpose"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TimetableBlockPlacementSource"
+          }
+        },
+        "required": [
+          "requestId",
+          "source",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "DraftClientMessage": {
+        "oneOf": [
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftPresenceUpdate"
+              },
+              "type": {
+                "enum": [
+                  "ClientPresenceUpdate"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftClaim"
+              },
+              "type": {
+                "enum": [
+                  "ClientClaim"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftTargetUpdate"
+              },
+              "type": {
+                "enum": [
+                  "ClientTarget"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftLeaseCommand"
+              },
+              "type": {
+                "enum": [
+                  "ClientRenew"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftLeaseCommand"
+              },
+              "type": {
+                "enum": [
+                  "ClientRelease"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftReplay"
+              },
+              "type": {
+                "enum": [
+                  "ClientReplay"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DraftCommandKind": {
+        "enum": [
+          "claim",
+          "target",
+          "renew",
+          "release"
+        ],
+        "type": "string"
+      },
+      "DraftCommandResult": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "$ref": "#/components/schemas/DraftCommandKind"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "leaseToken": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reservationId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimetableBlockPlacementSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "command",
+          "accepted"
+        ],
+        "type": "object"
+      },
+      "DraftConnectionPresence": {
+        "properties": {
+          "activeReservationId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "anchor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "context": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "connectionId"
+        ],
+        "type": "object"
+      },
+      "DraftContext": {
+        "additionalProperties": false,
+        "properties": {
+          "dayOfWeek": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "viewId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "viewMode": {
+            "$ref": "#/components/schemas/DraftViewMode"
+          }
+        },
+        "required": [
+          "viewMode"
+        ],
+        "type": "object"
+      },
+      "DraftEventEnvelope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DraftServerMessage"
+          },
+          {
+            "properties": {
+              "epoch": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "seq": {
+                "description": "Snapshot sequence for state sync; committed journal sequence for patches.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "epoch",
+              "seq"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DraftLeaseCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "leaseToken": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "leaseToken"
+        ],
+        "type": "object"
+      },
+      "DraftMutationIdentity": {
+        "additionalProperties": false,
+        "description": "Optional HTTP ownership proof. Actor/session identity always comes from authentication.",
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "leaseToken": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mutationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId",
+          "leaseToken",
+          "mutationId"
+        ],
+        "type": "object"
+      },
+      "DraftParticipant": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/DraftConnectionPresence"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profileImageFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "name",
+          "color",
+          "connections"
+        ],
+        "type": "object"
+      },
+      "DraftPatch": {
+        "properties": {
+          "mutationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ordinaryDemands": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableOrdinaryDemand"
+            },
+            "type": "array"
+          },
+          "originConnectionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "removedBlockIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceIssues": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSourceIssue"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TimetableBlockSummary"
+          },
+          "synchronizedDemands": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSynchronizedDemand"
+            },
+            "type": "array"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "totalDraftBlockCount": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upsertedBlocks": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableBlock"
+            },
+            "type": "array"
+          },
+          "version": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimetableVersion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "mutationId",
+          "upsertedBlocks",
+          "removedBlockIds",
+          "ordinaryDemands",
+          "synchronizedDemands",
+          "summary",
+          "sourceIssues"
+        ],
+        "type": "object"
+      },
+      "DraftPresenceUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "$ref": "#/components/schemas/DraftContext"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "type": "object"
+      },
+      "DraftReplay": {
+        "additionalProperties": false,
+        "properties": {
+          "afterSeq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "epoch": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epoch",
+          "afterSeq"
+        ],
+        "type": "object"
+      },
+      "DraftReservation": {
+        "description": "Public lease identity is distinct from its private ownership token.",
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ownerConnectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/DraftReservationPurpose"
+          },
+          "reservationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TimetableBlockPlacementSource"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reservationId",
+          "ownerConnectionId",
+          "purpose",
+          "source",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "DraftReservationPurpose": {
+        "enum": [
+          "drag",
+          "edit"
+        ],
+        "type": "string"
+      },
+      "DraftServerMessage": {
+        "oneOf": [
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftStateSync"
+              },
+              "type": {
+                "enum": [
+                  "DraftStateSync"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftParticipant"
+              },
+              "type": {
+                "enum": [
+                  "DraftPresenceChanged"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "properties": {
+                  "connectionId": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "connectionId"
+                ],
+                "type": "object"
+              },
+              "type": {
+                "enum": [
+                  "DraftPresenceLeft"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftCommandResult"
+              },
+              "type": {
+                "enum": [
+                  "DraftCommandResult"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "properties": {
+                  "reservations": {
+                    "items": {
+                      "$ref": "#/components/schemas/DraftReservation"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "reservations"
+                ],
+                "type": "object"
+              },
+              "type": {
+                "enum": [
+                  "DraftReservationsChanged"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftAvailability"
+              },
+              "type": {
+                "enum": [
+                  "DraftAvailability"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "$ref": "#/components/schemas/DraftPatch"
+              },
+              "type": {
+                "enum": [
+                  "DraftPatched"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "payload": {
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "type": "object"
+              },
+              "type": {
+                "enum": [
+                  "DraftReconcileRequired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "payload",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DraftStateSync": {
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reservations": {
+            "items": {
+              "$ref": "#/components/schemas/DraftReservation"
+            },
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/DraftParticipant"
+            },
+            "type": "array"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/TimetableBlockWorkspace"
+          }
+        },
+        "required": [
+          "connectionId",
+          "workspace",
+          "users",
+          "reservations"
+        ],
+        "type": "object"
+      },
+      "DraftTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blockId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dayOfWeek": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dayOfWeek",
+          "bellSchedulePeriodId"
+        ],
+        "type": "object"
+      },
+      "DraftTargetUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimetableBlockPlacementCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaseToken": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DraftTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "leaseToken"
+        ],
+        "type": "object"
+      },
+      "DraftViewMode": {
+        "enum": [
+          "homeroom",
+          "teacher",
+          "learning_group",
+          "wholeSchool"
+        ],
+        "type": "string"
+      },
       "EffectiveResult": {
         "properties": {
           "corrections": {

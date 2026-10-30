@@ -77,6 +77,7 @@ pub mod job_position_service;
 pub mod personnel_overview_service;
 mod staff_directory_query;
 pub use staff_directory_query::{
+    collaboration_portraits_on_connection,
     subject_groups_for_users, subject_groups_for_users_on_connection, StaffSubjectGroupAssignment,
 };
 

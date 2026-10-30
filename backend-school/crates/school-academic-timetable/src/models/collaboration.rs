@@ -32,21 +32,45 @@ pub enum DraftViewMode {
 pub struct DraftContext {
     pub view_mode: DraftViewMode,
     pub view_id: Option<Uuid>,
+    pub day_of_week: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum DraftAnchor {
-    Cell { day_of_week: String, bell_schedule_period_id: Uuid, u: f64, v: f64 },
-    Block { block_id: Uuid, u: f64, v: f64 },
-    Tray { source: TimetableBlockPlacementSource, u: f64, v: f64 },
+    Cell {
+        #[serde(rename = "dayOfWeek")]
+        day_of_week: String,
+        #[serde(rename = "bellSchedulePeriodId")]
+        bell_schedule_period_id: Uuid,
+        u: f64,
+        v: f64,
+    },
+    Block {
+        #[serde(rename = "blockId")]
+        block_id: Uuid,
+        u: f64,
+        v: f64,
+    },
+    Tray {
+        source: TimetableBlockPlacementSource,
+        u: f64,
+        v: f64,
+    },
 }
 
 impl DraftAnchor {
     pub fn has_valid_coordinates(&self) -> bool {
         let (u, v) = match self {
-            Self::Cell { u, v, .. } | Self::Block { u, v, .. } | Self::Tray { u, v, .. } => (*u, *v),
+            Self::Cell { u, v, .. } | Self::Block { u, v, .. } | Self::Tray { u, v, .. } => {
+                (*u, *v)
+            }
         };
         u.is_finite() && v.is_finite() && (0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)
     }
@@ -64,7 +88,10 @@ pub struct DraftTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum DraftReservationPurpose { Drag, Edit }
+pub enum DraftReservationPurpose {
+    Drag,
+    Edit,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
@@ -128,6 +155,7 @@ pub enum DraftClientMessage {
 #[serde(rename_all = "camelCase")]
 pub struct DraftConnectionPresence {
     pub connection_id: Uuid,
+    pub active_reservation_id: Option<Uuid>,
     pub context: Option<DraftContext>,
     pub anchor: Option<DraftAnchor>,
 }
@@ -159,7 +187,12 @@ pub struct DraftReservation {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum DraftCommandKind { Claim, Target, Renew, Release }
+pub enum DraftCommandKind {
+    Claim,
+    Target,
+    Renew,
+    Release,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
@@ -229,12 +262,19 @@ pub struct DraftPatch {
 pub enum DraftServerMessage {
     DraftStateSync(DraftStateSync),
     DraftPresenceChanged(DraftParticipant),
-    DraftPresenceLeft { #[serde(rename = "connectionId")] connection_id: Uuid },
+    DraftPresenceLeft {
+        #[serde(rename = "connectionId")]
+        connection_id: Uuid,
+    },
     DraftCommandResult(DraftCommandResult),
-    DraftReservationsChanged { reservations: Vec<DraftReservation> },
+    DraftReservationsChanged {
+        reservations: Vec<DraftReservation>,
+    },
     DraftAvailability(DraftAvailability),
     DraftPatched(DraftPatch),
-    DraftReconcileRequired { reason: String },
+    DraftReconcileRequired {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

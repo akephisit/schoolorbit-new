@@ -3,6 +3,18 @@ import { writable, type Writable } from 'svelte/store';
 import { BACKEND_WS_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
 import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
 import {
+	createDraftCollaborationSession,
+	type DraftSessionState,
+	type OwnedDraftLease
+} from '#lib/academic/timetable/collaboration-session.js';
+import type {
+	DraftEventEnvelope,
+	DraftReservationPurpose,
+	TimetableBlockPlacementCandidate,
+	TimetableBlockPlacementSource
+} from '#lib/api/timetable.js';
+import { decodeDraftEvent } from '#lib/academic/timetable/collaboration-decoder.js';
+import {
 	createTimetableSocketRuntime,
 	type TimetableSocketParams
 } from '#lib/utils/timetable-socket-runtime.js';
@@ -80,6 +92,112 @@ export const remoteCursors: Writable<
 > = writable({});
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
+export const draftSessionState = writable<DraftSessionState>({
+	versionId: null,
+	connectionId: null,
+	epoch: null,
+	seq: 0,
+	ready: false,
+	users: [],
+	reservations: [],
+	availability: null,
+	leaseRevision: 0
+});
+export const draftReconcileSignal = writable<{
+	versionId: string;
+	reason: string;
+	revision: number;
+} | null>(null);
+const draftEventListeners = new Set<(event: DraftEventEnvelope) => void>();
+const draftLeaseLostListeners = new Set<(lease: OwnedDraftLease, error: Error) => void>();
+let currentSocketParams: TimetableSocketParams | null = null;
+let invalidDraftMessages = 0;
+
+const draftSession = createDraftCollaborationSession({
+	send: (message) => timetableSocketRuntime.send(JSON.stringify(message)),
+	uuid: () => crypto.randomUUID(),
+	setTimer: (callback, delay) => setTimeout(callback, delay),
+	clearTimer: (timer) => clearTimeout(timer),
+	onState: (state) => draftSessionState.set(state),
+	onEvent: (event) => {
+		if (event.type === 'DraftStateSync') needsResumeReconcile = false;
+		for (const listener of draftEventListeners) listener(event);
+	},
+	onReconcile: (reason) => {
+		const params = currentSocketParams;
+		if (!params?.timetableVersionId) return;
+		draftSession.reset(params.timetableVersionId);
+		timetableSocketRuntime.disconnect();
+		timetableSocketRuntime.connect(params);
+		draftReconcileSignal.update((previous) => ({
+			versionId: params.timetableVersionId!,
+			reason,
+			revision: (previous?.revision ?? 0) + 1
+		}));
+	},
+	onLeaseLost: (lease, error) => {
+		for (const listener of draftLeaseLostListeners) listener(lease, error);
+	}
+});
+
+export async function claimDraftLease(
+	versionId: string,
+	source: TimetableBlockPlacementSource,
+	candidate: TimetableBlockPlacementCandidate,
+	purpose: DraftReservationPurpose,
+	signal?: AbortSignal
+): Promise<OwnedDraftLease> {
+	if (draftSession.state.versionId && draftSession.state.versionId !== versionId)
+		throw new Error('รุ่นตารางสอนเปลี่ยนไป กรุณาเลือกคาบใหม่');
+	if (!draftSession.state.ready || draftSession.state.versionId !== versionId) {
+		await new Promise<void>((resolve, reject) => {
+			let finished = false;
+			let unsubscribe = () => {};
+			const timer = setTimeout(() => finish(false), 4000);
+			function finish(ready: boolean) {
+				if (finished) return;
+				finished = true;
+				clearTimeout(timer);
+				unsubscribe();
+				signal?.removeEventListener('abort', abort);
+				if (ready) resolve();
+				else reject(new Error('ยังเชื่อมต่อผู้ร่วมจัดตารางไม่ได้ กรุณาลองใหม่'));
+			}
+			function abort() {
+				finish(false);
+			}
+			if (signal?.aborted) {
+				finish(false);
+				return;
+			}
+			signal?.addEventListener('abort', abort, { once: true });
+			unsubscribe = draftSessionState.subscribe((state) => {
+				if (state.versionId === versionId && state.ready) finish(true);
+				else if (state.versionId && state.versionId !== versionId) finish(false);
+			});
+		});
+	}
+	return draftSession.claim(source, candidate, purpose, signal);
+}
+export const targetDraftLease = draftSession.target;
+export const releaseDraftLease = draftSession.release;
+export const ownsDraftLease = draftSession.owns;
+export const draftMutationIdentity = draftSession.mutation;
+export const sendDraftPresence = draftSession.presence;
+export type { OwnedDraftLease };
+
+export function subscribeDraftEvents(listener: (event: DraftEventEnvelope) => void) {
+	draftEventListeners.add(listener);
+	return () => {
+		draftEventListeners.delete(listener);
+	};
+}
+export function subscribeDraftLeaseLost(listener: (lease: OwnedDraftLease, error: Error) => void) {
+	draftLeaseLostListeners.add(listener);
+	return () => {
+		draftLeaseLostListeners.delete(listener);
+	};
+}
 
 let currentUserId: string | null = null;
 let currentAcademicTermId: string | null = null;
@@ -94,6 +212,7 @@ function clearRealtimeState() {
 	isConnected.set(false);
 	activeUsers.set([]);
 	remoteCursors.set({});
+	draftSession.reset(currentSocketParams?.timetableVersionId ?? null);
 }
 
 function triggerReconcile(currentSeq?: number) {
@@ -145,7 +264,11 @@ function handleStateSync(event: StateSyncEvent) {
 	needsResumeReconcile = false;
 }
 
-function handleMessage(event: SequencedTimetableEvent) {
+function handleMessage(event: SequencedTimetableEvent | DraftEventEnvelope) {
+	if ('epoch' in event) {
+		draftSession.apply(event);
+		return;
+	}
 	if (isMutationEvent(event)) {
 		handleMutation(event);
 		return;
@@ -235,10 +358,23 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 	},
 	onOpen: () => isConnected.set(true),
 	onMessage: (data) => {
+		if (currentSocketParams?.timetableVersionId) {
+			const event = decodeDraftEvent(data);
+			if (event) {
+				draftSession.apply(event);
+				return;
+			}
+			const params = currentSocketParams;
+			invalidDraftMessages++;
+			timetableSocketRuntime.disconnect();
+			clearRealtimeState();
+			if (invalidDraftMessages === 1) timetableSocketRuntime.connect(params);
+			return;
+		}
 		try {
 			handleMessage(JSON.parse(String(data)) as SequencedTimetableEvent);
-		} catch (error) {
-			console.error('Failed to parse timetable realtime event', error);
+		} catch {
+			console.error('Failed to parse timetable realtime event');
 		}
 	},
 	onClose: (event) => {
@@ -250,10 +386,17 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 });
 
 export function connectTimetableSocket(params: TimetableSocketParams) {
-	if (currentAcademicTermId !== params.academicTermId) {
+	if (
+		currentAcademicTermId !== params.academicTermId ||
+		currentUserId !== params.currentUserId ||
+		currentSocketParams?.timetableVersionId !== params.timetableVersionId
+	) {
 		lastSeq = 0;
+		invalidDraftMessages = 0;
+		currentSocketParams = { ...params };
 		clearRealtimeState();
 	}
+	currentSocketParams = { ...params };
 	timetableSocketRuntime.connect(params);
 }
 
@@ -262,6 +405,7 @@ export function disconnectTimetableSocket() {
 	currentUserId = null;
 	currentAcademicTermId = null;
 	lastSeq = 0;
+	currentSocketParams = null;
 	timetableSocketRuntime.disconnect();
 	clearRealtimeState();
 }

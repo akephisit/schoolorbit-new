@@ -1669,10 +1669,12 @@ mod protected_router {
                 .unwrap(),
         )
         .unwrap();
+        let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
         let narrow = AcademicHttpState {
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: fixture.runtime.clone(),
-            websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+            websocket_manager: websocket_manager.clone(),
+            collaboration: websocket_manager.collaboration(),
             placement_rosters: &ROSTERS,
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
@@ -1814,10 +1816,12 @@ mod protected_router {
         let (session_id, token) = fixture
             .insert_session(&fixture.tenant_a_pool, user_id, 74, false)
             .await;
+        let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
         let narrow = AcademicHttpState {
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: fixture.runtime.clone(),
-            websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+            websocket_manager: websocket_manager.clone(),
+            collaboration: websocket_manager.collaboration(),
             placement_rosters: &ROSTERS,
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,

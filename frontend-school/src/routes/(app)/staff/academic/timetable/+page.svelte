@@ -14,7 +14,25 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import { applyDraftPatch } from '#lib/academic/timetable/collaboration-patch.js';
+	import { placementSourceKey } from '#lib/academic/timetable/collaboration-source.js';
+	import {
+		createPointerCoalescer,
+		relativePointer
+	} from '#lib/academic/timetable/collaboration-geometry.js';
+	import {
+		pointerTimetableSubject,
+		findTimetableBlockElement,
+		findTimetableCellElement
+	} from '#lib/academic/timetable/collaboration-dom.js';
+	import {
+		collaborationContextLabel,
+		timetableCollaborators,
+		timetableRemotePointers
+	} from '#lib/academic/timetable/collaboration-view.js';
+	import { sameDraftTarget } from '#lib/academic/timetable/collaboration-session.js';
+	import TimetableRemotePointers from '#lib/components/academic/timetable/TimetableRemotePointers.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 
@@ -63,6 +81,7 @@
 		deleteTimetableBlock,
 		deleteTimetableBlockSeries,
 		getTimetableBlockWorkspace,
+		timetableMutationOptions,
 		listTimetableVersions,
 		previewTimetableBlockPlacement,
 		removeTimetableBlockTarget,
@@ -77,7 +96,13 @@
 		type TimetableTargetKind,
 		type TimetableVersion,
 		type UpdateTimetableBlockRequest,
-		type TimetableBlockWorkspace
+		type TimetableBlockWorkspace,
+		type DraftAnchor,
+		type DraftContext,
+		type DraftEventEnvelope,
+		type DraftPresenceUpdate,
+		type DraftTarget,
+		type DraftMutationIdentity
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import TimetableBoard from '#lib/components/academic/timetable/TimetableBoard.svelte';
@@ -113,7 +138,18 @@
 	import {
 		connectTimetableSocket,
 		disconnectTimetableSocket,
-		refreshTrigger
+		refreshTrigger,
+		draftSessionState,
+		draftReconcileSignal,
+		claimDraftLease,
+		targetDraftLease,
+		releaseDraftLease,
+		ownsDraftLease,
+		draftMutationIdentity,
+		sendDraftPresence,
+		subscribeDraftEvents,
+		subscribeDraftLeaseLost,
+		type OwnedDraftLease
 	} from '#lib/stores/timetable-socket.js';
 	import {
 		AlertTriangle,
@@ -130,6 +166,20 @@
 	import type { PageProps } from './$types';
 
 	type RemovalMode = 'target' | 'block' | 'series';
+	type LocalInteraction = {
+		controller: TimetableWorkspaceController;
+		source: TimetableBlockPlacementSource;
+		candidate: TimetableBlockPlacementCandidate;
+		abort: AbortController;
+		claim: Promise<OwnedDraftLease>;
+		lease: OwnedDraftLease | null;
+		captured: boolean;
+		cancelled: boolean;
+		targetKey: string;
+		targetPromise: Promise<OwnedDraftLease> | null;
+		requestedTarget: DraftTarget | null;
+		targetError: Error | null;
+	};
 	type OptimisticPlacementOperation = {
 		controller: TimetableWorkspaceController;
 		dragSource: TimetableDragSource;
@@ -141,6 +191,7 @@
 		temporaryBlockId?: string;
 		originalBlocks: TimetableBlock[];
 		targetBlock: TimetableBlock | null;
+		interaction: LocalInteraction;
 	};
 	type OptimisticRemovalOperation = {
 		controller: TimetableWorkspaceController;
@@ -150,11 +201,13 @@
 		pendingCellKeys: string[];
 		target: ReturnType<typeof currentRemovalTarget>;
 		versionId: string;
+		interaction: LocalInteraction | null;
 	};
 	type OptimisticBlockEditOperation = {
 		controller: TimetableWorkspaceController;
 		originalBlock: TimetableBlock;
 		request: UpdateTimetableBlockRequest;
+		interaction: LocalInteraction;
 	};
 	type StructuralForm = {
 		kind: TimetableStructuralKind;
@@ -286,7 +339,67 @@
 			)
 	);
 	let overviewDay = $state('MON');
+	let workspaceRoot = $state<HTMLElement | null>(null);
+	let dragInteraction = $state.raw<LocalInteraction | null>(null);
+	let editInteraction = $state.raw<LocalInteraction | null>(null);
+	let interactionRevision = $state(0);
+	let currentAnchor = $state.raw<DraftAnchor | null>(null);
+	let pointerOwnerId = $state<string | null>(null);
+	let domRevision = $state(0);
+	let queuedDraftEvents: DraftEventEnvelope[] = [];
+	let draftQueueOverflow = false;
+	let disposed = false;
+	let presenceCoalescer: ReturnType<
+		typeof createPointerCoalescer<DraftPresenceUpdate, ReturnType<typeof setTimeout>>
+	> | null = null;
+	const collaborationContext = $derived<DraftContext>({
+		viewMode: activeView,
+		viewId: activeView === 'wholeSchool' ? pointerOwnerId : (controller?.selectedOwnerId ?? null),
+		dayOfWeek: activeView === 'wholeSchool' ? overviewDay : null
+	});
+	const collaborators = $derived(
+		controller
+			? timetableCollaborators(
+					controller.workspace,
+					$draftSessionState.users,
+					$draftSessionState.connectionId,
+					$draftSessionState.reservations
+				)
+			: []
+	);
+	const remotePointers = $derived.by(() => {
+		domRevision;
+		return workspaceRoot && controller
+			? timetableRemotePointers(
+					workspaceRoot,
+					controller.workspace,
+					collaborationContext,
+					$draftSessionState.users,
+					$draftSessionState.connectionId,
+					$draftSessionState.reservations
+				)
+			: [];
+	});
+	const socketContextKey = $derived(
+		`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
+	);
+	const editCanEdit = $derived.by(() => {
+		interactionRevision;
+		$draftSessionState.leaseRevision;
+		return Boolean(
+			canEdit &&
+			editInteraction?.lease &&
+			ownsDraftLease(editInteraction.lease) &&
+			editInteraction.controller === controller &&
+			editInteraction.source.kind === 'existing_block' &&
+			editInteraction.source.blockId === selectedBlockId
+		);
+	});
 	onDestroy(() => {
+		disposed = true;
+		cancelPlacement();
+		disposeInteraction(editInteraction);
+		presenceCoalescer?.dispose();
 		request.abort();
 		versionsRequest.abort();
 	});
@@ -702,7 +815,7 @@
 	}
 
 	function startExistingPlacement(block: TimetableBlock): void {
-		if (pendingBlockIds.has(block.id)) return;
+		if (pendingBlockIds.has(block.id) || blockLockLabel(block.id)) return;
 		startPlacement(
 			{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
 			candidateForBlock(block)
@@ -720,11 +833,211 @@
 		source: TimetableBlockPlacementSource,
 		candidate: TimetableBlockPlacementCandidate
 	): void {
+		if (!controller || !canEdit || sourceLockLabel(source)) return;
+		cancelPlacement();
+		disposeInteraction(editInteraction);
+		editInteraction = null;
 		previewCellKey = '';
+		controller.startPlacement(source, candidate);
+		dragInteraction = createInteraction(source, candidate, 'drag');
+	}
+
+	function createInteraction(
+		source: TimetableBlockPlacementSource,
+		candidate: TimetableBlockPlacementCandidate,
+		purpose: 'drag' | 'edit'
+	): LocalInteraction {
+		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+		const abort = new AbortController();
+		const interaction: LocalInteraction = {
+			controller,
+			source,
+			candidate,
+			abort,
+			claim: claimDraftLease(
+				controller.workspace.version.id,
+				source,
+				candidate,
+				purpose,
+				abort.signal
+			),
+			lease: null,
+			captured: false,
+			cancelled: false,
+			targetKey: '',
+			targetPromise: null,
+			requestedTarget: null,
+			targetError: null
+		};
+		void interaction.claim
+			.then((lease) => {
+				interaction.lease = lease;
+				interactionRevision++;
+				if (interaction.cancelled) void releaseInteractionLease(lease);
+			})
+			.catch((error: unknown) => {
+				if (interaction.cancelled || interaction.captured || disposed) return;
+				if (dragInteraction === interaction) cancelPlacement();
+				if (editInteraction === interaction) {
+					editInteraction = null;
+					interactionRevision++;
+				}
+				toast.error(error instanceof Error ? error.message : 'ยังจองคาบนี้ไม่ได้');
+			});
+		return interaction;
+	}
+
+	async function releaseInteractionLease(lease: OwnedDraftLease): Promise<void> {
+		try {
+			await releaseDraftLease(lease);
+		} catch {
+			if (!disposed && $draftSessionState.ready)
+				console.error('Unable to release timetable interaction; its lease will expire');
+		}
+	}
+
+	function disposeInteraction(interaction: LocalInteraction | null): void {
+		if (!interaction || interaction.captured || interaction.cancelled) return;
+		interaction.cancelled = true;
+		interaction.abort.abort();
+		if (interaction.lease) void releaseInteractionLease(interaction.lease);
+	}
+
+	function confirmInteractionTarget(
+		interaction: LocalInteraction,
+		target: DraftTarget | null,
+		force = false
+	): Promise<OwnedDraftLease> {
+		const key = JSON.stringify({ target, candidate: interaction.candidate });
+		if (!force && interaction.targetKey === key && interaction.targetPromise)
+			return interaction.targetPromise;
+		interaction.targetKey = key;
+		interaction.requestedTarget = target;
+		interaction.targetError = null;
+		const candidate = interaction.candidate;
+		const pending = interaction.claim
+			.then(async (lease) => {
+				if (interaction.cancelled || controller !== interaction.controller)
+					throw new Error('บริบทตารางสอนเปลี่ยนไป กรุณาเลือกคาบใหม่');
+				await targetDraftLease(lease, target, candidate, interaction.abort.signal);
+				return lease;
+			})
+			.catch((error: unknown) => {
+				if (interaction.targetPromise === pending) {
+					interaction.targetError =
+						error instanceof Error ? error : new Error('ยังจองช่องเวลานี้ไม่ได้');
+					interactionRevision++;
+				}
+				throw error;
+			});
+		interaction.targetPromise = pending;
+		return pending;
+	}
+
+	function observeTarget(interaction: LocalInteraction, pending: Promise<OwnedDraftLease>): void {
+		void pending.catch((error: unknown) => {
+			// Expected reservation denial is shown at the requested cell and retained for drop.
+			if (
+				interaction.cancelled ||
+				interaction.captured ||
+				!interaction.lease ||
+				ownsDraftLease(interaction.lease)
+			)
+				return;
+			if (dragInteraction === interaction) cancelPlacement();
+			toast.error(error instanceof Error ? error.message : 'สิทธิ์จัดคาบหมดอายุ กรุณาลองใหม่');
+		});
+	}
+
+	function peerName(connectionId: string): string {
+		return (
+			$draftSessionState.users.find((user) =>
+				user.connections.some((connection) => connection.connectionId === connectionId)
+			)?.name ?? 'ผู้ร่วมจัดตาราง'
+		);
+	}
+
+	function sourceLockLabel(source: TimetableBlockPlacementSource): string | null {
+		const reservation = $draftSessionState.reservations.find(
+			(item) =>
+				item.ownerConnectionId !== $draftSessionState.connectionId &&
+				placementSourceKey(item.source) === placementSourceKey(source)
+		);
+		if (reservation) return peerName(reservation.ownerConnectionId);
+		if (source.kind === 'existing_block' && pendingBlockIds.has(source.blockId))
+			return 'กำลังบันทึก';
+		if (
+			source.kind === 'ordinary_demand' &&
+			controller?.workspace.blocks.some(
+				(block) =>
+					pendingBlockIds.has(block.id) &&
+					block.groups.some((group) => group.learningGroupId === source.learningGroupId)
+			)
+		)
+			return 'กำลังบันทึก';
+		return null;
+	}
+
+	function blockLockLabel(blockId: string): string | null {
+		const reservation = $draftSessionState.reservations.find(
+			(item) =>
+				item.ownerConnectionId !== $draftSessionState.connectionId &&
+				((item.source.kind === 'existing_block' && item.source.blockId === blockId) ||
+					item.target?.blockId === blockId)
+		);
+		return reservation ? peerName(reservation.ownerConnectionId) : null;
+	}
+
+	function cellLockLabel(dayOfWeek: string, periodId: string): string | null {
+		interactionRevision;
+		if (
+			dragInteraction?.targetError &&
+			dragInteraction.requestedTarget?.dayOfWeek === dayOfWeek &&
+			dragInteraction.requestedTarget.bellSchedulePeriodId === periodId
+		)
+			return dragInteraction.targetError.message;
+		const availability = $draftSessionState.availability;
+		if (
+			!controller?.dragSource ||
+			!availability ||
+			placementSourceKey(availability.source) !==
+				placementSourceKey(controller.dragSource.source) ||
+			availability.context?.viewMode !== collaborationContext.viewMode ||
+			(availability.context?.viewId ?? null) !== (collaborationContext.viewId ?? null)
+		)
+			return null;
+		const blocked = availability.blockedCells.find(
+			(cell) => cell.dayOfWeek === dayOfWeek && cell.bellSchedulePeriodId === periodId
+		);
+		return blocked
+			? blocked.ownerConnectionId === $draftSessionState.connectionId
+				? 'กำลังบันทึก'
+				: peerName(blocked.ownerConnectionId)
+			: null;
+	}
+
+	function updateDemandSelection(
+		source: TimetableBlockPlacementSource,
+		candidate: TimetableBlockPlacementCandidate
+	): void {
+		if (
+			!dragInteraction ||
+			placementSourceKey(dragInteraction.source) !== placementSourceKey(source) ||
+			dragInteraction.captured
+		)
+			return;
+		dragInteraction.candidate = candidate;
 		controller?.startPlacement(source, candidate);
+		const interaction = dragInteraction;
+		observeTarget(
+			interaction,
+			confirmInteractionTarget(interaction, interaction.lease?.target ?? null, true)
+		);
 	}
 
 	function cancelPlacement(): void {
+		disposeInteraction(dragInteraction);
+		dragInteraction = null;
 		previewCellKey = '';
 		controller?.clearPlacement();
 	}

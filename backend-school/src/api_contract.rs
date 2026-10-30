@@ -5214,6 +5214,22 @@ mod tests {
     }
 
     #[test]
+    fn draft_anchor_schema_matches_serde_wire_field_names() {
+        let document = school_api_value().unwrap();
+        let variants = document["components"]["schemas"]["DraftAnchor"]["oneOf"].as_array().unwrap();
+        let period = uuid::Uuid::new_v4();
+        for anchor in [
+            DraftAnchor::Cell { day_of_week: "MON".into(), bell_schedule_period_id: period, u: 0.2, v: 0.8 },
+            DraftAnchor::Block { block_id: uuid::Uuid::new_v4(), u: 0.2, v: 0.8 },
+        ] {
+            let wire = serde_json::to_value(anchor).unwrap();
+            let variant = variants.iter().find(|variant| variant["properties"]["kind"]["enum"][0] == wire["kind"]).unwrap();
+            for field in wire.as_object().unwrap().keys() { assert!(variant["properties"].get(field).is_some(), "wire field {field} missing from schema"); }
+            for field in ["day_of_week", "bell_schedule_period_id", "block_id"] { assert!(variant["properties"].get(field).is_none()); }
+        }
+    }
+
+    #[test]
     fn documents_typed_timetable_block_placement_preview_contract() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(

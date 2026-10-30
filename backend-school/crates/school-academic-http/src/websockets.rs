@@ -35,6 +35,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+mod draft;
+
 /// จำนวน event ที่เก็บใน buffer ต่อ room (สำหรับ replay เมื่อ client reconnect)
 const EVENT_BUFFER_SIZE: usize = 200;
 const ACADEMIC_CORE_BROADCAST_ROOM_LIMIT: usize = 64;
@@ -70,6 +72,8 @@ pub struct WsParams {
     pub academic_term_id: Uuid,
     #[serde(default)]
     pub school_subdomain: Option<String>,
+    #[serde(default)]
+    pub timetable_version_id: Option<Uuid>,
 }
 
 fn parse_ws_params(
@@ -80,6 +84,7 @@ fn parse_ws_params(
         raw_query.ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?;
     let mut seen = HashSet::new();
     let mut academic_term_id = None;
+    let mut timetable_version_id = None;
 
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if !seen.insert(key.to_string()) {
@@ -92,12 +97,14 @@ fn parse_ws_params(
                     .map_err(|_| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
             );
         }
+        if key == "timetableVersionId" { timetable_version_id = Some(value.parse::<Uuid>().map_err(|_| AppError::BadRequest("Invalid WebSocket query".into()))?); }
     }
 
     Ok(WsParams {
         academic_term_id: academic_term_id
             .ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
         school_subdomain,
+        timetable_version_id,
     })
 }
 
@@ -106,6 +113,8 @@ fn parse_ws_params(
 // ==========================================
 
 pub struct WebSocketManager {
+    room_creation: Mutex<()>,
+    collaboration: Arc<school_academic_timetable::collaboration::TimetableCollaborationRuntime>,
     // Room Key -> Broadcast Sender (ส่ง SeqEvent ไปทุก subscriber)
     rooms: DashMap<String, broadcast::Sender<SeqEvent>>,
     // Room Key -> (User ID -> (Presence, tab/connection count))
@@ -122,6 +131,8 @@ pub struct WebSocketManager {
 impl WebSocketManager {
     pub fn new() -> Self {
         Self {
+            room_creation: Mutex::new(()),
+            collaboration: Arc::new(school_academic_timetable::collaboration::TimetableCollaborationRuntime::new()),
             rooms: DashMap::new(),
             room_users: DashMap::new(),
             room_seq: DashMap::new(),
@@ -130,9 +141,13 @@ impl WebSocketManager {
         }
     }
 
+    pub fn collaboration(&self) -> Arc<school_academic_timetable::collaboration::TimetableCollaborationRuntime> { self.collaboration.clone() }
+
     /// Spawn background cleanup task — ลบ room ที่ idle > ROOM_IDLE_TTL
     /// เรียกครั้งเดียวตอน startup (ใน main.rs)
     pub fn spawn_cleanup_task(self: Arc<Self>) {
+        let authority = self.collaboration();
+        tokio::spawn(async move { loop { tokio::time::sleep(Duration::from_secs(1)).await; authority.expire(); } });
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(ROOM_CLEANUP_INTERVAL).await;
@@ -177,6 +192,9 @@ impl WebSocketManager {
             return sender.clone();
         }
 
+        let _creation = self.room_creation.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(sender) = self.rooms.get(&key) { return sender.clone(); }
+
         let (tx, _rx) = broadcast::channel(100);
         self.rooms.insert(key.clone(), tx.clone());
         self.room_users.entry(key.clone()).or_default();
@@ -202,8 +220,7 @@ impl WebSocketManager {
     }
 
     /// Broadcast mutation event — assign seq, push buffer, send.
-    /// Skip ทั้งหมดถ้า receiver_count <= 1 (มีแค่ caller เอง หรือไม่มีใคร) — ประหยัด
-    /// seq ไม่เพิ่ม, buffer ไม่โต, send ไม่เกิด. Return 0 เมื่อ skip
+    /// Term signals remain observable with one subscriber; draft commits use their domain journal.
     pub fn broadcast_mutation(
         &self,
         school_key: String,
@@ -211,7 +228,7 @@ impl WebSocketManager {
         event: TimetableEvent,
     ) -> u64 {
         // Gate: ไม่มี "คนอื่น" ฟัง → skip ทั้ง pipeline
-        if !self.has_other_subscribers(school_key.clone(), academic_term_id) {
+        if !self.has_subscribers(school_key.clone(), academic_term_id) {
             return 0;
         }
         let key = Self::get_room_key(school_key.clone(), academic_term_id);
@@ -761,12 +778,10 @@ pub async fn timetable_websocket_handler(
     .map(|authentication| authentication.authenticated)
     .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     let context = actor_tenant_context_from_session(&state.auth_runtime, &authenticated).await?;
-    let access = authorize_socket(
-        &context.tenant.pool,
-        &context.actor,
-        params.academic_term_id,
-    )
-    .await?;
+    let draft = if let Some(version_id) = params.timetable_version_id {
+        Some(draft::prepare(&state, &context, &authenticated, params.academic_term_id, version_id).await?)
+    } else { None };
+    let access = if draft.is_none() { Some(authorize_socket(&context.tenant.pool, &context.actor, params.academic_term_id).await?) } else { None };
     if !session_service::revalidate(&authenticated, Utc::now()).await? {
         return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()));
     }
@@ -774,7 +789,9 @@ pub async fn timetable_websocket_handler(
     let mut authenticated = authenticated;
     authenticated.tenant.pool.release_for_realtime();
     Ok(ws.on_upgrade(move |socket| {
-        handle_socket(
+        async move { if let Some(draft) = draft {
+            draft::handle(socket, state, authenticated, draft, session_event_receiver, permission_event_receiver).await;
+        } else if let Some(access) = access { handle_socket(
             socket,
             state,
             params.academic_term_id,
@@ -782,7 +799,7 @@ pub async fn timetable_websocket_handler(
             access,
             session_event_receiver,
             permission_event_receiver,
-        )
+        ).await; } }
     }))
 }
 

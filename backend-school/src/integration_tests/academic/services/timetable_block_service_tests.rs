@@ -25,6 +25,8 @@ struct WorkspaceStaffDirectory {
 
 #[async_trait::async_trait]
 impl StaffDirectoryPort for WorkspaceStaffDirectory {
+    async fn collaboration_portraits(&self, _connection: &mut sqlx::PgConnection, _viewer: &school_authorization::ActorContext, _user_ids: &[Uuid]) -> Result<Vec<(Uuid, Uuid)>, AppError> { Ok(Vec::new()) }
+
     async fn subject_groups_for_users(
         &self,
         _connection: &mut sqlx::PgConnection,
@@ -72,7 +74,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
         all_teachers: false,
         room_id: None,
     };
-    let blocks = timetable_block_service::create_structural_blocks(&pool, actor, request.clone())
+    let blocks = timetable_block_service::create_structural_blocks(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), request.clone())
         .await
         .unwrap();
     let block = &blocks[0];
@@ -96,12 +98,12 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             bell_schedule_period_id: period,
         }];
         let outcomes = [
-            timetable_block_service::create_structural_blocks(&pool, actor, create_request)
+            timetable_block_service::create_structural_blocks(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), create_request)
                 .await
                 .map(|_| ()),
             timetable_block_service::remove_target(
                 &pool,
-                actor,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
                 block.id,
                 RemoveTimetableBlockTargetRequest {
                     timetable_version_id: version,
@@ -115,7 +117,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             .map(|_| ()),
             timetable_block_service::update_block(
                 &pool,
-                actor,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
                 block.id,
                 UpdateTimetableBlockRequest {
                     timetable_version_id: version,
@@ -136,7 +138,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             .map(|_| ()),
             timetable_block_service::swap_blocks(
                 &pool,
-                actor,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
                 school_academic_timetable::models::timetable_block::SwapTimetableBlocksRequest {
                     timetable_version_id: version,
                     block_a_id: block.id,
@@ -149,7 +151,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             .map(|_| ()),
             timetable_block_service::deactivate_block(
                 &pool,
-                actor,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
                 block.id,
                 version,
                 block.row_version,
@@ -158,7 +160,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
             .map(|_| ()),
             timetable_block_service::deactivate_series(
                 &pool,
-                actor,
+                &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
                 block.series_id.unwrap(),
                 version,
             )
@@ -206,7 +208,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
     let worker = tokio::spawn(async move {
         timetable_block_service::deactivate_block(
             &worker_pool,
-            actor,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&worker_pool, actor),
             block_id,
             version,
             row_version,
@@ -615,7 +617,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         note: None,
     };
 
-    let block = timetable_block_service::create_ordinary_block(&pool, actor_id, request.clone())
+    let block = timetable_block_service::create_ordinary_block(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id), request.clone())
         .await
         .expect("ordinary placement must succeed");
     assert_eq!(block.groups.len(), 1);
@@ -831,12 +833,12 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     );
 
     assert!(matches!(
-        timetable_block_service::create_ordinary_block(&pool, actor_id, request).await,
+        timetable_block_service::create_ordinary_block(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id), request).await,
         Err(AppError::Conflict(_))
     ));
     let moved = timetable_block_service::update_block(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         block.id,
         UpdateTimetableBlockRequest {
             timetable_version_id: version_id,
@@ -934,7 +936,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     };
     let swap_source = timetable_block_service::create_structural_blocks(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         structural(actor_id, vec![], None),
     )
     .await
@@ -942,7 +944,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     .remove(0);
     let third = timetable_block_service::create_structural_blocks(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         structural(teacher_id, vec![homeroom_ids[0]], Some(preferred_room_id)),
     )
     .await
@@ -1241,7 +1243,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .bind(offering.groups.iter().flat_map(|group|group.teachers.iter().map(|teacher|teacher.teacher_id)).collect::<Vec<_>>()).fetch_one(&pool).await.unwrap();
     let sync_block = timetable_block_service::create_synchronized_block(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         CreateSynchronizedTimetableBlockRequest {
             timetable_version_id: version_id,
             academic_term_id: term_id,
@@ -1277,7 +1279,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .unwrap();
     let without_reservation = timetable_block_service::remove_target(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         sync_block.id,
         RemoveTimetableBlockTargetRequest {
             timetable_version_id: version_id,
@@ -1292,7 +1294,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     assert_eq!(without_reservation.groups.len(), sync_block.groups.len());
     let excluded = timetable_block_service::remove_target(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         sync_block.id,
         RemoveTimetableBlockTargetRequest {
             timetable_version_id: version_id,
@@ -1319,7 +1321,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     );
     let retried = timetable_block_service::retry_sync(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         sync_block.id,
         RetryTimetableBlockSyncRequest {
             timetable_version_id: version_id,
@@ -1338,7 +1340,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     );
     let restored = timetable_block_service::restore_group(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         sync_block.id,
         RestoreTimetableBlockGroupRequest {
             timetable_version_id: version_id,
@@ -1370,7 +1372,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .unwrap();
     let structural = timetable_block_service::create_structural_blocks(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         CreateStructuralTimetableBlocksRequest {
             timetable_version_id: version_id,
             academic_term_id: term_id,
@@ -1396,7 +1398,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     assert_eq!(removed.room_code.as_deref(), Some("INTERNAL-SCI-002"));
     let changed = timetable_block_service::remove_target(
         &pool,
-        actor_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),
         structural[0].id,
         RemoveTimetableBlockTargetRequest {
             timetable_version_id: version_id,
@@ -1510,7 +1512,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
     };
     let source = timetable_block_service::create_structural_blocks(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
         structural("MON", teachers[0], vec![], None),
     )
     .await
@@ -1518,7 +1520,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
     .remove(0);
     let target = timetable_block_service::create_structural_blocks(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
         structural("TUE", teachers[1], homerooms.clone(), Some(room)),
     )
     .await
@@ -1526,7 +1528,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
     .remove(0);
     let third = timetable_block_service::create_structural_blocks(
         &pool,
-        actor,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
         structural("MON", teachers[1], homerooms, Some(room)),
     )
     .await
@@ -1592,7 +1594,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
         block_b_row_version: target.row_version,
     };
     assert!(matches!(
-        timetable_block_service::swap_blocks(&pool, actor, swap.clone()).await,
+        timetable_block_service::swap_blocks(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), swap.clone()).await,
         Err(AppError::Conflict(_))
     ));
 
@@ -1675,7 +1677,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
         .conflicts
         .iter()
         .any(|row| row.code == "TIMETABLE_TEACHER_CONFLICT"));
-    timetable_block_service::deactivate_block(&pool, actor, third.id, version, third.row_version)
+    timetable_block_service::deactivate_block(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), third.id, version, third.row_version)
         .await
         .unwrap();
     let preview = timetable_block_service::preview_placement(&pool, move_request)
@@ -1690,7 +1692,7 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
     assert_eq!(preview.state, TimetableBlockPlacementState::Swap);
     assert_eq!(preview.mutation, Some(TimetableBlockMutationKind::Swap));
     assert!(preview.conflicts.is_empty());
-    let swapped = timetable_block_service::swap_blocks(&pool, actor, swap)
+    let swapped = timetable_block_service::swap_blocks(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), swap)
         .await
         .unwrap();
     assert_eq!(swapped.block_a.day_of_week, "TUE");

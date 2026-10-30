@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use school_errors::AppError;
@@ -12,18 +12,19 @@ const JOURNAL_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) struct JournalEntry {
     seq: u64,
-    before: Arc<TimetableBlockWorkspace>,
-    after: Arc<TimetableBlockWorkspace>,
-    origin_connection_id: Option<Uuid>,
-    mutation_id: Uuid,
+    patches: BTreeMap<Uuid, DraftPatch>,
     bytes: usize,
 }
 
 impl DraftRoom {
-    /// Called under the draft mutation gate after a successful transaction, even without listeners.
+    /// The caller retains the mutation gate and commit pin. Expensive projections are computed
+    /// outside the memory mutex, so presence/lease frames never wait for whole-workspace copies.
     pub fn publish_blocks(&self, blocks: Vec<TimetableBlock>, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<u64, AppError> {
-        let mut state = self.lock()?;
-        let before = state.workspace.clone();
+        let (before, visibility, members, previous_seq) = {
+            let state = self.lock()?;
+            if !state.valid { return Err(stale()); }
+            (state.workspace.clone(), state.visibility.clone(), state.members.values().cloned().collect::<Vec<_>>(), state.seq)
+        };
         let mut after = (*before).clone();
         for block in blocks {
             let existing = after.blocks.iter().position(|entry| entry.id == block.id);
@@ -35,14 +36,32 @@ impl DraftRoom {
             }
         }
         after.blocks.sort_by_key(|block| block.id);
-        crate::policy::recompute_workspace(&mut after, &state.visibility);
-        // Bound retained snapshots by actual serialized bytes as well as event count.
-        let bytes = serde_json::to_vec(&after).map_err(|_| stale())?.len() + serde_json::to_vec(&before).map_err(|_| stale())?.len();
+        crate::policy::recompute_workspace(&mut after, &visibility);
+        let mut patches = BTreeMap::new();
+        let mut indices = BTreeMap::new();
+        let mut bytes = 32usize;
+        for member in members {
+            let before_projection = crate::policy::project_workspace(&before, &visibility, &member.access);
+            let after_projection = crate::policy::project_workspace(&after, &visibility, &member.access);
+            let patch = project_patch(&before_projection, &after_projection, origin_connection_id, mutation_id)?;
+            bytes = bytes.saturating_add(serde_json::to_vec(&patch).map_err(|_| stale())?.len());
+            indices.insert(member.connection_id, MemberVisibility {
+                read: VisibilityIndex::build(&after_projection),
+                manage: member.manage_access.as_ref().map(|access| VisibilityIndex::build(&crate::policy::project_workspace(&after, &visibility, access))),
+            });
+            patches.insert(member.connection_id, patch);
+        }
         let after = Arc::new(after);
+        let mut state = self.lock()?;
+        if !state.valid || state.seq != previous_seq || !Arc::ptr_eq(&state.workspace, &before) { return Err(stale()); }
+        // A disconnect may occur during projection. Its membership and indices must stay removed.
+        indices.retain(|connection, _| state.members.contains_key(connection));
+        patches.retain(|connection, _| state.members.contains_key(connection));
+        for (connection, index) in indices { state.member_visibility.insert(connection, index); state.projection_rebuilds += 1; }
         state.seq = state.seq.checked_add(1).ok_or_else(stale)?;
         let seq = state.seq;
-        state.workspace = after.clone();
-        state.journal.push_back(JournalEntry { seq, before, after, origin_connection_id, mutation_id, bytes });
+        state.workspace = after;
+        state.journal.push_back(JournalEntry { seq, patches, bytes });
         state.journal_bytes = state.journal_bytes.saturating_add(bytes);
         while state.journal.len() > JOURNAL_COUNT || state.journal_bytes > JOURNAL_BYTES {
             if let Some(entry) = state.journal.pop_front() { state.journal_bytes = state.journal_bytes.saturating_sub(entry.bytes); }
@@ -54,23 +73,39 @@ impl DraftRoom {
     }
 }
 
-pub(super) fn events_after(state: &RoomState, member: &DraftMember, epoch: Uuid, after_seq: u64, through: Option<u64>) -> Result<Vec<DraftEventEnvelope>, AppError> {
-    if epoch != state.epoch || after_seq > state.seq || (after_seq < state.seq && state.journal.front().is_none_or(|entry| entry.seq > after_seq.saturating_add(1))) {
-        return Ok(vec![DraftEventEnvelope { epoch: state.epoch, seq: state.seq, event: DraftServerMessage::DraftReconcileRequired { reason: "journal_gap".into() } }]);
+fn changed<T: serde::Serialize>(left: &T, right: &T) -> Result<bool, AppError> {
+    Ok(serde_json::to_value(left).map_err(|_| stale())? != serde_json::to_value(right).map_err(|_| stale())?)
+}
+
+fn project_patch(before: &TimetableBlockWorkspace, after: &TimetableBlockWorkspace, origin_connection_id: Option<Uuid>, mutation_id: Uuid) -> Result<DraftPatch, AppError> {
+    let before_ids = before.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
+    let after_ids = after.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
+    let mut upserted_blocks = Vec::new();
+    for block in &after.blocks {
+        if match before.blocks.iter().find(|old| old.id == block.id) { Some(old) => changed(old, block)?, None => true } { upserted_blocks.push(block.clone()); }
     }
-    state.journal.iter().filter(|entry| entry.seq > after_seq && through.is_none_or(|seq| entry.seq <= seq))
-        .map(|entry| {
-            let before = crate::policy::project_workspace(&entry.before, &state.visibility, &member.access);
-            let after = crate::policy::project_workspace(&entry.after, &state.visibility, &member.access);
-            let before_ids = before.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
-            let after_ids = after.blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
-            let upserted_blocks = after.blocks.iter().filter(|block| before.blocks.iter().find(|old| old.id == block.id).is_none_or(|old| old.row_version != block.row_version || serde_json::to_value(old).ok() != serde_json::to_value(block).ok())).cloned().collect();
-            let ordinary_demands = after.ordinary_demands.iter().filter(|demand| before.ordinary_demands.iter().find(|old| old.learning_group_id == demand.learning_group_id).is_none_or(|old| serde_json::to_value(old).ok() != serde_json::to_value(demand).ok())).cloned().collect();
-            let synchronized_demands = after.synchronized_demands.iter().filter(|demand| before.synchronized_demands.iter().find(|old| old.learning_offering_id == demand.learning_offering_id).is_none_or(|old| serde_json::to_value(old).ok() != serde_json::to_value(demand).ok())).cloned().collect();
-            Ok(DraftEventEnvelope { epoch: state.epoch, seq: entry.seq, event: DraftServerMessage::DraftPatched(DraftPatch {
-                timetable_version_id: state.workspace.version.id, origin_connection_id: entry.origin_connection_id, mutation_id: entry.mutation_id,
-                upserted_blocks, removed_block_ids: before_ids.difference(&after_ids).copied().collect(), ordinary_demands, synchronized_demands,
-                summary: after.summary, source_issues: after.source_issues, total_draft_block_count: after.total_draft_block_count, version: None,
-            }) })
-        }).collect()
+    let mut ordinary_demands = Vec::new();
+    for demand in &after.ordinary_demands {
+        if match before.ordinary_demands.iter().find(|old| old.learning_group_id == demand.learning_group_id) { Some(old) => changed(old, demand)?, None => true } { ordinary_demands.push(demand.clone()); }
+    }
+    let mut synchronized_demands = Vec::new();
+    for demand in &after.synchronized_demands {
+        if match before.synchronized_demands.iter().find(|old| old.learning_offering_id == demand.learning_offering_id) { Some(old) => changed(old, demand)?, None => true } { synchronized_demands.push(demand.clone()); }
+    }
+    Ok(DraftPatch { timetable_version_id: after.version.id, origin_connection_id, mutation_id, upserted_blocks,
+        removed_block_ids: before_ids.difference(&after_ids).copied().collect(), ordinary_demands, synchronized_demands,
+        summary: after.summary.clone(), source_issues: after.source_issues.clone(), total_draft_block_count: after.total_draft_block_count, version: None })
+}
+
+pub(super) fn events_after(state: &RoomState, member: &DraftMember, epoch: Uuid, after_seq: u64, through: Option<u64>) -> Result<Vec<DraftEventEnvelope>, AppError> {
+    let reconcile = || vec![DraftEventEnvelope { epoch: state.epoch, seq: state.seq, event: DraftServerMessage::DraftReconcileRequired { reason: "journal_gap".into() } }];
+    if epoch != state.epoch || after_seq > state.seq || (after_seq < state.seq && state.journal.front().is_none_or(|entry| entry.seq > after_seq.saturating_add(1))) { return Ok(reconcile()); }
+    let mut events = Vec::new();
+    for entry in state.journal.iter().filter(|entry| entry.seq > after_seq && through.is_none_or(|seq| entry.seq <= seq)) {
+        // Snapshots bootstrap a new connection. Replay never substitutes another user's/tab's
+        // authorization for the exact connection whose projection was accepted at publication.
+        let Some(patch) = entry.patches.get(&member.connection_id) else { return Ok(reconcile()); };
+        events.push(DraftEventEnvelope { epoch: state.epoch, seq: entry.seq, event: DraftServerMessage::DraftPatched(patch.clone()) });
+    }
+    Ok(events)
 }

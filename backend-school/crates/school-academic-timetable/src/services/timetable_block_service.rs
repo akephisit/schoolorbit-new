@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -231,11 +233,20 @@ pub async fn preview_placement_on_connection(
     super::timetable_block_conflicts::preview_placement(connection, request).await
 }
 
-pub async fn create_ordinary_block(
+pub async fn create_ordinary_block(pool: &PgPool, context: &TimetableMutationContext, request: CreateOrdinaryTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::Ordinary(request.clone()), move |pool, permit| async move {
+        let value = create_ordinary_block_in_permit(&pool, permit, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn create_ordinary_block_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     request: CreateOrdinaryTimetableBlockRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let day = normalize_day(&request.day_of_week)?;
     let instructor_ids = canonical_ids(&request.instructor_ids);
     if instructor_ids.is_empty() {
@@ -365,15 +376,25 @@ pub async fn create_ordinary_block(
             .await
             .map_err(map_write_error)?;
     }
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn create_synchronized_block(
+pub async fn create_synchronized_block(pool: &PgPool, context: &TimetableMutationContext, request: CreateSynchronizedTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::Synchronized(request.clone()), move |pool, permit| async move {
+        let value = create_synchronized_block_in_permit(&pool, permit, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn create_synchronized_block_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     request: CreateSynchronizedTimetableBlockRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let day = normalize_day(&request.day_of_week)?;
     let homeroom_ids = canonical_ids(&request.intended_homeroom_ids);
     let teacher_ids = canonical_ids(&request.teacher_ids);
@@ -485,24 +506,33 @@ pub async fn create_synchronized_block(
             .map_err(map_write_error)?;
     }
     timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, block_id, actor_id).await?;
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn create_structural_blocks(
+pub async fn create_structural_blocks(pool: &PgPool, context: &TimetableMutationContext, request: CreateStructuralTimetableBlocksRequest) -> Result<Vec<TimetableBlock>, AppError> {
+    structural_first_slot(&request)?;
+    context.execute(pool, request.timetable_version_id, MutationScope::Structural(request.clone()), move |pool, permit| async move {
+        let value = create_structural_blocks_in_permit(&pool, permit, request).await?;
+        let blocks = value.clone();
+        Ok((value, blocks))
+    }).await
+}
+
+fn structural_first_slot(request: &CreateStructuralTimetableBlocksRequest) -> Result<&crate::models::timetable_block::TimetableStructuralSlotInput, AppError> {
+    if request.title.trim().is_empty() { return Err(AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into())); }
+    request.slots.first().ok_or_else(|| AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".into()))
+}
+
+async fn create_structural_blocks_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     request: CreateStructuralTimetableBlocksRequest,
 ) -> Result<Vec<TimetableBlock>, AppError> {
+    let actor_id = permit.actor_id;
     let title = request.title.trim();
-    if title.is_empty() {
-        return Err(AppError::ValidationError(
-            "ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".to_string(),
-        ));
-    }
-    let first_slot = request.slots.first().ok_or_else(|| {
-        AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".to_string())
-    })?;
+    let first_slot = structural_first_slot(&request)?;
     let mut homeroom_ids = canonical_ids(&request.homeroom_ids);
     let mut teacher_ids = canonical_ids(&request.teacher_ids);
     let mut transaction = school_tenancy::TenantPool::begin_observed(
@@ -614,21 +644,26 @@ pub async fn create_structural_blocks(
         }
         block_ids.push(block_id);
     }
-    transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_timetable.services.timetable_block_service.create_structural_blocks.completion",
-    )
-    .await?;
-    timetable_block_queries::get_blocks_on_connection(&mut completion, &block_ids).await
+    let result = timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn remove_target(
+pub async fn remove_target(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RemoveTimetableBlockTargetRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::Blocks(vec![block_id]), move |pool, permit| async move {
+        let value = remove_target_in_permit(&pool, permit, block_id, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn remove_target_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     block_id: Uuid,
     request: RemoveTimetableBlockTargetRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.remove_target",
@@ -781,16 +816,26 @@ pub async fn remove_target(
     if increment_parent_revision {
         increment_block_revision(&mut transaction, block_id, actor_id).await?;
     }
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn update_block(
+pub async fn update_block(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: UpdateTimetableBlockRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::Update { block_id, request: request.clone() }, move |pool, permit| async move {
+        let value = update_block_in_permit(&pool, permit, block_id, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn update_block_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     block_id: Uuid,
     request: UpdateTimetableBlockRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     if request.clear_title && request.title.is_some()
         || request.clear_note && request.note.is_some()
         || request.clear_room && request.room_id.is_some()
@@ -967,15 +1012,25 @@ pub async fn update_block(
         timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, block_id, actor_id)
             .await?;
     }
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn swap_blocks(
+pub async fn swap_blocks(pool: &PgPool, context: &TimetableMutationContext, request: SwapTimetableBlocksRequest) -> Result<SwapTimetableBlocksResponse, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::Swap(request.clone()), move |pool, permit| async move {
+        let value = swap_blocks_in_permit(&pool, permit, request).await?;
+        let blocks = vec![value.block_a.clone(), value.block_b.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn swap_blocks_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     request: SwapTimetableBlocksRequest,
 ) -> Result<SwapTimetableBlocksResponse, AppError> {
+    let actor_id = permit.actor_id;
     if request.block_a_id == request.block_b_id {
         return Err(AppError::ValidationError(
             "ต้องเลือกคนละรายการเพื่อสลับคาบ".to_string(),
@@ -1048,19 +1103,29 @@ pub async fn swap_blocks(
         actor_id,
     )
     .await?;
-    transaction.commit().await?;
-    Ok(SwapTimetableBlocksResponse {
-        block_a: get_block(pool, request.block_a_id).await?,
-        block_b: get_block(pool, request.block_b_id).await?,
-    })
+    let result = SwapTimetableBlocksResponse {
+        block_a: get_block_on_connection(&mut transaction, request.block_a_id).await?,
+        block_b: get_block_on_connection(&mut transaction, request.block_b_id).await?,
+    };
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn retry_sync(
+pub async fn retry_sync(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RetryTimetableBlockSyncRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move {
+        let value = retry_sync_in_permit(&pool, permit, block_id, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn retry_sync_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     block_id: Uuid,
     request: RetryTimetableBlockSyncRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.retry_sync",
@@ -1086,16 +1151,26 @@ pub async fn retry_sync(
     )
     .await?;
     increment_block_revision(&mut transaction, block_id, actor_id).await?;
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn restore_group(
+pub async fn restore_group(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, request: RestoreTimetableBlockGroupRequest) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, request.timetable_version_id, MutationScope::WholeDraft, move |pool, permit| async move {
+        let value = restore_group_in_permit(&pool, permit, block_id, request).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn restore_group_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     block_id: Uuid,
     request: RestoreTimetableBlockGroupRequest,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.restore_group",
@@ -1121,17 +1196,27 @@ pub async fn restore_group(
     )
     .await?;
     increment_block_revision(&mut transaction, block_id, actor_id).await?;
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn deactivate_block(
+pub async fn deactivate_block(pool: &PgPool, context: &TimetableMutationContext, block_id: Uuid, timetable_version_id: Uuid, row_version: i64) -> Result<TimetableBlock, AppError> {
+    context.execute(pool, timetable_version_id, MutationScope::Blocks(vec![block_id]), move |pool, permit| async move {
+        let value = deactivate_block_in_permit(&pool, permit, block_id, timetable_version_id, row_version).await?;
+        let blocks = vec![value.clone()];
+        Ok((value, blocks))
+    }).await
+}
+
+async fn deactivate_block_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     block_id: Uuid,
     timetable_version_id: Uuid,
     row_version: i64,
 ) -> Result<TimetableBlock, AppError> {
+    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.deactivate_block",
@@ -1162,16 +1247,26 @@ pub async fn deactivate_block(
     if changed.rows_affected() != 1 {
         return Err(stale_block());
     }
-    transaction.commit().await?;
-    get_block(pool, block_id).await
+    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
-pub async fn deactivate_series(
+pub async fn deactivate_series(pool: &PgPool, context: &TimetableMutationContext, series_id: Uuid, timetable_version_id: Uuid) -> Result<Vec<TimetableBlock>, AppError> {
+    context.execute(pool, timetable_version_id, MutationScope::Series(series_id), move |pool, permit| async move {
+        let value = deactivate_series_in_permit(&pool, permit, series_id, timetable_version_id).await?;
+        let blocks = value.clone();
+        Ok((value, blocks))
+    }).await
+}
+
+async fn deactivate_series_in_permit(
     pool: &PgPool,
-    actor_id: Uuid,
+    permit: Arc<CommitPermit>,
     series_id: Uuid,
     timetable_version_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
+    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.deactivate_series",
@@ -1205,13 +1300,9 @@ pub async fn deactivate_series(
         .bind(actor_id)
         .execute()
         .await?;
-    transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_timetable.services.timetable_block_service.deactivate_series.completion",
-    )
-    .await?;
-    timetable_block_queries::get_blocks_on_connection(&mut completion, &block_ids).await
+    let result = timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+    permit.commit(transaction).await?;
+    Ok(result)
 }
 
 async fn lock_block(
@@ -1685,7 +1776,7 @@ mod tests {
         pool.close().await;
         let error = create_structural_blocks(
             &pool,
-            Uuid::new_v4(),
+            &TimetableMutationContext::for_tests(&pool, Uuid::new_v4()),
             CreateStructuralTimetableBlocksRequest {
                 timetable_version_id: Uuid::new_v4(),
                 academic_term_id: Uuid::new_v4(),

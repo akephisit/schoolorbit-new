@@ -31,6 +31,7 @@ export interface ApiResponse<T, E = never> {
 
 export interface ApiRequestOptions {
 	signal?: AbortSignal;
+	headers?: HeadersInit;
 	query?: ApiQuery;
 	requestFetch?: typeof globalThis.fetch;
 }
@@ -261,7 +262,7 @@ class APIClient {
 		requestFetch: typeof globalThis.fetch = globalThis.fetch
 	): Promise<ApiResponse<T, E>> {
 		const headers = new Headers(options.headers);
-		if (options.body !== undefined && !headers.has('Content-Type')) {
+		if (options.body !== undefined) {
 			headers.set('Content-Type', 'application/json');
 		}
 
@@ -319,7 +320,8 @@ class APIClient {
 			appendApiQuery(endpoint, options.query),
 			{
 				method: 'GET',
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch
@@ -329,7 +331,7 @@ class APIClient {
 	async getPublic<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<T>> {
 		return this.request<T>(
 			appendApiQuery(endpoint, options.query),
-			{ method: 'GET', signal: options.signal },
+			{ method: 'GET', signal: options.signal, headers: options.headers },
 			'public',
 			options.requestFetch
 		);
@@ -380,7 +382,8 @@ class APIClient {
 			{
 				method: 'POST',
 				body: body === undefined ? undefined : JSON.stringify(body),
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch
@@ -397,7 +400,8 @@ class APIClient {
 			{
 				method: 'POST',
 				body: JSON.stringify(body),
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'public',
 			options.requestFetch
@@ -446,7 +450,8 @@ class APIClient {
 			{
 				method: 'PUT',
 				body: body === undefined ? undefined : JSON.stringify(body),
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch
@@ -463,7 +468,8 @@ class APIClient {
 			{
 				method: 'PATCH',
 				body: body === undefined ? undefined : JSON.stringify(body),
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch
@@ -478,7 +484,8 @@ class APIClient {
 			appendApiQuery(endpoint, options.query),
 			{
 				method: 'DELETE',
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch
@@ -495,7 +502,8 @@ class APIClient {
 			{
 				method: 'DELETE',
 				body: JSON.stringify(body),
-				signal: options.signal
+				signal: options.signal,
+				headers: options.headers
 			},
 			'session',
 			options.requestFetch

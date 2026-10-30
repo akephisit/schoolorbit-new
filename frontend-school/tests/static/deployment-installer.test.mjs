@@ -515,6 +515,7 @@ test('academic smoke reads the canonical timetable workspace with its selected y
 			'-euc',
 			`
 tmp_dir=$1
+timetable_websocket_smoke() { :; }
 academic_context_get() {
     printf '%s\\t%s\\n' "$1" "$3" >>"$tmp_dir/requests"
     case "$1" in

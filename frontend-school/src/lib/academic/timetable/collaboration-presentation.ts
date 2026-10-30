@@ -4,7 +4,7 @@ export interface TimetableCollaborator {
 	name: string;
 	color: string;
 	profileImageFileId: string | null;
-	tabs: { connectionId: string; contextLabel: string; activityLabel: string }[];
+	tabs: { connectionId: string; contextLabel: string; activityLabel: string; canJump: boolean }[];
 }
 
 /** A cursor resolved to an element in this browser, never to the sender's screen pixels. */
@@ -13,6 +13,7 @@ export interface TimetableRemotePointer {
 	name: string;
 	color: string;
 	subjectKey: string;
+	contextKey: string;
 	subject: HTMLElement;
 	position: RelativePoint;
 	ghost: { code: string | null; title: string } | null;

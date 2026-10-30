@@ -18,6 +18,7 @@ pub(crate) static PLACEMENT_ROSTERS:
 impl FromRef<AppState> for AcademicHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            collaboration: state.websocket_manager.collaboration(),
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
@@ -199,6 +200,8 @@ impl FromRef<AppState> for school_files_http::http::state::FileHttpState {
 impl FromRef<AppState> for school_academic_http::state::AcademicWebSocketState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            collaboration: state.websocket_manager.collaboration(),
+            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
         }

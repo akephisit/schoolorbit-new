@@ -1311,7 +1311,7 @@ async fn fill_change_set_target_deficits(
                 let slots: Vec<(String,Uuid)>=sqlx::query_as("SELECT day.code,period.id FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id CROSS JOIN (VALUES('MON'),('TUE'),('WED'),('THU'),('FRI')) day(code) WHERE term.id=$1 AND period.is_active ORDER BY day.code,period.order_index").bind(academic_term_id).fetch_all(pool).await.unwrap();
                 let mut placed = false;
                 for (day_of_week, bell_schedule_period_id) in slots {
-                    match timetable_block_service::create_synchronized_block(pool,actor_user_id,school_academic_timetable::models::timetable_block::CreateSynchronizedTimetableBlockRequest {
+                    match timetable_block_service::create_synchronized_block(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_user_id),school_academic_timetable::models::timetable_block::CreateSynchronizedTimetableBlockRequest {
                     timetable_version_id,academic_term_id,learning_offering_id:offering.id,day_of_week,bell_schedule_period_id,intended_homeroom_ids:offering.homeroom_ids.clone(),teacher_ids:vec![],room_id:None,note:None
                 }).await {
                     Ok(_) => {placed=true;break;},Err(AppError::Conflict(_))=>{},Err(error)=>panic!("unexpected activity placement error: {error:?}")
@@ -1350,7 +1350,7 @@ async fn fill_change_set_target_deficits(
                 for (day_of_week, bell_schedule_period_id) in slots {
                     let result = timetable_block_service::create_ordinary_block(
                         pool,
-                        actor_user_id,
+                        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_user_id),
                         CreateOrdinaryTimetableBlockRequest {
                             timetable_version_id,
                             academic_term_id,
@@ -3340,7 +3340,7 @@ async fn timetable_preview_stays_unchanged_after_a_rejected_draft_collision() {
     let before = table_preview(&pool, draft.id).await;
     let collision = timetable_block_service::create_ordinary_block(
         &pool,
-        context.teacher_id,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
         CreateOrdinaryTimetableBlockRequest {
             timetable_version_id: draft.id,
             academic_term_id: context.term_id,
@@ -3514,7 +3514,7 @@ async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_del
     for (day_of_week, bell_schedule_period_id) in slots {
         match timetable_block_service::create_ordinary_block(
             &pool,
-            context.teacher_id,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id),
             CreateOrdinaryTimetableBlockRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: context.term_id,
@@ -7120,10 +7120,11 @@ async fn timetable_draft_deletion_serializes_with_autosave_without_partial_child
     .fetch_one(&pool)
     .await
     .unwrap();
+    let mutation = school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, context.teacher_id);
     let (saved, deleted) = tokio::join!(
         timetable_block_service::update_block(
             &pool,
-            context.teacher_id,
+            &mutation,
             block.id,
             UpdateTimetableBlockRequest {
                 timetable_version_id: draft.id,

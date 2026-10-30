@@ -1309,7 +1309,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     let create_error = if mode == "synchronized" {
         blocks::create_synchronized_block(
             &pool,
-            actor,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
             CreateSynchronizedTimetableBlockRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: source.academic_term_id,
@@ -1331,7 +1331,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     } else {
         blocks::create_ordinary_block(
             &pool,
-            actor,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
             CreateOrdinaryTimetableBlockRequest {
                 timetable_version_id: draft.id,
                 academic_term_id: source.academic_term_id,
@@ -1400,7 +1400,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
                 .any(|group| group.learning_offering_id == offering.id && group.is_active)
     }) {
         if mode == "synchronized" {
-            blocks::deactivate_block(&pool, actor, block.id, draft.id, block.row_version)
+            blocks::deactivate_block(&pool, &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor), block.id, draft.id, block.row_version)
                 .await
                 .unwrap();
             continue;
@@ -1412,7 +1412,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
             .unwrap();
         blocks::remove_target(
             &pool,
-            actor,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),
             block.id,
             RemoveTimetableBlockTargetRequest {
                 timetable_version_id: draft.id,

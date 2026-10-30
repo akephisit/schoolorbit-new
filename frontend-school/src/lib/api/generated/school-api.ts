@@ -20925,6 +20925,267 @@ export interface components {
 			qualityLevel?: number | null;
 			subjects: components['schemas']['SubjectEvaluationSummary'][];
 		};
+		DraftAnchor:
+			| {
+					/** Format: uuid */
+					bellSchedulePeriodId: string;
+					dayOfWeek: string;
+					/** @enum {string} */
+					kind: 'cell';
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  }
+			| {
+					/** Format: uuid */
+					blockId: string;
+					/** @enum {string} */
+					kind: 'block';
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'tray';
+					source: components['schemas']['TimetableBlockPlacementSource'];
+					/** Format: double */
+					u: number;
+					/** Format: double */
+					v: number;
+			  };
+		DraftAvailability: {
+			blockedCells: components['schemas']['DraftBlockedCell'][];
+			context?: components['schemas']['DraftContext'] | null;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+		};
+		DraftBlockedCell: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			dayOfWeek: string;
+			/** Format: uuid */
+			ownerConnectionId: string;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			reservationId: string;
+		};
+		DraftClaim: {
+			candidate?: components['schemas']['TimetableBlockPlacementCandidate'] | null;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			requestId: string;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+		};
+		DraftClientMessage:
+			| {
+					payload: components['schemas']['DraftPresenceUpdate'];
+					/** @enum {string} */
+					type: 'ClientPresenceUpdate';
+			  }
+			| {
+					payload: components['schemas']['DraftClaim'];
+					/** @enum {string} */
+					type: 'ClientClaim';
+			  }
+			| {
+					payload: components['schemas']['DraftTargetUpdate'];
+					/** @enum {string} */
+					type: 'ClientTarget';
+			  }
+			| {
+					payload: components['schemas']['DraftLeaseCommand'];
+					/** @enum {string} */
+					type: 'ClientRenew';
+			  }
+			| {
+					payload: components['schemas']['DraftLeaseCommand'];
+					/** @enum {string} */
+					type: 'ClientRelease';
+			  }
+			| {
+					payload: components['schemas']['DraftReplay'];
+					/** @enum {string} */
+					type: 'ClientReplay';
+			  };
+		/** @enum {string} */
+		DraftCommandKind: 'claim' | 'target' | 'renew' | 'release';
+		DraftCommandResult: {
+			accepted: boolean;
+			code?: string | null;
+			command: components['schemas']['DraftCommandKind'];
+			/** Format: date-time */
+			expiresAt?: string | null;
+			/** Format: uuid */
+			leaseToken?: string | null;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			reservationId?: string | null;
+			source?: components['schemas']['TimetableBlockPlacementSource'] | null;
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		DraftConnectionPresence: {
+			/** Format: uuid */
+			activeReservationId?: string | null;
+			anchor?: components['schemas']['DraftAnchor'] | null;
+			/** Format: uuid */
+			connectionId: string;
+			context?: components['schemas']['DraftContext'] | null;
+		};
+		DraftContext: {
+			dayOfWeek?: string | null;
+			/** Format: uuid */
+			viewId?: string | null;
+			viewMode: components['schemas']['DraftViewMode'];
+		};
+		DraftEventEnvelope: components['schemas']['DraftServerMessage'] & {
+			/** Format: uuid */
+			epoch: string;
+			/**
+			 * Format: int64
+			 * @description Snapshot sequence for state sync; committed journal sequence for patches.
+			 */
+			seq: number;
+		};
+		DraftLeaseCommand: {
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			requestId: string;
+		};
+		/** @description Optional HTTP ownership proof. Actor/session identity always comes from authentication. */
+		DraftMutationIdentity: {
+			/** Format: uuid */
+			connectionId: string;
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			mutationId: string;
+		};
+		DraftParticipant: {
+			color: string;
+			connections: components['schemas']['DraftConnectionPresence'][];
+			name: string;
+			/** Format: uuid */
+			profileImageFileId?: string | null;
+			/** Format: uuid */
+			userId: string;
+		};
+		DraftPatch: {
+			/** Format: uuid */
+			mutationId: string;
+			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+			/** Format: uuid */
+			originConnectionId?: string | null;
+			removedBlockIds: string[];
+			sourceIssues: components['schemas']['TimetableSourceIssue'][];
+			summary: components['schemas']['TimetableBlockSummary'];
+			synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+			/** Format: uuid */
+			timetableVersionId: string;
+			/** Format: int64 */
+			totalDraftBlockCount?: number | null;
+			upsertedBlocks: components['schemas']['TimetableBlock'][];
+			version?: components['schemas']['TimetableVersion'] | null;
+		};
+		DraftPresenceUpdate: {
+			anchor?: components['schemas']['DraftAnchor'] | null;
+			context: components['schemas']['DraftContext'];
+		};
+		DraftReplay: {
+			/** Format: int64 */
+			afterSeq: number;
+			/** Format: uuid */
+			epoch: string;
+		};
+		/** @description Public lease identity is distinct from its private ownership token. */
+		DraftReservation: {
+			/** Format: date-time */
+			expiresAt: string;
+			/** Format: uuid */
+			ownerConnectionId: string;
+			purpose: components['schemas']['DraftReservationPurpose'];
+			/** Format: uuid */
+			reservationId: string;
+			source: components['schemas']['TimetableBlockPlacementSource'];
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		/** @enum {string} */
+		DraftReservationPurpose: 'drag' | 'edit';
+		DraftServerMessage:
+			| {
+					payload: components['schemas']['DraftStateSync'];
+					/** @enum {string} */
+					type: 'DraftStateSync';
+			  }
+			| {
+					payload: components['schemas']['DraftParticipant'];
+					/** @enum {string} */
+					type: 'DraftPresenceChanged';
+			  }
+			| {
+					payload: {
+						/** Format: uuid */
+						connectionId: string;
+					};
+					/** @enum {string} */
+					type: 'DraftPresenceLeft';
+			  }
+			| {
+					payload: components['schemas']['DraftCommandResult'];
+					/** @enum {string} */
+					type: 'DraftCommandResult';
+			  }
+			| {
+					payload: {
+						reservations: components['schemas']['DraftReservation'][];
+					};
+					/** @enum {string} */
+					type: 'DraftReservationsChanged';
+			  }
+			| {
+					payload: components['schemas']['DraftAvailability'];
+					/** @enum {string} */
+					type: 'DraftAvailability';
+			  }
+			| {
+					payload: components['schemas']['DraftPatch'];
+					/** @enum {string} */
+					type: 'DraftPatched';
+			  }
+			| {
+					payload: {
+						reason: string;
+					};
+					/** @enum {string} */
+					type: 'DraftReconcileRequired';
+			  };
+		DraftStateSync: {
+			/** Format: uuid */
+			connectionId: string;
+			reservations: components['schemas']['DraftReservation'][];
+			users: components['schemas']['DraftParticipant'][];
+			workspace: components['schemas']['TimetableBlockWorkspace'];
+		};
+		DraftTarget: {
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			/** Format: uuid */
+			blockId?: string | null;
+			dayOfWeek: string;
+		};
+		DraftTargetUpdate: {
+			candidate?: components['schemas']['TimetableBlockPlacementCandidate'] | null;
+			/** Format: uuid */
+			leaseToken: string;
+			/** Format: uuid */
+			requestId: string;
+			target?: components['schemas']['DraftTarget'] | null;
+		};
+		/** @enum {string} */
+		DraftViewMode: 'homeroom' | 'teacher' | 'learning_group' | 'wholeSchool';
 		EffectiveResult: {
 			corrections: components['schemas']['ResultCorrectionRecord'][];
 			effective: components['schemas']['EffectiveResultValue'];
