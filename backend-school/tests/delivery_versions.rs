@@ -256,6 +256,10 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
     };
     let pool = predecessor("independent_table_delete").await;
     apply_migrations_through(&pool, 89).await.unwrap();
+    // This workflow calls current collaboration and lifecycle services after historical cutover.
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT id,published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
