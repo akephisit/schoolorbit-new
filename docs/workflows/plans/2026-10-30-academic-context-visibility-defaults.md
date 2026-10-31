@@ -4,7 +4,7 @@ Design: [approved specification](../specs/2026-10-30-academic-context-visibility
 
 The Senior owns Git/integration and shared-checkout coordination. Backend owns Rust, migrations, backend fixtures, API generation, these workflow artifacts and operational documentation. Frontend owns its source/tests and waits for generated contracts. Independent Reviewer and QA receive the frozen integrated candidate. No agent performs production mutations.
 
-1. Finish read-only migration/consumer assessment across the complete 001–145 timeline. Record authoritative date owners, explicit missing-link reconciliation and current function/view dependencies in task state.
+1. Finish read-only migration/consumer assessment across the complete 001–146 timeline. Record authoritative date owners, explicit missing-link reconciliation and current function/view dependencies in task state.
 2. Implement Core's date-free identities, visibility/default models and atomic revision-protected settings service/HTTP endpoint. Keep management reads, operational lifecycle and existing permissions independent.
 3. Reconcile legacy Attendance calendars, Calendar scoped relationships and Behavior reset intent through new forward migrations. Preserve genuine dated facts and existing links; refuse ambiguous data before dropping boundary dates.
 4. Update Admission, Promotion, Delivery, Timetable, Lifecycle, Assessment and Results consumers to explicit context relationships and actual domain dates. Remove boundary defaults and deleted-field APIs rather than add compatibility aliases.
