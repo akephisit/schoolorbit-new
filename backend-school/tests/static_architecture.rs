@@ -694,6 +694,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-academic-assessment",
             &[
                 "school-academic-core",
+                "school-academic-delivery",
                 "school-authorization",
                 "school-errors",
                 "school-permissions",

@@ -501,10 +501,6 @@ pub async fn publish_change_set(
         .collect::<Vec<_>>();
     super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
 
-    assessments
-        .fill_missing_coordinators(&mut transaction, actor_user_id, &add_offering_ids)
-        .await?;
-
     let published_version = DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.change_sets.publish_change_set",
@@ -555,6 +551,12 @@ pub async fn publish_change_set(
             "ชุดการเปลี่ยนแปลงเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
         ));
     }
+    // The same transaction now exposes the canonical published allocation to
+    // Assessment. An initialization failure still rolls back the entire publication.
+    assessments
+        .fill_missing_coordinators(&mut transaction, actor_user_id, &add_offering_ids)
+        .await?;
+
     let item_count = i32::try_from(item_rows.len())
         .map_err(|_| AppError::ValidationError("จำนวนรายการเปลี่ยนแปลงมากเกินไป".to_string()))?;
 

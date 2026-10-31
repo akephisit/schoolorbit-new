@@ -61,6 +61,20 @@ pub struct DeliveryVersionTeacher {
     pub role: LearningTeacherRole,
 }
 
+/// Teacher membership in the latest published allocation of an offering's context.
+/// Episode dates remain Delivery history; the selected graph owns membership here.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct DeliveryTeacherAllocation {
+    pub delivery_version_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub learning_offering_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub assignment_id: Uuid,
+    pub teacher_id: Uuid,
+    pub role: LearningTeacherRole,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, sqlx::Type)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
