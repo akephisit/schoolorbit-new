@@ -83,6 +83,7 @@ pub(super) struct Scope {
     pub owning_organization_unit_id: Option<Uuid>,
     pub assigned: bool,
     pub primary_teacher: bool,
+    pub primary_teacher_ids: Vec<Uuid>,
     pub score_entry_enabled: bool,
     pub locked: bool,
 }
@@ -191,25 +192,38 @@ pub(super) async fn begin_scope<'a>(
             .await?;
         DbSession::new(&mut *tx).query("academic_assessment.gradebook.services.begin_scope", "SELECT id FROM academic_gradebook_phase_controls WHERE academic_term_id=$1 ORDER BY id FOR SHARE").bind(context.academic_term_id).execute().await?;
     }
+    let assignments =
+        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+            &mut tx,
+            context.academic_year_id,
+            context.academic_term_id,
+            &[group],
+        )
+        .await?;
+    let membership = assignments
+        .groups
+        .iter()
+        .find(|membership| membership.learning_group_id == group);
+    let assigned =
+        membership.is_some_and(|membership| membership.teacher_ids.contains(&actor.user_id));
+    let primary_teacher_ids = membership
+        .map(|membership| membership.primary_teacher_ids.clone())
+        .unwrap_or_default();
+    let primary_teacher = primary_teacher_ids.contains(&actor.user_id);
     let scope:Option<Scope>=DbSession::new(&mut *tx).query_as("academic_assessment.gradebook.services.begin_scope", r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,p.id AS plan_id,phase.id AS phase_id,
         phase.phase_code,phase.max_score::text AS phase_max_score,phase.row_version AS phase_row_version,
         o.owning_organization_unit_id,c.score_entry_enabled,
         EXISTS(SELECT 1 FROM academic_course_result_locks l WHERE l.subject_id=d.subject_id AND l.academic_term_id=g.academic_term_id) AS locked,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-          AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-          AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS assigned,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4 AND teacher.role='primary'
-          AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-          AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS primary_teacher
+        $5::boolean AS assigned,$6::boolean AS primary_teacher,$7::uuid[] AS primary_teacher_ids
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_terms t ON t.id=g.academic_term_id
         JOIN academic_years y ON y.id=g.academic_year_id
         JOIN course_offering_details d ON d.learning_offering_id=o.id
         JOIN course_assessment_plans p ON p.learning_offering_id=o.id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id
-        JOIN course_assessment_phases phase ON phase.plan_id=p.id AND phase.id=$5
+        JOIN course_assessment_phases phase ON phase.plan_id=p.id AND phase.id=$4
         JOIN academic_gradebook_phase_controls c ON c.academic_term_id=g.academic_term_id AND c.academic_year_id=g.academic_year_id AND c.phase_code=phase.phase_code
         WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3"#)
-        .bind(group).bind(context.academic_term_id).bind(context.academic_year_id).bind(actor.user_id).bind(phase).fetch_optional().await?;
+        .bind(group).bind(context.academic_term_id).bind(context.academic_year_id).bind(phase).bind(assigned).bind(primary_teacher).bind(&primary_teacher_ids).fetch_optional().await?;
     let scope = scope.ok_or_else(|| {
         AppError::NotFound("Group phase not found in this academic context".into())
     })?;
@@ -290,11 +304,17 @@ async fn list_subjects_in_tx(
     access: &AcademicResourceListFilter,
     user_id: Uuid,
 ) -> Result<Vec<GradebookSubject>, AppError> {
+    let assignments =
+        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+            &mut **tx,
+            context.academic_year_id,
+            context.academic_term_id,
+            user_id,
+        )
+        .await?;
     Ok(DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.list_subjects_in_tx", r#"WITH groups AS (
       SELECT o.id AS learning_offering_id,d.subject_id,o.code_snapshot AS code,o.name_snapshot AS name,g.id AS learning_group_id,g.name AS group_name,o.owning_organization_unit_id,
-      EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$3
-        AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-        AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS assigned
+      g.id=ANY($3::uuid[]) AS assigned
       FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id
       WHERE g.academic_term_id=$1 AND g.academic_year_id=$2)
       SELECT learning_offering_id,subject_id,code,name,learning_group_id,group_name,assigned,
@@ -304,5 +324,5 @@ async fn list_subjects_in_tx(
       FROM groups
       WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND assigned)
       ORDER BY assigned DESC,code,learning_offering_id,learning_group_id LIMIT 1001"#)
-      .bind(context.academic_term_id).bind(context.academic_year_id).bind(user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all().await?)
+      .bind(context.academic_term_id).bind(context.academic_year_id).bind(&assignments.learning_group_ids).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all().await?)
 }

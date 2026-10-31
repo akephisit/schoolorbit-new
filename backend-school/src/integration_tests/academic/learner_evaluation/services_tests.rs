@@ -202,6 +202,203 @@ fn confirmation(ws: &EvaluationWorkspace) -> ConfirmationInput {
         row_version: ws.confirmation.as_ref().map(|c| c.row_version),
     }
 }
+
+async fn publish_learner_fixture_allocations(
+    pool: &sqlx::PgPool,
+    actor: &ActorContext,
+    ctx: &EvaluationContext,
+) {
+    let graph: serde_json::Value = sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,current_date,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),$1,$2,GREATEST(current_date,COALESCE(max(effective_from)+1,current_date)),'published',$3,$4,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$1 AND academic_year_id=$2 AND status='published'")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(graph).bind(actor.user_id).execute(pool).await.unwrap();
+}
+
+async fn add_learner_fixture_primary(
+    pool: &sqlx::PgPool,
+    ctx: &EvaluationContext,
+    groups: &[Uuid],
+) {
+    let replacement = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'fixture-not-a-login','Replacement','Primary','staff','active')")
+        .bind(replacement).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$4,'primary',current_date-10 FROM learning_groups WHERE id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3")
+        .bind(groups).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(replacement).execute(pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn learner_assignment_ids_missing_source_preserves_confirmation_and_never_revives() {
+    let (pool, actor, old_ctx, source_group, subject) =
+        fixture("learner_assignment_ids_no_source").await;
+    let term = Uuid::now_v7();
+    let offering = Uuid::now_v7();
+    let group = Uuid::now_v7();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Learner no source',1000,'LEARNER-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
+        .bind(term).bind(old_ctx.academic_term_id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) SELECT $1,$2,o.academic_year_id,'course','LEARNER-NO-SOURCE','Learner no source','draft',current_date,o.owning_organization_unit_id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$3")
+        .bind(offering).bind(term).bind(source_group).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score) SELECT $1,$2,d.academic_year_id,d.subject_version_id,d.subject_id,d.credit,d.hours,d.assessment_total_score FROM course_offering_details d JOIN learning_groups g ON g.learning_offering_id=d.learning_offering_id WHERE g.id=$3")
+        .bind(offering).bind(term).bind(source_group).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,'LEARNER-NO-SOURCE','Learner no source','draft','draft')")
+        .bind(group).bind(offering).bind(term).bind(old_ctx.academic_year_id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) VALUES(uuidv7(),$1,$2,$3,$4,'primary',current_date)")
+        .bind(group).bind(term).bind(old_ctx.academic_year_id).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let ctx = EvaluationContext {
+        academic_year_id: old_ctx.academic_year_id,
+        academic_term_id: term,
+    };
+    save_criterion(
+        &pool,
+        &actor,
+        subject,
+        DC,
+        &ctx,
+        None,
+        criterion("Historical criterion", None),
+    )
+    .await
+    .unwrap();
+    let ws = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(ws.students.is_empty() && ws.responses.is_empty());
+    assert!(!ws.can_confirm);
+    // This is a complete historical confirmation of an empty roster, using the
+    // exact canonical snapshot shape and the current persisted criterion source.
+    let snapshot = serde_json::json!({
+        "invalidated":false,"learningGroupId":group,"learningOfferingId":offering,
+        "sourceChecksum":ws.source_checksum,"rosterChecksum":ws.roster_checksum,
+        "criteria":ws.criteria,"roster":[],"responses":[],"confirmation":null,
+    });
+    sqlx::query("INSERT INTO learning_group_evaluation_confirmations(id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,roster_checksum,source_checksum,source_snapshot,confirmed_by,row_version) VALUES(uuidv7(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,7)")
+        .bind(group).bind(offering).bind(term).bind(ctx.academic_year_id).bind(subject).bind(DC.as_str()).bind(&ws.roster_checksum).bind(&ws.source_checksum).bind(snapshot).bind(actor.user_id).execute(&pool).await.unwrap();
+    let before: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(c) FROM learning_group_evaluation_confirmations c WHERE learning_group_id=$1 AND domain=$2")
+        .bind(group).bind(DC.as_str()).fetch_one(&pool).await.unwrap();
+    let retained = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(!retained.can_confirm && !retained.confirmation_is_current);
+    assert_eq!(retained.confirmation.as_ref().unwrap().row_version, 7);
+    assert!(!retained.confirmation.as_ref().unwrap().invalidated);
+    assert!(matches!(
+        confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&retained)).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert_eq!(sqlx::query_scalar::<_,serde_json::Value>("SELECT to_jsonb(c) FROM learning_group_evaluation_confirmations c WHERE learning_group_id=$1 AND domain=$2").bind(group).bind(DC.as_str()).fetch_one(&pool).await.unwrap(),before);
+    sqlx::query("UPDATE learning_group_evaluation_confirmations SET source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true'::jsonb),row_version=row_version+1 WHERE learning_group_id=$1 AND domain=$2")
+        .bind(group).bind(DC.as_str()).execute(&pool).await.unwrap();
+    let invalidated_before: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(c) FROM learning_group_evaluation_confirmations c WHERE learning_group_id=$1 AND domain=$2")
+        .bind(group).bind(DC.as_str()).fetch_one(&pool).await.unwrap();
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
+    let available = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(available.can_confirm && !available.confirmation_is_current);
+    assert!(available.confirmation.as_ref().unwrap().invalidated);
+    assert_eq!(sqlx::query_scalar::<_,serde_json::Value>("SELECT to_jsonb(c) FROM learning_group_evaluation_confirmations c WHERE learning_group_id=$1 AND domain=$2").bind(group).bind(DC.as_str()).fetch_one(&pool).await.unwrap(),invalidated_before);
+}
+
+#[tokio::test]
+async fn learner_assignment_ids_primary_sets_preserve_then_invalidate_the_exact_confirmer() {
+    let (pool, actor, ctx, group, _) = fixture("learner_assignment_ids_primaries").await;
+    let ws = fill(&pool, &actor, &ctx, group, DC, 2).await;
+    let original = confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&ws))
+        .await
+        .unwrap()
+        .confirmation
+        .unwrap();
+    let second = Uuid::from_u128(0x10000000000000000000000000000001);
+    let assignment = Uuid::from_u128(0x10000000000000000000000000000002);
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,'learner-second-primary','fixture-not-a-login','Second','Primary','staff','active')")
+        .bind(second).execute(&pool).await.unwrap();
+    let status: String = sqlx::query_scalar(
+        "UPDATE learning_groups SET status='draft' WHERE id=$1 RETURNING status",
+    )
+    .bind(group)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "draft");
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT $1,id,academic_term_id,academic_year_id,$3,'primary',current_date-20 FROM learning_groups WHERE id=$2")
+        .bind(assignment).bind(group).bind(second).execute(&pool).await.unwrap();
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
+    let shared = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(shared.confirmation_is_current);
+    assert_eq!(
+        shared.confirmation.as_ref().unwrap().row_version,
+        original.row_version
+    );
+    let control = list_controls(&pool, &actor, &ctx)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|control| control.domain == DC)
+        .unwrap();
+    update_control(
+        &pool,
+        &actor,
+        DC,
+        &ctx,
+        ControlInput {
+            entry_enabled: true,
+            row_version: control.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let second_actor = ActorContext {
+        user_id: second,
+        permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
+    };
+    let second_ws = get_workspace(&pool, &second_actor, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(second_ws.can_confirm && second_ws.confirmation_is_current);
+    let confirmed = confirm_group(
+        &pool,
+        &second_actor,
+        group,
+        DC,
+        &ctx,
+        confirmation(&second_ws),
+    )
+    .await
+    .unwrap()
+    .confirmation
+    .unwrap();
+    assert_eq!(confirmed.confirmed_by, second);
+    assert_eq!(confirmed.id, original.id);
+    // Ending the actual episode does not revoke an ID retained in the chosen graph.
+    sqlx::query("UPDATE learning_group_teachers SET ends_on=current_date-10 WHERE id=$1")
+        .bind(assignment)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ended = get_workspace(&pool, &second_actor, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(ended.can_confirm && ended.confirmation_is_current);
+    assert_eq!(
+        ended.confirmation.as_ref().unwrap().row_version,
+        confirmed.row_version
+    );
+    // Publishing the graph that omits that ended teacher is a known role change.
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
+    let replaced = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(!replaced.confirmation_is_current);
+    let retained = replaced.confirmation.as_ref().unwrap();
+    assert_eq!(retained.id, confirmed.id);
+    assert!(retained.invalidated);
+    assert_eq!(retained.row_version, confirmed.row_version + 1);
+    assert!(matches!(
+        confirm_group(
+            &pool,
+            &second_actor,
+            group,
+            DC,
+            &ctx,
+            confirmation(&replaced)
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+}
 async fn fill(
     pool: &sqlx::PgPool,
     actor: &ActorContext,
@@ -358,7 +555,13 @@ async fn learner_review_coordinator_keeps_configuration_after_assignment_expires
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
     };
     sqlx::query("UPDATE learning_groups SET status='draft' WHERE id IN (SELECT learning_group_id FROM learning_group_teachers WHERE teacher_id=$1)").bind(manager.user_id).execute(&pool).await.unwrap();
+    let groups: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT learning_group_id FROM learning_group_teachers WHERE teacher_id=$1 AND academic_term_id=$2 AND academic_year_id=$3")
+        .bind(manager.user_id).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&pool).await.unwrap();
+    add_learner_fixture_primary(&pool, &ctx, &groups).await;
     sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=(now() AT TIME ZONE 'Asia/Bangkok')::date-10,ends_on=(now() AT TIME ZONE 'Asia/Bangkok')::date-1 FROM academic_terms term WHERE teacher.academic_term_id=term.id AND teacher.teacher_id=$1").bind(manager.user_id).execute(&pool).await.unwrap();
+    // The explicit replacement graph removes teaching responsibility while the
+    // saved coordinator relationship keeps its existing configuration/read grants.
+    publish_learner_fixture_allocations(&pool, &manager, &ctx).await;
     let config = get_configuration(&pool, &coordinator, subject, DC, &ctx)
         .await
         .unwrap();
@@ -566,6 +769,27 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
         get_workspace(&pool, &coordinator, unrelated, DC, &ctx).await,
         Err(AppError::Forbidden(_))
     ));
+    let student = own.students[0].student_academic_year_id;
+    assert!(summary_for_actor(&pool, &coordinator, &ctx, student)
+        .await
+        .is_ok());
+    // A live registry assignment omitted from the selected graph cannot extend
+    // the coordinator's rights to a different contributing subject.
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) VALUES(uuidv7(),$1,$2,$3,$4,'primary',current_date)")
+        .bind(unrelated).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(coordinator.user_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at) SELECT uuidv7(),$1,academic_term_id,academic_year_id,student_academic_year_id,student_id,'active','manual',joined_at FROM learning_group_students WHERE learning_group_id=$2 AND student_academic_year_id=$3 AND membership_status='active'")
+        .bind(unrelated).bind(group).bind(student).execute(&pool).await.unwrap();
+    assert!(matches!(
+        summary_for_actor(&pool, &coordinator, &ctx, student).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        get_workspace(&pool, &coordinator, unrelated, DC, &ctx).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(summary_for_actor(&pool, &manager, &ctx, student)
+        .await
+        .is_ok());
 }
 
 // Catches copying non-applicable catalog criteria and deleting catalog identities used by subjects.
@@ -673,6 +897,10 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         .await
         .unwrap();
     sqlx::query("UPDATE learning_group_teachers SET role='secondary' WHERE learning_group_id=$1 AND teacher_id=$2").bind(group).bind(actor.user_id).execute(&pool).await.unwrap();
+    add_learner_fixture_primary(&pool, &ctx, &[group]).await;
+    let retained = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
+    assert!(retained.can_confirm && retained.confirmation_is_current);
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
     let ws = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
     assert!(ws.can_manage);
     assert!(!ws.can_confirm);
@@ -706,6 +934,7 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         .date_naive();
     sqlx::query("UPDATE learning_group_teachers SET starts_on=$3::date-10,ends_on=$3::date-1 WHERE learning_group_id=$1 AND teacher_id=$2")
         .bind(group).bind(actor.user_id).bind(operation_date).execute(&pool).await.unwrap();
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
     let expired_coordinator = get_workspace(&pool, &teacher, group, DC, &ctx)
         .await
         .unwrap();
@@ -1090,6 +1319,7 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
     let (pool, actor, ctx, group, subject) = fixture("learner_lock").await;
     let other:Uuid=sqlx::query_scalar("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuid_generate_v4(),learning_offering_id,academic_term_id,academic_year_id,'SECOND','Second room','draft','draft' FROM learning_groups WHERE id=$1 RETURNING id").bind(group).fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers (id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT uuid_generate_v4(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on FROM learning_group_teachers WHERE learning_group_id=$2").bind(other).bind(group).execute(&pool).await.unwrap();
+    publish_learner_fixture_allocations(&pool, &actor, &ctx).await;
     let ws = fill(&pool, &actor, &ctx, group, DC, 3).await;
     confirm_group(&pool, &actor, group, DC, &ctx, confirmation(&ws))
         .await

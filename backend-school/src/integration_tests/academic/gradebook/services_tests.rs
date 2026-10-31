@@ -754,6 +754,12 @@ async fn gradebook_policy_window_primary_and_context() {
         .await
         .unwrap();
     sqlx::query("UPDATE learning_group_teachers SET role='secondary' WHERE learning_group_id=$1 AND teacher_id=$2").bind(group).bind(manager.user_id).execute(&pool).await.unwrap();
+    let replacement = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'fixture-not-a-login','Gradebook','Replacement','staff','active')")
+        .bind(replacement).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary',current_date-10 FROM learning_groups WHERE id=$1")
+        .bind(group).bind(replacement).execute(&pool).await.unwrap();
+    publish_gradebook_fixture_allocations(&pool, &manager, &context).await;
     teacher.user_id = manager.user_id;
     let secondary = get_group_phase_workspace(&pool, &teacher, group, phase, &context)
         .await
@@ -775,7 +781,8 @@ async fn gradebook_policy_window_primary_and_context() {
         .await,
         Err(AppError::Forbidden(_))
     ));
-    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=(now() AT TIME ZONE 'Asia/Bangkok')::date+1 FROM academic_terms term WHERE teacher.learning_group_id=$1 AND term.id=teacher.academic_term_id").bind(group).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=(now() AT TIME ZONE 'Asia/Bangkok')::date+1 FROM academic_terms term WHERE teacher.learning_group_id=$1 AND teacher.teacher_id=$2 AND term.id=teacher.academic_term_id").bind(group).bind(manager.user_id).execute(&pool).await.unwrap();
+    publish_gradebook_fixture_allocations(&pool, &manager, &context).await;
     assert!(matches!(
         get_group_phase_workspace(&pool, &teacher, group, phase, &context).await,
         Err(AppError::Forbidden(_))
@@ -785,6 +792,17 @@ async fn gradebook_policy_window_primary_and_context() {
         .unwrap()
         .iter()
         .all(|r| r.learning_group_id != group));
+}
+
+async fn publish_gradebook_fixture_allocations(
+    pool: &sqlx::PgPool,
+    actor: &ActorContext,
+    context: &GradebookContext,
+) {
+    let graph: serde_json::Value = sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,current_date,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2")
+        .bind(context.academic_term_id).bind(context.academic_year_id).fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),$1,$2,GREATEST(current_date,COALESCE(max(effective_from)+1,current_date)),'published',$3,$4,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$1 AND academic_year_id=$2 AND status='published'")
+        .bind(context.academic_term_id).bind(context.academic_year_id).bind(graph).bind(actor.user_id).execute(pool).await.unwrap();
 }
 
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, GradebookContext, Uuid, Uuid) {
@@ -811,6 +829,40 @@ async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, GradebookContext, U
         group,
         phase,
     )
+}
+
+#[tokio::test]
+async fn gradebook_published_assignment_survives_the_teaching_episode_end() {
+    let (pool, admin, context, group, phase) = fixture("gradebook_published_assignment").await;
+    let allocation_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_delivery_latest_published_teacher_allocations WHERE learning_group_id=$1 AND teacher_id=$2",
+    ).bind(group).bind(admin.user_id).fetch_one(&pool).await.unwrap();
+    assert!(
+        allocation_count > 0,
+        "the selected published graph must contain the fixture teacher"
+    );
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_group_teachers SET starts_on=current_date-20,ends_on=current_date-10 WHERE learning_group_id=$1 AND teacher_id=$2")
+        .bind(group).bind(admin.user_id).execute(&pool).await.unwrap();
+    let teacher = ActorContext {
+        user_id: admin.user_id,
+        permissions: vec![codes::ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED.into()],
+    };
+    let subjects = list_subjects(&pool, &teacher, &context).await.unwrap();
+    assert!(
+        subjects
+            .iter()
+            .any(|subject| subject.learning_group_id == group && subject.assigned),
+        "published responsibility must survive the actual episode end"
+    );
+    let workspace = get_group_phase_workspace(&pool, &teacher, group, phase, &context)
+        .await
+        .unwrap();
+    assert_eq!(workspace.learning_group_id, group);
 }
 
 #[tokio::test]

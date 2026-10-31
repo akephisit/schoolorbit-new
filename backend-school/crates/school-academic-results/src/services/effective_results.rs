@@ -2,6 +2,7 @@ use super::{decimal_wire, validate_context};
 use crate::policy::results as academic_result_access_policy;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
+use school_academic_delivery::services::versions::assigned_group_ids_on_connection;
 use school_authorization::{AcademicResourceListFilter, ActorContext};
 use school_database::DbSession;
 use school_errors::AppError;
@@ -248,6 +249,20 @@ pub async fn search_effective_results(
         .execute()
         .await?;
     validate_context(&mut tx, &context).await?;
+    let assigned_groups = if result_access.assigned_actor_id.is_some()
+        || learner_access.assigned_actor_id.is_some()
+    {
+        assigned_group_ids_on_connection(
+            &mut tx,
+            context.academic_year_id,
+            context.academic_term_id,
+            actor.user_id,
+        )
+        .await?
+        .learning_group_ids
+    } else {
+        Vec::new()
+    };
     let rows: Vec<EffectiveSearchRow> = DbSession::new(&mut *tx).query_as("academic_results.services.effective_results.search_effective_results",
         r#"WITH visible AS (
             SELECT 'course'::text AS kind,result.id AS result_id,result.student_academic_year_id,
@@ -277,11 +292,7 @@ pub async fn search_effective_results(
             ) correction ON true
             WHERE result.academic_term_id=$1 AND result.academic_year_id=$2
               AND ($4 OR offering.owning_organization_unit_id=ANY($5)
-                   OR ($6 AND EXISTS(SELECT 1 FROM learning_group_teachers teacher
-                       JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
-                       WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))))
+                   OR ($6 AND learning_group.id=ANY($13::uuid[])))
             UNION ALL
             SELECT 'activity'::text,result.id,result.student_academic_year_id,student_info.student_id,
                    concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name),
@@ -304,11 +315,7 @@ pub async fn search_effective_results(
             ) correction ON true
             WHERE result.academic_term_id=$1 AND result.academic_year_id=$2
               AND ($4 OR offering.owning_organization_unit_id=ANY($5)
-                   OR ($6 AND EXISTS(SELECT 1 FROM learning_group_teachers teacher
-                       JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
-                       WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))))
+                   OR ($6 AND learning_group.id=ANY($13::uuid[])))
             UNION ALL
             SELECT 'learner_evaluation'::text,result.id,result.student_academic_year_id,student_info.student_id,
                    concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name),
@@ -334,11 +341,7 @@ pub async fn search_effective_results(
             WHERE criterion.id=result.subject_term_criterion_id
               AND result.academic_term_id=$1 AND result.academic_year_id=$2
               AND ($7 OR offering.owning_organization_unit_id=ANY($8)
-                   OR ($9 AND (EXISTS(SELECT 1 FROM learning_group_teachers teacher
-                       JOIN users teacher_account ON teacher_account.id=teacher.teacher_id AND teacher_account.status='active'
-                       WHERE teacher.learning_group_id=learning_group.id AND teacher.teacher_id=$3
-                         AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
-                         AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date))
+                   OR ($9 AND (learning_group.id=ANY($13::uuid[])
                        OR EXISTS(SELECT 1 FROM course_assessment_plans plan
                            JOIN course_offering_details detail ON detail.learning_offering_id=plan.learning_offering_id
                            WHERE detail.subject_id=result.subject_id AND plan.academic_term_id=result.academic_term_id
@@ -366,6 +369,7 @@ pub async fn search_effective_results(
     .bind(requested_kind)
     .bind(search)
     .bind(i64::from(limit))
+    .bind(&assigned_groups)
     .fetch_all()
     .await?;
 

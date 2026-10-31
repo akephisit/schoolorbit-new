@@ -1,5 +1,5 @@
 use school_database::DbSession;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use school_authorization::{
@@ -12,7 +12,8 @@ use uuid::Uuid;
 use crate::models::versions::{
     DeliveryReadinessCode, DeliveryReadinessFinding, DeliverySnapshot, DeliveryTeacherAllocation,
     DeliveryVersion, DeliveryVersionCourseMetadata, DeliveryVersionDetails, DeliveryVersionStatus,
-    DeliveryVersionSummary,
+    DeliveryVersionSummary, GroupTeacherAssignments, PublishedTeacherAssignments,
+    PublishedTeacherGroupIds,
 };
 use crate::models::{LearningOfferingKind, LearningOfferingSnapshot, LearningTeacherRole};
 
@@ -84,6 +85,151 @@ pub async fn teacher_allocations_on_connection(
         .bind(offering_ids)
         .fetch_all()
         .await?)
+}
+
+#[derive(sqlx::FromRow)]
+struct TeacherMembershipRow {
+    delivery_version_id: Uuid,
+    learning_group_id: Option<Uuid>,
+    teacher_id: Option<Uuid>,
+    role: Option<LearningTeacherRole>,
+}
+
+enum TeacherMembershipFilter<'a> {
+    Groups(&'a [Uuid]),
+    Teacher(Uuid),
+}
+
+async fn teacher_memberships_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    filter: TeacherMembershipFilter<'_>,
+) -> Result<Vec<TeacherMembershipRow>, AppError> {
+    let (group_ids, teacher_id) = match filter {
+        TeacherMembershipFilter::Groups(ids) => (Some(ids), None),
+        TeacherMembershipFilter::Teacher(id) => (None, Some(id)),
+    };
+    let rows: Vec<TeacherMembershipRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.versions.teacher_memberships_on_connection",
+            r#"WITH latest AS (
+                   SELECT id FROM academic_delivery_versions
+                   WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
+                   ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1
+               )
+               SELECT latest.id AS delivery_version_id,
+                      membership.learning_group_id,membership.teacher_id,membership.role
+               FROM latest
+               LEFT JOIN LATERAL (
+                   SELECT DISTINCT allocation.learning_group_id,allocation.teacher_id,allocation.role
+                   FROM academic_delivery_latest_published_teacher_allocations allocation
+                   JOIN users account ON account.id=allocation.teacher_id AND account.status='active'
+                   WHERE allocation.delivery_version_id=latest.id
+                     AND allocation.academic_year_id=$1 AND allocation.academic_term_id=$2
+                     AND ($3::uuid[] IS NULL OR allocation.learning_group_id=ANY($3))
+                     AND ($4::uuid IS NULL OR allocation.teacher_id=$4)
+               ) membership ON true
+               ORDER BY membership.learning_group_id,membership.teacher_id,membership.role"#,
+        )
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(group_ids)
+        .bind(teacher_id)
+        .fetch_all()
+        .await?;
+    if rows.iter().any(|row| {
+        !matches!(
+            (row.learning_group_id, row.teacher_id, row.role),
+            (None, None, None) | (Some(_), Some(_), Some(_))
+        )
+    }) {
+        return Err(AppError::InternalServerError(
+            "Published teacher allocation is incomplete".into(),
+        ));
+    }
+    Ok(rows)
+}
+
+/// Resolves source availability even for an empty group request. Missing group
+/// records mean no active assignment in that exact context's latest published graph.
+pub async fn group_teacher_assignments_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    group_ids: &[Uuid],
+) -> Result<PublishedTeacherAssignments, AppError> {
+    let group_ids = group_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let rows = teacher_memberships_on_connection(
+        connection,
+        academic_year_id,
+        academic_term_id,
+        TeacherMembershipFilter::Groups(&group_ids),
+    )
+    .await?;
+    let delivery_version_id = rows.first().map(|row| row.delivery_version_id);
+    let mut groups: BTreeMap<Uuid, (BTreeSet<Uuid>, BTreeSet<Uuid>)> = BTreeMap::new();
+    for row in rows {
+        match (row.learning_group_id, row.teacher_id, row.role) {
+            (None, None, None) => {}
+            (Some(group), Some(teacher), Some(role)) => {
+                let (teachers, primaries) = groups.entry(group).or_default();
+                teachers.insert(teacher);
+                if role == LearningTeacherRole::Primary {
+                    primaries.insert(teacher);
+                }
+            }
+            _ => {
+                return Err(AppError::InternalServerError(
+                    "Published teacher allocation is incomplete".into(),
+                ))
+            }
+        }
+    }
+    Ok(PublishedTeacherAssignments {
+        delivery_version_id,
+        groups: groups
+            .into_iter()
+            .map(
+                |(learning_group_id, (teachers, primaries))| GroupTeacherAssignments {
+                    learning_group_id,
+                    teacher_ids: teachers.into_iter().collect(),
+                    primary_teacher_ids: primaries.into_iter().collect(),
+                },
+            )
+            .collect(),
+    })
+}
+
+/// Assigned discovery is scoped to one actor and exact year/term before consumers
+/// apply their resource filters and limits. No historical episode fallback is used.
+pub async fn assigned_group_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    teacher_id: Uuid,
+) -> Result<PublishedTeacherGroupIds, AppError> {
+    let rows = teacher_memberships_on_connection(
+        connection,
+        academic_year_id,
+        academic_term_id,
+        TeacherMembershipFilter::Teacher(teacher_id),
+    )
+    .await?;
+    Ok(PublishedTeacherGroupIds {
+        delivery_version_id: rows.first().map(|row| row.delivery_version_id),
+        learning_group_ids: rows
+            .into_iter()
+            .filter_map(|row| row.learning_group_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+    })
 }
 
 pub async fn list_versions(

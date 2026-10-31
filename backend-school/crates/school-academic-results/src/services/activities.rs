@@ -1,5 +1,6 @@
 use super::*;
 use crate::policy::results as access_policy;
+use school_academic_delivery::services::versions::group_teacher_assignments_on_connection;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use serde::Serialize;
@@ -15,7 +16,7 @@ struct ActivityScope {
     offering_id: Uuid,
     owning_organization_unit_id: Option<Uuid>,
     assigned: bool,
-    primary_teacher_id: Option<Uuid>,
+    primary_teacher_ids: Vec<Uuid>,
     locked: bool,
 }
 
@@ -68,32 +69,22 @@ async fn load_scope(
     group: Uuid,
     context: &ResultContext,
 ) -> Result<ActivityScope, AppError> {
-    load_scope_at(tx, actor, group, context, None).await
-}
-
-async fn load_scope_at(
-    tx: &mut Transaction<'_, Postgres>,
-    actor: &ActorContext,
-    group: Uuid,
-    context: &ResultContext,
-    date: Option<chrono::NaiveDate>,
-) -> Result<ActivityScope, AppError> {
+    let assignments = group_teacher_assignments_on_connection(
+        tx,
+        context.academic_year_id,
+        context.academic_term_id,
+        &[group],
+    )
+    .await?;
     DbSession::new(&mut **tx).query_as("academic_results.services.activities.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id,
-                  EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                         WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                           AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-                           AND teacher.starts_on<=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date))) AS assigned,
-                  (SELECT teacher.teacher_id FROM learning_group_teachers teacher
-                     JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                    WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                      AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary'
-                      AND teacher.starts_on<=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date)
-                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date))
-                    ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
+                  COALESCE($4=ANY(assignment.teacher_ids),false) AS assigned,
+                  COALESCE(assignment.primary_teacher_ids,'{}'::uuid[]) AS primary_teacher_ids,
                   lock.id IS NOT NULL AS locked
            FROM learning_groups g
+           LEFT JOIN jsonb_to_recordset($5::jsonb)
+             AS assignment(learning_group_id uuid,teacher_ids uuid[],primary_teacher_ids uuid[])
+             ON assignment.learning_group_id=g.id
            JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='activity'
            JOIN activity_offering_details detail ON detail.learning_offering_id=o.id
            JOIN academic_terms t ON t.id=g.academic_term_id
@@ -105,7 +96,7 @@ async fn load_scope_at(
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(actor.user_id)
-    .bind(date)
+    .bind(sqlx::types::Json(&assignments.groups))
     .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Activity group not found in context".into()))
@@ -174,7 +165,7 @@ async fn begin_activity<'a>(
     if write {
         if !access_policy::can_manage_group(actor, scope.assigned) {
             return Err(AppError::Forbidden(
-                "Current activity assignment is required".into(),
+                "Published activity assignment is required".into(),
             ));
         }
         require_activity_group_unlocked(
@@ -297,7 +288,7 @@ async fn load_workspace(
             )
         })
         .collect::<Vec<_>>();
-    if scope.primary_teacher_id.is_none() {
+    if scope.primary_teacher_ids.is_empty() {
         blockers.push(blocker(ResultBlockerCode::MissingPrimaryTeacher, None));
     }
     if scope.locked {
@@ -313,7 +304,7 @@ async fn load_workspace(
         !saved.invalidated
             && saved.source_checksum == source_checksum
             && saved.roster_checksum == roster_checksum
-            && Some(saved.confirmed_by) == scope.primary_teacher_id
+            && scope.primary_teacher_ids.contains(&saved.confirmed_by)
             && !blockers.iter().any(|item| {
                 matches!(
                     item.code,
@@ -339,7 +330,7 @@ async fn load_workspace(
             can_confirm: editable
                 && access_policy::can_confirm_activity(
                     actor,
-                    scope.primary_teacher_id == Some(actor.user_id),
+                    scope.primary_teacher_ids.contains(&actor.user_id),
                 ),
         },
         roster,
@@ -351,9 +342,8 @@ pub(super) async fn workspace_for_lock(
     actor: &ActorContext,
     context: &ResultContext,
     group: Uuid,
-    date: chrono::NaiveDate,
 ) -> Result<ActivityPreparationWorkspace, AppError> {
-    let scope = load_scope_at(tx, actor, group, context, Some(date)).await?;
+    let scope = load_scope(tx, actor, group, context).await?;
     let (workspace, _) = load_workspace(tx, actor, &scope).await?;
     Ok(workspace)
 }
@@ -403,7 +393,7 @@ pub async fn save_activity_outcomes(
     let (mut tx, scope) = begin_activity(pool, actor, group, context, true).await?;
     if !access_policy::can_enter_activity(actor, scope.assigned) {
         return Err(AppError::Forbidden(
-            "Current activity assignment is required for outcome entry".into(),
+            "Published activity assignment is required for outcome entry".into(),
         ));
     }
     let (workspace, _) = load_workspace(&mut tx, actor, &scope).await?;
@@ -470,10 +460,12 @@ pub async fn confirm_activity(
     input: ResultConfirmationInput,
 ) -> Result<ActivityPreparationWorkspace, AppError> {
     let (mut tx, scope) = begin_activity(pool, actor, group, context, true).await?;
-    if !access_policy::can_confirm_activity(actor, scope.primary_teacher_id == Some(actor.user_id))
-    {
+    if !access_policy::can_confirm_activity(
+        actor,
+        scope.primary_teacher_ids.contains(&actor.user_id),
+    ) {
         return Err(AppError::Forbidden(
-            "Current activity primary teacher is required for confirmation".into(),
+            "Published activity primary teacher is required for confirmation".into(),
         ));
     }
     let (workspace, roster) = load_workspace(&mut tx, actor, &scope).await?;

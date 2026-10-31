@@ -106,33 +106,41 @@ pub async fn require_assessment_plan_access_on_connection(
     offering_id: Uuid,
     action: AssessmentAction,
 ) -> Result<(), AppError> {
-    let target: Option<(Option<Uuid>, bool)> = DbSession::new(connection)
+    let target: Option<(Option<Uuid>, Uuid, Uuid, Vec<Uuid>)> = DbSession::new(connection)
         .query_as(
             "academic_assessment.policy.assessment.require_assessment_plan_access_on_connection",
             r#"
-        SELECT offering.owning_organization_unit_id,
-               EXISTS (
-                   SELECT 1
+        SELECT offering.owning_organization_unit_id,offering.academic_year_id,offering.academic_term_id,
+               ARRAY (
+                   SELECT learning_group.id
                    FROM learning_groups learning_group
-                   JOIN learning_group_teachers teacher
-                     ON teacher.learning_group_id = learning_group.id
                    WHERE learning_group.learning_offering_id = offering.id
-                     AND teacher.teacher_id = $2
-               ) AS actor_is_assigned
+                   ORDER BY learning_group.id
+               ) AS learning_group_ids
         FROM learning_offerings offering
         WHERE offering.id = $1
           AND offering.kind = 'course'
         "#,
         )
         .bind(offering_id)
-        .bind(actor.user_id)
         .fetch_optional()
         .await?;
-    let Some((owning_organization_unit_id, actor_is_assigned)) = target else {
+    let Some((owning_organization_unit_id, year, term, group_ids)) = target else {
         return Err(AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()));
     };
 
     let filter = assessment_plan_list_access_on_connection(connection, actor, action).await?;
+    let actor_is_assigned = if filter.assigned_actor_id.is_some() {
+        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+            connection, year, term, &group_ids,
+        )
+        .await?
+        .groups
+        .iter()
+        .any(|group| group.teacher_ids.contains(&actor.user_id))
+    } else {
+        false
+    };
     if resource_access_policy::academic_resource_access_for(
         &filter,
         owning_organization_unit_id,

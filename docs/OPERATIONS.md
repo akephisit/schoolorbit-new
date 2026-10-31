@@ -1699,6 +1699,16 @@ rejects the older today-based binary. Recovery rolls forward. The migration chan
 projections only: preserve stored coordinators, teacher intervals, allocation graphs and exam
 snapshots, and never edit applied migrations or backfill guessed allocation coverage.
 
+Gradebook, Learner Evaluation and Results teacher responsibility also consume the same published
+allocation IDs, including readiness, locking and retained-confirmation checks. This extension uses
+the existing150 schema and changes no stored interval or official result snapshot. Deploy the
+matching application release through the normal maintenance/acceptance gates; missing allocation
+coverage must be resolved through its ordinary publication workflow, without guessed data repair.
+This extension retains schema150, so that schema fence does not reject every preceding150 binary.
+After activation, recover forward to an ID-provider-compatible release: the preceding Learner
+Evaluation reader can persist an incorrect invalidation when another valid primary has a lower
+assignment ID. Do not restore that reader to recover the new responsibility policy.
+
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
 Migration148 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.

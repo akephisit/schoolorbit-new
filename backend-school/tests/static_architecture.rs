@@ -1668,6 +1668,38 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
 }
 
 #[test]
+fn academic_teacher_responsibility_consumes_delivery_ids_without_episode_or_snapshot_fallback() {
+    for relative in [
+        "crates/school-academic-assessment/src/assessment/services.rs",
+        "crates/school-academic-assessment/src/policy/assessment.rs",
+        "crates/school-academic-assessment/src/policy/learner_evaluation.rs",
+        "crates/school-academic-assessment/src/gradebook/services.rs",
+        "crates/school-academic-assessment/src/gradebook/services/workspace.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/entry.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/confirmation.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/locking.rs",
+        "crates/school-academic-results/src/services/course_preparation.rs",
+        "crates/school-academic-results/src/services/activities.rs",
+        "crates/school-academic-results/src/services/readiness.rs",
+        "crates/school-academic-results/src/services/locking.rs",
+        "crates/school-academic-results/src/services/effective_results.rs",
+    ] {
+        let source = read_source(manifest_dir().join(relative));
+        for forbidden in [
+            "learning_group_teachers",
+            "academic_delivery_versions",
+            "snapshot->'offerings'",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{relative} must consume Delivery's typed assignment provider: {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
 fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
     let source = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery/src/services/workspaces.rs"),
@@ -4114,7 +4146,7 @@ fn academic_assessment_plans_are_offering_and_term_scoped() {
 }
 
 #[test]
-fn academic_assessment_supports_resource_and_assigned_group_scope() {
+fn academic_assessment_unions_resource_and_published_assignment_scope() {
     let service = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
@@ -4124,17 +4156,45 @@ fn academic_assessment_supports_resource_and_assigned_group_scope() {
     let backend_registry = strip_comments(&read_source(
         manifest_dir().join("crates/school-permissions/src/registry_generated.rs"),
     ));
+    let list = extract_source_block(
+        &service,
+        "pub async fn list_assessment_plans_on_connection(",
+        false,
+    );
+    let policy = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-assessment/src/policy/assessment.rs"),
+    ));
+    let detail_policy = extract_source_block(
+        &policy,
+        "pub async fn require_assessment_plan_access_on_connection(",
+        false,
+    );
+    let detail_flow = normalize_rust_expression(
+        &detail_policy,
+        &lexical_mask(&detail_policy, false),
+        0,
+        detail_policy.len(),
+    );
 
     assert!(
         backend_registry.contains("academic_assessment.read.organization_unit"),
         "assessment organization-unit read permission must remain registered"
     );
     assert!(
-        service.contains("AcademicResourceListFilter")
-            && service.contains("allowed_organization_unit_ids")
-            && service.contains("offering.owning_organization_unit_id = ANY")
-            && service.contains("learning_group_teachers"),
-        "assessment list must combine resource ownership and assigned learning-group scope"
+        list.contains("AcademicResourceListFilter")
+            && list.contains("access.allowed_organization_unit_ids()")
+            && list.contains(
+                "AND ($4 OR offering.owning_organization_unit_id = ANY($5) OR EXISTS ("
+            )
+            && list.contains("AND $6::uuid IS NOT NULL")
+            && list.contains("AND learning_group.id = ANY($9::uuid[])"),
+        "assessment list must union school, exact organization ownership and published group assignment"
+    );
+    assert!(
+        detail_flow.contains("school_academic_delivery::services::versions::group_teacher_assignments_on_connection(connection,year,term,&group_ids,)")
+            && detail_flow.contains(".any(|group|group.teacher_ids.contains(&actor.user_id))")
+            && detail_flow.contains("resource_access_policy::academic_resource_access_for(&filter,owning_organization_unit_id,actor_is_assigned,)"),
+        "assessment detail policy must union the same resource ownership and context-bound Delivery membership"
     );
     assert!(
         models.contains("pub learning_group_ids: Vec<Uuid>"),
@@ -4143,20 +4203,64 @@ fn academic_assessment_supports_resource_and_assigned_group_scope() {
 }
 
 #[test]
-fn academic_assessment_teacher_scope_uses_learning_group_teachers() {
+fn academic_assessment_teacher_scope_uses_delivery_ids_before_pagination() {
     let service = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
+    let list = extract_source_block(
+        &service,
+        "pub async fn list_assessment_plans_on_connection(",
+        false,
+    );
+    for (marker, teacher) in [
+        (
+            "let assigned_group_ids = if let Some(actor) = access.assigned_actor_id",
+            "actor",
+        ),
+        (
+            "let instructor_group_ids = match query.instructor_id",
+            "instructor",
+        ),
+    ] {
+        let resolution = extract_source_block(&list, marker, false);
+        let flow = normalize_rust_expression(
+            &resolution,
+            &lexical_mask(&resolution, false),
+            0,
+            resolution.len(),
+        );
+        assert!(
+            flow.contains(&format!("school_academic_delivery::services::versions::assigned_group_ids_on_connection(connection,year,query.academic_term_id,{teacher},).await?.learning_group_ids")),
+            "assessment {teacher} scope must resolve exact-context group IDs through Delivery"
+        );
+    }
+    let queries = extract_method_invocations(&list, &lexical_mask(&list, false), "query_as");
+    assert_eq!(
+        queries.len(),
+        1,
+        "inspect the executed assessment list query"
+    );
+    let sql = queries[0]
+        .arguments
+        .get(1)
+        .expect("assessment list query requires its SQL argument");
+    let (before_limit, _) = sql
+        .split_once("LIMIT 500")
+        .expect("assessment list must retain its bounded SQL result");
 
     assert!(
-        service.contains("JOIN learning_group_teachers teacher")
-            && service.contains("teacher.teacher_id = $3"),
-        "assessment teacher filtering must use canonical learning-group teachers"
+        before_limit.contains("AND ($3::uuid IS NULL OR EXISTS (")
+            && before_limit.contains("AND learning_group.id = ANY($8::uuid[])")
+            && before_limit.contains("AND learning_group.id = ANY($9::uuid[])")
+            && list.contains(".bind(&instructor_group_ids)\n        .bind(&assigned_group_ids)"),
+        "assessment instructor and assigned scopes must bind Delivery IDs into SQL before pagination"
     );
     assert!(
         !service.contains("primary_instructor_id")
-            && !service.contains("classroom_course_instructors"),
-        "assessment teacher filtering must not retain legacy primary-instructor identity"
+            && !service.contains("classroom_course_instructors")
+            && !list.contains("learning_group_teachers")
+            && !list.contains("academic_delivery_versions"),
+        "assessment filtering must not restore legacy identity or own Delivery membership selection"
     );
 }
 

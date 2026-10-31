@@ -40,6 +40,46 @@ fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
     }
 }
 
+async fn assert_assessment_assignment_scope(
+    pool: &sqlx::PgPool,
+    term: Uuid,
+    offering: Uuid,
+    teacher: Uuid,
+    expected: bool,
+) {
+    let assigned = actor(teacher, &[codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED]);
+    let access = require_assessment_plan_list_access(pool, &assigned, AssessmentAction::Read)
+        .await
+        .unwrap();
+    let plans = services::list_assessment_plans(pool, &list_query(term), &access, teacher)
+        .await
+        .unwrap();
+    assert_eq!(
+        plans.iter().any(|plan| plan.offering_id == offering),
+        expected
+    );
+    let detail_access =
+        require_assessment_plan_access(pool, &assigned, offering, AssessmentAction::Read).await;
+    if expected {
+        detail_access.unwrap();
+    } else {
+        assert!(matches!(detail_access, Err(AppError::Forbidden(_))));
+    }
+    let mut instructor_query = list_query(term);
+    instructor_query.instructor_id = Some(teacher);
+    let school = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let filtered = services::list_assessment_plans(pool, &instructor_query, &school, teacher)
+        .await
+        .unwrap();
+    assert_eq!(
+        filtered.iter().any(|plan| plan.offering_id == offering),
+        expected
+    );
+}
+
 #[tokio::test]
 async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_ended() {
     let pool = populated_canonical_pool("assessment_allocation_history").await;
@@ -65,8 +105,6 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
         .bind(group).bind(offering).execute(&mut *transaction).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,ends_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary',current_date-100,current_date-80 FROM learning_groups WHERE id=$1")
         .bind(group).bind(primary).execute(&mut *transaction).await.unwrap();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date-90,'published',academic_capture_delivery_snapshot(academic_term_id,current_date-90,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$2,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
-        .bind(offering).bind(primary).execute(&mut *transaction).await.unwrap();
     sqlx::query("UPDATE learning_groups SET status='published' WHERE id=$1")
         .bind(group)
         .execute(&mut *transaction)
@@ -80,6 +118,14 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
     sqlx::query("INSERT INTO course_assessment_plans(id,academic_term_id,academic_year_id,subject_version_id,learning_offering_id,assessment_coordinator_id) SELECT $1,academic_term_id,academic_year_id,subject_version_id,learning_offering_id,$3 FROM course_offering_details WHERE learning_offering_id=$2")
         .bind(plan).bind(offering).bind(primary).execute(&mut *transaction).await.unwrap();
     transaction.commit().await.unwrap();
+    // The saved owner is retained, but no graph means no assigned/instructor
+    // authority even when an actual teaching episode exists in the same context.
+    let unknown = services::get_plan_detail(&pool, offering).await.unwrap();
+    assert_eq!(unknown.assessment_coordinator_id, Some(primary));
+    assert!(unknown.coordinator_candidates.is_empty());
+    assert_assessment_assignment_scope(&pool, term, offering, primary, false).await;
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date-90,'published',academic_capture_delivery_snapshot(academic_term_id,current_date-90,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$2,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
+        .bind(offering).bind(primary).execute(&pool).await.unwrap();
     let detail = services::get_plan_detail(&pool, offering).await.unwrap();
     assert_eq!(detail.assessment_coordinator_id, Some(primary));
     assert!(
@@ -89,6 +135,37 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
             .any(|candidate| candidate.teacher_id == primary),
         "the latest published allocation retains its teacher after the dated episode ends"
     );
+    assert_assessment_assignment_scope(&pool, term, offering, primary, true).await;
+
+    let live_only = Uuid::from_u128(0x50000000000000000000000000000003);
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'secondary',current_date FROM learning_groups WHERE id=$1")
+        .bind(group).bind(live_only).execute(&pool).await.unwrap();
+    assert_assessment_assignment_scope(&pool, term, offering, live_only, false).await;
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(primary)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_assessment_assignment_scope(&pool, term, offering, primary, false).await;
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(primary)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_assessment_assignment_scope(&pool, term, offering, primary, true).await;
+
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date,'published',academic_capture_delivery_snapshot(academic_term_id,current_date,'[]'::jsonb),$2,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
+        .bind(offering).bind(primary).execute(&pool).await.unwrap();
+    assert_assessment_assignment_scope(&pool, term, offering, primary, false).await;
+    assert_assessment_assignment_scope(&pool, term, offering, live_only, false).await;
+    let omitted = services::get_plan_detail(&pool, offering).await.unwrap();
+    assert_eq!(omitted.assessment_coordinator_id, Some(primary));
+    assert!(omitted.coordinator_candidates.is_empty());
 }
 
 #[tokio::test]

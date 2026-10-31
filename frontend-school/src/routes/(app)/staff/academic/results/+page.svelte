@@ -63,6 +63,7 @@
 	const overviewRequest = new LatestRequest();
 	const policyRequest = new LatestRequest();
 	const workspaceRequest = new LatestRequest();
+	const confirmationRequest = new LatestRequest();
 	const summaryRequest = new LatestRequest();
 	const emptyReadiness: AcademicResultReadiness = { courses: [], activities: [] };
 	const domains: LearnerEvaluationDomain[] = [
@@ -283,6 +284,7 @@
 
 	async function changeSection(section: string): Promise<void> {
 		if (section !== 'course' && section !== 'activity' && section !== 'learner') return;
+		invalidateConfirmation();
 		workspaceRequest.abort();
 		summaryRequest.abort();
 		activeSection = section;
@@ -309,7 +311,13 @@
 		await loadSelectedWorkspace();
 	}
 
+	function invalidateConfirmation(): void {
+		confirmationRequest.abort();
+		confirming = false;
+	}
+
 	async function loadSelectedWorkspace(): Promise<void> {
+		invalidateConfirmation();
 		workspaceRequest.abort();
 		summaryRequest.abort();
 		courseWorkspace = null;
@@ -414,40 +422,64 @@
 	async function confirmCourse(): Promise<void> {
 		if (!canManageResult) return;
 		const context = contextValue();
-		if (!context || !courseWorkspace) return;
+		const groupId = selectedGroupId;
+		const workspace = courseWorkspace;
+		if (!context || !workspace) return;
+		const { revision } = confirmationRequest.begin();
+		const isCurrent = () =>
+			confirmationRequest.isCurrent(revision) &&
+			context.academicYearId === academicYearId &&
+			context.academicTermId === academicTermId &&
+			groupId === selectedGroupId &&
+			activeSection === 'course';
 		confirming = true;
 		try {
-			courseWorkspace = await confirmCourseGroupResults(selectedGroupId, context, {
-				sourceChecksum: courseWorkspace.sourceChecksum,
-				rosterChecksum: courseWorkspace.rosterChecksum,
-				rowVersion: courseWorkspace.confirmation?.rowVersion ?? null
+			const saved = await confirmCourseGroupResults(groupId, context, {
+				sourceChecksum: workspace.sourceChecksum,
+				rosterChecksum: workspace.rosterChecksum,
+				rowVersion: workspace.confirmation?.rowVersion ?? null
 			});
+			if (!isCurrent()) return;
+			courseWorkspace = saved;
 			toast.success('ยืนยันผลห้องนี้แล้ว');
 			void refreshReadiness();
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ยืนยันผลห้องนี้ไม่สำเร็จ');
+			if (isCurrent())
+				toast.error(error instanceof Error ? error.message : 'ยืนยันผลห้องนี้ไม่สำเร็จ');
 		} finally {
-			confirming = false;
+			if (confirmationRequest.isCurrent(revision)) confirming = false;
 		}
 	}
 
 	async function confirmActivity(): Promise<void> {
 		if (!canManageResult) return;
 		const context = contextValue();
-		if (!context || !activityWorkspace) return;
+		const groupId = selectedGroupId;
+		const workspace = activityWorkspace;
+		if (!context || !workspace) return;
+		const { revision } = confirmationRequest.begin();
+		const isCurrent = () =>
+			confirmationRequest.isCurrent(revision) &&
+			context.academicYearId === academicYearId &&
+			context.academicTermId === academicTermId &&
+			groupId === selectedGroupId &&
+			activeSection === 'activity';
 		confirming = true;
 		try {
-			activityWorkspace = await confirmActivityGroupResults(selectedGroupId, context, {
-				sourceChecksum: activityWorkspace.sourceChecksum,
-				rosterChecksum: activityWorkspace.rosterChecksum,
-				rowVersion: activityWorkspace.confirmation?.rowVersion ?? null
+			const saved = await confirmActivityGroupResults(groupId, context, {
+				sourceChecksum: workspace.sourceChecksum,
+				rosterChecksum: workspace.rosterChecksum,
+				rowVersion: workspace.confirmation?.rowVersion ?? null
 			});
+			if (!isCurrent()) return;
+			activityWorkspace = saved;
 			toast.success('ยืนยันผลกิจกรรมแล้ว');
 			void refreshReadiness();
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ยืนยันผลกิจกรรมไม่สำเร็จ');
+			if (isCurrent())
+				toast.error(error instanceof Error ? error.message : 'ยืนยันผลกิจกรรมไม่สำเร็จ');
 		} finally {
-			confirming = false;
+			if (confirmationRequest.isCurrent(revision)) confirming = false;
 		}
 	}
 
@@ -481,6 +513,7 @@
 		overviewRequest.abort();
 		policyRequest.abort();
 		workspaceRequest.abort();
+		confirmationRequest.abort();
 		summaryRequest.abort();
 	});
 
@@ -563,6 +596,7 @@
 		const routeWorkspace = data.workspace;
 		const { revision } = workspaceRequest.begin();
 		untrack(() => {
+			invalidateConfirmation();
 			courseWorkspace = null;
 			activityWorkspace = null;
 			evaluationWorkspaces = {};
