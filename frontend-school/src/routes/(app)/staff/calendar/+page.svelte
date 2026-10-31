@@ -109,6 +109,7 @@
 	const selectedMonth = $derived(committed.month);
 	let selectedDate = $state(todayDate);
 	let detailOpen = $state(false);
+	let detailDismissedOutside = false;
 	let detailKind = $state<'day' | 'event' | 'request'>('day');
 	let detailId = $state('');
 	let detailAnchor = $state.raw<HTMLElement | null>(null);
@@ -546,6 +547,7 @@
 		detailKind = 'day';
 		detailId = '';
 		detailAnchor = anchor;
+		detailDismissedOutside = false;
 		detailOpen = true;
 	}
 	function openEntryDetails(event: CalendarDisplayEvent, date: string, anchor: HTMLElement) {
@@ -553,11 +555,19 @@
 		detailKind = event.pending ? 'request' : 'event';
 		detailId = event.pending ? event.id.slice('request:'.length) : event.id;
 		detailAnchor = anchor;
+		detailDismissedOutside = false;
 		detailOpen = true;
 	}
 	function restoreDetailFocus(event: Event) {
 		event.preventDefault();
-		if (eventDialogOpen || requestDialogOpen || reviewOpen || deleteDialogOpen) return;
+		if (
+			detailDismissedOutside ||
+			eventDialogOpen ||
+			requestDialogOpen ||
+			reviewOpen ||
+			deleteDialogOpen
+		)
+			return;
 		if (detailAnchor?.isConnected) detailAnchor.focus();
 		else
 			document.querySelector<HTMLButtonElement>(`[data-calendar-date="${selectedDate}"]`)?.focus();
@@ -1062,7 +1072,12 @@
 	}
 </script>
 
-<PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
+<PageShell
+	title="ปฏิทินโรงเรียน"
+	description="กิจกรรมและประกาศตามช่วงเดือน"
+	class="flex h-full min-h-0 flex-col"
+	contentClass="flex min-h-0 flex-1 flex-col"
+>
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
 			{#if canRequestCalendar || canManageCalendar}
@@ -1299,7 +1314,7 @@
 		</div>
 	{/if}
 
-	<section data-testid="calendar-events" aria-busy={loading}>
+	<section data-testid="calendar-events" aria-busy={loading} class="min-h-0 flex-1 overflow-y-auto">
 		{#if !canReadCalendar && !loading}
 			<PageState
 				variant="permission"
@@ -1319,7 +1334,7 @@
 			{#if loading && !calendarRendered}<div role="status" aria-label="กำลังโหลดกิจกรรม">
 					<PageSkeleton variant="detail" />
 				</div>{:else if eventsLoaded || calendarRendered}
-				<div class="min-w-0 space-y-3">
+				<div class="flex h-full min-h-fit min-w-0 flex-col gap-3">
 					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
 						{#if pendingLoading && !pendingLoaded}<p
 								role="status"
@@ -1341,6 +1356,7 @@
 					{/if}
 					<div
 						role="presentation"
+						class="min-h-[26rem] flex-1 sm:min-h-[28rem]"
 						onpointerdowncapture={() => (dismissDetailClick = detailOpen)}
 						onclickcapture={captureCalendarClick}
 					>
@@ -1348,7 +1364,8 @@
 							monthDate={selectedMonth}
 							{events}
 							pendingRequests={pendingDisplayEvents}
-							{selectedDate}
+							selectedDate={detailOpen ? selectedDate : ''}
+							fillHeight
 							hideMobileTimes
 							onselect={openDayDetails}
 							oneventselect={openEntryDetails}
@@ -1365,6 +1382,7 @@
 						collisionPadding={12}
 						sideOffset={8}
 						onCloseAutoFocus={restoreDetailFocus}
+						onInteractOutside={() => (detailDismissedOutside = true)}
 						role={detailOpen ? 'dialog' : undefined}
 						aria-hidden={!detailOpen}
 						aria-label="รายละเอียดปฏิทิน"

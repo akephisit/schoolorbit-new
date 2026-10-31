@@ -159,7 +159,12 @@ test('a day popup exposes activities hidden behind the overflow count', async ({
 	);
 	await page.goto(calendarPath());
 	const day = page.getByRole('button', { name: '1 ต.ค. 2569, 6 กิจกรรม', exact: true });
-	await expect(day).toContainText('+3');
+	const visibleEntries = page.getByRole('button', { name: /^ดูรายละเอียด กิจกรรมลำดับ/ });
+	await expect
+		.poll(async () =>
+			day.getByText(`+${6 - (await visibleEntries.count())}`, { exact: true }).count()
+		)
+		.toBe(1);
 	await day.click({ position: { x: 5, y: 5 } });
 	const popup = page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true });
 	await expect(popup.getByRole('article')).toHaveCount(6);

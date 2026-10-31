@@ -171,6 +171,7 @@ test('manager selects event settings before approval, with explicit enrollment-y
 	await page.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true }).click();
 	await expect(page.getByLabel('ชื่อกิจกรรม', { exact: true })).toHaveValue(pending.title);
 	await page
+		.getByRole('dialog')
 		.getByRole('combobox')
 		.filter({ hasText: /^\s*ไม่ระบุหมวดหมู่\s*$/ })
 		.click();
@@ -204,7 +205,7 @@ test('rejection requires and displays a reason without creating an event', async
 	await expect(
 		page.getByTestId('calendar-requests').getByRole('heading', { name: pending.title, exact: true })
 	).toHaveCount(0);
-	await page.getByRole('button', { name: 'สถานะคำร้อง', exact: true }).click();
+	await page.getByRole('combobox', { name: 'สถานะคำร้อง', exact: true }).click();
 	await page.getByRole('option', { name: 'ไม่อนุมัติ', exact: true }).click();
 	await expect(page.getByTestId('calendar-requests')).toContainText('ขอปรับกำหนดการ');
 	expect(writes[0].payload).toEqual({ reason: 'ขอปรับกำหนดการ' });
@@ -268,7 +269,7 @@ test('review starts with pending and excludes approvals even in all results whil
 	await expect(list.getByRole('heading', { name: 'ไม่อนุมัติก่อนแล้ว', exact: true })).toHaveCount(
 		0
 	);
-	await page.getByRole('button', { name: 'สถานะคำร้อง', exact: true }).click();
+	await page.getByRole('combobox', { name: 'สถานะคำร้อง', exact: true }).click();
 	await expect(page.getByRole('option', { name: 'อนุมัติแล้ว', exact: true })).toHaveCount(0);
 	await page.getByRole('option', { name: 'ยังไม่อนุมัติทั้งหมด', exact: true }).click();
 	await expect(list).toContainText('ไม่อนุมัติก่อนแล้ว');
