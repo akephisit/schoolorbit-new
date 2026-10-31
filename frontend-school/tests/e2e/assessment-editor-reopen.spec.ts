@@ -104,6 +104,7 @@ async function mockAssessmentApis(
 		failControlsOnce?: boolean;
 		assignedTeacher?: boolean;
 		coordinatorState?: 'ineligible' | 'unnamed_ineligible' | 'empty';
+		noCoordinatorCandidates?: boolean;
 		phaseEditing?: Partial<Record<(typeof phaseCodes)[number], { score: boolean; exam: boolean }>>;
 		controlWriteWait?: Promise<void>;
 		failControlWriteOnce?: boolean;
@@ -126,7 +127,11 @@ async function mockAssessmentApis(
 				: options.coordinatorState
 					? 'ครูเดิม บันทึกไว้'
 					: initialMathematics.assessmentCoordinatorName,
-		suggestedCoordinatorId: options.coordinatorState === 'empty' ? null : teacherId,
+		coordinatorCandidates: options.noCoordinatorCandidates
+			? []
+			: initialMathematics.coordinatorCandidates,
+		suggestedCoordinatorId:
+			options.coordinatorState === 'empty' || options.noCoordinatorCandidates ? null : teacherId,
 		readiness: {
 			...initialMathematics.readiness,
 			ready: !options.coordinatorState,
@@ -628,7 +633,10 @@ for (const coordinatorState of ['ineligible', 'unnamed_ineligible'] as const) {
 		for (let opening = 0; opening < 2; opening += 1) {
 			await course.click();
 			await expect(
-				page.getByText('ผู้รับผิดชอบไม่ได้สอนรายวิชานี้แล้ว', { exact: true })
+				page.getByText(
+					'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+					{ exact: true }
+				)
 			).toBeVisible();
 			await expect(
 				page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
@@ -652,30 +660,48 @@ for (const coordinatorState of ['ineligible', 'unnamed_ineligible'] as const) {
 			page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
 		).toHaveText('ครูทดสอบ ระบบ');
 		await expect(
-			page.getByText('ผู้รับผิดชอบไม่ได้สอนรายวิชานี้แล้ว', { exact: true })
+			page.getByText(
+				'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+				{ exact: true }
+			)
 		).toBeHidden();
 	});
 }
 
-test('a genuinely empty coordinator remains unassigned without an automatic write', async ({
-	page
-}) => {
-	const writes: SaveAssessmentPlanRequest[] = [];
-	await mockAssessmentApis(page, {
-		coordinatorState: 'empty',
-		onPlanWrite: (payload) => writes.push(payload)
+for (const noCoordinatorCandidates of [false, true]) {
+	test(`a genuinely empty coordinator remains unassigned without an automatic write (no candidates: ${noCoordinatorCandidates})`, async ({
+		page
+	}) => {
+		const writes: SaveAssessmentPlanRequest[] = [];
+		await mockAssessmentApis(page, {
+			coordinatorState: 'empty',
+			noCoordinatorCandidates,
+			onPlanWrite: (payload) => writes.push(payload)
+		});
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		await page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }).click();
+		await expect(
+			page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
+		).toHaveText('ยังไม่ได้กำหนดผู้รับผิดชอบ');
+		await expect(
+			page.getByText('ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน', { exact: true })
+		).toBeVisible();
+		await expect(
+			page.getByText(
+				'เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้ในรุ่นเปิดสอนที่เผยแพร่ล่าสุดของภาคเรียนที่เลือก',
+				{ exact: true }
+			)
+		).toBeVisible();
+		const noCandidates = page.getByText(
+			'ยังไม่มีผู้สอนจากรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+			{ exact: true }
+		);
+		if (noCoordinatorCandidates) await expect(noCandidates).toBeVisible();
+		else await expect(noCandidates).toBeHidden();
+		await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
+		await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
+		expect(writes).toEqual([]);
 	});
-	await page.goto(
-		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
-	);
-	await page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }).click();
-	await expect(
-		page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
-	).toHaveText('ยังไม่ได้กำหนดผู้รับผิดชอบ');
-	await expect(
-		page.getByText('ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน', { exact: true })
-	).toBeVisible();
-	await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
-	await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
-	expect(writes).toEqual([]);
-});
+}

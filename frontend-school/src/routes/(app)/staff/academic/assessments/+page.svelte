@@ -261,7 +261,8 @@
 		return (
 			{
 				missing_coordinator: 'ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน',
-				coordinator_not_candidate: 'ผู้รับผิดชอบไม่ได้สอนรายวิชานี้แล้ว',
+				coordinator_not_candidate:
+					'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
 				missing_phase: 'ช่วงคะแนนมาตรฐานยังไม่ครบ 4 ช่วง',
 				total_mismatch: 'คะแนนรวมยังไม่ตรงกับเกณฑ์ของรายวิชา',
 				midterm_missing_exam_duration: 'การสอบกลางภาคยังไม่ระบุเวลา',
@@ -1011,7 +1012,7 @@
 								<UsersRound class="size-4 text-primary" /> ผู้รับผิดชอบโครงสร้างคะแนน
 							</div>
 							<p class="mt-1 text-xs text-muted-foreground">
-								เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้
+								เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้ในรุ่นเปิดสอนที่เผยแพร่ล่าสุดของภาคเรียนที่เลือก
 							</p>
 						</div>
 						{#if detail.suggestedCoordinatorId && canManageSchool}<Button
@@ -1047,6 +1048,11 @@
 								>{/each}
 						</Select.Content>
 					</Select.Root>
+					{#if detail.coordinatorCandidates.length === 0}
+						<p class="text-xs text-muted-foreground">
+							ยังไม่มีผู้สอนจากรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้
+						</p>
+					{/if}
 					{#if !canManageSchool && detail.assessmentCoordinatorId === currentUserId}<p
 							class="text-xs text-muted-foreground"
 						>
