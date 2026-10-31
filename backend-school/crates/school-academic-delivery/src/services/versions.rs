@@ -10,8 +10,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::models::versions::{
-    DeliveryReadinessCode, DeliveryReadinessFinding, DeliverySnapshot, DeliveryVersion,
-    DeliveryVersionCourseMetadata, DeliveryVersionDetails, DeliveryVersionStatus,
+    DeliveryReadinessCode, DeliveryReadinessFinding, DeliverySnapshot, DeliveryTeacherAllocation,
+    DeliveryVersion, DeliveryVersionCourseMetadata, DeliveryVersionDetails, DeliveryVersionStatus,
     DeliveryVersionSummary,
 };
 use crate::models::{LearningOfferingKind, LearningOfferingSnapshot, LearningTeacherRole};
@@ -62,6 +62,29 @@ const VERSION_SELECT: &str = "SELECT version.id,version.academic_term_id,version
     WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
       AND next.effective_from>version.effective_from
     ) AS effective_until FROM academic_delivery_versions version";
+
+/// Reads only the latest published graph in each requested offering's exact context.
+/// Missing versions or omitted offerings return no allocations, without a date fallback.
+pub async fn teacher_allocations_on_connection(
+    connection: &mut sqlx::PgConnection,
+    offering_ids: &[Uuid],
+) -> Result<Vec<DeliveryTeacherAllocation>, AppError> {
+    if offering_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.versions.teacher_allocations_on_connection",
+            r#"SELECT delivery_version_id,academic_year_id,academic_term_id,
+                      learning_offering_id,learning_group_id,assignment_id,teacher_id,role
+               FROM academic_delivery_latest_published_teacher_allocations
+               WHERE learning_offering_id=ANY($1)
+               ORDER BY learning_offering_id,learning_group_id,teacher_id,assignment_id"#,
+        )
+        .bind(offering_ids)
+        .fetch_all()
+        .await?)
+}
 
 pub async fn list_versions(
     pool: &PgPool,

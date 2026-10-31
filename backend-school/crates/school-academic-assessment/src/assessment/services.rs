@@ -41,13 +41,9 @@ struct AssessmentPlanSummaryRow {
 }
 
 #[derive(Debug, FromRow)]
-struct CoordinatorCandidateRow {
-    offering_id: Uuid,
+struct CoordinatorAccountRow {
     teacher_id: Uuid,
     display_name: String,
-    learning_group_count: i64,
-    primary_learning_group_count: i64,
-    primary_assignment_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -463,8 +459,8 @@ pub async fn get_plan_detail_on_connection(
     fetch_plan_detail(connection, offering_id).await
 }
 
-/// Initializes only missing coordinators, using the same dated suggestion as plan reads.
-/// Delivery owns the transaction and publishes teacher episodes before invoking this operation.
+/// Initializes only missing coordinators, using the same published allocation as plan reads.
+/// Delivery owns the transaction and publishes its allocation before invoking this operation.
 pub async fn fill_missing_coordinators(
     result_locks: &dyn crate::ports::ResultLockPort,
     transaction: &mut Transaction<'_, Postgres>,
@@ -611,7 +607,7 @@ pub async fn save_plan(
         .is_some_and(|coordinator_id| !candidate_ids.contains(&coordinator_id))
     {
         return Err(AppError::ValidationError(
-            "ผู้รับผิดชอบต้องเป็นครูที่กำลังสอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้".to_string(),
+            "ผู้รับผิดชอบต้องเป็นผู้สอนในรุ่นเปิดสอนที่เผยแพร่ล่าสุดของภาคเรียนนี้".to_string(),
         ));
     }
 
@@ -1282,58 +1278,83 @@ async fn load_coordinator_candidates(
     if offering_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows: Vec<CoordinatorCandidateRow> = DbSession::new(connection)
+    let allocations =
+        school_academic_delivery::services::versions::teacher_allocations_on_connection(
+            connection,
+            offering_ids,
+        )
+        .await?;
+    if allocations.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let teacher_ids = allocations
+        .iter()
+        .map(|allocation| allocation.teacher_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let accounts: Vec<CoordinatorAccountRow> = DbSession::new(connection)
         .query_as(
             "academic_assessment.assessment.services.load_coordinator_candidates",
-            r#"SELECT offering.id AS offering_id,
-                  teacher.teacher_id,
-                  coalesce(
-                      nullif(user_account.display_name, ''),
-                      user_account.username
-                  ) AS display_name,
-                  count(DISTINCT learning_group.id)::bigint AS learning_group_count,
-                  count(DISTINCT learning_group.id)
-                      FILTER (WHERE teacher.role = 'primary')::bigint
-                      AS primary_learning_group_count,
-                  count(*) FILTER (WHERE teacher.role = 'primary')::bigint
-                      AS primary_assignment_count
-           FROM learning_offerings offering
-           JOIN academic_terms term ON term.id = offering.academic_term_id
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = offering.id
-            AND learning_group.status <> 'closed'
-           JOIN learning_group_teachers teacher
-             ON teacher.learning_group_id = learning_group.id
-            AND teacher.starts_on <= (now() AT TIME ZONE 'Asia/Bangkok')::date
-            AND (
-                teacher.ends_on IS NULL
-                OR teacher.ends_on >= (now() AT TIME ZONE 'Asia/Bangkok')::date
-            )
-           JOIN user_display_names user_account
-             ON user_account.id = teacher.teacher_id
-            AND user_account.status = 'active'
-           WHERE offering.id = ANY($1)
-           GROUP BY offering.id, teacher.teacher_id,
-                    user_account.display_name, user_account.username
-           ORDER BY offering.id, display_name, teacher.teacher_id"#,
+            r#"SELECT id AS teacher_id,coalesce(nullif(display_name,''),username) AS display_name
+               FROM user_display_names WHERE id=ANY($1) AND status='active'"#,
         )
-        .bind(offering_ids)
+        .bind(&teacher_ids)
         .fetch_all()
         .await?;
+    let accounts = accounts
+        .into_iter()
+        .map(|account| (account.teacher_id, account.display_name))
+        .collect::<HashMap<_, _>>();
+    #[derive(Default)]
+    struct Coverage {
+        groups: HashSet<Uuid>,
+        primary_groups: HashSet<Uuid>,
+        primary_assignments: HashSet<Uuid>,
+    }
+    let mut coverage: HashMap<(Uuid, Uuid), Coverage> = HashMap::new();
+    for allocation in allocations {
+        if !accounts.contains_key(&allocation.teacher_id) {
+            continue;
+        }
+        let candidate = coverage
+            .entry((allocation.learning_offering_id, allocation.teacher_id))
+            .or_default();
+        candidate.groups.insert(allocation.learning_group_id);
+        if allocation.role == school_academic_delivery::models::LearningTeacherRole::Primary {
+            candidate
+                .primary_groups
+                .insert(allocation.learning_group_id);
+            candidate
+                .primary_assignments
+                .insert(allocation.assignment_id);
+        }
+    }
     let mut by_offering: HashMap<Uuid, Vec<CoordinatorCandidate>> = HashMap::new();
-    for row in rows {
+    for ((offering_id, teacher_id), coverage) in coverage {
+        let Some(display_name) = accounts.get(&teacher_id) else {
+            continue;
+        };
         by_offering
-            .entry(row.offering_id)
+            .entry(offering_id)
             .or_default()
             .push(CoordinatorCandidate {
                 option: AssessmentCoordinatorOption {
-                    teacher_id: row.teacher_id,
-                    display_name: row.display_name,
-                    learning_group_count: row.learning_group_count,
-                    primary_learning_group_count: row.primary_learning_group_count,
+                    teacher_id,
+                    display_name: display_name.clone(),
+                    learning_group_count: coverage.groups.len() as i64,
+                    primary_learning_group_count: coverage.primary_groups.len() as i64,
                 },
-                primary_assignment_count: row.primary_assignment_count,
+                primary_assignment_count: coverage.primary_assignments.len() as i64,
             });
+    }
+    for candidates in by_offering.values_mut() {
+        candidates.sort_by(|left, right| {
+            left.option
+                .display_name
+                .cmp(&right.option.display_name)
+                .then_with(|| left.option.teacher_id.cmp(&right.option.teacher_id))
+        });
     }
     Ok(by_offering)
 }
@@ -1342,32 +1363,15 @@ async fn load_candidate_ids_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<HashSet<Uuid>, AppError> {
-    Ok(DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_assessment.assessment.services.load_candidate_ids_in_tx",
-            r#"SELECT DISTINCT teacher.teacher_id
-           FROM learning_offerings offering
-           JOIN academic_terms term ON term.id = offering.academic_term_id
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = offering.id
-            AND learning_group.status <> 'closed'
-           JOIN learning_group_teachers teacher
-             ON teacher.learning_group_id = learning_group.id
-            AND teacher.starts_on <= (now() AT TIME ZONE 'Asia/Bangkok')::date
-            AND (
-                teacher.ends_on IS NULL
-                OR teacher.ends_on >= (now() AT TIME ZONE 'Asia/Bangkok')::date
-            )
-           JOIN user_display_names user_account
-             ON user_account.id = teacher.teacher_id
-            AND user_account.status = 'active'
-           WHERE offering.id = $1"#,
-        )
-        .bind(offering_id)
-        .fetch_all()
-        .await?
-        .into_iter()
-        .collect())
+    Ok(
+        load_coordinator_candidates(&mut **transaction, &[offering_id])
+            .await?
+            .remove(&offering_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|candidate| candidate.option.teacher_id)
+            .collect(),
+    )
 }
 
 fn suggested_coordinator(

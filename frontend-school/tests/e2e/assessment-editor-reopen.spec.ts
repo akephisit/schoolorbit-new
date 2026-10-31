@@ -1,4 +1,5 @@
 import type {
+	AssessmentReadinessFinding,
 	SaveAssessmentPlanRequest,
 	UpdateAssessmentPhaseControlRequest
 } from '../../src/lib/api/academicAssessments';
@@ -102,6 +103,8 @@ async function mockAssessmentApis(
 		failPlansOnRead?: number;
 		failControlsOnce?: boolean;
 		assignedTeacher?: boolean;
+		coordinatorState?: 'ineligible' | 'unnamed_ineligible' | 'empty';
+		noCoordinatorCandidates?: boolean;
 		phaseEditing?: Partial<Record<(typeof phaseCodes)[number], { score: boolean; exam: boolean }>>;
 		controlWriteWait?: Promise<void>;
 		failControlWriteOnce?: boolean;
@@ -109,7 +112,36 @@ async function mockAssessmentApis(
 		onPlanWrite?: (payload: SaveAssessmentPlanRequest) => void;
 	} = {}
 ) {
-	let mathematics = assessmentPlan(offeringIds.mathematics, 'ค21101', 'คณิตศาสตร์พื้นฐาน');
+	const initialMathematics = assessmentPlan(offeringIds.mathematics, 'ค21101', 'คณิตศาสตร์พื้นฐาน');
+	let mathematics = {
+		...initialMathematics,
+		assessmentCoordinatorId:
+			options.coordinatorState === 'empty'
+				? null
+				: options.coordinatorState
+					? '30000000-0000-4000-8000-000000000002'
+					: teacherId,
+		assessmentCoordinatorName:
+			options.coordinatorState === 'empty' || options.coordinatorState === 'unnamed_ineligible'
+				? null
+				: options.coordinatorState
+					? 'ครูเดิม บันทึกไว้'
+					: initialMathematics.assessmentCoordinatorName,
+		coordinatorCandidates: options.noCoordinatorCandidates
+			? []
+			: initialMathematics.coordinatorCandidates,
+		suggestedCoordinatorId:
+			options.coordinatorState === 'empty' || options.noCoordinatorCandidates ? null : teacherId,
+		readiness: {
+			...initialMathematics.readiness,
+			ready: !options.coordinatorState,
+			findings: (options.coordinatorState === 'empty'
+				? ['missing_coordinator']
+				: options.coordinatorState
+					? ['coordinator_not_candidate']
+					: []) as AssessmentReadinessFinding[]
+		}
+	};
 	const science = assessmentPlan(offeringIds.science, 'ว21101', 'วิทยาศาสตร์พื้นฐาน');
 	let plansFailed = false;
 	let controlsFailed = false;
@@ -240,6 +272,15 @@ async function mockAssessmentApis(
 					mathematics = {
 						...mathematics,
 						rowVersion: mathematics.rowVersion + 1,
+						assessmentCoordinatorId: body.assessmentCoordinatorId ?? null,
+						assessmentCoordinatorName:
+							body.assessmentCoordinatorId === teacherId ? 'ครูทดสอบ ระบบ' : null,
+						readiness: {
+							...mathematics.readiness,
+							ready: body.assessmentCoordinatorId === teacherId,
+							findings:
+								body.assessmentCoordinatorId === teacherId ? [] : mathematics.readiness.findings
+						},
 						phases: mathematics.phases.map((phase) => {
 							const saved = body.phases.find((item) => item.phaseCode === phase.phaseCode);
 							if (!saved) throw new Error('Missing assessment phase');
@@ -569,5 +610,98 @@ for (const theme of ['light', 'dark'] as const) {
 				examDurationMinutes: null
 			})
 		);
+	});
+}
+
+for (const coordinatorState of ['ineligible', 'unnamed_ineligible'] as const) {
+	test(`preserves the ${coordinatorState} saved coordinator until an explicit replacement`, async ({
+		page
+	}) => {
+		const writes: SaveAssessmentPlanRequest[] = [];
+		await mockAssessmentApis(page, {
+			coordinatorState,
+			onPlanWrite: (payload) => writes.push(payload)
+		});
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		const course = page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true });
+		const savedLabel =
+			coordinatorState === 'ineligible'
+				? 'ครูเดิม บันทึกไว้ (ที่บันทึกไว้)'
+				: 'ผู้รับผิดชอบที่บันทึกไว้ (ไม่ระบุชื่อ)';
+		for (let opening = 0; opening < 2; opening += 1) {
+			await course.click();
+			await expect(
+				page.getByText(
+					'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+					{ exact: true }
+				)
+			).toBeVisible();
+			await expect(
+				page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
+			).toHaveText(savedLabel);
+			await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
+			await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
+		}
+		expect(writes).toEqual([]);
+		await course.click();
+		await page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true }).click();
+		const savedOption = page.getByRole('option', { name: savedLabel, exact: true });
+		await expect(savedOption).toBeDisabled();
+		await expect(savedOption).toHaveAttribute('aria-selected', 'true');
+		await expect(savedOption).toHaveAttribute('data-value', '30000000-0000-4000-8000-000000000002');
+		await page
+			.getByRole('option', { name: 'ครูทดสอบ ระบบ · ครูหลัก 1/1 กลุ่ม', exact: true })
+			.click();
+		await expect.poll(() => writes.length).toBe(1);
+		expect(writes[0].assessmentCoordinatorId).toBe(teacherId);
+		await expect(
+			page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
+		).toHaveText('ครูทดสอบ ระบบ');
+		await expect(
+			page.getByText(
+				'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+				{ exact: true }
+			)
+		).toBeHidden();
+	});
+}
+
+for (const noCoordinatorCandidates of [false, true]) {
+	test(`a genuinely empty coordinator remains unassigned without an automatic write (no candidates: ${noCoordinatorCandidates})`, async ({
+		page
+	}) => {
+		const writes: SaveAssessmentPlanRequest[] = [];
+		await mockAssessmentApis(page, {
+			coordinatorState: 'empty',
+			noCoordinatorCandidates,
+			onPlanWrite: (payload) => writes.push(payload)
+		});
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		await page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }).click();
+		await expect(
+			page.getByRole('combobox', { name: 'ผู้รับผิดชอบโครงสร้างคะแนน', exact: true })
+		).toHaveText('ยังไม่ได้กำหนดผู้รับผิดชอบ');
+		await expect(
+			page.getByText('ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน', { exact: true })
+		).toBeVisible();
+		await expect(
+			page.getByText(
+				'เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้ในรุ่นเปิดสอนที่เผยแพร่ล่าสุดของภาคเรียนที่เลือก',
+				{ exact: true }
+			)
+		).toBeVisible();
+		const noCandidates = page.getByText(
+			'ยังไม่มีผู้สอนจากรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
+			{ exact: true }
+		);
+		if (noCoordinatorCandidates) await expect(noCandidates).toBeVisible();
+		else await expect(noCandidates).toBeHidden();
+		await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
+		await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
+		expect(writes).toEqual([]);
 	});
 }

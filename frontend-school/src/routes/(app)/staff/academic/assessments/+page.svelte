@@ -162,6 +162,26 @@
 			].some((value) => value.toLocaleLowerCase('th').includes(query));
 		});
 	});
+	const savedCoordinatorOutsideCandidates = $derived(
+		Boolean(
+			detail?.assessmentCoordinatorId &&
+			!detail.coordinatorCandidates.some(
+				(candidate) => candidate.teacherId === detail?.assessmentCoordinatorId
+			)
+		)
+	);
+	const savedCoordinatorLabel = $derived(
+		detail?.assessmentCoordinatorName
+			? `${detail.assessmentCoordinatorName} (ที่บันทึกไว้)`
+			: 'ผู้รับผิดชอบที่บันทึกไว้ (ไม่ระบุชื่อ)'
+	);
+	const draftCoordinatorLabel = $derived(
+		detail?.coordinatorCandidates.find((candidate) => candidate.teacherId === draftCoordinatorId)
+			?.displayName ??
+			(draftCoordinatorId && draftCoordinatorId === detail?.assessmentCoordinatorId
+				? savedCoordinatorLabel
+				: 'ยังไม่ได้กำหนดผู้รับผิดชอบ')
+	);
 	const readyCount = $derived(plans.filter((plan) => plan.readiness.ready).length);
 	const attentionCount = $derived(plans.length - readyCount);
 	const draftTotal = $derived(
@@ -241,7 +261,8 @@
 		return (
 			{
 				missing_coordinator: 'ยังไม่ได้กำหนดผู้รับผิดชอบโครงสร้างคะแนน',
-				coordinator_not_candidate: 'ผู้รับผิดชอบไม่ได้สอนรายวิชานี้แล้ว',
+				coordinator_not_candidate:
+					'ผู้รับผิดชอบไม่อยู่ในรายชื่อผู้สอนของรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้',
 				missing_phase: 'ช่วงคะแนนมาตรฐานยังไม่ครบ 4 ช่วง',
 				total_mismatch: 'คะแนนรวมยังไม่ตรงกับเกณฑ์ของรายวิชา',
 				midterm_missing_exam_duration: 'การสอบกลางภาคยังไม่ระบุเวลา',
@@ -991,7 +1012,7 @@
 								<UsersRound class="size-4 text-primary" /> ผู้รับผิดชอบโครงสร้างคะแนน
 							</div>
 							<p class="mt-1 text-xs text-muted-foreground">
-								เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้
+								เลือกจากครูที่สอนอย่างน้อยหนึ่งกลุ่มของรายวิชานี้ในรุ่นเปิดสอนที่เผยแพร่ล่าสุดของภาคเรียนที่เลือก
 							</p>
 						</div>
 						{#if detail.suggestedCoordinatorId && canManageSchool}<Button
@@ -1010,13 +1031,16 @@
 							markDirty();
 						}}
 					>
-						<Select.Trigger class="w-full"
-							>{detail.coordinatorCandidates.find(
-								(candidate) => candidate.teacherId === draftCoordinatorId
-							)?.displayName ?? 'ยังไม่ได้กำหนดผู้รับผิดชอบ'}</Select.Trigger
+						<Select.Trigger class="w-full" aria-label="ผู้รับผิดชอบโครงสร้างคะแนน"
+							>{draftCoordinatorLabel}</Select.Trigger
 						>
 						<Select.Content>
 							<Select.Item value="__none__">ยังไม่ได้กำหนด</Select.Item>
+							{#if savedCoordinatorOutsideCandidates && detail.assessmentCoordinatorId}
+								<Select.Item value={detail.assessmentCoordinatorId} disabled aria-disabled="true"
+									>{savedCoordinatorLabel}</Select.Item
+								>
+							{/if}
 							{#each detail.coordinatorCandidates as candidate (candidate.teacherId)}<Select.Item
 									value={candidate.teacherId}
 									>{candidate.displayName} · ครูหลัก {candidate.primaryLearningGroupCount}/{candidate.learningGroupCount}
@@ -1024,6 +1048,11 @@
 								>{/each}
 						</Select.Content>
 					</Select.Root>
+					{#if detail.coordinatorCandidates.length === 0}
+						<p class="text-xs text-muted-foreground">
+							ยังไม่มีผู้สอนจากรุ่นเปิดสอนที่เผยแพร่ล่าสุดในภาคเรียนนี้
+						</p>
+					{/if}
 					{#if !canManageSchool && detail.assessmentCoordinatorId === currentUserId}<p
 							class="text-xs text-muted-foreground"
 						>

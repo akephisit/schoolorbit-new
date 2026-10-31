@@ -1692,6 +1692,13 @@ These counts do not authorize guessed data repair or changes to applied migratio
 
 Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and [149](../backend-school/migrations/149_academic_receipt_recovery.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
+[Migration150](../backend-school/migrations/150_assessment_coordinator_delivery_versions.sql) shares
+Delivery's latest published allocation projection with Assessment and exam eligibility. Deploy its
+matching binary through the same maintenance and all-tenant migration gates; the schema fence
+rejects the older today-based binary. Recovery rolls forward. The migration changes read
+projections only: preserve stored coordinators, teacher intervals, allocation graphs and exam
+snapshots, and never edit applied migrations or backfill guessed allocation coverage.
+
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
 Migration148 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.

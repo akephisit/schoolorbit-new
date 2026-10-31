@@ -216,8 +216,48 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
     let f = fixture("roster_tracking_history").await;
     let old = members(&f, f.groups[0]).await[0].clone();
     let shared = members(&f, f.groups[2]).await[0].clone();
+    // Existing grade history remains valid without a current published allocation.
+    // Seed its canonical assessment facts explicitly rather than relying on direct
+    // offering publication to initialize a plan without allocation coverage.
+    let historical_plan = Uuid::new_v4();
+    let mut transaction = f.pool.begin().await.unwrap();
+    sqlx::query(
+        r#"INSERT INTO course_assessment_plans (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               subject_version_id, assessment_coordinator_id
+           )
+           SELECT $1, detail.learning_offering_id, detail.academic_term_id,
+                  detail.academic_year_id, detail.subject_version_id, $3
+           FROM learning_groups learning_group
+           JOIN course_offering_details detail
+             ON detail.learning_offering_id = learning_group.learning_offering_id
+            AND detail.academic_term_id = learning_group.academic_term_id
+            AND detail.academic_year_id = learning_group.academic_year_id
+           WHERE learning_group.id = $2"#,
+    )
+    .bind(historical_plan)
+    .bind(f.groups[0])
+    .bind(f.actor)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO course_assessment_phases (
+               id, plan_id, phase_code, max_score, exam_arrangement,
+               exam_duration_minutes, row_version, created_by, updated_by
+           )
+           SELECT uuidv7(), $1, phase_code, 0, 'none', NULL, 1, $2, $2
+           FROM unnest(ARRAY['before_midterm','midterm','after_midterm','final']) phase_code"#,
+    )
+    .bind(historical_plan)
+    .bind(f.actor)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    transaction.commit().await.unwrap();
     let (plan, phase) =
         super::room_scope_tests::canonical_score_phase(&f.pool, f.groups[0], f.actor).await;
+    assert_eq!(plan, historical_plan);
     let item = Uuid::new_v4();
     let score = Uuid::new_v4();
     sqlx::query("INSERT INTO learning_group_score_items(id,learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score) SELECT $1,id,learning_offering_id,$2,$3,academic_term_id,academic_year_id,'Synthetic score',10 FROM learning_groups WHERE id=$4").bind(item).bind(plan).bind(phase).bind(f.groups[0]).execute(&f.pool).await.unwrap();

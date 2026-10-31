@@ -17,6 +17,7 @@ bigdecimal = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
 school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-permissions = { workspace = true }

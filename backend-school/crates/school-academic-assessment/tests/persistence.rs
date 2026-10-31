@@ -41,6 +41,57 @@ fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
 }
 
 #[tokio::test]
+async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_ended() {
+    let pool = populated_canonical_pool("assessment_allocation_history").await;
+    let primary = Uuid::from_u128(0x50000000000000000000000000000002);
+    let source: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let term = Uuid::now_v7();
+    let offering = Uuid::now_v7();
+    let group = Uuid::now_v7();
+    let plan = Uuid::now_v7();
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,offering.academic_year_id,'Allocation history',1000,'ALLOC-HISTORY','custom',false,false,'planning',term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms term ON term.id=offering.academic_term_id WHERE offering.id=$2")
+        .bind(term).bind(source).execute(&mut *transaction).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) SELECT $1,$2,academic_year_id,'course','ALLOC-HISTORY','Allocation history','draft',current_date-100,owning_organization_unit_id FROM learning_offerings WHERE id=$3")
+        .bind(offering).bind(term).bind(source).execute(&mut *transaction).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score) SELECT $1,$2,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE learning_offering_id=$3")
+        .bind(offering).bind(term).bind(source).execute(&mut *transaction).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT $1,id,academic_term_id,academic_year_id,'ALLOC-HISTORY','Allocation history','draft','draft' FROM learning_offerings WHERE id=$2")
+        .bind(group).bind(offering).execute(&mut *transaction).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,ends_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary',current_date-100,current_date-80 FROM learning_groups WHERE id=$1")
+        .bind(group).bind(primary).execute(&mut *transaction).await.unwrap();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date-90,'published',academic_capture_delivery_snapshot(academic_term_id,current_date-90,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$2,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
+        .bind(offering).bind(primary).execute(&mut *transaction).await.unwrap();
+    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=$1")
+        .bind(group)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_offerings SET status='published',published_at=now() WHERE id=$1")
+        .bind(offering)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO course_assessment_plans(id,academic_term_id,academic_year_id,subject_version_id,learning_offering_id,assessment_coordinator_id) SELECT $1,academic_term_id,academic_year_id,subject_version_id,learning_offering_id,$3 FROM course_offering_details WHERE learning_offering_id=$2")
+        .bind(plan).bind(offering).bind(primary).execute(&mut *transaction).await.unwrap();
+    transaction.commit().await.unwrap();
+    let detail = services::get_plan_detail(&pool, offering).await.unwrap();
+    assert_eq!(detail.assessment_coordinator_id, Some(primary));
+    assert!(
+        detail
+            .coordinator_candidates
+            .iter()
+            .any(|candidate| candidate.teacher_id == primary),
+        "the latest published allocation retains its teacher after the dated episode ends"
+    );
+}
+
+#[tokio::test]
 async fn assessment_candidates_read_canonical_name_projection() {
     let pool = populated_canonical_pool("assessment_canonical_names").await;
     // Migration 146 can add another subject's plan ahead of the retained Math UUID.
@@ -163,8 +214,9 @@ async fn assessment_candidates_read_canonical_name_projection() {
         .find(|candidate| candidate.teacher_id == primary)
         .unwrap();
     assert_eq!(primary_option.display_name, "นายสมชาย ทดสอบ");
-    assert_eq!(primary_option.learning_group_count, 2);
-    assert_eq!(primary_option.primary_learning_group_count, 2);
+    // The new draft group remains in the denominator, but not the published allocation.
+    assert_eq!(primary_option.learning_group_count, 1);
+    assert_eq!(primary_option.primary_learning_group_count, 1);
     let secondary_option = detail
         .coordinator_candidates
         .iter()
@@ -337,7 +389,7 @@ async fn assessment_phase_controls_read_through_the_assessment_crate_boundary() 
 async fn assessment_detail_and_summary_share_the_callers_single_connection() {
     let pool = populated_canonical_pool("assessment_borrowed_connection").await;
     let (offering, term): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT learning_offering_id,academic_term_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+        "SELECT DISTINCT plan.learning_offering_id,plan.academic_term_id FROM course_assessment_plans plan JOIN academic_delivery_latest_published_teacher_allocations allocation ON allocation.learning_offering_id=plan.learning_offering_id ORDER BY plan.learning_offering_id LIMIT 1",
     ).fetch_one(&pool).await.unwrap();
     let mut connection = pool.acquire().await.unwrap();
     let access = AcademicResourceListFilter {
