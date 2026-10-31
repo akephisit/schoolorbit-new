@@ -82,7 +82,7 @@ fn native_exception(file: &Path, function: &str) -> bool {
     (file.ends_with("crates/school-migrations/src/lib.rs")
         && matches!(
             function,
-            "run_tenant_migrations" | "verify_tenant_schema" | "grant_runtime_privileges"
+            "run_tenant_migrations_detailed" | "verify_tenant_schema" | "grant_runtime_privileges"
         ))
         || (file.ends_with("src/system/handlers/migration.rs") && function == "get_current_version")
         || (file.ends_with("crates/school-database/src/lib.rs") && execution_method(function))
@@ -826,6 +826,38 @@ fn inspect_snippet_at(file: &str, source: &str) -> BTreeSet<String> {
     }
     .visit_file(&syntax);
     problems
+}
+
+#[test]
+fn guard_migration_runner_native_execution_requires_exact_owner_and_function() {
+    let owner = "crates/school-migrations/src/lib.rs";
+    let entry = "pub async fn run_tenant_migrations_detailed(pool: &PgPool) { sqlx::query_scalar(SQL).fetch_one(pool).await; }";
+    assert!(inspect_snippet_at(owner, entry).is_empty());
+
+    let legacy = entry.replace("run_tenant_migrations_detailed", "run_tenant_migrations");
+    let similar = entry.replace(
+        "run_tenant_migrations_detailed",
+        "run_tenant_migrations_detailed_helper",
+    );
+    for (file, source) in [
+        (owner, legacy.as_str()),
+        (owner, similar.as_str()),
+        ("crates/school-migrations/src/other.rs", entry),
+        ("crates/school-tenancy/src/lib.rs", entry),
+    ] {
+        let problems = inspect_snippet_at(file, source);
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("native execution accepts an executor")),
+            "unregistered migration native execution accepted at {file}: {source}"
+        );
+    }
+    assert!(inspect_snippet_at(
+        owner,
+        "pub async fn run_tenant_migrations(pool: &PgPool) { run_tenant_migrations_detailed(pool).await; }",
+    )
+    .is_empty());
 }
 
 #[test]
