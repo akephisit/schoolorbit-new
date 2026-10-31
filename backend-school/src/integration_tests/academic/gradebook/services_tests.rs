@@ -814,6 +814,40 @@ async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, GradebookContext, U
 }
 
 #[tokio::test]
+async fn gradebook_published_assignment_survives_the_teaching_episode_end() {
+    let (pool, admin, context, group, phase) = fixture("gradebook_published_assignment").await;
+    let allocation_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_delivery_latest_published_teacher_allocations WHERE learning_group_id=$1 AND teacher_id=$2",
+    ).bind(group).bind(admin.user_id).fetch_one(&pool).await.unwrap();
+    assert!(
+        allocation_count > 0,
+        "the selected published graph must contain the fixture teacher"
+    );
+    sqlx::query("UPDATE learning_groups SET status='draft' WHERE id=$1")
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_group_teachers SET starts_on=current_date-20,ends_on=current_date-10 WHERE learning_group_id=$1 AND teacher_id=$2")
+        .bind(group).bind(admin.user_id).execute(&pool).await.unwrap();
+    let teacher = ActorContext {
+        user_id: admin.user_id,
+        permissions: vec![codes::ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED.into()],
+    };
+    let subjects = list_subjects(&pool, &teacher, &context).await.unwrap();
+    assert!(
+        subjects
+            .iter()
+            .any(|subject| subject.learning_group_id == group && subject.assigned),
+        "published responsibility must survive the actual episode end"
+    );
+    let workspace = get_group_phase_workspace(&pool, &teacher, group, phase, &context)
+        .await
+        .unwrap();
+    assert_eq!(workspace.learning_group_id, group);
+}
+
+#[tokio::test]
 async fn gradebook_roster_orders_grade_room_number_and_keeps_score_identity() {
     use school_academic_assessment::learner_evaluation::{
         models as evaluation, services as evaluations,
