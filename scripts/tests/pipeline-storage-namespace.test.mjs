@@ -150,7 +150,12 @@ if(args[0]==='run'){
  if(command==='storage-namespace routing-fingerprints'){if(args[args.indexOf('--network')+1]!=='none')process.exit(94);console.log(JSON.stringify(route));process.exit(0);}
  if(command==='storage-namespace context-admin'){console.log(JSON.stringify({...route,tenants:opts.fresh?0:2,inventory_sha256:opts.inventoryMismatch?'0'.repeat(64):'${inventoryHash}',...(opts.hostileContext?{private:'private-sentinel'}:{})}));process.exit(0);}
  if(fs.existsSync(file))process.exit(95);
- if(command==='migrate-tenants'){if(opts.migrationFailure){console.log(JSON.stringify({schema_version:1,tenants:2,migrated:1,failed:1,latest_version:137}));console.error('storage_binding_database_failed');console.error('private-sentinel postgres://secret');process.exit(1);}console.log(JSON.stringify({schema_version:1,tenants:opts.fresh?0:2,migrated:opts.fresh?0:2,failed:0,latest_version:137}));process.exit(0);}
+if(command==='migrate-tenants'){
+ const result=opts.migrationOutput??{schema_version:1,tenants:opts.fresh?0:2,migrated:opts.fresh?0:opts.migrationFailure?1:2,failed:opts.migrationFailure?1:0,latest_version:148,failures:opts.migrationFailure?[{stage:'migration_execution',version:148,error_class:'database',sqlstate:'P0001',code:'ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE',count:1}]:[],overflow_count:0};
+ console.log(opts.rawMigrationOutput??JSON.stringify(result));
+ if(opts.migrationFailure){console.error('storage_binding_database_failed');console.error('private-sentinel postgres://secret');}
+ process.exit(opts.migrationExitCode??(opts.migrationFailure?1:0));
+}
  if(command==='storage-namespace attest-admin'){
   if(!process.env.FILE_STORAGE_NAMESPACE_ATTESTATION_JSON||!args.includes('--env')||process.env.FILE_STORAGE_NAMESPACE_MANIFEST_DIRECTORY!=='/run/storage-namespace-manifests')process.exit(96);
   const mount=args.find(a=>a.endsWith(':/run/storage-namespace-manifests:rw'));if(!mount)process.exit(97);const directory=mount.split(':')[0];const st=fs.statSync(directory);if((st.mode&511)!==448||st.uid!==process.getuid())process.exit(98);
@@ -478,6 +483,257 @@ test("failure exposes approved aggregate counts and known static code but never 
   assert.match(r.stdout, /"mismatched":1/);
   assert.match(r.stderr, /storage_binding_namespace_invalid/);
   assert.doesNotMatch(r.stdout + r.stderr, /private-sentinel|postgres:\/\//);
+});
+const migrationBucket = (overrides = {}) => ({
+  stage: "migration_execution",
+  version: 148,
+  error_class: "database",
+  sqlstate: "P0001",
+  code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE",
+  count: 1,
+  ...overrides,
+});
+function migrationReport(failures = [migrationBucket()], overflow_count = 0) {
+  const failed =
+    failures.reduce((sum, bucket) => sum + bucket.count, 0) + overflow_count;
+  return {
+    schema_version: 1,
+    tenants: failed + 1,
+    migrated: 1,
+    failed,
+    latest_version: 148,
+    failures,
+    overflow_count,
+  };
+}
+function migrationCutover(t, options) {
+  const f = fixture(t, options);
+  assert.equal(f.run("preflight").status, 0);
+  f.maintenance();
+  return { f, result: f.cutover() };
+}
+function assertMigrationBlocked(f, result) {
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(path.join(f.stack, "started")), false);
+  assert.ok(existsSync(path.join(f.root, "pending-release")));
+  assert.ok(existsSync(path.join(f.journal, "migration-attempted")));
+  assert.equal(
+    f.commands().some((x) => x.args[0] === "start"),
+    false,
+  );
+  assert.equal(
+    f.commands().some((x) => x.args.join(" ").endsWith("check-admin")),
+    false,
+  );
+  assert.doesNotMatch(
+    result.stdout + result.stderr,
+    /private-sentinel|postgres:\/\//,
+  );
+}
+test("migration refusal histogram survives a failing process without exposing private stderr", (t) => {
+  const report = migrationReport([migrationBucket({ count: 2 })]);
+  const { f, result } = migrationCutover(t, {
+    migrationFailure: true,
+    migrationOutput: report,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+  assert.match(result.stderr, /headless_command_failed/);
+});
+test("migration histogram accepts every exact version-bound refusal and no tenant identity fields", (t) => {
+  const codes = {
+    147: [
+      "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH",
+      "ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE",
+    ],
+    148: [
+      "ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY",
+      "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH",
+      "ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE",
+      "ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE",
+      "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED",
+      "ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED",
+      "PROMOTION_RUN_HISTORY_RETAINED",
+      "PROMOTION_RUN_IDENTITY_IMMUTABLE",
+    ],
+  };
+  const buckets = Object.entries(codes).flatMap(([version, messages]) =>
+    messages
+      .sort()
+      .map((code) => migrationBucket({ version: Number(version), code })),
+  );
+  const report = migrationReport(buckets);
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: report,
+    migrationExitCode: 1,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+});
+test("bounded histogram reports repeated retained buckets plus truthful overflow", (t) => {
+  const buckets = Array.from({ length: 64 }, (_, index) =>
+    migrationBucket({
+      version: index + 1,
+      code: "unclassified",
+      count: index === 0 ? 2 : 1,
+    }),
+  );
+  const report = migrationReport(buckets, 3);
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: report,
+    migrationExitCode: 1,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+});
+test("unclassified failures retain nullable metadata and native versions newer than the release", (t) => {
+  const report = migrationReport([
+    migrationBucket({ version: null, sqlstate: null, code: "unclassified" }),
+    migrationBucket({
+      version: 149,
+      error_class: "version_too_new",
+      sqlstate: null,
+      code: "unclassified",
+    }),
+  ]);
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: report,
+    migrationExitCode: 1,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+});
+const invalidMigrationReports = {
+  "extra root identity": { ...migrationReport(), tenant: "private-sentinel" },
+  "missing histogram": (() => {
+    const report = migrationReport();
+    delete report.failures;
+    return report;
+  })(),
+  "extra bucket payload": migrationReport([
+    migrationBucket({ message: "private-sentinel" }),
+  ]),
+  "unknown stage": migrationReport([
+    migrationBucket({ stage: "private-sentinel" }),
+  ]),
+  "unknown error class": migrationReport([
+    migrationBucket({ error_class: "private-sentinel" }),
+  ]),
+  "unknown static code": migrationReport([
+    migrationBucket({ code: "ACADEMIC_CONTEXT_148_private-sentinel" }),
+  ]),
+  "multiline static code": migrationReport([
+    migrationBucket({
+      code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE\nprivate-sentinel",
+    }),
+  ]),
+  "wrong refusal version": migrationReport([migrationBucket({ version: 147 })]),
+  "wrong refusal stage": migrationReport([
+    migrationBucket({ stage: "permission_sync" }),
+  ]),
+  "wrong refusal class": migrationReport([
+    migrationBucket({ error_class: "configuration" }),
+  ]),
+  "null refusal version": migrationReport([migrationBucket({ version: null })]),
+  "lowercase SQLSTATE": migrationReport([
+    migrationBucket({ sqlstate: "p0001" }),
+  ]),
+  "multiline SQLSTATE": migrationReport([
+    migrationBucket({ sqlstate: "P0001\n" }),
+  ]),
+  "non-string SQLSTATE": migrationReport([
+    migrationBucket({ sqlstate: 12345 }),
+  ]),
+  "zero version": migrationReport([
+    migrationBucket({ version: 0, code: "unclassified" }),
+  ]),
+  "fractional version": migrationReport([
+    migrationBucket({ version: 1.5, code: "unclassified" }),
+  ]),
+  "unsafe version": migrationReport([
+    migrationBucket({ version: 9007199254740992, code: "unclassified" }),
+  ]),
+  "zero count": migrationReport([migrationBucket({ count: 0 })]),
+  "negative count": migrationReport([migrationBucket({ count: -1 })]),
+  "fractional count": migrationReport([migrationBucket({ count: 0.5 })]),
+  "negative total": { ...migrationReport(), tenants: -1 },
+  "unsafe total": { ...migrationReport(), tenants: 9007199254740992 },
+  "tenant sum mismatch": { ...migrationReport(), tenants: 3 },
+  "failure sum mismatch": { ...migrationReport(), failed: 2, tenants: 3 },
+  "negative overflow": { ...migrationReport(), overflow_count: -1 },
+  "overflow without full detail": migrationReport([migrationBucket()], 1),
+  "missing failure details": { ...migrationReport(), failures: [] },
+  "more than 64 buckets": migrationReport(
+    Array.from({ length: 65 }, (_, i) =>
+      migrationBucket({ version: i + 1, code: "unclassified" }),
+    ),
+  ),
+  "duplicate tuples": migrationReport([migrationBucket(), migrationBucket()]),
+  "unsorted tuples": migrationReport([
+    migrationBucket(),
+    migrationBucket({ version: null, code: "unclassified" }),
+  ]),
+};
+for (const [name, migrationOutput] of Object.entries(invalidMigrationReports)) {
+  test(`migration diagnostics reject ${name} without echoing any payload`, (t) => {
+    const { f, result } = migrationCutover(t, {
+      migrationOutput,
+      migrationExitCode: 1,
+    });
+    assertMigrationBlocked(f, result);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /headless_command_failed/);
+  });
+}
+for (const rawMigrationOutput of [
+  JSON.stringify(migrationReport()) +
+    "\n" +
+    JSON.stringify({ private: "private-sentinel" }),
+  "private-sentinel postgres://secret",
+  JSON.stringify([migrationReport()]),
+]) {
+  test("migration diagnostics reject malformed or multiple protocol documents privately", (t) => {
+    const { f, result } = migrationCutover(t, {
+      rawMigrationOutput,
+      migrationExitCode: 1,
+    });
+    assertMigrationBlocked(f, result);
+    assert.equal(result.stdout, "");
+  });
+}
+test("zero-exit migration claiming failures is rejected before backend start", (t) => {
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: migrationReport(),
+    migrationExitCode: 0,
+  });
+  assertMigrationBlocked(f, result);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /invalid_command_output/);
+});
+test("instrumented same-release retry preserves the original proof and starts only after clean diagnostics", (t) => {
+  const { f, result } = migrationCutover(t, { migrationFailure: true });
+  assertMigrationBlocked(f, result);
+  const proof = readFileSync(path.join(f.journal, "old-context.json"));
+  writeFileSync(path.join(f.stack, "options.json"), "{}");
+  assert.equal(f.run("preflight").status, 0);
+  const retry = f.cutover();
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.ok(existsSync(path.join(f.stack, "started")));
+  assert.deepEqual(
+    readFileSync(path.join(f.journal, "old-context.json")),
+    proof,
+  );
+  assert.match(retry.stdout, /"failures":\[\],"overflow_count":0/);
+  assert.equal(f.commands().filter((x) => x.args[0] === "stop").length, 1);
+  assert.equal(f.commands().filter((x) => x.args[0] === "rm").length, 1);
 });
 test("malformed aggregate and hostile context cannot disclose arbitrary process output", (t) => {
   const f = fixture(t, { checkFailure: true, maliciousFailure: true });

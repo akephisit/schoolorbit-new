@@ -99,6 +99,8 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON cleanup_transport_probe TO {cls.runtime};
         self.assertNotIn(self.password, str(args))
         self.assertNotIn(self.password, str(kwargs.get('env')))
         converted = list(args); converted[0] = 'docker'
+        # Rootless Podman maps container root to the invoking host user.
+        converted[2:2] = ['--user', f'{os.getuid()}:{os.getgid()}']
         converted[converted.index('--name') + 1] = self.prefix + '-client'
         converted[converted.index('--network') + 1] = self.network
         ca_mount = converted.index('/opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro')

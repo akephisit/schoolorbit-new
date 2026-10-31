@@ -5,15 +5,202 @@ use school_file_platform::{
     namespace_binding::{self, BindingError, BindingManifest, ConfiguredNamespaces},
     r2_storage_provider::R2StorageRouting,
 };
+use school_migrations::{MigrationErrorClass, MigrationStage};
 use school_tenancy::{AdminClient, AdminClientConfig, OperationalTenant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool};
-use std::{env, fs::OpenOptions, io::Write};
+use std::{collections::BTreeMap, env, fs::OpenOptions, io::Write};
 use uuid::Uuid;
 
 fn failure() -> BindingError {
     BindingError::Database
+}
+
+#[derive(Clone, Copy)]
+enum FailureStage {
+    MigrationUrl,
+    OwnerConnection,
+    OwnerIdentity,
+    MigrationIdentity,
+    MigrationExecution,
+    PermissionSync,
+    RuntimeGrants,
+    OwnerSchema,
+    OwnerAcademicCoreCutover,
+    OwnerGradebookResultsCutover,
+    OwnerDeliveryTimetableCutover,
+    OwnerStaffProfileCutover,
+    RuntimeConnection,
+    RuntimeIdentity,
+    RuntimeSchema,
+    RuntimeAcademicCoreCutover,
+    RuntimeGradebookResultsCutover,
+    RuntimeDeliveryTimetableCutover,
+    RuntimeStaffProfileCutover,
+    AdminStatus,
+}
+impl FailureStage {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::MigrationUrl => "migration_url",
+            Self::OwnerConnection => "owner_connection",
+            Self::OwnerIdentity => "owner_identity",
+            Self::MigrationIdentity => "migration_identity",
+            Self::MigrationExecution => "migration_execution",
+            Self::PermissionSync => "permission_sync",
+            Self::RuntimeGrants => "runtime_grants",
+            Self::OwnerSchema => "owner_schema",
+            Self::OwnerAcademicCoreCutover => "owner_academic_core_cutover",
+            Self::OwnerGradebookResultsCutover => "owner_gradebook_results_cutover",
+            Self::OwnerDeliveryTimetableCutover => "owner_delivery_timetable_cutover",
+            Self::OwnerStaffProfileCutover => "owner_staff_profile_cutover",
+            Self::RuntimeConnection => "runtime_connection",
+            Self::RuntimeIdentity => "runtime_identity",
+            Self::RuntimeSchema => "runtime_schema",
+            Self::RuntimeAcademicCoreCutover => "runtime_academic_core_cutover",
+            Self::RuntimeGradebookResultsCutover => "runtime_gradebook_results_cutover",
+            Self::RuntimeDeliveryTimetableCutover => "runtime_delivery_timetable_cutover",
+            Self::RuntimeStaffProfileCutover => "runtime_staff_profile_cutover",
+            Self::AdminStatus => "admin_status",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+struct FailureDiagnostic {
+    stage: &'static str,
+    version: Option<i64>,
+    error_class: &'static str,
+    sqlstate: Option<String>,
+    code: &'static str,
+}
+#[derive(Debug)]
+struct RolloutFailure {
+    diagnostic: FailureDiagnostic,
+    binding: BindingError,
+}
+impl RolloutFailure {
+    fn plain(stage: FailureStage, binding: BindingError) -> Self {
+        let class = match binding {
+            BindingError::Configuration
+            | BindingError::OwnerRequired
+            | BindingError::SchemaMissing => MigrationErrorClass::Configuration,
+            _ => MigrationErrorClass::Other,
+        };
+        Self {
+            diagnostic: FailureDiagnostic {
+                stage: stage.as_str(),
+                version: None,
+                error_class: class.as_str(),
+                sqlstate: None,
+                code: "unclassified",
+            },
+            binding,
+        }
+    }
+    fn database(stage: FailureStage, error: &sqlx::Error) -> Self {
+        let mut failure = Self::plain(stage, BindingError::Database);
+        failure.diagnostic.error_class = MigrationErrorClass::from_sqlx(error).as_str();
+        failure.diagnostic.sqlstate = school_migrations::diagnostic_sqlstate(error);
+        failure
+    }
+    fn audit(stage: FailureStage, error: &school_errors::AppError) -> Self {
+        let mut failure = Self::plain(stage, BindingError::Database);
+        failure.diagnostic.sqlstate = error
+            .database_code()
+            .as_deref()
+            .and_then(school_migrations::validated_sqlstate);
+        if failure.diagnostic.sqlstate.is_some() {
+            failure.diagnostic.error_class = MigrationErrorClass::Database.as_str();
+        }
+        failure
+    }
+    fn migration(error: school_migrations::MigrationFailure) -> Self {
+        let diagnostic = error.diagnostic;
+        let stage = match diagnostic.stage {
+            MigrationStage::Identity => FailureStage::MigrationIdentity,
+            MigrationStage::Execution => FailureStage::MigrationExecution,
+            MigrationStage::PermissionSync => FailureStage::PermissionSync,
+            MigrationStage::RuntimeGrants => FailureStage::RuntimeGrants,
+        };
+        Self {
+            diagnostic: FailureDiagnostic {
+                stage: stage.as_str(),
+                version: diagnostic.version,
+                error_class: diagnostic.error_class.as_str(),
+                sqlstate: diagnostic.sqlstate,
+                code: diagnostic.code,
+            },
+            binding: BindingError::Database,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FailureCount {
+    #[serde(flatten)]
+    diagnostic: FailureDiagnostic,
+    count: usize,
+}
+#[derive(Default)]
+struct FailureHistogram {
+    details: BTreeMap<FailureDiagnostic, usize>,
+    overflow_count: usize,
+}
+impl FailureHistogram {
+    fn record(&mut self, diagnostic: FailureDiagnostic) {
+        if let Some(count) = self.details.get_mut(&diagnostic) {
+            *count += 1;
+        } else if self.details.len() < 64 {
+            self.details.insert(diagnostic, 1);
+        } else {
+            self.overflow_count += 1;
+        }
+    }
+    fn into_report(self, tenants: usize, migrated: usize) -> MigrationReport {
+        let failed = self.details.values().sum::<usize>() + self.overflow_count;
+        MigrationReport {
+            schema_version: 1,
+            tenants,
+            migrated,
+            failed,
+            latest_version: school_migrations::latest_migration_version(),
+            failures: self
+                .details
+                .into_iter()
+                .map(|(diagnostic, count)| FailureCount { diagnostic, count })
+                .collect(),
+            overflow_count: self.overflow_count,
+        }
+    }
+}
+#[derive(Serialize)]
+struct MigrationReport {
+    schema_version: u8,
+    tenants: usize,
+    migrated: usize,
+    failed: usize,
+    latest_version: i64,
+    failures: Vec<FailureCount>,
+    overflow_count: usize,
+}
+
+async fn record_failed_tenant<F>(
+    failures: &mut FailureHistogram,
+    error: RolloutFailure,
+    update_status: F,
+) where
+    F: std::future::Future<Output = Result<(), String>>,
+{
+    // Keep the original cause even when secondary metadata reporting fails.
+    failures.record(error.diagnostic);
+    if update_status.await.is_err() {
+        tracing::warn!(
+            operation = "tenant_migration_status",
+            reason = "failure_status_update_failed"
+        );
+    }
 }
 fn admin_client() -> Result<AdminClient, BindingError> {
     Ok(AdminClient::new(
@@ -68,57 +255,81 @@ async fn unchanged(admin: &AdminClient, before: &[OperationalTenant]) -> Result<
         Err(BindingError::ChangedWatch)
     }
 }
-async fn identity(
+async fn identity_detailed(
     connection: &mut PgConnection,
     tenant: Uuid,
     require_owner: bool,
-) -> Result<(), BindingError> {
+    stage: FailureStage,
+) -> Result<(), RolloutFailure> {
     let (owner,marker,authority):(String,Option<String>,bool)=DbSession::new(connection).query_as("rollout.database_identity","SELECT r.rolname,shobj_description(r.oid,'pg_authid'),pg_has_role(current_user,r.oid,'USAGE') FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba WHERE d.datname=current_database()")
-        .fetch_one().await.map_err(|_|failure())?;
+        .fetch_one().await.map_err(|error|RolloutFailure::database(stage, &error))?;
     if owner != format!("so_{}_owner", tenant.simple())
         || marker.as_deref() != Some(format!("schoolorbit:{tenant}:migration").as_str())
     {
-        return Err(BindingError::Configuration);
+        return Err(RolloutFailure::plain(stage, BindingError::Configuration));
     }
     if require_owner && !authority {
-        return Err(BindingError::OwnerRequired);
+        return Err(RolloutFailure::plain(stage, BindingError::OwnerRequired));
     }
     Ok(())
 }
-async fn cutovers(connection: &mut PgConnection) -> Result<(), BindingError> {
+async fn cutovers_detailed(
+    connection: &mut PgConnection,
+    owner: bool,
+) -> Result<(), RolloutFailure> {
+    let stage = if owner {
+        FailureStage::OwnerAcademicCoreCutover
+    } else {
+        FailureStage::RuntimeAcademicCoreCutover
+    };
     if !school_academic_core::reconciliation::read_academic_core_cleanup_audit_on_connection(
         &mut *connection,
     )
     .await
-    .map_err(|_| failure())?
+    .map_err(|error| RolloutFailure::audit(stage, &error))?
     .completed
     {
-        return Err(failure());
+        return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
+    let stage = if owner {
+        FailureStage::OwnerGradebookResultsCutover
+    } else {
+        FailureStage::RuntimeGradebookResultsCutover
+    };
     if !school_academic_results::services::read_gradebook_results_cutover_audit_on_connection(
         &mut *connection,
     )
     .await
-    .map_err(|_| failure())?
+    .map_err(|error| RolloutFailure::audit(stage, &error))?
     .completed
     {
-        return Err(failure());
+        return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
+    let stage = if owner {
+        FailureStage::OwnerDeliveryTimetableCutover
+    } else {
+        FailureStage::RuntimeDeliveryTimetableCutover
+    };
     if !school_academic_delivery::services::versions::read_cutover_audit_on_connection(
         &mut *connection,
     )
     .await
-    .map_err(|_| failure())?
+    .map_err(|error| RolloutFailure::audit(stage, &error))?
     .completed
     {
-        return Err(failure());
+        return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
+    let stage = if owner {
+        FailureStage::OwnerStaffProfileCutover
+    } else {
+        FailureStage::RuntimeStaffProfileCutover
+    };
     if !school_staff::profile_cutover::read_profile_cutover_on_connection(connection)
         .await
-        .map_err(|_| failure())?
+        .map_err(|error| RolloutFailure::audit(stage, &error))?
         .passed
     {
-        return Err(failure());
+        return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
     Ok(())
 }
@@ -128,16 +339,47 @@ async fn verify_pool(
     owner: bool,
     full_schema: bool,
 ) -> Result<(), BindingError> {
+    verify_pool_detailed(pool, tenant, owner, full_schema)
+        .await
+        .map_err(|failure| failure.binding)
+}
+async fn verify_pool_detailed(
+    pool: &PgPool,
+    tenant: Uuid,
+    owner: bool,
+    full_schema: bool,
+) -> Result<(), RolloutFailure> {
+    let connection_stage = if owner {
+        FailureStage::OwnerConnection
+    } else {
+        FailureStage::RuntimeConnection
+    };
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "rollout.verify_database")
             .await
-            .map_err(|_| failure())?;
-    identity(&mut connection, tenant, owner).await?;
+            .map_err(|error| RolloutFailure::database(connection_stage, &error))?;
+    let identity_stage = if owner {
+        FailureStage::OwnerIdentity
+    } else {
+        FailureStage::RuntimeIdentity
+    };
+    identity_detailed(&mut connection, tenant, owner, identity_stage).await?;
     if full_schema {
         school_migrations::verify_tenant_schema(&mut *connection)
             .await
-            .map_err(|_| BindingError::SchemaMissing)?;
-        cutovers(&mut connection).await?;
+            .map_err(|error| {
+                let stage = if owner {
+                    FailureStage::OwnerSchema
+                } else {
+                    FailureStage::RuntimeSchema
+                };
+                let mut failure = RolloutFailure::plain(stage, BindingError::SchemaMissing);
+                if error == "Tenant migration history unavailable" {
+                    failure.diagnostic.error_class = MigrationErrorClass::Database.as_str();
+                }
+                failure
+            })?;
+        cutovers_detailed(&mut connection, owner).await?;
     }
     Ok(())
 }
@@ -231,20 +473,25 @@ pub async fn migrate_tenants() -> Result<bool, BindingError> {
     let admin = admin_client()?;
     let tenants = snapshot(&admin).await?;
     let mut migrated = 0;
-    let mut failed = 0;
+    let mut failures = FailureHistogram::default();
     for tenant in &tenants {
         let mut applied_version = None;
         let result = async {
             let url = admin
                 .get_operational_migration_database_url(&tenant.subdomain)
                 .await
-                .map_err(|_| failure())?;
+                .map_err(|_| {
+                    RolloutFailure::plain(FailureStage::MigrationUrl, BindingError::Database)
+                })?;
             let pool = school_tenancy::connect_privileged_pool(&url, 1)
                 .await
-                .map_err(|_| failure())?;
+                .map_err(|_| {
+                    RolloutFailure::plain(FailureStage::OwnerConnection, BindingError::Database)
+                })?;
             let migration = async {
-                verify_pool(pool.as_ref(), tenant.id, true, false).await?;
-                let migrated = school_migrations::run_tenant_migrations(pool.as_ref()).await;
+                verify_pool_detailed(pool.as_ref(), tenant.id, true, false).await?;
+                let migrated =
+                    school_migrations::run_tenant_migrations_detailed(pool.as_ref()).await;
                 // A grant or later audit can fail after the migration transaction committed.
                 // Record only a canonical checksum-verified version, never a fabricated zero.
                 if let Ok(mut connection) = school_tenancy::TenantPool::observed_checkout_pool(
@@ -259,49 +506,61 @@ pub async fn migrate_tenants() -> Result<bool, BindingError> {
                         applied_version = Some(version);
                     }
                 }
-                migrated.map_err(|_| failure())?;
-                verify_pool(pool.as_ref(), tenant.id, true, true).await
+                migrated.map_err(RolloutFailure::migration)?;
+                verify_pool_detailed(pool.as_ref(), tenant.id, true, true).await
             }
             .await;
             pool.close().await;
             migration?;
             let runtime = school_tenancy::connect_privileged_pool(&tenant.database_url, 1)
                 .await
-                .map_err(|_| failure())?;
-            let verified = verify_pool(runtime.as_ref(), tenant.id, false, true).await;
+                .map_err(|_| {
+                    RolloutFailure::plain(FailureStage::RuntimeConnection, BindingError::Database)
+                })?;
+            let verified = verify_pool_detailed(runtime.as_ref(), tenant.id, false, true).await;
             runtime.close().await;
             verified?;
-            let version = i32::try_from(school_migrations::latest_migration_version())
-                .map_err(|_| failure())?;
+            let version =
+                i32::try_from(school_migrations::latest_migration_version()).map_err(|_| {
+                    RolloutFailure::plain(FailureStage::AdminStatus, BindingError::Database)
+                })?;
             admin
                 .update_migration_status(&tenant.subdomain, version, "migrated", None)
                 .await
-                .map_err(|_| failure())?;
-            Ok::<_, BindingError>(())
+                .map_err(|_| {
+                    RolloutFailure::plain(FailureStage::AdminStatus, BindingError::Database)
+                })?;
+            Ok::<_, RolloutFailure>(())
         }
         .await;
-        if result.is_ok() {
-            migrated += 1;
-        } else {
-            failed += 1;
-            if let Some(version) = applied_version.and_then(|version| i32::try_from(version).ok()) {
-                let _ = admin
-                    .update_migration_status(
-                        &tenant.subdomain,
-                        version,
-                        "failed",
-                        Some("tenant_migration_failed"),
-                    )
-                    .await;
+        match result {
+            Ok(()) => migrated += 1,
+            Err(error) => {
+                record_failed_tenant(&mut failures, error, async {
+                    if let Some(version) =
+                        applied_version.and_then(|version| i32::try_from(version).ok())
+                    {
+                        admin
+                            .update_migration_status(
+                                &tenant.subdomain,
+                                version,
+                                "failed",
+                                Some("tenant_migration_failed"),
+                            )
+                            .await
+                    } else {
+                        // No exact current history: retain prior Admin metadata.
+                        Ok(())
+                    }
+                })
+                .await;
             }
-            // If no exact current history could be verified, retain prior Admin metadata.
         }
     }
     unchanged(&admin, &tenants).await?;
-    output(
-        &serde_json::json!({"schema_version":1,"tenants":tenants.len(),"migrated":migrated,"failed":failed,"latest_version":school_migrations::latest_migration_version()}),
-    )?;
-    Ok(failed == 0)
+    let report = failures.into_report(tenants.len(), migrated);
+    output(&report)?;
+    Ok(report.failed == 0)
 }
 
 #[derive(Deserialize)]
@@ -508,6 +767,184 @@ pub async fn namespace_operation(mode: &str) -> Result<bool, BindingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_failure_histogram_is_sorted_exact_and_contains_no_tenant_fields() {
+        let mut histogram = FailureHistogram::default();
+        let primary =
+            RolloutFailure::plain(FailureStage::RuntimeSchema, BindingError::SchemaMissing)
+                .diagnostic;
+        histogram.record(primary.clone());
+        histogram.record(
+            RolloutFailure::plain(FailureStage::MigrationUrl, BindingError::Database).diagnostic,
+        );
+        histogram.record(primary);
+        let report = histogram.into_report(4, 1);
+        assert_eq!(
+            (
+                report.tenants,
+                report.migrated,
+                report.failed,
+                report.overflow_count
+            ),
+            (4, 1, 3, 0)
+        );
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json.as_object().unwrap().len(), 7);
+        assert_eq!(json["failures"].as_array().unwrap().len(), 2);
+        assert_eq!(json["failures"][0]["stage"], "migration_url");
+        assert_eq!(json["failures"][1]["stage"], "runtime_schema");
+        assert_eq!(json["failures"][1]["count"], 2);
+        for bucket in json["failures"].as_array().unwrap() {
+            assert_eq!(bucket.as_object().unwrap().len(), 6);
+            assert!(
+                bucket.get("tenant").is_none()
+                    && bucket.get("subdomain").is_none()
+                    && bucket.get("error").is_none()
+            );
+        }
+        let successful = FailureHistogram::default().into_report(2, 2);
+        assert_eq!(successful.failed, 0);
+        assert!(successful.failures.is_empty());
+        assert_eq!(successful.overflow_count, 0);
+    }
+
+    #[tokio::test]
+    async fn secondary_admin_status_failure_preserves_the_original_primary_diagnostic() {
+        let mut histogram = FailureHistogram::default();
+        let primary =
+            RolloutFailure::plain(FailureStage::RuntimeSchema, BindingError::SchemaMissing);
+        record_failed_tenant(&mut histogram, primary, async {
+            Err("private-sentinel postgres://credentials".into())
+        })
+        .await;
+        let report = histogram.into_report(1, 0);
+        assert_eq!(report.failed, 1);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].diagnostic.stage, "runtime_schema");
+        assert!(!serde_json::to_string(&report)
+            .unwrap()
+            .contains("private-sentinel"));
+    }
+
+    #[test]
+    fn migration_failure_histogram_caps_details_but_keeps_existing_bucket_counts() {
+        let mut histogram = FailureHistogram::default();
+        for version in 1..=70 {
+            let mut diagnostic =
+                RolloutFailure::plain(FailureStage::MigrationExecution, BindingError::Database)
+                    .diagnostic;
+            diagnostic.version = Some(version);
+            histogram.record(diagnostic);
+        }
+        let mut existing =
+            RolloutFailure::plain(FailureStage::MigrationExecution, BindingError::Database)
+                .diagnostic;
+        existing.version = Some(1);
+        histogram.record(existing);
+        let report = histogram.into_report(71, 0);
+        assert_eq!(report.failures.len(), 64);
+        assert_eq!(report.overflow_count, 6);
+        assert_eq!(report.failed, 71);
+        assert_eq!(report.failures[0].count, 2);
+        assert_eq!(
+            report
+                .failures
+                .iter()
+                .map(|bucket| bucket.count)
+                .sum::<usize>()
+                + report.overflow_count,
+            report.failed
+        );
+    }
+
+    #[tokio::test]
+    async fn canonical_migration_refusal_keeps_native_version_code_and_legacy_message() {
+        use school_test_db::cutover_test_support::{
+            apply_migrations_through, apply_phase_b_runtime_migrations,
+            seed_academic_cutover_fixture, CutoverFixture,
+        };
+        let pool = school_test_db::create_named_test_pool("rollout_native_147_refusal").await;
+        apply_migrations_through(&pool, 40).await.unwrap();
+        seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+            .await
+            .unwrap();
+        apply_phase_b_runtime_migrations(&pool).await.unwrap();
+        apply_migrations_through(&pool, 146).await.unwrap();
+        sqlx::query("UPDATE academic_years SET status='ready' WHERE year=2025")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.status IN ('active','closing') AND year.status NOT IN ('active','closing')",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
+        let error = school_migrations::run_tenant_migrations_detailed(&pool)
+            .await
+            .unwrap_err();
+        let failure = RolloutFailure::migration(error);
+        assert_eq!(failure.diagnostic.stage, "migration_execution");
+        assert_eq!(failure.diagnostic.version, Some(147));
+        assert_eq!(failure.diagnostic.error_class, "database");
+        assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("P0001"));
+        assert_eq!(
+            failure.diagnostic.code,
+            "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT max(version) FROM _sqlx_migrations WHERE success")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            146
+        );
+        assert_eq!(
+            school_migrations::run_tenant_migrations(&pool)
+                .await
+                .unwrap_err(),
+            "Migration failed: database (version 147)"
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_schema_permission_failure_is_not_reported_as_a_migration_refusal() {
+        let pool = school_test_db::create_named_test_pool("rollout_post_commit_permission").await;
+        school_test_db::run_test_migrations(&pool).await;
+        sqlx::raw_sql("CREATE FUNCTION reject_permission_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'private-sentinel postgres://credentials' USING ERRCODE='42501'; END $$; CREATE TRIGGER reject_permission_fixture BEFORE INSERT OR UPDATE ON permissions FOR EACH ROW EXECUTE FUNCTION reject_permission_fixture();")
+            .execute(&pool).await.unwrap();
+        let error = school_migrations::run_tenant_migrations_detailed(&pool)
+            .await
+            .unwrap_err();
+        let legacy = error.diagnostic.clone();
+        assert_eq!(
+            error.into_legacy_message(),
+            "Permission sync failed after migrations: database"
+        );
+        let failure = RolloutFailure::migration(
+            school_migrations::run_tenant_migrations_detailed(&pool)
+                .await
+                .unwrap_err(),
+        );
+        assert_eq!(legacy.stage, MigrationStage::PermissionSync);
+        assert_eq!(failure.diagnostic.stage, "permission_sync");
+        assert_eq!(failure.diagnostic.version, None);
+        assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("42501"));
+        assert_eq!(failure.diagnostic.code, "unclassified");
+        assert_eq!(
+            school_migrations::verify_tenant_schema(&pool)
+                .await
+                .unwrap(),
+            school_migrations::latest_migration_version()
+        );
+        assert!(!serde_json::to_string(&failure.diagnostic)
+            .unwrap()
+            .contains("private-sentinel"));
+    }
     #[test]
     fn inventory_fingerprint_excludes_passwords_but_fences_tenant_identity_and_route() {
         let tenant = OperationalTenant {

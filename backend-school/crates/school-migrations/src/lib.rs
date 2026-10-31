@@ -83,39 +83,261 @@ fn all_migrations_without_db_lock() -> Migrator {
 
 static TENANT_MIGRATION_GATE: Mutex<()> = Mutex::const_new(());
 
-// Classify before erasing the native error: driver details can contain SQL and values.
-fn safe_migration_failure(error: sqlx::migrate::MigrateError) -> String {
-    use sqlx::migrate::MigrateError;
-    let (category, version) = match &error {
-        MigrateError::Execute(error) => (school_database::error_class(error), None),
-        MigrateError::ExecuteMigration(error, version) => {
-            (school_database::error_class(error), Some(*version))
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MigrationStage {
+    Identity,
+    Execution,
+    PermissionSync,
+    RuntimeGrants,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MigrationErrorClass {
+    Database,
+    RowNotFound,
+    PoolTimeout,
+    PoolClosed,
+    Connection,
+    Decode,
+    Encode,
+    Protocol,
+    Configuration,
+    Other,
+    Source,
+    VersionMissing,
+    VersionMismatch,
+    VersionNotPresent,
+    VersionTooOld,
+    VersionTooNew,
+    Dirty,
+    MigrationConfiguration,
+}
+impl MigrationErrorClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Database => "database",
+            Self::RowNotFound => "row_not_found",
+            Self::PoolTimeout => "pool_timeout",
+            Self::PoolClosed => "pool_closed",
+            Self::Connection => "connection",
+            Self::Decode => "decode",
+            Self::Encode => "encode",
+            Self::Protocol => "protocol",
+            Self::Configuration => "configuration",
+            Self::Other => "other",
+            Self::Source => "source",
+            Self::VersionMissing => "version_missing",
+            Self::VersionMismatch => "version_mismatch",
+            Self::VersionNotPresent => "version_not_present",
+            Self::VersionTooOld => "version_too_old",
+            Self::VersionTooNew => "version_too_new",
+            Self::Dirty => "dirty",
+            Self::MigrationConfiguration => "migration_configuration",
         }
-        MigrateError::Source(_) => ("source", None),
-        MigrateError::VersionMissing(version) => ("version_missing", Some(*version)),
-        MigrateError::VersionMismatch(version) => ("version_mismatch", Some(*version)),
-        MigrateError::VersionNotPresent(version) => ("version_not_present", Some(*version)),
-        MigrateError::VersionTooOld(version, _) => ("version_too_old", Some(*version)),
-        MigrateError::VersionTooNew(version, _) => ("version_too_new", Some(*version)),
-        MigrateError::Dirty(version) => ("dirty", Some(*version)),
-        _ => ("migration_configuration", None),
+    }
+    pub fn from_sqlx(error: &sqlx::Error) -> Self {
+        match school_database::error_class(error) {
+            "database" => Self::Database,
+            "row_not_found" => Self::RowNotFound,
+            "pool_timeout" => Self::PoolTimeout,
+            "pool_closed" => Self::PoolClosed,
+            "connection" => Self::Connection,
+            "decode" => Self::Decode,
+            "encode" => Self::Encode,
+            "protocol" => Self::Protocol,
+            "configuration" => Self::Configuration,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// A native SQLSTATE only; database messages, details and SQL never leave this boundary.
+pub fn diagnostic_sqlstate(error: &sqlx::Error) -> Option<String> {
+    let code = error.as_database_error()?.code()?;
+    validated_sqlstate(&code)
+}
+pub fn validated_sqlstate(code: &str) -> Option<String> {
+    (code.len() == 5
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit()))
+    .then(|| code.to_string())
+}
+
+pub fn diagnostic_version(version: i64) -> Option<i64> {
+    (1..=9_007_199_254_740_991)
+        .contains(&version)
+        .then_some(version)
+}
+
+fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
+    let Some(database) = error.as_database_error() else {
+        return "unclassified";
     };
-    match version {
-        Some(version) => format!("Migration failed: {category} (version {version})"),
-        None => format!("Migration failed: {category}"),
+    match (version, database.message()) {
+        (Some(147), "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH") => {
+            "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH"
+        }
+        (Some(147), "ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE") => {
+            "ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY") => {
+            "ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH") => {
+            "ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE") => {
+            "ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE") => {
+            "ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED") => {
+            "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED"
+        }
+        (Some(148), "ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED") => {
+            "ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED"
+        }
+        (Some(148), "PROMOTION_RUN_HISTORY_RETAINED") => "PROMOTION_RUN_HISTORY_RETAINED",
+        (Some(148), "PROMOTION_RUN_IDENTITY_IMMUTABLE") => "PROMOTION_RUN_IDENTITY_IMMUTABLE",
+        _ => "unclassified",
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationDiagnostic {
+    pub stage: MigrationStage,
+    pub version: Option<i64>,
+    pub error_class: MigrationErrorClass,
+    pub sqlstate: Option<String>,
+    pub code: &'static str,
+}
+#[derive(Debug)]
+pub struct MigrationFailure {
+    pub diagnostic: MigrationDiagnostic,
+    legacy_message: String,
+}
+impl MigrationFailure {
+    pub fn into_legacy_message(self) -> String {
+        self.legacy_message
+    }
+    fn sqlx(stage: MigrationStage, error: &sqlx::Error, legacy_message: String) -> Self {
+        Self {
+            diagnostic: MigrationDiagnostic {
+                stage,
+                version: None,
+                error_class: MigrationErrorClass::from_sqlx(error),
+                sqlstate: diagnostic_sqlstate(error),
+                code: "unclassified",
+            },
+            legacy_message,
+        }
+    }
+    fn identity(legacy_message: String) -> Self {
+        Self {
+            diagnostic: MigrationDiagnostic {
+                stage: MigrationStage::Identity,
+                version: None,
+                error_class: MigrationErrorClass::Configuration,
+                sqlstate: None,
+                code: "unclassified",
+            },
+            legacy_message,
+        }
+    }
+}
+
+// Classify before erasing the native error: driver details can contain SQL and values.
+fn migration_failure(error: sqlx::migrate::MigrateError) -> MigrationFailure {
+    use sqlx::migrate::MigrateError;
+    use MigrationErrorClass as Class;
+    let (category, version) = match &error {
+        MigrateError::Execute(error) => (Class::from_sqlx(error), None),
+        MigrateError::ExecuteMigration(error, version) => (Class::from_sqlx(error), Some(*version)),
+        MigrateError::Source(_) => (Class::Source, None),
+        MigrateError::VersionMissing(version) => (Class::VersionMissing, Some(*version)),
+        MigrateError::VersionMismatch(version) => (Class::VersionMismatch, Some(*version)),
+        MigrateError::VersionNotPresent(version) => (Class::VersionNotPresent, Some(*version)),
+        MigrateError::VersionTooOld(version, _) => (Class::VersionTooOld, Some(*version)),
+        MigrateError::VersionTooNew(version, _) => (Class::VersionTooNew, Some(*version)),
+        MigrateError::Dirty(version) => (Class::Dirty, Some(*version)),
+        _ => (Class::MigrationConfiguration, None),
+    };
+    let legacy_message = match version {
+        Some(version) => format!(
+            "Migration failed: {} (version {version})",
+            category.as_str()
+        ),
+        None => format!("Migration failed: {}", category.as_str()),
+    };
+    let (sqlstate, code) = match &error {
+        MigrateError::Execute(error) | MigrateError::ExecuteMigration(error, _) => {
+            (diagnostic_sqlstate(error), refusal_code(version, error))
+        }
+        _ => (None, "unclassified"),
+    };
+    MigrationFailure {
+        diagnostic: MigrationDiagnostic {
+            stage: MigrationStage::Execution,
+            version: version.and_then(diagnostic_version),
+            error_class: category,
+            sqlstate,
+            code,
+        },
+        legacy_message,
     }
 }
 
 pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
+    run_tenant_migrations_detailed(pool)
+        .await
+        .map_err(MigrationFailure::into_legacy_message)
+}
+
+/// The canonical runner with bounded diagnostics for release orchestration.
+pub async fn run_tenant_migrations_detailed(pool: &PgPool) -> Result<(), MigrationFailure> {
     let started = std::time::Instant::now();
     let owner: String = sqlx::query_scalar("SELECT current_user::text")
         .fetch_one(pool)
         .await
-        .map_err(|_| "Migration identity unavailable".to_string())?;
+        .map_err(|error| {
+            MigrationFailure::sqlx(
+                MigrationStage::Identity,
+                &error,
+                "Migration identity unavailable".into(),
+            )
+        })?;
     if owner.starts_with("so_") && owner.ends_with("_runtime") {
-        return Err("Runtime identities cannot migrate".into());
+        return Err(MigrationFailure::identity(
+            "Runtime identities cannot migrate".into(),
+        ));
     }
-    let runtime = runtime_role_for_owner(&owner)?;
+    let runtime = runtime_role_for_owner(&owner).map_err(MigrationFailure::identity)?;
     // The deployment/provision endpoints share one process. Serialize real tenant
     // owner jobs without serializing unrelated disposable test schemas.
     let _guard = if runtime.is_some() {
@@ -126,17 +348,29 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
     all_migrations_without_db_lock()
         .run(pool)
         .await
-        .map_err(safe_migration_failure)?;
+        .map_err(migration_failure)?;
 
     sync_permissions(pool).await.map_err(|error| {
-        format!(
-            "Permission sync failed after migrations: {}",
-            school_database::error_class(&error)
+        MigrationFailure::sqlx(
+            MigrationStage::PermissionSync,
+            &error,
+            format!(
+                "Permission sync failed after migrations: {}",
+                school_database::error_class(&error)
+            ),
         )
     })?;
 
     if let Some(runtime) = runtime {
-        grant_runtime_privileges(pool, &runtime).await?;
+        grant_runtime_privileges(pool, &runtime)
+            .await
+            .map_err(|error| {
+                MigrationFailure::sqlx(
+                    MigrationStage::RuntimeGrants,
+                    &error,
+                    "Runtime privilege reconciliation failed".into(),
+                )
+            })?;
     }
 
     tracing::info!(
@@ -196,7 +430,7 @@ fn runtime_role_for_owner(owner: &str) -> Result<Option<String>, String> {
     Ok(Some(format!("so_{identity}_runtime")))
 }
 
-async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), String> {
+async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), sqlx::Error> {
     let statement = format!(
         "REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO \"{runtime}\";
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
@@ -207,8 +441,7 @@ async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), St
     );
     sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
         .execute(pool)
-        .await
-        .map_err(|_| "Runtime privilege reconciliation failed".to_string())?;
+        .await?;
     Ok(())
 }
 
@@ -312,6 +545,163 @@ mod tests {
         Arc,
     };
     use tokio::time::{sleep, Duration};
+
+    #[derive(Debug)]
+    struct NativeError {
+        message: String,
+        code: String,
+    }
+    impl std::fmt::Display for NativeError {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(&self.message)
+        }
+    }
+    impl std::error::Error for NativeError {}
+    impl sqlx::error::DatabaseError for NativeError {
+        fn message(&self) -> &str {
+            &self.message
+        }
+        fn code(&self) -> Option<std::borrow::Cow<'_, str>> {
+            Some(std::borrow::Cow::Borrowed(&self.code))
+        }
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+    }
+    fn native(message: &str, code: &str) -> sqlx::Error {
+        sqlx::Error::Database(Box::new(NativeError {
+            message: message.into(),
+            code: code.into(),
+        }))
+    }
+
+    #[test]
+    fn migration_diagnostics_require_exact_native_refusal_and_matching_version() {
+        let code = "ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY";
+        for (version, message, expected) in [
+            (148, code.to_string(), code),
+            (147, code.to_string(), "unclassified"),
+            (149, code.to_string(), "unclassified"),
+            (148, format!("prefix {code}"), "unclassified"),
+            (
+                148,
+                format!("{code} postgres://private-sentinel"),
+                "unclassified",
+            ),
+            (148, format!("{code}\n"), "unclassified"),
+            (
+                147,
+                "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH".into(),
+                "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH",
+            ),
+        ] {
+            let failure = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(&message, "P0001"),
+                version,
+            ));
+            assert_eq!(failure.diagnostic.stage, MigrationStage::Execution);
+            assert_eq!(failure.diagnostic.version, Some(version));
+            assert_eq!(
+                failure.diagnostic.error_class,
+                MigrationErrorClass::Database
+            );
+            assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("P0001"));
+            assert_eq!(failure.diagnostic.code, expected);
+            assert!(!format!("{failure:?}").contains("private-sentinel"));
+            assert_eq!(
+                failure.into_legacy_message(),
+                format!("Migration failed: database (version {version})")
+            );
+        }
+        let failure =
+            migration_failure(sqlx::migrate::MigrateError::Execute(native(code, "P0001")));
+        assert_eq!(failure.diagnostic.code, "unclassified");
+        assert_eq!(failure.diagnostic.version, None);
+    }
+
+    #[test]
+    fn migration_diagnostics_bound_sqlstate_without_erasing_future_versions() {
+        for (code, expected) in [
+            ("42501", Some("42501")),
+            ("ABC12", Some("ABC12")),
+            ("42p01", None),
+            ("P0001\nsecret", None),
+            ("secret-url", None),
+        ] {
+            let failure = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native("private-sentinel postgres://credentials", code),
+                148,
+            ));
+            assert_eq!(failure.diagnostic.sqlstate.as_deref(), expected);
+            assert_eq!(failure.diagnostic.code, "unclassified");
+            assert!(!format!("{failure:?}").contains("private-sentinel"));
+            assert!(!failure.into_legacy_message().contains("credentials"));
+        }
+        let future = latest_migration_version() + 1;
+        let failure = migration_failure(sqlx::migrate::MigrateError::VersionMissing(future));
+        assert_eq!(failure.diagnostic.version, Some(future));
+        assert_eq!(
+            failure.diagnostic.error_class,
+            MigrationErrorClass::VersionMissing
+        );
+        assert_eq!(
+            failure.into_legacy_message(),
+            format!("Migration failed: version_missing (version {future})")
+        );
+        for version in [0, -1, i64::MAX] {
+            let failure = migration_failure(sqlx::migrate::MigrateError::VersionMissing(version));
+            assert_eq!(failure.diagnostic.version, None);
+            assert_eq!(
+                failure.into_legacy_message(),
+                format!("Migration failed: version_missing (version {version})")
+            );
+        }
+        assert_eq!(
+            diagnostic_version(9_007_199_254_740_991),
+            Some(9_007_199_254_740_991)
+        );
+        assert_eq!(diagnostic_version(9_007_199_254_740_992), None);
+    }
+
+    #[test]
+    fn post_migration_native_errors_keep_stage_and_legacy_adapter_message() {
+        let failure = MigrationFailure::sqlx(
+            MigrationStage::PermissionSync,
+            &native("ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY", "42501"),
+            "Permission sync failed after migrations: database".into(),
+        );
+        assert_eq!(failure.diagnostic.stage, MigrationStage::PermissionSync);
+        assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("42501"));
+        assert_eq!(failure.diagnostic.code, "unclassified");
+        assert_eq!(
+            failure.into_legacy_message(),
+            "Permission sync failed after migrations: database"
+        );
+        let failure = MigrationFailure::sqlx(
+            MigrationStage::RuntimeGrants,
+            &native("private-sentinel", "42501"),
+            "Runtime privilege reconciliation failed".into(),
+        );
+        assert_eq!(failure.diagnostic.stage, MigrationStage::RuntimeGrants);
+        assert_eq!(
+            failure.into_legacy_message(),
+            "Runtime privilege reconciliation failed"
+        );
+        assert_eq!(
+            MigrationFailure::identity("Runtime identities cannot migrate".into())
+                .into_legacy_message(),
+            "Runtime identities cannot migrate"
+        );
+    }
 
     #[tokio::test]
     async fn run_once_allows_only_one_concurrent_operation_per_subdomain() {
