@@ -76,9 +76,10 @@ async fn assessment_candidates_read_canonical_name_projection() {
          ) INSERT INTO learning_group_teachers (
              id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on
          ) SELECT uuidv7(),inserted_group.id,inserted_group.academic_term_id,
-                  inserted_group.academic_year_id,$2,'primary',term.start_date
-           FROM inserted_group JOIN academic_terms term ON term.id=inserted_group.academic_term_id",
-    ).bind(offering).bind(primary).execute(&pool).await.unwrap();
+                  inserted_group.academic_year_id,$2,'primary',(now() AT TIME ZONE 'Asia/Bangkok')::date
+           FROM inserted_group",
+    ).bind(offering).bind(primary)
+            .execute(&pool).await.unwrap();
     sqlx::query(
         "UPDATE course_assessment_plans SET assessment_coordinator_id=$2 WHERE learning_offering_id=$1",
     ).bind(offering).bind(primary).execute(&pool).await.unwrap();

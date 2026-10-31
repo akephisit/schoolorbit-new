@@ -970,7 +970,7 @@ mod tests {
         sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT $1,'LOOKUP-STARTONLY','lookup-startonly',subject_group_id,owning_organization_unit_id FROM subjects LIMIT 1").bind(stable).execute(&pool).await.unwrap();
         // Historical required fields are seeded only before migration 138.
         sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,effective_until,status,published_at) SELECT $1,$2,1,'LOOKUP-STARTONLY','Lookup old expiry',1,'BASIC',id,start_date-730,end_date-366,'published',now() FROM academic_years WHERE id=$3").bind(version).bind(stable).bind(year).execute(&pool).await.unwrap();
-        apply_migrations_through(&pool, i64::MAX).await.unwrap();
+        school_test_db::run_test_migrations(&pool).await;
         let mut query = subject_query();
         query.search = Some("LOOKUP-STARTONLY".into());
         let found = lookup_subjects(&pool, query).await.unwrap();

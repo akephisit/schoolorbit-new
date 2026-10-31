@@ -5460,3 +5460,106 @@ async fn attendance_notification_source_identity_drift_refuses_presentation_unti
     .unwrap()
     .is_some());
 }
+
+#[tokio::test]
+async fn attendance_explicit_calendar_keeps_reports_digests_and_score_facts_consistent() {
+    use school_attendance::services::score_changes as changes;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(); // Thursday: both the old default and preset include it.
+    for (name, configured, day, override_count, counted) in [
+        ("missing_default", false, None, None, false),
+        ("missing_preset", true, None, None, false),
+        ("counted_day", true, Some(true), None, true),
+        ("uncounted_day", true, Some(false), None, false),
+        ("override_missing", true, None, Some(true), true),
+        ("override_includes", true, Some(false), Some(true), true),
+        ("override_excludes", true, Some(true), Some(false), false),
+    ] {
+        let f = fixture(&format!("attendance_counting_{name}")).await;
+        sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+            .bind(TERM)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        if configured {
+            let configuration = AttendanceConfiguration {
+                enabled: true,
+                weekdays: vec![4],
+                ..Default::default()
+            };
+            sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3)")
+                .bind(TERM).bind(sqlx::types::Json(configuration)).bind(TEACHER).execute(&f.pool).await.unwrap();
+        }
+        if let Some(day) = day {
+            sqlx::query(
+                "INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,$3)",
+            )
+            .bind(TERM)
+            .bind(date)
+            .bind(day)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        }
+        let mut source = seed(&f, AttendanceKind::Arrival, date);
+        source.session.count_override = override_count;
+        let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+        let detail = sessions::detail(&f.pool, &f.actor, session.id)
+            .await
+            .unwrap();
+        let captured = sessions::save(
+            &f.pool,
+            &f.actor,
+            session.id,
+            save_payload(&detail, STUDENT, AttendanceResult::Present),
+        )
+        .await
+        .unwrap();
+        assert_eq!(captured.counted, counted, "session detail: {name}");
+        let summary = reports::summaries(&f.pool, TERM, Some(STUDENT), Some(TEACHER))
+            .await
+            .unwrap();
+        notifications::queue_digest(
+            &f.pool,
+            TERM,
+            date,
+            NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        let messages:Vec<String>=sqlx::query_scalar("SELECT notice.message FROM attendance_notifications ledger JOIN notifications notice ON notice.id=ledger.notification_id WHERE ledger.recipient_id=$1 AND ledger.dedup_key LIKE 'digest:%'")
+            .bind(TEACHER).fetch_all(&f.pool).await.unwrap();
+        let facts =
+            changes::day_facts_on_connection(&mut *f.pool.acquire().await.unwrap(), TERM, date)
+                .await
+                .unwrap();
+        let expected = usize::from(counted);
+        assert_eq!((summary.summaries.len(),messages.len(),facts.len()),(expected,expected,expected),"all counted consumers must agree with the explicit calendar and session override: {name}");
+        if counted {
+            assert_eq!(summary.summaries[0].present, 1);
+            assert_eq!(summary.summaries[0].expected, 1);
+            assert!(messages[0].contains("มา 1"));
+            assert!(messages[0].contains("ยังไม่เช็ค 1"));
+            assert_eq!(facts[0].student_id, STUDENT);
+            assert_eq!(facts[0].result, AttendanceResult::Present);
+            assert!(facts[0].counted);
+        }
+        // A capture remains a real fact even when excluded from counting. The
+        // dirty-day queue must still reconcile any previous score contribution.
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_records WHERE session_id=$1"
+            )
+            .bind(session.id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            1
+        );
+        let pending = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+            .await
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].date, date);
+        assert_eq!(pending[0].academic_term_id, TERM);
+    }
+}

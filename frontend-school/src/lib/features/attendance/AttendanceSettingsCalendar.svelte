@@ -120,13 +120,9 @@
 		calendar.events.filter((event) => eventOverlapsDate(event, selectedDate))
 	);
 	function isCounted(value: string) {
-		return (
-			days.find((day) => day.date === value)?.counted ??
-			settings.configuration.weekdays.includes(
-				((new Date(value + 'T00:00:00Z').getUTCDay() + 6) % 7) + 1
-			)
-		);
+		return days.find((day) => day.date === value)?.counted ?? false;
 	}
+
 	const dayStates = $derived.by(() => {
 		const states: Record<string, CalendarDayState> = {};
 		for (const cell of buildCalendarMonth(month + '-01')) {
@@ -323,7 +319,7 @@
 			!note
 		);
 	}
-	function applyRange(counted: boolean) {
+	function applyRange(mode: boolean | 'weekdays') {
 		try {
 			if (!rangeStart || !rangeEnd || rangeStart > rangeEnd)
 				throw new Error('เลือกช่วงวันที่ให้ถูกต้อง');
@@ -333,7 +329,14 @@
 				throw new Error('เลือกช่วงวันที่ให้ถูกต้อง');
 			const values: AttendanceDay[] = [];
 			while (current <= stop && values.length <= 366) {
-				values.push({ date: current.toISOString().slice(0, 10), counted, note });
+				values.push({
+					date: current.toISOString().slice(0, 10),
+					counted:
+						mode === 'weekdays'
+							? settings.configuration.weekdays.includes(((current.getUTCDay() + 6) % 7) + 1)
+							: mode,
+					note
+				});
 				current.setUTCDate(current.getUTCDate() + 1);
 			}
 			if (values.length > 366) throw new Error('เลือกครั้งละไม่เกิน 366 วัน');
@@ -347,7 +350,8 @@
 <Card.Root>
 	<Card.Header
 		><Card.Title><h2>ปฏิทินวันประมวลผล</h2></Card.Title><Card.Description
-			>กดช่องวันเพื่อสลับการนับยอดทันที กดแถบกิจกรรมเพื่อดูรายละเอียดประกอบการตัดสินใจ</Card.Description
+			>วันที่ยังไม่กำหนดจะไม่นับยอด กดช่องวันเพื่อสลับการนับยอดทันที
+			กดแถบกิจกรรมเพื่อดูรายละเอียดประกอบการตัดสินใจ</Card.Description
 		></Card.Header
 	>
 	<Card.Content class="space-y-4">
@@ -482,6 +486,11 @@
 				type="button"
 				variant="outline"
 				disabled={!writable || busy || saving}
+				onclick={() => applyRange('weekdays')}>กำหนดตามวันประจำสัปดาห์</Button
+			><Button
+				type="button"
+				variant="outline"
+				disabled={!writable || busy || saving}
 				onclick={() => applyRange(true)}>นับช่วงนี้</Button
 			><Button
 				type="button"
@@ -490,6 +499,10 @@
 				onclick={() => applyRange(false)}>วันหยุด / ไม่นับช่วงนี้</Button
 			>
 		</div>
+		<p class="text-sm text-muted-foreground">
+			กำหนดตามชุดวันประจำสัปดาห์ที่บันทึกแล้ว: วันในชุดนับยอด วันอื่นไม่นับยอด
+			การกดกำหนดจะเปลี่ยนทุกวันในช่วงนี้ ครั้งละไม่เกิน 366 วัน
+		</p>
 	</Card.Content>
 </Card.Root>
 

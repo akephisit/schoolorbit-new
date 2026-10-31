@@ -489,10 +489,9 @@ async fn prepare_published_roster_mutation(pool: &sqlx::PgPool, group: Uuid) -> 
     .await
     .unwrap();
     let joined_at: NaiveDate = sqlx::query_scalar(
-        r#"SELECT GREATEST(offering.starts_on,academic_year.start_date)
+        r#"SELECT offering.starts_on
            FROM learning_groups group_row
            JOIN learning_offerings offering ON offering.id=group_row.learning_offering_id
-           JOIN academic_years academic_year ON academic_year.id=group_row.academic_year_id
            WHERE group_row.id=$1"#,
     )
     .bind(group)

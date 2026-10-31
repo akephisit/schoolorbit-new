@@ -2,6 +2,7 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 import { mockStaffHome, id, year, actor } from './fixtures/staff-home-route-data';
 import type {
 	AttendanceSettings,
+	AttendanceDay,
 	AttendanceOptions,
 	SaveAttendanceDays
 } from '../../src/lib/api/attendance';
@@ -51,7 +52,7 @@ const event: CalendarViewerEvent = {
 	createdAt: '2026-10-01T00:00:00Z',
 	updatedAt: '2026-10-01T00:00:00Z'
 };
-async function fixture(page: Page, schoolCalendar = true, archived = false) {
+async function fixture(page: Page, schoolCalendar = true, archived = false, emptyCalendar = false) {
 	await mockStaffHome(page, {
 		permissions: [
 			'attendance.manage.school',
@@ -95,6 +96,14 @@ async function fixture(page: Page, schoolCalendar = true, archived = false) {
 			})
 	);
 	let saved = structuredClone(settings);
+	// Queue tests declare their saved calendar explicitly; an empty calendar is always uncounted.
+	let savedDays: AttendanceDay[] = emptyCalendar
+		? []
+		: Array.from({ length: 31 }, (_, index) => {
+				const value = `2026-10-${String(index + 1).padStart(2, '0')}`;
+				const weekday = new Date(value + 'T00:00:00Z').getUTCDay();
+				return { date: value, counted: weekday > 0 && weekday < 6, note: '' };
+			});
 	saved.archived = archived;
 	const options: AttendanceOptions = {
 		students: [{ id: student, name: 'นักเรียนทดสอบ', homeroomId: id(201), homeroomName: 'ม.1/1' }],
@@ -119,8 +128,21 @@ async function fixture(page: Page, schoolCalendar = true, archived = false) {
 					saved = { ...saved, ...request.postDataJSON(), rowVersion: saved.rowVersion + 1 };
 				return reply(route, saved);
 			}
-			if (url.pathname === '/api/attendance/days') return reply(route, []);
+			if (url.pathname === '/api/attendance/days')
+				return reply(
+					route,
+					savedDays.filter(
+						(day) =>
+							day.date >= (url.searchParams.get('start') ?? '') &&
+							day.date <= (url.searchParams.get('end') ?? '9999')
+					)
+				);
 			if (url.pathname.includes('/days/')) {
+				const payload: SaveAttendanceDays = request.postDataJSON();
+				savedDays = [
+					...savedDays.filter((day) => !payload.days.some((value) => value.date === day.date)),
+					...payload.days
+				];
 				saved.rowVersion++;
 				return reply(route, saved);
 			}
@@ -160,7 +182,7 @@ test('24-hour composed inputs normalize compact times and preserve failures', as
 test('real school events inform explicit day decisions without automatic counting', async ({
 	page
 }) => {
-	const api = await fixture(page);
+	const api = await fixture(page, true, false, true);
 	await page.goto(path);
 	await expect(
 		page.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ }).first()
@@ -168,7 +190,7 @@ test('real school events inform explicit day decisions without automatic countin
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toBeEnabled();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-label',
-		/1 กิจกรรม, ✓ นับยอด/
+		/1 กิจกรรม, — ไม่นับยอด/
 	);
 	expect(api.writes).toHaveLength(0);
 	expect(api.reads).toContain('/api/calendar/events');
@@ -183,17 +205,137 @@ test('real school events inform explicit day decisions without automatic countin
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-pressed',
-		'false'
+		'true'
 	);
-	expect(api.writes[0].data).toMatchObject({ days: [{ date, counted: false }] });
+	expect(api.writes[0].data).toMatchObject({ days: [{ date, counted: true }] });
 	await page.locator(`[data-calendar-date="${date}"]`).focus();
 	await page.keyboard.press('Space');
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-pressed',
-		'true'
+		'false'
 	);
 	await expect.poll(() => api.writes.length).toBe(2);
-	expect(api.writes[1].data).toMatchObject({ rowVersion: 2, days: [{ date, counted: true }] });
+	expect(api.writes[1].data).toMatchObject({ rowVersion: 2, days: [{ date, counted: false }] });
+});
+
+test('saved weekday preset changes explicit range dates only when applied', async ({
+	page
+}, testInfo) => {
+	const api = await fixture(page, true, false, true);
+	await page.goto(path);
+	const saturday = page.locator('[data-calendar-date="2026-10-10"]');
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
+	await expect(saturday).toHaveAttribute('aria-pressed', 'false');
+	await page
+		.getByRole('group', { name: 'ชุดวันประจำสัปดาห์สำหรับปฏิทิน', exact: true })
+		.getByLabel('ส', { exact: true })
+		.check();
+	await page.getByRole('button', { name: 'ถึง', exact: true }).click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^11$/ })
+		.click();
+	await page.getByLabel('หมายเหตุวันหยุด / กิจกรรม', { exact: true }).fill('ช่วงทดสอบ');
+	expect(api.writes).toHaveLength(0);
+	const apply = page.getByRole('button', { name: 'กำหนดตามวันประจำสัปดาห์', exact: true });
+	await apply.click();
+	await expect(apply).toBeEnabled();
+	expect(api.writes[0].data).toEqual({
+		rowVersion: 1,
+		days: [
+			{ date, counted: true, note: 'ช่วงทดสอบ' },
+			{ date: '2026-10-10', counted: false, note: 'ช่วงทดสอบ' },
+			{ date: '2026-10-11', counted: false, note: 'ช่วงทดสอบ' }
+		]
+	});
+	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
+	await expect(apply).toBeEnabled();
+	expect(api.writes).toHaveLength(2);
+	expect(api.writes[1].data).toMatchObject({
+		rowVersion: 2,
+		configuration: { weekdays: [1, 2, 3, 4, 5, 6] }
+	});
+	await expect(saturday).toHaveAttribute('aria-pressed', 'false');
+	await apply.click();
+	await expect(apply).toBeEnabled();
+	expect(api.writes[2].data).toEqual({
+		rowVersion: 3,
+		days: [
+			{ date, counted: true, note: 'ช่วงทดสอบ' },
+			{ date: '2026-10-10', counted: true, note: 'ช่วงทดสอบ' },
+			{ date: '2026-10-11', counted: false, note: 'ช่วงทดสอบ' }
+		]
+	});
+	for (const width of [390, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		for (const theme of ['light', 'dark']) {
+			await page.evaluate(
+				(dark) => document.documentElement.classList.toggle('dark', dark),
+				theme === 'dark'
+			);
+			await apply.scrollIntoViewIfNeeded();
+			await expect(apply).toBeInViewport();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+			await page.screenshot({
+				path: testInfo.outputPath(`preset-range-${width}-${theme}.png`),
+				animations: 'disabled'
+			});
+		}
+	}
+});
+
+test('weekday range conflict retry retains chosen flags and notes against newer settings', async ({
+	page
+}) => {
+	await fixture(page, true, false, true);
+	const writes: SaveAttendanceDays[] = [];
+	let conflicted = false;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/settings/'),
+		(route) =>
+			reply(route, {
+				...settings,
+				rowVersion: conflicted ? 4 : 1,
+				configuration: { ...settings.configuration, weekdays: conflicted ? [7] : [1, 2, 3, 4, 5] }
+			})
+	);
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		(route) => {
+			writes.push(route.request().postDataJSON());
+			if (writes.length === 1) {
+				conflicted = true;
+				return reply(route, 'ปฏิทินเปลี่ยนแล้ว', 409);
+			}
+			return reply(route, { ...settings, rowVersion: 5 });
+		}
+	);
+	await page.goto(path);
+	await page.getByRole('button', { name: 'ถึง', exact: true }).click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^11$/ })
+		.click();
+	await page.getByLabel('หมายเหตุวันหยุด / กิจกรรม', { exact: true }).fill('รอทบทวน');
+	const apply = page.getByRole('button', { name: 'กำหนดตามวันประจำสัปดาห์', exact: true });
+	await apply.click();
+	await expect(page.getByText('ปฏิทินเปลี่ยนแล้ว', { exact: true })).toBeVisible();
+	await expect(apply).toBeDisabled();
+	expect(writes).toHaveLength(1);
+	await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
+	await expect(apply).toBeEnabled();
+	expect(writes).toHaveLength(2);
+	expect(writes[1]).toEqual({ ...writes[0], rowVersion: 4 });
+	expect(writes[1].days).toEqual([
+		{ date, counted: true, note: 'รอทบทวน' },
+		{ date: '2026-10-10', counted: false, note: 'รอทบทวน' },
+		{ date: '2026-10-11', counted: false, note: 'รอทบทวน' }
+	]);
 });
 
 test('day click stays usable while saving and retains pending selection after rejection', async ({
@@ -571,7 +713,7 @@ test('group dialog is lazy and keeps local failed draft while special session re
 	await dialog.getByLabel('ชื่อกลุ่ม', { exact: true }).fill('ชุมนุมวิทย์');
 	await dialog.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
 	await expect(dialog.getByText('เลือกสมาชิกอย่างน้อยหนึ่งคน', { exact: true })).toBeVisible();
-	await dialog.getByRole('button', { name: 'สมาชิกกลุ่ม', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'สมาชิกกลุ่ม', exact: true }).click();
 	await page.getByRole('option', { name: 'ม.1/1 · นักเรียนทดสอบ', exact: true }).click();
 	await page.keyboard.press('Escape');
 	await dialog.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();

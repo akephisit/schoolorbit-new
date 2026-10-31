@@ -131,10 +131,29 @@ for (const mode of ['page', 'embed']) {
 			await page.setViewportSize({ width: 390, height });
 			await lastDay.scrollIntoViewIfNeeded();
 			await expect(lastDay).toBeInViewport();
-			if (height === 360 || mode === 'page')
+			const bounds = (await lastDay.boundingBox())!;
+			expect(bounds.y).toBeGreaterThanOrEqual(0);
+			expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
+			if (height === 360)
 				await expect
 					.poll(() => page.locator('main').evaluate((element) => element.scrollTop))
 					.toBeGreaterThan(0);
+			else
+				await expect
+					.poll(() =>
+						page.locator('[data-calendar-date]').evaluateAll((days) =>
+							days.every((day) => {
+								const box = day.getBoundingClientRect();
+								return (
+									box.top >= 0 &&
+									box.bottom <= innerHeight &&
+									box.left >= 0 &&
+									box.right <= innerWidth
+								);
+							})
+						)
+					)
+					.toBe(true);
 			const navigation = page.getByRole('button', { name: 'เดือนถัดไป', exact: true });
 			await navigation.scrollIntoViewIfNeeded();
 			await expect(navigation).toBeInViewport();

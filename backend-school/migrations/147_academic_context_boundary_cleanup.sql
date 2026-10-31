@@ -1,7 +1,8 @@
 -- Old dates are migration input only. All transformed intent is reconciled before
 -- removing the boundary contract; unknown dependencies refuse without CASCADE.
 LOCK TABLE academic_years,academic_terms,calendar_events,calendar_event_targets,
-    attendance_settings,attendance_days,academic_promotion_runs,behavior_settings
+    attendance_settings,attendance_days,attendance_sessions,attendance_finalized_dates,
+    academic_promotion_runs,behavior_settings
     IN SHARE ROW EXCLUSIVE MODE;
 
 -- Compare the actual predecessor view to its exact 060 definition. A known
@@ -122,6 +123,11 @@ JOIN academic_years year ON year.id=run.target_year_id;
 CREATE TEMP TABLE academic147_existing_targets ON COMMIT DROP AS
 SELECT * FROM calendar_event_targets;
 CREATE TEMP TABLE academic147_existing_days ON COMMIT DROP AS SELECT * FROM attendance_days;
+-- Arrival results and scan evidence own their dates through the session FK.
+-- Finalization can retain a dated fact after its captured details are removed.
+CREATE TEMP TABLE academic147_attendance_fact_dates ON COMMIT DROP AS
+SELECT academic_term_id,date FROM attendance_sessions
+UNION SELECT academic_term_id,date FROM attendance_finalized_dates;
 CREATE TEMP TABLE academic147_calendar_mapping ON COMMIT DROP AS
 SELECT target.id,
        count(year.id)::bigint AS candidate_count,
@@ -144,22 +150,32 @@ DO $$ BEGIN
         WHERE target.academic_year_id IS NOT NULL AND target.academic_year_id<>room.academic_year_id
     ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CALENDAR_ROOM_YEAR_MISMATCH'; END IF;
     IF (SELECT COALESCE(sum(GREATEST(0,COALESCE(term.closed_on,term.planned_end_date,year.end_date)-term.start_date+1)),0)
-        FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id)>2500000 THEN
+        FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id)
+       +(SELECT count(*) FROM academic147_attendance_fact_dates fact
+          JOIN academic_terms term ON term.id=fact.academic_term_id
+          JOIN academic_years year ON year.id=term.academic_year_id
+          WHERE fact.date NOT BETWEEN term.start_date AND COALESCE(term.closed_on,term.planned_end_date,year.end_date))>2500000 THEN
         RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CALENDAR_MATERIALIZATION_TOO_LARGE';
     END IF;
 END $$;
 
--- Every old date's counting decision becomes an Attendance-owned calendar fact.
+-- Preserve the old range and every finite persisted fact date. A later term
+-- closure could precede an already captured session, whose old report/score
+-- weekday meaning must survive. Unreferenced dates beyond that range are absent.
 CREATE TEMP TABLE academic147_expected_days ON COMMIT DROP AS
-SELECT term.id AS academic_term_id,day.date::date AS date,
+WITH dates AS (
+    SELECT term.id AS academic_term_id,day.date::date AS date
+    FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id
+    CROSS JOIN LATERAL generate_series(term.start_date::timestamp,
+        COALESCE(term.closed_on,term.planned_end_date,year.end_date)::timestamp,interval '1 day') day(date)
+    UNION SELECT academic_term_id,date FROM academic147_attendance_fact_dates
+)
+SELECT dates.academic_term_id,dates.date,
        COALESCE(existing.counted,COALESCE(settings.configuration->'weekdays','[1,2,3,4,5]'::jsonb)
-           @> jsonb_build_array(extract(isodow FROM day.date)::integer)) AS counted,
+           @> jsonb_build_array(extract(isodow FROM dates.date)::integer)) AS counted,
        COALESCE(existing.note,'') AS note
-FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id
-LEFT JOIN attendance_settings settings ON settings.academic_term_id=term.id
-CROSS JOIN LATERAL generate_series(term.start_date::timestamp,
-    COALESCE(term.closed_on,term.planned_end_date,year.end_date)::timestamp,interval '1 day') day(date)
-LEFT JOIN attendance_days existing ON existing.academic_term_id=term.id AND existing.date=day.date::date;
+FROM dates LEFT JOIN attendance_settings settings ON settings.academic_term_id=dates.academic_term_id
+LEFT JOIN attendance_days existing ON existing.academic_term_id=dates.academic_term_id AND existing.date=dates.date;
 
 -- Old checksums retain their accepted meaning. Recover the exact full request
 -- from the original audit, then store one current canonical replay request.
@@ -281,24 +297,26 @@ SELECT request_id,pg_temp.academic147_canonical_promotion(outcome,run_id) AS out
 CREATE TEMP TABLE academic147_expected_promotion_approvals ON COMMIT DROP AS
 SELECT id,pg_temp.academic147_canonical_promotion(intent,run_id) AS intent FROM academic_promotion_run_approvals;
 
--- Created availability has an actual date; retained-only results have no new
--- availability intent. Prove the created subset with IDs, counts and the exact
--- transaction-default timestamp, never a best-effort date/timestamp heuristic.
+-- Legacy accepted requests had no explicit offering-date constraint. Publication
+-- may legitimately retime those outputs, so retain their actual dates and leave
+-- the new accepted constraint unbound. Still prove the created subset with exact
+-- IDs, counts and transaction-default timestamps; never infer request intent from
+-- mutable current output dates.
 CREATE TEMP TABLE academic147_expected_apply_dates ON COMMIT DROP AS
 SELECT ledger.idempotency_key,
-       CASE WHEN ledger.created_offering_count>0 THEN created.starts_on END AS starts_on,
-       ledger.created_offering_count,created.created_count,created.date_count,
+       NULL::date AS starts_on,
+       ledger.created_offering_count,created.created_count,
        (SELECT count(*) FROM learning_offerings offering WHERE offering.academic_term_id=ledger.academic_term_id AND offering.created_at=ledger.created_at) AS all_created_count,
        (SELECT count(*) FROM unnest(ledger.offering_ids) output(id) LEFT JOIN learning_offerings offering ON offering.id=output.id AND offering.academic_term_id=ledger.academic_term_id WHERE offering.id IS NULL) AS invalid_output_count,
        cardinality(ledger.offering_ids)=(SELECT count(DISTINCT output.id) FROM unnest(ledger.offering_ids) output(id)) AS unique_outputs
 FROM learning_delivery_apply_runs ledger
 CROSS JOIN LATERAL(
-    SELECT count(*) AS created_count,count(DISTINCT offering.starts_on) AS date_count,min(offering.starts_on) AS starts_on
+    SELECT count(*) AS created_count
     FROM unnest(ledger.offering_ids) output(id) JOIN learning_offerings offering ON offering.id=output.id
     WHERE offering.academic_term_id=ledger.academic_term_id AND offering.created_at=ledger.created_at
 ) created;
 DO $$ BEGIN
-    IF EXISTS(SELECT 1 FROM academic147_expected_apply_dates WHERE created_count<>created_offering_count OR all_created_count<>created_count OR invalid_output_count<>0 OR NOT unique_outputs OR (created_count>0 AND date_count<>1))
+    IF EXISTS(SELECT 1 FROM academic147_expected_apply_dates WHERE created_count<>created_offering_count OR all_created_count<>created_count OR invalid_output_count<>0 OR NOT unique_outputs)
     THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CURRICULUM_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;
 -- 079 stored the complete normalized identity. Reconstruct Serde field and
@@ -367,7 +385,7 @@ SELECT ledger.id,ledger.target_academic_term_id,ledger.created_at,
 FROM academic_term_preparation_runs ledger CROSS JOIN LATERAL jsonb_array_elements(ledger.outcome) module
 WHERE module->>'module'='delivery';
 CREATE TEMP TABLE academic147_preparation_created_proof ON COMMIT DROP AS
-SELECT output.id,created.offerings,created.groups,created.revisions,created.date_count,created.starts_on,
+SELECT output.id,created.offerings,created.groups,created.revisions,
        output.created_count,
        (SELECT count(*) FROM unnest(output.target_ids) candidate(id)
           JOIN academic_term_change_sets revision ON revision.id=candidate.id
@@ -395,9 +413,7 @@ JOIN academic_term_preparation_runs ledger ON ledger.id=output.id
 CROSS JOIN LATERAL(
     SELECT count(DISTINCT offering.id) FILTER(WHERE offering.created_at=output.created_at) AS offerings,
            count(DISTINCT learning_group.id) FILTER(WHERE learning_group.created_at=output.created_at) AS groups,
-           count(DISTINCT revision.id) FILTER(WHERE revision.created_at=output.created_at) AS revisions,
-           count(DISTINCT offering.starts_on) FILTER(WHERE offering.created_at=output.created_at) AS date_count,
-           min(offering.starts_on) FILTER(WHERE offering.created_at=output.created_at) AS starts_on
+           count(DISTINCT revision.id) FILTER(WHERE revision.created_at=output.created_at) AS revisions
     FROM unnest(output.target_ids) candidate(id)
     LEFT JOIN learning_offerings offering ON offering.id=candidate.id AND offering.academic_term_id=output.target_academic_term_id
     LEFT JOIN learning_groups learning_group ON learning_group.id=candidate.id AND learning_group.academic_term_id=output.target_academic_term_id
@@ -408,12 +424,12 @@ DO $$ BEGIN
         GROUP BY ledger.id,ledger.selected_modules HAVING count(output.id)<>CASE WHEN 'delivery'=ANY(ledger.selected_modules) THEN 1 ELSE 0 END)
        OR EXISTS(SELECT 1 FROM academic147_preparation_created_proof WHERE
          offerings+groups+revisions<>created_count OR revisions<>1 OR proven_versions<>1 OR offerings<>all_created_offerings
-         OR invalid_output_count<>0 OR NOT unique_outputs OR (offerings>0 AND date_count<>1))
+         OR invalid_output_count<>0 OR NOT unique_outputs)
     THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PREPARATION_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;
 CREATE TEMP TABLE academic147_expected_preparation_dates ON COMMIT DROP AS
-SELECT ledger.id,CASE WHEN proof.offerings>0 THEN proof.starts_on END AS offering_starts_on
-FROM academic_term_preparation_runs ledger LEFT JOIN academic147_preparation_created_proof proof ON proof.id=ledger.id;
+SELECT ledger.id,NULL::date AS offering_starts_on
+FROM academic_term_preparation_runs ledger;
 
 -- Snapshot retained facts for the complete dependent relation graph. Only the
 -- explicitly transformed fields are normalized; evidence contains hashes, no PII.

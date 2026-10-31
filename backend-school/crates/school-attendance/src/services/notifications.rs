@@ -208,9 +208,8 @@ pub async fn queue_digest_in_transaction(
  CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p("studentId" uuid)
  LEFT JOIN attendance_records r ON r.session_id=s.id AND r.student_id=p."studentId"
  LEFT JOIN attendance_days d ON d.academic_term_id=s.academic_term_id AND d.date=s.date
- LEFT JOIN attendance_settings c ON c.academic_term_id=s.academic_term_id
  WHERE s.academic_term_id=$1 AND s.date=$2 AND NOT s.cancelled AND s.start_time<=$3
- AND COALESCE(s.count_override,d.counted,COALESCE(c.configuration->'weekdays','[1,2,3,4,5]'::jsonb) @> to_jsonb(EXTRACT(ISODOW FROM s.date)::integer))
+ AND COALESCE(s.count_override,d.counted,false)
  UNION ALL SELECT teacher,v.category,'unchecked',v.expected
  FROM jsonb_to_recordset($4) v(category text,"teacherIds" uuid[],expected bigint) CROSS JOIN LATERAL unnest(v."teacherIds") teacher),
  summaries AS (SELECT teacher,category,

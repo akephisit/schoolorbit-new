@@ -37,19 +37,20 @@ mod tests {
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
         apply_migrations_through(&pool, 58).await.unwrap();
-        apply_migrations_through(&pool, 89).await.unwrap();
+        school_test_db::run_test_migrations(&pool).await;
         let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-        let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
-            r#"SELECT version.id, version.row_version, term.start_date
+        let (source_id, source_row_version, version_starts_on): (Uuid, i64, NaiveDate) =
+            sqlx::query_as(
+                r#"SELECT version.id, version.row_version, version.effective_from
                    FROM academic_timetable_versions version
                    JOIN academic_terms term ON term.id = version.academic_term_id
                    WHERE version.status = 'published' AND term.status = 'active'
                    ORDER BY version.effective_from, version.id
                    LIMIT 1"#,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         let (source_group, source_teacher, source_year, source_term, source_day): (Uuid, Uuid, Uuid, Uuid, String) = sqlx::query_as(
             "SELECT block_group.id, instructor.instructor_id, block.academic_year_id, block.academic_term_id, block.day_of_week
              FROM academic_timetable_blocks block
@@ -60,7 +61,7 @@ mod tests {
         ).bind(source_id).fetch_one(&pool).await.unwrap();
         let observed_at = (0..7)
             .map(|days| {
-                (term_start + chrono::Duration::days(days))
+                (version_starts_on + chrono::Duration::days(days))
                     .and_hms_opt(5, 0, 0)
                     .unwrap()
                     .and_utc()

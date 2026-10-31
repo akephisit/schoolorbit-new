@@ -135,7 +135,7 @@
 			<Card.Header>
 				<Card.Title><h2>การประมวลผลและแจ้งเตือน</h2></Card.Title>
 				<Card.Description
-					>กำหนดวันนับยอด เวลาเข้าสาย และการแจ้งสรุปสำหรับภาคเรียนนี้</Card.Description
+					>ตั้งชุดวันประจำสัปดาห์ เวลาเข้าสาย และการแจ้งสรุปสำหรับภาคเรียนนี้</Card.Description
 				>
 			</Card.Header>
 			<Card.Content>
@@ -168,23 +168,26 @@
 									disabled={settings.archived}
 								/><Label for="attendance-digest-enabled">เปิดส่งสรุปครูตามเวลา</Label>
 							</div>
-							<p class="text-sm text-muted-foreground">
-								เลือกวันเพื่อนับในยอดสรุปและส่งสรุปครู
-								วันที่ไม่ได้เลือกยังบันทึกและแจ้งเตือนรายคนได้
-							</p>
-							<div class="flex flex-wrap gap-3">
-								{#each weekdays as day, i (i)}<div class="flex items-center gap-2">
-										<Checkbox
-											id={`attendance-weekday-${i}`}
-											checked={configuration.weekdays.includes(i + 1)}
-											onCheckedChange={(checked) => {
-												configuration.weekdays = checked
-													? [...configuration.weekdays, i + 1]
-													: configuration.weekdays.filter((day) => day !== i + 1);
-											}}
-										/><Label for={`attendance-weekday-${i}`}>{day}</Label>
-									</div>{/each}
-							</div>
+							<fieldset class="space-y-3">
+								<legend class="text-sm font-medium">ชุดวันประจำสัปดาห์สำหรับปฏิทิน</legend>
+								<p class="text-sm text-muted-foreground">
+									การบันทึกชุดวันนี้ไม่เปลี่ยนวันนับยอดที่กำหนดไว้ เลือกช่วงวันที่แล้วกด
+									“กำหนดตามวันประจำสัปดาห์” ในปฏิทินด้านล่างเพื่อใช้งาน
+								</p>
+								<div class="flex flex-wrap gap-3">
+									{#each weekdays as day, i (i)}<div class="flex items-center gap-2">
+											<Checkbox
+												id={`attendance-weekday-${i}`}
+												checked={configuration.weekdays.includes(i + 1)}
+												onCheckedChange={(checked) => {
+													configuration.weekdays = checked
+														? [...configuration.weekdays, i + 1]
+														: configuration.weekdays.filter((day) => day !== i + 1);
+												}}
+											/><Label for={`attendance-weekday-${i}`}>{day}</Label>
+										</div>{/each}
+								</div>
+							</fieldset>
 						</div>
 						<div class="grid gap-6 sm:grid-cols-2">
 							<div class="space-y-2">

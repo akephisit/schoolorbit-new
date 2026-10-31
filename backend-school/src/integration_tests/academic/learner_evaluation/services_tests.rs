@@ -687,7 +687,11 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         user_id: actor.user_id,
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
     };
-    sqlx::query("UPDATE learning_group_teachers SET starts_on=(SELECT start_date-10 FROM academic_terms WHERE id=$3),ends_on=(SELECT start_date-1 FROM academic_terms WHERE id=$3) WHERE learning_group_id=$1 AND teacher_id=$2").bind(group).bind(actor.user_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    let operation_date = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    sqlx::query("UPDATE learning_group_teachers SET starts_on=$3::date-10,ends_on=$3::date-1 WHERE learning_group_id=$1 AND teacher_id=$2")
+        .bind(group).bind(actor.user_id).bind(operation_date).execute(&pool).await.unwrap();
     let expired_coordinator = get_workspace(&pool, &teacher, group, DC, &ctx)
         .await
         .unwrap();

@@ -14,9 +14,8 @@ pub(crate) const SUMMARY_SQL: &str = r#"WITH eligible AS (
  LEFT JOIN attendance_special_rounds special ON special.id=s.special_round_id
  LEFT JOIN attendance_special_templates template ON template.id=special.template_id
  LEFT JOIN attendance_days d ON d.academic_term_id=s.academic_term_id AND d.date=s.date
- LEFT JOIN attendance_settings config ON config.academic_term_id=s.academic_term_id
  WHERE s.academic_term_id=$1 AND NOT s.cancelled AND s.date<=(now() AT TIME ZONE 'Asia/Bangkok')::date
- AND COALESCE(s.count_override,d.counted,COALESCE(config.configuration->'weekdays','[1,2,3,4,5]'::jsonb) @> to_jsonb(EXTRACT(ISODOW FROM s.date)::integer))
+ AND COALESCE(s.count_override,d.counted,false)
  AND ($2::uuid IS NULL OR p."studentId"=$2) AND ($3::uuid IS NULL OR $3=ANY(s.teacher_ids))),
  daily AS (SELECT DISTINCT ON(student_id,date) * FROM eligible WHERE kind='arrival'
  ORDER BY student_id,date,(result IN ('present','late')) DESC,(result<>'unchecked') DESC,result),

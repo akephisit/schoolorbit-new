@@ -970,6 +970,20 @@ preservation, explicit attendance dates/notes, scoped target links, refusal and 
 ./scripts/test_backend_school.sh --package school-academic-core --test context_migration_preservation -- --nocapture
 ```
 
+From the repository root, run these focused runtime replay cases separately:
+
+```bash
+./scripts/test_backend_school.sh historical_term_transition_replays_canonical_request_without_rewriting_evidence -- --test-threads=1
+./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
+./scripts/test_backend_school.sh delivery_preparation_preview_is_read_only_and_apply_creates_only_target_drafts -- --test-threads=1
+```
+
+These cases exercise canonical transition replay and accepted offering-date constraints. A legacy
+implicitly inferred date was never explicit accepted input, so migrated requests retain a NULL date
+constraint. Runs that create new offerings bind their explicit accepted date; retrying the same key
+with a different date returns 409. Retained-only and legacy replay preserve current actual offering
+dates, independent Delivery revision/version identities and dates, and original audit evidence.
+
 The facility fixtures cover building-to-room navigation, deep links/history and retained academic
 context, lazy and cancelled region reads, separate unassigned rooms, name-only filtering before
 client pagination, exact mutation permissions, failure/retry and stale-draft ownership. Room and
@@ -1805,6 +1819,18 @@ Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx pl
 ## Attendance and supervised webcam check-in
 
 For per-person note removal, run `./scripts/test_backend_school.sh attendance_note_migration -- --test-threads=1 --nocapture` with the documented local Cargo profile against its owned Docker PostgreSQL fixture. It covers non-note record equality, retained live and orphaned audit identities/results/revisions, calendar/unrelated note preservation, rejected unknown or partial snapshots, reconciliation failure before cleanup and retry. The ordinary Attendance suite derives the latest version from the canonical migration timeline; historical cutover fixtures retain their explicitly requested predecessors through `fixture_at`. The generated contract and domain input tests reject removed per-person note fields.
+
+Attendance counting uses explicit dated calendar entries; a missing day is uncounted. Saved weekdays
+are a preset for the explicit range action, which writes each date as counted or uncounted through
+the existing revision-checked day save. Saving a weekday preset alone leaves persisted dates intact.
+Run the settings calendar coverage against the ready local frontend:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/attendance-settings-experience.spec.ts --project=chromium --workers=1
+```
+
+These synthetic cases cover empty calendars, first-click counting, saved versus unsaved presets,
+weekday/weekend range values, retained notes, serialized edits, conflict recovery and focused retries.
 
 The Attendance browser suite checks seven visible single-selection status buttons plus explicit unchecked clearing, one-tap changes, repeated-tap retention, keyboard focus/activation, disabled read-only access and per-person note absence. Exercise narrow mobile and desktop light/dark layouts against a ready production build, together with sparse saves, correction reasons, same-day arrival context, special-round score overrides and overlapping scan conflicts. No browser fixture mutates a real tenant.
 
