@@ -19,7 +19,8 @@ neither edits applied migrations 147/148, SQLx history, credentials or real tena
    lock cohort, staging namespace, failure/cancellation behavior and evidence schema against the
    approved design. Preserve the old migration bytes and existing public provider direction.
 2. **Backend: implement preparation and atomic transition.** On the verified locked 147 branch,
-   admit only mask-1 lower-count cases within distinct output cardinality. Preserve the original
+   retain ordinary mask-0 receipts and admit only mask-1 lower-count violations within distinct
+   output cardinality. Preserve the original
    physical count column; capture all original receipts and prove reconstruction by bidirectional
    `EXCEPT ALL`, counts and SHA before the unchanged native 148 runs. Keep preparation, native
    148 and new 149 in one outer transaction/connection, with no preparation DML on other domains.

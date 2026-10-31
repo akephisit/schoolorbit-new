@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -211,7 +212,7 @@ for raw in (b'{"a":1,"a":2}',b'{"a":NaN}',b'{"a":1}{}',b'x'*(m.MAX_BYTES+1)):
   );
 });
 
-test("trusted main preparation requires exact immutable migration prefix and private hash-bound files", (t) => {
+test("trusted main preparation validates149 sources and emits the unchanged148 historical prefix", (t) => {
   const temporary = mkdtempSync(path.join(os.tmpdir(), "academic148-prepare-"));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const output = path.join(temporary, "academic148-inputs");
@@ -227,10 +228,28 @@ test("trusted main preparation requires exact immutable migration prefix and pri
   assert.equal(result.status, 0, result.stderr);
   const manifest = JSON.parse(readFileSync(path.join(output, "manifest.json")));
   assert.equal(manifest.length, 148);
+  const migrations = readdirSync(path.join(root, "backend-school/migrations"))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  assert.equal(migrations.length, 149);
   for (const [index, item] of manifest.entries()) {
     assert.equal(item.version, index + 1);
     assert.match(item.checksum, /^[a-f0-9]{96}$/);
+    assert.equal(
+      item.checksum,
+      createHash("sha384")
+        .update(
+          readFileSync(
+            path.join(root, "backend-school/migrations", migrations[index]),
+          ),
+        )
+        .digest("hex"),
+    );
   }
+  assert.equal(
+    manifest.some((item) => item.version === 149),
+    false,
+  );
   for (const name of [
     "manifest.json",
     "pipeline-academic148-observations.py",
@@ -251,6 +270,35 @@ test("trusted main preparation requires exact immutable migration prefix and pri
   assert.notEqual(denied.status, 0);
   assert.equal(denied.stdout, "");
   assert.equal(denied.stderr.trim(), "academic148_observation=refused");
+});
+
+test("historical observer preparation refuses missing, extra or symlinked149 sources", () => {
+  python(`import shutil
+with tempfile.TemporaryDirectory() as directory:
+ root=pathlib.Path(directory);migrations=root/'backend-school/migrations';migrations.mkdir(parents=True)
+ source=pathlib.Path(sys.argv[1]).parents[2]
+ for path in (source/'backend-school/migrations').glob('*.sql'):os.link(path,migrations/path.name)
+ for name in ('pipeline-academic148-observations.py','pipeline-academic148-observations.sql'):
+  target=root/'scripts/lib'/name;target.parent.mkdir(parents=True,exist_ok=True);os.link(source/'scripts/lib'/name,target)
+ def refused():
+  with tempfile.TemporaryDirectory() as runtime,patch.dict(os.environ,{'GITHUB_REF':'refs/heads/main','GITHUB_WORKSPACE':str(root),'RUNNER_TEMP':runtime}):
+   try:m.prepare()
+   except m.Refusal:pass
+   else:raise AssertionError('invalid source inventory accepted')
+ latest=next(migrations.glob('149_*.sql'));original=source/'backend-school/migrations'/latest.name
+ latest.unlink();refused();latest.symlink_to(original);refused();latest.unlink();os.link(original,latest)
+ extra=migrations/'150_unreviewed.sql';extra.write_text('private-observation-sentinel');refused();extra.unlink()
+ wrong=latest.with_name('149_wrong-uppercase-NAME.sql');latest.rename(wrong);refused()`);
+});
+
+test("historical observer continues to refuse149 reports rather than becoming a runtime fallback", () => {
+  python(
+    `data['history_version']=149
+try:m.validate(data)
+except m.Refusal:pass
+else:raise AssertionError('unsupported schema149 admitted')`,
+    empty(),
+  );
 });
 
 test("operational provider denies redirects, invalid inventories and owner routing drift", () => {

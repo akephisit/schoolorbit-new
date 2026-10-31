@@ -93,6 +93,10 @@ report_aggregate() {
                 "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED",
                 "ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED",
                 "PROMOTION_RUN_HISTORY_RETAINED","PROMOTION_RUN_IDENTITY_IMMUTABLE");
+            def refusal149: IN("ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE",
+                "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY",
+                "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED",
+                "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID");
             def tuple: [.stage,.version,.error_class,.sqlstate,.code];
             def bucket:
                 type == "object" and keys == ["code","count","error_class","sqlstate","stage","version"] and
@@ -103,7 +107,8 @@ report_aggregate() {
                 (.code == "unclassified" or
                     (.stage == "migration_execution" and .error_class == "database" and
                         ((.version == 147 and (.code | refusal147)) or
-                         (.version == 148 and (.code | refusal148)))));
+                         (.version == 148 and (.code | refusal148)) or
+                         (.version == 149 and (.code | refusal149)))));
             if length != 1 then error("invalid") else .[0] end |
             if type == "object" and
                 keys == ["failed","failures","latest_version","migrated","overflow_count","schema_version","tenants"] and

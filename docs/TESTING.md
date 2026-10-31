@@ -2343,7 +2343,8 @@ no test-only production bypass is supported. Do not log URL/key values in fixtur
 
 For the fixed academic-148 curriculum observation collector, run
 `node --test scripts/tests/pipeline-academic148-observations.test.mjs` with the pinned Node
-runtime. This covers trusted manifest preparation, private credential transport, fixed
+runtime. This covers exact trusted 001–149 source validation with an unchanged 001–148 historical
+manifest, explicit schema-149 refusal, private credential transport, fixed
 read-only identity/transaction controls, bounded failures, aggregate reconciliation and
 artifact rejection. Its focused disposable PostgreSQL/TLS case reuses the existing fixture
 owner; it does not contact production. The Backend-owned
@@ -2356,7 +2357,31 @@ predicates and history/checkpoint evidence:
 
 Deployment workflow changes also require the
 owning `./scripts/pipeline verify --scope deployment` suite. Local fixture evidence does not
-establish the cause in a real tenant; obtain that evidence through the protected Operations flag.
+establish the cause in a real tenant. The optional historical Operations flag is not a prerequisite
+for the approved migration-149 recovery and cannot observe a version-149 database.
+
+For the version-149 Pipeline consumer and bounded migration diagnostics, run:
+
+```bash
+node --test scripts/tests/migration-completion-gate.test.mjs scripts/tests/pipeline-storage-namespace.test.mjs
+```
+
+These execute the real release filter and remote adapter: latest version at least 149, context
+version 149, all six exact distinct check codes passing, absent/duplicated/substituted evidence
+refusal, and version-bound diagnostic codes without private output. Keep the existing complete
+tenant coverage, maintenance, immutable image, drain and replay cases. The owning deployment
+suite additionally verifies shared orchestration, Bats, Compose and actionlint. Backend-owned
+atomic 147→149 fixtures must separately verify original physical-column/JSON preservation,
+native 148 phase evidence, transitive nonreceipt proof, rollback/cancellation and cross-connection
+visibility, existing-148 nonnull dates, fresh provisioning, pool size one, and missing or invalid
+149 readiness evidence through the dedicated owning fixture:
+
+```bash
+./scripts/test_backend_school.sh --integration academic149_receipt_recovery -- --test-threads=1
+```
+
+Select further migration-unit, Academic Core context and architecture checks with the Backend
+implementation. No fixture may use a production database or edit applied migration/history bytes.
 
 Production release uses the main executable in the exact prepared, digest-pinned School image:
 `backend-school migrate-tenants`, then `backend-school storage-namespace check-admin`, and only

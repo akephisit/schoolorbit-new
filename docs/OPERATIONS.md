@@ -1670,8 +1670,11 @@ inventory/owner connections and one repeatable-read, read-only connection per te
 runs migrations nor changes maintenance or tenant status. Only a complete, validated aggregate
 is retained in the three-day `academic148-curriculum-<run>-<attempt>` artifact; refusal produces
 no successful evidence artifact. Keep maintenance active while investigating a failed cutover.
-The collector binds its fixed query and the exact migration-001–148 checksum manifest to the
-trusted main checkout. Predicate masks preserve receipt/output multiplicity. Before-050 timing
+The collector validates the trusted migration-001–149 source inventory and binds its fixed query
+to the unchanged 001–148 checksum prefix. It remains limited to historical database schemas
+147/148: schema 149 is explicitly unsupported and produces no successful evidence artifact.
+This diagnostic boundary is not a business fallback or a prerequisite for the approved recovery.
+Predicate masks preserve receipt/output multiplicity. Before-050 timing
 is correlation rather than proof of a historical client; matching SQLx history verifies the
 immutable migration prefix rather than historical ledger authorship. Checkpoint count/hash
 matches are independent observations; legitimate later work, actor deletion or historical
@@ -1687,7 +1690,7 @@ and distinct-output totals use different units and must not be equated. No recei
 timestamps or hashes are published, and the read-only observation still performs no repair.
 These counts do not authorize guessed data repair or changes to applied migrations.
 
-Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql) and [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits the prior binary against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
+Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and 149 with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
@@ -1697,9 +1700,33 @@ Attendance owns explicit dated counting decisions after cutover. Migration mater
 
 Original lifecycle audit payloads, accepted readiness and request checksums remain unchanged. Migration verifies the original ordered request identity before normalizing only the active replay projection. Historical operation days come from each receipt's Bangkok creation day. Promotion's run date is a default for new or pending work; executed items retain the dates of their exact placement receipts, including mixed dates and legitimate decisions with no placement. Approval and execution bind the per-item date.
 
-Curriculum and preparation receipts preserve an accepted explicit offering-date constraint only for new requests that create offerings. All legacy requests predate that input and migrate with a null constraint, as do new retained-only results; publication can legitimately change an offering's actual date later. Exact transaction creation identity, output IDs and counts still prove the original created subset. Preparation may also create a separately dated Delivery revision/version. Actual offering/reference dates, links and original creation audits remain intact. Preparation verifies its original normalized module/mapping request and checksum; malformed, altered or unprovable history refuses cutover without retiming or rewriting it.
+Curriculum and preparation receipts preserve an accepted explicit offering-date constraint only for new requests that create offerings. Legacy requests predate that input and migrate with a null constraint independently of their created counts, as do new retained-only results; publication can legitimately change an offering's actual date later. The source-confirmed historical draft delete/reapply path could recreate the same offering UUID, so current timestamps do not necessarily prove the original created subset. The cause of the three observed production mismatches remains unknown; a lower timestamp-matched count does not establish that an accepted historical count is wrong. Preparation may also create a separately dated Delivery revision/version. Actual offering/reference dates, links and original creation audits remain intact. Preparation verifies its original normalized module/mapping request and checksum; unrelated malformed, altered or unprovable history still refuses cutover without retiming or rewriting it.
 
-Before dropping any boundary column, migration148 compares row counts and SHA256 summaries for the complete affected foreign-key relation graph, verifies every original nonnull link, compares each newly mapped target and promotion date, and checks exact Attendance calendar and Behavior schedule transformations. It repeats retained-fact and transformed-link checks after cleanup, stores only immutable hashes/counts in `academic_context_cutover_audit`, and exposes bounded reconciliation checks through the internal migration status. The deployment gate requires all five `academicContextCutover` checks to pass for every tenant. A receipt records the atomic migration reconciliation; it is not an archive of retired boundary values or a claim that mutable business data never changes after release. Applied migrations replay without transforming data again.
+Migration 149 owns a finite correction of that transition premise. On an exact verified, locked
+147 cohort, the canonical runner retains ordinary mask-0 receipts. Among violating receipts it
+admits only pure mask-1 cases with original count `N` greater than current timestamp-matched `M`,
+with `N` no greater than distinct nonnull output cardinality and all other predicates passing.
+All receipts participate in preservation. It preflights receipt shape, triggers and dependencies, retains the
+original physical count column with its identity/default/checks, and derives a same-name `M`
+projection. Before native unchanged 148, complete original receipt JSON must reconstruct exactly
+by bidirectional `EXCEPT ALL`, count and SHA proofs. Preparation changes no other domain relation.
+One outer transaction and connection span preparation, native SQLx 148 and 149 restoration.
+The 148 audit truthfully records the projected phase; immutable 149 evidence links original,
+projected, 148-audit and final phases and proves restoration of every original receipt field
+except the newly null legacy `starts_on`. Restoration reuses `pg_temp.academic148_snapshot` to
+prove that no nonreceipt relation in its transitive graph changed. All staging/helpers disappear
+before commit. Existing-148 databases preserve receipt JSON exactly, including legitimate nonnull
+explicit dates. Permission/grant reconciliation follows commit and connection release, supporting
+a one-connection privileged pool.
+
+For the 147 recovery branch, failure or cancellation rolls the whole transition back; no external
+connection may observe a committed projected 148/staging state. A disconnect near commit can
+leave 147 or 149. Reconcile fresh exact history and phase evidence before proceeding; never infer
+rollback from client loss, replay guessed data repairs, or patch SQLx records. Keep universal
+maintenance active and roll forward through the compatible canonical runner. No further
+diagnostic-only production cycle is required before this approved correction.
+
+Before dropping any boundary column, migration148 compares row counts and SHA256 summaries for the complete affected foreign-key relation graph, verifies every original nonnull link, compares each newly mapped target and promotion date, and checks exact Attendance calendar and Behavior schedule transformations. It repeats retained-fact and transformed-link checks after cleanup and stores immutable hashes/counts in `academic_context_cutover_audit`. Context status now remains pending below 149. The deployment gate requires context version 149 and exactly six distinct, passed `academicContextCutover` codes for every tenant: the existing five plus `ACADEMIC_CONTEXT_RECEIPT_RECOVERY_EVIDENCE`. The sixth verifies immutable 149 evidence and absence of staging; it does not continually compare original counts against current timestamps. These receipts record atomic phase reconciliation rather than an archive of retired boundaries or a claim that mutable business data never changes after release. Applied migrations replay without transforming data again.
 
 ## Tenant Migrations
 

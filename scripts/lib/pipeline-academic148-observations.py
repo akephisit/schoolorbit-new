@@ -129,10 +129,12 @@ def prepare():
     output = Path(os.environ['RUNNER_TEMP']) / 'academic148-inputs'
     output.mkdir(mode=0o700); manifest = []
     files = sorted((root/'backend-school/migrations').glob('*.sql'))
-    require(len(files) == 148)
+    require(len(files) == 149)
     for version, path in enumerate(files, 1):
         require(re.fullmatch(f'{version:03d}_[a-z0-9_]+\\.sql', path.name))
-        manifest.append({'version':version,'checksum':hashlib.sha384(regular(path)).hexdigest()})
+        checksum = hashlib.sha384(regular(path)).hexdigest()
+        if version <= 148:
+            manifest.append({'version':version,'checksum':checksum})
     payloads = {'manifest.json':json.dumps(manifest,separators=(',',':')).encode()}
     for name in ('pipeline-academic148-observations.py','pipeline-academic148-observations.sql'):
         payloads[name] = regular(root/'scripts/lib'/name)

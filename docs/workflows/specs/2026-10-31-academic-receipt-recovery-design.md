@@ -39,10 +39,11 @@ single-connection privileged pool must remain sufficient.
 1. Verify the exact successful immutable migration prefix through 147, acquire the locks needed
    to keep the complete receipt cohort and preservation proof stable, and refuse unexpected
    receipt shapes, triggers, dependencies or staging-name collisions before projecting anything.
-2. Admit only receipts whose sole migration-148 violation is mask 1 with `N > M` and
-   `N <=` the distinct nonnull output cardinality. Every other migration-148 predicate must pass.
-   All receipts participate in preservation; admission is not permission to rewrite only a
-   convenient subset or bypass another refusal.
+2. Retain ordinary mask-0 receipts. Among violating receipts, admit only those whose sole
+   migration-148 violation is mask 1 with `N > M` and `N <=` the distinct nonnull output
+   cardinality. Every other migration-148 predicate must pass. All receipts participate in
+   preservation; admission is not permission to rewrite only a convenient subset or bypass
+   another refusal.
 3. Capture the complete original receipt JSON multiset `S0`. Physically rename the original `N`
    column, retaining that column's identity, default and checks. Derive a temporary same-name
    `M` projection for migration 148; do not overwrite the original values or mutate another
