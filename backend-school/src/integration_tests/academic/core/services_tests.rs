@@ -857,6 +857,30 @@ async fn current_fixture_subject_version(pool: &PgPool) -> Uuid {
         .unwrap()[&subject_id]
 }
 
+async fn current_fixture_activity_version_and_grade(pool: &PgPool) -> (Uuid, Uuid) {
+    let activity_id: Uuid = sqlx::query_scalar(
+        "SELECT activity_id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let activity_version_id = {
+        let mut connection = pool.acquire().await.unwrap();
+        catalog::current_activity_revisions_on_connection(&mut connection, &[activity_id])
+            .await
+            .unwrap()[&activity_id]
+            .id
+    };
+    let grade_level_id = sqlx::query_scalar(
+        "SELECT grade.value::uuid FROM activity_versions version CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value) WHERE version.id=$1 ORDER BY grade.value LIMIT 1",
+    )
+    .bind(activity_version_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (activity_version_id, grade_level_id)
+}
+
 async fn create_curriculum_overview_fixture(
     pool: &PgPool,
     _owner_id: Uuid,
@@ -1112,41 +1136,26 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
             .fetch_one(&pool)
             .await
             .unwrap();
-    let grade_level_id: Uuid = sqlx::query_scalar(
-        r#"SELECT grade.value::uuid
-           FROM activity_versions version
-           CROSS JOIN LATERAL jsonb_array_elements_text(
-               COALESCE(version.grade_level_ids, '[]'::jsonb)
-           ) grade(value)
-           WHERE version.status = 'published'
-           ORDER BY grade.value LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must include a published activity with a supported grade");
+    let (activity_version_id, grade_level_id) =
+        current_fixture_activity_version_and_grade(&pool).await;
     let subject_version_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    let activity_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT version.id
-           FROM activity_versions version
-           WHERE version.status = 'published'
-             AND EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements_text(
-                     COALESCE(version.grade_level_ids, '[]'::jsonb)
-                 ) grade(value)
-                 WHERE grade.value::uuid = $1
-             )
-           ORDER BY version.id LIMIT 1"#,
-    )
-    .bind(grade_level_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_id = sqlx::query_scalar("SELECT subject_id FROM subject_versions WHERE id=$1")
+        .bind(subject_version_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let current_subject = catalog::current_subject_version_ids(&pool, &[subject_id])
+        .await
+        .unwrap()[&subject_id];
+    assert_ne!(
+        subject_version_id, current_subject,
+        "the source must exercise a historical course pin"
+    );
     let (_curriculum_id, source_version_id) = create_curriculum_overview_fixture(
         &pool,
         owner_id,
@@ -1239,6 +1248,14 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
     let source_workspace = curriculum_structure::get_workspace(&pool, source_version_id)
         .await
         .unwrap();
+    assert!(
+        source_workspace
+            .requirements
+            .iter()
+            .filter(|r| r.resource_kind == RequirementResourceKind::Course)
+            .all(|r| r.catalog_version_id == subject_version_id),
+        "publication preserves the historical source course pin"
+    );
     assert_eq!(source_workspace.programs.len(), 2);
     assert_eq!(source_workspace.requirements.len(), 3);
     assert!(source_workspace
@@ -1331,6 +1348,14 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
     let copied_workspace = curriculum_structure::get_workspace(&pool, target.id)
         .await
         .unwrap();
+    assert!(
+        copied_workspace
+            .requirements
+            .iter()
+            .any(|r| r.resource_kind == RequirementResourceKind::Course
+                && r.catalog_version_id == subject_version_id),
+        "copy preserves the historical course revision rather than selecting today's revision"
+    );
     assert_eq!(copied_workspace.programs.len(), 1);
     assert_eq!(copied_workspace.requirements.len(), 2);
     let shape = |w: &school_academic_core::models::CurriculumStructureWorkspace, pid: Uuid| {
@@ -2202,7 +2227,7 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
 #[tokio::test]
 async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flags() {
     let historical = prepare_core_fixture_through("future_term_annual_inclusion_legacy", 60).await;
-    let legacy_id: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,term_type,sequence_no,name,start_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) SELECT $1,'summer',99,'Historical inclusion','2027-04-01',true,false,id,'planning' FROM bell_schedules WHERE academic_year_id=$1 AND is_default RETURNING id").bind(FUTURE_YEAR_ID).fetch_one(&historical).await.unwrap();
+    let legacy_id: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,term_type,sequence_no,code,name,start_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) SELECT $1,'summer',99,'SUMMER-HISTORY-99','Historical inclusion','2027-04-01',true,false,id,'planning' FROM bell_schedules WHERE academic_year_id=$1 AND is_default RETURNING id").bind(FUTURE_YEAR_ID).fetch_one(&historical).await.unwrap();
     apply_migrations_through(&historical, 67).await.unwrap();
     let repaired: (bool,bool,i64) = sqlx::query_as("SELECT included_in_year_result,blocks_year_closure,row_version FROM academic_terms WHERE id=$1").bind(legacy_id).fetch_one(&historical).await.unwrap();
     assert_eq!(repaired, (true, true, 2));
@@ -2250,7 +2275,22 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
         years_terms::update_term(&pool, actor, created.id, invalid_update).await,
         Err(school_errors::AppError::ValidationError(_))
     ));
-    let rejected = sqlx::query("UPDATE academic_terms SET blocks_year_closure=false WHERE id=$1")
+    let unchanged = years_terms::get_term(&pool, created.id).await.unwrap();
+    let expected_flags = (
+        created.included_in_year_result,
+        created.blocks_year_closure,
+        created.row_version,
+    );
+    assert_eq!(
+        (
+            unchanged.included_in_year_result,
+            unchanged.blocks_year_closure,
+            unchanged.row_version
+        ),
+        expected_flags,
+        "rejected service updates leave the flags and version intact"
+    );
+    let rejected = sqlx::query("UPDATE academic_terms SET included_in_year_result=true,blocks_year_closure=false WHERE id=$1")
         .bind(created.id)
         .execute(&pool)
         .await
@@ -2260,6 +2300,16 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
             .as_database_error()
             .and_then(|error| error.constraint()),
         Some("academic_terms_included_blocks_closure_check")
+    );
+    let unchanged = years_terms::get_term(&pool, created.id).await.unwrap();
+    assert_eq!(
+        (
+            unchanged.included_in_year_result,
+            unchanged.blocks_year_closure,
+            unchanged.row_version
+        ),
+        expected_flags,
+        "the database constraint refuses the contradictory pair without changing the row"
     );
 }
 
@@ -4991,17 +5041,8 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
 #[tokio::test]
 async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
     let pool = prepare_current_core_fixture("academic_core_curriculum_metric_blocker").await;
-    let (activity_version_id, grade_level_id): (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT version.id, grade.value::uuid
-           FROM activity_versions version
-           CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value)
-           WHERE version.status = 'published'
-           ORDER BY version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (activity_version_id, grade_level_id) =
+        current_fixture_activity_version_and_grade(&pool).await;
     sqlx::query(
         "ALTER TABLE activity_versions DISABLE TRIGGER activity_versions_published_immutable",
     )
