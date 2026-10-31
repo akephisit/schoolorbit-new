@@ -229,6 +229,37 @@ async fn facts(pool: &sqlx::PgPool) -> Value {
         .fetch_one(pool).await.unwrap()
 }
 
+async fn seed_historical_empty_confirmation(
+    pool: &sqlx::PgPool,
+    actor: &ActorContext,
+    ctx: &EvaluationContext,
+    ws: &EvaluationWorkspace,
+) {
+    assert!(ws.students.is_empty() && ws.responses.is_empty());
+    assert!(ws
+        .criteria
+        .iter()
+        .any(|criterion| criterion.lifecycle == "active"));
+    let offering: Uuid =
+        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id=$1")
+            .bind(ws.learning_group_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    // This branch introduces retained historical evidence after proving the
+    // no-history classification. It cannot create a new confirmation through an
+    // omitted teacher; the complete snapshot represents a pre-existing fact.
+    let snapshot = serde_json::json!({
+        "invalidated":false,"learningGroupId":ws.learning_group_id,
+        "learningOfferingId":offering,"sourceChecksum":ws.source_checksum,
+        "rosterChecksum":ws.roster_checksum,
+        "criteria":ws.criteria.iter().filter(|criterion| criterion.lifecycle == "active").collect::<Vec<_>>(),
+        "roster":[],"responses":[],"confirmation":null,
+    });
+    sqlx::query("INSERT INTO learning_group_evaluation_confirmations(learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(ws.learning_group_id).bind(offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(ws.subject_id).bind(DC.as_str()).bind(&ws.roster_checksum).bind(&ws.source_checksum).bind(snapshot).bind(actor.user_id).execute(pool).await.unwrap();
+}
+
 #[tokio::test]
 async fn learner_current_obligation_ready_retained_rooms_lock_without_unused_omitted_room() {
     let (pool, actor, ctx, group, subject, unused) =
@@ -358,9 +389,11 @@ async fn learner_current_obligation_future_scope_and_invalidated_confirmation_re
         .await
         .unwrap();
     assert!(empty.students.is_empty());
-    confirm_group(&pool, &actor, unused, DC, &ctx, confirmation(&empty))
-        .await
-        .unwrap();
+    assert!(matches!(
+        confirm_group(&pool, &actor, unused, DC, &ctx, confirmation(&empty)).await,
+        Err(AppError::Forbidden(_))
+    ));
+    seed_historical_empty_confirmation(&pool, &actor, &ctx, &empty).await;
     sqlx::query("UPDATE learning_group_evaluation_confirmations SET source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true') WHERE learning_group_id=$1")
         .bind(unused).execute(&pool).await.unwrap();
     let before = facts(&pool).await;
@@ -702,9 +735,11 @@ async fn learner_current_obligation_current_omitted_invalidated_confirmation_is_
         .await
         .unwrap();
     assert!(empty.students.is_empty());
-    confirm_group(&pool, &actor, unused, DC, &ctx, confirmation(&empty))
-        .await
-        .unwrap();
+    assert!(matches!(
+        confirm_group(&pool, &actor, unused, DC, &ctx, confirmation(&empty)).await,
+        Err(AppError::Forbidden(_))
+    ));
+    seed_historical_empty_confirmation(&pool, &actor, &ctx, &empty).await;
     sqlx::query("UPDATE learning_group_evaluation_confirmations SET source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true') WHERE learning_group_id=$1")
         .bind(unused).execute(&pool).await.unwrap();
     let no_locks:i64=sqlx::query_scalar("SELECT count(*) FROM subject_term_evaluation_locks WHERE subject_id=$1 AND academic_term_id=$2")

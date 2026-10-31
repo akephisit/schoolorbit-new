@@ -767,22 +767,25 @@ async fn results_assignment_ids_missing_source_retains_confirmation_and_invalida
     let term = Uuid::now_v7();
     let offering = Uuid::now_v7();
     let group = Uuid::now_v7();
-    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Results no source',1000,'RESULT-NO-SOURCE','custom',false,false,'active',bell_schedule_id FROM academic_terms WHERE id=$2")
-        .bind(term).bind(old_context.academic_term_id).execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    // Planning is writable and preserves the existing single active term.
+    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Results no source',1000,'RESULT-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
+        .bind(term).bind(old_context.academic_term_id).execute(&mut *tx).await.unwrap();
     let source: Uuid = sqlx::query_scalar("SELECT learning_offering_id FROM activity_offering_details WHERE academic_term_id=$1 ORDER BY learning_offering_id LIMIT 1")
-        .bind(old_context.academic_term_id).fetch_one(&pool).await.unwrap();
+        .bind(old_context.academic_term_id).fetch_one(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) SELECT $1,$2,academic_year_id,'activity','RESULT-NO-SOURCE','Results no source','draft',current_date,owning_organization_unit_id FROM learning_offerings WHERE id=$3")
-        .bind(offering).bind(term).bind(source).execute(&pool).await.unwrap();
+        .bind(offering).bind(term).bind(source).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours) SELECT $1,$2,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours FROM activity_offering_details WHERE learning_offering_id=$3")
-        .bind(offering).bind(term).bind(source).execute(&pool).await.unwrap();
+        .bind(offering).bind(term).bind(source).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,'RESULT-NO-SOURCE','Results no source','draft','draft')")
-        .bind(group).bind(offering).bind(term).bind(old_context.academic_year_id).execute(&pool).await.unwrap();
+        .bind(group).bind(offering).bind(term).bind(old_context.academic_year_id).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) VALUES(uuidv7(),$1,$2,$3,$4,'primary',current_date)")
-        .bind(group).bind(term).bind(old_context.academic_year_id).bind(actor.user_id).execute(&pool).await.unwrap();
+        .bind(group).bind(term).bind(old_context.academic_year_id).bind(actor.user_id).execute(&mut *tx).await.unwrap();
     let ctx = ResultContext {
         academic_year_id: old_context.academic_year_id,
         academic_term_id: term,
     };
+    tx.commit().await.unwrap();
     let workspace = get_activity_workspace(&pool, &actor, &ctx, group)
         .await
         .unwrap();

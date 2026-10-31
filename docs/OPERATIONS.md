@@ -1704,6 +1704,10 @@ allocation IDs, including readiness, locking and retained-confirmation checks. T
 the existing150 schema and changes no stored interval or official result snapshot. Deploy the
 matching application release through the normal maintenance/acceptance gates; missing allocation
 coverage must be resolved through its ordinary publication workflow, without guessed data repair.
+This extension retains schema150, so that schema fence does not reject every preceding150 binary.
+After activation, recover forward to an ID-provider-compatible release: the preceding Learner
+Evaluation reader can persist an incorrect invalidation when another valid primary has a lower
+assignment ID. Do not restore that reader to recover the new responsibility policy.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
