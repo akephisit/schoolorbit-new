@@ -309,3 +309,120 @@ async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked
         .id
         .is_none());
 }
+
+#[tokio::test]
+async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_plans() {
+    let pool = predecessor("assessment_publication_large_mixed_targets").await;
+    let (missing, groups, start, _) = offering(&pool, 1, -10).await;
+    teacher(&pool, &groups, PRIMARY, start, None).await;
+    let (owned, owned_groups, owned_start, _) = offering(&pool, 2, -10).await;
+    teacher(&pool, &owned_groups, PRIMARY, owned_start, None).await;
+    existing_plan(&pool, owned, Some(OTHER)).await;
+
+    // Delivery includes retained activities and courses with accepted owners in its targets.
+    // Persist every target so deduplication or nonexistent IDs cannot hide a smaller input.
+    let activity_ids = (0..499).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
+    let mut tx = pool.begin().await.unwrap();
+    let activity_source: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM activity_offering_details ORDER BY learning_offering_id LIMIT 1",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    let inserted = sqlx::query(
+        "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on)
+         SELECT batch.id,target.academic_term_id,target.academic_year_id,'activity','COORD-ACT-'||batch.number::text,'Coordinator activity fixture','draft',source.owning_organization_unit_id,target.starts_on
+         FROM unnest($1::uuid[]) WITH ORDINALITY batch(id,number)
+         JOIN learning_offerings target ON target.id=$2
+         JOIN learning_offerings source ON source.id=$3",
+    )
+    .bind(&activity_ids)
+    .bind(missing)
+    .bind(activity_source)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(inserted.rows_affected(), 499);
+    sqlx::query(
+        "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria)
+         SELECT offering.id,offering.academic_term_id,offering.academic_year_id,source.activity_version_id,source.activity_id,source.registration_type,source.scheduling_mode,source.hours,source.capacity,source.attendance_requirement,source.pass_criteria
+         FROM learning_offerings offering JOIN activity_offering_details source ON source.learning_offering_id=$2
+         WHERE offering.id=ANY($1)",
+    )
+    .bind(&activity_ids)
+    .bind(activity_source)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE learning_offerings SET status='published',published_at=now() WHERE id=ANY($1)",
+    )
+    .bind(&activity_ids)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let mut target_ids = activity_ids.clone();
+    target_ids.extend([owned, missing]);
+    target_ids.reverse();
+    assert_eq!(
+        target_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        501
+    );
+    let persisted_targets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_offerings WHERE id=ANY($1)")
+            .bind(&target_ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(persisted_targets, 501);
+    let snapshot_sql = "SELECT jsonb_agg(jsonb_build_object('plan',to_jsonb(plan),'phases',(SELECT jsonb_agg(to_jsonb(phase) ORDER BY phase.id) FROM course_assessment_phases phase WHERE phase.plan_id=plan.id)) ORDER BY plan.id) FROM course_assessment_plans plan WHERE plan.learning_offering_id=ANY($1)";
+    let owned_before: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(vec![owned])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    fill(&mut tx, &target_ids).await;
+    tx.commit().await.unwrap();
+
+    let assigned = services::get_plan_detail(&pool, missing).await.unwrap();
+    assert_eq!(assigned.assessment_coordinator_id, Some(PRIMARY));
+    assert_eq!(assigned.phases.len(), 4);
+    assert!(assigned.phases.iter().all(|phase| phase.max_score == "0"
+        && phase.exam_arrangement
+            == school_academic_assessment::assessment::models::AssessmentExamArrangement::None
+        && phase.exam_duration_minutes.is_none()));
+    let owned_after: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(vec![owned])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(owned_before, owned_after);
+    let activity_plans: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM course_assessment_plans WHERE learning_offering_id=ANY($1)",
+    )
+    .bind(&activity_ids)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(activity_plans, 0);
+    let first_fill: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(&target_ids)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    fill(&mut tx, &target_ids).await;
+    tx.commit().await.unwrap();
+    let repeated_fill: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(&target_ids)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(first_fill, repeated_fill);
+}

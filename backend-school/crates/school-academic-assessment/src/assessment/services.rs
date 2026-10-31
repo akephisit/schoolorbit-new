@@ -477,11 +477,6 @@ pub async fn fill_missing_coordinators(
     if offering_ids.is_empty() {
         return Ok(());
     }
-    if offering_ids.len() > 500 {
-        return Err(AppError::ValidationError(
-            "จำนวนรายวิชาสำหรับกำหนดผู้รับผิดชอบเกิน 500 รายการ".into(),
-        ));
-    }
     let contexts: Vec<(Uuid, Uuid)> = DbSession::new(&mut **transaction).query_as(
         "academic_assessment.assessment.services.fill_missing_coordinators",
         "SELECT DISTINCT academic_year_id,academic_term_id FROM learning_offerings WHERE id=ANY($1) AND kind='course' ORDER BY academic_year_id,academic_term_id",
