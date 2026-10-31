@@ -568,6 +568,40 @@ mod tests {
         }
         let _ = check as fn(&PgPool);
     }
+    #[test]
+    fn recovery_refusal_codes_require_native149_and_legacy_connection_errors_are_preserved() {
+        for code in [
+            "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE",
+            "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY",
+            "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED",
+            "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID",
+        ] {
+            let failure = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(code, "P0001"),
+                149,
+            ));
+            assert_eq!(failure.diagnostic.code, code);
+            let wrong = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(code, "P0001"),
+                148,
+            ));
+            assert_eq!(wrong.diagnostic.code, "unclassified");
+            let spoofed = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(&format!("{code} private-sentinel"), "P0001"),
+                149,
+            ));
+            assert_eq!(spoofed.diagnostic.code, "unclassified");
+            assert!(!format!("{spoofed:?}").contains("private-sentinel"));
+        }
+        let connection = migration_failure(sqlx::migrate::MigrateError::Execute(
+            sqlx::Error::PoolTimedOut,
+        ));
+        assert_eq!(connection.diagnostic.stage, MigrationStage::Execution);
+        assert_eq!(
+            connection.into_legacy_message(),
+            "Migration failed: pool_timeout"
+        );
+    }
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,

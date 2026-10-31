@@ -129,7 +129,13 @@ pub(super) async fn run_transition(
         Ok(false) => transaction.rollback().await?,
         Err(primary) => {
             // Secondary cleanup must never replace the native primary cause.
-            let _ = transaction.rollback().await;
+            if let Err(cleanup) = transaction.rollback().await {
+                tracing::warn!(
+                    operation = "academic_receipt_recovery",
+                    reason = "rollback_failed",
+                    error_class = school_database::error_class(&cleanup)
+                );
+            }
             return Err(primary);
         }
     };

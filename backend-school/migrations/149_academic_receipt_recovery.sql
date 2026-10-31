@@ -157,6 +157,15 @@ BEGIN
        OR EXISTS(SELECT 1 FROM pg_constraint WHERE contype='f' AND confrelid=receipt_relation)
        OR EXISTS(SELECT 1 FROM pg_depend WHERE refclassid='pg_class'::regclass
                  AND refobjid=receipt_relation AND classid IN('pg_rewrite'::regclass,'pg_proc'::regclass))
+       -- Composite parameters, domains and stored columns depend on pg_type,
+       -- including the generated array type. Only automatic/internal type links
+       -- belong to the canonical table; normal consumers are unknown dependencies.
+       OR EXISTS(SELECT 1 FROM pg_depend dependency
+                 JOIN pg_class receipt ON receipt.oid=receipt_relation
+                 JOIN pg_type row_type ON row_type.oid=receipt.reltype
+                 WHERE dependency.refclassid='pg_type'::regclass
+                   AND dependency.refobjid IN(row_type.oid,row_type.typarray)
+                   AND dependency.deptype='n')
        OR EXISTS(SELECT 1 FROM pg_depend WHERE refclassid='pg_class'::regclass
                  AND refobjid=receipt_relation AND refobjsubid=count_column
                  AND classid NOT IN('pg_constraint'::regclass,'pg_attrdef'::regclass))
