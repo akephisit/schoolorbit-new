@@ -870,6 +870,15 @@ mod tests {
         }
     }
 
+    fn subject_query() -> SubjectLookupQuery {
+        SubjectLookupQuery {
+            active_only: Some(true),
+            search: None,
+            limit: Some(100),
+            subject_type: None,
+        }
+    }
+
     #[test]
     fn lookup_limit_defaults_to_one_hundred_and_caps_at_five_hundred() {
         assert_eq!(lookup_limit(None), 100);
@@ -935,9 +944,7 @@ mod tests {
         let students = lookup_students(&pool, academic_query(academic_year_id))
             .await
             .unwrap();
-        let subjects = lookup_subjects(&pool, academic_query(academic_year_id))
-            .await
-            .unwrap();
+        let subjects = lookup_subjects(&pool, subject_query()).await.unwrap();
 
         assert!(!grade_levels.is_empty());
         assert!(!homerooms.is_empty());
@@ -946,7 +953,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn catalog_start_only_lookup_preserves_selected_year_and_former_expiry_is_metadata() {
+    async fn catalog_start_only_lookup_uses_actual_day_and_former_expiry_is_metadata() {
         let pool = create_named_test_pool("catalog_start_only_subject_lookup").await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
@@ -963,27 +970,27 @@ mod tests {
         sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT $1,'LOOKUP-STARTONLY','lookup-startonly',subject_group_id,owning_organization_unit_id FROM subjects LIMIT 1").bind(stable).execute(&pool).await.unwrap();
         // Historical required fields are seeded only before migration 138.
         sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,effective_until,status,published_at) SELECT $1,$2,1,'LOOKUP-STARTONLY','Lookup old expiry',1,'BASIC',id,start_date-730,end_date-366,'published',now() FROM academic_years WHERE id=$3").bind(version).bind(stable).bind(year).execute(&pool).await.unwrap();
-        apply_migrations_through(&pool, 138).await.unwrap();
-        let mut query = academic_query(year);
+        apply_migrations_through(&pool, i64::MAX).await.unwrap();
+        let mut query = subject_query();
         query.search = Some("LOOKUP-STARTONLY".into());
         let found = lookup_subjects(&pool, query).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, stable);
-        let mut by_name = academic_query(year);
+        let mut by_name = subject_query();
         by_name.search = Some("Lookup old expiry".into());
         by_name.subject_type = Some("BASIC".into());
         let named = lookup_subjects(&pool, by_name).await.unwrap();
         assert_eq!(named.len(), 1);
         assert_eq!(named[0].id, stable);
-        let unsearched = lookup_subjects(&pool, academic_query(year)).await.unwrap();
+        let unsearched = lookup_subjects(&pool, subject_query()).await.unwrap();
         assert!(unsearched.iter().any(|item| item.id == stable));
-        let mut wrong_type = academic_query(year);
+        let mut wrong_type = subject_query();
         wrong_type.search = Some("LOOKUP-STARTONLY".into());
         wrong_type.subject_type = Some("ADDITIONAL".into());
         assert!(lookup_subjects(&pool, wrong_type).await.unwrap().is_empty());
         let future = Uuid::new_v4();
-        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) SELECT $1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',end_date+1,'published',now() FROM academic_years WHERE id=$3").bind(future).bind(stable).bind(year).execute(&pool).await.unwrap();
-        let mut query = academic_query(year);
+        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) VALUES($1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',(now() AT TIME ZONE 'Asia/Bangkok')::date+1,'published',now())").bind(future).bind(stable).execute(&pool).await.unwrap();
+        let mut query = subject_query();
         query.search = Some("LOOKUP-STARTONLY".into());
         let unchanged = lookup_subjects(&pool, query).await.unwrap();
         assert_eq!(unchanged.len(), 1);
