@@ -97,6 +97,7 @@
 	let { data }: PageProps = $props();
 	const subjectsRequest = new LatestRequest();
 	const workspaceRequest = new LatestRequest();
+	const confirmationRequest = new LatestRequest();
 	const criteriaRequest = new LatestRequest();
 	const controlsRequest = new LatestRequest();
 	const phaseCodes: GradebookPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
@@ -559,7 +560,14 @@
 		await loadSelectedWorkspace();
 	}
 
+	function invalidateConfirmation(): void {
+		confirmationRequest.abort();
+		confirming = false;
+		confirmationDialogOpen = false;
+	}
+
 	async function loadSelectedWorkspace(): Promise<void> {
+		invalidateConfirmation();
 		workspaceRequest.abort();
 		workspaceError = '';
 		scoreWorkspaces = [];
@@ -944,31 +952,44 @@
 
 	async function confirmCurrentWorkspace(): Promise<void> {
 		const context = contextValue();
-		if (!context || !selectedGroupId) return;
-		if (!(await flushPendingWork())) return;
+		const groupId = selectedGroupId;
+		const subjectId = selectedSubjectId;
+		const tab = activeTab;
+		const phase = activePhase;
+		if (!context || !groupId) return;
+		const { revision } = confirmationRequest.begin();
+		const isCurrent = () =>
+			confirmationRequest.isCurrent(revision) &&
+			context.academicYearId === academicYearId &&
+			context.academicTermId === academicTermId &&
+			groupId === selectedGroupId &&
+			subjectId === selectedSubjectId &&
+			tab === activeTab &&
+			phase === activePhase;
+		if (!(await flushPendingWork()) || !isCurrent()) return;
 		confirming = true;
 		try {
-			if (activeTab === 'scores' && scoreWorkspace) {
-				const confirmation = await confirmGradebookPhase(selectedGroupId, activePhase, context, {
-					sourceChecksum: scoreWorkspace.sourceChecksum,
-					rosterChecksum: scoreWorkspace.rosterChecksum,
-					rowVersion: scoreWorkspace.confirmation?.rowVersion ?? null
+			if (tab === 'scores' && scoreWorkspace) {
+				const workspace = scoreWorkspace;
+				const confirmation = await confirmGradebookPhase(groupId, phase, context, {
+					sourceChecksum: workspace.sourceChecksum,
+					rosterChecksum: workspace.rosterChecksum,
+					rowVersion: workspace.confirmation?.rowVersion ?? null
 				});
-				patchScoreWorkspace({
-					...scoreWorkspace,
-					confirmation,
-					confirmationIsCurrent: true
-				});
+				if (!isCurrent()) return;
+				patchScoreWorkspace({ ...workspace, confirmation, confirmationIsCurrent: true });
 				toast.success('ยืนยันคะแนนช่วงนี้แล้ว');
-			} else if (activeTab !== 'scores' && evaluationWorkspace) {
-				const result = await confirmLearnerEvaluationGroup(selectedGroupId, activeTab, context, {
-					sourceChecksum: evaluationWorkspace.sourceChecksum,
-					rosterChecksum: evaluationWorkspace.rosterChecksum,
-					rowVersion: evaluationWorkspace.confirmation?.rowVersion ?? null
+			} else if (tab !== 'scores' && evaluationWorkspace) {
+				const workspace = evaluationWorkspace;
+				const result = await confirmLearnerEvaluationGroup(groupId, tab, context, {
+					sourceChecksum: workspace.sourceChecksum,
+					rosterChecksum: workspace.rosterChecksum,
+					rowVersion: workspace.confirmation?.rowVersion ?? null
 				});
+				if (!isCurrent()) return;
 				if (result.confirmation) {
 					evaluationWorkspace = {
-						...evaluationWorkspace,
+						...workspace,
 						confirmation: result.confirmation,
 						confirmationIsCurrent: true
 					};
@@ -979,9 +1000,10 @@
 			}
 			confirmationDialogOpen = false;
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ยืนยันข้อมูลไม่สำเร็จ');
+			if (isCurrent())
+				toast.error(error instanceof Error ? error.message : 'ยืนยันข้อมูลไม่สำเร็จ');
 		} finally {
-			confirming = false;
+			if (confirmationRequest.isCurrent(revision)) confirming = false;
 		}
 	}
 
@@ -1024,6 +1046,7 @@
 		return () => {
 			subjectsRequest.abort();
 			workspaceRequest.abort();
+			confirmationRequest.abort();
 			criteriaRequest.abort();
 			controlsRequest.abort();
 			unsubscribeScore();
@@ -1083,6 +1106,7 @@
 		const routeWorkspace = data.workspace;
 		const { revision } = workspaceRequest.begin();
 		untrack(() => {
+			invalidateConfirmation();
 			scoreWorkspaces = [];
 			evaluationWorkspace = null;
 			evaluationConfiguration = null;
