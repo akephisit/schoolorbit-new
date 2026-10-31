@@ -162,6 +162,26 @@
 			].some((value) => value.toLocaleLowerCase('th').includes(query));
 		});
 	});
+	const savedCoordinatorOutsideCandidates = $derived(
+		Boolean(
+			detail?.assessmentCoordinatorId &&
+			!detail.coordinatorCandidates.some(
+				(candidate) => candidate.teacherId === detail?.assessmentCoordinatorId
+			)
+		)
+	);
+	const savedCoordinatorLabel = $derived(
+		detail?.assessmentCoordinatorName
+			? `${detail.assessmentCoordinatorName} (ที่บันทึกไว้)`
+			: 'ผู้รับผิดชอบที่บันทึกไว้ (ไม่ระบุชื่อ)'
+	);
+	const draftCoordinatorLabel = $derived(
+		detail?.coordinatorCandidates.find((candidate) => candidate.teacherId === draftCoordinatorId)
+			?.displayName ??
+			(draftCoordinatorId && draftCoordinatorId === detail?.assessmentCoordinatorId
+				? savedCoordinatorLabel
+				: 'ยังไม่ได้กำหนดผู้รับผิดชอบ')
+	);
 	const readyCount = $derived(plans.filter((plan) => plan.readiness.ready).length);
 	const attentionCount = $derived(plans.length - readyCount);
 	const draftTotal = $derived(
@@ -1010,13 +1030,16 @@
 							markDirty();
 						}}
 					>
-						<Select.Trigger class="w-full"
-							>{detail.coordinatorCandidates.find(
-								(candidate) => candidate.teacherId === draftCoordinatorId
-							)?.displayName ?? 'ยังไม่ได้กำหนดผู้รับผิดชอบ'}</Select.Trigger
+						<Select.Trigger class="w-full" aria-label="ผู้รับผิดชอบโครงสร้างคะแนน"
+							>{draftCoordinatorLabel}</Select.Trigger
 						>
 						<Select.Content>
 							<Select.Item value="__none__">ยังไม่ได้กำหนด</Select.Item>
+							{#if savedCoordinatorOutsideCandidates && detail.assessmentCoordinatorId}
+								<Select.Item value={detail.assessmentCoordinatorId} disabled aria-disabled="true"
+									>{savedCoordinatorLabel}</Select.Item
+								>
+							{/if}
 							{#each detail.coordinatorCandidates as candidate (candidate.teacherId)}<Select.Item
 									value={candidate.teacherId}
 									>{candidate.displayName} · ครูหลัก {candidate.primaryLearningGroupCount}/{candidate.learningGroupCount}
