@@ -810,7 +810,6 @@ async fn gradebook_roster_orders_grade_room_number_and_keeps_score_identity() {
         models as evaluation, services as evaluations,
     };
     let (pool, mut actor, context, group, phase) = fixture("gradebook_roster_order").await;
-    apply_migrations_through(&pool, 61).await.unwrap();
     actor
         .permissions
         .push(codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into());

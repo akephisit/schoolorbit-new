@@ -922,7 +922,6 @@ mod tests {
     async fn enrollment_shared_year_allows_independent_enrollment_and_attendance_guards() {
         let fixture = enrollment_fixture("admission_enrollment_shared_year", 4).await;
         let sibling = sibling_application(&fixture).await;
-        apply_migrations_through(&fixture.pool, 108).await.unwrap();
         let schedule = school_academic_core::services::bell_schedules::create(
             &fixture.pool,
             fixture.enroller_id,
@@ -1341,7 +1340,6 @@ mod tests {
         use school_admission::applications::submit_application;
         let fixture = enrollment_fixture("admission_number_counter_concurrent", 5).await;
         let (round, track) = open_submission(&fixture).await;
-        apply_migrations_through(&fixture.pool, 118).await.unwrap();
         let mut unrelated = fixture.pool.begin().await.unwrap();
         sqlx::query("INSERT INTO admission_application_number_counters VALUES('00000000',1)")
             .execute(&mut *unrelated)

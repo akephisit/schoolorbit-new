@@ -28,27 +28,30 @@ async fn insert_deferred_synchronized_offering(
     term_id: Uuid,
     year_id: Uuid,
     code: &str,
+    starts_on: NaiveDate,
 ) -> Uuid {
     let offering_id = Uuid::new_v4();
     let mut transaction = pool.begin().await.unwrap();
-    sqlx::query(
+    let saved_starts_on: NaiveDate = sqlx::query_scalar(
         r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
-               name_snapshot, status, owning_organization_unit_id
+               name_snapshot, status, owning_organization_unit_id, starts_on
            )
            SELECT $1, $2, $3, 'activity', $4,
-                  'กิจกรรมรอจัดกลุ่ม', 'draft', activity.owning_organization_unit_id
+                  'กิจกรรมรอจัดกลุ่ม', 'draft', activity.owning_organization_unit_id, $5
            FROM activities activity
            JOIN activity_versions version ON version.activity_id = activity.id
            WHERE version.scheduling_mode = 'synchronized'
            ORDER BY version.id
-           LIMIT 1"#,
+           LIMIT 1
+           RETURNING starts_on"#,
     )
     .bind(offering_id)
     .bind(term_id)
     .bind(year_id)
     .bind(code)
-    .execute(&mut *transaction)
+    .bind(starts_on)
+    .fetch_one(&mut *transaction)
     .await
     .unwrap();
     sqlx::query(
@@ -91,6 +94,7 @@ async fn insert_deferred_synchronized_offering(
     .await
     .unwrap();
     transaction.commit().await.unwrap();
+    assert_eq!(saved_starts_on, starts_on);
     offering_id
 }
 
@@ -230,14 +234,18 @@ async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_re
     apply_migrations_through(&pool, school_migrations::latest_migration_version())
         .await
         .unwrap();
-    let (source_id,term_id,year_id,actor): (Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,academic_term_id,academic_year_id,published_by FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
-    let offering =
-        insert_deferred_synchronized_offering(&pool, term_id, year_id, "UNPUBLISHED-REGISTRY")
-            .await;
-    let source =
-        timetable_version_service::get_version(&pool, source_id, chrono::Utc::now().date_naive())
-            .await
-            .unwrap();
+    let (source_id,term_id,year_id,actor,effective_from): (Uuid,Uuid,Uuid,Uuid,NaiveDate)=sqlx::query_as("SELECT id,academic_term_id,academic_year_id,published_by,effective_from FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let offering = insert_deferred_synchronized_offering(
+        &pool,
+        term_id,
+        year_id,
+        "UNPUBLISHED-REGISTRY",
+        effective_from,
+    )
+    .await;
+    let source = timetable_version_service::get_version(&pool, source_id, effective_from)
+        .await
+        .unwrap();
     let cloned = timetable_version_service::clone_draft(
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
@@ -360,7 +368,8 @@ async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
     .await
     .unwrap();
     let offering_id =
-        insert_deferred_synchronized_offering(&pool, term_id, year_id, "MIGRATION-080").await;
+        insert_deferred_synchronized_offering(&pool, term_id, year_id, "MIGRATION-080", term_start)
+            .await;
 
     apply_migrations_through(&pool, 80)
         .await

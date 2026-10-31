@@ -487,10 +487,24 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
     let unrelated = Uuid::new_v4();
     let (unrelated_subject,unrelated_version):(Uuid,Uuid)=sqlx::query_as("SELECT v.subject_id,v.id FROM subject_versions v WHERE v.subject_id<>$1 AND NOT EXISTS(SELECT 1 FROM course_offering_details d WHERE d.subject_version_id=v.id AND d.academic_term_id=$2) ORDER BY v.id LIMIT 1").bind(subject).bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO learning_offerings (id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','UNRELATED','Unrelated subject','draft',o.owning_organization_unit_id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$4").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(group).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings (id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','UNRELATED','Unrelated subject','draft',o.owning_organization_unit_id,o.starts_on FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$4").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(group).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO course_offering_details (learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit) VALUES ($1,$2,$3,$4,$5,1)").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(unrelated_version).bind(unrelated_subject).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES ($1,$2,$3,$4,'UNRELATED_ROOM','Unrelated room','draft','draft')").bind(unrelated).bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
+    let (source_starts_on, unrelated_starts_on): (chrono::NaiveDate, chrono::NaiveDate) =
+        sqlx::query_as(
+            "SELECT source.starts_on, unrelated.starts_on
+             FROM learning_groups source_group
+             JOIN learning_offerings source ON source.id=source_group.learning_offering_id
+             CROSS JOIN learning_offerings unrelated
+             WHERE source_group.id=$1 AND unrelated.id=$2",
+        )
+        .bind(group)
+        .bind(unrelated_offering)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(unrelated_starts_on, source_starts_on);
     let control = list_controls(&pool, &manager, &ctx)
         .await
         .unwrap()
