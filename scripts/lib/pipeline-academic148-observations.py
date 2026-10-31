@@ -21,6 +21,7 @@ CLIENT = 'schoolorbit-academic148-observation'
 MAX_BYTES = 1048576
 COUNTS = ('receipts','violating_receipts','created_count_mismatches','matched_created_lower','matched_created_higher','zero_recorded_positive_created','all_created_count_mismatches','invalid_output_receipts','nonunique_output_receipts','missing_output_entries','wrong_context_output_entries','null_output_entries','duplicate_nonnull_output_entries','extra_timestamp_offerings','shared_timestamp_cohorts','shared_timestamp_receipts')
 KINDS = ('before050','equal050','after050','unknown050')
+DIVERGENCE = ('lower_receipts','recorded_created_total','timestamp_created_total','difference_total','distinct_output_total','recorded_above_output_receipts','output_entries_earlier','output_entries_equal','output_entries_later','later_entries_with_current_receipt','later_entries_with_delete_item_audit')
 
 class Refusal(Exception):
     pass
@@ -46,10 +47,18 @@ def shape(value, keys):
 def integer(value):
     require(type(value) is int and 0 <= value <= 9007199254740991)
 
-def validate(value):
-    shape(value, ('operation','schema_version','history_version','history_verified','counts','masks','timing','checkpoints'))
-    require(value['operation'] == 'academic148_curriculum' and type(value['schema_version']) is int and value['schema_version'] == 1)
-    require(type(value['history_version']) is int and value['history_version'] in (147,148) and value['history_verified'] is True)
+def validate_divergence(value):
+    shape(value, DIVERGENCE)
+    for count in value.values(): integer(count)
+    require(value['recorded_created_total'] - value['timestamp_created_total'] == value['difference_total'])
+    require(value['output_entries_equal'] == value['timestamp_created_total'])
+    require(value['difference_total'] >= value['lower_receipts'])
+    require(value['recorded_above_output_receipts'] <= value['lower_receipts'])
+    require(value['later_entries_with_current_receipt'] <= value['output_entries_later'])
+    require(value['later_entries_with_delete_item_audit'] <= value['output_entries_later'])
+    require(value['lower_receipts'] > 0 or all(count == 0 for count in value.values()))
+
+def validate_metrics(value):
     shape(value['counts'], COUNTS)
     for count in value['counts'].values(): integer(count)
     require(type(value['masks']) is list and len(value['masks']) == 16)
@@ -68,6 +77,14 @@ def validate(value):
         require(item['violating'] <= item['count'] and item['zero_recorded_positive_created'] <= item['violating'])
     for key, count in (('count','receipts'),('violating','violating_receipts'),('zero_recorded_positive_created','zero_recorded_positive_created')):
         require(sum(item[key] for item in value['timing']) == value['counts'][count])
+
+def validate(value):
+    shape(value, ('operation','schema_version','history_version','history_verified','counts','masks','timing','checkpoints','divergence'))
+    require(value['operation'] == 'academic148_curriculum' and type(value['schema_version']) is int and value['schema_version'] == 2)
+    require(type(value['history_version']) is int and value['history_version'] in (147,148) and value['history_verified'] is True)
+    validate_metrics(value)
+    validate_divergence(value['divergence'])
+    require(value['divergence']['lower_receipts'] == value['counts']['matched_created_lower'])
     require(type(value['checkpoints']) is list and len(value['checkpoints']) == 2)
     for version, item in zip((138,141), value['checkpoints']):
         shape(item, ('version','present','unique','count_match','hash_match')); require(type(item['version']) is int and item['version'] == version)
@@ -193,29 +210,61 @@ def observe(tenant, secret, sql, manifest, ca):
         return validate(decode(capture(args,env=environment,seconds=35)))
 
 def aggregate(values):
-    result = {'operation':'academic148_curriculum_observation','schema_version':1,'tenants':len(values),'history_versions':[{'version':version,'count':sum(item['history_version']==version for item in values)} for version in (147,148)],'counts':{key:sum(item['counts'][key] for item in values) for key in COUNTS},'masks':[{'mask':mask,'count':sum(item['masks'][mask]['count'] for item in values)} for mask in range(16)],'timing':[{'kind':kind,**{key:sum(item['timing'][index][key] for item in values) for key in ('count','violating','zero_recorded_positive_created')}} for index,kind in enumerate(KINDS)],'checkpoints':[{'version':version,**{key+'_tenants':sum(item['checkpoints'][index][key] for item in values) for key in ('present','unique','count_match','hash_match')}} for index,version in enumerate((138,141))]}
+    values = [validate(value) for value in values]
+    result = {
+        'operation':'academic148_curriculum_observation','schema_version':2,'tenants':len(values),
+        'history_versions':[{'version':version,'count':sum(item['history_version']==version for item in values)} for version in (147,148)],
+        'counts':{key:sum(item['counts'][key] for item in values) for key in COUNTS},
+        'masks':[{'mask':mask,'count':sum(item['masks'][mask]['count'] for item in values)} for mask in range(16)],
+        'timing':[{'kind':kind,**{key:sum(item['timing'][index][key] for item in values) for key in ('count','violating','zero_recorded_positive_created')}} for index,kind in enumerate(KINDS)],
+        'checkpoints':checkpoint_counts(values),
+        'history_observations':[]}
+    for version in (147,148):
+        group = [item for item in values if item['history_version'] == version]
+        result['history_observations'].append({'version':version,'tenants':len(group),
+            'divergence':{key:sum(item['divergence'][key] for item in group) for key in DIVERGENCE},
+            'checkpoints':checkpoint_counts(group)})
     for count in result['counts'].values(): integer(count)
     validate_aggregate(result)
     return result
 
+def checkpoint_counts(values):
+    return [{'version':version,**{key+'_tenants':sum(item['checkpoints'][index][key] for item in values)
+            for key in ('present','unique','count_match','hash_match')}} for index,version in enumerate((138,141))]
+
+def validate_checkpoint_counts(checkpoints, tenants):
+    require(type(checkpoints) is list and len(checkpoints) == 2)
+    for version,item in zip((138,141),checkpoints):
+        shape(item,('version','present_tenants','unique_tenants','count_match_tenants','hash_match_tenants'))
+        require(type(item['version']) is int and item['version'] == version)
+        for key in ('present_tenants','unique_tenants','count_match_tenants','hash_match_tenants'): integer(item[key])
+        require(item['count_match_tenants'] <= item['unique_tenants'] <= item['present_tenants'] <= tenants)
+        require(item['hash_match_tenants'] <= item['unique_tenants'])
+
 def validate_aggregate(value):
-    shape(value, ('operation','schema_version','tenants','history_versions','counts','masks','timing','checkpoints'))
-    require(value['operation'] == 'academic148_curriculum_observation' and type(value['schema_version']) is int and value['schema_version'] == 1)
+    shape(value, ('operation','schema_version','tenants','history_versions','counts','masks','timing','checkpoints','history_observations'))
+    require(value['operation'] == 'academic148_curriculum_observation' and type(value['schema_version']) is int and value['schema_version'] == 2)
     integer(value['tenants']); require(value['tenants'] <= 64)
     require(type(value['history_versions']) is list and len(value['history_versions']) == 2)
     for version,item in zip((147,148),value['history_versions']):
         shape(item,('version','count')); require(type(item['version']) is int and item['version'] == version); integer(item['count'])
     require(sum(item['count'] for item in value['history_versions']) == value['tenants'])
-    validate({'operation':'academic148_curriculum','schema_version':1,'history_version':147,'history_verified':True,
-        **{key:value[key] for key in ('counts','masks','timing')},
-        'checkpoints':[{'version':version,'present':False,'unique':False,'count_match':False,'hash_match':False} for version in (138,141)]})
-    require(type(value['checkpoints']) is list and len(value['checkpoints']) == 2)
-    for version,item in zip((138,141),value['checkpoints']):
-        shape(item,('version','present_tenants','unique_tenants','count_match_tenants','hash_match_tenants'))
-        require(type(item['version']) is int and item['version'] == version)
-        for key in ('present_tenants','unique_tenants','count_match_tenants','hash_match_tenants'): integer(item[key])
-        require(item['count_match_tenants'] <= item['unique_tenants'] <= item['present_tenants'] <= value['tenants'])
-        require(item['hash_match_tenants'] <= item['unique_tenants'])
+    validate_metrics(value)
+    validate_checkpoint_counts(value['checkpoints'],value['tenants'])
+    groups = value['history_observations']
+    require(type(groups) is list and len(groups) == 2)
+    for version,history,group in zip((147,148),value['history_versions'],groups):
+        shape(group,('version','tenants','divergence','checkpoints'))
+        require(type(group['version']) is int and group['version'] == version)
+        integer(group['tenants']); require(group['tenants'] == history['count'])
+        validate_divergence(group['divergence'])
+        require(group['tenants'] > 0 or all(count == 0 for count in group['divergence'].values()))
+        validate_checkpoint_counts(group['checkpoints'],group['tenants'])
+    require(sum(group['tenants'] for group in groups) == value['tenants'])
+    require(sum(group['divergence']['lower_receipts'] for group in groups) == value['counts']['matched_created_lower'])
+    for index,checkpoint in enumerate(value['checkpoints']):
+        for key in ('present_tenants','unique_tenants','count_match_tenants','hash_match_tenants'):
+            require(sum(group['checkpoints'][index][key] for group in groups) == checkpoint[key])
     return value
 
 def collect_tenants(secret, sql, manifest, ca):

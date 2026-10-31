@@ -5,6 +5,7 @@ use school_test_db::cutover_test_support::{
     seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
 };
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::borrow::Cow;
 use uuid::Uuid;
@@ -109,9 +110,9 @@ async fn observe(pool: &PgPool) -> Value {
 }
 
 fn assert_contract(report: &Value) {
-    assert_eq!(report.as_object().unwrap().len(), 8);
+    assert_eq!(report.as_object().unwrap().len(), 9);
     assert_eq!(report["operation"], "academic148_curriculum");
-    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["schema_version"], 2);
     assert_eq!(report["history_verified"], true);
     assert!(matches!(
         report["history_version"].as_u64(),
@@ -173,6 +174,37 @@ fn assert_contract(report: &Value) {
             assert!(row[key].is_boolean());
         }
     }
+    let divergence = report["divergence"].as_object().unwrap();
+    assert_eq!(divergence.len(), 11);
+    assert!(divergence.values().all(|value| value.as_u64().is_some()));
+    assert_eq!(
+        divergence["lower_receipts"],
+        counts["matched_created_lower"]
+    );
+    assert_eq!(
+        divergence["recorded_created_total"].as_u64().unwrap()
+            - divergence["timestamp_created_total"].as_u64().unwrap(),
+        divergence["difference_total"].as_u64().unwrap()
+    );
+    assert_eq!(
+        divergence["output_entries_equal"],
+        divergence["timestamp_created_total"]
+    );
+    for key in [
+        "later_entries_with_current_receipt",
+        "later_entries_with_delete_item_audit",
+    ] {
+        assert!(
+            divergence[key].as_u64().unwrap()
+                <= divergence["output_entries_later"].as_u64().unwrap()
+        );
+    }
+    assert!(
+        divergence["recorded_above_output_receipts"]
+            .as_u64()
+            .unwrap()
+            <= divergence["lower_receipts"].as_u64().unwrap()
+    );
     let text = report.to_string();
     assert!(!text.contains("private-observation-sentinel"));
     assert!(!text.contains(&"c".repeat(64)) && !text.contains(&"d".repeat(64)));
@@ -187,7 +219,7 @@ async fn original_four_predicates_keep_multiplicity_and_report_only_aggregate_de
     let retained = clone_offering(&pool, TERM, instant(3)).await;
     let created = clone_offering(&pool, TERM, instant(4)).await;
     receipt(&pool, vec![Some(created), Some(retained)], 1, instant(4)).await;
-    receipt(&pool, vec![], 2, instant(5)).await;
+    let partially_created = clone_offering(&pool, TERM, instant(5)).await;
     let selected = clone_offering(&pool, TERM, instant(6)).await;
     clone_offering(&pool, TERM, instant(6)).await;
     receipt(&pool, vec![Some(selected)], 1, instant(6)).await;
@@ -217,6 +249,75 @@ async fn original_four_predicates_keep_multiplicity_and_report_only_aggregate_de
     let second = clone_offering(&pool, TERM, instant(10)).await;
     receipt(&pool, vec![Some(first)], 1, instant(10)).await;
     receipt(&pool, vec![Some(second)], 1, instant(10)).await;
+    receipt(
+        &pool,
+        vec![Some(retained), Some(partially_created), Some(first)],
+        4,
+        instant(5),
+    )
+    .await;
+    // Each near-match violates exactly one required deletion-correlation field or bound.
+    for (code, entity, term, action, id, date) in [
+        (
+            "academic_term_change_item.changed",
+            "academic_term_change_item",
+            TERM,
+            "add_offering",
+            first,
+            instant(7),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_delivery_version",
+            TERM,
+            "add_offering",
+            first,
+            instant(7),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_term_change_item",
+            OTHER_TERM,
+            "add_offering",
+            first,
+            instant(7),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_term_change_item",
+            TERM,
+            "stop_offering",
+            first,
+            instant(7),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_term_change_item",
+            TERM,
+            "add_offering",
+            retained,
+            instant(7),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_term_change_item",
+            TERM,
+            "add_offering",
+            first,
+            instant(4),
+        ),
+        (
+            "academic_term_change_item.deleted",
+            "academic_term_change_item",
+            TERM,
+            "add_offering",
+            first,
+            instant(11),
+        ),
+    ] {
+        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,academic_term_id,payload,created_at) VALUES($1,$2,$3,$4,$5)")
+            .bind(code).bind(entity).bind(term).bind(json!({"action":action,"learningOfferingId":id})).bind(date).execute(&pool).await.unwrap();
+    }
     let report = observe(&pool).await;
     assert_contract(&report);
     assert!(!report.to_string().contains(&private_id.to_string()));
@@ -227,12 +328,330 @@ async fn original_four_predicates_keep_multiplicity_and_report_only_aggregate_de
     for (mask, count) in [(0, 2), (1, 2), (2, 3), (12, 1), (15, 1)] {
         assert_eq!(report["masks"][mask]["count"], count);
     }
+    assert_eq!(
+        report["divergence"],
+        json!({"lower_receipts":1,"recorded_created_total":4,"timestamp_created_total":1,"difference_total":3,"distinct_output_total":3,"recorded_above_output_receipts":1,"output_entries_earlier":1,"output_entries_equal":1,"output_entries_later":1,"later_entries_with_current_receipt":1,"later_entries_with_delete_item_audit":0})
+    );
     let refusal = apply_migrations_through(&pool, 148).await.unwrap_err();
     assert!(refusal
         .to_string()
         .contains("ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE"));
     assert_eq!(observe(&pool).await, report, "failed 148 must roll back");
 }
+
+#[tokio::test]
+async fn historical_generated_draft_delete_and_new_key_reapply_preserve_receipt_but_refuse148() {
+    use school_academic_delivery::models::LearningOfferingKind;
+    use school_academic_delivery::services::offerings::prepared_offering_id;
+
+    // 089 is the real schema shipped with 96dc50e56. Current APIs are not called
+    // against this predecessor: the following SQL snapshots its producer/deleter.
+    let pool = fixture("observations148_old_reapply", 89).await;
+    let actor = Uuid::from_u128(0x50000000000000000000000000000002);
+    let (year, reference): (Uuid, chrono::NaiveDate) = sqlx::query_as(
+        "SELECT academic_year_id,start_date FROM academic_terms WHERE id=$1 AND status='active'",
+    )
+    .bind(TERM)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (source, catalog, periods, requirement): (Uuid, Uuid, i32, Uuid) = sqlx::query_as("SELECT detail.learning_offering_id,detail.activity_version_id,version.periods_per_week,detail.curriculum_activity_requirement_id FROM activity_offering_details detail JOIN activity_versions version ON version.id=detail.activity_version_id WHERE detail.academic_term_id=$1 AND detail.curriculum_activity_requirement_id IS NOT NULL ORDER BY detail.learning_offering_id LIMIT 1")
+        .bind(TERM).fetch_one(&pool).await.unwrap();
+    assert!(periods > 0);
+    let (homeroom,program): (Uuid,Uuid) = sqlx::query_as("SELECT homeroom.id,homeroom.study_program_id FROM homerooms homeroom JOIN curriculum_activity_requirements requirement ON requirement.grade_level_id=homeroom.grade_level_id AND requirement.study_program_id=homeroom.study_program_id WHERE homeroom.academic_year_id=$1 AND homeroom.is_active AND requirement.id=$2 ORDER BY homeroom.id LIMIT 1").bind(year).bind(requirement).fetch_one(&pool).await.unwrap();
+    let generated = prepared_offering_id(TERM, LearningOfferingKind::Activity, catalog);
+    assert_eq!(
+        generated,
+        Uuid::new_v5(
+            &Uuid::from_u128(0x83c846dae34e51468ff1f7caaa6e20a4),
+            format!("offering:{TERM}:Activity:{catalog}").as_bytes()
+        )
+    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM learning_offerings WHERE id=$1)"
+    )
+    .bind(generated)
+    .fetch_one(&pool)
+    .await
+    .unwrap());
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CreateIdentity<'a> {
+        academic_term_id: Uuid,
+        reason: &'a str,
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Choice {
+        proposal_id: String,
+        action: &'static str,
+        groups: Vec<Uuid>,
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ApplyIdentity {
+        academic_term_id: Uuid,
+        study_program_ids: Vec<Uuid>,
+        delivery_version_id: Option<Uuid>,
+        source_hash: String,
+        choices: Vec<Choice>,
+    }
+    let reason = "Historical generated draft fixture";
+    let creation_hash = hex::encode(Sha256::digest(
+        serde_json::to_vec(&CreateIdentity {
+            academic_term_id: TERM,
+            reason,
+        })
+        .unwrap(),
+    ));
+    let revision = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    let base: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1").bind(TERM).fetch_optional(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by) VALUES($1,$2,$3,$4,$5,'{\"offerings\":[]}'::jsonb,$6)")
+        .bind(version).bind(TERM).bind(year).bind(base).bind(reference).bind(actor).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(revision).bind(TERM).bind(year).bind(reference).bind(reason).bind(Uuid::new_v4().to_string()).bind(creation_hash).bind(actor).bind(base).bind(version).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let old_key = Uuid::new_v4();
+    let new_key = Uuid::new_v4();
+    assert_ne!(old_key, new_key);
+    let mut original_receipt = Value::Null;
+    let mut creation_times = Vec::new();
+    let mut actual_dates = Vec::new();
+    for (generation, nonce) in [old_key, new_key].into_iter().enumerate() {
+        // Controlled preview tokens are opaque ledger inputs; bind each into the
+        // exact historical Serde request identity rather than modifying a receipt.
+        let source_hash = hex::encode(Sha256::digest(
+            serde_json::to_vec(&(catalog, revision, generation)).unwrap(),
+        ));
+        let identity = ApplyIdentity {
+            academic_term_id: TERM,
+            study_program_ids: vec![program],
+            delivery_version_id: Some(version),
+            source_hash: source_hash.clone(),
+            choices: vec![Choice {
+                proposal_id: hex::encode(Sha256::digest(
+                    serde_json::to_vec(&(TERM, LearningOfferingKind::Activity, catalog)).unwrap(),
+                )),
+                action: "defer_groups",
+                groups: vec![],
+            }],
+        };
+        let request_hash = hex::encode(Sha256::digest(serde_json::to_vec(&identity).unwrap()));
+        let item = Uuid::new_v4();
+        let mut tx = pool.begin().await.unwrap();
+        // insert_generated_offering omitted timestamps, availability and provenance;
+        // real defaults/052's availability trigger supply them in this 089 schema.
+        assert_eq!(sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,source_requirement_kind,source_requirement_id,status,owning_organization_unit_id) SELECT $1,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,'curriculum_activity_requirement',$2,'draft',owning_organization_unit_id FROM learning_offerings WHERE id=$3")
+            .bind(generated).bind(requirement).bind(source).execute(&mut *tx).await.unwrap().rows_affected(),1);
+        assert_eq!(sqlx::query("INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,curriculum_activity_requirement_id,registration_type,scheduling_mode,hours,attendance_requirement,pass_criteria) SELECT $1,academic_term_id,academic_year_id,activity_version_id,activity_id,$2,'assigned',scheduling_mode,hours,'{\"minimumPercent\":null,\"requiredSessions\":null}'::jsonb,'{\"requireAttendance\":false,\"requireTeacherConfirmation\":true,\"outcomes\":[\"pass\",\"fail\"]}'::jsonb FROM activity_offering_details WHERE learning_offering_id=$3")
+            .bind(generated).bind(requirement).bind(source).execute(&mut *tx).await.unwrap().rows_affected(),1);
+        let target = Uuid::new_v5(
+            &Uuid::from_u128(0x83c846dae34e51468ff1f7caaa6e20a4),
+            format!("target:{generated}:{homeroom}").as_bytes(),
+        );
+        assert_eq!(sqlx::query("INSERT INTO learning_offering_targets(id,learning_offering_id,academic_term_id,academic_year_id,target_kind,homeroom_id,grade_level_id,study_program_id) SELECT $1,$2,$3,$4,'homeroom',homeroom.id,homeroom.grade_level_id,homeroom.study_program_id FROM homerooms homeroom WHERE homeroom.id=$5 AND homeroom.academic_year_id=$4 ON CONFLICT ON CONSTRAINT learning_offering_targets_unique_key DO NOTHING")
+            .bind(target).bind(generated).bind(TERM).bind(year).bind(homeroom).execute(&mut *tx).await.unwrap().rows_affected(),1);
+        // include_offering and apply_from_curriculum persisted these in the same
+        // producer transaction. Both created_at values retain the real now() default.
+        sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by) VALUES($1,$2,$3,$4,'add_offering',$5,$6,$7)")
+            .bind(item).bind(revision).bind(TERM).bind(year).bind(generated).bind(periods).bind(actor).execute(&mut *tx).await.unwrap();
+        sqlx::query("UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1").bind(revision).execute(&mut *tx).await.unwrap();
+        sqlx::query("UPDATE academic_delivery_versions version SET snapshot=academic_delivery_revision_snapshot($1),row_version=version.row_version+1,updated_at=now() FROM academic_term_change_sets revision WHERE revision.id=$1 AND revision.target_delivery_version_id=version.id AND revision.status='draft' AND version.status='draft'")
+            .bind(revision).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO learning_delivery_apply_runs(idempotency_key,academic_term_id,request_hash,source_hash,offering_ids,group_ids,created_offering_count,retained_offering_count,created_group_count,retained_group_count,skipped_count,actor_user_id) VALUES($1,$2,$3,$4,$5,ARRAY[]::uuid[],1,0,0,0,0,$6)")
+            .bind(nonce).bind(TERM).bind(&request_hash).bind(source_hash).bind(vec![generated]).bind(actor).execute(&mut *tx).await.unwrap();
+        let (offering_at,receipt_at,date): (DateTime<Utc>,DateTime<Utc>,chrono::NaiveDate) = sqlx::query_as("SELECT offering.created_at,receipt.created_at,offering.starts_on FROM learning_offerings offering JOIN learning_delivery_apply_runs receipt ON offering.id=ANY(receipt.offering_ids) WHERE receipt.idempotency_key=$1")
+            .bind(nonce).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(offering_at, receipt_at);
+        creation_times.push(offering_at);
+        actual_dates.push(date);
+        tx.commit().await.unwrap();
+        if generation == 0 {
+            original_receipt = sqlx::query_scalar("SELECT to_jsonb(receipt) FROM learning_delivery_apply_runs receipt WHERE idempotency_key=$1").bind(old_key).fetch_one(&pool).await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            let (status, downstream): (String, i64) =
+                sqlx::query_as(LEGACY_UNPUBLISHED_DELETE_GUARD)
+                    .bind(generated)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            assert_eq!((status.as_str(), downstream), ("draft", 0));
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM learning_delivery_apply_runs WHERE $1=ANY(offering_ids)"
+                )
+                .bind(generated)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap(),
+                1,
+                "the former guard allowed a receipt-linked draft"
+            );
+            // Exact 96dc50e56 AddOffering deletion statements; no constraints or
+            // triggers are disabled. 91e23daad subsequently made this path refuse.
+            assert_eq!(
+                sqlx::query("DELETE FROM academic_term_change_items WHERE id=$1")
+                    .bind(item)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap()
+                    .rows_affected(),
+                1
+            );
+            assert_eq!(
+                sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id=$1")
+                    .bind(generated)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap()
+                    .rows_affected(),
+                0
+            );
+            assert_eq!(
+                sqlx::query("DELETE FROM learning_offerings WHERE id=$1 AND status='draft'")
+                    .bind(generated)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap()
+                    .rows_affected(),
+                1
+            );
+            sqlx::query("UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1").bind(revision).execute(&mut *tx).await.unwrap();
+            sqlx::query("UPDATE academic_delivery_versions version SET snapshot=academic_delivery_revision_snapshot($1),row_version=version.row_version+1,updated_at=now() FROM academic_term_change_sets revision WHERE revision.id=$1 AND revision.target_delivery_version_id=version.id AND revision.status='draft' AND version.status='draft'")
+                .bind(revision).execute(&mut *tx).await.unwrap();
+            tx.commit().await.unwrap();
+            sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_term_change_item.deleted','academic_term_change_item',$1,$2,$3,$4,$5)")
+                .bind(item).bind(year).bind(TERM).bind(actor).bind(json!({"changeSetId":revision,"action":"add_offering","learningOfferingId":generated,"learningGroupId":null,"learningGroupTeacherId":null,"teacherId":null})).execute(&pool).await.unwrap();
+            assert!(!sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM learning_offerings WHERE id=$1)"
+            )
+            .bind(generated)
+            .fetch_one(&pool)
+            .await
+            .unwrap());
+        }
+        let unchanged: Value = sqlx::query_scalar("SELECT to_jsonb(receipt) FROM learning_delivery_apply_runs receipt WHERE idempotency_key=$1").bind(old_key).fetch_one(&pool).await.unwrap();
+        assert_eq!(unchanged, original_receipt);
+    }
+    assert!(creation_times[1] > creation_times[0]);
+    assert_eq!(actual_dates[0], actual_dates[1]);
+    apply_migrations_through(&pool, 147).await.unwrap();
+    let retained: Value = sqlx::query_scalar("SELECT to_jsonb(receipt)-'curriculum_sources' FROM learning_delivery_apply_runs receipt WHERE idempotency_key=$1").bind(old_key).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        retained, original_receipt,
+        "096 adds provenance, never rewrites accepted counts, IDs, hashes or timestamps"
+    );
+    let report = observe(&pool).await;
+    assert_contract(&report);
+    assert_eq!(report["counts"]["receipts"], 2);
+    assert_eq!(report["counts"]["violating_receipts"], 1);
+    assert_eq!(report["masks"][0]["count"], 1);
+    assert_eq!(report["masks"][1]["count"], 1);
+    assert_eq!(
+        report["divergence"],
+        json!({"lower_receipts":1,"recorded_created_total":1,"timestamp_created_total":0,"difference_total":1,"distinct_output_total":1,"recorded_above_output_receipts":0,"output_entries_earlier":0,"output_entries_equal":0,"output_entries_later":1,"later_entries_with_current_receipt":1,"later_entries_with_delete_item_audit":1})
+    );
+    for checkpoint in report["checkpoints"].as_array().unwrap() {
+        assert_eq!(checkpoint["count_match"], true);
+        assert_eq!(checkpoint["hash_match"], true);
+    }
+    // A duplicate synthetic event must not multiply the entry correlation.
+    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload,created_at) SELECT event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload,created_at FROM academic_audit_events WHERE event_code='academic_term_change_item.deleted'").execute(&pool).await.unwrap();
+    assert_eq!(observe(&pool).await["divergence"], report["divergence"]);
+    let before = facts(&pool).await;
+    let refusal = apply_migrations_through(&pool, 148).await.unwrap_err();
+    assert!(refusal
+        .to_string()
+        .contains("ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE"));
+    assert_eq!(
+        facts(&pool).await,
+        before,
+        "148 rollback preserves the valid historical receipt and current recreation"
+    );
+    assert_eq!(observe(&pool).await["divergence"], report["divergence"]);
+}
+
+// Exact query from 96dc50e56::change_sets::require_unpublished_only_delete.
+// 91e23daad later added receipt references to this guard; this snapshot models the
+// former sanctioned lifecycle without disabling any current database constraint.
+const LEGACY_UNPUBLISHED_DELETE_GUARD: &str = r#"SELECT offering.status,
+                  (SELECT count(*) FROM academic_timetable_blocks block
+                    WHERE block.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM course_assessment_plans plan
+                    WHERE plan.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_score_items item
+                    WHERE item.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_student_scores score
+                    WHERE score.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_result_overrides selection
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = selection.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_phase_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_result_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_evaluations evaluation
+                    WHERE evaluation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_result_confirmations confirmation
+                    WHERE confirmation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_student_evaluations evaluation
+                    WHERE evaluation.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM learning_group_evaluation_confirmations confirmation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = confirmation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_course_result_locks result_lock
+                    JOIN course_offering_details detail
+                      ON detail.subject_id = result_lock.subject_id
+                     AND detail.academic_term_id = result_lock.academic_term_id
+                     AND detail.academic_year_id = result_lock.academic_year_id
+                    WHERE detail.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_result_locks result_lock
+                    WHERE result_lock.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM subject_term_evaluation_locks result_lock
+                    JOIN course_offering_details detail
+                      ON detail.subject_id = result_lock.subject_id
+                     AND detail.academic_term_id = result_lock.academic_term_id
+                     AND detail.academic_year_id = result_lock.academic_year_id
+                    WHERE detail.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_course_results result
+                    WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_activity_results result
+                    WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM subject_term_student_evaluations result
+                    WHERE result.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM academic_result_corrections correction
+                    WHERE EXISTS (
+                        SELECT 1 FROM academic_course_results result
+                        WHERE result.id = correction.course_result_id
+                          AND result.learning_offering_id = offering.id
+                    ) OR EXISTS (
+                        SELECT 1 FROM academic_activity_results result
+                        WHERE result.id = correction.activity_result_id
+                          AND result.learning_offering_id = offering.id
+                    ) OR EXISTS (
+                        SELECT 1 FROM subject_term_student_evaluations result
+                        WHERE result.id = correction.subject_student_evaluation_id
+                          AND result.learning_offering_id = offering.id
+                    ))
+                + (SELECT count(*) FROM academic_exam_schedule_items item
+                    WHERE item.learning_offering_id = offering.id)
+                + (SELECT count(*) FROM supervision_observations observation
+                    JOIN learning_groups learning_group
+                      ON learning_group.id = observation.learning_group_id
+                    WHERE learning_group.learning_offering_id = offering.id)
+           FROM learning_offerings offering
+           WHERE offering.id = $1
+           FOR UPDATE"#;
 
 #[tokio::test]
 async fn real050_default_zero_is_observed_without_rewriting_the_accepted_receipt() {

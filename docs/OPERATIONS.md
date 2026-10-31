@@ -1677,6 +1677,14 @@ immutable migration prefix rather than historical ledger authorship. Checkpoint 
 matches are independent observations; legitimate later work, actor deletion or historical
 session-timezone formatting can change them. Historical checkpoint audits did not record their
 session timezone; do not guess one to force a match.
+Schema 2 also groups checkpoint observations and divergence totals by verified history version
+147 or 148. For receipts whose recorded created count exceeds the current timestamp-matched
+count, divergence reports those counts and their difference, distinct current outputs, relative
+output-time ordering, current-receipt reuse and retained deletion-item audit correlations. These
+are aggregate observations of current facts: timestamp ordering or reuse does not prove causation,
+and missing deletion audit evidence does not refute a historical deletion. Output-entry counts
+and distinct-output totals use different units and must not be equated. No receipt identities,
+timestamps or hashes are published, and the read-only observation still performs no repair.
 These counts do not authorize guessed data repair or changes to applied migrations.
 
 Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql) and [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits the prior binary against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
