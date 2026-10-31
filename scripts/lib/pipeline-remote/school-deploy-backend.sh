@@ -427,7 +427,7 @@ if ! curl \
 fi
 migration_completion_filter="
     .latest_version as \$latest
-    | \$latest >= 148
+    | (\$latest | type == \"number\" and . >= 149 and floor == .)
     and .total_schools >= 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
@@ -437,10 +437,18 @@ migration_completion_filter="
       .migration_version == \$latest
       and .migration_status == \"migrated\"
       and .migration_error == null
-      and .academicContextCutover.migrationVersion == 148
+      and .academicContextCutover.migrationVersion == 149
       and .academicContextCutover.status == \"cutoverCompleted\"
       and .academicContextCutover.passed == true
-      and (.academicContextCutover.checks | length) == 5
+      and (.academicContextCutover.checks | type == \"array\" and length == 6)
+      and ([.academicContextCutover.checks[].code] | sort) == [
+        \"ACADEMIC_CONTEXT_CUTOVER_EVIDENCE\",
+        \"ACADEMIC_CONTEXT_EXPLICIT_CALENDAR_SCOPE\",
+        \"ACADEMIC_CONTEXT_LEGACY_OWNER_REMOVED\",
+        \"ACADEMIC_CONTEXT_RECEIPT_RECOVERY_EVIDENCE\",
+        \"ACADEMIC_CONTEXT_RETIRED_COLUMNS\",
+        \"ACADEMIC_CONTEXT_VISIBLE_DEFAULTS\"
+      ]
       and all(.academicContextCutover.checks[]; .passed == true)
       and .academicCoreCutover.migrationVersion == 45
       and .academicCoreCutover.status == \"cleanupCompleted\"

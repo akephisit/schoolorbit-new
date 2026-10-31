@@ -151,7 +151,7 @@ if(args[0]==='run'){
  if(command==='storage-namespace context-admin'){console.log(JSON.stringify({...route,tenants:opts.fresh?0:2,inventory_sha256:opts.inventoryMismatch?'0'.repeat(64):'${inventoryHash}',...(opts.hostileContext?{private:'private-sentinel'}:{})}));process.exit(0);}
  if(fs.existsSync(file))process.exit(95);
 if(command==='migrate-tenants'){
- const result=opts.migrationOutput??{schema_version:1,tenants:opts.fresh?0:2,migrated:opts.fresh?0:opts.migrationFailure?1:2,failed:opts.migrationFailure?1:0,latest_version:148,failures:opts.migrationFailure?[{stage:'migration_execution',version:148,error_class:'database',sqlstate:'P0001',code:'ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE',count:1}]:[],overflow_count:0};
+ const result=opts.migrationOutput??{schema_version:1,tenants:opts.fresh?0:2,migrated:opts.fresh?0:opts.migrationFailure?1:2,failed:opts.migrationFailure?1:0,latest_version:149,failures:opts.migrationFailure?[{stage:'migration_execution',version:149,error_class:'database',sqlstate:'P0001',code:'ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE',count:1}]:[],overflow_count:0};
  console.log(opts.rawMigrationOutput??JSON.stringify(result));
  if(opts.migrationFailure){console.error('storage_binding_database_failed');console.error('private-sentinel postgres://secret');}
  process.exit(opts.migrationExitCode??(opts.migrationFailure?1:0));
@@ -486,10 +486,10 @@ test("failure exposes approved aggregate counts and known static code but never 
 });
 const migrationBucket = (overrides = {}) => ({
   stage: "migration_execution",
-  version: 148,
+  version: 149,
   error_class: "database",
   sqlstate: "P0001",
-  code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE",
+  code: "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE",
   count: 1,
   ...overrides,
 });
@@ -501,7 +501,7 @@ function migrationReport(failures = [migrationBucket()], overflow_count = 0) {
     tenants: failed + 1,
     migrated: 1,
     failed,
-    latest_version: 148,
+    latest_version: 149,
     failures,
     overflow_count,
   };
@@ -564,6 +564,12 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       "PROMOTION_RUN_HISTORY_RETAINED",
       "PROMOTION_RUN_IDENTITY_IMMUTABLE",
     ],
+    149: [
+      "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE",
+      "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY",
+      "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED",
+      "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID",
+    ],
   };
   const buckets = Object.entries(codes).flatMap(([version, messages]) =>
     messages
@@ -598,7 +604,7 @@ test("unclassified failures retain nullable metadata and native versions newer t
   const report = migrationReport([
     migrationBucket({ version: null, sqlstate: null, code: "unclassified" }),
     migrationBucket({
-      version: 149,
+      version: 150,
       error_class: "version_too_new",
       sqlstate: null,
       code: "unclassified",
@@ -628,14 +634,20 @@ const invalidMigrationReports = {
     migrationBucket({ error_class: "private-sentinel" }),
   ]),
   "unknown static code": migrationReport([
-    migrationBucket({ code: "ACADEMIC_CONTEXT_148_private-sentinel" }),
+    migrationBucket({ code: "ACADEMIC_CONTEXT_149_private-sentinel" }),
   ]),
   "multiline static code": migrationReport([
     migrationBucket({
-      code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE\nprivate-sentinel",
+      code: "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE\nprivate-sentinel",
     }),
   ]),
   "wrong refusal version": migrationReport([migrationBucket({ version: 147 })]),
+  "149 refusal under version148": migrationReport([
+    migrationBucket({ version: 148 }),
+  ]),
+  "148 refusal under version149": migrationReport([
+    migrationBucket({ code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE" }),
+  ]),
   "wrong refusal stage": migrationReport([
     migrationBucket({ stage: "permission_sync" }),
   ]),

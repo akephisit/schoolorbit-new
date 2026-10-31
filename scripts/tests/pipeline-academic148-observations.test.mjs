@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -43,8 +44,35 @@ function python(code, data = {}, options = {}) {
   return result.stdout.trim() ? JSON.parse(result.stdout) : null;
 }
 const empty = () =>
-  python(`value={'operation':'academic148_curriculum','schema_version':1,'history_version':147,'history_verified':True,'counts':{key:0 for key in m.COUNTS},'masks':[{'mask':mask,'count':0} for mask in range(16)],'timing':[{'kind':kind,'count':0,'violating':0,'zero_recorded_positive_created':0} for kind in m.KINDS],'checkpoints':[{'version':version,'present':True,'unique':True,'count_match':False,'hash_match':True} for version in (138,141)]}
+  python(`value={'operation':'academic148_curriculum','schema_version':2,'history_version':147,'history_verified':True,'counts':{key:0 for key in m.COUNTS},'masks':[{'mask':mask,'count':0} for mask in range(16)],'timing':[{'kind':kind,'count':0,'violating':0,'zero_recorded_positive_created':0} for kind in m.KINDS],'checkpoints':[{'version':version,'present':True,'unique':True,'count_match':False,'hash_match':True} for version in (138,141)],'divergence':{key:0 for key in m.DIVERGENCE}}
 print(json.dumps(m.validate(value)))`);
+
+function lowerReceipt(historyVersion = 147) {
+  const value = empty();
+  value.history_version = historyVersion;
+  for (const key of [
+    "receipts",
+    "violating_receipts",
+    "created_count_mismatches",
+    "matched_created_lower",
+  ])
+    value.counts[key] = 1;
+  value.masks[1].count = 1;
+  value.timing[2].count = 1;
+  value.timing[2].violating = 1;
+  Object.assign(value.divergence, {
+    lower_receipts: 1,
+    recorded_created_total: 4,
+    timestamp_created_total: 1,
+    difference_total: 3,
+    distinct_output_total: 4,
+    output_entries_equal: 1,
+    output_entries_later: 3,
+    later_entries_with_current_receipt: 2,
+    later_entries_with_delete_item_audit: 1,
+  });
+  return value;
+}
 
 test("aggregate preserves independent checkpoint observations and complete history counts", () => {
   const report = python(
@@ -58,7 +86,106 @@ test("aggregate preserves independent checkpoint observations and complete histo
   ]);
   assert.equal(report.checkpoints[0].count_match_tenants, 0);
   assert.equal(report.checkpoints[0].hash_match_tenants, 2);
+  assert.deepEqual(
+    report.history_observations.map((group) => [group.version, group.tenants]),
+    [
+      [147, 1],
+      [148, 1],
+    ],
+  );
   assert.ok(!JSON.stringify(report).includes("history_verified"));
+});
+
+test("schema2 groups divergence and checkpoint evidence by verified history without mixing units", () => {
+  const first = lowerReceipt();
+  const second = lowerReceipt(148);
+  second.divergence.distinct_output_total = 99;
+  second.divergence.later_entries_with_current_receipt = 1;
+  second.checkpoints[0].count_match = true;
+  second.checkpoints[0].hash_match = false;
+  const third = empty();
+  third.history_version = 148;
+  const report = python(`print(json.dumps(m.aggregate(data)))`, [
+    first,
+    second,
+    third,
+  ]);
+  assert.equal(report.schema_version, 2);
+  assert.deepEqual(
+    report.history_observations.map((group) => group.tenants),
+    [1, 2],
+  );
+  assert.equal(
+    report.history_observations[0].divergence.distinct_output_total,
+    4,
+  );
+  assert.equal(
+    report.history_observations[1].divergence.distinct_output_total,
+    99,
+  );
+  assert.equal(
+    report.history_observations[1].checkpoints[0].count_match_tenants,
+    1,
+  );
+  assert.equal(
+    report.history_observations[1].checkpoints[0].hash_match_tenants,
+    1,
+  );
+  assert.equal(report.counts.matched_created_lower, 2);
+  assert.ok(!JSON.stringify(report).includes("history_verified"));
+});
+
+test("schema2 rejects old, private, noninteger and inconsistent divergence evidence", () => {
+  python(
+    `import copy
+cases=[]
+value=copy.deepcopy(data);value['schema_version']=1;cases.append(value)
+value=copy.deepcopy(data);del value['divergence'];cases.append(value)
+value=copy.deepcopy(data);value['divergence']['private']='private-observation-sentinel';cases.append(value)
+for key in m.DIVERGENCE:
+ for invalid in (True,-1,0.5,9007199254740992):
+  value=copy.deepcopy(data);value['divergence'][key]=invalid;cases.append(value)
+for key,number in (('lower_receipts',2),('recorded_created_total',3),('timestamp_created_total',2),('difference_total',0),('output_entries_equal',0),('recorded_above_output_receipts',2),('later_entries_with_current_receipt',4),('later_entries_with_delete_item_audit',4)):
+ value=copy.deepcopy(data);value['divergence'][key]=number;cases.append(value)
+value=copy.deepcopy(data);value['counts']['matched_created_lower']=0;value['counts']['matched_created_higher']=1;cases.append(value)
+for value in cases:
+ try:m.validate(value)
+ except Exception:pass
+ else:raise AssertionError('accepted invalid divergence')`,
+    lowerReceipt(),
+  );
+  python(
+    `data['divergence']['distinct_output_total']=1
+try:m.validate(data)
+except m.Refusal:pass
+else:raise AssertionError('zero lower receipts retained evidence')`,
+    empty(),
+  );
+});
+
+test("schema2 aggregate rejects malformed history groups, mixed totals and secret fields", () => {
+  python(
+    `import copy
+report=m.aggregate([data]);cases=[]
+for mutate in (
+ lambda v:v.update(schema_version=1),
+ lambda v:v.pop('history_observations'),
+ lambda v:v['history_observations'].reverse(),
+ lambda v:v['history_observations'][0].update(tenants=0),
+ lambda v:v['history_observations'][0].update(private='private-observation-sentinel'),
+ lambda v:v['history_observations'][0]['divergence'].update(private='private-observation-sentinel'),
+ lambda v:v['history_observations'][0]['divergence'].update(lower_receipts=2),
+ lambda v:v['history_observations'][0]['checkpoints'][0].update(hash_match_tenants=0),
+ lambda v:v['history_observations'][1]['checkpoints'][0].update(present_tenants=1),
+):
+ value=copy.deepcopy(report);mutate(value);cases.append(value)
+value=copy.deepcopy(report);value['history_observations'][1]['divergence']=value['history_observations'][0]['divergence'];value['history_observations'][0]['divergence']={key:0 for key in m.DIVERGENCE};cases.append(value)
+for value in cases:
+ try:m.validate_aggregate(value)
+ except Exception:pass
+ else:raise AssertionError('accepted inconsistent group')`,
+    lowerReceipt(),
+  );
 });
 
 test("internal report rejects malformed shapes, unsafe numbers and inconsistent predicate evidence", () => {
@@ -85,7 +212,7 @@ for raw in (b'{"a":1,"a":2}',b'{"a":NaN}',b'{"a":1}{}',b'x'*(m.MAX_BYTES+1)):
   );
 });
 
-test("trusted main preparation requires exact immutable migration prefix and private hash-bound files", (t) => {
+test("trusted main preparation validates149 sources and emits the unchanged148 historical prefix", (t) => {
   const temporary = mkdtempSync(path.join(os.tmpdir(), "academic148-prepare-"));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const output = path.join(temporary, "academic148-inputs");
@@ -101,10 +228,28 @@ test("trusted main preparation requires exact immutable migration prefix and pri
   assert.equal(result.status, 0, result.stderr);
   const manifest = JSON.parse(readFileSync(path.join(output, "manifest.json")));
   assert.equal(manifest.length, 148);
+  const migrations = readdirSync(path.join(root, "backend-school/migrations"))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  assert.equal(migrations.length, 149);
   for (const [index, item] of manifest.entries()) {
     assert.equal(item.version, index + 1);
     assert.match(item.checksum, /^[a-f0-9]{96}$/);
+    assert.equal(
+      item.checksum,
+      createHash("sha384")
+        .update(
+          readFileSync(
+            path.join(root, "backend-school/migrations", migrations[index]),
+          ),
+        )
+        .digest("hex"),
+    );
   }
+  assert.equal(
+    manifest.some((item) => item.version === 149),
+    false,
+  );
   for (const name of [
     "manifest.json",
     "pipeline-academic148-observations.py",
@@ -125,6 +270,35 @@ test("trusted main preparation requires exact immutable migration prefix and pri
   assert.notEqual(denied.status, 0);
   assert.equal(denied.stdout, "");
   assert.equal(denied.stderr.trim(), "academic148_observation=refused");
+});
+
+test("historical observer preparation refuses missing, extra or symlinked149 sources", () => {
+  python(`import shutil
+with tempfile.TemporaryDirectory() as directory:
+ root=pathlib.Path(directory);migrations=root/'backend-school/migrations';migrations.mkdir(parents=True)
+ source=pathlib.Path(sys.argv[1]).parents[2]
+ for path in (source/'backend-school/migrations').glob('*.sql'):shutil.copyfile(path,migrations/path.name)
+ for name in ('pipeline-academic148-observations.py','pipeline-academic148-observations.sql'):
+  target=root/'scripts/lib'/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/'scripts/lib'/name,target)
+ def refused():
+  with tempfile.TemporaryDirectory() as runtime,patch.dict(os.environ,{'GITHUB_REF':'refs/heads/main','GITHUB_WORKSPACE':str(root),'RUNNER_TEMP':runtime}):
+   try:m.prepare()
+   except m.Refusal:pass
+   else:raise AssertionError('invalid source inventory accepted')
+ latest=next(migrations.glob('149_*.sql'));original=source/'backend-school/migrations'/latest.name
+ latest.unlink();refused();latest.symlink_to(original);refused();latest.unlink();shutil.copyfile(original,latest)
+ extra=migrations/'150_unreviewed.sql';extra.write_text('private-observation-sentinel');refused();extra.unlink()
+ wrong=latest.with_name('149_wrong-uppercase-NAME.sql');latest.rename(wrong);refused()`);
+});
+
+test("historical observer continues to refuse149 reports rather than becoming a runtime fallback", () => {
+  python(
+    `data['history_version']=149
+try:m.validate(data)
+except m.Refusal:pass
+else:raise AssertionError('unsupported schema149 admitted')`,
+    empty(),
+  );
 });
 
 test("operational provider denies redirects, invalid inventories and owner routing drift", () => {
@@ -227,6 +401,7 @@ test("artifact promotion accepts only reconciled aggregate data and never raw pr
   assert.equal(promote(JSON.stringify(report)).status, 0);
   assert.equal(statSync(destination).mode & 0o777, 0o600);
   for (const hostile of [
+    { ...report, schema_version: 1 },
     { ...report, private: sentinel },
     { ...report, tenants: 2 },
     { ...report, counts: { ...report.counts, receipts: true } },
@@ -244,6 +419,19 @@ test("artifact promotion accepts only reconciled aggregate data and never raw pr
         { version: 148, count: 0 },
       ],
     },
+    {
+      ...report,
+      history_observations: [
+        {
+          ...report.history_observations[0],
+          divergence: {
+            ...report.history_observations[0].divergence,
+            private: sentinel,
+          },
+        },
+        report.history_observations[1],
+      ],
+    },
   ]) {
     const result = promote(JSON.stringify(hostile));
     assert.notEqual(result.status, 0);
@@ -253,6 +441,15 @@ test("artifact promotion accepts only reconciled aggregate data and never raw pr
   assert.notEqual(
     promote(
       JSON.stringify(report).replace('"tenants":1', '"tenants":1,"tenants":1'),
+    ).status,
+    0,
+  );
+  assert.notEqual(
+    promote(
+      JSON.stringify(report).replace(
+        '"lower_receipts":0',
+        '"lower_receipts":0,"lower_receipts":0',
+      ),
     ).status,
     0,
   );

@@ -33,16 +33,25 @@ async function accepts(report) {
   });
 }
 
-function validReport(version = 148) {
+const contextCodes = [
+  "ACADEMIC_CONTEXT_CUTOVER_EVIDENCE",
+  "ACADEMIC_CONTEXT_RETIRED_COLUMNS",
+  "ACADEMIC_CONTEXT_EXPLICIT_CALENDAR_SCOPE",
+  "ACADEMIC_CONTEXT_VISIBLE_DEFAULTS",
+  "ACADEMIC_CONTEXT_LEGACY_OWNER_REMOVED",
+  "ACADEMIC_CONTEXT_RECEIPT_RECOVERY_EVIDENCE",
+];
+
+function validReport(version = 149) {
   const school = {
     migration_version: version,
     migration_status: "migrated",
     migration_error: null,
     academicContextCutover: {
-      migrationVersion: 148,
+      migrationVersion: 149,
       status: "cutoverCompleted",
       passed: true,
-      checks: Array.from({length:5},()=>({passed:true})),
+      checks: contextCodes.map((code) => ({ code, passed: true })),
     },
     academicCoreCutover: {
       migrationVersion: 45,
@@ -83,7 +92,7 @@ function validReport(version = 148) {
 test("fully migrated tenants pass without a retired personnel report", async () => {
   assert.equal(await accepts(validReport()), true);
   assert.equal(
-    await accepts(validReport(149)),
+    await accepts(validReport(150)),
     true,
     "future SQL migrations use the same completion gate",
   );
@@ -209,14 +218,97 @@ test("staff profile cutover refuses missing or incomplete preservation proof", a
   }
 });
 
-test("academic context cutover refuses absent, stale, incomplete and failed evidence",async()=>{
-  const mutations=[
-    report=>{delete report.schools[0].academicContextCutover;},
-    report=>{report.schools[0].academicContextCutover.migrationVersion=147;},
-    report=>{report.schools[0].academicContextCutover.status="pendingMigration";},
-    report=>{report.schools[0].academicContextCutover.passed=false;},
-    report=>{report.schools[0].academicContextCutover.checks=[];},
-    report=>{report.schools[0].academicContextCutover.checks[0].passed=false;},
+test("academic context cutover refuses absent, stale, incomplete and failed evidence", async () => {
+  const mutations = [
+    (report) => {
+      delete report.schools[0].academicContextCutover;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.migrationVersion = 147;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.migrationVersion = 148;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.status = "pendingMigration";
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.passed = false;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks = [];
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks = Object.fromEntries(
+        report.schools[0].academicContextCutover.checks.map((check, index) => [
+          index,
+          check,
+        ]),
+      );
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks[0].passed = false;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks.pop();
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks.push({
+        code: contextCodes[5],
+        passed: true,
+      });
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks[5] = {
+        code: contextCodes[0],
+        passed: true,
+      };
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks[5] = {
+        code: "ACADEMIC_CONTEXT_UNKNOWN",
+        passed: true,
+      };
+    },
+    (report) => {
+      delete report.schools[0].academicContextCutover.checks[5].code;
+    },
+    (report) => {
+      report.schools[0].academicContextCutover.checks[5].passed = false;
+    },
   ];
-  for(const mutate of mutations){const report=validReport();mutate(report);assert.equal(await accepts(report),false);}
+  for (const mutate of mutations) {
+    const report = validReport();
+    mutate(report);
+    assert.equal(await accepts(report), false);
+  }
+});
+
+test("context readiness cannot accept schema148 even when an empty inventory has no tenant checks", async () => {
+  assert.equal(await accepts(validReport(148)), false);
+  const report = validReport(148);
+  report.total_schools = 0;
+  report.migrated = 0;
+  report.schools = [];
+  assert.equal(await accepts(report), false);
+});
+
+test("latest migration is a numeric integer rather than a jq type-order comparison", async () => {
+  for (const version of ["149", 149.5]) {
+    const report = validReport(version);
+    assert.equal(await accepts(report), false);
+  }
+});
+
+test("six exact context codes permit arbitrary provider order but require every evidence result", async () => {
+  const report = validReport();
+  report.schools[0].academicContextCutover.checks.reverse();
+  assert.equal(await accepts(report), true);
+  for (const code of contextCodes) {
+    const invalid = validReport();
+    invalid.schools[0].academicContextCutover.checks.find(
+      (check) => check.code === code,
+    ).passed = false;
+    assert.equal(await accepts(invalid), false);
+  }
 });

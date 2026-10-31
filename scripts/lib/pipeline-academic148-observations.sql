@@ -86,6 +86,7 @@ facts AS (
            COALESCE(output.wrong_context_count,0) AS wrong_context_count,
            COALESCE(output.null_count,0) AS null_count,
            COALESCE(output.duplicate_count,0) AS duplicate_count,
+           COALESCE(output.unique_count,0) AS distinct_output_count,
            COALESCE(cohort.count,0)-COALESCE(output.distinct_created_count,0) AS extra_count,
            cardinality(ledger.offering_ids)<>COALESCE(output.unique_count,0) AS nonunique,
            CASE WHEN installed.installed_on IS NULL OR ledger.created_at IS NULL THEN 'unknown050'
@@ -104,6 +105,33 @@ classified AS MATERIALIZED (
          + (CASE WHEN missing_count+wrong_context_count+null_count>0 THEN 4 ELSE 0 END)
          + (CASE WHEN nonunique THEN 8 ELSE 0 END) AS mask
     FROM facts
+),
+current_receipt_references AS MATERIALIZED (
+    SELECT DISTINCT ledger.academic_term_id,ledger.created_at,output.id
+    FROM receipts ledger CROSS JOIN LATERAL unnest(ledger.offering_ids) output(id)
+    WHERE output.id IS NOT NULL
+),
+lower_output_entries AS (
+    SELECT ledger.idempotency_key,ledger.created_at AS receipt_at,offering.created_at AS offering_at,
+           reference.id IS NOT NULL AS current_receipt,
+           CASE WHEN offering.created_at>ledger.created_at THEN EXISTS (
+               SELECT 1 FROM academic_audit_events event
+               WHERE event.event_code='academic_term_change_item.deleted'
+                 AND event.entity_type='academic_term_change_item'
+                 AND event.academic_term_id=ledger.academic_term_id
+                 AND event.payload->>'action'='add_offering'
+                 AND event.payload->>'learningOfferingId'=offering.id::text
+                 AND event.created_at BETWEEN ledger.created_at AND offering.created_at
+           ) ELSE false END AS delete_item_audit
+    FROM classified lower JOIN receipts ledger USING(idempotency_key)
+    CROSS JOIN LATERAL unnest(ledger.offering_ids) output(id)
+    JOIN offerings offering ON offering.id=output.id AND offering.academic_term_id=ledger.academic_term_id
+    LEFT JOIN current_receipt_references reference
+      ON reference.academic_term_id=ledger.academic_term_id
+     AND reference.created_at=offering.created_at AND reference.id=offering.id
+    WHERE lower.created_count<lower.created_offering_count
+    -- For later outputs, a receipt at offering_at necessarily differs from this
+    -- receipt at receipt_at. Distinct references avoid multiplying output entries.
 ),
 current_checkpoint AS (
     -- 138 and 141 hash row JSON in text order, including every original field.
@@ -141,8 +169,12 @@ checkpoints AS (
 -- did not record. Preserve their exact algorithm; do not guess a historical zone.
 -- Mismatch metrics count receipts; *_entries and extra_timestamp_offerings sum entries
 -- per receipt. Shared timestamp cohorts are not proof of a shared transaction ID.
+-- Divergence covers only lower-match receipts. Temporal metrics count extant,
+-- same-context entries with multiplicity; declared distinct IDs also include missing
+-- or wrong-context IDs. Reuse/deletion are correlations, not proof of the cause.
+-- Historic deletion audits were appended after commit; absence does not refute deletion.
 SELECT jsonb_build_object(
-    'operation','academic148_curriculum','schema_version',1,
+    'operation','academic148_curriculum','schema_version',2,
     'history_version',eligible.version,'history_verified',true,
     'counts',(SELECT jsonb_build_object(
         'receipts',count(*),'violating_receipts',count(*) FILTER(WHERE mask<>0),
@@ -170,6 +202,19 @@ SELECT jsonb_build_object(
                       'zero_recorded_positive_created',(SELECT count(*) FROM classified
                          WHERE classified.timing=timing.kind AND created_offering_count=0 AND created_count>0)) ORDER BY timing.position)
               FROM (VALUES(1,'before050'),(2,'equal050'),(3,'after050'),(4,'unknown050')) timing(position,kind)),
-    'checkpoints',(SELECT jsonb_agg(to_jsonb(checkpoints) ORDER BY version) FROM checkpoints)
+    'checkpoints',(SELECT jsonb_agg(to_jsonb(checkpoints) ORDER BY version) FROM checkpoints),
+    'divergence',(SELECT jsonb_build_object(
+        'lower_receipts',count(*),
+        'recorded_created_total',COALESCE(sum(created_offering_count),0),
+        'timestamp_created_total',COALESCE(sum(created_count),0),
+        'difference_total',COALESCE(sum(created_offering_count-created_count),0),
+        'distinct_output_total',COALESCE(sum(distinct_output_count),0),
+        'recorded_above_output_receipts',count(*) FILTER(WHERE created_offering_count>distinct_output_count),
+        'output_entries_earlier',(SELECT count(*) FROM lower_output_entries WHERE offering_at<receipt_at),
+        'output_entries_equal',(SELECT count(*) FROM lower_output_entries WHERE offering_at=receipt_at),
+        'output_entries_later',(SELECT count(*) FROM lower_output_entries WHERE offering_at>receipt_at),
+        'later_entries_with_current_receipt',(SELECT count(*) FROM lower_output_entries WHERE offering_at>receipt_at AND current_receipt),
+        'later_entries_with_delete_item_audit',(SELECT count(*) FROM lower_output_entries WHERE offering_at>receipt_at AND delete_item_audit)
+    ) FROM classified WHERE created_count<created_offering_count)
 )
 FROM eligible;

@@ -1,5 +1,6 @@
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use school_academic_core::context_reconciliation::CONTEXT_CUTOVER_VERSION;
 use school_academic_core::reconciliation::{
     read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
@@ -72,10 +73,10 @@ async fn academic_context_cutover_status(
     pool: Option<&PgPool>,
     version: i32,
 ) -> AcademicContextCutoverStatus {
-    if version < 148 {
+    if i64::from(version) < CONTEXT_CUTOVER_VERSION {
         return AcademicContextCutoverStatus {
             status: "pendingMigration".into(),
-            migration_version: 148,
+            migration_version: CONTEXT_CUTOVER_VERSION,
             passed: None,
             checks: vec![],
         };
@@ -92,7 +93,7 @@ async fn academic_context_cutover_status(
                     "cutoverFailed"
                 }
                 .into(),
-                migration_version: 148,
+                migration_version: CONTEXT_CUTOVER_VERSION,
                 passed: Some(audit.completed),
                 checks: audit.checks,
             };
@@ -100,9 +101,28 @@ async fn academic_context_cutover_status(
     }
     AcademicContextCutoverStatus {
         status: "unavailable".into(),
-        migration_version: 148,
+        migration_version: CONTEXT_CUTOVER_VERSION,
         passed: Some(false),
         checks: vec![],
+    }
+}
+
+#[cfg(test)]
+mod context_status_tests {
+    use super::*;
+    #[tokio::test]
+    async fn context_status_is_pending_below149_and_unavailable_without_its_pool() {
+        for version in [147, 148] {
+            let status = academic_context_cutover_status(None, version).await;
+            assert_eq!(status.status, "pendingMigration");
+            assert_eq!(status.migration_version, 149);
+            assert_eq!(status.passed, None);
+            assert!(status.checks.is_empty());
+        }
+        let status = academic_context_cutover_status(None, 149).await;
+        assert_eq!(status.status, "unavailable");
+        assert_eq!(status.migration_version, 149);
+        assert_eq!(status.passed, Some(false));
     }
 }
 

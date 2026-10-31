@@ -84,6 +84,8 @@ fn native_exception(file: &Path, function: &str) -> bool {
             function,
             "run_tenant_migrations_detailed" | "verify_tenant_schema" | "grant_runtime_privileges"
         ))
+        || (file.ends_with("crates/school-migrations/src/academic149.rs")
+            && function == "run_transition")
         || (file.ends_with("src/system/handlers/migration.rs") && function == "get_current_version")
         || (file.ends_with("crates/school-database/src/lib.rs") && execution_method(function))
 }
@@ -163,7 +165,10 @@ fn resource_initializer(expression: &Expr) -> bool {
 fn native_pool_boundary_exception(file: &Path, function: &str) -> bool {
     let path = file.to_string_lossy().replace('\\', "/");
     (path.ends_with("crates/school-migrations/src/lib.rs")
-        && matches!(function, "sync_permissions" | "grant_runtime_privileges"))
+        && matches!(
+            function,
+            "sync_permissions" | "grant_runtime_privileges" | "run_tenant_migrations_detailed"
+        ))
         || (path.ends_with("crates/school-tenancy/src/tenant_pool.rs")
             && matches!(function, "observed_checkout_pool" | "begin_observed"))
         || (path.ends_with("crates/school-tenancy/src/pool_manager.rs")
@@ -858,6 +863,32 @@ fn guard_migration_runner_native_execution_requires_exact_owner_and_function() {
         "pub async fn run_tenant_migrations(pool: &PgPool) { run_tenant_migrations_detailed(pool).await; }",
     )
     .is_empty());
+    let atomic_owner = "crates/school-migrations/src/academic149.rs";
+    let atomic_entry="async fn run_transition(connection: &mut PgConnection) { sqlx::raw_sql(SQL).execute(connection).await; }";
+    assert!(inspect_snippet_at(atomic_owner, atomic_entry).is_empty());
+    for (file, source) in [
+        (owner, atomic_entry.to_string()),
+        (
+            atomic_owner,
+            atomic_entry.replace("run_transition", "run_transition_helper"),
+        ),
+        (
+            "crates/school-migrations/src/other149.rs",
+            atomic_entry.to_string(),
+        ),
+    ] {
+        assert!(inspect_snippet_at(file, &source)
+            .iter()
+            .any(|problem| problem.contains("native execution accepts an executor")));
+    }
+    let admission="pub async fn run_tenant_migrations_detailed(pool: &PgPool) { let connection=pool.acquire().await; }";
+    assert!(inspect_snippet_at(owner, admission).is_empty());
+    assert!(inspect_snippet_at(
+        owner,
+        &admission.replace("run_tenant_migrations_detailed", "run_tenant_migrations")
+    )
+    .iter()
+    .any(|problem| problem.contains("native pool admission bypasses observed work boundary")));
 }
 
 #[test]
