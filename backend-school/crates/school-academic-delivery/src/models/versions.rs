@@ -75,6 +75,28 @@ pub struct DeliveryTeacherAllocation {
     pub role: LearningTeacherRole,
 }
 
+/// Active teacher IDs in one group of the selected published allocation.
+/// Snake-case serialization is an internal typed SQL-binding contract, not an HTTP DTO.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct GroupTeacherAssignments {
+    pub learning_group_id: Uuid,
+    pub teacher_ids: Vec<Uuid>,
+    pub primary_teacher_ids: Vec<Uuid>,
+}
+
+/// A source ID remains present when a published graph has no matching memberships.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishedTeacherAssignments {
+    pub delivery_version_id: Option<Uuid>,
+    pub groups: Vec<GroupTeacherAssignments>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishedTeacherGroupIds {
+    pub delivery_version_id: Option<Uuid>,
+    pub learning_group_ids: Vec<Uuid>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, sqlx::Type)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
