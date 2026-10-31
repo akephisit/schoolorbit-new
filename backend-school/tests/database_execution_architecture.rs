@@ -215,6 +215,37 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-academic-delivery/src/services/change_sets/draft_removal.rs",
             &["remove_resource"],
         ),
+        // Mutation contexts admit pool+permit work without a held connection. These
+        // exact private owners begin their observed transaction and commit via the permit.
+        (
+            "school-academic-timetable/src/services/teacher_handoff.rs",
+            &["apply_in_permit"],
+        ),
+        (
+            "school-academic-timetable/src/services/timetable_block_service.rs",
+            &[
+                "create_ordinary_block_in_permit",
+                "create_structural_blocks_in_permit",
+                "create_synchronized_block_in_permit",
+                "deactivate_block_in_permit",
+                "deactivate_series_in_permit",
+                "remove_target_in_permit",
+                "swap_blocks_in_permit",
+                "update_block_in_permit",
+            ],
+        ),
+        (
+            "school-academic-timetable/src/services/timetable_lifecycle.rs",
+            &["publish_in_permit", "update_source_in_permit"],
+        ),
+        (
+            "school-academic-timetable/src/services/timetable_template_service.rs",
+            &["apply_template_in_permit", "clear_timetable_in_permit"],
+        ),
+        (
+            "school-academic-timetable/src/services/timetable_version_service.rs",
+            &["create_initial_draft_in_permit"],
+        ),
         // Observation status owns locks+mutation+commit, then a fresh response read.
         (
             "school-supervision/src/services/observations.rs",
@@ -833,6 +864,69 @@ fn guard_private_work_entries_keep_native_and_nested_pool_guards() {
         assert!(
             problems.iter().any(|problem| problem.contains(expected)),
             "registered work entry bypassed {expected}: {problems:?}"
+        );
+    }
+}
+
+#[test]
+fn guard_timetable_transaction_entries_require_exact_owner_and_function() {
+    for (owner, function, permit_type) in [
+        (
+            "crates/school-academic-timetable/src/services/timetable_block_service.rs",
+            "create_ordinary_block_in_permit",
+            "CommitPermit",
+        ),
+        (
+            "crates/school-academic-timetable/src/services/timetable_version_service.rs",
+            "create_initial_draft_in_permit",
+            "CreationPermit",
+        ),
+    ] {
+        let entry = format!("async fn {function}(pool: &PgPool, permit: Arc<{permit_type}>) {{ let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; permit.commit(tx).await?; }}");
+        assert!(inspect_snippet_at(owner, &entry).is_empty());
+
+        let helper = entry.replace(&format!("fn {function}("), "fn hydrate_in_permit(");
+        let wrong_owner = owner.replace("school-academic-timetable", "school-academic-delivery");
+        let wrong_file = "crates/school-academic-timetable/src/services/unregistered.rs";
+        for (file, source) in [
+            (owner, helper.as_str()),
+            (wrong_owner.as_str(), entry.as_str()),
+            (wrong_file, entry.as_str()),
+        ] {
+            let problems = inspect_snippet_at(file, source);
+            assert!(
+                problems
+                    .iter()
+                    .any(|problem| problem
+                        .contains("private query helper retains a pool capability")),
+                "unregistered Timetable pool helper accepted at {file}: {source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn guard_timetable_transaction_entries_keep_native_and_nested_pool_guards() {
+    let owner = "crates/school-academic-timetable/src/services/timetable_block_service.rs";
+    for (operation, expected) in [
+        (
+            "sqlx::query(SQL).execute(&mut *tx).await?;",
+            "native execution accepts an executor",
+        ),
+        (
+            "let connection = TenantPool::observed_checkout_pool(pool, OP).await?;",
+            "pool helper observed_checkout_pool called while a connection or transaction is held",
+        ),
+        (
+            "let connection = pool.acquire().await?;",
+            "native pool admission bypasses observed work boundary",
+        ),
+    ] {
+        let entry = format!("async fn create_ordinary_block_in_permit(pool: &PgPool, permit: Arc<CommitPermit>) {{ let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; {operation} permit.commit(tx).await?; }}");
+        let problems = inspect_snippet_at(owner, &entry);
+        assert!(
+            problems.iter().any(|problem| problem.contains(expected)),
+            "registered Timetable entry bypassed {expected}: {problems:?}"
         );
     }
 }
