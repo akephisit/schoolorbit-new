@@ -222,7 +222,7 @@ class Response:
   if data.get('scenario')=='no_student_permission':user['permissions']=[]
   if path=='/api/auth/me':value=user
   elif path=='/api/academic/context/options':
-   year='11111111-1111-4111-8111-111111111111';value={'activeAcademicYearId':year,'years':[{'id':year}]}
+   year='11111111-1111-4111-8111-111111111111';value={'defaultAcademicYearId':year,'years':[{'id':year}]}
    if data.get('scenario')=='no_context':value={'years':[]}
    if data.get('scenario')=='unknown_active_year':value['years']=[{'id':'22222222-2222-4222-8222-222222222222'}]
   elif path=='/api/staff/dashboard':value={'totalStaff':2,'totalStudents':20,'activeHomerooms':1}

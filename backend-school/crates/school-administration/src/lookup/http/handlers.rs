@@ -9,7 +9,6 @@ use uuid::Uuid;
 #[cfg(feature = "api-docs")]
 use crate::facility::models::Room;
 use crate::http::state::AdministrationHttpState;
-use crate::lookup::models::AcademicLookupQuery;
 #[cfg(feature = "api-docs")]
 use crate::lookup::models::HomeroomLookupItem;
 #[cfg(feature = "api-docs")]
@@ -23,6 +22,7 @@ use crate::lookup::models::RoleLookupItem;
 use crate::lookup::models::StaffLookupItem;
 #[cfg(feature = "api-docs")]
 use crate::lookup::models::StudentLookupItem;
+use crate::lookup::models::{AcademicLookupQuery, SubjectLookupQuery};
 use crate::lookup::services as lookup_service;
 #[cfg(feature = "api-docs")]
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
@@ -266,7 +266,7 @@ pub async fn lookup_rooms(
     path = "/api/lookup/subjects",
     operation_id = "lookupSubjects",
     tag = "lookup",
-    params(AcademicLookupQuery),
+    params(SubjectLookupQuery),
     responses(
         (status = 200, description = "Subject lookup items", body = ApiResponse<Vec<LookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
@@ -274,7 +274,7 @@ pub async fn lookup_rooms(
 ))]
 pub async fn lookup_subjects(
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<AcademicLookupQuery>,
+    Query(query): Query<SubjectLookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_subjects(&context.tenant.pool, query).await?;

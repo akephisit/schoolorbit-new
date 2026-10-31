@@ -393,14 +393,27 @@ export async function mockDeliveryNavigation(
 			if (path === '/api/menu/user') return reply(route, { groups: [] });
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: navigationIds.activeYear,
-					activeAcademicTermId: navigationIds.activeTerm,
+					defaultAcademicYearId: navigationIds.activeYear,
+					defaultAcademicTermId: navigationIds.activeTerm,
 					years: [
-						{ id: navigationIds.activeYear, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' },
-						{ id: navigationIds.year, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' }
+						{
+							isVisible: true,
+							id: navigationIds.activeYear,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						},
+						{
+							isVisible: true,
+							id: navigationIds.year,
+							name: 'ปีการศึกษา 2570',
+							year: 2570,
+							status: 'active'
+						}
 					],
 					terms: [
 						{
+							isVisible: true,
 							id: navigationIds.activeTerm,
 							academicYearId: navigationIds.activeYear,
 							name: 'ภาคเรียนที่ 1',
@@ -410,6 +423,7 @@ export async function mockDeliveryNavigation(
 							status: 'active'
 						},
 						{
+							isVisible: true,
 							id: navigationIds.term,
 							academicYearId: navigationIds.year,
 							name: 'ภาคเรียนที่ 2',

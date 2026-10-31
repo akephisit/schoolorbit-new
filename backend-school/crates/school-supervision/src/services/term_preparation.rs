@@ -83,11 +83,9 @@ pub async fn apply(
             .booking_closes_at
             .map(|value| mapped_date(value, dates))
             .transpose()?;
-        if starts_at.date_naive() < context.target_start_date
-            || ends_at.date_naive() > context.target_end_date
-        {
-            return Err(AppError::Conflict(
-                "ช่วงเวลารอบนิเทศต้องอยู่ในภาคเรียนเป้าหมาย".into(),
+        if ends_at < starts_at {
+            return Err(AppError::ValidationError(
+                "วันสิ้นสุดรอบนิเทศต้องไม่ก่อนวันเริ่ม".into(),
             ));
         }
         let id = Uuid::now_v7();

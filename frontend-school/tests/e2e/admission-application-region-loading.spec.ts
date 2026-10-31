@@ -105,17 +105,16 @@ async function mock(page: Page, manager = true, validContext = false) {
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: validContext ? contextYearId : null,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: validContext ? contextYearId : null,
+					defaultAcademicTermId: null,
 					years: validContext
 						? [
 								{
+									isVisible: true,
 									id: contextYearId,
 									year: 2569,
 									name: '2569',
-									status: 'active',
-									startDate: '2026-05-01',
-									endDate: '2027-04-30'
+									status: 'active'
 								}
 							]
 						: [],

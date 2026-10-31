@@ -139,11 +139,20 @@ async function install(page: Page, mode: 'light' | 'dark' = 'light', values = ro
 				});
 			} else if (pathname === '/api/academic/context/options') {
 				await fulfill(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
-					years: [{ id: year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
+					years: [
+						{
+							isVisible: true,
+							id: year,
+							name: 'ปีการศึกษา 2569',
+							year: 2569,
+							status: 'active'
+						}
+					],
 					terms: [
 						{
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							name: 'ภาคเรียนที่ 1',
@@ -151,8 +160,6 @@ async function install(page: Page, mode: 'light' | 'dark' = 'light', values = ro
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-03-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

@@ -223,8 +223,10 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         "calendar day note"
     );
     apply_migrations_through(&f.pool, 108).await.unwrap();
-    // Current saves use the ledger-only contract after central dispatch takes ownership.
-    apply_migrations_through(&f.pool, 120).await.unwrap();
+    // Historical preservation is verified above; current saves require the current dispatch schema.
+    apply_migrations_through(&f.pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let detail = sessions::detail(&f.pool, &f.actor, saved_session.id)
         .await
         .unwrap();
@@ -705,7 +707,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -836,14 +838,8 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)").bind(TERM).bind(date+chrono::Duration::days(2)).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     let configuration = AttendanceConfiguration {
         late_after: NaiveTime::from_hms_opt(23, 59, 59).unwrap(),
         ..Default::default()
@@ -1146,9 +1142,8 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         .unwrap();
     }
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
-        .bind(date)
         .execute(&f.pool)
         .await
         .unwrap();
@@ -1357,11 +1352,10 @@ async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope
         open(&f.pool, &actor, malformed).await,
         Err(AppError::NotFound(_))
     ));
-    let (other_term,other_date):(Uuid,NaiveDate)=sqlx::query_as("SELECT id,start_date FROM academic_terms WHERE academic_year_id<>(SELECT academic_year_id FROM academic_terms WHERE id=$1) ORDER BY start_date,id LIMIT 1")
+    let other_term:Uuid=sqlx::query_scalar("SELECT term.id FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.academic_year_id<>(SELECT academic_year_id FROM academic_terms WHERE id=$1) ORDER BY year.year,term.sequence_no,term.id LIMIT 1")
         .bind(TERM).fetch_one(&f.pool).await.unwrap();
     let mut cross_year = context.clone();
     cross_year.academic_term_id = other_term;
-    cross_year.date = other_date;
     assert!(matches!(
         open(&f.pool, &actor, cross_year).await,
         Err(AppError::NotFound(_))
@@ -2193,7 +2187,7 @@ async fn attendance_retention_drains_more_than_one_batch_after_term_closes() {
         evidence_file(&f.pool, STUDENT).await;
     }
     sqlx::query("UPDATE files SET expires_at=now()-interval '1 minute' WHERE purpose_code='attendance_evidence'").execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -2226,12 +2220,20 @@ mod retention_tests {
         platform_types::DownloadGrant,
         storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
     };
+    use sha2::{Digest, Sha256};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
     use url::Url;
 
     #[derive(Default)]
-    struct RetentionStorage(AtomicUsize);
+    struct RetentionStorage {
+        deleted_objects: AtomicUsize,
+        objects: Mutex<HashSet<String>>,
+    }
     #[async_trait]
     impl StorageProvider for RetentionStorage {
         fn namespace(
@@ -2260,11 +2262,29 @@ mod retention_tests {
         async fn get(&self, _: &StoredObject, _: u64) -> Result<Bytes, StorageError> {
             panic!("retention must not read bytes")
         }
-        async fn head(&self, _: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
-            panic!("retention must not inspect objects")
+        async fn head(
+            &self,
+            object: &StoredObject,
+        ) -> Result<Option<ObjectMetadata>, StorageError> {
+            Ok(self
+                .objects
+                .lock()
+                .unwrap()
+                .contains(object.object_key.as_str())
+                .then(|| ObjectMetadata {
+                    content_type: Some(object.content_type.clone()),
+                    content_length: Some(50_000),
+                }))
         }
-        async fn delete(&self, _: &StoredObject) -> Result<(), StorageError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
+        async fn delete(&self, object: &StoredObject) -> Result<(), StorageError> {
+            if self
+                .objects
+                .lock()
+                .unwrap()
+                .remove(object.object_key.as_str())
+            {
+                self.deleted_objects.fetch_add(1, Ordering::SeqCst);
+            }
             Ok(())
         }
         async fn private_download_grant(
@@ -2292,10 +2312,18 @@ mod retention_tests {
         let f = fixture("attendance_file_cleaner_capacity").await;
         let pool = f.pool;
         let actor = f.actor.user_id;
+        let storage = Arc::new(RetentionStorage::default());
+        let mut version_ids = Vec::new();
         for _ in 0..105 {
             let file = Uuid::new_v4();
+            let object_key = format!(
+                "tenants/{}/attendance/evidence/{file}/v1/original.jpg",
+                Uuid::new_v4()
+            );
+            assert!(storage.objects.lock().unwrap().insert(object_key.clone()));
             sqlx::query("INSERT INTO files(id,owner_user_id,purpose_code,display_filename,visibility,lifecycle_status,retention_class,created_by,expires_at,inspection_metadata) VALUES($1,$2,'attendance_evidence','fixture.jpg','private','ready','temporary',$2,now()-interval '1 minute','{\"kind\":\"image\",\"width_px\":640,\"height_px\":480}')").bind(file).bind(actor).execute(&pool).await.unwrap();
-            let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(format!("tenants/{}/attendance/evidence/{file}/v1/original.jpg", Uuid::new_v4())).bind(actor).fetch_one(&pool).await.unwrap();
+            let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(object_key).bind(actor).fetch_one(&pool).await.unwrap();
+            version_ids.push(version);
             sqlx::query("UPDATE files SET current_version_id=$2 WHERE id=$1")
                 .bind(file)
                 .bind(version)
@@ -2303,13 +2331,53 @@ mod retention_tests {
                 .await
                 .unwrap();
         }
+        // All locators and their fake provider routing are owned by this fixture.
+        // Bind that evidence through the real owner/revision/identity checks.
+        let namespaces =
+            school_file_platform::namespace_binding::ConfiguredNamespaces::from_provider(
+                storage.as_ref(),
+            )
+            .unwrap();
+        let watch_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM file_storage_cleanup_watches WHERE target_kind='version' AND target_id=ANY($1) ORDER BY id")
+            .bind(&version_ids).fetch_all(&pool).await.unwrap();
+        assert_eq!(watch_ids.len(), 105);
+        let mut object_keys = storage
+            .objects
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        object_keys.sort();
+        let attestation = hex::encode(Sha256::digest(
+            serde_json::to_vec(&("fixture", "https://fixture.invalid", "private", object_keys))
+                .unwrap(),
+        ));
+        let manifest = school_file_platform::namespace_binding::prepare_binding_manifest(
+            &pool,
+            &watch_ids,
+            attestation,
+            &namespaces,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            school_file_platform::namespace_binding::bind_attested_namespaces(
+                &pool,
+                &manifest,
+                &namespaces,
+                true
+            )
+            .await
+            .unwrap(),
+            105
+        );
         assert_eq!(
             school_attendance::services::faces::expire_evidence(&pool)
                 .await
                 .unwrap(),
             100
         );
-        let storage = Arc::new(RetentionStorage::default());
         let platform = Arc::new(FilePlatform::new(
             storage.clone(),
             Arc::new(RetentionScanner),
@@ -2317,8 +2385,11 @@ mod retention_tests {
         FileCleaner::new(pool.clone(), platform)
             .reconcile_file_operations()
             .await;
-        assert_eq!(storage.0.load(Ordering::SeqCst), 105);
+        // Ordinary deletes and cleanup watches may repeat an idempotent provider request.
+        assert_eq!(storage.deleted_objects.load(Ordering::SeqCst), 105);
+        assert!(storage.objects.lock().unwrap().is_empty());
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM files WHERE lifecycle_status='deleted' AND purpose_code='attendance_evidence'").fetch_one(&pool).await.unwrap(), 105);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM file_operations WHERE operation_type='delete_object' AND status='succeeded'").fetch_one(&pool).await.unwrap(), 105);
     }
 }
 
@@ -2946,6 +3017,10 @@ async fn attendance_migration_preserves_explicit_legacy_ceremony_facts_and_retri
         ("present".into(), "teacher".into(), "preserved".into(), 7)
     );
     apply_migrations_through(&pool, 108).await.unwrap();
+    // The current reader uses explicit dates materialized from preserved legacy counting rules.
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let report = reports::summaries(&pool, TERM, Some(STUDENT), None)
         .await
         .unwrap();
@@ -2960,18 +3035,8 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
-        .bind(date + chrono::Duration::days(2))
-        .execute(&f.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     let descriptor = FaceDescriptor {
         values: vec![0.01; 128],
     };
@@ -3340,7 +3405,7 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -3454,7 +3519,7 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
         .await
         .unwrap();
     }
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&pool)
         .await
@@ -3865,6 +3930,25 @@ async fn attendance_prefetched_score_change_reloads_reset_before_new_generation_
     )
     .await
     .unwrap();
+    assert!(settings::days(&f.pool, TERM, date, date)
+        .await
+        .unwrap()
+        .is_empty());
+    settings::save_days(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceDays {
+            row_version: 0,
+            days: vec![AttendanceDay {
+                date,
+                counted: true,
+                note: String::new(),
+            }],
+        },
+    )
+    .await
+    .unwrap();
     let new_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
     assert_eq!(old_session.id, new_session.id);
     let new_detail = sessions::detail(&f.pool, &f.actor, new_session.id)
@@ -3948,18 +4032,8 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
-        .bind(date + chrono::Duration::days(2))
-        .execute(&f.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(date - chrono::Duration::days(1))
-        .bind(date + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("UPDATE behavior_settings SET enabled=true")
         .execute(&f.pool)
         .await
@@ -4179,6 +4253,18 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
     use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
     let f = fixture("attendance_lifecycle_delivery_gate").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    // This gate scenario owns one counted day, rather than the migrated fixture's full calendar.
+    sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true)")
+        .bind(TERM)
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
         .bind(TERM)
@@ -4358,7 +4444,7 @@ async fn attendance_wait_for_blocker(pool: &PgPool, blocker: i32) {
 #[tokio::test]
 async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_release() {
     let f = fixture("attendance_report_destructive_guards").await;
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -4475,7 +4561,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
 #[tokio::test]
 async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_state() {
     let f = fixture("attendance_report_queued_reset").await;
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -5005,7 +5091,7 @@ async fn attendance_notification_purge_uses_atomic_inbox_acceptance_and_keeps_pe
     )
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(TERM)
         .execute(&f.pool)
         .await
@@ -5318,15 +5404,8 @@ async fn attendance_options_assigned_enrollment_and_kiosk_finish_with_one_connec
     let today = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
-        .bind(TERM).bind(today + chrono::Duration::days(2)).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
-        .bind(TERM)
-        .bind(today - chrono::Duration::days(1))
-        .bind(today + chrono::Duration::days(1))
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=EXCLUDED.counted")
+        .bind(TERM).bind(today).execute(&f.pool).await.unwrap();
     sqlx::query("UPDATE homeroom_placements SET end_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
         .bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) SELECT homeroom_id,$2,'primary' FROM homeroom_placements WHERE student_academic_year_id=$1 AND status='current' ON CONFLICT(homeroom_id,user_id) DO NOTHING")
@@ -5494,4 +5573,392 @@ async fn attendance_notification_source_identity_drift_refuses_presentation_unti
     .await
     .unwrap()
     .is_some());
+}
+
+#[tokio::test]
+async fn attendance_explicit_calendar_keeps_reports_digests_and_score_facts_consistent() {
+    use school_attendance::services::score_changes as changes;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(); // Thursday: both the old default and preset include it.
+    for (name, configured, day, override_count, counted) in [
+        ("missing_default", false, None, None, false),
+        ("missing_preset", true, None, None, false),
+        ("counted_day", true, Some(true), None, true),
+        ("uncounted_day", true, Some(false), None, false),
+        ("override_missing", true, None, Some(true), true),
+        ("override_includes", true, Some(false), Some(true), true),
+        ("override_excludes", true, Some(true), Some(false), false),
+    ] {
+        let f = fixture(&format!("attendance_counting_{name}")).await;
+        sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+            .bind(TERM)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        if configured {
+            let configuration = AttendanceConfiguration {
+                enabled: true,
+                weekdays: vec![4],
+                ..Default::default()
+            };
+            sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3)")
+                .bind(TERM).bind(sqlx::types::Json(configuration)).bind(TEACHER).execute(&f.pool).await.unwrap();
+        }
+        if let Some(day) = day {
+            sqlx::query(
+                "INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,$3)",
+            )
+            .bind(TERM)
+            .bind(date)
+            .bind(day)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        }
+        let mut source = seed(&f, AttendanceKind::Arrival, date);
+        source.session.count_override = override_count;
+        let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+        let detail = sessions::detail(&f.pool, &f.actor, session.id)
+            .await
+            .unwrap();
+        let captured = sessions::save(
+            &f.pool,
+            &f.actor,
+            session.id,
+            save_payload(&detail, STUDENT, AttendanceResult::Present),
+        )
+        .await
+        .unwrap();
+        assert_eq!(captured.counted, counted, "session detail: {name}");
+        let summary = reports::summaries(&f.pool, TERM, Some(STUDENT), Some(TEACHER))
+            .await
+            .unwrap();
+        notifications::queue_digest(
+            &f.pool,
+            TERM,
+            date,
+            NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+        )
+        .await
+        .unwrap();
+        let messages:Vec<String>=sqlx::query_scalar("SELECT notice.message FROM attendance_notifications ledger JOIN notifications notice ON notice.id=ledger.notification_id WHERE ledger.recipient_id=$1 AND ledger.dedup_key LIKE 'digest:%'")
+            .bind(TEACHER).fetch_all(&f.pool).await.unwrap();
+        let facts =
+            changes::day_facts_on_connection(&mut *f.pool.acquire().await.unwrap(), TERM, date)
+                .await
+                .unwrap();
+        let expected = usize::from(counted);
+        assert_eq!((summary.summaries.len(),messages.len(),facts.len()),(expected,expected,expected),"all counted consumers must agree with the explicit calendar and session override: {name}");
+        if counted {
+            assert_eq!(summary.summaries[0].present, 1);
+            assert_eq!(summary.summaries[0].expected, 1);
+            assert!(messages[0].contains("มา 1"));
+            assert!(messages[0].contains("ยังไม่เช็ค 1"));
+            assert_eq!(facts[0].student_id, STUDENT);
+            assert_eq!(facts[0].result, AttendanceResult::Present);
+            assert!(facts[0].counted);
+        }
+        // A capture remains a real fact even when excluded from counting. The
+        // dirty-day queue must still reconcile any previous score contribution.
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_records WHERE session_id=$1"
+            )
+            .bind(session.id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            1
+        );
+        let pending = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+            .await
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].date, date);
+        assert_eq!(pending[0].academic_term_id, TERM);
+    }
+}
+
+async fn explicit_special(f: &Fixture, date: NaiveDate) {
+    let mut source = seed(f, AttendanceKind::Special, date);
+    source.session.count_override = Some(true);
+    let definition = SpecialAttendanceDefinition {
+        scoring: None,
+        title: "รอบนับเฉพาะวันที่".into(),
+        dates: vec![date],
+        start_time: NaiveTime::MIN,
+        end_time: NaiveTime::from_hms_opt(1, 0, 0).unwrap(),
+        counted: true,
+        notify: true,
+        groups: vec![SpecialAttendanceGroup {
+            name: "กลุ่ม".into(),
+            teacher_ids: vec![TEACHER],
+            homeroom_ids: vec![],
+            audience_group_ids: vec![],
+            student_ids: f.students.iter().map(|s| s.student_id).collect(),
+            use_homeroom_advisors: false,
+        }],
+    };
+    specials::create_template(&f.pool, TEACHER, TERM, definition, vec![vec![source]])
+        .await
+        .unwrap();
+}
+
+async fn attendance_closure_complete(pool: &PgPool, date: NaiveDate) -> Result<(), AppError> {
+    use school_academic_lifecycle::ports::ExternalLifecyclePort;
+    let mut tx = pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, true, true).await?;
+    let result = crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await;
+    tx.rollback().await.unwrap();
+    result
+}
+
+#[tokio::test]
+async fn attendance_finalization_counted_overrides_drive_scheduling_without_calendar_defaults() {
+    use chrono::TimeZone;
+    use school_attendance::services::{finalization as progress, score_changes};
+    for explicit_false in [false, true] {
+        let f = fixture(&format!("attendance_override_work_{explicit_false}")).await;
+        let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+        let special_date = date.succ_opt().unwrap();
+        let excluded_date = special_date.succ_opt().unwrap();
+        let midnight = Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap();
+        sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1,coverage_start=$1")
+            .bind(date)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+            .bind(TERM)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let time = NaiveTime::from_hms_opt(16, 0, 0).unwrap();
+        let config = AttendanceConfiguration {
+            enabled: true,
+            digest_times: vec![time],
+            ..Default::default()
+        };
+        sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3)")
+            .bind(TERM).bind(sqlx::types::Json(config)).bind(TEACHER).execute(&f.pool).await.unwrap();
+        if explicit_false {
+            sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,false),($1,$3,false)")
+                .bind(TERM).bind(date).bind(special_date).execute(&f.pool).await.unwrap();
+        }
+        let mut saved = seed(&f, AttendanceKind::Arrival, date);
+        saved.session.count_override = Some(true);
+        let saved = sessions::ensure(&f.pool, &f.actor, saved).await.unwrap();
+        explicit_special(&f, special_date).await;
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_sessions WHERE kind='special'"
+            )
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            0,
+            "special participants exist before any capture"
+        );
+        // None/false/cancelled rounds on another missing date do not become work.
+        sessions::ensure(
+            &f.pool,
+            &f.actor,
+            seed(&f, AttendanceKind::Arrival, excluded_date),
+        )
+        .await
+        .unwrap();
+        explicit_special(&f, excluded_date).await;
+        let mut suppressed = specials::seeds(&f.pool, TERM, excluded_date)
+            .await
+            .unwrap()
+            .remove(0);
+        suppressed.session.count_override = Some(false);
+        let suppressed = sessions::ensure(&f.pool, &f.actor, suppressed)
+            .await
+            .unwrap();
+        explicit_special(&f, excluded_date).await;
+        let cancelled = specials::seeds(&f.pool, TERM, excluded_date)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|s| s.session.id != suppressed.id)
+            .unwrap();
+        let cancelled = sessions::ensure(&f.pool, &f.actor, cancelled)
+            .await
+            .unwrap();
+        sessions::cancel(
+            &f.pool,
+            &f.actor,
+            cancelled.id,
+            AttendanceCancellation {
+                session: session_context(&cancelled),
+                roster_token: cancelled.roster_token.clone(),
+                row_version: cancelled.row_version,
+                cancelled: true,
+                reason: "งดรอบทดสอบ".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(
+                attendance_closure_complete(&f.pool, date.pred_opt().unwrap()).await,
+                Err(AppError::Conflict(_))
+            ),
+            "future counted overrides block closure"
+        );
+        assert!(
+            matches!(
+                attendance_closure_complete(&f.pool, special_date).await,
+                Err(AppError::Conflict(_))
+            ),
+            "counted overrides block closure before finalization"
+        );
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                special_date.succ_opt().unwrap()
+            )
+            .await
+            .unwrap(),
+            date.pred_opt().unwrap()
+        );
+        let generation = sessions::module_generation(&f.pool).await.unwrap();
+        for day in [date, special_date] {
+            assert!(school_attendance::runtime::queue_scheduled_digest(
+                &f.pool, TERM, day, time, generation
+            )
+            .await
+            .unwrap());
+            assert!(school_attendance::runtime::queue_scheduled_digest(
+                &f.pool, TERM, day, time, generation
+            )
+            .await
+            .unwrap());
+        }
+        assert!(!school_attendance::runtime::queue_scheduled_digest(
+            &f.pool,
+            TERM,
+            excluded_date,
+            time,
+            generation
+        )
+        .await
+        .unwrap());
+        let messages:Vec<String>=sqlx::query_scalar("SELECT notice.message FROM attendance_notifications ledger JOIN notifications notice ON notice.id=ledger.notification_id WHERE ledger.recipient_id=$1 AND ledger.dedup_key LIKE 'digest:%' ORDER BY ledger.dedup_key")
+            .bind(TEACHER).fetch_all(&f.pool).await.unwrap();
+        assert_eq!(
+            messages.len(),
+            2,
+            "one idempotent digest per actual counted date"
+        );
+        assert!(messages.iter().all(|m| m.contains("ยังไม่เช็ค 2")),"saved and uncaptured special rosters are scheduled without ordinary virtual coverage: {messages:?}");
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight - chrono::Duration::seconds(1),
+                4
+            )
+            .await
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(&f.pool, midnight, 4)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                excluded_date
+            )
+            .await
+            .unwrap(),
+            date
+        );
+        assert!(attendance_closure_complete(&f.pool, special_date)
+            .await
+            .is_err());
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight + chrono::Duration::days(1),
+                4
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        let rows:Vec<(Uuid,Uuid,String,String)>=sqlx::query_as("SELECT r.session_id,r.student_id,r.result,r.origin FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1 ORDER BY r.session_id,r.student_id")
+            .bind(TERM).fetch_all(&f.pool).await.unwrap();
+        assert_eq!(
+            rows.len(),
+            4,
+            "only saved counted and explicit special rounds become absences"
+        );
+        assert!(rows.iter().all(|r| r.2 == "absent" && r.3 == "automatic"));
+        assert_eq!(rows.iter().filter(|r| r.0 == saved.id).count(), 2);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1"
+            )
+            .bind(TERM)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            5,
+            "no ordinary virtual rounds are persisted on missing/false days"
+        );
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight + chrono::Duration::days(3),
+                4
+            )
+            .await
+            .unwrap(),
+            0
+        );
+        progress::require_finalized_through(
+            &mut *f.pool.acquire().await.unwrap(),
+            TERM,
+            special_date,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                excluded_date
+            )
+            .await
+            .unwrap(),
+            special_date
+        );
+        assert!(
+            score_changes::require_drained(&mut *f.pool.acquire().await.unwrap(), TERM)
+                .await
+                .is_err()
+        );
+        assert!(
+            attendance_closure_complete(&f.pool, special_date)
+                .await
+                .is_err(),
+            "closure waits for score delivery after finalization"
+        );
+        crate::adapters::behavior::run(&f.pool).await.unwrap();
+        assert!(
+            score_changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+                .await
+                .unwrap()
+                .is_empty(),
+            "actual source delivery acknowledges its accepted revisions"
+        );
+        attendance_closure_complete(&f.pool, special_date)
+            .await
+            .unwrap();
+    }
 }

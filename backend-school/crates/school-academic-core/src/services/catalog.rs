@@ -20,10 +20,8 @@ use super::super::models::{
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
-const SUBJECT_COLUMNS: &str =
-    "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
-const ACTIVITY_COLUMNS: &str =
-    "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+const SUBJECT_COLUMNS: &str = "id, code, subject_group_id, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
+const ACTIVITY_COLUMNS: &str = "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 
 // Owned links (draft grades and default teachers) are removed with the catalog entry.
 // All downstream references, including publication snapshots without catalog FKs, refuse deletion.

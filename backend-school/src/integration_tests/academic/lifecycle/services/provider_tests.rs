@@ -141,7 +141,7 @@ async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_che
 async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_exam_fingerprint").await;
     let (year, term, date): (Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as(
-        "SELECT academic_year_id,id,start_date FROM academic_terms WHERE status='active'",
+        "SELECT academic_year_id,id,(now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms WHERE status='active'",
     )
     .fetch_one(&pool)
     .await
@@ -198,7 +198,7 @@ async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
 async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_delivery_items() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_operational_providers").await;
     let (year,term,bell,start):(Uuid,Uuid,Uuid,chrono::NaiveDate) = sqlx::query_as(
-        "SELECT academic_year_id,id,bell_schedule_id,start_date FROM academic_terms WHERE status='active'"
+        "SELECT academic_year_id,id,bell_schedule_id,(now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms WHERE status='active'"
     ).fetch_one(&pool).await.unwrap();
     let actor: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' LIMIT 1")
         .fetch_one(&pool)

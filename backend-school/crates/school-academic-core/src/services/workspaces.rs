@@ -328,6 +328,7 @@ pub async fn setup_workspace_on_connection(
         "จำนวนตารางคาบ",
     )?;
     Ok(AcademicSetupWorkspace {
+        context_settings: super::context_settings::get_on_connection(connection).await?,
         years,
         terms,
         bell_schedules,

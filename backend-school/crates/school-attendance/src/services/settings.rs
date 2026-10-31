@@ -158,10 +158,6 @@ pub async fn save_days(
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "attendance.settings.transaction").await?;
     lock_term(&mut tx, term, true, true).await?;
-    let (start,end):(NaiveDate,NaiveDate)=DbSession::new(&mut *tx).query_as("attendance.services.settings.save_days", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(term).fetch_one().await?;
-    if p.days.iter().any(|d| d.date < start || d.date > end) {
-        return Err(invalid("วันที่อยู่นอกภาคเรียน"));
-    }
     let version: Option<i64> = DbSession::new(&mut *tx)
         .scalar(
             "attendance.services.settings.save_days",

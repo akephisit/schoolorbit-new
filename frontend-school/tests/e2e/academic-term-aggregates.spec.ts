@@ -121,20 +121,20 @@ async function mock(page: Page, manager = false, conflict = false) {
 				} satisfies Schemas['CurrentUserResponse']);
 			if (path === '/api/academic/context/options')
 				return respond(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
 					years: [
 						{
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
+							status: 'active'
 						}
 					],
 					terms: [
 						{
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							code: '1',
@@ -142,9 +142,6 @@ async function mock(page: Page, manager = false, conflict = false) {
 							sequence: 1,
 							termType: 'regular',
 							status: 'closing',
-							startDate: '2026-05-16',
-							plannedEndDate: null,
-							closedOn: null,
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

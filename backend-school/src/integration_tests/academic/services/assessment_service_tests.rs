@@ -54,8 +54,12 @@ async fn assessment_lifecycle_guard_blocks_structure_and_window_changes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(term).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(term)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         for admin in [true, false] {
             assert!(matches!(
                 assessment_adapter::save_plan(&pool, offering, actor, admin, save_payload(&before))
@@ -152,7 +156,7 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
         .unwrap();
 
     let preferred_offering_id = Uuid::new_v4();
-    sqlx::query_scalar::<_, Uuid>(
+    let starts_on_preserved = sqlx::query_scalar::<_, bool>(
         r#"WITH source AS (
                SELECT term.id AS academic_term_id,
                       term.academic_year_id,
@@ -163,12 +167,15 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                       version.credit,
                       version.hours_per_semester,
                       subject.owning_organization_unit_id,
-                      existing_detail.assessment_total_score
+                      existing_detail.assessment_total_score,
+                      source_offering.starts_on
                FROM academic_terms term
                JOIN subject_versions version ON version.code = 'SCI-CORE'
                JOIN subjects subject ON subject.id = version.subject_id
                JOIN course_offering_details existing_detail
                  ON existing_detail.academic_term_id = term.id
+               JOIN learning_offerings source_offering
+                 ON source_offering.id = existing_detail.learning_offering_id
                WHERE term.id = $2
                ORDER BY existing_detail.learning_offering_id
                LIMIT 1
@@ -176,12 +183,13 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                INSERT INTO learning_offerings (
                    id, academic_term_id, academic_year_id, kind, code_snapshot,
                    name_snapshot, status, owning_organization_unit_id,
-                   migration_provenance
+                   migration_provenance, starts_on
                )
                SELECT $1, academic_term_id, academic_year_id, 'course', code,
-                      name_th, 'draft', owning_organization_unit_id, '{}'::jsonb
+                      name_th, 'draft', owning_organization_unit_id, '{}'::jsonb,
+                      starts_on
                FROM source
-               RETURNING id
+               RETURNING id, starts_on
            ), inserted_detail AS (
                INSERT INTO course_offering_details (
                    learning_offering_id, academic_term_id, academic_year_id,
@@ -205,7 +213,8 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                   source.subject_version_id, inserted_detail.learning_offering_id,
                   source.academic_year_id, $3, 1, '{}'::jsonb, now(), now()
            FROM source CROSS JOIN inserted_detail
-           RETURNING learning_offering_id"#,
+           RETURNING (SELECT starts_on FROM inserted_offering)
+                     = (SELECT starts_on FROM source)"#,
     )
     .bind(preferred_offering_id)
     .bind(term_id)
@@ -213,6 +222,10 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
     .fetch_one(&pool)
     .await
     .unwrap();
+    assert!(
+        starts_on_preserved,
+        "cloned offering must retain its source date"
+    );
 
     let plans = assessment_service::list_assessment_plans(
         &pool,

@@ -50,12 +50,60 @@ struct SchoolMigrationStatus {
     migration_error: Option<String>,
     #[serde(rename = "academicCoreCutover")]
     academic_core_cutover: AcademicCoreCutoverStatus,
+    #[serde(rename = "academicContextCutover")]
+    academic_context_cutover: AcademicContextCutoverStatus,
     #[serde(rename = "gradebookResultsCutover")]
     gradebook_results_cutover: GradebookResultsCutoverStatus,
     #[serde(rename = "deliveryTimetableCutover")]
     delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
     #[serde(rename = "staffProfileCutover")]
     staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcademicContextCutoverStatus {
+    status: String,
+    migration_version: i64,
+    passed: Option<bool>,
+    checks: Vec<ReconciliationCheck>,
+}
+async fn academic_context_cutover_status(
+    pool: Option<&PgPool>,
+    version: i32,
+) -> AcademicContextCutoverStatus {
+    if version < 148 {
+        return AcademicContextCutoverStatus {
+            status: "pendingMigration".into(),
+            migration_version: 148,
+            passed: None,
+            checks: vec![],
+        };
+    }
+    if let Some(pool) = pool {
+        if let Ok(audit) =
+            school_academic_core::context_reconciliation::read_academic_context_cutover_audit(pool)
+                .await
+        {
+            return AcademicContextCutoverStatus {
+                status: if audit.completed {
+                    "cutoverCompleted"
+                } else {
+                    "cutoverFailed"
+                }
+                .into(),
+                migration_version: 148,
+                passed: Some(audit.completed),
+                checks: audit.checks,
+            };
+        }
+    }
+    AcademicContextCutoverStatus {
+        status: "unavailable".into(),
+        migration_version: 148,
+        passed: Some(false),
+        checks: vec![],
+    }
 }
 
 #[derive(Serialize)]
@@ -396,6 +444,7 @@ pub async fn migration_status(
         let (
             version,
             academic_core_cutover,
+            academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
             staff_profile_cutover,
@@ -417,6 +466,7 @@ pub async fn migration_status(
                     (
                         version,
                         academic_core_cutover,
+                        academic_context_cutover_status(Some(&pool), version).await,
                         gradebook_results_cutover,
                         delivery_timetable_cutover_status(Some(&pool), version).await,
                         staff_profile_cutover_status(Some(&pool), version).await,
@@ -425,6 +475,7 @@ pub async fn migration_status(
                 Err(_) => (
                     reported_version,
                     academic_core_cutover_unavailable(reported_version),
+                    academic_context_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_unavailable(reported_version),
                     delivery_timetable_cutover_unavailable(),
                     staff_profile_cutover_status(None, reported_version).await,
@@ -434,6 +485,7 @@ pub async fn migration_status(
             (
                 reported_version,
                 academic_core_cutover_status(None, reported_version).await,
+                academic_context_cutover_status(None, reported_version).await,
                 gradebook_results_cutover_status(None, reported_version).await,
                 delivery_timetable_cutover_status(None, reported_version).await,
                 staff_profile_cutover_status(None, reported_version).await,
@@ -463,6 +515,7 @@ pub async fn migration_status(
             last_migrated_at: school.last_migrated_at,
             migration_error: school.migration_error,
             academic_core_cutover,
+            academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
             staff_profile_cutover,
@@ -937,6 +990,12 @@ mod tests {
     #[test]
     fn school_status_serializes_academic_core_cutover_in_camel_case() {
         let value = serde_json::to_value(SchoolMigrationStatus {
+            academic_context_cutover: AcademicContextCutoverStatus {
+                status: "pendingMigration".into(),
+                migration_version: 148,
+                passed: None,
+                checks: vec![],
+            },
             subdomain: "fixture".to_string(),
             migration_version: 45,
             migration_status: "migrated".to_string(),

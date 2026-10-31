@@ -203,7 +203,7 @@ pub async fn submit_application(
             return Err(AppError::BadRequest(format!(
                 "รอบรับสมัครไม่ได้เปิดรับ (สถานะ: {})",
                 s
-            )))
+            )));
         }
     }
 
@@ -1154,10 +1154,7 @@ pub async fn complete_enrollment(
                   homeroom.grade_level_id,
                   homeroom.study_program_id,
                   year.status AS academic_year_status,
-                  CASE WHEN year.status = 'active'
-                       THEN GREATEST(CURRENT_DATE, year.start_date)
-                       ELSE year.start_date
-                  END AS placement_start_date
+                  $2::date AS placement_start_date
            FROM admission_room_assignments assignment
            JOIN admission_applications application ON application.id = assignment.application_id
            JOIN admission_rounds round ON round.id = application.admission_round_id
@@ -1176,6 +1173,7 @@ pub async fn complete_enrollment(
            FOR UPDATE OF assignment"#,
         )
         .bind(id)
+        .bind(payload.placement_starts_on)
         .fetch_optional()
         .await
         .map_err(|_| AppError::InternalServerError("Database error".to_string()))?

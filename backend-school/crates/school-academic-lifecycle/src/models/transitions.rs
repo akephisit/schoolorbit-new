@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
@@ -19,7 +19,7 @@ pub enum TermTransitionAction {
     Activate,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TermTransitionRequest {
@@ -30,7 +30,6 @@ pub struct TermTransitionRequest {
     pub expected_term_version: i64,
     pub readiness_checksum: String,
     pub acknowledged_warning_codes: Vec<String>,
-    pub closed_on: Option<NaiveDate>,
     pub reason: Option<String>,
 }
 

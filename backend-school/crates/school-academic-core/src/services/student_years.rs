@@ -802,7 +802,6 @@ pub async fn create_placement(
         study_program_id,
     )
     .await?;
-    validate_placement_date(&mut transaction, academic_year_id, request.start_date).await?;
     let id = Uuid::now_v7();
     DbSession::new(&mut *transaction)
         .query(
@@ -923,12 +922,6 @@ pub async fn transfer_placement(
         old.academic_year_id,
         grade_level_id,
         study_program_id,
-    )
-    .await?;
-    validate_placement_date(
-        &mut transaction,
-        old.academic_year_id,
-        request.transfer_date,
     )
     .await?;
     DbSession::new(&mut *transaction)
@@ -1302,27 +1295,6 @@ async fn validate_target_homeroom(
     } else {
         Err(AppError::ValidationError(
             "ห้องเป้าหมายต้องอยู่ในปี ระดับชั้น และแผนการเรียนเดียวกับนักเรียน".to_string(),
-        ))
-    }
-}
-
-async fn validate_placement_date(
-    transaction: &mut Transaction<'_, Postgres>,
-    academic_year_id: Uuid,
-    date: chrono::NaiveDate,
-) -> Result<(), AppError> {
-    let valid: bool = DbSession::new(&mut **transaction).scalar("academic_core.services.student_years.validate_placement_date",
-        "SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1 AND $2 BETWEEN start_date AND end_date)",
-    )
-    .bind(academic_year_id)
-    .bind(date)
-    .fetch_one()
-    .await?;
-    if valid {
-        Ok(())
-    } else {
-        Err(AppError::ValidationError(
-            "วันที่จัดห้องอยู่นอกปีการศึกษา".to_string(),
         ))
     }
 }

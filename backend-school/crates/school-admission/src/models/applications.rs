@@ -526,6 +526,7 @@ pub struct ApplicationFilter {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CompleteEnrollmentRequest {
+    pub placement_starts_on: chrono::NaiveDate,
     /// รหัสนักเรียน (student_id field ใน student_info)
     pub student_code: Option<String>,
     /// ข้อมูลมอบตัวที่ staff กรอกแทน (เมื่อนักเรียนยังไม่ pre-submit)

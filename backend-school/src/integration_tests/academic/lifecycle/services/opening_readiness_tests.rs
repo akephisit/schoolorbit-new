@@ -7,7 +7,7 @@ use crate::integration_tests::academic::{
     results::{models as result_models, services as result_services},
     services::timetable_version_service,
 };
-use chrono::{Duration, NaiveDate};
+use chrono::NaiveDate;
 use school_authorization::ActorContext;
 use school_permissions::registry::codes;
 use uuid::Uuid;
@@ -30,15 +30,23 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     )
     .await;
     let mut tx = pool.begin().await.unwrap();
-    let offerings =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
-            .await
-            .unwrap();
+    let offerings = delivery::services::opening::published_for_term(
+        &mut tx,
+        year.id,
+        term.id,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
+    )
+    .await
+    .unwrap();
     let timetables = timetable_version_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
-        term.start_date,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
         term.bell_schedule_id,
     )
     .await
@@ -69,13 +77,12 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO activity_versions(id,activity_id,version_no,name,activity_type,periods_per_week,hours_per_week,scheduling_mode,is_active,grade_level_ids,start_academic_year_id,effective_from,status,published_at)
-         VALUES($1,$2,1,'E2E-LIFECYCLE-opening','other',1,1,'synchronized',true,'[]'::jsonb,$3,$4,'published',now())",
+        "INSERT INTO activity_versions(id,activity_id,version_no,name,activity_type,periods_per_week,hours_per_week,scheduling_mode,is_active,grade_level_ids,effective_from,status,published_at)
+         VALUES($1,$2,1,'E2E-LIFECYCLE-opening','other',1,1,'synchronized',true,'[]'::jsonb,$3,'published',now())",
     )
     .bind(activity_version)
     .bind(activity)
-    .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .execute(&mut *setup)
     .await
     .unwrap();
@@ -86,7 +93,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(offering)
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .bind(owner)
     .execute(&mut *setup)
     .await
@@ -113,7 +120,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     let version = Uuid::new_v4();
     let delivery_version = Uuid::new_v4();
     sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,$4,'published','{\"offerings\":[]}', $5,now(),uuid_generate_v4(),repeat('0',64))")
-        .bind(delivery_version).bind(term.id).bind(year.id).bind(term.start_date).bind(actor)
+        .bind(delivery_version).bind(term.id).bind(year.id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).bind(actor)
         .execute(&mut *setup).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
@@ -122,7 +129,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(version)
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .bind(term.bell_schedule_id)
     .bind(actor)
     .bind(delivery_version)
@@ -136,7 +143,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(Uuid::new_v4())
     .bind(term.id)
     .bind(year.id)
-    .bind(term.start_date.succ_opt().unwrap())
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive().succ_opt().unwrap())
     .bind(term.bell_schedule_id)
     .bind(actor)
     .bind(delivery_version)
@@ -146,15 +153,23 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     setup.commit().await.unwrap();
 
     let mut tx = pool.begin().await.unwrap();
-    let offerings =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
-            .await
-            .unwrap();
+    let offerings = delivery::services::opening::published_for_term(
+        &mut tx,
+        year.id,
+        term.id,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
+    )
+    .await
+    .unwrap();
     let timetables = timetable_version_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
-        term.start_date,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
         term.bell_schedule_id,
     )
     .await
@@ -171,10 +186,16 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .execute(&mut *tx)
     .await
     .unwrap();
-    let cancelled =
-        delivery::services::opening::published_for_term(&mut tx, year.id, term.id, term.start_date)
-            .await
-            .unwrap();
+    let cancelled = delivery::services::opening::published_for_term(
+        &mut tx,
+        year.id,
+        term.id,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
+    )
+    .await
+    .unwrap();
     assert_eq!(cancelled.count(), 0);
 }
 
@@ -336,7 +357,7 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
     .bind(student_year)
     .bind(year.id)
     .bind(room)
-    .bind(term.start_date)
+    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .execute(&pool)
     .await
     .unwrap();
@@ -492,45 +513,21 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    let source_end: NaiveDate =
-        sqlx::query_scalar("SELECT end_date FROM academic_years WHERE id=$1")
-            .bind(calculation.run.source_year_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let target_end: NaiveDate =
-        sqlx::query_scalar("SELECT end_date FROM academic_years WHERE id=$1")
-            .bind(calculation.run.target_year_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let target_start: NaiveDate =
-        sqlx::query_scalar("SELECT start_date FROM academic_years WHERE id=$1")
-            .bind(calculation.run.target_year_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let intervening: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM academic_years
-         WHERE id<>$1 AND id<>$2 AND start_date>$3 AND start_date<$4 ORDER BY start_date,id",
-    )
-    .bind(calculation.run.source_year_id)
-    .bind(calculation.run.target_year_id)
-    .bind(source_end)
-    .bind(target_start)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    for (index, year_id) in intervening.into_iter().enumerate() {
-        let start = target_end + Duration::days(1 + (index as i64 * 366));
-        sqlx::query("UPDATE academic_years SET start_date=$1,end_date=$2 WHERE id=$3")
-            .bind(start)
-            .bind(start + Duration::days(364))
-            .bind(year_id)
+    let target_number: i32 = sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1")
+        .bind(calculation.run.target_year_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let intervening:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM academic_years WHERE year>(SELECT year FROM academic_years WHERE id=$1) AND year<$2 ORDER BY year,id").bind(calculation.run.source_year_id).bind(target_number).fetch_all(&pool).await.unwrap();
+    for (index, year) in intervening.into_iter().enumerate() {
+        sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1")
+            .bind(year)
+            .bind(target_number + 1 + index as i32)
             .execute(&pool)
             .await
             .unwrap();
     }
+    let target_start = calculation.run.target_placement_starts_on;
     let term = ready_term_for_existing_year(
         &pool,
         executor.user_id,

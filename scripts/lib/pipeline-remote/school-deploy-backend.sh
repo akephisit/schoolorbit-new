@@ -427,7 +427,7 @@ if ! curl \
 fi
 migration_completion_filter="
     .latest_version as \$latest
-    | \$latest >= 114
+    | \$latest >= 148
     and .total_schools >= 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
@@ -437,6 +437,11 @@ migration_completion_filter="
       .migration_version == \$latest
       and .migration_status == \"migrated\"
       and .migration_error == null
+      and .academicContextCutover.migrationVersion == 148
+      and .academicContextCutover.status == \"cutoverCompleted\"
+      and .academicContextCutover.passed == true
+      and (.academicContextCutover.checks | length) == 5
+      and all(.academicContextCutover.checks[]; .passed == true)
       and .academicCoreCutover.migrationVersion == 45
       and .academicCoreCutover.status == \"cleanupCompleted\"
       and .academicCoreCutover.passed == true

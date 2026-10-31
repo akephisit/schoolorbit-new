@@ -105,8 +105,7 @@ pub(super) async fn load_term_context(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
 ) -> Result<TermContext, AppError> {
-    let query = "SELECT term.id, term.academic_year_id, term.code, term.start_date, \
-         term.planned_end_date, term.closed_on, year.end_date AS academic_year_end_date, \
+    let query = "SELECT term.id, term.academic_year_id, term.code, (now() AT TIME ZONE 'Asia/Bangkok')::date AS operation_date, \
          term.term_type, (SELECT count(*)::integer FROM academic_terms occurrence \
              WHERE occurrence.academic_year_id = term.academic_year_id \
                AND occurrence.term_type = term.term_type \
@@ -238,28 +237,16 @@ pub(super) struct TermContext {
     pub id: Uuid,
     pub academic_year_id: Uuid,
     pub code: String,
-    pub start_date: chrono::NaiveDate,
-    pub planned_end_date: Option<chrono::NaiveDate>,
-    pub closed_on: Option<chrono::NaiveDate>,
-    pub academic_year_end_date: chrono::NaiveDate,
+    pub operation_date: chrono::NaiveDate,
     pub term_type: String,
     pub type_occurrence: i32,
     pub status: String,
     pub row_version: i64,
 }
 
-impl TermContext {
-    pub(super) fn date_upper_bound(&self) -> chrono::NaiveDate {
-        self.closed_on
-            .or(self.planned_end_date)
-            .unwrap_or(self.academic_year_end_date)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
 
     #[test]
     fn stable_hash_is_deterministic_and_revision_validation_fails_closed() {
@@ -273,27 +260,5 @@ mod tests {
         );
         assert!(validate_row_version(1).is_ok());
         assert!(validate_row_version(0).is_err());
-    }
-
-    #[test]
-    fn term_date_upper_bound_falls_back_to_the_academic_year_end() {
-        let term = TermContext {
-            id: Uuid::nil(),
-            academic_year_id: Uuid::nil(),
-            code: "1".to_string(),
-            start_date: NaiveDate::from_ymd_opt(2027, 5, 1).unwrap(),
-            planned_end_date: None,
-            closed_on: None,
-            academic_year_end_date: NaiveDate::from_ymd_opt(2028, 4, 30).unwrap(),
-            term_type: "regular".to_string(),
-            type_occurrence: 1,
-            status: "planning".to_string(),
-            row_version: 1,
-        };
-
-        assert_eq!(
-            term.date_upper_bound(),
-            NaiveDate::from_ymd_opt(2028, 4, 30).unwrap()
-        );
     }
 }

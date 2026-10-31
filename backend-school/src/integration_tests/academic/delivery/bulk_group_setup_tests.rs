@@ -15,24 +15,6 @@ struct BulkFixture {
 async fn fixture(name: &str) -> BulkFixture {
     let pool = prepare_concurrent_delivery_runtime_fixture(name).await;
     let context = planning_runtime_context(&pool).await;
-    let today: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2+180) WHERE id=$1")
-        .bind(context.year_id)
-        .bind(today)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date=GREATEST(planned_end_date,$2+60) WHERE id=$1",
-    )
-    .bind(context.term_id)
-    .bind(today)
-    .execute(&pool)
-    .await
-    .unwrap();
     let opening =
         create_runtime_change_set(&pool, context.teacher_id, context.term_id, 0, name).await;
     let CreateLearningOfferingRequest::Course(course) = course_request(&context) else {
@@ -588,7 +570,7 @@ async fn bulk_group_setup_refuses_published_groups_rosters_and_closed_contexts()
         assert_eq!(facts(&f).await, before);
     }
     sqlx::query("UPDATE learning_groups SET status='draft',roster_status='draft',row_version=row_version+1 WHERE id=$1").bind(f.group_ids[1]).execute(&f.pool).await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(f.context.term_id)
         .execute(&f.pool)
         .await
@@ -609,11 +591,14 @@ async fn bulk_group_setup_refuses_published_groups_rosters_and_closed_contexts()
 #[tokio::test]
 async fn bulk_group_setup_shared_tracking_policy_refuses_self_registration() {
     let f = fixture("bulk_setup_self_tracking").await;
-    let (activity_version_id,scheduling_mode):(Uuid,ActivitySchedulingMode)=sqlx::query_as("SELECT v.id,v.scheduling_mode FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.status='published' AND v.effective_from<=t.start_date ORDER BY v.id LIMIT 1").bind(f.context.term_id).fetch_one(&f.pool).await.unwrap();
+    let (activity_version_id,scheduling_mode):(Uuid,ActivitySchedulingMode)=sqlx::query_as("SELECT v.id,v.scheduling_mode FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.status='published' AND v.effective_from<=(now() AT TIME ZONE 'Asia/Bangkok')::date ORDER BY v.id LIMIT 1").bind(f.context.term_id).fetch_one(&f.pool).await.unwrap();
     let offering = offerings::create(
         &f.pool,
         f.context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             create_homeroom_groups: false,
             academic_term_id: f.context.term_id,
             activity_version_id,

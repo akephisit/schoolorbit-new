@@ -795,19 +795,6 @@
 			toast.error('กรุณาเลือกปีการศึกษาก่อน');
 			return;
 		}
-		const range = academicTermId
-			? academicContextOptions?.terms.find((term) => term.id === academicTermId)
-			: academicContextOptions?.years.find((year) => year.id === academicYearId);
-
-		const rangeEnd =
-			range && 'plannedEndDate' in range
-				? (range.closedOn ?? range.plannedEndDate ?? '')
-				: (range?.endDate ?? '');
-
-		cycleForm.startsDate ||= range?.startDate ?? '';
-		cycleForm.endsDate ||= rangeEnd;
-		cycleForm.bookingOpensDate ||= range?.startDate ?? '';
-		cycleForm.bookingClosesDate ||= rangeEnd;
 		createCycleDialogOpen = true;
 		if (routeData) void retryManagementTemplates();
 	}

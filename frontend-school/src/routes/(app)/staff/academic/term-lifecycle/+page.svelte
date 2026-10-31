@@ -27,7 +27,6 @@
 	import TermPreparationDialog from '#lib/components/academic/lifecycle/TermPreparationDialog.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -65,7 +64,6 @@
 	let busy = $state(false);
 	let dialogOpen = $state(false);
 	let action = $state<TermTransitionAction>('begin_closing');
-	let closedOn = $state<string | undefined>();
 	let reason = $state('');
 	let acknowledged = $state<string[]>([]);
 	let mutationError = $state('');
@@ -91,7 +89,7 @@
 			!needsRefresh &&
 			!!workspace &&
 			$can.has(permissions[action]) &&
-			canConfirmTransition(workspace, action, closedOn, reason, acknowledged)
+			canConfirmTransition(workspace, action, reason, acknowledged)
 	);
 
 	async function loadWorkspace() {
@@ -116,7 +114,6 @@
 	function openAction(next: TermTransitionAction) {
 		if (busy || !availableActions.includes(next)) return;
 		action = next;
-		closedOn = undefined;
 		reason = '';
 		acknowledged = [];
 		mutationError = '';
@@ -135,7 +132,6 @@
 			expectedTermVersion: workspace.context.termRowVersion,
 			readinessChecksum: workspace.sourceChecksum,
 			acknowledgedWarningCodes: [...acknowledged].sort(),
-			closedOn: closedOn ?? null,
 			reason: action === 'reopen' ? reason.trim() : null
 		};
 		const key = JSON.stringify(body);
@@ -358,17 +354,6 @@
 		{#if workspace}
 			<p class="text-sm font-medium">{workspace.context.yearName} · {workspace.context.termName}</p>
 			{#if action === 'close'}
-				<div class="space-y-2">
-					<Label for="actual-close-date">วันที่ปิดภาคเรียนจริง</Label><DatePicker
-						id="actual-close-date"
-						ariaLabel="วันที่ปิดภาคเรียนจริง"
-						bind:value={closedOn}
-						disabled={busy}
-					/>
-					<p class="text-xs text-muted-foreground">
-						ต้องไม่ก่อนวันเริ่มภาคเรียนและไม่เกินวันสิ้นสุดปีการศึกษา
-					</p>
-				</div>
 				{#each warnings as warning (warning.code)}<div
 						class="flex items-start gap-3 rounded-lg border p-3"
 					>

@@ -10,8 +10,6 @@ use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
-const ACTION: &str = "activate";
-
 /// Atomically opens a ready term and, when it is the first term of a planning
 /// year, the year plus its planned enrollment and currently eligible placements.
 pub(crate) async fn activate_term(
@@ -36,24 +34,12 @@ pub(crate) async fn activate_term(
     .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
 
-    let receipt: Option<(Uuid, String, String, Json<TermTransitionOutcome>)> =
-        DbSession::new(&mut *tx)
-            .query_as(
-                "academic_lifecycle.services.term_activation.activate_term",
-                "SELECT actor_user_id,action,request_checksum,outcome
-         FROM academic_term_transition_receipts WHERE request_id=$1",
-            )
-            .bind(request.request_id)
-            .fetch_optional()
-            .await?;
-    if let Some((owner, action, checksum, outcome)) = receipt {
-        if owner != actor.user_id || action != ACTION || checksum != request_checksum {
-            return Err(AppError::Conflict(
-                "คำขอนี้เคยใช้กับข้อมูล การดำเนินการ หรือผู้ดำเนินการอื่นแล้ว".into(),
-            ));
-        }
+    if let Some(outcome) =
+        super::term_transitions::replay_term_transition(&mut tx, actor.user_id, term_id, &request)
+            .await?
+    {
         tx.commit().await?;
-        return Ok(outcome.0);
+        return Ok(outcome);
     }
 
     // The tenant transition lock prevents every participating academic writer
@@ -97,12 +83,7 @@ pub(crate) async fn activate_term(
         term_id,
     )
     .await?;
-    super::term_transitions::validate_request(
-        &request,
-        workspace.context.year_start_date,
-        workspace.context.year_end_date,
-        workspace.context.term_start_date,
-    )?;
+    super::term_transitions::validate_request(&request)?;
     if workspace.context.year_row_version != request.expected_year_version
         || workspace.context.term_row_version != request.expected_term_version
         || workspace.source_checksum != request.readiness_checksum
@@ -191,15 +172,17 @@ pub(crate) async fn activate_term(
             "สถานะปีการศึกษาเปลี่ยนแล้ว กรุณาตรวจสอบใหม่".into(),
         ));
     }
-    let term_update = DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
-        "UPDATE academic_terms SET status='active',closed_on=NULL,row_version=row_version+1,updated_at=now()
+    let term_update = DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_activation.activate_term",
+            "UPDATE academic_terms SET status='active',row_version=row_version+1,updated_at=now()
          WHERE id=$1 AND academic_year_id=$2 AND row_version=$3 AND status='ready'",
-    )
-    .bind(term_id)
-    .bind(request.academic_year_id)
-    .bind(request.expected_term_version)
-    .execute()
-    .await?;
+        )
+        .bind(term_id)
+        .bind(request.academic_year_id)
+        .bind(request.expected_term_version)
+        .execute()
+        .await?;
     if term_update.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "สถานะภาคเรียนเปลี่ยนแล้ว กรุณาตรวจสอบใหม่".into(),
@@ -215,8 +198,8 @@ pub(crate) async fn activate_term(
     };
     DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
         "INSERT INTO academic_term_transition_receipts
-         (request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome)
-         VALUES($1,$2,$3,$4,'activate',$5,$6,$7)",
+         (request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request)
+         VALUES($1,$2,$3,$4,'activate',$5,$6,$7,$8)",
     )
     .bind(request.request_id)
     .bind(request.academic_year_id)
@@ -225,6 +208,7 @@ pub(crate) async fn activate_term(
     .bind(&request_checksum)
     .bind(Json(&workspace))
     .bind(Json(&outcome))
+    .bind(Json(&request))
     .execute()
     .await?;
     if workspace.opens_year {
@@ -283,10 +267,7 @@ fn validate_activation_shape(
             "ข้อมูลอ้างอิงหรือรุ่นความพร้อมเปิดใช้ไม่ถูกต้อง".into(),
         ));
     }
-    if request.closed_on.is_some()
-        || request.reason.is_some()
-        || !request.acknowledged_warning_codes.is_empty()
-    {
+    if request.reason.is_some() || !request.acknowledged_warning_codes.is_empty() {
         return Err(AppError::ValidationError(
             "การเปิดภาคเรียนไม่รับวันที่ปิด เหตุผล หรือการยืนยันคำเตือน".into(),
         ));
@@ -307,7 +288,6 @@ mod tests {
             expected_term_version: 1,
             readiness_checksum: "a".repeat(64),
             acknowledged_warning_codes: vec![],
-            closed_on: None,
             reason: None,
         }
     }

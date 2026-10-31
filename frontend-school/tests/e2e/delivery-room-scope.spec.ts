@@ -1,3 +1,4 @@
+import { offeringStartsOn, selectOfferingStartDate } from './fixtures/offering-start-date';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
 	AcademicTermChangeSet,
@@ -404,6 +405,7 @@ async function mockRoomScope(
 					studyProgramIds: [baseRoom.studyProgram.id]
 				});
 				return reply(route, {
+					startsOn: offeringStartsOn,
 					academicTermId: ids.term,
 					curriculumSources: [],
 					sourceHash: 'a'.repeat(64),
@@ -752,6 +754,7 @@ test('whole-offering removal is separate and re-add previews only the selected d
 		.click();
 	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา เคมีเพิ่มเติม', exact: true });
 	await expect(preparation).toContainText('รวม 1 ห้อง');
+	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(preparation).toContainText('ใช้รายการเดิม');
 	await expect(preparation).not.toContainText('ครอบคลุมห้องนอกเป้าหมายหลักสูตร');

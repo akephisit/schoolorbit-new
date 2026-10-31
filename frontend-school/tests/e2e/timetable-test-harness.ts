@@ -525,20 +525,20 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/context/options') {
 				await fulfill(route, {
-					activeAcademicYearId: timetableIds.year,
-					activeAcademicTermId: timetableIds.term,
+					defaultAcademicYearId: timetableIds.year,
+					defaultAcademicTermId: timetableIds.term,
 					years: [
 						{
+							isVisible: true,
 							id: timetableIds.year,
 							name: 'ปีการศึกษา 2569',
 							year: 2569,
-							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-03-31'
+							status: 'active'
 						}
 					],
 					terms: [
 						{
+							isVisible: true,
 							id: timetableIds.term,
 							academicYearId: timetableIds.year,
 							name: 'ภาคเรียนที่ 1',
@@ -546,8 +546,6 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2026-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}

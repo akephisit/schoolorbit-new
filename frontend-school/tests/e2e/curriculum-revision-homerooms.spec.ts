@@ -35,9 +35,17 @@ for (const mobile of [false, true]) {
 						};
 					} else if (path === '/api/academic/context/options') {
 						data = {
-							activeAcademicYearId: yearId,
-							activeAcademicTermId: null,
-							years: [{ id: yearId, name: 'ปีการศึกษา 2572', year: 2572, status: 'planning' }],
+							defaultAcademicYearId: yearId,
+							defaultAcademicTermId: null,
+							years: [
+								{
+									isVisible: true,
+									id: yearId,
+									name: 'ปีการศึกษา 2572',
+									year: 2572,
+									status: 'planning'
+								}
+							],
 							terms: []
 						};
 					} else if (path === '/api/menu/user') data = { groups: [] };

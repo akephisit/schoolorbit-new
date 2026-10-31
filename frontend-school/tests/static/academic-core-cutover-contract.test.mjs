@@ -265,38 +265,36 @@ test('academic exact values and offering variants keep their wire semantics', as
 	}
 });
 
-test('academic terms use optional planned end and read-only actual close semantics', async () => {
+test('academic years and terms expose visibility without boundary dates', async () => {
 	const { contract } = await readContractArtifacts();
 	const schemas = contract.components.schemas;
-
-	for (const responseName of ['AcademicTerm', 'AcademicTermOption']) {
-		const response = schemas[responseName];
-		assert.ok(response.required.includes('plannedEndDate'));
-		assert.ok(response.required.includes('closedOn'));
-		assert.deepEqual(response.properties.plannedEndDate.type, ['string', 'null']);
-		assert.deepEqual(response.properties.closedOn.type, ['string', 'null']);
-		assert.equal(response.properties.endDate, undefined);
+	for (const name of [
+		'AcademicYear',
+		'AcademicYearOption',
+		'AcademicTerm',
+		'AcademicTermOption',
+		'CreateAcademicYearRequest',
+		'UpdateAcademicYearRequest',
+		'CreateAcademicTermRequest',
+		'UpdateAcademicTermRequest'
+	]) {
+		for (const field of ['startDate', 'endDate', 'plannedEndDate', 'closedOn']) {
+			assert.equal(schemas[name].properties[field], undefined, `${name}.${field} must be absent`);
+		}
 	}
-
-	for (const requestName of ['CreateAcademicTermRequest', 'UpdateAcademicTermRequest']) {
-		const request = schemas[requestName];
-		assert.ok(!request.required.includes('plannedEndDate'));
-		assert.deepEqual(request.properties.plannedEndDate.type, ['string', 'null']);
-		assert.equal(request.properties.endDate, undefined);
-		assert.equal(request.properties.closedOn, undefined);
+	for (const name of ['AcademicYear', 'AcademicYearOption', 'AcademicTerm', 'AcademicTermOption']) {
+		assert.ok(schemas[name].required.includes('isVisible'));
 	}
-
-	const editor = await readFile(
-		path.join(
-			repoRoot,
-			'frontend-school/src/lib/components/academic-core/setup/AcademicTermSetupStep.svelte'
-		),
-		'utf8'
-	);
-	assert.match(editor, /วันที่คาดว่าจะปิดภาคเรียน \(ไม่บังคับ\)/);
-	assert.match(editor, /plannedEndDate:\s*plannedEndDate\s*\|\|\s*null/);
-	assert.match(editor, /closedOn/);
-	assert.doesNotMatch(editor, /term\.endDate|\bendDate\s*[,=]/);
+	for (const name of ['AcademicYearSetupStep', 'AcademicTermSetupStep']) {
+		const editor = await readFile(
+			path.join(repoRoot, `frontend-school/src/lib/components/academic-core/setup/${name}.svelte`),
+			'utf8'
+		);
+		assert.doesNotMatch(editor, /startDate|endDate|plannedEndDate|closedOn|DatePicker/);
+	}
+	const settings = contract.paths['/api/academic/context/settings'].put;
+	assert.equal(settings.operationId, 'updateAcademicContextSettings');
+	assert.ok(schemas.AcademicContextSettingsMutationResponse.required.includes('contextOptions'));
 });
 
 test('academic JSON operations use response envelopes', async () => {

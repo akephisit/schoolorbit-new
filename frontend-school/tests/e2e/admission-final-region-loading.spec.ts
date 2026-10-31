@@ -71,8 +71,8 @@ async function mock(
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null,
 					years: [],
 					terms: []
 				});
@@ -179,7 +179,17 @@ test('enrollment shows the round while its list is slow, then patches a complete
 	api.release();
 	await expect(page.getByText('นักเรียน รับมอบตัว')).toBeVisible();
 	await page.getByRole('button', { name: 'รับมอบตัว', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ยืนยันมอบตัว' })).toBeDisabled();
+	await page.getByRole('button', { name: 'วันที่เริ่มจัดนักเรียนในห้อง', exact: true }).click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^15$/ })
+		.click();
+	const enrollment = page.waitForRequest(
+		(request) => new URL(request.url()).pathname.endsWith('/enroll') && request.method() === 'POST'
+	);
 	await page.getByRole('button', { name: 'ยืนยันมอบตัว' }).click();
+	expect((await enrollment).postDataJSON().placementStartsOn).toMatch(/^\d{4}-\d{2}-15$/);
 	await expect(page.getByText('เสร็จสิ้น')).toBeVisible();
 	expect(
 		api.reads.filter((resource) => resource === `/api/admission/rounds/${roundId}/enrollment`)

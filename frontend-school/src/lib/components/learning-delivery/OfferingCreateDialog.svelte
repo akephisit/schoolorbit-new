@@ -14,6 +14,7 @@
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { BookCopy, Plus, Sparkles } from '@lucide/svelte';
@@ -48,6 +49,7 @@
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
 	let optionsLoading = $state(false);
 	let saving = $state(false);
+	let startsOn = $state('');
 	let activityOpeningMode = $state<'central' | 'groups'>('central');
 	let errorMessage = $state('');
 	let draft = $state({
@@ -96,12 +98,14 @@
 		preparationRevision += 1;
 		addKind = requestedKind;
 		mode = requestedKind ? 'manual' : 'curriculum';
-		if (requestedKind)
+		if (requestedKind) {
+			startsOn = '';
 			draft = {
 				...draft,
 				kind: requestedKind === 'activity' ? 'activity' : 'course',
 				catalogVersionId: ''
 			};
+		}
 		open = true;
 		if (options || optionsLoading) return;
 		optionsLoading = true;
@@ -139,7 +143,14 @@
 
 	async function createManual(event: SubmitEvent) {
 		event.preventDefault();
-		if (!options || !draft.catalogVersionId || !draft.gradeLevelId || !draft.studyProgramId) return;
+		if (
+			!options ||
+			!startsOn ||
+			!draft.catalogVersionId ||
+			!draft.gradeLevelId ||
+			!draft.studyProgramId
+		)
+			return;
 		saving = true;
 		errorMessage = '';
 		try {
@@ -161,6 +172,7 @@
 					? {
 							kind: 'course',
 							academicTermId,
+							startsOn,
 							subjectVersionId: draft.catalogVersionId,
 							curriculumCourseRequirementId: null,
 							assessmentTotalScore: '100.00',
@@ -169,6 +181,7 @@
 					: {
 							kind: 'activity',
 							academicTermId,
+							startsOn,
 							activityVersionId: draft.catalogVersionId,
 							curriculumActivityRequirementId: null,
 							registrationType: 'assigned',
@@ -308,6 +321,14 @@
 			{:else}
 				<form class="space-y-4" onsubmit={createManual}>
 					<fieldset disabled={saving} class="space-y-4">
+						<div class="space-y-2">
+							<Label for="offering-actual-start">วันที่เริ่มเปิดสอนจริง</Label><DatePicker
+								id="offering-actual-start"
+								bind:value={startsOn}
+								ariaLabel="วันที่เริ่มเปิดสอนจริง"
+								required
+							/>
+						</div>
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="space-y-2">
 								<Label for="offering-create-kind">ประเภท</Label>{#if addKind}<p
@@ -411,8 +432,10 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังสร้าง"
-							disabled={!draft.catalogVersionId || !draft.gradeLevelId || !draft.studyProgramId}
-							>สร้างฉบับร่าง</LoadingButton
+							disabled={!startsOn ||
+								!draft.catalogVersionId ||
+								!draft.gradeLevelId ||
+								!draft.studyProgramId}>สร้างฉบับร่าง</LoadingButton
 						></Dialog.Footer
 					>
 				</form>

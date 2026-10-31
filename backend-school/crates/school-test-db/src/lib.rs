@@ -266,5 +266,6 @@ mod tests {
         create_named_test_pool_with_max_connections("zero_connections", 0).await;
     }
 }
+pub mod academic_context_receipt_fixture;
 pub mod cutover_test_preflight;
 pub mod cutover_test_support;

@@ -6,7 +6,7 @@ use school_errors::AppError;
 
 use super::models::{
     AcademicLookupQuery, HomeroomLookupItem, LookupItem, LookupQuery, OrganizationUnitLookupItem,
-    RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    RoleLookupItem, StaffLookupItem, StudentLookupItem, SubjectLookupQuery,
 };
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 
@@ -683,7 +683,7 @@ pub async fn lookup_rooms_on_connection(
 
 pub async fn lookup_subjects(
     pool: &PgPool,
-    query: AcademicLookupQuery,
+    query: SubjectLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_subjects")
@@ -693,7 +693,7 @@ pub async fn lookup_subjects(
 
 pub async fn lookup_subjects_on_connection(
     connection: &mut sqlx::PgConnection,
-    query: AcademicLookupQuery,
+    query: SubjectLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
     let active_only = query.active_only.unwrap_or(true);
@@ -704,12 +704,11 @@ pub async fn lookup_subjects_on_connection(
                  FROM subject_version_grade_levels mapping
                  WHERE mapping.subject_id = version.id) AS grade_level_ids
          FROM subjects subject
-         JOIN academic_years year ON year.id = $1
          JOIN LATERAL (
              SELECT candidate.*
              FROM subject_versions candidate
              WHERE candidate.subject_id = subject.id
-               AND candidate.effective_from <= year.end_date",
+               AND candidate.effective_from <= (now() AT TIME ZONE 'Asia/Bangkok')::date",
     );
 
     if active_only {
@@ -722,7 +721,7 @@ pub async fn lookup_subjects_on_connection(
          WHERE 1=1",
     );
 
-    let mut param_idx: i32 = 2;
+    let mut param_idx: i32 = 1;
     let mut bind_subject_type: Option<String> = None;
     let mut bind_search: Option<String> = None;
 
@@ -745,8 +744,7 @@ pub async fn lookup_subjects_on_connection(
         limit
     ));
 
-    let mut query_builder =
-        sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
+    let mut query_builder = sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref subject_type) = bind_subject_type {
         query_builder = query_builder.bind(subject_type);
     }
@@ -872,6 +870,15 @@ mod tests {
         }
     }
 
+    fn subject_query() -> SubjectLookupQuery {
+        SubjectLookupQuery {
+            active_only: Some(true),
+            search: None,
+            limit: Some(100),
+            subject_type: None,
+        }
+    }
+
     #[test]
     fn lookup_limit_defaults_to_one_hundred_and_caps_at_five_hundred() {
         assert_eq!(lookup_limit(None), 100);
@@ -937,9 +944,7 @@ mod tests {
         let students = lookup_students(&pool, academic_query(academic_year_id))
             .await
             .unwrap();
-        let subjects = lookup_subjects(&pool, academic_query(academic_year_id))
-            .await
-            .unwrap();
+        let subjects = lookup_subjects(&pool, subject_query()).await.unwrap();
 
         assert!(!grade_levels.is_empty());
         assert!(!homerooms.is_empty());
@@ -948,7 +953,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn catalog_start_only_lookup_preserves_selected_year_and_former_expiry_is_metadata() {
+    async fn catalog_start_only_lookup_uses_actual_day_and_former_expiry_is_metadata() {
+        use school_academic_core::{
+            models::{CreateSubjectVersionRequest, PublishVersionRequest, VersionStatus},
+            services::catalog,
+        };
+
         let pool = create_named_test_pool("catalog_start_only_subject_lookup").await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
@@ -965,27 +975,83 @@ mod tests {
         sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT $1,'LOOKUP-STARTONLY','lookup-startonly',subject_group_id,owning_organization_unit_id FROM subjects LIMIT 1").bind(stable).execute(&pool).await.unwrap();
         // Historical required fields are seeded only before migration 138.
         sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,effective_until,status,published_at) SELECT $1,$2,1,'LOOKUP-STARTONLY','Lookup old expiry',1,'BASIC',id,start_date-730,end_date-366,'published',now() FROM academic_years WHERE id=$3").bind(version).bind(stable).bind(year).execute(&pool).await.unwrap();
-        apply_migrations_through(&pool, 138).await.unwrap();
-        let mut query = academic_query(year);
+        let original_dates: (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
+            "SELECT effective_from,effective_until FROM subject_versions WHERE id=$1",
+        )
+        .bind(version)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        school_test_db::run_test_migrations(&pool).await;
+        let preserved_dates: (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
+            "SELECT effective_from,(migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date FROM subject_versions WHERE id=$1",
+        )
+        .bind(version)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(preserved_dates, original_dates);
+        let mut query = subject_query();
         query.search = Some("LOOKUP-STARTONLY".into());
         let found = lookup_subjects(&pool, query).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, stable);
-        let mut by_name = academic_query(year);
+        let mut by_name = subject_query();
         by_name.search = Some("Lookup old expiry".into());
         by_name.subject_type = Some("BASIC".into());
         let named = lookup_subjects(&pool, by_name).await.unwrap();
         assert_eq!(named.len(), 1);
         assert_eq!(named[0].id, stable);
-        let unsearched = lookup_subjects(&pool, academic_query(year)).await.unwrap();
+        let unsearched = lookup_subjects(&pool, subject_query()).await.unwrap();
         assert!(unsearched.iter().any(|item| item.id == stable));
-        let mut wrong_type = academic_query(year);
+        let mut wrong_type = subject_query();
         wrong_type.search = Some("LOOKUP-STARTONLY".into());
         wrong_type.subject_type = Some("ADDITIONAL".into());
         assert!(lookup_subjects(&pool, wrong_type).await.unwrap().is_empty());
-        let future = Uuid::new_v4();
-        sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,effective_from,status,published_at) SELECT $1,$2,2,'LOOKUP-STARTONLY','Future lookup revision',1,'BASIC',end_date+1,'published',now() FROM academic_years WHERE id=$3").bind(future).bind(stable).bind(year).execute(&pool).await.unwrap();
-        let mut query = academic_query(year);
+        // Migration 141 may append a grade-snapshot correction. Let the catalog owner
+        // allocate the next revision and validate an otherwise eligible future publication.
+        let current = catalog::current_subject_revisions(&pool, &[stable])
+            .await
+            .unwrap()[&stable];
+        let current = catalog::get_subject_version(&pool, current.id)
+            .await
+            .unwrap();
+        assert_eq!(current.name_th, "Lookup old expiry");
+        assert_eq!(current.effective_from, original_dates.0);
+        assert!(!current.grade_level_ids.is_empty());
+        let tomorrow = catalog::subject_catalog_today().succ_opt().unwrap();
+        let future = catalog::create_subject_version(
+            &pool,
+            stable,
+            CreateSubjectVersionRequest {
+                name_th: "Future lookup revision".into(),
+                name_en: current.name_en.clone(),
+                credit: current.credit.clone(),
+                hours_per_semester: Some(60),
+                subject_type: current.subject_type.clone(),
+                description: current.description.clone(),
+                effective_from: tomorrow,
+                term_code: current.term_code.clone(),
+                periods_per_week: Some(3),
+                grade_level_ids: current.grade_level_ids.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        let future = catalog::publish_subject_version(
+            &pool,
+            future.id,
+            PublishVersionRequest {
+                row_version: future.row_version,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(future.status, VersionStatus::Published);
+        assert_eq!(future.effective_from, tomorrow);
+        assert_eq!(future.grade_level_ids, current.grade_level_ids);
+        assert!(future.version_no > current.version_no);
+        let mut query = subject_query();
         query.search = Some("LOOKUP-STARTONLY".into());
         let unchanged = lookup_subjects(&pool, query).await.unwrap();
         assert_eq!(unchanged.len(), 1);

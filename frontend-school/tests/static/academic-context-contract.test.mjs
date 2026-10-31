@@ -75,28 +75,27 @@ test.after(async () => {
 
 function contextOptions() {
 	return {
-		activeAcademicYearId: 'year-active',
-		activeAcademicTermId: 'term-active',
+		defaultAcademicYearId: 'year-active',
+		defaultAcademicTermId: 'term-active',
 		years: [
 			{
+				isVisible: true,
 				id: 'year-active',
 				name: 'ปีการศึกษา 2570',
 				year: 2570,
-				status: 'active',
-				startDate: '2027-05-01',
-				endDate: '2028-03-31'
+				status: 'active'
 			},
 			{
+				isVisible: true,
 				id: 'year-planning',
 				name: 'ปีการศึกษา 2571',
 				year: 2571,
-				status: 'planning',
-				startDate: '2028-05-01',
-				endDate: '2029-03-31'
+				status: 'planning'
 			}
 		],
 		terms: [
 			{
+				isVisible: true,
 				id: 'term-active',
 				academicYearId: 'year-active',
 				name: 'ภาคเรียนที่ 1',
@@ -104,12 +103,11 @@ function contextOptions() {
 				sequence: 1,
 				termType: 'regular',
 				status: 'active',
-				startDate: '2027-05-01',
-				endDate: '2027-10-31',
 				includedInYearResult: true,
 				blocksYearClosure: true
 			},
 			{
+				isVisible: true,
 				id: 'term-planning',
 				academicYearId: 'year-planning',
 				name: 'ภาคฤดูร้อน',
@@ -117,8 +115,6 @@ function contextOptions() {
 				sequence: 1,
 				termType: 'summer',
 				status: 'planning',
-				startDate: '2029-03-01',
-				endDate: '2029-04-15',
 				includedInYearResult: false,
 				blocksYearClosure: true
 			}
@@ -126,7 +122,7 @@ function contextOptions() {
 	};
 }
 
-test('scoped academic year resolver repairs missing and unauthorized URLs', async () => {
+test('scoped academic year resolver initializes missing URLs and preserves invalid explicit URLs', async () => {
 	const { resolveScopedAcademicYearUrl } = await importScopedYear();
 	const options = contextOptions();
 
@@ -138,12 +134,10 @@ test('scoped academic year resolver repairs missing and unauthorized URLs', asyn
 		options,
 		new URL('https://school.test/student?academicYearId=year-other&academicTermId=term-other')
 	);
-	assert.equal(unauthorized.academicYearId, 'year-active');
-	assert.equal(unauthorized.replaceUrl?.searchParams.get('academicYearId'), 'year-active');
-	assert.equal(unauthorized.replaceUrl?.searchParams.has('academicTermId'), false);
+	assert.deepEqual(unauthorized, { academicYearId: null, replaceUrl: null });
 
 	const empty = resolveScopedAcademicYearUrl(
-		{ ...options, activeAcademicYearId: null, activeAcademicTermId: null, years: [], terms: [] },
+		{ ...options, defaultAcademicYearId: null, defaultAcademicTermId: null, years: [], terms: [] },
 		new URL('https://school.test/student')
 	);
 	assert.deepEqual(empty, { academicYearId: null, replaceUrl: null });
@@ -357,6 +351,58 @@ test('menu destinations complete the context required by the target route', asyn
 	assert.equal(
 		academicContextualMenuPath('/staff/work', selected, options, requirement),
 		'/staff/work'
+	);
+});
+
+test('menu destinations preserve invalid explicit context instead of substituting school defaults', async () => {
+	const { academicContextualMenuPath } = await importRouteContext();
+	const options = contextOptions();
+	for (const selected of [
+		{ academicYearId: 'malformed', academicTermId: 'also-malformed' },
+		{ academicYearId: 'year-hidden', academicTermId: 'term-hidden' },
+		{ academicYearId: 'year-active', academicTermId: 'term-unavailable' },
+		{ academicYearId: 'year-active', academicTermId: 'term-planning' },
+		{ academicYearId: '', academicTermId: '' }
+	]) {
+		for (const requirement of ['term_required', 'term_optional']) {
+			const result = new URL(
+				academicContextualMenuPath(
+					'/staff/target?view=list#details',
+					selected,
+					options,
+					() => requirement
+				),
+				'https://school.test'
+			);
+			assert.equal(result.searchParams.get('academicYearId'), selected.academicYearId);
+			assert.equal(result.searchParams.get('academicTermId'), selected.academicTermId);
+			assert.equal(result.searchParams.get('view'), 'list');
+			assert.equal(result.hash, '#details');
+		}
+		const yearOnly = new URL(
+			academicContextualMenuPath('/staff/target', selected, options, () => 'year_required'),
+			'https://school.test'
+		);
+		assert.equal(yearOnly.searchParams.get('academicYearId'), selected.academicYearId);
+		assert.equal(yearOnly.searchParams.has('academicTermId'), false);
+	}
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/target',
+			{ academicYearId: null, academicTermId: 'term-hidden' },
+			options,
+			() => 'term_required'
+		),
+		'/staff/target?academicYearId=year-active&academicTermId=term-hidden'
+	);
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/target',
+			{ academicYearId: 'year-planning', academicTermId: null },
+			options,
+			() => 'term_required'
+		),
+		'/staff/target?academicYearId=year-planning'
 	);
 });
 
@@ -688,7 +734,9 @@ test('student and parent history selectors use learner-scoped academic context e
 	assert.match(coreService, /pub async fn list_options_for_student/);
 	assert.match(coreService, /pub async fn list_options_for_parent/);
 	assert.match(coreService, /student_academic_years/);
-	assert.match(coreService, /student_id\s*=\s*\$1/);
+	assert.match(coreService, /scoped_options\(connection, 1, Some\(student_id\)\)/);
+	assert.match(coreService, /scoped_options\(connection, 2, Some\(parent_id\)\)/);
+	assert.match(coreService, /enrollment\.student_id\s*=\s*\$2/);
 	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
 	assert.match(parentsApi, /academicTermId:\s*trimmedAcademicTermId/);
 	assert.match(parentsApi, /date:\s*requiredDate/);
@@ -748,7 +796,8 @@ test('calendar consumers use dates independently of academic header context', as
 		assert.match(view, /CalendarViewer/);
 		assert.doesNotMatch(view, /selectedYearId|AcademicContextOptions/);
 	}
-	assert.doesNotMatch(api, /academicYearId|academicTermId/);
+	assert.doesNotMatch(api, /academicTermId/);
+	assert.match(api, /listCalendarTargetOptions[\s\S]*query:\s*\{ academicYearId \}/);
 });
 
 test('student activity registration uses learner term context and canonical delivery groups', async () => {
@@ -772,7 +821,7 @@ test('student activity registration uses learner term context and canonical deli
 	assert.doesNotMatch(page, /Promise\.all/);
 });
 
-test('public calendar scopes date ranges using public academic year dates', async () => {
+test('public calendar browses actual dates independently of academic boundaries', async () => {
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
@@ -787,10 +836,10 @@ test('public calendar scopes date ranges using public academic year dates', asyn
 
 	assert.match(api, /listPublicAcademicContextOptions/);
 	assert.match(api, /\/api\/public\/academic-context\/options/);
-	assert.match(view, /listPublicAcademicContextOptions|selectedYearId/);
+	assert.doesNotMatch(view, /selectedYearId|year\.startDate|year\.endDate/);
 	const loader = await readProjectFile('src/lib/calendar/public-route.ts');
-	assert.match(loader, /listPublicAcademicContextOptions/);
-	assert.match(loader, /publicCalendarRange\(month, year\)/);
+	assert.doesNotMatch(loader, /listPublicAcademicContextOptions/);
+	assert.match(loader, /publicCalendarRange\(month\)/);
 	assert.doesNotMatch(loader, /listMyAcademicContextOptions|apiClient\.get\(/);
 	assert.match(view, /listPublicCalendarEvents/);
 	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_http::routes::public_routes\(\)/);
@@ -820,4 +869,160 @@ test('manual frontend sources contain no legacy academic wrapper, path, or wire 
 		if (forbidden.some((pattern) => pattern.test(source))) violations.push(file);
 	}
 	assert.deepEqual(violations, []);
+});
+
+test('school explicit defaults initialize context independently of operational status', async () => {
+	const { resolveAcademicContextUrl } = await importRouteContext();
+	const options = contextOptions();
+	options.defaultAcademicYearId = 'year-planning';
+	options.defaultAcademicTermId = 'term-planning';
+	const direct = resolveAcademicContextUrl(
+		'term_required',
+		options,
+		new URL('https://school.test/staff/academic/delivery')
+	);
+	assert.equal(direct.status, 'ready');
+	assert.deepEqual(direct.selected, {
+		academicYearId: 'year-planning',
+		academicTermId: 'term-planning'
+	});
+	const older = new URL(
+		'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+	);
+	const explicit = resolveAcademicContextUrl('term_required', options, older);
+	assert.deepEqual(explicit.selected, {
+		academicYearId: 'year-active',
+		academicTermId: 'term-active'
+	});
+	assert.equal(explicit.replaceUrl, null);
+});
+
+test('settings response supersedes an older pending options read and preserves explicit selection', async () => {
+	const {
+		createAcademicContextStore,
+		registerAcademicContextDirtySource,
+		hasAcademicContextDirtySource
+	} = await importAcademicContextStore();
+	let resolveOld;
+	const old = new Promise((resolve) => {
+		resolveOld = resolve;
+	});
+	let navigations = 0;
+	const store = createAcademicContextStore({
+		navigate: async () => {
+			navigations += 1;
+		},
+		loadOptions: () => old
+	});
+	let snapshot;
+	const unsubscribe = store.subscribe((value) => {
+		snapshot = value;
+	});
+	const url = new URL(
+		'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+	);
+	const pending = store.sync('/(app)/staff/academic/delivery', url);
+	const latest = contextOptions();
+	latest.defaultAcademicYearId = 'year-planning';
+	latest.defaultAcademicTermId = 'term-planning';
+	const unregister = registerAcademicContextDirtySource('settings-draft', () => true);
+	store.replaceOptions(latest);
+	resolveOld(contextOptions());
+	await pending;
+	assert.deepEqual(snapshot.options, latest);
+	assert.deepEqual(snapshot.selected, {
+		academicYearId: 'year-active',
+		academicTermId: 'term-active'
+	});
+	assert.equal(navigations, 0);
+	assert.equal(hasAcademicContextDirtySource(), true);
+	await store.primeOptions();
+	assert.deepEqual(snapshot.options, latest);
+	unregister();
+	unsubscribe();
+	store.reset();
+});
+
+test('scoped selectors leave missing defaults and invalid explicit parent-term contexts unselected', async () => {
+	const {
+		resolveScopedAcademicYearUrl,
+		resolveScopedAcademicContextUrl,
+		resolveScopedAcademicTerm
+	} = await importScopedYear();
+	const options = contextOptions();
+	for (const defaultId of [null, 'year-inaccessible']) {
+		const noDefault = { ...options, defaultAcademicYearId: defaultId, defaultAcademicTermId: null };
+		assert.deepEqual(
+			resolveScopedAcademicYearUrl(noDefault, new URL('https://school.test/student')),
+			{ academicYearId: null, replaceUrl: null }
+		);
+		assert.equal(
+			resolveScopedAcademicTerm(noDefault, new URL('https://school.test/student/behavior')),
+			undefined
+		);
+	}
+	const noTermDefault = { ...options, defaultAcademicTermId: null };
+	assert.equal(
+		resolveScopedAcademicContextUrl(
+			noTermDefault,
+			new URL('https://school.test/student/timetable?academicYearId=year-active'),
+			true
+		).academicTermId,
+		''
+	);
+	for (const value of ['term-missing', 'term-planning']) {
+		const invalid = new URL(
+			`https://school.test/student/timetable?academicYearId=year-active&academicTermId=${value}`
+		);
+		assert.deepEqual(resolveScopedAcademicContextUrl(options, invalid, true), {
+			academicYearId: '',
+			academicTermId: '',
+			replaceUrl: null
+		});
+		assert.equal(resolveScopedAcademicTerm(options, invalid), undefined);
+	}
+	const older = new URL(
+		'https://school.test/student/timetable?academicYearId=year-planning&academicTermId=term-planning'
+	);
+	assert.equal(
+		resolveScopedAcademicContextUrl(options, older, true).academicTermId,
+		'term-planning'
+	);
+	assert.equal(resolveScopedAcademicTerm(options, older)?.id, 'term-planning');
+});
+
+test('draft metadata guards allow visibility-only revisions but detect concurrent year and term edits', async () => {
+	await importAcademicContextStore();
+	const { yearDraftBase, termDraftBase, yearDraftMetadataMatches, termDraftMetadataMatches } =
+		await academicContextStoreServer.ssrLoadModule('/src/lib/academic-core/context-drafts.ts');
+	const year = { ...contextOptions().years[0], schoolDays: ['MON', 'TUE'], rowVersion: 1 };
+	const term = { ...contextOptions().terms[0], bellScheduleId: 'bell', rowVersion: 1 };
+	const yearBase = yearDraftBase(year),
+		termBase = termDraftBase(term);
+	assert.equal(
+		yearDraftMetadataMatches(yearBase, {
+			...year,
+			isVisible: false,
+			rowVersion: 2,
+			schoolDays: ['TUE', 'MON']
+		}),
+		true
+	);
+	assert.equal(
+		termDraftMetadataMatches(termBase, { ...term, isVisible: false, rowVersion: 2 }),
+		true
+	);
+	for (const change of [
+		{ name: 'Changed by another actor' },
+		{ year: year.year + 1 },
+		{ schoolDays: ['MON'] }
+	])
+		assert.equal(yearDraftMetadataMatches(yearBase, { ...year, ...change, rowVersion: 3 }), false);
+	for (const change of [
+		{ name: 'Changed term' },
+		{ bellScheduleId: 'other-bell' },
+		{ includedInYearResult: false },
+		{ termType: 'summer' }
+	])
+		assert.equal(termDraftMetadataMatches(termBase, { ...term, ...change, rowVersion: 3 }), false);
 });

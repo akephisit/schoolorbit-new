@@ -452,28 +452,25 @@ test('academic smoke reads the canonical timetable workspace with its selected y
 			JSON.stringify({
 				success: true,
 				data: {
-					activeAcademicYearId: yearId,
-					activeAcademicTermId: termId,
+					defaultAcademicYearId: yearId,
+					defaultAcademicTermId: termId,
 					years: [
 						{
+							isVisible: true,
 							id: yearId,
 							year: 2569,
 							name: '2569',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30',
 							status: 'active'
 						}
 					],
 					terms: [termId, otherTermId].map((id, index) => ({
+						isVisible: true,
 						id,
 						academicYearId: yearId,
 						sequence: index + 1,
 						code: String(index + 1),
 						name: `Term ${index + 1}`,
 						termType: 'regular',
-						startDate: '2026-05-01',
-						plannedEndDate: '2026-10-01',
-						closedOn: null,
 						includedInYearResult: true,
 						blocksYearClosure: true,
 						status: index === 0 ? 'active' : 'planning'

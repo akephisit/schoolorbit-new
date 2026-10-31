@@ -8,17 +8,16 @@ import { year } from './staff-home-route-data';
 export const publicYears = {
 	years: [
 		{
+			isVisible: true,
 			id: year,
 			year: 2569,
 			name: 'ปีการศึกษา 2569',
-			status: 'active',
-			startDate: '2026-05-14',
-			endDate: '2027-04-09'
+			status: 'active'
 		}
 	],
 	terms: [],
-	activeAcademicYearId: year,
-	activeAcademicTermId: null
+	defaultAcademicYearId: year,
+	defaultAcademicTermId: null
 };
 export const publicCalendarEvent = makeApprovedCalendarEvent({
 	title: 'สอบช่วงเช้า',

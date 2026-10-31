@@ -68,7 +68,7 @@ const VERSION_SELECT: &str = r#"
            version.academic_year_id,
            version.effective_from,
            CASE
-               WHEN version.status = 'published' THEN COALESCE(
+               WHEN version.status = 'published' THEN (
                    (
                        SELECT next_version.effective_from - 1
                        FROM academic_timetable_versions next_version
@@ -77,8 +77,7 @@ const VERSION_SELECT: &str = r#"
                          AND next_version.effective_from > version.effective_from
                        ORDER BY next_version.effective_from, next_version.id
                        LIMIT 1
-                   ),
-                   term.closed_on
+                   )
                )
                ELSE NULL
            END AS effective_until,
@@ -485,7 +484,7 @@ pub async fn clone_draft_in_transaction(
         None if drafts.len() > 1 => {
             return Err(AppError::Conflict(
                 "มีหลายแบบร่างจากรุ่นนี้ กรุณาเลือกแบบร่างที่ต้องการแก้ต่อ".into(),
-            ))
+            ));
         }
         None => None,
     };

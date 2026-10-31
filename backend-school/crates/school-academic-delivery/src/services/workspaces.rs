@@ -1302,10 +1302,10 @@ pub async fn delivery_management_options_on_connection(
     filter: &AcademicResourceListFilter,
     curriculum_filter: &AcademicResourceListFilter,
 ) -> Result<DeliveryManagementOptions, AppError> {
-    let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) = DbSession::new(connection)
+    let (academic_year_id, catalog_date): (Uuid, chrono::NaiveDate) = DbSession::new(connection)
         .query_as(
             "academic_delivery.services.workspaces.delivery_management_options_on_connection",
-            "SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1",
+            "SELECT academic_year_id, (now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms WHERE id = $1",
         )
         .bind(academic_term_id)
         .fetch_optional()
@@ -1339,7 +1339,7 @@ pub async fn delivery_management_options_on_connection(
         LIMIT $4
         "#,
     )
-    .bind(term_start)
+    .bind(catalog_date)
     .bind(filter.includes_school_owned)
     .bind(&owner_ids)
     .bind((MAX_CATALOG_OPTIONS + 1) as i64)
@@ -1594,11 +1594,11 @@ mod tests {
         let year = Uuid::new_v4();
         let term = Uuid::new_v4();
         let schedule = Uuid::new_v4();
-        sqlx::query("INSERT INTO academic_years (id,year,name,start_date,end_date,status) VALUES ($1,2569,'Synthetic workspace year','2026-05-01','2027-04-30','planning')")
+        sqlx::query("INSERT INTO academic_years (id,year,name,status) VALUES ($1,2569,'Synthetic workspace year','planning')")
             .bind(year).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO bell_schedules (id,academic_year_id,code,name) VALUES ($1,$2,'SYNTHETIC','Synthetic workspace schedule')")
             .bind(schedule).bind(year).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular','2026-05-01','2026-10-01',true,true,$3,'planning')")
+        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular',true,true,$3,'planning')")
             .bind(term).bind(year).bind(schedule).execute(&pool).await.unwrap();
         let filter = AcademicResourceListFilter {
             includes_school_owned: true,

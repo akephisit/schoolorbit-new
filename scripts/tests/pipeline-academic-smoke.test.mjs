@@ -36,7 +36,7 @@ test('academic acceptance preserves published reads, selects only existing in-te
   {name:'no context',versions:[],noContext:true,draft:false,published:false},
  ];
  for(const fixture of cases){
-  writeFileSync(path.join(directory,'context.json'),JSON.stringify({success:true,data:{activeAcademicYearId:year,activeAcademicTermId:term,years:fixture.noContext?[]:[{id:year}],terms:fixture.noContext?[]:[{id:term,academicYearId:year}]}}));
+  writeFileSync(path.join(directory,'context.json'),JSON.stringify({success:true,data:{defaultAcademicYearId:year,defaultAcademicTermId:term,years:fixture.noContext?[]:[{id:year}],terms:fixture.noContext?[]:[{id:term,academicYearId:year}]}}));
   writeFileSync(path.join(directory,'versions.json'),JSON.stringify({success:true,data:fixture.versions}));
   writeFileSync(path.join(directory,'requests'),'');writeFileSync(path.join(directory,'sockets'),'');
   const result=spawnSync('bash',['-euc',`

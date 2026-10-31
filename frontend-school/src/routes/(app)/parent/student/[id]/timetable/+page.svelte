@@ -235,10 +235,7 @@
 		if (!contextOptions?.years.some((year) => year.id === yearId) || yearId === selectedYearId)
 			return;
 		const terms = contextOptions.terms.filter((term) => term.academicYearId === yearId);
-		const next =
-			terms.find((term) => term.id === contextOptions?.activeAcademicTermId)?.id ??
-			terms[0]?.id ??
-			'';
+		const next = terms.find((term) => term.id === contextOptions?.defaultAcademicTermId)?.id ?? '';
 		await updateUrl(yearId, next);
 	}
 	async function changeTerm(value: string) {

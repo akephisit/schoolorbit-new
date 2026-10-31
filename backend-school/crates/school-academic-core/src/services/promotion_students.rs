@@ -66,7 +66,7 @@ pub async fn validate_run_years(
     target_year: Uuid,
 ) -> Result<(), AppError> {
     let years: Vec<YearLifecycleContext> = DbSession::new(&mut **tx).query_as("academic_core.services.promotion_students.validate_run_years",
-        "SELECT id AS academic_year_id,year,name,start_date,end_date,status,row_version FROM academic_years WHERE id=ANY($1) ORDER BY id FOR SHARE"
+        "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=ANY($1) ORDER BY id FOR SHARE"
     ).bind(vec![source_year,target_year]).fetch_all().await?;
     let source = years
         .iter()
@@ -76,13 +76,8 @@ pub async fn validate_run_years(
         .iter()
         .find(|year| year.academic_year_id == target_year)
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษาปลายทาง".into()))?;
-    if source_year == target_year
-        || target.year <= source.year
-        || target.start_date <= source.end_date
-    {
-        return Err(AppError::ValidationError(
-            "ปีปลายทางต้องอยู่หลังปีต้นทางและช่วงวันที่ต้องไม่ทับกัน".into(),
-        ));
+    if source_year == target_year || target.year <= source.year {
+        return Err(AppError::ValidationError("ปีปลายทางต้องอยู่หลังปีต้นทาง".into()));
     }
     if !matches!(
         source.status,

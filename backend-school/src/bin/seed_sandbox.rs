@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{
@@ -261,7 +261,7 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
     ensure_student_parent_link(&mut tx, student_user_id, parent_user_id).await?;
 
     let academic_year_id = upsert_academic_year(&mut tx, config.academic_year).await?;
-    let active_term_id = upsert_terms(&mut tx, config.academic_year, academic_year_id).await?;
+    let active_term_id = upsert_terms(&mut tx, academic_year_id).await?;
     let grade_level_id = upsert_grade_level(&mut tx).await?;
     ensure_year_grade_level(&mut tx, academic_year_id, grade_level_id).await?;
     let (curriculum_level_id, study_program_id) =
@@ -576,10 +576,6 @@ async fn upsert_academic_year(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     academic_year: i32,
 ) -> SeedResult<Uuid> {
-    let start_year = academic_year - 543;
-    let start_date = NaiveDate::from_ymd_opt(start_year, 5, 16).ok_or("invalid start date")?;
-    let end_date = NaiveDate::from_ymd_opt(start_year + 1, 3, 31).ok_or("invalid end date")?;
-
     school_database::DbSession::new(&mut **tx)
         .query(
             "school.bin.seed_sandbox.upsert_academic_year",
@@ -596,14 +592,13 @@ async fn upsert_academic_year(
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_academic_year",
             r#"
-        INSERT INTO academic_years (year, name, start_date, end_date, school_days, status, metadata)
-        VALUES ($1, $2, $3, $4, 'MON,TUE,WED,THU,FRI', 'active',
+        INSERT INTO academic_years (year, name, school_days, status, is_visible, metadata)
+        VALUES ($1, $2, 'MON,TUE,WED,THU,FRI', 'active', true,
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (year) DO UPDATE SET
             name = EXCLUDED.name,
-            start_date = EXCLUDED.start_date,
-            end_date = EXCLUDED.end_date,
             status = 'active',
+            is_visible = true,
             school_days = EXCLUDED.school_days,
             row_version = academic_years.row_version + 1,
             metadata = COALESCE(academic_years.metadata, '{}'::jsonb) || EXCLUDED.metadata,
@@ -613,8 +608,6 @@ async fn upsert_academic_year(
         )
         .bind(academic_year)
         .bind(format!("ปีการศึกษา {}", academic_year))
-        .bind(start_date)
-        .bind(end_date)
         .fetch_one()
         .await
         .map_err(database_failure)?;
@@ -624,15 +617,8 @@ async fn upsert_academic_year(
 
 async fn upsert_terms(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    academic_year: i32,
     academic_year_id: Uuid,
 ) -> SeedResult<Uuid> {
-    let start_year = academic_year - 543;
-    let term_1_start = NaiveDate::from_ymd_opt(start_year, 5, 16).ok_or("invalid term date")?;
-    let term_1_end = NaiveDate::from_ymd_opt(start_year, 10, 10).ok_or("invalid term date")?;
-    let term_2_start = NaiveDate::from_ymd_opt(start_year, 10, 20).ok_or("invalid term date")?;
-    let term_2_end = NaiveDate::from_ymd_opt(start_year + 1, 3, 31).ok_or("invalid term date")?;
-
     let bell_schedule_id = school_database::DbSession::new(&mut **tx)
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_terms",
@@ -664,7 +650,6 @@ async fn upsert_terms(
             "school.bin.seed_sandbox.upsert_terms",
             "UPDATE academic_terms
          SET status = 'closed',
-             closed_on = COALESCE(closed_on, planned_end_date, CURRENT_DATE),
              row_version = row_version + 1, updated_at = NOW()
          WHERE status = 'active' AND academic_year_id <> $1",
         )
@@ -678,18 +663,16 @@ async fn upsert_terms(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
         INSERT INTO academic_terms (
-            academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
+            academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular', $2, $3,
-                true, true, $4, 'active',
+        VALUES ($1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular',
+                true, true, $2, 'active',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET
             sequence_no = 1,
             name = EXCLUDED.name,
             term_type = EXCLUDED.term_type,
-            start_date = EXCLUDED.start_date,
-            planned_end_date = EXCLUDED.planned_end_date,
             included_in_year_result = true,
             blocks_year_closure = true,
             bell_schedule_id = EXCLUDED.bell_schedule_id,
@@ -701,8 +684,6 @@ async fn upsert_terms(
         "#,
         )
         .bind(academic_year_id)
-        .bind(term_1_start)
-        .bind(term_1_end)
         .bind(bell_schedule_id)
         .fetch_one()
         .await
@@ -713,18 +694,16 @@ async fn upsert_terms(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
         INSERT INTO academic_terms (
-            academic_year_id, sequence_no, code, name, term_type, start_date, planned_end_date,
+            academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular', $2, $3,
-                true, true, $4, 'ready',
+        VALUES ($1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular',
+                true, true, $2, 'ready',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET
             sequence_no = 2,
             name = EXCLUDED.name,
             term_type = EXCLUDED.term_type,
-            start_date = EXCLUDED.start_date,
-            planned_end_date = EXCLUDED.planned_end_date,
             included_in_year_result = true,
             blocks_year_closure = true,
             bell_schedule_id = EXCLUDED.bell_schedule_id,
@@ -735,13 +714,21 @@ async fn upsert_terms(
         "#,
         )
         .bind(academic_year_id)
-        .bind(term_2_start)
-        .bind(term_2_end)
         .bind(bell_schedule_id)
         .execute()
         .await
         .map_err(database_failure)?;
 
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "school.bin.seed_sandbox.context_visibility",
+            "UPDATE academic_terms SET is_visible=true WHERE id=$1",
+        )
+        .bind(active_term_id)
+        .execute()
+        .await
+        .map_err(database_failure)?;
+    school_database::DbSession::new(&mut **tx).query("school.bin.seed_sandbox.context_defaults","UPDATE academic_context_settings SET default_academic_year_id=$1,default_academic_term_id=$2,row_version=row_version+1,updated_at=now() WHERE singleton").bind(academic_year_id).bind(active_term_id).execute().await.map_err(database_failure)?;
     Ok(active_term_id)
 }
 

@@ -121,8 +121,8 @@ async function mock(page: Page, options: { canScore?: boolean; globalDefault?: b
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null,
 					years: [],
 					terms: []
 				});

@@ -224,7 +224,9 @@ pub async fn discard_draft(
         "curriculum_activity_requirements",
         "curriculum_term_slots",
     ] {
-        let sql=format!("DELETE FROM {table} WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)");
+        let sql = format!(
+            "DELETE FROM {table} WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)"
+        );
         DbSession::new(&mut *tx)
             .query(
                 "academic_core.services.curriculum_publications.discard_draft",
@@ -251,24 +253,65 @@ pub async fn discard_draft(
     .await?;
     DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "UPDATE study_programs SET code='discard-'||gen_random_uuid()::text WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
         .bind(id).execute().await?;
-    for (table,snapshot,columns) in [
-        ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active,credit_criteria,credit_criteria_row_version"),
-        ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,migration_provenance,display_order"),
-        ("curriculum_term_slots","curriculum_publication_slots","id,curriculum_level_id,sequence,term_type,type_occurrence,name,row_version,created_at,updated_at"),
-        ("curriculum_course_requirements","curriculum_publication_courses","id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,created_at,updated_at,study_program_id,requirement_kind,row_version,term_slot_id"),
-        ("curriculum_activity_requirements","curriculum_publication_activities","id,curriculum_level_id,display_order,created_at,updated_at,activity_version_id,grade_level_id,study_program_id,requirement_kind,row_version,term_slot_id"),
+    for (table, snapshot, columns) in [
+        (
+            "curriculum_levels",
+            "curriculum_publication_levels",
+            "id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active,credit_criteria,credit_criteria_row_version",
+        ),
+        (
+            "study_programs",
+            "curriculum_publication_programs",
+            "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,migration_provenance,display_order",
+        ),
+        (
+            "curriculum_term_slots",
+            "curriculum_publication_slots",
+            "id,curriculum_level_id,sequence,term_type,type_occurrence,name,row_version,created_at,updated_at",
+        ),
+        (
+            "curriculum_course_requirements",
+            "curriculum_publication_courses",
+            "id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,created_at,updated_at,study_program_id,requirement_kind,row_version,term_slot_id",
+        ),
+        (
+            "curriculum_activity_requirements",
+            "curriculum_publication_activities",
+            "id,curriculum_level_id,display_order,created_at,updated_at,activity_version_id,grade_level_id,study_program_id,requirement_kind,row_version,term_slot_id",
+        ),
     ] {
-        let selected=columns.split(',').map(|column| match column {
-            "row_version" | "credit_criteria_row_version"=>format!("p.{column}+1"),
-            "updated_at"=>"now()".to_owned(),
-            _=>format!("p.{column}"),
-        }).collect::<Vec<_>>().join(",");
-        let updated=columns.split(',').filter(|column| *column!="id").map(|column| match column {
-            "row_version" | "credit_criteria_row_version"=>format!("{column}=GREATEST(workspace.{column}+1,EXCLUDED.{column})"),
-            _=>format!("{column}=EXCLUDED.{column}"),
-        }).collect::<Vec<_>>().join(",");
-        let sql=format!("INSERT INTO {table} AS workspace({columns}) SELECT {selected} FROM {snapshot} p WHERE publication_id=$1 ON CONFLICT(id) DO UPDATE SET {updated}");
-        DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", sqlx::AssertSqlSafe(sql)).bind(publication).execute().await.map_err(discard_error)?;
+        let selected = columns
+            .split(',')
+            .map(|column| match column {
+                "row_version" | "credit_criteria_row_version" => format!("p.{column}+1"),
+                "updated_at" => "now()".to_owned(),
+                _ => format!("p.{column}"),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let updated = columns
+            .split(',')
+            .filter(|column| *column != "id")
+            .map(|column| match column {
+                "row_version" | "credit_criteria_row_version" => {
+                    format!("{column}=GREATEST(workspace.{column}+1,EXCLUDED.{column})")
+                }
+                _ => format!("{column}=EXCLUDED.{column}"),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "INSERT INTO {table} AS workspace({columns}) SELECT {selected} FROM {snapshot} p WHERE publication_id=$1 ON CONFLICT(id) DO UPDATE SET {updated}"
+        );
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_core.services.curriculum_publications.discard_draft",
+                sqlx::AssertSqlSafe(sql),
+            )
+            .bind(publication)
+            .execute()
+            .await
+            .map_err(discard_error)?;
     }
     // The database guard independently requires the entire workspace to match the
     // publication before permitting this token to close without a new publication.
@@ -369,7 +412,9 @@ pub async fn read_levels_on_connection(
     } else {
         super::curriculum::LEVEL_COLUMNS.to_owned()
     };
-    let sql = format!("SELECT {columns} FROM {table} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 ORDER BY l.created_at,l.id LIMIT 501");
+    let sql = format!(
+        "SELECT {columns} FROM {table} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 ORDER BY l.created_at,l.id LIMIT 501"
+    );
     let levels: Vec<CurriculumLevel> = DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum_publications.read_levels_on_connection",
@@ -532,7 +577,9 @@ pub async fn list_publications_on_connection(
     edition_id: Uuid,
 ) -> Result<Vec<CurriculumPublication>, AppError> {
     super::curriculum::get_on_connection(connection, edition_id).await?;
-    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 ORDER BY publication_no DESC LIMIT 501");
+    let sql = format!(
+        "SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 ORDER BY publication_no DESC LIMIT 501"
+    );
     let rows: Vec<CurriculumPublication> = DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum_publications.list_publications_on_connection",
@@ -567,7 +614,9 @@ pub async fn history_on_connection(
     edition_id: Uuid,
     publication_id: Uuid,
 ) -> Result<CurriculumPublicationHistory, AppError> {
-    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 AND p.id=$2");
+    let sql = format!(
+        "SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 AND p.id=$2"
+    );
     let publication: CurriculumPublication = DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum_publications.history_on_connection",

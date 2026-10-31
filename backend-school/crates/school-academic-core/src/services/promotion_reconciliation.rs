@@ -19,6 +19,7 @@ pub async fn reconcile_decision(
     actor_user_id: Uuid,
     source_year_id: Uuid,
     target_year_id: Uuid,
+    placement_starts_on: NaiveDate,
     source_student_year_id: Uuid,
     owned_target_student_year_id: Option<Uuid>,
     owned_target_placement_id: Option<Uuid>,
@@ -85,6 +86,7 @@ pub async fn reconcile_decision(
             tx,
             target_year_id,
             target_student_year_id,
+            placement_starts_on,
             owned_target_placement_id,
             decision.target_homeroom_id,
         )
@@ -226,6 +228,7 @@ async fn reconcile_placement(
     tx: &mut Transaction<'_, Postgres>,
     target_year_id: Uuid,
     target_student_year_id: Uuid,
+    placement_starts_on: NaiveDate,
     owned_target_placement_id: Option<Uuid>,
     target_homeroom_id: Option<Uuid>,
 ) -> Result<Option<Uuid>, AppError> {
@@ -274,14 +277,7 @@ async fn reconcile_placement(
         .await?;
         Ok(Some(id))
     } else {
-        let (id, start_date): (Uuid, NaiveDate) = DbSession::new(&mut **tx)
-            .query_as(
-                "academic_core.services.promotion_reconciliation.reconcile_placement",
-                "SELECT gen_random_uuid(),start_date FROM academic_years WHERE id=$1",
-            )
-            .bind(target_year_id)
-            .fetch_one()
-            .await?;
+        let id = Uuid::now_v7();
         DbSession::new(&mut **tx).query("academic_core.services.promotion_reconciliation.reconcile_placement",
             "INSERT INTO homeroom_placements(
                  id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type
@@ -291,7 +287,7 @@ async fn reconcile_placement(
         .bind(target_student_year_id)
         .bind(target_year_id)
         .bind(room_id)
-        .bind(start_date)
+        .bind(placement_starts_on)
         .execute()
         .await?;
         Ok(Some(id))

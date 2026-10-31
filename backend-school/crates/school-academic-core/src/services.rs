@@ -1,6 +1,5 @@
 use super::models::{AcademicTermStatus, VersionStatus};
 use bigdecimal::BigDecimal;
-use chrono::NaiveDate;
 use school_errors::AppError;
 use std::str::FromStr;
 pub mod activation_context;
@@ -8,6 +7,7 @@ pub mod attendance_roster;
 pub mod bell_schedules;
 pub mod catalog;
 pub mod context;
+pub mod context_settings;
 pub mod curriculum;
 pub mod curriculum_credit_criteria;
 mod curriculum_publication_changes;
@@ -22,7 +22,6 @@ pub mod promotion_execution;
 pub mod promotion_reconciliation;
 pub mod promotion_students;
 pub mod promotion_targets;
-pub mod score_calendar;
 pub mod student_year_batch;
 pub mod student_years;
 pub mod workspaces;
@@ -50,25 +49,6 @@ pub fn validate_canonical_decimal(value: &str, max_scale: usize) -> Result<BigDe
     }
 
     BigDecimal::from_str(value).map_err(|_| AppError::ValidationError("ค่าทศนิยมไม่ถูกต้อง".to_string()))
-}
-
-pub fn validate_date_containment(
-    parent_start: NaiveDate,
-    parent_end: NaiveDate,
-    child_start: NaiveDate,
-    child_end: NaiveDate,
-) -> Result<(), AppError> {
-    if parent_start > parent_end || child_start > child_end {
-        return Err(AppError::ValidationError(
-            "วันเริ่มต้นต้องไม่อยู่หลังวันสิ้นสุด".to_string(),
-        ));
-    }
-    if child_start < parent_start || child_end > parent_end {
-        return Err(AppError::ValidationError(
-            "ช่วงวันที่ต้องอยู่ภายในปีการศึกษา".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 pub fn parse_row_version(row_version: i64) -> Result<i64, AppError> {

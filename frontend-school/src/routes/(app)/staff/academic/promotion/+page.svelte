@@ -9,6 +9,8 @@
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { listAcademicYears, type AcademicYear } from '#lib/api/academic-core.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -45,6 +47,8 @@
 	let createOpen = $state(false);
 	let saving = $state(false);
 	let targetYear = $state('');
+	let targetPlacementStartsOn = $state('');
+	let managementYears = $state<AcademicYear[]>([]);
 	let policyId = $state('');
 	let alive = true;
 	let pending: { key: string; input: PromotionRunCreateInput } | null = null;
@@ -52,13 +56,7 @@
 	const years = $derived($context.options?.years ?? []);
 	const source = $derived(years.find((row) => row.id === year));
 	const targets = $derived(
-		years.filter(
-			(row) =>
-				row.status === 'planning' &&
-				!!source &&
-				row.year > source.year &&
-				row.startDate > source.endDate
-		)
+		managementYears.filter((row) => row.status === 'planning' && !!source && row.year > source.year)
 	);
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL));
 	const canCreate = $derived(
@@ -75,7 +73,8 @@
 			sourceEligible &&
 			targets.some((row) => row.id === targetYear) &&
 			policies.some((row) => row.id === policyId) &&
-			!loadingPolicies
+			!loadingPolicies &&
+			!!targetPlacementStartsOn
 	);
 	function yearName(id: string) {
 		return years.find((row) => row.id === id)?.name ?? 'ไม่พบชื่อปีการศึกษา';
@@ -110,15 +109,20 @@
 	async function openCreate() {
 		if (!canCreate || !sourceEligible || saving) return;
 		targetYear = '';
+		targetPlacementStartsOn = '';
 		policyId = '';
 		formError = '';
 		pending = null;
 		createOpen = true;
 		loadingPolicies = true;
 		try {
-			const data = await listPromotionPolicies();
+			const [data, availableYears] = await Promise.all([
+				listPromotionPolicies(),
+				listAcademicYears()
+			]);
 			if (alive) {
 				policies = data;
+				managementYears = availableYears;
 				if (data.length === 1) policyId = data[0].id;
 			}
 		} catch (cause) {
@@ -129,7 +133,12 @@
 	}
 	async function save() {
 		if (!canSave || !year || saving) return;
-		const values = { sourceYearId: year, targetYearId: targetYear, policyId };
+		const values = {
+			sourceYearId: year,
+			targetYearId: targetYear,
+			policyId,
+			targetPlacementStartsOn
+		};
 		const key = JSON.stringify(values);
 		if (pending?.key !== key)
 			pending = { key, input: { ...values, requestId: crypto.randomUUID() } };
@@ -302,9 +311,23 @@
 					></Select.Root
 				>
 				{#if !targets.length}<p class="text-sm text-amber-700 dark:text-amber-400">
-						ยังไม่มีปีปลายทางที่ใช้ได้ ให้ผู้ดูแลเพิ่มปีที่กำลังวางแผนและตรวจช่วงวันที่ก่อน
+						ยังไม่มีปีปลายทางที่ใช้ได้ ให้ผู้ดูแลเพิ่มปีที่กำลังวางแผนที่มีเลขปีมากกว่าปีต้นทาง
 					</p>{/if}
 			</div>
+			<div class="space-y-2">
+				<Label for="promotion-placement-start">วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่</Label>
+				<DatePicker
+					id="promotion-placement-start"
+					bind:value={targetPlacementStartsOn}
+					ariaLabel="วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่"
+					required
+					disabled={saving}
+				/>
+				<p class="text-xs text-muted-foreground">
+					ใช้สำหรับรายการใหม่ในรอบนี้ รายการเดิมคงวันที่ของแต่ละคน
+				</p>
+			</div>
+
 			<div class="space-y-2">
 				<Label for="promotion-policy">เกณฑ์ที่ยืนยันแล้ว</Label><Select.Root
 					type="single"

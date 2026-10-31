@@ -3056,14 +3056,12 @@ async fn school_override_null_owner_and_list_scope_union_are_explicit() {
 async fn insert_academic_year(pool: &PgPool, year: i32) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO academic_years
-            (year, name, start_date, end_date, status)
-         VALUES ($1, $2, $3, $4, 'planning')
+            (year, name, status)
+         VALUES ($1, $2, 'planning')
          RETURNING id",
     )
     .bind(year)
     .bind(format!("ปีการศึกษา {year}"))
-    .bind(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap())
-    .bind(NaiveDate::from_ymd_opt(2027, 4, 30).unwrap())
     .fetch_one(pool)
     .await
     .expect("academic year fixture should insert")

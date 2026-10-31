@@ -14,8 +14,7 @@ use uuid::Uuid;
 
 pub(super) const EDITION_COLUMNS: &str = "current_publication_id,publication_count,draft_id,id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
 pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.credit_criteria,l.credit_criteria_row_version,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
-pub(super) const PROGRAM_COLUMNS: &str =
-    "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,display_order";
+pub(super) const PROGRAM_COLUMNS: &str = "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,display_order";
 const MAX_LEVELS: i64 = 500;
 const MAX_PROGRAM_OPTIONS: i64 = 2000;
 const MAX_COPIED_REQUIREMENTS: i64 = 50_000;
@@ -66,7 +65,9 @@ pub async fn list_on_connection(
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CurriculumEdition>, AppError> {
     require_school_filter(filter)?;
-    let sql=format!("SELECT {EDITION_COLUMNS} FROM curriculum_editions ORDER BY revision_year DESC NULLS LAST,created_at DESC,id LIMIT 501");
+    let sql = format!(
+        "SELECT {EDITION_COLUMNS} FROM curriculum_editions ORDER BY revision_year DESC NULLS LAST,created_at DESC,id LIMIT 501"
+    );
     let rows: Vec<CurriculumEdition> = DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum.list_on_connection",
@@ -183,7 +184,9 @@ pub async fn get_level_on_connection(
     connection: &mut sqlx::PgConnection,
     id: Uuid,
 ) -> Result<CurriculumLevel, AppError> {
-    let sql=format!("SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1");
+    let sql = format!(
+        "SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1"
+    );
     DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum.get_level_on_connection",
@@ -211,7 +214,9 @@ pub async fn list_levels_on_connection(
     edition_id: Uuid,
 ) -> Result<Vec<CurriculumLevel>, AppError> {
     get_on_connection(connection, edition_id).await?;
-    let sql=format!("SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 ORDER BY l.created_at,l.id LIMIT $2");
+    let sql = format!(
+        "SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 ORDER BY l.created_at,l.id LIMIT $2"
+    );
     let rows: Vec<CurriculumLevel> = DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum.list_levels_on_connection",
@@ -392,7 +397,9 @@ pub async fn publish(
             .revision_year
             .ok_or_else(|| AppError::ValidationError("กำหนดปีปรับปรุงก่อนเผยแพร่".into()))?,
     )?;
-    let sql=format!("SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 FOR UPDATE OF l");
+    let sql = format!(
+        "SELECT {LEVEL_COLUMNS} FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 FOR UPDATE OF l"
+    );
     let levels: Vec<CurriculumLevel> = DbSession::new(&mut *tx)
         .query_as(
             "academic_core.services.curriculum.publish",
@@ -446,7 +453,9 @@ pub(super) async fn list_programs_for_level(
     connection: &mut sqlx::PgConnection,
     level_id: Uuid,
 ) -> Result<Vec<StudyProgram>, AppError> {
-    let sql=format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id");
+    let sql = format!(
+        "SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id"
+    );
     Ok(DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum.list_programs_for_level",
@@ -538,7 +547,9 @@ pub async fn replace_program_order(
             "ระดับการศึกษาถูกแก้ไขแล้ว กรุณาโหลดใหม่".into(),
         ));
     }
-    let sql = format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id LIMIT $2");
+    let sql = format!(
+        "SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id LIMIT $2"
+    );
     let mut programs: Vec<StudyProgram> = DbSession::new(&mut *tx)
         .query_as(
             "academic_core.services.curriculum.replace_program_order",
@@ -915,7 +926,9 @@ pub(super) async fn level_from_publication(
     } else {
         LEVEL_COLUMNS.to_owned()
     };
-    let query = format!("SELECT {columns} FROM {source} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1");
+    let query = format!(
+        "SELECT {columns} FROM {source} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1"
+    );
     DbSession::new(connection)
         .query_as(
             "academic_core.services.curriculum.level_from_publication",

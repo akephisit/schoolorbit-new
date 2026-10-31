@@ -1,5 +1,9 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type {
+		AcademicContextSettings,
+		AcademicContextSettingsMutationResponse,
+		UpdateAcademicContextSettingsRequest,
 		AcademicTerm,
 		AcademicYear,
 		BellSchedule,
@@ -12,6 +16,7 @@
 		UpdateAcademicYearRequest,
 		UpdateBellScheduleRequest
 	} from '#lib/api/academic-core.js';
+	import AcademicContextSettingsControls from './AcademicContextSettingsControls.svelte';
 	import AcademicTermSetupStep from '#lib/components/academic-core/setup/AcademicTermSetupStep.svelte';
 	import AcademicYearSetupStep from '#lib/components/academic-core/setup/AcademicYearSetupStep.svelte';
 	import BellSchedulePeriodsStep from '#lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte';
@@ -35,7 +40,10 @@
 		termsByYear,
 		bellSchedules = [],
 		canManage = false,
-		busy = false,
+		busy = { year: false, term: false, schedule: false, periods: false },
+		contextSettings,
+		onUpdateContextSettings,
+		onReloadContextSettings,
 		onCreateYear,
 		onUpdateYear,
 		onCreateBellSchedule,
@@ -49,7 +57,12 @@
 		termsByYear: Map<string, AcademicTerm[]>;
 		bellSchedules?: BellSchedule[];
 		canManage?: boolean;
-		busy?: boolean;
+		busy?: { year: boolean; term: boolean; schedule: boolean; periods: boolean };
+		contextSettings: AcademicContextSettings | null;
+		onReloadContextSettings: () => Promise<void>;
+		onUpdateContextSettings: (
+			draft: UpdateAcademicContextSettingsRequest
+		) => Promise<AcademicContextSettingsMutationResponse>;
 		onCreateYear: (draft: CreateAcademicYearRequest) => Promise<AcademicYear>;
 		onUpdateYear: (id: string, draft: UpdateAcademicYearRequest) => Promise<AcademicYear>;
 		onCreateBellSchedule: (draft: CreateBellScheduleRequest) => Promise<BellSchedule>;
@@ -63,11 +76,13 @@
 		onUpdateTerm: (id: string, draft: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 	} = $props();
 
-	let selectedYearId = $derived(
-		years.find((year) => year.status === 'planning')?.id ?? years[0]?.id ?? ''
+	let selectedYearId = $state(
+		untrack(() => years.find((year) => year.status === 'planning')?.id ?? years[0]?.id ?? '')
 	);
-	let activeStep = $derived<StepKey>(selectedYearId ? firstIncompleteStep(selectedYearId) : 'year');
-	let creatingYear = $derived(years.length === 0);
+	let activeStep = $state<StepKey>(
+		untrack(() => (selectedYearId ? firstIncompleteStep(selectedYearId) : 'year'))
+	);
+	let creatingYear = $state(untrack(() => years.length === 0));
 	let configuredScheduleIds = $state<string[]>([]);
 
 	const selectedYear = $derived(years.find((year) => year.id === selectedYearId) ?? null);
@@ -207,11 +222,22 @@
 			<div class="flex gap-3 border-b bg-muted/20 px-5 py-3 text-xs text-muted-foreground sm:px-6">
 				<School class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
 				<p>
-					หน้านี้ใช้เตรียมโครงสร้างเท่านั้น การเปิดใช้ปี การปิดภาคเรียน
+					สร้างปีและภาคเรียนเป็นร่างที่ซ่อนอยู่ จากนั้นเลือกแสดงและตั้งค่าเริ่มต้นได้ การปิดภาคเรียน
 					และการเลื่อนชั้นเป็นขั้นตอนแยกเมื่อระบบผลการเรียนพร้อม
 				</p>
 			</div>
 		</div>
+
+		{#if selectedYear && contextSettings && !creatingYear}
+			<AcademicContextSettingsControls
+				year={selectedYear}
+				terms={selectedTerms}
+				settings={contextSettings}
+				{canManage}
+				onsave={onUpdateContextSettings}
+				onreload={onReloadContextSettings}
+			/>
+		{/if}
 
 		<article class="overflow-hidden rounded-2xl border bg-card">
 			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
@@ -222,7 +248,7 @@
 				</div>
 				<div class="min-w-0 flex-1">
 					<h3 class="font-semibold">ปีการศึกษา</h3>
-					<p class="text-xs text-muted-foreground">ปี พ.ศ. ช่วงวันที่ และวันเรียนปกติ</p>
+					<p class="text-xs text-muted-foreground">ปี พ.ศ. และวันเรียนปกติ</p>
 				</div>
 				{#if selectedYear && !creatingYear}
 					<Badge variant="outline"><Check class="size-3" /> บันทึกแล้ว</Badge>
@@ -237,7 +263,7 @@
 						<AcademicYearSetupStep
 							existing={creatingYear ? null : selectedYear}
 							{suggestedYear}
-							{busy}
+							busy={busy.year}
 							onCreate={onCreateYear}
 							onUpdate={onUpdateYear}
 							onSaved={handleYearSaved}
@@ -249,11 +275,6 @@
 					<div>
 						<span class="text-muted-foreground">ชื่อ</span><strong class="block"
 							>{selectedYear.name}</strong
-						>
-					</div>
-					<div>
-						<span class="text-muted-foreground">ช่วงวันที่</span><strong class="block"
-							>{selectedYear.startDate} – {selectedYear.endDate}</strong
 						>
 					</div>
 					<div>
@@ -292,7 +313,7 @@
 					<BellScheduleSetupStep
 						year={selectedYear}
 						schedules={selectedSchedules}
-						{busy}
+						busy={busy.schedule}
 						onCreate={onCreateBellSchedule}
 						onUpdate={onUpdateBellSchedule}
 						onSaved={handleScheduleSaved}
@@ -336,7 +357,7 @@
 					<BellSchedulePeriodsStep
 						year={selectedYear}
 						schedules={selectedSchedules}
-						{busy}
+						busy={busy.periods}
 						onLoad={onLoadBellSchedulePeriods}
 						onReplace={onReplaceBellSchedulePeriods}
 						onSaved={handlePeriodsSaved}
@@ -378,7 +399,7 @@
 							year={selectedYear}
 							schedules={selectedSchedules}
 							terms={selectedTerms}
-							{busy}
+							busy={busy.term}
 							onCreate={onCreateTerm}
 							onUpdate={onUpdateTerm}
 							onSaved={handleTermSaved}
@@ -391,11 +412,6 @@
 						<div class="flex items-center justify-between gap-3 p-4 text-sm sm:px-5">
 							<div>
 								<strong>{term.name}</strong>
-								<p class="text-xs text-muted-foreground">
-									เริ่ม {term.startDate} · คาดว่าจะปิด {term.plannedEndDate ?? 'ยังไม่กำหนด'}
-									{#if term.closedOn}
-										· ปิดจริง {term.closedOn}{/if}
-								</p>
 							</div>
 							<ChevronRight class="size-4 text-muted-foreground" />
 						</div>
@@ -410,8 +426,8 @@
 			<div class="flex gap-3">
 				<CalendarDays class="size-4 shrink-0 text-primary" />
 				<p>
-					<strong class="block">เปิดใช้งานภายหลัง</strong><span
-						class="text-xs text-muted-foreground">เมื่อข้อมูลหลักสูตรและการจัดชั้นพร้อม</span
+					<strong class="block">แสดงและตั้งค่าเริ่มต้น</strong><span
+						class="text-xs text-muted-foreground">เลือกแสดงเมื่อพร้อมให้บุคลากรเลือกใช้งาน</span
 					>
 				</p>
 			</div>

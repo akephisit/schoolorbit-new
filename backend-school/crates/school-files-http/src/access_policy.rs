@@ -1221,8 +1221,8 @@ mod tests {
         let pool = create_named_test_pool("school_font_upload_policy").await;
         run_test_migrations(&pool).await;
         let academic_year_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_years (year, name, start_date, end_date, status)
-             VALUES (2997, 'School font policy test', '2997-01-01', '2997-12-31', 'planning')
+            "INSERT INTO academic_years (year, name, status)
+             VALUES (2997, 'School font policy test', 'planning')
              RETURNING id",
         )
         .fetch_one(&pool)
@@ -1408,8 +1408,8 @@ mod tests {
         .await
         .expect("actor fixture should insert");
         let academic_year_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_years (year, name, start_date, end_date, status)
-             VALUES (2996, 'Certificate school font guard', '2996-01-01', '2996-12-31', 'planning')
+            "INSERT INTO academic_years (year, name, status)
+             VALUES (2996, 'Certificate school font guard', 'planning')
              RETURNING id",
         )
         .fetch_one(&pool)

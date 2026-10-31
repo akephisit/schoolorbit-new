@@ -65,7 +65,12 @@ test('change set and readiness panels expose teacher handoff without reviving di
 		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
 	);
 
-	assert.match(changePanel, /AcademicTeacherChangeForm/);
+	const teacherDialog = await readProjectFile(
+		'src/lib/components/learning-delivery/OfferingTeacherChangeDialog.svelte'
+	);
+	assert.match(teacherDialog, /AcademicTeacherChangeForm/);
+	assert.match(teacherDialog, /managementOptions=\{options\}/);
+	assert.doesNotMatch(teacherDialog, /replaceLearningGroupTeachers/);
 	assert.match(changePanel, /TeacherHandoffPanel/);
 	assert.match(changePanel, /จัดการคาบที่ได้รับผลกระทบ/);
 	assert.doesNotMatch(changePanel, /replaceLearningGroupTeachers/);

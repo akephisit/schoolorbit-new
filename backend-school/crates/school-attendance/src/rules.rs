@@ -1,5 +1,5 @@
 use crate::models::*;
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use school_errors::AppError;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -25,8 +25,12 @@ pub fn validate_configuration(c: &AttendanceConfiguration) -> Result<(), AppErro
     }
     Ok(())
 }
-pub fn counted(c: &AttendanceConfiguration, date: NaiveDate, day: Option<bool>) -> bool {
-    day.unwrap_or_else(|| c.weekdays.contains(&date.weekday().number_from_monday()))
+pub fn counted(
+    _configuration: &AttendanceConfiguration,
+    _date: NaiveDate,
+    day: Option<bool>,
+) -> bool {
+    day.unwrap_or(false)
 }
 pub fn validate_inputs(inputs: &[AttendanceResultInput], roster: &[Uuid]) -> Result<(), AppError> {
     if inputs.is_empty()

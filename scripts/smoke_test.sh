@@ -749,8 +749,8 @@ for row in terms:
     if year_id and term_id:
         term_rows.append((year_id, term_id))
 
-active_year_id = canonical_uuid(data.get("activeAcademicYearId"))
-active_term_id = canonical_uuid(data.get("activeAcademicTermId"))
+active_year_id = canonical_uuid(data.get("defaultAcademicYearId"))
+active_term_id = canonical_uuid(data.get("defaultAcademicTermId"))
 selected_year_ids = []
 for candidate in [active_year_id, *year_rows]:
     if candidate and candidate in year_rows and candidate not in selected_year_ids:

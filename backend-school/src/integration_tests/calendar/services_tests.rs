@@ -22,7 +22,7 @@ use super::services;
 static NEXT_YEAR: AtomicI32 = AtomicI32::new(50_000);
 
 #[tokio::test]
-async fn cross_month_search_is_partial_bounded_and_keeps_public_visibility_and_year_dates() {
+async fn cross_month_search_is_partial_bounded_and_keeps_public_visibility_and_actual_dates() {
     let pool = migrated_pool("calendar_cross_month_search").await;
     let fixture = insert_fixture(&pool).await;
     let today = calendar_today();
@@ -41,7 +41,7 @@ async fn cross_month_search_is_partial_bounded_and_keeps_public_visibility_and_y
                 date,
                 public,
                 vec![],
-                vec![target(CalendarAudienceType::All, None, None)],
+                vec![target(CalendarAudienceType::All, None, None, None)],
                 vec![],
             ),
         )
@@ -151,7 +151,19 @@ async fn insert_user(pool: &PgPool, user_type: &str, first_name: &str) -> Uuid {
     id
 }
 
+enum CalendarFixtureSchema {
+    Current,
+    Migration097,
+}
+
 async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
+    insert_fixture_for_schema(pool, CalendarFixtureSchema::Current).await
+}
+
+async fn insert_fixture_for_schema(
+    pool: &PgPool,
+    schema: CalendarFixtureSchema,
+) -> CalendarFixture {
     let year = NEXT_YEAR.fetch_add(1, Ordering::Relaxed);
     let academic_year_id = Uuid::new_v4();
     let homeroom_id = Uuid::new_v4();
@@ -171,18 +183,34 @@ async fn insert_fixture(pool: &PgPool) -> CalendarFixture {
             .expect("cutover fixture study program should exist");
     let today = calendar_today();
 
-    sqlx::query(
-        "INSERT INTO academic_years (id, year, name, start_date, end_date, status)
-         VALUES ($1, $2, $3, $4, $5, 'planning')",
-    )
-    .bind(academic_year_id)
-    .bind(year)
-    .bind(format!("Calendar {year}"))
-    .bind(today - Duration::days(60))
-    .bind(today + Duration::days(365))
-    .execute(pool)
-    .await
-    .expect("academic year should insert");
+    match schema {
+        CalendarFixtureSchema::Current => {
+            sqlx::query(
+                "INSERT INTO academic_years (id, year, name, status, is_visible)
+                 VALUES ($1, $2, $3, 'planning', true)",
+            )
+            .bind(academic_year_id)
+            .bind(year)
+            .bind(format!("Calendar {year}"))
+            .execute(pool)
+            .await
+            .expect("date-free academic year should insert");
+        }
+        CalendarFixtureSchema::Migration097 => {
+            sqlx::query(
+                "INSERT INTO academic_years (id, year, name, start_date, end_date, status)
+                 VALUES ($1, $2, $3, $4, $5, 'planning')",
+            )
+            .bind(academic_year_id)
+            .bind(year)
+            .bind(format!("Calendar {year}"))
+            .bind(today - Duration::days(60))
+            .bind(today + Duration::days(365))
+            .execute(pool)
+            .await
+            .expect("migration 097 academic year should insert");
+        }
+    }
 
     sqlx::query(
         "INSERT INTO homerooms (
@@ -275,8 +303,10 @@ fn target(
     audience_type: CalendarAudienceType,
     grade_level_id: Option<Uuid>,
     homeroom_id: Option<Uuid>,
+    academic_year_id: Option<Uuid>,
 ) -> CalendarEventTargetInput {
     CalendarEventTargetInput {
+        academic_year_id,
         audience_type,
         grade_level_id,
         homeroom_id,
@@ -372,11 +402,13 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
                 CalendarAudienceType::Student,
                 None,
                 Some(fixture.homeroom_id),
+                Some(fixture.academic_year_id),
             ),
             target(
                 CalendarAudienceType::Parent,
                 Some(fixture.grade_level_id),
                 None,
+                Some(fixture.academic_year_id),
             ),
         ],
         vec![1, 7, 1],
@@ -409,7 +441,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
             today + Duration::days(10),
             true,
             Vec::new(),
-            vec![target(CalendarAudienceType::All, None, None)],
+            vec![target(CalendarAudienceType::All, None, None, None)],
             vec![3],
         ),
     )
@@ -453,7 +485,7 @@ async fn event_lifecycle_preserves_targets_tags_reminders_and_soft_delete() {
 #[tokio::test]
 async fn calendar_date_migration_preserves_existing_event_and_related_history() {
     let pool = migrated_pool_through("calendar_migration_preservation", 97).await;
-    let fixture = insert_fixture(&pool).await;
+    let fixture = insert_fixture_for_schema(&pool, CalendarFixtureSchema::Migration097).await;
     let event_id = Uuid::new_v4();
     let target_id = Uuid::new_v4();
     let reminder_id = Uuid::new_v4();
@@ -496,7 +528,7 @@ fn payload(
 }
 
 #[tokio::test]
-async fn date_calendar_accepts_dates_outside_and_closed_academic_years() {
+async fn date_calendar_accepts_independent_dates_and_requires_explicit_matching_target_year() {
     let pool = migrated_pool("date_calendar").await;
     let fixture = insert_fixture(&pool).await;
     sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
@@ -509,9 +541,10 @@ async fn date_calendar_accepts_dates_outside_and_closed_academic_years() {
         fixture.academic_year_id,
         "Future event",
         vec![CalendarEventTargetInput {
-            audience_type: CalendarAudienceType::All,
+            academic_year_id: Some(fixture.academic_year_id),
+            audience_type: CalendarAudienceType::Student,
             grade_level_id: None,
-            homeroom_id: None,
+            homeroom_id: Some(fixture.homeroom_id),
         }],
     );
     let closed_year_event = services::create_event(&pool, fixture.staff_user_id, request.clone())
@@ -537,12 +570,47 @@ async fn date_calendar_accepts_dates_outside_and_closed_academic_years() {
         .any(|item| item.id == event.id));
     request.title = "Updated future event".into();
     assert_eq!(
-        services::update_event(&pool, fixture.staff_user_id, event.id, request)
+        services::update_event(&pool, fixture.staff_user_id, event.id, request.clone())
             .await
             .unwrap()
             .event
             .title,
         "Updated future event"
+    );
+    assert_eq!(
+        event.targets[0].academic_year_id,
+        Some(fixture.academic_year_id)
+    );
+    let other = insert_fixture(&pool).await;
+    for invalid_year in [None, Some(other.academic_year_id), Some(Uuid::new_v4())] {
+        let mut invalid = request.clone();
+        invalid.targets[0].academic_year_id = invalid_year;
+        assert!(matches!(
+            services::update_event(&pool, fixture.staff_user_id, event.id, invalid).await,
+            Err(AppError::BadRequest(_))
+        ));
+        let retained = school_calendar::services::get_event_for_response(&pool, event.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            retained.targets[0].academic_year_id,
+            Some(fixture.academic_year_id)
+        );
+        assert_eq!(retained.targets[0].homeroom_id, Some(fixture.homeroom_id));
+    }
+    let mut invalid_date = request.clone();
+    invalid_date.end_date = invalid_date.start_date - Duration::days(1);
+    assert!(matches!(
+        services::update_event(&pool, fixture.staff_user_id, event.id, invalid_date).await,
+        Err(AppError::BadRequest(_))
+    ));
+    assert_eq!(
+        school_calendar::services::get_event_for_response(&pool, event.id)
+            .await
+            .unwrap()
+            .start_date,
+        request.start_date,
+        "invalid context or date changes roll back without replacing the accepted event"
     );
     services::soft_delete_event(&pool, event.id, fixture.staff_user_id)
         .await
@@ -849,6 +917,7 @@ fn payload_event_for_pending_test(date: NaiveDate, year: Uuid) -> UpsertCalendar
         year,
         "Approved event",
         vec![CalendarEventTargetInput {
+            academic_year_id: None,
             audience_type: CalendarAudienceType::All,
             grade_level_id: None,
             homeroom_id: None,
@@ -932,6 +1001,7 @@ async fn pending_requests_are_private_and_decisions_create_one_event() {
         fixture.academic_year_id,
         "Approved event",
         vec![CalendarEventTargetInput {
+            academic_year_id: None,
             audience_type: CalendarAudienceType::All,
             grade_level_id: None,
             homeroom_id: None,
@@ -1086,7 +1156,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
         &fixture,
         "All audience",
         false,
-        vec![target(CalendarAudienceType::All, None, None)],
+        vec![target(CalendarAudienceType::All, None, None, None)],
     )
     .await;
     let staff_id = create_named_event(
@@ -1094,7 +1164,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
         &fixture,
         "Staff audience",
         false,
-        vec![target(CalendarAudienceType::Staff, None, None)],
+        vec![target(CalendarAudienceType::Staff, None, None, None)],
     )
     .await;
     let student_id = create_named_event(
@@ -1106,6 +1176,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
             CalendarAudienceType::Student,
             None,
             Some(fixture.homeroom_id),
+            Some(fixture.academic_year_id),
         )],
     )
     .await;
@@ -1118,6 +1189,7 @@ async fn management_self_child_and_public_views_enforce_current_audiences() {
             CalendarAudienceType::Parent,
             None,
             Some(fixture.homeroom_id),
+            Some(fixture.academic_year_id),
         )],
     )
     .await;
@@ -1202,29 +1274,33 @@ async fn recipient_resolution_deduplicates_overlapping_all_grade_class_targets()
         "Recipient overlap",
         false,
         vec![
-            target(CalendarAudienceType::All, None, None),
-            target(CalendarAudienceType::Staff, None, None),
-            target(CalendarAudienceType::Student, None, None),
+            target(CalendarAudienceType::All, None, None, None),
+            target(CalendarAudienceType::Staff, None, None, None),
+            target(CalendarAudienceType::Student, None, None, None),
             target(
                 CalendarAudienceType::Student,
                 Some(fixture.grade_level_id),
                 None,
+                Some(fixture.academic_year_id),
             ),
             target(
                 CalendarAudienceType::Student,
                 None,
                 Some(fixture.homeroom_id),
+                Some(fixture.academic_year_id),
             ),
-            target(CalendarAudienceType::Parent, None, None),
+            target(CalendarAudienceType::Parent, None, None, None),
             target(
                 CalendarAudienceType::Parent,
                 Some(fixture.grade_level_id),
                 None,
+                Some(fixture.academic_year_id),
             ),
             target(
                 CalendarAudienceType::Parent,
                 None,
                 Some(fixture.homeroom_id),
+                Some(fixture.academic_year_id),
             ),
         ],
     )
@@ -1265,6 +1341,7 @@ async fn successful_reminder_marks_sent_once_and_second_run_is_idempotent() {
                 CalendarAudienceType::Parent,
                 None,
                 Some(fixture.homeroom_id),
+                Some(fixture.academic_year_id),
             )],
             vec![1],
         ),
@@ -1327,6 +1404,7 @@ async fn reminder_without_active_recipients_is_marked_complete_without_broadcast
                 CalendarAudienceType::Parent,
                 None,
                 Some(fixture.homeroom_id),
+                Some(fixture.academic_year_id),
             )],
             vec![1],
         ),

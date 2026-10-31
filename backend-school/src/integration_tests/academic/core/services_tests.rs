@@ -22,7 +22,7 @@ use school_academic_core::models::{
 use school_academic_core::services::{
     bell_schedules, catalog, context, curriculum, curriculum_structure, ensure_draft_version,
     ensure_planning_delete, parse_row_version, progressions, student_years,
-    validate_canonical_decimal, validate_date_containment, workspaces, years_terms,
+    validate_canonical_decimal, workspaces, years_terms,
 };
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
@@ -58,11 +58,11 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 138).await
+    prepare_core_fixture_through(name, school_migrations::latest_migration_version()).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 138).await
+    prepare_core_fixture_through(name, school_migrations::latest_migration_version()).await
 }
 
 pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -145,7 +145,8 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 138).await;
+    let pool =
+        prepare_core_fixture_through(name, school_migrations::latest_migration_version()).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -154,8 +155,8 @@ async fn deactivation_lifecycle_fixture(
     for (year, is_future) in
         std::iter::once((historical_year, false)).chain(future_year.map(|year| (year, true)))
     {
-        sqlx::query("INSERT INTO academic_years (id,year,name,start_date,end_date,school_days,status) VALUES ($1,$2,'Deactivation test year',CURRENT_DATE+$3,CURRENT_DATE+$4,'MON,TUE,WED,THU,FRI',$5)")
-            .bind(year).bind(if is_future {2598} else {2597}).bind(if is_future {365i32} else {-730i32}).bind(if is_future {730i32} else {-365i32}).bind(if is_future {"planning"} else {historical_status}).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO academic_years (id,year,name,school_days,status) VALUES ($1,$2,'Deactivation test year','MON,TUE,WED,THU,FRI',$3)")
+            .bind(year).bind(if is_future {2598} else {2597}).bind(if is_future {"planning"} else {historical_status}).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id,grade_level_id) VALUES ($1,$2)").bind(year).bind(grade).execute(&pool).await.unwrap();
         let homeroom = Uuid::new_v4();
         sqlx::query("INSERT INTO homerooms (id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity) VALUES ($1,$2,'Deactivation room',$3,$4,'1',$5,40)")
@@ -163,8 +164,8 @@ async fn deactivation_lifecycle_fixture(
         let student_year = Uuid::new_v4();
         sqlx::query("INSERT INTO student_academic_years (id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES ($1,$2,$3,$4,$5,$6)")
             .bind(student_year).bind(student).bind(year).bind(grade).bind(program).bind(if is_future {"planned"} else {"active"}).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO homeroom_placements (id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,$5,'test' FROM academic_years WHERE id=$3")
-            .bind(Uuid::new_v4()).bind(student_year).bind(year).bind(homeroom).bind(if is_future {"planned"} else {"current"}).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO homeroom_placements (id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES($1,$2,$3,$4,CURRENT_DATE+$6,$5,'test')")
+            .bind(Uuid::new_v4()).bind(student_year).bind(year).bind(homeroom).bind(if is_future {"planned"} else {"current"}).bind(if is_future {365i32} else {-730i32}).execute(&pool).await.unwrap();
     }
     (pool, student, historical_year, future_year)
 }
@@ -568,8 +569,12 @@ async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
             "closed",
             "cancelled",
         ] {
-            sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-                .bind(term).bind(term_status).execute(&pool).await.unwrap();
+            sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+                .bind(term)
+                .bind(term_status)
+                .execute(&pool)
+                .await
+                .unwrap();
             let mut tx = pool.begin().await.unwrap();
             let outcome = require_term_write(&mut tx, CURRENT_YEAR_ID, term).await;
             let expected = !matches!(year_status, "closed" | "archived")
@@ -654,8 +659,11 @@ async fn lifecycle_guard_serializes_source_writes_and_transitions_in_both_orders
         "New source writes must wait for transition commit"
     );
     next_source.rollback().await.unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date,row_version=row_version+1 WHERE id=$1")
-        .bind(term).execute(&mut *transition).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',row_version=row_version+1 WHERE id=$1")
+        .bind(term)
+        .execute(&mut *transition)
+        .await
+        .unwrap();
     transition.commit().await.unwrap();
     let mut source = pool.begin().await.unwrap();
     assert!(require_term_write(&mut source, CURRENT_YEAR_ID, term)
@@ -847,6 +855,30 @@ async fn current_fixture_subject_version(pool: &PgPool) -> Uuid {
     catalog::current_subject_version_ids(pool, &[subject_id])
         .await
         .unwrap()[&subject_id]
+}
+
+async fn current_fixture_activity_version_and_grade(pool: &PgPool) -> (Uuid, Uuid) {
+    let activity_id: Uuid = sqlx::query_scalar(
+        "SELECT activity_id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let activity_version_id = {
+        let mut connection = pool.acquire().await.unwrap();
+        catalog::current_activity_revisions_on_connection(&mut connection, &[activity_id])
+            .await
+            .unwrap()[&activity_id]
+            .id
+    };
+    let grade_level_id = sqlx::query_scalar(
+        "SELECT grade.value::uuid FROM activity_versions version CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value) WHERE version.id=$1 ORDER BY grade.value LIMIT 1",
+    )
+    .bind(activity_version_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (activity_version_id, grade_level_id)
 }
 
 async fn create_curriculum_overview_fixture(
@@ -1104,41 +1136,26 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
             .fetch_one(&pool)
             .await
             .unwrap();
-    let grade_level_id: Uuid = sqlx::query_scalar(
-        r#"SELECT grade.value::uuid
-           FROM activity_versions version
-           CROSS JOIN LATERAL jsonb_array_elements_text(
-               COALESCE(version.grade_level_ids, '[]'::jsonb)
-           ) grade(value)
-           WHERE version.status = 'published'
-           ORDER BY grade.value LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must include a published activity with a supported grade");
+    let (activity_version_id, grade_level_id) =
+        current_fixture_activity_version_and_grade(&pool).await;
     let subject_version_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    let activity_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT version.id
-           FROM activity_versions version
-           WHERE version.status = 'published'
-             AND EXISTS (
-                 SELECT 1
-                 FROM jsonb_array_elements_text(
-                     COALESCE(version.grade_level_ids, '[]'::jsonb)
-                 ) grade(value)
-                 WHERE grade.value::uuid = $1
-             )
-           ORDER BY version.id LIMIT 1"#,
-    )
-    .bind(grade_level_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_id = sqlx::query_scalar("SELECT subject_id FROM subject_versions WHERE id=$1")
+        .bind(subject_version_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let current_subject = catalog::current_subject_version_ids(&pool, &[subject_id])
+        .await
+        .unwrap()[&subject_id];
+    assert_ne!(
+        subject_version_id, current_subject,
+        "the source must exercise a historical course pin"
+    );
     let (_curriculum_id, source_version_id) = create_curriculum_overview_fixture(
         &pool,
         owner_id,
@@ -1231,6 +1248,14 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
     let source_workspace = curriculum_structure::get_workspace(&pool, source_version_id)
         .await
         .unwrap();
+    assert!(
+        source_workspace
+            .requirements
+            .iter()
+            .filter(|r| r.resource_kind == RequirementResourceKind::Course)
+            .all(|r| r.catalog_version_id == subject_version_id),
+        "publication preserves the historical source course pin"
+    );
     assert_eq!(source_workspace.programs.len(), 2);
     assert_eq!(source_workspace.requirements.len(), 3);
     assert!(source_workspace
@@ -1323,6 +1348,14 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
     let copied_workspace = curriculum_structure::get_workspace(&pool, target.id)
         .await
         .unwrap();
+    assert!(
+        copied_workspace
+            .requirements
+            .iter()
+            .any(|r| r.resource_kind == RequirementResourceKind::Course
+                && r.catalog_version_id == subject_version_id),
+        "copy preserves the historical course revision rather than selecting today's revision"
+    );
     assert_eq!(copied_workspace.programs.len(), 1);
     assert_eq!(copied_workspace.requirements.len(), 2);
     let shape = |w: &school_academic_core::models::CurriculumStructureWorkspace, pid: Uuid| {
@@ -1349,13 +1382,12 @@ async fn published_program_copy_preserves_selected_courses_activities_and_source
         shape(&source_workspace, source.id),
         shape(&copied_workspace, copied.id)
     );
-    assert!(copied_workspace
-        .requirements
-        .iter()
-        .all(|r| !source_workspace
+    assert!(copied_workspace.requirements.iter().all(|r| {
+        !source_workspace
             .requirements
             .iter()
-            .any(|old| old.id == r.id)));
+            .any(|old| old.id == r.id)
+    }));
     assert_eq!(
         copied_workspace.term_slots.len(),
         3,
@@ -1757,8 +1789,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let payload = json!({
         "year": 2570,
         "customName": "ปีแห่งการอ่าน",
-        "startDate": "2027-05-01",
-        "endDate": "2028-03-31",
         "schoolDays": ["MON", "TUE"],
         "rowVersion": 3
     });
@@ -1768,8 +1798,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let unknown = json!({
         "name": "ปีการศึกษา 2570",
         "year": 2570,
-        "startDate": "2027-05-01",
-        "endDate": "2028-03-31",
         "schoolDays": ["MON"],
         "rowVersion": 3,
     });
@@ -1779,8 +1807,6 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "academicYearId": Uuid::new_v4(),
         "termType": "regular",
         "customName": null,
-        "startDate": "2027-05-01",
-        "plannedEndDate": null,
         "includedInYearResult": true,
         "blocksYearClosure": true,
         "bellScheduleId": Uuid::new_v4()
@@ -1837,29 +1863,6 @@ fn canonical_decimal_validation_rejects_ambiguous_wire_values() {
     for invalid in ["02.50", "+2.5", "2.500", "2e1", " 2.5", "-0"] {
         assert!(validate_canonical_decimal(invalid, 2).is_err(), "{invalid}");
     }
-}
-
-#[test]
-fn child_dates_must_be_contained_by_parent_dates() {
-    let year_start = NaiveDate::from_ymd_opt(2027, 5, 1).unwrap();
-    let year_end = NaiveDate::from_ymd_opt(2028, 3, 31).unwrap();
-    let term_start = NaiveDate::from_ymd_opt(2027, 10, 1).unwrap();
-    let term_end = NaiveDate::from_ymd_opt(2028, 1, 31).unwrap();
-    assert!(validate_date_containment(year_start, year_end, term_start, term_end).is_ok());
-    assert!(validate_date_containment(
-        year_start,
-        year_end,
-        year_start.pred_opt().unwrap(),
-        term_end
-    )
-    .is_err());
-    assert!(validate_date_containment(
-        year_start,
-        year_end,
-        term_start,
-        year_end.succ_opt().unwrap()
-    )
-    .is_err());
 }
 
 #[test]
@@ -1969,14 +1972,14 @@ async fn context_options_keep_closing_term_as_current_for_staff_and_students() {
             .await
             .unwrap(),
     ] {
-        assert_eq!(options.active_academic_year_id, Some(year));
-        assert_eq!(options.active_academic_term_id, Some(term));
+        assert_eq!(options.default_academic_year_id, Some(year));
+        assert_eq!(options.default_academic_term_id, Some(term));
     }
 }
 
 #[tokio::test]
 async fn context_options_keep_closing_year_as_current_for_staff_and_students() {
-    let pool = prepare_core_fixture_through("context_closing_year_current", 70).await;
+    let pool = prepare_current_core_fixture("context_closing_year_current").await;
     let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
         .fetch_one(&pool)
         .await
@@ -2000,7 +2003,7 @@ async fn context_options_keep_closing_year_as_current_for_staff_and_students() {
             .await
             .unwrap(),
     ] {
-        assert_eq!(options.active_academic_year_id, Some(year));
+        assert_eq!(options.default_academic_year_id, Some(year));
     }
 }
 
@@ -2038,10 +2041,11 @@ async fn context_options_are_read_only_and_keep_active_state_unchanged() {
     .unwrap();
     assert_eq!(audit_after, audit_before);
     assert_eq!(active_after, active_before);
-    assert_eq!(options.active_academic_year_id, Some(active_before.0));
-    assert_eq!(options.active_academic_term_id, Some(active_before.1));
-    assert_eq!(options.years.len(), 4);
-    assert_eq!(options.terms.len(), 9);
+    assert_eq!(options.default_academic_year_id, Some(active_before.0));
+    assert_eq!(options.default_academic_term_id, Some(active_before.1));
+    let expected: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM academic_years WHERE is_visible),(SELECT count(*) FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id WHERE term.is_visible AND year.is_visible)").fetch_one(&pool).await.unwrap();
+    assert_eq!(options.years.len() as i64, expected.0);
+    assert_eq!(options.terms.len() as i64, expected.1);
 }
 
 #[tokio::test]
@@ -2062,8 +2066,6 @@ async fn create_term_seeds_phase_controls() {
             academic_year_id: FUTURE_YEAR_ID,
             term_type: AcademicTermType::Remedial,
             custom_name: None,
-            start_date: NaiveDate::from_ymd_opt(2027, 4, 1).unwrap(),
-            planned_end_date: Some(NaiveDate::from_ymd_opt(2027, 4, 15).unwrap()),
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id,
@@ -2140,8 +2142,6 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
             academic_year_id: year.id,
             term_type: AcademicTermType::Summer,
             custom_name: None,
-            start_date: year.end_date,
-            planned_end_date: None,
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id: schedule,
@@ -2150,8 +2150,7 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
     .await
     .unwrap();
     assert_eq!(created.status, AcademicTermStatus::Planning);
-    assert!(created.planned_end_date.is_none());
-    assert!(created.closed_on.is_none());
+    assert!(!created.is_visible);
     let updated = years_terms::update_term(
         &pool,
         actor,
@@ -2159,8 +2158,6 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         UpdateAcademicTermRequest {
             term_type: created.term_type,
             custom_name: Some("ภาคฤดูร้อนสำหรับเตรียมงาน".into()),
-            start_date: created.start_date,
-            planned_end_date: None,
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id: schedule,
@@ -2179,8 +2176,6 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         UpdateAcademicTermRequest {
             term_type: active.term_type,
             custom_name: Some("ห้ามแก้ภาคที่ใช้อยู่".into()),
-            start_date: active.start_date,
-            planned_end_date: active.planned_end_date,
             included_in_year_result: active.included_in_year_result,
             blocks_year_closure: active.blocks_year_closure,
             bell_schedule_id: active.bell_schedule_id,
@@ -2231,7 +2226,12 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
 
 #[tokio::test]
 async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flags() {
-    let pool = prepare_core_fixture_through("future_term_annual_inclusion", 60).await;
+    let historical = prepare_core_fixture_through("future_term_annual_inclusion_legacy", 60).await;
+    let legacy_id: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,term_type,sequence_no,code,name,start_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) SELECT $1,'summer',99,'SUMMER-HISTORY-99','Historical inclusion','2027-04-01',true,false,id,'planning' FROM bell_schedules WHERE academic_year_id=$1 AND is_default RETURNING id").bind(FUTURE_YEAR_ID).fetch_one(&historical).await.unwrap();
+    apply_migrations_through(&historical, 67).await.unwrap();
+    let repaired: (bool,bool,i64) = sqlx::query_as("SELECT included_in_year_result,blocks_year_closure,row_version FROM academic_terms WHERE id=$1").bind(legacy_id).fetch_one(&historical).await.unwrap();
+    assert_eq!(repaired, (true, true, 2));
+    let pool = prepare_current_core_fixture("future_term_annual_inclusion").await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
     let schedule: Uuid = sqlx::query_scalar(
@@ -2245,8 +2245,6 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
         academic_year_id: year.id,
         term_type: AcademicTermType::Summer,
         custom_name: None,
-        start_date: year.end_date,
-        planned_end_date: None,
         included_in_year_result: true,
         blocks_year_closure: false,
         bell_schedule_id: schedule,
@@ -2268,8 +2266,6 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
     let invalid_update = UpdateAcademicTermRequest {
         term_type: created.term_type,
         custom_name: None,
-        start_date: created.start_date,
-        planned_end_date: None,
         included_in_year_result: true,
         blocks_year_closure: false,
         bell_schedule_id: schedule,
@@ -2279,17 +2275,22 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
         years_terms::update_term(&pool, actor, created.id, invalid_update).await,
         Err(school_errors::AppError::ValidationError(_))
     ));
-    // Reproduce an inconsistent pre-067 configuration, then exercise the forward repair.
-    sqlx::query("UPDATE academic_terms SET included_in_year_result=true WHERE id=$1")
-        .bind(created.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    apply_migrations_through(&pool, 67).await.unwrap();
-    let repaired = years_terms::get_term(&pool, created.id).await.unwrap();
-    assert!(repaired.included_in_year_result && repaired.blocks_year_closure);
-    assert_eq!(repaired.row_version, created.row_version + 1);
-    let rejected = sqlx::query("UPDATE academic_terms SET blocks_year_closure=false WHERE id=$1")
+    let unchanged = years_terms::get_term(&pool, created.id).await.unwrap();
+    let expected_flags = (
+        created.included_in_year_result,
+        created.blocks_year_closure,
+        created.row_version,
+    );
+    assert_eq!(
+        (
+            unchanged.included_in_year_result,
+            unchanged.blocks_year_closure,
+            unchanged.row_version
+        ),
+        expected_flags,
+        "rejected service updates leave the flags and version intact"
+    );
+    let rejected = sqlx::query("UPDATE academic_terms SET included_in_year_result=true,blocks_year_closure=false WHERE id=$1")
         .bind(created.id)
         .execute(&pool)
         .await
@@ -2299,6 +2300,16 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
             .as_database_error()
             .and_then(|error| error.constraint()),
         Some("academic_terms_included_blocks_closure_check")
+    );
+    let unchanged = years_terms::get_term(&pool, created.id).await.unwrap();
+    assert_eq!(
+        (
+            unchanged.included_in_year_result,
+            unchanged.blocks_year_closure,
+            unchanged.row_version
+        ),
+        expected_flags,
+        "the database constraint refuses the contradictory pair without changing the row"
     );
 }
 
@@ -2318,8 +2329,6 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
         academic_year_id: year.id,
         term_type: AcademicTermType::Custom,
         custom_name: None,
-        start_date: year.end_date,
-        planned_end_date: None,
         included_in_year_result: false,
         blocks_year_closure: false,
         bell_schedule_id: schedule,
@@ -2327,7 +2336,7 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
     let created = years_terms::create_term(&pool, actor, request.clone())
         .await
         .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=COALESCE(planned_end_date,start_date) WHERE academic_year_id<>$1 AND status IN ('active','closing')")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE academic_year_id<>$1 AND status IN ('active','closing')")
         .bind(year.id).execute(&pool).await.unwrap();
     sqlx::query(
         "UPDATE academic_years SET status='closed' WHERE id<>$1 AND status IN ('active','closing')",
@@ -2359,8 +2368,6 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
                     UpdateAcademicTermRequest {
                         term_type: created.term_type,
                         custom_name: None,
-                        start_date: created.start_date,
-                        planned_end_date: None,
                         included_in_year_result: false,
                         blocks_year_closure: false,
                         bell_schedule_id: schedule,
@@ -2397,8 +2404,6 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     let update_year = UpdateAcademicYearRequest {
         year: future.year,
         custom_name: Some("ปีการศึกษา 2026 เตรียมการ".to_string()),
-        start_date: future.start_date,
-        end_date: future.end_date,
         school_days: future.school_days,
         row_version: future.row_version,
     };
@@ -2413,8 +2418,6 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         UpdateAcademicYearRequest {
             year: future.year,
             custom_name: Some("ข้อมูลเก่า".to_string()),
-            start_date: future.start_date,
-            end_date: future.end_date,
             school_days: vec!["MON".to_string()],
             row_version: future.row_version,
         },
@@ -2444,8 +2447,6 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
             academic_year_id: FUTURE_YEAR_ID,
             term_type: AcademicTermType::Remedial,
             custom_name: None,
-            start_date: NaiveDate::from_ymd_opt(2027, 4, 1).unwrap(),
-            planned_end_date: Some(NaiveDate::from_ymd_opt(2027, 4, 15).unwrap()),
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id,
@@ -2475,8 +2476,6 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     let update_term = UpdateAcademicTermRequest {
         term_type: AcademicTermType::Custom,
         custom_name: Some("ภาคซ่อมเสริมปรับปรุง".to_string()),
-        start_date: created.start_date,
-        planned_end_date: created.planned_end_date,
         included_in_year_result: created.included_in_year_result,
         blocks_year_closure: created.blocks_year_closure,
         bell_schedule_id: created.bell_schedule_id,
@@ -2495,8 +2494,6 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         UpdateAcademicTermRequest {
             term_type: created.term_type,
             custom_name: Some("ข้อมูลเก่า".to_string()),
-            start_date: created.start_date,
-            planned_end_date: created.planned_end_date,
             included_in_year_result: created.included_in_year_result,
             blocks_year_closure: created.blocks_year_closure,
             bell_schedule_id: created.bell_schedule_id,
@@ -5044,17 +5041,8 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
 #[tokio::test]
 async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
     let pool = prepare_current_core_fixture("academic_core_curriculum_metric_blocker").await;
-    let (activity_version_id, grade_level_id): (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT version.id, grade.value::uuid
-           FROM activity_versions version
-           CROSS JOIN LATERAL jsonb_array_elements_text(version.grade_level_ids) grade(value)
-           WHERE version.status = 'published'
-           ORDER BY version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (activity_version_id, grade_level_id) =
+        current_fixture_activity_version_and_grade(&pool).await;
     sqlx::query(
         "ALTER TABLE activity_versions DISABLE TRIGGER activity_versions_published_immutable",
     )
@@ -6455,7 +6443,9 @@ async fn organization_learning_area_cutover_preserves_academic_owners_and_grants
             "organization_members",
             "organization_permission_grants",
         ] {
-            let sql = format!("SELECT md5(coalesce(string_agg(row_json, ',' ORDER BY row_json), '')) FROM (SELECT to_jsonb(t)::text AS row_json FROM {table} t) rows");
+            let sql = format!(
+                "SELECT md5(coalesce(string_agg(row_json, ',' ORDER BY row_json), '')) FROM (SELECT to_jsonb(t)::text AS row_json FROM {table} t) rows"
+            );
             result.push(
                 sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
                     .fetch_one(pool)

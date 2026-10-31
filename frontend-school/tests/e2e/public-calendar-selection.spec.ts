@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { startPublicCalendarServer } from './fixtures/public-calendar-server';
-import { year } from './fixtures/staff-home-route-data';
 
 let fixture: Awaited<ReturnType<typeof startPublicCalendarServer>>;
 test.describe.configure({ mode: 'serial', timeout: 60000 });
@@ -48,10 +47,13 @@ for (const width of [1543, 390]) {
 		await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 		await expect(page).toHaveURL(/month=2026-11/);
 		await expect(selectedDays).toHaveCount(0);
-		await page.locator('#public-calendar-year').click();
-		await page.getByRole('option', { name: 'ปีการศึกษา 2569', exact: true }).click();
-		await expect(page).toHaveURL(new RegExp(`academicYearId=${year}`));
-		await expect(selectedDays).toHaveCount(0);
+		for (const month of ['2026-12', '2027-01']) {
+			await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
+			await expect(page).toHaveURL(new RegExp(`month=${month}`));
+			await expect(selectedDays).toHaveCount(0);
+		}
+		await expect(page.locator('#public-calendar-year')).toHaveCount(0);
+		await expect(page).not.toHaveURL(/academicYearId=/);
 	});
 }
 
@@ -129,10 +131,29 @@ for (const mode of ['page', 'embed']) {
 			await page.setViewportSize({ width: 390, height });
 			await lastDay.scrollIntoViewIfNeeded();
 			await expect(lastDay).toBeInViewport();
-			if (height === 360 || mode === 'page')
+			const bounds = (await lastDay.boundingBox())!;
+			expect(bounds.y).toBeGreaterThanOrEqual(0);
+			expect(bounds.y + bounds.height).toBeLessThanOrEqual(height);
+			if (height === 360)
 				await expect
 					.poll(() => page.locator('main').evaluate((element) => element.scrollTop))
 					.toBeGreaterThan(0);
+			else
+				await expect
+					.poll(() =>
+						page.locator('[data-calendar-date]').evaluateAll((days) =>
+							days.every((day) => {
+								const box = day.getBoundingClientRect();
+								return (
+									box.top >= 0 &&
+									box.bottom <= innerHeight &&
+									box.left >= 0 &&
+									box.right <= innerWidth
+								);
+							})
+						)
+					)
+					.toBe(true);
 			const navigation = page.getByRole('button', { name: 'เดือนถัดไป', exact: true });
 			await navigation.scrollIntoViewIfNeeded();
 			await expect(navigation).toBeInViewport();

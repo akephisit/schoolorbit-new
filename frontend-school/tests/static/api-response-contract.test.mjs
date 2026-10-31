@@ -765,7 +765,7 @@ test('admission application detail contract returns application and documents in
 	);
 	assert.match(
 		frontendApi,
-		/const payload: CompleteEnrollmentRequest = \{ studentCode, formData \}/
+		/const payload: CompleteEnrollmentRequest = \{ studentCode, formData, placementStartsOn \}/
 	);
 	const enrollmentContract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
 	const enrollmentOperation =

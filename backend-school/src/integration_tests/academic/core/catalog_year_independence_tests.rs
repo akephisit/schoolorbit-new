@@ -76,7 +76,9 @@ fn activity_update(
 #[tokio::test]
 async fn catalog_year_independence_create_update_publish_without_any_academic_year() {
     let pool = school_test_db::create_named_test_pool("catalog_year_independence_empty").await;
-    apply_migrations_through(&pool, 138).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let years: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_years")
         .fetch_one(&pool)
         .await
@@ -210,7 +212,7 @@ async fn catalog_year_independence_outside_and_overlapping_years_keep_domain_gua
     .await
     .is_err());
     for (index, year) in [2599, 2600].into_iter().enumerate() {
-        sqlx::query("INSERT INTO academic_years(id,year,name,start_date,end_date,school_days,status) VALUES($1,$2,'Overlapping fixture','2040-01-01','2040-12-31','MON','planning')")
+        sqlx::query("INSERT INTO academic_years(id,year,name,school_days,status) VALUES($1,$2,'Independent fixture','MON','planning')")
             .bind(Uuid::new_v4()).bind(year).execute(&pool).await.unwrap();
         let stable = stable_subject(&pool, &format!("YEAR-FREE-OVERLAP-{index}")).await;
         assert!(
@@ -405,39 +407,85 @@ async fn catalog_year_independence_migration_preserves_all_facts_pins_and_migrat
 
 #[tokio::test]
 async fn catalog_year_independence_migration_refuses_dependency_and_retries_atomically() {
-    for (index,create,drop) in [
-        (0,"CREATE VIEW unexpected_catalog_year_consumer AS SELECT start_academic_year_id FROM subject_versions","DROP VIEW unexpected_catalog_year_consumer RESTRICT"),
-        (1,"ALTER TABLE subject_versions ADD CONSTRAINT unexpected_catalog_end_check CHECK (effective_until IS NULL OR effective_until > '1900-01-01')","ALTER TABLE subject_versions DROP CONSTRAINT unexpected_catalog_end_check"),
-        (2,"CREATE INDEX unexpected_activity_year_index ON activity_versions(start_academic_year_id)","DROP INDEX unexpected_activity_year_index RESTRICT"),
+    for (index, create, drop) in [
+        (
+            0,
+            "CREATE VIEW unexpected_catalog_year_consumer AS SELECT start_academic_year_id FROM subject_versions",
+            "DROP VIEW unexpected_catalog_year_consumer RESTRICT",
+        ),
+        (
+            1,
+            "ALTER TABLE subject_versions ADD CONSTRAINT unexpected_catalog_end_check CHECK (effective_until IS NULL OR effective_until > '1900-01-01')",
+            "ALTER TABLE subject_versions DROP CONSTRAINT unexpected_catalog_end_check",
+        ),
+        (
+            2,
+            "CREATE INDEX unexpected_activity_year_index ON activity_versions(start_academic_year_id)",
+            "DROP INDEX unexpected_activity_year_index RESTRICT",
+        ),
     ] {
-        let pool=prepare_core_fixture_through(&format!("catalog_year_independence_dependency_{index}"),137).await;
+        let pool = prepare_core_fixture_through(
+            &format!("catalog_year_independence_dependency_{index}"),
+            137,
+        )
+        .await;
         native_versions_before_138(&pool).await;
-        let before=versions(&pool,false).await;let references=pins(&pool).await;
+        let before = versions(&pool, false).await;
+        let references = pins(&pool).await;
         sqlx::query(create).execute(&pool).await.unwrap();
         let before_guards:Value=sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(tgname,tgenabled::text) ORDER BY tgname) FROM pg_trigger WHERE tgrelid IN('subject_versions'::regclass,'activity_versions'::regclass)").fetch_one(&pool).await.unwrap();
-        let error=apply_migrations_through(&pool,138).await.unwrap_err();
-        assert!(error.to_string().contains("CATALOG_138_DEPENDENCY_UNSUPPORTED"),"{error}");
-        assert_eq!(before,versions(&pool,false).await);assert_eq!(references,pins(&pool).await);
+        let error = apply_migrations_through(&pool, 138).await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("CATALOG_138_DEPENDENCY_UNSUPPORTED"),
+            "{error}"
+        );
+        assert_eq!(before, versions(&pool, false).await);
+        assert_eq!(references, pins(&pool).await);
         let after_guards:Value=sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(tgname,tgenabled::text) ORDER BY tgname) FROM pg_trigger WHERE tgrelid IN('subject_versions'::regclass,'activity_versions'::regclass)").fetch_one(&pool).await.unwrap();
-        assert_eq!(before_guards,after_guards);
-        let applied:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=138)").fetch_one(&pool).await.unwrap();assert!(!applied);
+        assert_eq!(before_guards, after_guards);
+        let applied: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=138)")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!applied);
         sqlx::query(drop).execute(&pool).await.unwrap();
-        apply_migrations_through(&pool,138).await.unwrap();
+        apply_migrations_through(&pool, 138).await.unwrap();
     }
 }
 
 #[tokio::test]
 async fn catalog_year_independence_migration_refuses_unknown_provenance_and_guard_state() {
-    for (index,statement,code) in [
-        (0,"UPDATE activity_versions SET migration_provenance='[]'::jsonb WHERE status='draft'","CATALOG_138_PROVENANCE_UNMAPPABLE"),
-        (1,"UPDATE activity_versions SET migration_provenance='{\"historicalCatalogContext\":{}}'::jsonb WHERE status='draft'","CATALOG_138_PROVENANCE_UNMAPPABLE"),
-        (2,"ALTER TABLE subject_versions DISABLE TRIGGER update_subjects_updated_at","CATALOG_138_GUARD_STATE_INVALID"),
+    for (index, statement, code) in [
+        (
+            0,
+            "UPDATE activity_versions SET migration_provenance='[]'::jsonb WHERE status='draft'",
+            "CATALOG_138_PROVENANCE_UNMAPPABLE",
+        ),
+        (
+            1,
+            "UPDATE activity_versions SET migration_provenance='{\"historicalCatalogContext\":{}}'::jsonb WHERE status='draft'",
+            "CATALOG_138_PROVENANCE_UNMAPPABLE",
+        ),
+        (
+            2,
+            "ALTER TABLE subject_versions DISABLE TRIGGER update_subjects_updated_at",
+            "CATALOG_138_GUARD_STATE_INVALID",
+        ),
     ] {
-        let pool=prepare_core_fixture_through(&format!("catalog_year_independence_refusal_{index}"),137).await;
+        let pool = prepare_core_fixture_through(
+            &format!("catalog_year_independence_refusal_{index}"),
+            137,
+        )
+        .await;
         native_versions_before_138(&pool).await;
-        sqlx::query(statement).execute(&pool).await.unwrap();let before=versions(&pool,false).await;
-        let error=apply_migrations_through(&pool,138).await.unwrap_err();assert!(error.to_string().contains(code),"{error}");
-        assert_eq!(before,versions(&pool,false).await);
+        sqlx::query(statement).execute(&pool).await.unwrap();
+        let before = versions(&pool, false).await;
+        let error = apply_migrations_through(&pool, 138).await.unwrap_err();
+        assert!(error.to_string().contains(code), "{error}");
+        assert_eq!(before, versions(&pool, false).await);
     }
 }
 

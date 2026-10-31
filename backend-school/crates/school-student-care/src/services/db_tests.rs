@@ -40,11 +40,10 @@ async fn fixture(name: &str) -> Fixture {
         .await
         .unwrap();
     let date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
-    let start = date - chrono::Duration::days(30);
-    let end = date + chrono::Duration::days(300);
-    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Care fixture',$1,$2,'active') RETURNING id").bind(start).bind(end).fetch_one(&pool).await.unwrap();
+    let placement_start = date - chrono::Duration::days(30);
+    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status,is_visible) VALUES(2988,'Care fixture','active',true) RETURNING id").fetch_one(&pool).await.unwrap();
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE','Care fixture',true) RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
-    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'CARE','Care fixture','regular',$2,$3,$4,'active',true,true) RETURNING id").bind(year).bind(start).bind(end).bind(bell).fetch_one(&pool).await.unwrap();
+    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES($1,1,'CARE','Care fixture','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
     let grade:Uuid=sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active) VALUES('secondary',1,true) ON CONFLICT(level_type,year) DO UPDATE SET is_active=true RETURNING id").fetch_one(&pool).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id) VALUES($1,$2)",
@@ -68,7 +67,7 @@ async fn fixture(name: &str) -> Fixture {
             .unwrap();
         let sy:Uuid=sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(uuidv7(),$1,$2,$3,$4,'active') RETURNING id").bind(id).bind(year).bind(grade).bind(program).fetch_one(&pool).await.unwrap();
         if n == 0 {
-            sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) VALUES(uuidv7(),$1,$2,$3,$4,'current','regular',1)").bind(sy).bind(year).bind(room).bind(start).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) VALUES(uuidv7(),$1,$2,$3,$4,'current','regular',1)").bind(sy).bind(year).bind(room).bind(placement_start).execute(&pool).await.unwrap();
         }
     }
     sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')").bind(student).bind(parent).execute(&pool).await.unwrap();
@@ -582,49 +581,150 @@ async fn care_current_guardian_authority_matches_rounds_overview_and_responses()
     );
 
     for (change, restore, child_only) in [
-        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", true),
-        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='student' WHERE id=$1", true),
-        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", false),
-        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='parent' WHERE id=$1", false),
-        ("DELETE FROM student_parents WHERE student_user_id=$1", "INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')", true),
+        (
+            "UPDATE users SET status='inactive' WHERE id=$1",
+            "UPDATE users SET status='active' WHERE id=$1",
+            true,
+        ),
+        (
+            "UPDATE users SET user_type='staff' WHERE id=$1",
+            "UPDATE users SET user_type='student' WHERE id=$1",
+            true,
+        ),
+        (
+            "UPDATE users SET status='inactive' WHERE id=$1",
+            "UPDATE users SET status='active' WHERE id=$1",
+            false,
+        ),
+        (
+            "UPDATE users SET user_type='staff' WHERE id=$1",
+            "UPDATE users SET user_type='parent' WHERE id=$1",
+            false,
+        ),
+        (
+            "DELETE FROM student_parents WHERE student_user_id=$1",
+            "INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')",
+            true,
+        ),
     ] {
         let target = if child_only { f.student } else { f.parent };
-        sqlx::query(change).bind(target).execute(&f.pool).await.unwrap();
-        let listed = assignments(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
-        let listed_rounds = rounds(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
+        sqlx::query(change)
+            .bind(target)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let listed = assignments(
+            &f.pool,
+            parent,
+            CareListQuery {
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let listed_rounds = rounds(
+            &f.pool,
+            parent,
+            CareListQuery {
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         if child_only {
-            assert_eq!(listed.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current.id]);
-            assert_eq!(listed_rounds.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current_round.id]);
+            assert_eq!(
+                listed.iter().map(|v| v.id).collect::<Vec<_>>(),
+                vec![current.id]
+            );
+            assert_eq!(
+                listed_rounds.iter().map(|v| v.id).collect::<Vec<_>>(),
+                vec![current_round.id]
+            );
             get_assignment(&f.pool, parent, current.id).await.unwrap();
             get_round(&f.pool, parent, current_round.id).await.unwrap();
         } else {
             assert!(listed.is_empty());
             assert!(listed_rounds.is_empty());
-            assert!(matches!(get_assignment(&f.pool, parent, current.id).await, Err(AppError::NotFound(_))));
-            assert!(matches!(get_round(&f.pool, parent, current_round.id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                get_assignment(&f.pool, parent, current.id).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                get_round(&f.pool, parent, current_round.id).await,
+                Err(AppError::NotFound(_))
+            ));
         }
         let counts = overview(&f.pool, parent).await.unwrap();
-        assert_eq!((counts.assigned_count, counts.submitted_count, counts.urgent_unacknowledged_count), (i64::from(child_only), 0, 0));
+        assert_eq!(
+            (
+                counts.assigned_count,
+                counts.submitted_count,
+                counts.urgent_unacknowledged_count
+            ),
+            (i64::from(child_only), 0, 0)
+        );
         for (id, round_id, payload, submit) in [
             (draft.id, draft_round.id, draft_payload.clone(), false),
-            (submitted.id, submitted_round.id, submitted_payload.clone(), true),
+            (
+                submitted.id,
+                submitted_round.id,
+                submitted_payload.clone(),
+                true,
+            ),
         ] {
-            assert!(matches!(get_assignment(&f.pool, parent, id).await, Err(AppError::NotFound(_))));
-            assert!(matches!(get_round(&f.pool, parent, round_id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                get_assignment(&f.pool, parent, id).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                get_round(&f.pool, parent, round_id).await,
+                Err(AppError::NotFound(_))
+            ));
             // Exact successful receipt replay and fresh saves both use current authority.
-            assert!(matches!(save_response(&f.pool, parent, id, payload, submit).await, Err(AppError::NotFound(_))));
-            assert!(matches!(save_response(&f.pool, parent, id, response(2), false).await, Err(AppError::NotFound(_))));
+            assert!(matches!(
+                save_response(&f.pool, parent, id, payload, submit).await,
+                Err(AppError::NotFound(_))
+            ));
+            assert!(matches!(
+                save_response(&f.pool, parent, id, response(2), false).await,
+                Err(AppError::NotFound(_))
+            ));
         }
         // Independent school authority is an OR branch, not revoked own authority.
-        assert_eq!(rounds(&f.pool, f.admin, CareListQuery::default()).await.unwrap().len(), 3);
+        assert_eq!(
+            rounds(&f.pool, f.admin, CareListQuery::default())
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
         assert_eq!(overview(&f.pool, f.admin).await.unwrap().submitted_count, 1);
-        get_assignment(&f.pool, f.teacher, submitted.id).await.unwrap();
+        get_assignment(&f.pool, f.teacher, submitted.id)
+            .await
+            .unwrap();
         if restore.starts_with("INSERT") {
-            sqlx::query(restore).bind(target).bind(f.parent).execute(&f.pool).await.unwrap();
+            sqlx::query(restore)
+                .bind(target)
+                .bind(f.parent)
+                .execute(&f.pool)
+                .await
+                .unwrap();
         } else {
-            sqlx::query(restore).bind(target).execute(&f.pool).await.unwrap();
+            sqlx::query(restore)
+                .bind(target)
+                .execute(&f.pool)
+                .await
+                .unwrap();
         }
-        assert_eq!(assignments(&f.pool, parent, CareListQuery::default()).await.unwrap().len(), 3);
+        assert_eq!(
+            assignments(&f.pool, parent, CareListQuery::default())
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
         get_round(&f.pool, parent, draft_round.id).await.unwrap();
     }
 }

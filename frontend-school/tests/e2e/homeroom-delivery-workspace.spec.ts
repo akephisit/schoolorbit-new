@@ -1,3 +1,4 @@
+import { offeringStartsOn, selectOfferingStartDate } from './fixtures/offering-start-date';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
@@ -206,20 +207,20 @@ async function mockDelivery(
 			if (url.pathname === '/api/academic/context/options') {
 				await contextGate;
 				await fulfill(route, {
-					activeAcademicYearId: ids.year,
-					activeAcademicTermId: ids.term,
+					defaultAcademicYearId: ids.year,
+					defaultAcademicTermId: ids.term,
 					years: [
 						{
+							isVisible: true,
 							id: ids.year,
 							name: 'ปีการศึกษา 2570',
 							year: 2570,
-							status: 'active',
-							startDate: '2027-05-01',
-							endDate: '2028-03-31'
+							status: 'active'
 						}
 					],
 					terms: [
 						{
+							isVisible: true,
 							id: ids.term,
 							academicYearId: ids.year,
 							name: 'ภาคเรียนที่ 1',
@@ -227,8 +228,6 @@ async function mockDelivery(
 							sequence: 1,
 							termType: 'regular',
 							status: 'active',
-							startDate: '2027-05-01',
-							endDate: '2027-10-31',
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}
@@ -1127,6 +1126,7 @@ async function mockActivityActivation(
 	});
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			startsOn: offeringStartsOn,
 			curriculumSources: [],
 			sourceHash: 'a'.repeat(64),
 			proposals: [
@@ -1188,6 +1188,7 @@ for (const count of [0, 1, 2]) {
 		await expect(page.getByRole('dialog', { name: 'สร้างรุ่นเปิดสอน', exact: true })).toHaveCount(
 			0
 		);
+		await selectOfferingStartDate(page);
 		await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 		await expect(page.getByRole('dialog')).toContainText('เปิดแบบกลาง');
 		await page.getByRole('button', { name: 'เปิดใช้งานกิจกรรม', exact: true }).click();
@@ -1299,6 +1300,7 @@ for (const size of ['mobile', 'desktop'] as const)
 			await page.keyboard.press('Enter');
 			await expect(page.getByRole('dialog')).toHaveCount(1);
 			await expect(page.getByRole('dialog')).toContainText('เพิ่มกิจกรรม ชุมนุม');
+			await selectOfferingStartDate(page);
 			await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 			await expect(page.getByRole('dialog')).toContainText('เปิดแบบกลาง');
 			await page.screenshot({ path: `test-results/central-${size}-${theme}.png` });
@@ -1402,6 +1404,7 @@ for (const viewport of [
 			);
 			await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 				fulfill(route, {
+					startsOn: offeringStartsOn,
 					curriculumSources: [],
 					sourceHash: 'a'.repeat(64),
 					proposals: resources.map((resource, index) => ({
@@ -1436,6 +1439,7 @@ for (const viewport of [
 			await dialog.getByRole('combobox', { name: 'เลือกแผนการเรียนจากหลักสูตร' }).click();
 			await page.getByRole('option', { name: /แผนมาตรฐาน/ }).click();
 			await page.keyboard.press('Escape');
+			await selectOfferingStartDate(page);
 			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 			for (const resource of resources) {
 				const prefix = resource.resourceKind === 'activity' ? resource.name : resource.code;
@@ -1542,6 +1546,7 @@ test('curriculum preparation orders groups and room controls naturally while pre
 	);
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			startsOn: offeringStartsOn,
 			curriculumSources: [],
 			sourceHash,
 			proposals: [
@@ -1576,6 +1581,7 @@ test('curriculum preparation orders groups and room controls naturally while pre
 	await dialog.getByRole('combobox', { name: 'เลือกแผนการเรียนจากหลักสูตร' }).click();
 	await page.getByRole('option', { name: /แผนมาตรฐาน/ }).click();
 	await page.keyboard.press('Escape');
+	await selectOfferingStartDate(page);
 	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	const inputs = dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน' });
 	const inputNames = () =>
@@ -1630,7 +1636,12 @@ test('focused activity preparation hides its code in the heading and missing-pro
 }) => {
 	await mockActivityActivation(page, 1);
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
-		fulfill(route, { curriculumSources: [], sourceHash: 'a'.repeat(64), proposals: [] })
+		fulfill(route, {
+			startsOn: offeringStartsOn,
+			curriculumSources: [],
+			sourceHash: 'a'.repeat(64),
+			proposals: []
+		})
 	);
 	await page.goto(
 		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${activitySource}`
@@ -1640,6 +1651,7 @@ test('focused activity preparation hides its code in the heading and missing-pro
 	await expect(
 		dialog.getByRole('heading', { name: 'เปิดใช้งาน ชุมนุม', exact: true })
 	).toBeVisible();
+	await selectOfferingStartDate(page);
 	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await expect(dialog.getByRole('alert')).toHaveText('ไม่พบ ชุมนุม ในโครงสร้างของห้องเป้าหมาย');
 	await expect(dialog).not.toContainText('CLUB');
@@ -1652,6 +1664,7 @@ test('activity preparation preserves server-owned existing group names on restor
 	const existingName = 'CLUB-legacy · กลุ่มชื่อเดิม';
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			startsOn: offeringStartsOn,
 			curriculumSources: [],
 			sourceHash: 'a'.repeat(64),
 			proposals: [
@@ -1680,6 +1693,7 @@ test('activity preparation preserves server-owned existing group names on restor
 	);
 	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	const dialog = page.getByRole('dialog');
+	await selectOfferingStartDate(page);
 	await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await dialog.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
 	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();
@@ -1699,6 +1713,7 @@ test('curriculum synchronized activation can explicitly create its reviewed home
 	);
 	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 	await expect(page.getByRole('dialog', { name: /เพิ่มกิจกรรม ชุมนุม/ })).toBeVisible();
+	await selectOfferingStartDate(page);
 	await page.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน' }).click();
 	await page.getByRole('combobox', { name: 'วิธีเตรียม ชุมนุม', exact: true }).click();
 	await page.getByRole('option', { name: 'เปิดสอนและจัดกลุ่ม', exact: true }).click();

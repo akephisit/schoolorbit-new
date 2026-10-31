@@ -64,11 +64,23 @@ async function mockYearCollections(
 			}
 			if (path === '/api/academic/context/options') {
 				await fulfill(route, {
-					activeAcademicYearId: yearId,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: yearId,
+					defaultAcademicTermId: null,
 					years: [
-						{ id: yearId, name: 'ปีการศึกษา 2570', year: 2570, status: 'active' },
-						{ id: nextYearId, name: 'ปีการศึกษา 2571', year: 2571, status: 'planning' }
+						{
+							isVisible: true,
+							id: yearId,
+							name: 'ปีการศึกษา 2570',
+							year: 2570,
+							status: 'active'
+						},
+						{
+							isVisible: true,
+							id: nextYearId,
+							name: 'ปีการศึกษา 2571',
+							year: 2571,
+							status: 'planning'
+						}
 					],
 					terms: []
 				});

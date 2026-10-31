@@ -183,6 +183,7 @@ pub struct LearningOfferingSignalDescriptor {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PreviewHashInput<'a> {
+    starts_on: chrono::NaiveDate,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     term_row_version: i64,
@@ -312,6 +313,7 @@ pub async fn catalog_owners_for_curriculum_request(
         PreviewCurriculumOfferingsRequest {
             delivery_version_id: request.delivery_version_id,
             academic_term_id: request.academic_term_id,
+            starts_on: request.starts_on,
             study_program_ids: request.study_program_ids.clone(),
         },
     )
@@ -614,6 +616,7 @@ pub async fn preview_from_curriculum(
         request.academic_term_id,
         &program_ids,
         request.delivery_version_id,
+        request.starts_on,
     )
     .await?;
     transaction.commit().await?;
@@ -635,6 +638,7 @@ pub struct TermPreparationDeliveryOutcome {
 pub async fn preview_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
     target_term_id: Uuid,
+    starts_on: chrono::NaiveDate,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let program_ids: Vec<Uuid> = DbSession::new(&mut **transaction)
         .scalar(
@@ -659,8 +663,16 @@ pub async fn preview_term_preparation(
             "ภาคเรียนเป้าหมายต้องอยู่ในสถานะวางแผน".into(),
         ));
     }
-    build_curriculum_preview_for_term(transaction, target_term_id, &program_ids, term, false, None)
-        .await
+    build_curriculum_preview_for_term(
+        transaction,
+        target_term_id,
+        &program_ids,
+        term,
+        false,
+        None,
+        starts_on,
+    )
+    .await
 }
 
 fn default_preparation_choice(
@@ -738,6 +750,7 @@ pub async fn apply_from_curriculum(
     .await?;
     if let Some((
         stored_request_hash,
+        stored_starts_on,
         source_hash,
         offering_ids,
         group_ids,
@@ -749,6 +762,7 @@ pub async fn apply_from_curriculum(
     )) = DbSession::new(&mut preflight)
         .query_as::<(
             String,
+            Option<chrono::NaiveDate>,
             String,
             Vec<Uuid>,
             Vec<Uuid>,
@@ -759,7 +773,7 @@ pub async fn apply_from_curriculum(
             i32,
         )>(
             "academic_delivery.services.offerings.apply_from_curriculum.preflight",
-            "SELECT request_hash::text, source_hash::text, offering_ids, group_ids, \
+            "SELECT request_hash::text, starts_on, source_hash::text, offering_ids, group_ids, \
                 created_offering_count, retained_offering_count, \
                 created_group_count, retained_group_count, skipped_count \
          FROM learning_delivery_apply_runs WHERE idempotency_key = $1",
@@ -768,7 +782,9 @@ pub async fn apply_from_curriculum(
         .fetch_optional()
         .await?
     {
-        if stored_request_hash.trim_end() != request_hash {
+        if stored_request_hash.trim_end() != request_hash
+            || stored_starts_on.is_some_and(|date| date != request.starts_on)
+        {
             return Err(AppError::Conflict(
                 "idempotencyKey ถูกใช้กับคำขออื่นแล้ว".to_string(),
             ));
@@ -798,6 +814,7 @@ pub async fn apply_from_curriculum(
         request.academic_term_id,
         &program_ids,
         request.delivery_version_id,
+        request.starts_on,
     )
     .await?;
     if preview.source_hash != request.source_hash {
@@ -845,8 +862,8 @@ pub async fn apply_from_curriculum(
              idempotency_key, academic_term_id, request_hash, source_hash,
              offering_ids, group_ids, created_offering_count,
              retained_offering_count, created_group_count, retained_group_count,
-             skipped_count, actor_user_id, curriculum_sources
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+             skipped_count, actor_user_id, curriculum_sources, starts_on
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         )
         .bind(request.idempotency_key)
         .bind(request.academic_term_id)
@@ -861,6 +878,7 @@ pub async fn apply_from_curriculum(
         .bind(applied.skipped_count as i32)
         .bind(actor_user_id)
         .bind(sqlx::types::Json(&preview.curriculum_sources))
+        .bind((applied.created_offering_count > 0).then_some(request.starts_on))
         .execute()
         .await?;
     transaction.commit().await?;
@@ -961,7 +979,8 @@ async fn apply_preview_in_transaction(
             existing
         } else {
             created_offering_count += 1;
-            let id = insert_generated_offering(transaction, term, proposal).await?;
+            let id =
+                insert_generated_offering(transaction, term, proposal, preview.starts_on).await?;
             record_curriculum_sources(
                 transaction,
                 id,
@@ -1301,7 +1320,7 @@ pub(super) async fn insert_course(
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(&source.status, source.effective_from, term)?;
+    validate_version_for_term(&source.status, source.effective_from, request.starts_on)?;
     required_standard_periods_per_week(source.standard_periods_per_week)?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
         let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) =
@@ -1340,8 +1359,8 @@ pub(super) async fn insert_course(
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id
-           ) VALUES ($1, $2, $3, 'course', $4, $5, $6, $7, 'draft', $8)"#,
+               status, owning_organization_unit_id, starts_on
+           ) VALUES ($1, $2, $3, 'course', $4, $5, $6, $7, 'draft', $8, $9)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -1355,6 +1374,7 @@ pub(super) async fn insert_course(
         )
         .bind(request.curriculum_course_requirement_id)
         .bind(source.owning_organization_unit_id)
+        .bind(request.starts_on)
         .execute()
         .await?;
     DbSession::new(&mut **transaction)
@@ -1397,7 +1417,7 @@ pub(super) async fn insert_activity(
     validate_activity_rules(&request.attendance_requirement, &request.pass_criteria)?;
     let source = activity_version_source(transaction, request.activity_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(&source.status, source.effective_from, term)?;
+    validate_version_for_term(&source.status, source.effective_from, request.starts_on)?;
     if source.scheduling_mode != request.scheduling_mode {
         return Err(AppError::ValidationError(
             "รูปแบบตารางกิจกรรมต้องตรงกับเวอร์ชันกิจกรรม".to_string(),
@@ -1441,8 +1461,8 @@ pub(super) async fn insert_activity(
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id
-           ) VALUES ($1, $2, $3, 'activity', $4, $5, $6, $7, 'draft', $8)"#,
+               status, owning_organization_unit_id, starts_on
+           ) VALUES ($1, $2, $3, 'activity', $4, $5, $6, $7, 'draft', $8, $9)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -1456,6 +1476,7 @@ pub(super) async fn insert_activity(
         )
         .bind(request.curriculum_activity_requirement_id)
         .bind(source.owning_organization_unit_id)
+        .bind(request.starts_on)
         .execute()
         .await?;
     DbSession::new(&mut **transaction)
@@ -1565,14 +1586,14 @@ async fn catalog_version_owner(
 fn validate_version_for_term(
     status: &str,
     effective_from: chrono::NaiveDate,
-    term: &TermContext,
+    on_date: chrono::NaiveDate,
 ) -> Result<(), AppError> {
     if status != "published" {
         return Err(AppError::ValidationError(
             "เลือกได้เฉพาะเวอร์ชันที่เผยแพร่แล้ว".to_string(),
         ));
     }
-    if term.start_date < effective_from {
+    if on_date < effective_from {
         return Err(AppError::ValidationError(
             "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก".to_string(),
         ));
@@ -1751,8 +1772,17 @@ async fn validate_publishable(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
     kind: LearningOfferingKind,
-    term: &TermContext,
+    _term: &TermContext,
 ) -> Result<(), AppError> {
+    let offering_starts_on: chrono::NaiveDate = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.publication_date",
+            "SELECT starts_on FROM learning_offerings WHERE id=$1",
+        )
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
+
     let target_count: i64 = DbSession::new(&mut **transaction)
         .scalar(
             "academic_delivery.services.offerings.validate_publishable",
@@ -1811,7 +1841,7 @@ async fn validate_publishable(
                 .bind(offering_id)
                 .fetch_one()
                 .await?;
-            validate_version_for_term(&status, from, term)?;
+            validate_version_for_term(&status, from, offering_starts_on)?;
         }
         LearningOfferingKind::Activity => {
             let (status, from): (String, chrono::NaiveDate) = DbSession::new(&mut **transaction)
@@ -1825,7 +1855,7 @@ async fn validate_publishable(
                 .bind(offering_id)
                 .fetch_one()
                 .await?;
-            validate_version_for_term(&status, from, term)?;
+            validate_version_for_term(&status, from, offering_starts_on)?;
         }
     }
     Ok(())
@@ -1985,6 +2015,7 @@ async fn build_curriculum_preview_scoped(
     academic_term_id: Uuid,
     program_ids: &[Uuid],
     version: Option<Uuid>,
+    starts_on: chrono::NaiveDate,
 ) -> Result<PreparedCurriculumPreview, AppError> {
     let term = require_writable_term(transaction, academic_term_id, false).await?;
     let context = match version {
@@ -2000,6 +2031,7 @@ async fn build_curriculum_preview_scoped(
         term,
         true,
         context.as_ref(),
+        starts_on,
     )
     .await?;
     Ok(PreparedCurriculumPreview { preview, context })
@@ -2029,6 +2061,7 @@ async fn build_curriculum_preview_for_term(
     term: TermContext,
     lock_rows: bool,
     context: Option<&super::audiences::RevisionContext>,
+    starts_on: chrono::NaiveDate,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     // Lock stable owners before resolving their pointers. Joining publication rows
     // in the locking statement could otherwise retain an older statement snapshot
@@ -2136,7 +2169,7 @@ async fn build_curriculum_preview_for_term(
     let mut proposals = Vec::<CurriculumPreparationProposal>::new();
     let mut proposal_indexes = HashMap::<(LearningOfferingKind, Uuid), usize>::new();
     for row in rows {
-        validate_version_for_term(&row.version_status, row.effective_from, &term)?;
+        validate_version_for_term(&row.version_status, row.effective_from, starts_on)?;
         let key = (row.resource_kind, row.catalog_version_id);
         let proposal_index = if let Some(index) = proposal_indexes.get(&key) {
             *index
@@ -2331,6 +2364,7 @@ async fn build_curriculum_preview_for_term(
             .then(left.catalog_version_id.cmp(&right.catalog_version_id))
     });
     let source_hash = stable_hash(&PreviewHashInput {
+        starts_on,
         academic_term_id,
         academic_year_id: term.academic_year_id,
         term_row_version: term.row_version,
@@ -2341,6 +2375,7 @@ async fn build_curriculum_preview_for_term(
         delivery_context: context,
     })?;
     Ok(CurriculumOfferingPreview {
+        starts_on,
         curriculum_sources,
         academic_term_id,
         source_hash,
@@ -2487,6 +2522,7 @@ async fn insert_generated_offering(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
     proposal: &CurriculumPreparationProposal,
+    starts_on: chrono::NaiveDate,
 ) -> Result<Uuid, AppError> {
     let owner_id = catalog_version_owner(
         transaction,
@@ -2502,8 +2538,8 @@ async fn insert_generated_offering(
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9)"#,
+               status, owning_organization_unit_id, starts_on
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -2517,12 +2553,13 @@ async fn insert_generated_offering(
         })
         .bind(proposal.requirement_ids.first().copied())
         .bind(owner_id)
+        .bind(starts_on)
         .execute()
         .await?;
     match proposal.resource_kind {
         LearningOfferingKind::Course => {
             let source = course_version_source(transaction, proposal.catalog_version_id).await?;
-            validate_version_for_term(&source.status, source.effective_from, term)?;
+            validate_version_for_term(&source.status, source.effective_from, starts_on)?;
             required_standard_periods_per_week(source.standard_periods_per_week)?;
             DbSession::new(&mut **transaction)
                 .query(
@@ -2555,7 +2592,7 @@ async fn insert_generated_offering(
         }
         LearningOfferingKind::Activity => {
             let source = activity_version_source(transaction, proposal.catalog_version_id).await?;
-            validate_version_for_term(&source.status, source.effective_from, term)?;
+            validate_version_for_term(&source.status, source.effective_from, starts_on)?;
             DbSession::new(&mut **transaction)
                 .query(
                     "academic_delivery.services.offerings.insert_generated_offering",

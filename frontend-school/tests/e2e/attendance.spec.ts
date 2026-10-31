@@ -70,7 +70,7 @@ for (const invalidDate of ['bad', '2026-02-30'])
 		await mockAttendance(page);
 		await page.goto(path('/settings').replace(`date=${date}`, `date=${invalidDate}`));
 		await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'เดือน', exact: true })).toHaveText('ตุลาคม');
+		await expect(page.getByRole('combobox', { name: 'เดือน', exact: true })).toHaveText('ตุลาคม');
 	});
 
 test('calendar range saves wait for an in-flight month read', async ({ page }) => {
@@ -89,11 +89,17 @@ test('calendar range saves wait for an in-flight month read', async ({ page }) =
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeDisabled();
 	await expect(
+		page.getByRole('button', { name: 'กำหนดตามวันประจำสัปดาห์', exact: true })
+	).toBeDisabled();
+	await expect(
 		page.getByRole('button', { name: 'วันหยุด / ไม่นับช่วงนี้', exact: true })
 	).toBeDisabled();
 	expect(api.writes).toHaveLength(0);
 	release();
 	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeEnabled();
+	await expect(
+		page.getByRole('button', { name: 'กำหนดตามวันประจำสัปดาห์', exact: true })
+	).toBeEnabled();
 });
 
 test('parent keeps child context and retries only a failed report', async ({ page }) => {
@@ -440,21 +446,20 @@ async function mockAttendance(
 			].includes(url.pathname),
 		(r) =>
 			reply(r, {
-				activeAcademicYearId: year,
-				activeAcademicTermId: term,
+				defaultAcademicYearId: year,
+				defaultAcademicTermId: term,
 				years: [
 					{
+						isVisible: true,
 						id: year,
 						name: '2569',
 						year: 2569,
-						status: 'active',
-						startDate: '2026-05-01',
-						plannedEndDate: '2027-04-30',
-						closedOn: null
+						status: 'active'
 					}
 				],
 				terms: [
 					{
+						isVisible: true,
 						id: term,
 						academicYearId: year,
 						code: '1',
@@ -462,9 +467,6 @@ async function mockAttendance(
 						sequence: 1,
 						termType: 'regular',
 						status: 'active',
-						startDate: '2026-05-01',
-						plannedEndDate: '2026-10-31',
-						closedOn: null,
 						includedInYearResult: true,
 						blocksYearClosure: true
 					}
@@ -971,11 +973,11 @@ test('calendar toggles a single processing date', async ({ page }) => {
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-pressed',
-		'false'
+		'true'
 	);
 	expect(api.writes.find((w) => w.path.includes('/days/'))?.data).toMatchObject({
 		rowVersion: 1,
-		days: [{ date, counted: false }]
+		days: [{ date, counted: true }]
 	});
 	expect(api.reads.filter((p) => p.includes('/settings/'))).toHaveLength(1);
 });
@@ -991,7 +993,7 @@ test('settings save succeeds twice and calendar uses the returned revision', asy
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-pressed',
-		'false'
+		'true'
 	);
 	expect(api.writes.filter((w) => w.path.includes('/settings/')).map((w) => w.data)).toMatchObject([
 		{ rowVersion: 1, configuration: { lateAfter: '08:30:00' } },
@@ -1110,13 +1112,13 @@ test('slow options do not block calendar use', async ({ page }) => {
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-pressed',
-		'false'
+		'true'
 	);
 	api.release();
 	await expect(page.getByRole('heading', { name: 'เครื่องเว็บแคม' })).toBeVisible();
 });
-test('unsaved weekday edits do not alter the saved processing calendar', async ({ page }) => {
-	await mockAttendance(page);
+test('saving weekday preset does not alter explicit processing dates', async ({ page }) => {
+	const api = await mockAttendance(page);
 	await page.goto(path('/settings'));
 	await page
 		.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ' })
@@ -1129,8 +1131,9 @@ test('unsaved weekday edits do not alter the saved processing calendar', async (
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
 		'aria-pressed',
-		'true'
+		'false'
 	);
+	expect(api.writes.filter((write) => write.path.includes('/days/'))).toHaveLength(0);
 });
 test('month controls prevent empty selection and failed reads cannot write guessed days', async ({
 	page
@@ -1145,6 +1148,9 @@ test('month controls prevent empty selection and failed reads cannot write guess
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.getByText('ปฏิทินไม่พร้อม', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeDisabled();
+	await expect(
+		page.getByRole('button', { name: 'กำหนดตามวันประจำสัปดาห์', exact: true })
+	).toBeDisabled();
 	expect(api.writes).toHaveLength(0);
 });
 test('read-only teacher sees saved results without management links or optional reads', async ({

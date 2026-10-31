@@ -32,9 +32,21 @@ async fn promotion_core_execution_creates_only_planned_destination_and_preserves
     let room: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,room_number,capacity,is_active) VALUES(gen_random_uuid(),'E2E-EXEC','E2E-EXEC',$1,$2,$3,'1',1,true) RETURNING id")
         .bind(target).bind(decision.target_grade_level_id).bind(decision.target_study_program_id).fetch_one(&mut *tx).await.unwrap();
     decision.target_homeroom_id = Some(room);
-    let result = execute_decision(&mut tx, source.student_id, year, target, &source, &decision)
-        .await
-        .unwrap();
+    let result = execute_decision(
+        &mut tx,
+        source.student_id,
+        year,
+        target,
+        Some(
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
+        ),
+        &source,
+        &decision,
+    )
+    .await
+    .unwrap();
     let state: (String, Uuid, Uuid, Uuid) = sqlx::query_as("SELECT status,academic_year_id,grade_level_id,study_program_id FROM student_academic_years WHERE id=$1")
         .bind(result.target_student_year_id).fetch_one(&mut *tx).await.unwrap();
     assert_eq!(
@@ -52,18 +64,27 @@ async fn promotion_core_execution_creates_only_planned_destination_and_preserves
             .fetch_one(&mut *tx)
             .await
             .unwrap();
-    let start = sqlx::query_scalar::<_, chrono::NaiveDate>(
-        "SELECT start_date FROM academic_years WHERE id=$1",
-    )
-    .bind(target)
-    .fetch_one(&mut *tx)
-    .await
-    .unwrap();
+    let start = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
     assert_eq!(placement, ("planned".into(), room, start));
     assert_eq!(placements(&mut tx, &source).await, before);
     assert_eq!(result.source_row_version, source.row_version);
     assert!(matches!(
-        execute_decision(&mut tx, source.student_id, year, target, &source, &decision).await,
+        execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive()
+            ),
+            &source,
+            &decision
+        )
+        .await,
         Err(AppError::Conflict(_))
     ));
     tx.rollback().await.unwrap();
@@ -93,9 +114,21 @@ async fn promotion_core_execution_terminal_and_hold_never_change_source_placemen
             sqlx::query("INSERT INTO grade_level_progressions(from_grade_level_id,transition_kind) VALUES($1,'graduate') ON CONFLICT DO NOTHING").bind(source.grade_level_id).execute(&mut *tx).await.unwrap();
         }
         let before = placements(&mut tx, &source).await;
-        let result = execute_decision(&mut tx, source.student_id, year, target, &source, &decision)
-            .await
-            .unwrap();
+        let result = execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive(),
+            ),
+            &source,
+            &decision,
+        )
+        .await
+        .unwrap();
         assert!(result.target_student_year_id.is_none());
         assert!(result.target_placement_id.is_none());
         let state: (String, i64) =
@@ -128,7 +161,20 @@ async fn promotion_core_execution_rechecks_source_version_and_foreign_destinatio
         .await
         .unwrap();
     assert!(matches!(
-        execute_decision(&mut tx, source.student_id, year, target, &source, &decision).await,
+        execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive()
+            ),
+            &source,
+            &decision
+        )
+        .await,
         Err(AppError::Conflict(_))
     ));
     tx.rollback().await.unwrap();
@@ -137,7 +183,20 @@ async fn promotion_core_execution_rechecks_source_version_and_foreign_destinatio
     sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(gen_random_uuid(),$1,$2,$3,$4,'planned')")
         .bind(source.student_id).bind(target).bind(decision.target_grade_level_id).bind(decision.target_study_program_id).execute(&mut *tx).await.unwrap();
     assert!(matches!(
-        execute_decision(&mut tx, source.student_id, year, target, &source, &decision).await,
+        execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive()
+            ),
+            &source,
+            &decision
+        )
+        .await,
         Err(AppError::Conflict(_))
     ));
 }
@@ -154,11 +213,24 @@ async fn promotion_core_execution_rejects_full_room_without_creating_enrollment(
         .fetch_one(&mut *tx).await.unwrap();
     let enrolled: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(gen_random_uuid(),$1,$2,$3,$4,'planned') RETURNING id")
         .bind(other).bind(target).bind(decision.target_grade_level_id).bind(decision.target_study_program_id).fetch_one(&mut *tx).await.unwrap();
-    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT gen_random_uuid(),$1,$2,$3,start_date,'planned','promotion' FROM academic_years WHERE id=$2")
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES(gen_random_uuid(),$1,$2,$3,CURRENT_DATE,'planned','promotion')")
         .bind(enrolled).bind(target).bind(room).execute(&mut *tx).await.unwrap();
     decision.target_homeroom_id = Some(room);
     assert!(matches!(
-        execute_decision(&mut tx, source.student_id, year, target, &source, &decision).await,
+        execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive()
+            ),
+            &source,
+            &decision
+        )
+        .await,
         Err(AppError::Conflict(_))
     ));
     let count: i64 = sqlx::query_scalar(
@@ -172,11 +244,21 @@ async fn promotion_core_execution_rejects_full_room_without_creating_enrollment(
     assert_eq!(count, 0);
     // Releasing the planned place must make the same approved destination usable.
     sqlx::query("UPDATE homeroom_placements SET status='ended',end_date=start_date WHERE student_academic_year_id=$1").bind(enrolled).execute(&mut *tx).await.unwrap();
-    assert!(
-        execute_decision(&mut tx, source.student_id, year, target, &source, &decision)
-            .await
-            .is_ok()
-    );
+    assert!(execute_decision(
+        &mut tx,
+        source.student_id,
+        year,
+        target,
+        Some(
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive()
+        ),
+        &source,
+        &decision
+    )
+    .await
+    .is_ok());
 }
 
 #[tokio::test]
@@ -196,9 +278,21 @@ async fn promotion_core_execution_repeat_and_conditional_keep_explicit_targets()
             sqlx::query("INSERT INTO grade_level_progressions(from_grade_level_id,to_grade_level_id,transition_kind) VALUES($1,$1,'repeat') ON CONFLICT DO NOTHING")
                 .bind(source.grade_level_id).execute(&mut *tx).await.unwrap();
         }
-        let result = execute_decision(&mut tx, source.student_id, year, target, &source, &decision)
-            .await
-            .unwrap();
+        let result = execute_decision(
+            &mut tx,
+            source.student_id,
+            year,
+            target,
+            Some(
+                chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive(),
+            ),
+            &source,
+            &decision,
+        )
+        .await
+        .unwrap();
         assert!(result.target_placement_id.is_none());
         let grade: Uuid =
             sqlx::query_scalar("SELECT grade_level_id FROM student_academic_years WHERE id=$1")

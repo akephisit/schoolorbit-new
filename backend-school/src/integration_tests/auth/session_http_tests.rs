@@ -1407,9 +1407,9 @@ pub(crate) mod protected_router {
         let today = Utc::now()
             .with_timezone(&chrono_tz::Asia::Bangkok)
             .date_naive();
-        let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2986,'Care HTTP',$1,$2,'active') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status,is_visible) VALUES(2986,'Care HTTP','active',true) RETURNING id").fetch_one(&fixture.tenant_a_pool).await.unwrap();
         let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE_HTTP','Care HTTP',true) RETURNING id").bind(year).fetch_one(&fixture.tenant_a_pool).await.unwrap();
-        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'CARE_HTTP','Care HTTP','regular',$2,$3,$4,'active',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES($1,1,'CARE_HTTP','Care HTTP','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&fixture.tenant_a_pool).await.unwrap();
         let round = school_student_care::services::create_round(
             &fixture.tenant_a_pool,
             a,
@@ -1667,14 +1667,14 @@ pub(crate) mod protected_router {
         let group_ids = vec![Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
         let term_id = {
             let mut tx = fixture.tenant_a_pool.begin().await.unwrap();
-            let year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Bulk HTTP success',$1,$2,'planning') RETURNING id")
-                .bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2988,'Bulk HTTP success','planning') RETURNING id")
+                .fetch_one(&mut *tx).await.unwrap();
             let bell: Uuid = sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id")
                 .bind(year).fetch_one(&mut *tx).await.unwrap();
-            let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id")
-                .bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
-                .bind(offering_id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id")
+                .bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
+                .bind(offering_id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(offering_id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             for (index, id) in group_ids.iter().enumerate() {
@@ -2068,12 +2068,12 @@ pub(crate) mod protected_router {
             .await
             .unwrap();
             let mut tx = tenant.pool.begin().await.unwrap();
-            let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2987,'Bulk HTTP',$1,$2,'planning') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&mut *tx).await.unwrap();
+            let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2987,'Bulk HTTP','planning') RETURNING id").fetch_one(&mut *tx).await.unwrap();
             let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id").bind(year).fetch_one(&mut *tx).await.unwrap();
-            let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,$3,$4,'planning',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&mut *tx).await.unwrap();
+            let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id").bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
             let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id FROM subjects WHERE id=$4")
-                .bind(id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
+                .bind(id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             tx.commit().await.unwrap();

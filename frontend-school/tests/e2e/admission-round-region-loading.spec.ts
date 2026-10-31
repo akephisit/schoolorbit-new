@@ -95,25 +95,23 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: yearId,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: yearId,
+					defaultAcademicTermId: null,
 					terms: [],
 					years: [
 						{
+							isVisible: true,
 							id: yearId,
 							year: 2569,
 							name: '2569',
-							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
+							status: 'active'
 						},
 						{
+							isVisible: true,
 							id: nextYearId,
 							year: 2570,
 							name: '2570',
-							status: 'planned',
-							startDate: '2027-05-01',
-							endDate: '2028-04-30'
+							status: 'planned'
 						}
 					]
 				});
@@ -261,8 +259,20 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 			if (path === '/api/lookup/academic-years') {
 				if (holdYears) await waitYears;
 				return reply(route, [
-					{ id: yearId, year: 2569, name: '2569', status: 'active' },
-					{ id: nextYearId, year: 2570, name: '2570', status: 'planned' }
+					{
+						isVisible: true,
+						id: yearId,
+						year: 2569,
+						name: '2569',
+						status: 'active'
+					},
+					{
+						isVisible: true,
+						id: nextYearId,
+						year: 2570,
+						name: '2570',
+						status: 'planned'
+					}
 				]);
 			}
 			if (path === '/api/lookup/grade-levels') {

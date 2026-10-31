@@ -11,7 +11,7 @@ import {
 	entries,
 	summary
 } from './fixtures/behavior-route-data';
-import type { BehaviorDailyTotal } from '../../src/lib/api/behavior';
+import type { BehaviorSettings, BehaviorDailyTotal } from '../../src/lib/api/behavior';
 
 test('reader loads history without settings or action-only selector reads', async ({ page }) => {
 	const api = await mockBehavior(page, { permissions: [PERMISSIONS.BEHAVIOR_READ_SCHOOL] });
@@ -312,3 +312,43 @@ for (const userType of ['student', 'parent'] as const)
 		expect(api.reads).not.toContain('/api/behavior/items');
 		await expect(page.getByRole('button', { name: 'ยืนยันยกเลิก', exact: true })).toHaveCount(0);
 	});
+
+test('scheduled behavior cutoffs save explicit dates independently for each score side', async ({
+	page
+}) => {
+	await mockBehavior(page);
+	const writes: BehaviorSettings[] = [];
+	await page.route('**/api/behavior/settings', async (route) => {
+		if (route.request().method() !== 'PUT') {
+			await route.fallback();
+			return;
+		}
+		const body: { settings: BehaviorSettings } = route.request().postDataJSON();
+		writes.push(body.settings);
+		await route.fulfill({
+			json: { success: true, data: { ...body.settings, rowVersion: body.settings.rowVersion + 1 } }
+		});
+	});
+	await page.goto(behaviorPath('/settings'));
+	await page.getByRole('combobox', { name: 'รีเซ็ตความดี', exact: true }).click();
+	await page.getByRole('option', { name: 'กำหนดวันที่สิ้นสุดรอบ', exact: true }).click();
+	await expect(page.getByText('ยังไม่ได้กำหนดวันรีเซ็ต', { exact: false })).toBeVisible();
+	await page.getByRole('button', { name: 'วันที่สิ้นสุดรอบคะแนนความดี', exact: true }).click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^15$/ })
+		.click();
+	await page.getByRole('button', { name: 'เพิ่มวันที่', exact: true }).click();
+	await expect(page.getByText('ระบบเริ่มรอบใหม่ในวันถัดไป', { exact: false })).toBeVisible();
+	await page.getByRole('button', { name: 'บันทึกการตั้งค่า', exact: true }).click();
+	await expect(page.getByRole('status')).toContainText('บันทึกการตั้งค่าแล้ว');
+	expect(writes).toHaveLength(1);
+	expect(writes[0]).toMatchObject({
+		meritReset: 'scheduled',
+		meritResetDates: [expect.stringMatching(/^\d{4}-\d{2}-15$/)],
+		deductionReset: 'monthly',
+		deductionResetDates: []
+	});
+	expect(writes[0]).not.toHaveProperty('academicYearId');
+	expect(writes[0]).not.toHaveProperty('academicTermId');
+});

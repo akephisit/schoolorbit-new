@@ -45,8 +45,12 @@ async fn results_lifecycle_guard_keeps_history_and_blocks_ordinary_writes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(ctx.academic_term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let course = get_course_workspace(&pool, &actor, &ctx, course_group)
             .await
             .unwrap();
@@ -307,7 +311,11 @@ async fn fixture_with_obligation_groups(
             // Complete the new historical draft's children first, then validate
             // its publication preconditions. Never insert into a published group.
             let published:Option<Uuid>=sqlx::query_scalar("UPDATE learning_groups g SET status='published' FROM learning_offerings o,academic_terms term WHERE g.id=$1 AND g.status='draft' AND o.id=g.learning_offering_id AND o.status='published' AND term.id=g.academic_term_id AND (SELECT count(*) FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.role='primary' AND teacher.starts_on<=term.start_date AND (teacher.ends_on IS NULL OR teacher.ends_on>=term.start_date))=1 RETURNING g.id").bind(id).fetch_optional(&pool).await.unwrap();
-            assert_eq!(published,Some(id),"historical group publication requires a published parent and complete primary-teacher children");
+            assert_eq!(
+                published,
+                Some(id),
+                "historical group publication requires a published parent and complete primary-teacher children"
+            );
         }
         Some(id)
     } else {
@@ -326,7 +334,9 @@ async fn fixture_with_obligation_groups(
         None
     };
     // This is the live-service fixture; dedicated historical migration fixtures stay at 061.
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![
@@ -479,10 +489,9 @@ async fn prepare_published_roster_mutation(pool: &sqlx::PgPool, group: Uuid) -> 
     .await
     .unwrap();
     let joined_at: NaiveDate = sqlx::query_scalar(
-        r#"SELECT GREATEST(offering.starts_on,academic_year.start_date)
+        r#"SELECT offering.starts_on
            FROM learning_groups group_row
            JOIN learning_offerings offering ON offering.id=group_row.learning_offering_id
-           JOIN academic_years academic_year ON academic_year.id=group_row.academic_year_id
            WHERE group_row.id=$1"#,
     )
     .bind(group)
@@ -1852,8 +1861,6 @@ async fn results_locked_course_keeps_policy_and_confirmation_snapshot() {
 #[tokio::test]
 async fn results_activity_completeness_assignment_and_roster_staleness() {
     let (pool, mut actor, ctx, _) = fixture("results_activity").await;
-    apply_migrations_through(&pool, 100).await.unwrap();
-    apply_migrations_through(&pool, 113).await.unwrap();
     let (group,teacher):(Uuid,Uuid)=sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     actor.user_id = teacher;
     let ws = get_activity_workspace(&pool, &actor, &ctx, group)
@@ -2223,8 +2230,6 @@ async fn results_readiness_detects_stale_course_selection_snapshot() {
 #[tokio::test]
 async fn results_activity_membership_aba_invalidates_at_the_delivery_boundary() {
     let (pool, mut actor, ctx, _) = fixture("results_activity_membership_aba").await;
-    apply_migrations_through(&pool, 100).await.unwrap();
-    apply_migrations_through(&pool, 113).await.unwrap();
     let (group, teacher): (Uuid, Uuid) = sqlx::query_as(
         "SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1",
     )
@@ -2297,8 +2302,6 @@ async fn results_activity_membership_aba_invalidates_at_the_delivery_boundary() 
 #[tokio::test]
 async fn results_course_membership_aba_invalidates_phase_result_and_learner_confirmations() {
     let (pool, actor, ctx, group) = fixture("results_course_membership_aba").await;
-    apply_migrations_through(&pool, 100).await.unwrap();
-    apply_migrations_through(&pool, 113).await.unwrap();
     prepare_phases(&pool, &actor, &ctx, group).await;
     let workspace = get_course_workspace(&pool, &actor, &ctx, group)
         .await

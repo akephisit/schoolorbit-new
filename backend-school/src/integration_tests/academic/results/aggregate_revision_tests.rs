@@ -14,13 +14,10 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
         lifecycle::services as lifecycle,
     };
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("year_complete_closure").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 70)
-        .await
-        .unwrap();
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());
-    sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,closed_on=CASE WHEN id=$2 THEN start_date ELSE NULL END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
     let policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -149,12 +146,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         lifecycle::{models::LifecycleSeverity, services as lifecycle},
     };
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("lifecycle_complete_closure").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 109)
-        .await
-        .unwrap();
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());
@@ -223,7 +214,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         expected_term_version: workspace.context.term_row_version,
         readiness_checksum: workspace.source_checksum,
         acknowledged_warning_codes: vec![],
-        closed_on: None,
         reason: None,
     };
     term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request.clone())
@@ -238,7 +228,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     request.expected_year_version = workspace.context.year_row_version;
     request.expected_term_version = workspace.context.term_row_version;
     request.readiness_checksum = workspace.source_checksum;
-    request.closed_on = Some(workspace.context.term_start_date);
     assert!(term_transitions::transition_term(
         &pool,
         &actor,
@@ -259,7 +248,10 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
             .await
             .unwrap();
     assert_eq!(closed.context.term_status, AcademicTermStatus::Closed);
-    assert_eq!(closed.context.closed_on, request.closed_on);
+    assert_eq!(
+        closed.context.term_status,
+        school_academic_core::models::AcademicTermStatus::Closed
+    );
     let mut tx = pool.begin().await.unwrap();
     assert!(
         school_academic_core::services::lifecycle_guard::require_term_write(
@@ -280,14 +272,16 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     request.expected_year_version = workspace.context.year_row_version;
     request.expected_term_version = workspace.context.term_row_version;
     request.readiness_checksum = workspace.source_checksum;
-    request.closed_on = None;
     request.acknowledged_warning_codes.clear();
     request.reason = Some("ทบทวนข้อมูลภาคเรียน".into());
     let reopened = term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request)
         .await
         .unwrap();
     assert_eq!(reopened.context.term_status, AcademicTermStatus::Closing);
-    assert!(reopened.context.closed_on.is_none());
+    assert_eq!(
+        reopened.context.term_status,
+        school_academic_core::models::AcademicTermStatus::Closing
+    );
     let controls_after:String=sqlx::query_scalar("SELECT md5(jsonb_agg(to_jsonb(control) ORDER BY id)::text) FROM academic_gradebook_phase_controls control WHERE academic_term_id=$1").bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
     assert_eq!(controls_before, controls_after);
 }
@@ -295,9 +289,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
 #[tokio::test]
 async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_checksums() {
     let (pool, mut actor, ctx, _) = fixture("aggregate_batch_parity").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.push(
         school_permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
     );
@@ -484,9 +475,6 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
     use school_authorization::ActorContext;
     use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture(name).await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
         codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL.into(),
@@ -672,7 +660,7 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
     );
     // Closure blocks ordinary editing, not audited corrections or a new immutable
     // aggregate revision. Reopening must never be required just to correct a result.
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(ctx.academic_term_id)
         .execute(&pool)
         .await
@@ -950,9 +938,6 @@ async fn aggregate_preview_missing_results_cannot_be_locked_even_with_a_hold() {
     use school_errors::AppError;
     use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture("aggregate_missing_results").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
         codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL.into(),

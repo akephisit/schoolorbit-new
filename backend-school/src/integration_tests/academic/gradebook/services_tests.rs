@@ -70,8 +70,12 @@ async fn gradebook_lifecycle_guard_preserves_history_and_rejects_all_ordinary_wr
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(context.academic_term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let historical = get_group_phase_workspace(&pool, &admin, group, phase, &context)
             .await
             .unwrap();
@@ -191,7 +195,16 @@ async fn gradebook_lifecycle_guard_preserves_history_and_rejects_all_ordinary_wr
 
 #[tokio::test]
 async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
-    let (pool, actor, _, _, _) = fixture("gradebook_default_scopes").await;
+    // Customize the original broad grants before migrations 064 and 065 narrow defaults.
+    let pool = create_named_test_pool_with_max_connections("gradebook_default_scopes", 4).await;
+    seed_release_two_predecessor(&pool).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
+    let actor_id: Uuid = sqlx::query_scalar(
+        "SELECT teacher_id FROM learning_group_teachers WHERE role='primary' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let unit: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE code='SUBJ-SC'")
         .fetch_one(&pool)
         .await
@@ -206,11 +219,11 @@ async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
         .bind(customized_source).bind(vec![codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT, codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT, codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT, codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT]).execute(&pool).await.unwrap();
     // A later school edit must survive even if the broad position was retained.
     sqlx::query("UPDATE organization_permission_grants g SET created_by=$1 FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$2 AND p.code=$3")
-        .bind(actor.user_id).bind(other).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+        .bind(actor_id).bind(other).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     sqlx::query("UPDATE organization_permission_grants g SET created_at=g.created_at+interval '1 day' FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$1 AND p.code=$2")
         .bind(other).bind(codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     sqlx::query("UPDATE organization_permission_grants g SET created_by=$1 FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$2 AND p.code=$3")
-        .bind(actor.user_id).bind(other).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+        .bind(actor_id).bind(other).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     // Existing head grants must not cause unique-key failure or be duplicated.
     sqlx::query("INSERT INTO organization_permission_grants (organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=$2 ON CONFLICT DO NOTHING")
         .bind(unit).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
@@ -762,7 +775,7 @@ async fn gradebook_policy_window_primary_and_context() {
         .await,
         Err(AppError::Forbidden(_))
     ));
-    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=term.planned_end_date+1 FROM academic_terms term WHERE teacher.learning_group_id=$1 AND term.id=teacher.academic_term_id").bind(group).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=(now() AT TIME ZONE 'Asia/Bangkok')::date+1 FROM academic_terms term WHERE teacher.learning_group_id=$1 AND term.id=teacher.academic_term_id").bind(group).execute(&pool).await.unwrap();
     assert!(matches!(
         get_group_phase_workspace(&pool, &teacher, group, phase, &context).await,
         Err(AppError::Forbidden(_))
@@ -777,7 +790,9 @@ async fn gradebook_policy_window_primary_and_context() {
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, GradebookContext, Uuid, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 60).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (year,term,group,phase,teacher): (Uuid,Uuid,Uuid,Uuid,Uuid) = sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,p.id,t.teacher_id FROM learning_groups g JOIN course_assessment_plans plan ON plan.learning_offering_id=g.learning_offering_id JOIN course_assessment_phases p ON p.plan_id=plan.id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND p.phase_code='before_midterm' ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     let actor = ActorContext {
         user_id: teacher,
@@ -804,7 +819,6 @@ async fn gradebook_roster_orders_grade_room_number_and_keeps_score_identity() {
         models as evaluation, services as evaluations,
     };
     let (pool, mut actor, context, group, phase) = fixture("gradebook_roster_order").await;
-    apply_migrations_through(&pool, 61).await.unwrap();
     actor
         .permissions
         .push(codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into());

@@ -85,7 +85,7 @@ pub async fn suppressed(
     source: BehaviorSource,
     term: Uuid,
 ) -> Result<bool, AppError> {
-    Ok(DbSession::new(connection).scalar("behavior.services.shared.suppressed", "SELECT EXISTS(SELECT 1 FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND side=$2 AND source=$3 AND(academic_term_id IS NULL OR academic_term_id=$4)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$4)))").bind(date).bind(side).bind(source).bind(term).fetch_one().await?)
+    Ok(DbSession::new(connection).scalar("behavior.services.shared.suppressed", "SELECT EXISTS(SELECT 1 FROM behavior_suppressions WHERE (start_date IS NULL OR $1 BETWEEN start_date AND end_date) AND side=$2 AND source=$3 AND(academic_term_id IS NULL OR academic_term_id=$4)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$4)))").bind(date).bind(side).bind(source).bind(term).fetch_one().await?)
 }
 pub async fn receipt<P: Serialize, T: DeserializeOwned + Send + Unpin + 'static>(
     connection: &mut PgConnection,
@@ -117,11 +117,19 @@ pub async fn save_receipt<P: Serialize, T: Serialize>(
 pub async fn begin_manual(
     pool: &PgPool,
     term: Uuid,
-    date: NaiveDate,
+    _date: NaiveDate,
 ) -> Result<school_tenancy::ObservedTransaction, AppError> {
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "behavior.shared.begin_manual").await?;
-    let year:Uuid=DbSession::new(&mut *tx).scalar("behavior.services.shared.begin_manual", "SELECT academic_year_id FROM academic_terms WHERE id=$1 AND $2 BETWEEN start_date AND COALESCE(closed_on,planned_end_date,(SELECT end_date FROM academic_years WHERE id=academic_year_id))").bind(term).bind(date).fetch_optional().await?.ok_or_else(||invalid("วันที่อยู่นอกภาคเรียน"))?;
+    let year: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "behavior.services.shared.begin_manual",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+        )
+        .bind(term)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("วันที่อยู่นอกภาคเรียน"))?;
     school_academic_core::services::lifecycle_guard::require_term_write(&mut tx, year, term)
         .await?;
     lock(&mut tx).await?;

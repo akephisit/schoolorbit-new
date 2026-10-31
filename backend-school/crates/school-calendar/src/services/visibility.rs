@@ -40,6 +40,7 @@ LEFT JOIN calendar_categories c ON c.id = e.category_id
 struct CalendarEventTargetRow {
     event_id: Uuid,
     id: Uuid,
+    academic_year_id: Option<Uuid>,
     audience_type: String,
     grade_level_id: Option<Uuid>,
     homeroom_id: Option<Uuid>,
@@ -73,7 +74,7 @@ async fn list_targets_for_events(
         .query_as::<CalendarEventTargetRow>(
             "calendar.services.visibility.list_targets_for_events",
             r#"
-        SELECT event_id, id, audience_type, grade_level_id, homeroom_id
+        SELECT event_id, id, academic_year_id, audience_type, grade_level_id, homeroom_id
         FROM calendar_event_targets
         WHERE event_id = ANY($1)
         ORDER BY event_id, audience_type, grade_level_id NULLS FIRST, homeroom_id NULLS FIRST
@@ -89,6 +90,7 @@ async fn list_targets_for_events(
             .entry(row.event_id)
             .or_insert_with(Vec::new)
             .push(CalendarEventTarget {
+                academic_year_id: row.academic_year_id,
                 id: row.id,
                 audience_type: row.audience_type,
                 grade_level_id: row.grade_level_id,
@@ -550,7 +552,7 @@ fn push_my_event_target_filter(
             );
             builder.push_bind(user_id);
             builder.push(
-                "             AND (student_year.academic_year_id = target.academic_year_id OR (target.academic_year_id IS NULL AND EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=e.start_date AND target_year.end_date>=e.start_date)))
+                "             AND student_year.academic_year_id = target.academic_year_id
                               AND (
                                   target.grade_level_id IS NULL
                                   OR student_year.grade_level_id = target.grade_level_id
@@ -624,7 +626,7 @@ fn push_child_event_target_filter(
     );
     builder.push_bind(student_id);
     builder.push(
-        "                 AND (student_year.academic_year_id = target.academic_year_id OR (target.academic_year_id IS NULL AND EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=e.start_date AND target_year.end_date>=e.start_date)))
+        "                 AND student_year.academic_year_id = target.academic_year_id
                               AND (
                                   target.grade_level_id IS NULL
                                   OR student_year.grade_level_id = target.grade_level_id

@@ -112,8 +112,8 @@ async function mock(
 			if (path === '/api/menu/user') return respond(route, { groups: [] });
 			if (path === '/api/academic/context/options')
 				return respond(route, {
-					activeAcademicYearId: null,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: null,
+					defaultAcademicTermId: null,
 					years: [],
 					terms: []
 				});

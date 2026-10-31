@@ -41,6 +41,7 @@ export type AcademicContextNavigate = (
 
 export type AcademicContextStore = Readable<AcademicContextState> & {
 	primeOptions: () => Promise<void>;
+	replaceOptions: (options: AcademicContextOptionsResponse) => void;
 	sync: (routeId: string | null, url: URL) => Promise<void>;
 	selectYear: (academicYearId: string) => Promise<void>;
 	selectTerm: (academicTermId: string | null) => Promise<void>;

@@ -1251,7 +1251,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
     )
     .await
     .unwrap();
-    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=t.start_date ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(pool).await.unwrap();
+    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=(now() AT TIME ZONE 'Asia/Bangkok')::date ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(pool).await.unwrap();
     let (homeroom_id,grade_level_id,study_program_id):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 1").bind(year_id).fetch_one(pool).await.unwrap();
     let changed = change_sets::upsert_change_item(
         pool,
@@ -1261,6 +1261,9 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
             change_set_row_version: revision.row_version,
             weekly_period_target: 1,
             offering: CreateActivityOfferingRequest {
+                starts_on: chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive(),
                 create_homeroom_groups: true,
                 academic_term_id: term_id,
                 activity_version_id,
@@ -2128,7 +2131,10 @@ async fn scoped_lookup_gain_and_loss_match_fresh_authorized_http_projection() {
     );
     let connection = uuid(&manager_sync["payload"]["connectionId"]);
     let room_id = uuid(&manager_sync["payload"]["workspace"]["rooms"][0]["id"]);
-    let path = format!("http://{}/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.address, fixture.block.academic_year_id, fixture.term, fixture.version);
+    let path = format!(
+        "http://{}/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}",
+        fixture.address, fixture.block.academic_year_id, fixture.term, fixture.version
+    );
     let http_projection = || async {
         let response = reqwest::Client::new()
             .get(&path)
@@ -2363,7 +2369,10 @@ async fn workspace_cap_fixture(kind: &str) {
     .await
     .unwrap()
     .remove(0);
-    let path = format!("/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.block.academic_year_id, fixture.term, fixture.version);
+    let path = format!(
+        "/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}",
+        fixture.block.academic_year_id, fixture.term, fixture.version
+    );
     let before = reqwest::Client::new()
         .get(format!("http://{}{}", fixture.address, path))
         .header("origin", "http://localhost:5173")
@@ -2737,7 +2746,9 @@ async fn standalone_websocket_smoke_completes_term_and_draft_close_handshakes() 
         .unwrap()
         .0;
     // Execute the acceptance owner's exact inline client, with real opaque-session middleware.
-    let shell = format!("pass() {{ :; }}; fail() {{ return 1; }}\ntimetable_websocket_smoke() {{{probe}\ncookie_jar=$1\ntimetable_websocket_smoke fixture \"$2\" \"$3\" \"$4\" \"$5\"\n");
+    let shell = format!(
+        "pass() {{ :; }}; fail() {{ return 1; }}\ntimetable_websocket_smoke() {{{probe}\ncookie_jar=$1\ntimetable_websocket_smoke fixture \"$2\" \"$3\" \"$4\" \"$5\"\n"
+    );
     let mut outcomes = Vec::new();
     for (mode, version) in [
         ("term", String::new()),
@@ -2916,7 +2927,10 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
     for field in ["room_code", "homeroom_number", "version_creator"] {
         let fixture = Fixture::new(&format!("native_nullable_{field}")).await;
         let pool = &fixture.auth.tenant_a_pool;
-        let path = format!("/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}", fixture.block.academic_year_id, fixture.term, fixture.version);
+        let path = format!(
+            "/api/academic/timetable-blocks/workspace?academicYearId={}&academicTermId={}&timetableVersionId={}",
+            fixture.block.academic_year_id, fixture.term, fixture.version
+        );
         let baseline = fixture
             .request(reqwest::Method::GET, &path)
             .send()

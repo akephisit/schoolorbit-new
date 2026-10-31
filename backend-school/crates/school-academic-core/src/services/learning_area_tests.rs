@@ -220,22 +220,61 @@ async fn learning_area_migration_rejects_ambiguous_states_and_reconciles_missing
     let pool = pre_separation_fixture("learning_area_migration").await;
     let migration = include_str!("../../../../migrations/116_organization_learning_areas.sql");
     for (setup, expected) in [
-        ("UPDATE organization_units SET is_active=false WHERE code='SCHOOL'", "ROOT_INVALID"),
-        ("UPDATE subject_groups SET is_active=NULL WHERE id=(SELECT id FROM subject_groups LIMIT 1)", "STATUS_CONFLICT"),
-        ("INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'BAD-TYPE','ประเภทผิด','division',id,false FROM subject_groups LIMIT 1", "UNMAPPED_UNIT"),
-        ("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'WRONG-OWNER','WRONG-OWNER',g.id,u.id FROM subject_groups g CROSS JOIN organization_units u WHERE u.code='SCHOOL' LIMIT 1", "SUBJECT_OWNER_CONFLICT"),
-        ("UPDATE subject_groups SET is_active=false WHERE id=(SELECT subject_group_id FROM organization_units WHERE code='SUBJ-MA'); UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'; INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'INACTIVE-OWNER','INACTIVE-OWNER',subject_group_id,id FROM organization_units WHERE code='SUBJ-MA'", "SUBJECT_OWNER_CONFLICT"),
-        ("UPDATE subject_groups SET name_th='' WHERE id=(SELECT id FROM subject_groups LIMIT 1)", "NAME_INVALID"),
-        ("INSERT INTO organization_units(code,name,unit_type) VALUES ('LOOSE','ไม่เชื่อม','subject_group')", "UNMAPPED_UNIT"),
-        ("INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'DUP','ซ้ำ','subject_group',subject_group_id,false FROM organization_units WHERE unit_type='subject_group' LIMIT 1", "DUPLICATE_MAPPING"),
-        ("UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'", "STATUS_CONFLICT"),
-        ("UPDATE organization_units SET subject_group_id=NULL WHERE code='ACAD-ACT'", "ACTIVITY_MAPPING_INVALID"),
-        ("INSERT INTO organization_units(code,name,parent_unit_id) SELECT 'CHILD','หน่วยงานลูก',id FROM organization_units WHERE code='SUBJ-MA'", "SUBJECT_GROUP_HAS_CHILDREN"),
+        (
+            "UPDATE organization_units SET is_active=false WHERE code='SCHOOL'",
+            "ROOT_INVALID",
+        ),
+        (
+            "UPDATE subject_groups SET is_active=NULL WHERE id=(SELECT id FROM subject_groups LIMIT 1)",
+            "STATUS_CONFLICT",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'BAD-TYPE','ประเภทผิด','division',id,false FROM subject_groups LIMIT 1",
+            "UNMAPPED_UNIT",
+        ),
+        (
+            "INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'WRONG-OWNER','WRONG-OWNER',g.id,u.id FROM subject_groups g CROSS JOIN organization_units u WHERE u.code='SCHOOL' LIMIT 1",
+            "SUBJECT_OWNER_CONFLICT",
+        ),
+        (
+            "UPDATE subject_groups SET is_active=false WHERE id=(SELECT subject_group_id FROM organization_units WHERE code='SUBJ-MA'); UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'; INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) SELECT uuidv7(),'INACTIVE-OWNER','INACTIVE-OWNER',subject_group_id,id FROM organization_units WHERE code='SUBJ-MA'",
+            "SUBJECT_OWNER_CONFLICT",
+        ),
+        (
+            "UPDATE subject_groups SET name_th='' WHERE id=(SELECT id FROM subject_groups LIMIT 1)",
+            "NAME_INVALID",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type) VALUES ('LOOSE','ไม่เชื่อม','subject_group')",
+            "UNMAPPED_UNIT",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,unit_type,subject_group_id,is_active) SELECT 'DUP','ซ้ำ','subject_group',subject_group_id,false FROM organization_units WHERE unit_type='subject_group' LIMIT 1",
+            "DUPLICATE_MAPPING",
+        ),
+        (
+            "UPDATE organization_units SET is_active=false WHERE code='SUBJ-MA'",
+            "STATUS_CONFLICT",
+        ),
+        (
+            "UPDATE organization_units SET subject_group_id=NULL WHERE code='ACAD-ACT'",
+            "ACTIVITY_MAPPING_INVALID",
+        ),
+        (
+            "INSERT INTO organization_units(code,name,parent_unit_id) SELECT 'CHILD','หน่วยงานลูก',id FROM organization_units WHERE code='SUBJ-MA'",
+            "SUBJECT_GROUP_HAS_CHILDREN",
+        ),
     ] {
         let mut tx = pool.begin().await.unwrap();
         sqlx::raw_sql(setup).execute(&mut *tx).await.unwrap();
-        let error = sqlx::raw_sql(migration).execute(&mut *tx).await.unwrap_err();
-        assert!(error.to_string().contains(expected), "expected {expected}: {error}");
+        let error = sqlx::raw_sql(migration)
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains(expected),
+            "expected {expected}: {error}"
+        );
         tx.rollback().await.unwrap();
     }
     let before: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM organization_members), (SELECT count(*) FROM organization_permission_grants), (SELECT count(*) FROM organization_units)")

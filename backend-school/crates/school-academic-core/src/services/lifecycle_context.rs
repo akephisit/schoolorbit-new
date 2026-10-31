@@ -16,8 +16,7 @@ pub async fn read_term_context(
         "SELECT year.id AS academic_year_id,term.id AS academic_term_id,year.name AS year_name,
          term.name AS term_name,year.status AS year_status,term.status AS term_status,
          year.row_version AS year_row_version,term.row_version AS term_row_version,
-         year.start_date AS year_start_date,year.end_date AS year_end_date,term.start_date AS term_start_date,
-         term.planned_end_date,term.closed_on,term.sequence_no AS sequence,term.bell_schedule_id,
+         (now() AT TIME ZONE 'Asia/Bangkok')::date AS operation_date,term.sequence_no AS sequence,term.bell_schedule_id,
          term.included_in_year_result,term.blocks_year_closure
          FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id
          WHERE year.id=$1 AND term.id=$2",
@@ -33,7 +32,7 @@ pub async fn read_year_context(
     tx: &mut Transaction<'_, Postgres>,
     year: Uuid,
 ) -> Result<YearLifecycleContext, AppError> {
-    DbSession::new(&mut **tx).query_as("academic_core.services.lifecycle_context.read_year_context", "SELECT id AS academic_year_id,year,name,start_date,end_date,status,row_version FROM academic_years WHERE id=$1")
+    DbSession::new(&mut **tx).query_as("academic_core.services.lifecycle_context.read_year_context", "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=$1")
         .bind(year)
         .fetch_optional()
         .await?
@@ -67,13 +66,13 @@ pub async fn read_year_recovery_state(
     let (running_years, successor_years, running_terms): (i64, i64, i64) = DbSession::new(&mut **tx).query_as("academic_core.services.lifecycle_context.read_year_recovery_state",
         "SELECT
          (SELECT count(*) FROM academic_years WHERE id<>$1 AND status IN ('active','closing')),
-         (SELECT count(*) FROM academic_years successor WHERE successor.id<>$1 AND successor.start_date>$2 AND
+         (SELECT count(*) FROM academic_years successor WHERE successor.id<>$1 AND successor.year>$2 AND
           (successor.status IN ('active','closing','closed','archived') OR EXISTS(
            SELECT 1 FROM academic_year_transition_receipts receipt WHERE receipt.academic_year_id=successor.id AND receipt.action='activate'))),
          (SELECT count(*) FROM academic_terms WHERE status IN ('active','closing'))",
     )
     .bind(year)
-    .bind(context.start_date)
+    .bind(context.year)
     .fetch_one()
     .await?;
     Ok(YearRecoveryState {

@@ -79,14 +79,14 @@ pub(crate) async fn activation_evidence_in_transaction(
         tx,
         academic_year_id,
         academic_term_id,
-        state.context.term_start_date,
+        state.context.operation_date,
     )
     .await?;
     let timetables = timetable_version_service::opening::published_for_term(
         tx,
         academic_year_id,
         academic_term_id,
-        state.context.term_start_date,
+        state.context.operation_date,
         state.context.bell_schedule_id,
     )
     .await?;

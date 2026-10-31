@@ -434,6 +434,11 @@ test('creating an activity with groups navigates with the created offering conte
 		await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
 		await visibleOption.click();
 	}
+	await dialog.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริง', exact: true }).click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^15$/ })
+		.click();
 	await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
 	await dialog.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
 	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
@@ -445,7 +450,8 @@ test('creating an activity with groups navigates with the created offering conte
 		kind: 'activity',
 		academicTermId: ids.term,
 		activityVersionId: offerings.club,
-		createHomeroomGroups: true
+		createHomeroomGroups: true,
+		startsOn: expect.stringMatching(/^\d{4}-\d{2}-15$/)
 	});
 	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
 	await expectManagerOrigin(page, 'offerings');

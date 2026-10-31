@@ -6,7 +6,6 @@ type Action = components['schemas']['TermTransitionAction'];
 export function canConfirmTransition(
 	workspace: Workspace,
 	action: Action,
-	closedOn: string | undefined,
 	reason: string,
 	acknowledged: string[]
 ): boolean {
@@ -15,16 +14,6 @@ export function canConfirmTransition(
 		if (
 			!workspace.coverage.ready ||
 			workspace.findings.some((finding) => finding.severity === 'blocking')
-		)
-			return false;
-		if (!closedOn || !/^\d{4}-\d{2}-\d{2}$/.test(closedOn)) return false;
-		const timestamp = Date.parse(`${closedOn}T00:00:00Z`);
-		if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== closedOn)
-			return false;
-		if (
-			closedOn < workspace.context.termStartDate ||
-			closedOn < workspace.context.yearStartDate ||
-			closedOn > workspace.context.yearEndDate
 		)
 			return false;
 		const warnings = workspace.findings
@@ -36,7 +25,7 @@ export function canConfirmTransition(
 			warnings.every((code) => acknowledged.includes(code))
 		);
 	}
-	if (closedOn || acknowledged.length > 0) return false;
+	if (acknowledged.length > 0) return false;
 	if (action === 'reopen') return reason.trim().length > 0 && Array.from(reason).length <= 1000;
 	return true;
 }

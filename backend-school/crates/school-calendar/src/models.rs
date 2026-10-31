@@ -84,6 +84,8 @@ pub struct UpsertCalendarTagRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventTarget {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub academic_year_id: Option<Uuid>,
     pub id: Uuid,
     pub audience_type: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
@@ -92,10 +94,11 @@ pub struct CalendarEventTarget {
     pub homeroom_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventTargetInput {
+    pub academic_year_id: Option<Uuid>,
     pub audience_type: CalendarAudienceType,
     pub grade_level_id: Option<Uuid>,
     pub homeroom_id: Option<Uuid>,

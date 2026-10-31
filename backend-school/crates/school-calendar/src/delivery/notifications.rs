@@ -86,7 +86,7 @@ async fn resolve_event_recipient_user_ids_on_connection(
          AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'student'
-         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND targets.grade_level_id IS NULL AND targets.homeroom_id IS NULL))
         WHERE users.status = 'active'
           AND users.user_type = 'student'
           AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
@@ -109,7 +109,7 @@ async fn resolve_event_recipient_user_ids_on_connection(
          AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'parent'
-         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND targets.grade_level_id IS NULL AND targets.homeroom_id IS NULL))
         WHERE parent_users.status = 'active'
           AND parent_users.user_type = 'parent'
           AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
@@ -157,7 +157,7 @@ pub(crate) async fn accept_event_in_transaction(
         (CalendarNotificationKind::Reminder { .. }, None) => {
             return Err(AppError::Conflict(
                 "calendar_reminder_source_required".into(),
-            ))
+            ));
         }
         (CalendarNotificationKind::Created, _) => format!("calendar-event:{}:created", event.id),
         (CalendarNotificationKind::Updated, _) => format!(

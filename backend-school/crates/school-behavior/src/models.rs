@@ -18,7 +18,7 @@ macro_rules! text_enum {
 text_enum!(BehaviorSide { Merit=>"merit", Deduction=>"deduction" });
 text_enum!(BehaviorSource { Manual=>"manual", Arrival=>"arrival", Lesson=>"lesson", Special=>"special" });
 text_enum!(BehaviorScoreAction { None=>"none", Merit=>"merit", Deduction=>"deduction" });
-text_enum!(BehaviorResetSchedule { Manual=>"manual", Monthly=>"monthly", Term=>"term", Year=>"year" });
+text_enum!(BehaviorResetSchedule { Manual=>"manual", Monthly=>"monthly", Scheduled=>"scheduled" });
 text_enum!(BehaviorCleanupMode { DetailsOnly=>"details_only", Archive=>"archive", DeleteEffects=>"delete_effects" });
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -94,7 +94,9 @@ pub struct BehaviorSettings {
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub daily_deduction_cap: Option<i32>,
     pub merit_reset: BehaviorResetSchedule,
+    pub merit_reset_dates: Vec<NaiveDate>,
     pub deduction_reset: BehaviorResetSchedule,
+    pub deduction_reset_dates: Vec<NaiveDate>,
     pub row_version: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,8 +470,6 @@ pub enum BehaviorDeliveryOutcome {
 pub struct BehaviorResetReadiness {
     pub finalized_through: NaiveDate,
     pub delivered_through: NaiveDate,
-    pub term_ends: Vec<NaiveDate>,
-    pub year_ends: Vec<NaiveDate>,
 }
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]

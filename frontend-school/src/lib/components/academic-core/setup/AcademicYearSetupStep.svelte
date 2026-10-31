@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type {
 		AcademicYear,
 		CreateAcademicYearRequest,
@@ -10,10 +11,10 @@
 		standardAcademicYearName,
 		type AcademicWeekday
 	} from '#lib/academic-core/foundation-presentation.js';
+	import { yearDraftBase, yearDraftMetadataMatches } from '#lib/academic-core/context-drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ChevronDown, Save } from '@lucide/svelte';
@@ -44,17 +45,22 @@
 		onSaved: (year: AcademicYear) => void;
 	} = $props();
 
-	let year = $derived(existing?.year ?? suggestedYear);
-	let customName = $derived(
-		existing ? customNameFromStored(existing.name, standardAcademicYearName(existing.year)) : ''
+	let year = $state(untrack(() => existing?.year ?? suggestedYear));
+	let customName = $state(
+		untrack(() =>
+			existing ? customNameFromStored(existing.name, standardAcademicYearName(existing.year)) : ''
+		)
 	);
-	let startDate = $derived(existing?.startDate ?? '');
-	let endDate = $derived(existing?.endDate ?? '');
-	let schoolDays = $derived<AcademicWeekday[]>(
-		normalizeSchoolDays(existing?.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'])
+	let schoolDays = $state<AcademicWeekday[]>(
+		untrack(() => normalizeSchoolDays(existing?.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI']))
 	);
-	let advancedOpen = $derived(customName.length > 0);
+	let advancedOpen = $state(untrack(() => customName.length > 0));
 	let errorMessage = $state('');
+
+	let draftBase = $state(untrack(() => (existing ? yearDraftBase(existing) : null)));
+	const metadataChanged = $derived(
+		!!existing && !!draftBase && !yearDraftMetadataMatches(draftBase, existing)
+	);
 
 	const standardName = $derived(standardAcademicYearName(year));
 	const displayName = $derived(customName.trim() || standardName);
@@ -67,15 +73,8 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (busy || metadataChanged) return;
 		errorMessage = '';
-		if (!startDate || !endDate) {
-			errorMessage = 'กรุณาเลือกวันเริ่มและวันสิ้นสุดปีการศึกษา';
-			return;
-		}
-		if (startDate > endDate) {
-			errorMessage = 'วันสิ้นสุดปีการศึกษาต้องไม่อยู่ก่อนวันเริ่ม';
-			return;
-		}
 		if (schoolDays.length === 0) {
 			errorMessage = 'กรุณาเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
@@ -83,8 +82,6 @@
 		const common = {
 			year,
 			customName: customName.trim() || null,
-			startDate,
-			endDate,
 			schoolDays
 		};
 		try {
@@ -111,24 +108,6 @@
 		<div class="space-y-1.5">
 			<Label for="academic-year-value">ปีการศึกษา (พ.ศ.)</Label>
 			<Input id="academic-year-value" type="number" min="2400" bind:value={year} required />
-		</div>
-		<div class="space-y-1.5">
-			<Label for="academic-year-start">วันเริ่มปีการศึกษา</Label>
-			<DatePicker
-				id="academic-year-start"
-				bind:value={startDate}
-				ariaLabel="เลือกวันเริ่มปีการศึกษา"
-				required
-			/>
-		</div>
-		<div class="space-y-1.5 sm:col-start-2">
-			<Label for="academic-year-end">วันสิ้นสุดปีการศึกษา</Label>
-			<DatePicker
-				id="academic-year-end"
-				bind:value={endDate}
-				ariaLabel="เลือกวันสิ้นสุดปีการศึกษา"
-				required
-			/>
 		</div>
 	</div>
 
@@ -170,6 +149,30 @@
 		</Collapsible.Content>
 	</Collapsible.Root>
 
+	{#if metadataChanged && existing}
+		<div
+			role="alert"
+			class="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+		>
+			<p class="font-medium">ข้อมูลปีการศึกษาที่บันทึกไว้เปลี่ยนระหว่างแก้ไข</p>
+			<p>
+				ข้อมูลล่าสุด: {existing.name} · ปี {existing.year} · วันเรียน {existing.schoolDays.join(
+					', '
+				)}
+			</p>
+			<p>ฉบับร่างของคุณยังอยู่ ตรวจสอบกับข้อมูลล่าสุดก่อนบันทึก</p>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				disabled={busy}
+				onclick={() => {
+					if (existing) draftBase = yearDraftBase(existing);
+				}}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button
+			>
+		</div>
+	{/if}
+
 	{#if errorMessage}
 		<p
 			role="alert"
@@ -179,7 +182,7 @@
 		</p>
 	{/if}
 
-	<Button type="submit" disabled={busy}>
+	<Button type="submit" disabled={busy || metadataChanged}>
 		<Save class="size-4" />
 		{existing ? 'บันทึกปีการศึกษา' : 'สร้างปีสำหรับวางแผน'}
 	</Button>

@@ -23,12 +23,15 @@ export type RoomLookupItem = Schemas['Room'];
 
 export type LookupOptions = NonNullable<operations['lookupStaff']['parameters']['query']>;
 export type AcademicLookupOptions = operations['lookupStudents']['parameters']['query'];
+export type SubjectLookupOptions = NonNullable<operations['lookupSubjects']['parameters']['query']>;
 
 // ===================================================================
 // Helper
 // ===================================================================
 
-function buildQueryString(options?: LookupOptions | AcademicLookupOptions): string {
+function buildQueryString(
+	options?: LookupOptions | AcademicLookupOptions | SubjectLookupOptions
+): string {
 	const params = new URLSearchParams();
 	if (options?.activeOnly !== undefined) {
 		params.set('activeOnly', String(options.activeOnly));
@@ -54,7 +57,7 @@ function buildQueryString(options?: LookupOptions | AcademicLookupOptions): stri
 
 async function fetchLookup<T>(
 	endpoint: string,
-	options?: LookupOptions | AcademicLookupOptions,
+	options?: LookupOptions | AcademicLookupOptions | SubjectLookupOptions,
 	requestOptions: ApiRequestOptions = {}
 ): Promise<T[]> {
 	const query = buildQueryString(options);
@@ -155,6 +158,6 @@ export async function lookupRooms(
  * Fetch subjects list for dropdowns
  * Returns: id, name, code
  */
-export async function lookupSubjects(options: AcademicLookupOptions): Promise<LookupItem[]> {
+export async function lookupSubjects(options: SubjectLookupOptions = {}): Promise<LookupItem[]> {
 	return fetchLookup<LookupItem>('subjects', options);
 }

@@ -596,6 +596,7 @@ use utoipa::OpenApi;
         school_academic_http::handlers::exam_schedule::list_my_exam_schedule,
         school_academic_http::handlers::exam_schedule::list_staff_exam_schedule,
         school_academic_http::core::handlers::list_context_options,
+        school_academic_http::core::handlers::update_context_settings,
 		school_academic_http::core::handlers::list_public_context_options,
         school_academic_http::core::handlers::get_academic_setup_workspace,
         school_academic_http::core::handlers::list_years,
@@ -1320,6 +1321,10 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         AcademicYearOption,
         AcademicTermOption,
         AcademicContextOptions,
+        AcademicContextSettings,
+        AcademicContextVisibilityInput,
+        UpdateAcademicContextSettingsRequest,
+        AcademicContextSettingsMutationResponse,
         CreateBellScheduleRequest,
         UpdateBellScheduleRequest,
         BellSchedule,
@@ -1445,6 +1450,7 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<HomeroomNumberingPreview>,
         ApiResponse<Vec<HomeroomRosterCandidate>>,
         ApiResponse<AcademicContextOptions>,
+        ApiResponse<AcademicContextSettingsMutationResponse>,
         ApiResponse<Vec<AcademicYear>>,
         ApiResponse<AcademicYear>,
         ApiResponse<Vec<AcademicTerm>>,
@@ -3539,16 +3545,15 @@ mod tests {
             required(&schemas["AcademicYear"]),
             vec![
                 "createdAt",
-                "endDate",
                 "id",
+                "isVisible",
                 "migrated",
                 "name",
                 "rowVersion",
                 "schoolDays",
-                "startDate",
                 "status",
                 "updatedAt",
-                "year",
+                "year"
             ]
         );
         assert_eq!(
@@ -3557,38 +3562,85 @@ mod tests {
                 "academicYearId",
                 "bellScheduleId",
                 "blocksYearClosure",
-                "closedOn",
                 "code",
                 "createdAt",
                 "id",
                 "includedInYearResult",
+                "isVisible",
                 "migrated",
                 "name",
-                "plannedEndDate",
                 "rowVersion",
                 "sequence",
-                "startDate",
                 "status",
                 "termType",
-                "updatedAt",
+                "updatedAt"
             ]
         );
-        for retired_field in ["semesterId", "classroomCourseId", "isActive"] {
-            assert!(schemas["AcademicYear"]["properties"][retired_field].is_null());
-            assert!(schemas["AcademicTerm"]["properties"][retired_field].is_null());
+        for schema_name in [
+            "AcademicYear",
+            "AcademicTerm",
+            "AcademicYearOption",
+            "AcademicTermOption",
+            "CreateAcademicYearRequest",
+            "UpdateAcademicYearRequest",
+            "CreateAcademicTermRequest",
+            "UpdateAcademicTermRequest",
+        ] {
+            for retired_field in [
+                "startDate",
+                "endDate",
+                "plannedEndDate",
+                "closedOn",
+                "semesterId",
+                "classroomCourseId",
+                "isActive",
+            ] {
+                assert!(
+                    schemas[schema_name]["properties"][retired_field].is_null(),
+                    "{schema_name}.{retired_field} must stay retired"
+                );
+            }
         }
-        for schema_name in ["AcademicTerm", "AcademicTermOption"] {
-            let schema = &schemas[schema_name];
-            assert!(required(schema).contains(&"plannedEndDate"));
-            assert!(required(schema).contains(&"closedOn"));
-            assert!(contains_null(&schema["properties"]["plannedEndDate"]));
-            assert!(contains_null(&schema["properties"]["closedOn"]));
-            assert!(schema["properties"]["endDate"].is_null());
+        for schema_name in [
+            "CreateAcademicYearRequest",
+            "UpdateAcademicYearRequest",
+            "CreateAcademicTermRequest",
+            "UpdateAcademicTermRequest",
+            "UpdateAcademicContextSettingsRequest",
+        ] {
+            assert_eq!(
+                schemas[schema_name]["additionalProperties"],
+                serde_json::json!(false)
+            );
         }
-        for schema_name in ["CreateAcademicTermRequest", "UpdateAcademicTermRequest"] {
-            let schema = &schemas[schema_name];
-            assert!(contains_null(&schema["properties"]["plannedEndDate"]));
-            assert!(schema["properties"]["endDate"].is_null());
+        for field in ["defaultAcademicYearId", "defaultAcademicTermId"] {
+            assert!(required(&schemas["AcademicContextOptions"]).contains(&field));
+            assert!(contains_null(
+                &schemas["AcademicContextOptions"]["properties"][field]
+            ));
+            assert!(required(&schemas["UpdateAcademicContextSettingsRequest"]).contains(&field));
+            assert!(contains_null(
+                &schemas["UpdateAcademicContextSettingsRequest"]["properties"][field]
+            ));
+        }
+        assert!(schemas["AcademicContextOptions"]["properties"]["activeAcademicYearId"].is_null());
+        assert!(schemas["AcademicContextOptions"]["properties"]["activeAcademicTermId"].is_null());
+        assert_eq!(
+            required(&schemas["AcademicContextSettingsMutationResponse"]),
+            vec!["contextOptions", "settings", "terms", "years"]
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/context/settings"]["put"]["operationId"],
+            "updateAcademicContextSettings"
+        );
+        for field in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
+            let mut request =
+                serde_json::json!({"year":2570,"customName":null,"schoolDays":["MON"]});
+            request[field] = serde_json::json!("2027-05-01");
+            assert!(serde_json::from_value::<
+                school_academic_core::models::CreateAcademicYearRequest,
+            >(request)
+            .is_err());
         }
 
         let success = &document["paths"]["/api/academic/offerings"]["get"]["responses"]["200"]
@@ -4806,9 +4858,11 @@ mod tests {
                 );
             }
             if let Some(parameters) = document["paths"][path][method]["parameters"].as_array() {
-                assert!(parameters.iter().all(|parameter| !parameter["name"]
-                    .as_str()
-                    .is_some_and(|name| name.contains('_'))));
+                assert!(parameters.iter().all(|parameter| {
+                    !parameter["name"]
+                        .as_str()
+                        .is_some_and(|name| name.contains('_'))
+                }));
             }
         }
     }
@@ -6703,52 +6757,236 @@ mod tests {
         assert_operations(
             &document,
             &[
-                ("/api/academic/gradebook/subjects", "get", "listGradebookSubjects"),
-                ("/api/academic/gradebook/controls", "get", "listGradebookControls"),
-                ("/api/academic/gradebook/controls/{control_id}", "put", "updateGradebookControl"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}", "get", "getGradebookGroupPhaseWorkspace"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items", "post", "createGradebookItem"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}", "put", "updateGradebookItem"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}", "delete", "removeGradebookItem"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores", "put", "saveGradebookScoresBatch"),
-                ("/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm", "post", "confirmGradebookPhase"),
-                ("/api/academic/learner-evaluations/policies", "get", "listLearnerEvaluationPolicies"),
-                ("/api/academic/learner-evaluations/policies", "post", "createLearnerEvaluationPolicy"),
-                ("/api/academic/learner-evaluations/policies/{policy_id}/activate", "post", "activateLearnerEvaluationPolicy"),
-                ("/api/academic/learner-evaluations/subjects", "get", "listLearnerEvaluationSubjects"),
-                ("/api/academic/learner-evaluations/lock-readiness", "get", "getLearnerEvaluationLockReadiness"),
-                ("/api/academic/learner-evaluations/catalog", "get", "listLearnerEvaluationCatalog"),
-                ("/api/academic/learner-evaluations/catalog", "post", "createLearnerEvaluationCatalog"),
-                ("/api/academic/learner-evaluations/catalog/{criterion_id}", "put", "updateLearnerEvaluationCatalog"),
-                ("/api/academic/learner-evaluations/catalog/{criterion_id}", "delete", "removeLearnerEvaluationCatalog"),
-                ("/api/academic/learner-evaluations/controls", "get", "listLearnerEvaluationControls"),
-                ("/api/academic/learner-evaluations/controls/{domain}", "put", "updateLearnerEvaluationControl"),
-                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration", "get", "getLearnerEvaluationConfiguration"),
-                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria", "post", "createSubjectEvaluationCriterion"),
-                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}", "put", "updateSubjectEvaluationCriterion"),
-                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}", "delete", "removeSubjectEvaluationCriterion"),
-                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}", "get", "getLearnerEvaluationWorkspace"),
-                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses", "put", "saveLearnerEvaluationResponses"),
-                ("/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm", "post", "confirmLearnerEvaluationGroup"),
-                ("/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock", "post", "lockLearnerEvaluationSubject"),
-                ("/api/academic/learner-evaluations/students/{student_academic_year_id}/summary", "get", "getStudentLearnerEvaluationSummary"),
-                ("/api/academic/results/policies", "get", "listAcademicGradingPolicies"),
-                ("/api/academic/results/policies", "post", "createAcademicGradingPolicy"),
-                ("/api/academic/results/policies/{policy_id}/activate", "post", "activateAcademicGradingPolicy"),
-                ("/api/academic/results/groups/{group_id}/course", "get", "getCourseResultPreparation"),
-                ("/api/academic/results/groups/{group_id}/course/selection", "put", "saveCourseResultSelection"),
-                ("/api/academic/results/groups/{group_id}/course/confirm", "post", "confirmCourseGroupResults"),
-                ("/api/academic/results/groups/{group_id}/activity", "get", "getActivityResultPreparation"),
-                ("/api/academic/results/groups/{group_id}/activity/outcomes", "put", "saveActivityResultOutcomes"),
-                ("/api/academic/results/groups/{group_id}/activity/confirm", "post", "confirmActivityGroupResults"),
-                ("/api/academic/results/readiness", "get", "getAcademicResultReadiness"),
-                ("/api/academic/results/subjects/{subject_id}/lock", "post", "lockCourseSubjectResults"),
-                ("/api/academic/results/groups/{group_id}/activity/lock", "post", "lockActivityGroupResults"),
-                ("/api/academic/results/activities/lock-ready", "post", "lockAllReadyActivityResults"),
-                ("/api/academic/results/effective", "get", "searchEffectiveAcademicResults"),
-                ("/api/academic/results/corrections", "post", "correctEffectiveAcademicResult"),
-                ("/api/academic/results/aggregate-policies", "get", "listAggregatePolicies"),
-                ("/api/academic/results/aggregate-policies", "post", "createAggregatePolicy"),
+                (
+                    "/api/academic/gradebook/subjects",
+                    "get",
+                    "listGradebookSubjects",
+                ),
+                (
+                    "/api/academic/gradebook/controls",
+                    "get",
+                    "listGradebookControls",
+                ),
+                (
+                    "/api/academic/gradebook/controls/{control_id}",
+                    "put",
+                    "updateGradebookControl",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}",
+                    "get",
+                    "getGradebookGroupPhaseWorkspace",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items",
+                    "post",
+                    "createGradebookItem",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",
+                    "put",
+                    "updateGradebookItem",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",
+                    "delete",
+                    "removeGradebookItem",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores",
+                    "put",
+                    "saveGradebookScoresBatch",
+                ),
+                (
+                    "/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm",
+                    "post",
+                    "confirmGradebookPhase",
+                ),
+                (
+                    "/api/academic/learner-evaluations/policies",
+                    "get",
+                    "listLearnerEvaluationPolicies",
+                ),
+                (
+                    "/api/academic/learner-evaluations/policies",
+                    "post",
+                    "createLearnerEvaluationPolicy",
+                ),
+                (
+                    "/api/academic/learner-evaluations/policies/{policy_id}/activate",
+                    "post",
+                    "activateLearnerEvaluationPolicy",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects",
+                    "get",
+                    "listLearnerEvaluationSubjects",
+                ),
+                (
+                    "/api/academic/learner-evaluations/lock-readiness",
+                    "get",
+                    "getLearnerEvaluationLockReadiness",
+                ),
+                (
+                    "/api/academic/learner-evaluations/catalog",
+                    "get",
+                    "listLearnerEvaluationCatalog",
+                ),
+                (
+                    "/api/academic/learner-evaluations/catalog",
+                    "post",
+                    "createLearnerEvaluationCatalog",
+                ),
+                (
+                    "/api/academic/learner-evaluations/catalog/{criterion_id}",
+                    "put",
+                    "updateLearnerEvaluationCatalog",
+                ),
+                (
+                    "/api/academic/learner-evaluations/catalog/{criterion_id}",
+                    "delete",
+                    "removeLearnerEvaluationCatalog",
+                ),
+                (
+                    "/api/academic/learner-evaluations/controls",
+                    "get",
+                    "listLearnerEvaluationControls",
+                ),
+                (
+                    "/api/academic/learner-evaluations/controls/{domain}",
+                    "put",
+                    "updateLearnerEvaluationControl",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration",
+                    "get",
+                    "getLearnerEvaluationConfiguration",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria",
+                    "post",
+                    "createSubjectEvaluationCriterion",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",
+                    "put",
+                    "updateSubjectEvaluationCriterion",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",
+                    "delete",
+                    "removeSubjectEvaluationCriterion",
+                ),
+                (
+                    "/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}",
+                    "get",
+                    "getLearnerEvaluationWorkspace",
+                ),
+                (
+                    "/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses",
+                    "put",
+                    "saveLearnerEvaluationResponses",
+                ),
+                (
+                    "/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm",
+                    "post",
+                    "confirmLearnerEvaluationGroup",
+                ),
+                (
+                    "/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock",
+                    "post",
+                    "lockLearnerEvaluationSubject",
+                ),
+                (
+                    "/api/academic/learner-evaluations/students/{student_academic_year_id}/summary",
+                    "get",
+                    "getStudentLearnerEvaluationSummary",
+                ),
+                (
+                    "/api/academic/results/policies",
+                    "get",
+                    "listAcademicGradingPolicies",
+                ),
+                (
+                    "/api/academic/results/policies",
+                    "post",
+                    "createAcademicGradingPolicy",
+                ),
+                (
+                    "/api/academic/results/policies/{policy_id}/activate",
+                    "post",
+                    "activateAcademicGradingPolicy",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/course",
+                    "get",
+                    "getCourseResultPreparation",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/course/selection",
+                    "put",
+                    "saveCourseResultSelection",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/course/confirm",
+                    "post",
+                    "confirmCourseGroupResults",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/activity",
+                    "get",
+                    "getActivityResultPreparation",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/activity/outcomes",
+                    "put",
+                    "saveActivityResultOutcomes",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/activity/confirm",
+                    "post",
+                    "confirmActivityGroupResults",
+                ),
+                (
+                    "/api/academic/results/readiness",
+                    "get",
+                    "getAcademicResultReadiness",
+                ),
+                (
+                    "/api/academic/results/subjects/{subject_id}/lock",
+                    "post",
+                    "lockCourseSubjectResults",
+                ),
+                (
+                    "/api/academic/results/groups/{group_id}/activity/lock",
+                    "post",
+                    "lockActivityGroupResults",
+                ),
+                (
+                    "/api/academic/results/activities/lock-ready",
+                    "post",
+                    "lockAllReadyActivityResults",
+                ),
+                (
+                    "/api/academic/results/effective",
+                    "get",
+                    "searchEffectiveAcademicResults",
+                ),
+                (
+                    "/api/academic/results/corrections",
+                    "post",
+                    "correctEffectiveAcademicResult",
+                ),
+                (
+                    "/api/academic/results/aggregate-policies",
+                    "get",
+                    "listAggregatePolicies",
+                ),
+                (
+                    "/api/academic/results/aggregate-policies",
+                    "post",
+                    "createAggregatePolicy",
+                ),
             ],
         );
 

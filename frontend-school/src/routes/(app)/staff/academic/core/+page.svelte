@@ -3,6 +3,9 @@
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
+		updateAcademicContextSettings,
+		type AcademicContextSettings,
+		type UpdateAcademicContextSettingsRequest,
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
@@ -16,6 +19,8 @@
 		updateAcademicYear,
 		updateBellSchedule
 	} from '#lib/api/academic-core.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 	import AcademicYearTermEditor from '#lib/components/academic-core/AcademicYearTermEditor.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -31,7 +36,9 @@
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let loading = $state(true);
 	let workspaceReady = $state(false);
-	let busy = $state(false);
+	let busy = $state({ year: false, term: false, schedule: false, periods: false });
+	let contextSettings = $state<AcademicContextSettings | null>(null);
+	const academicContext = getAcademicContextStore();
 	let errorMessage = $state('');
 	let mutationRevision = 0;
 	const canRead = $derived(
@@ -43,6 +50,12 @@
 
 	function loadWorkspace() {
 		return invalidate(ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
+	}
+
+	async function reloadContextSettings() {
+		await loadWorkspace();
+		const result = await data.workspace;
+		if (!result.ok) throw new Error(result.error);
 	}
 
 	$effect.pre(() => {
@@ -69,6 +82,7 @@
 						termsByYear.clear();
 						for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
 						bellSchedules = workspace.bellSchedules;
+						contextSettings = workspace.contextSettings;
 						workspaceReady = true;
 					} else if (!result.ok) errorMessage = result.error;
 					loading = false;
@@ -80,8 +94,32 @@
 		};
 	});
 
+	async function saveContextSettings(draft: UpdateAcademicContextSettingsRequest) {
+		const identity = appIdentityKey();
+		const result = await updateAcademicContextSettings(draft);
+		if (identity !== appIdentityKey()) return result;
+		mutationRevision += 1;
+		if (contextSettings && contextSettings.rowVersion > result.settings.rowVersion) return result;
+		contextSettings = result.settings;
+		const changedYears = new Map(result.years.map((year) => [year.id, year]));
+		years = years.map((year) => {
+			const updated = changedYears.get(year.id);
+			return updated && updated.rowVersion >= year.rowVersion ? updated : year;
+		});
+		for (const term of result.terms) {
+			termsByYear.set(
+				term.academicYearId,
+				(termsByYear.get(term.academicYearId) ?? []).map((current) =>
+					current.id === term.id && term.rowVersion >= current.rowVersion ? term : current
+				)
+			);
+		}
+		academicContext.replaceOptions(result.contextOptions);
+		return result;
+	}
+
 	async function addYear(draft: Parameters<typeof createAcademicYear>[0]) {
-		busy = true;
+		busy.year = true;
 		try {
 			const created = await createAcademicYear(draft);
 			mutationRevision += 1;
@@ -89,12 +127,12 @@
 			termsByYear.set(created.id, []);
 			return created;
 		} finally {
-			busy = false;
+			busy.year = false;
 		}
 	}
 
 	async function addTerm(draft: Parameters<typeof createAcademicTerm>[0]) {
-		busy = true;
+		busy.term = true;
 		try {
 			const created = await createAcademicTerm(draft);
 			mutationRevision += 1;
@@ -106,55 +144,59 @@
 			);
 			return created;
 		} finally {
-			busy = false;
+			busy.term = false;
 		}
 	}
 
 	async function editYear(id: string, draft: Parameters<typeof updateAcademicYear>[1]) {
-		busy = true;
+		busy.year = true;
 		try {
 			const updated = await updateAcademicYear(id, draft);
 			mutationRevision += 1;
 			years = years
-				.map((year) => (year.id === updated.id ? updated : year))
+				.map((year) =>
+					year.id === updated.id && updated.rowVersion >= year.rowVersion ? updated : year
+				)
 				.sort((a, b) => b.year - a.year);
 			return updated;
 		} finally {
-			busy = false;
+			busy.year = false;
 		}
 	}
 
 	async function editTerm(id: string, draft: Parameters<typeof updateAcademicTerm>[1]) {
-		busy = true;
+		busy.term = true;
 		try {
 			const updated = await updateAcademicTerm(id, draft);
 			mutationRevision += 1;
 			termsByYear.set(
 				updated.academicYearId,
 				(termsByYear.get(updated.academicYearId) ?? [])
-					.map((term) => (term.id === updated.id ? updated : term))
+					.map((term) =>
+						term.id === updated.id && updated.rowVersion >= term.rowVersion ? updated : term
+					)
 					.sort((a, b) => a.sequence - b.sequence)
 			);
 			return updated;
 		} finally {
-			busy = false;
+			busy.term = false;
 		}
 	}
 
 	async function addBellSchedule(draft: Parameters<typeof createBellSchedule>[0]) {
-		busy = true;
+		busy.schedule = true;
 		try {
 			const created = await createBellSchedule(draft);
 			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			busy = false;
+			busy.schedule = false;
 		}
 	}
 
 	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
-		busy = true;
+		busy.schedule = true;
 		try {
 			const updated = await updateBellSchedule(id, draft);
 			mutationRevision += 1;
@@ -165,7 +207,7 @@
 			];
 			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
-			busy = false;
+			busy.schedule = false;
 		}
 	}
 
@@ -173,7 +215,7 @@
 		id: string,
 		draft: Parameters<typeof replaceBellSchedulePeriods>[1]
 	) {
-		busy = true;
+		busy.periods = true;
 		try {
 			const periods = await replaceBellSchedulePeriods(id, draft);
 			mutationRevision += 1;
@@ -187,7 +229,7 @@
 			}
 			return periods;
 		} finally {
-			busy = false;
+			busy.periods = false;
 		}
 	}
 </script>
@@ -224,6 +266,9 @@
 				{termsByYear}
 				{bellSchedules}
 				{canManage}
+				{contextSettings}
+				onUpdateContextSettings={saveContextSettings}
+				onReloadContextSettings={reloadContextSettings}
 				{busy}
 				onCreateYear={addYear}
 				onUpdateYear={editYear}

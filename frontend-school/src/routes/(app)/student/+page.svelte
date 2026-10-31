@@ -55,10 +55,8 @@
 	const termId = $derived(
 		contextOptions?.terms.find(
 			(term) =>
-				term.academicYearId === selectedYearId && term.id === contextOptions?.activeAcademicTermId
-		)?.id ??
-			contextOptions?.terms.find((term) => term.academicYearId === selectedYearId)?.id ??
-			''
+				term.academicYearId === selectedYearId && term.id === contextOptions?.defaultAcademicTermId
+		)?.id ?? ''
 	);
 	const termQuery = $derived(
 		`${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`

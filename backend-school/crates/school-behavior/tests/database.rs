@@ -43,10 +43,9 @@ async fn fixture(name: &str) -> Fixture {
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
     let start = today - Duration::days(40);
-    let end = today + Duration::days(365);
-    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status)VALUES(2999,'Behavior Fixture',$1,$2,'active')RETURNING id").bind(start).bind(end).fetch_one(&pool).await.unwrap();
+    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status)VALUES(2999,'Behavior Fixture','active')RETURNING id").fetch_one(&pool).await.unwrap();
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default)VALUES(uuidv7(),$1,'BEHAVIOR','Behavior fixture',true)RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
-    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure)VALUES($1,1,'B1','Behavior Term','regular',$2,$3,$4,'active',true,true)RETURNING id").bind(year).bind(start).bind(end).bind(bell).fetch_one(&pool).await.unwrap();
+    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)VALUES($1,1,'B1','Behavior Term','regular',$2,'active',true,true)RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
     let grade:Uuid=sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active)VALUES('secondary',1,true)ON CONFLICT(level_type,year)DO UPDATE SET is_active=true RETURNING id").fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id)VALUES($1,$2)ON CONFLICT DO NOTHING").bind(year).bind(grade).execute(&pool).await.unwrap();
     let edition:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(id,name,revision_year)VALUES(uuidv7(),'Behavior Curriculum',2999)RETURNING id").fetch_one(&pool).await.unwrap();
@@ -395,8 +394,6 @@ async fn reset_twenty_zero_then_five_same_day_and_actual_detail_deletion() {
     let ready = BehaviorResetReadiness {
         finalized_through: today(),
         delivered_through: today(),
-        term_ends: vec![],
-        year_ends: vec![],
     };
     schedules::reset(&f.pool, f.admin.actor_id, reset.clone(), ready.clone())
         .await
@@ -748,8 +745,6 @@ async fn queued_reset_with_long_reason_finishes_and_preserves_full_audit() {
         BehaviorResetReadiness {
             finalized_through: today(),
             delivered_through: today(),
-            term_ends: vec![],
-            year_ends: vec![],
         },
     )
     .await
@@ -1210,15 +1205,18 @@ async fn manual_selector_keeps_unassigned_students_without_optional_profile() {
 }
 
 #[tokio::test]
-async fn summaries_retain_other_term_history_and_reset_calendar_excludes_unactivated_periods() {
+async fn summaries_retain_other_term_history_and_resets_require_explicit_inclusive_cutoffs() {
     let f = fixture("behavior_cross_term_history").await;
     let now = today();
-    let planning_end = now - Duration::days(10);
     let closed_on = now - Duration::days(1);
-    let old_term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,closed_on,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,2,'OLD','Archived Term','custom',$2,$3,$4,bell_schedule_id,'closed',false,false FROM academic_terms WHERE id=$1 RETURNING id").bind(f.term).bind(now-Duration::days(3)).bind(now-Duration::days(2)).bind(closed_on).fetch_one(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,3,'UNUSED','Never Activated','custom',$2,$3,bell_schedule_id,'planning',false,false FROM academic_terms WHERE id=$1").bind(f.term).bind(now-Duration::days(20)).bind(planning_end).execute(&f.pool).await.unwrap();
-    let unused_year_end = now - Duration::days(5);
-    sqlx::query("INSERT INTO academic_years(year,name,start_date,end_date,status)VALUES(2998,'Unactivated year',$1,$2,'planning')").bind(now-Duration::days(30)).bind(unused_year_end).execute(&f.pool).await.unwrap();
+    let old_term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,2,'OLD','Archived Term','custom',bell_schedule_id,'closed',false,false FROM academic_terms WHERE id=$1 RETURNING id").bind(f.term).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,3,'UNUSED','Never Activated','custom',bell_schedule_id,'planning',false,false FROM academic_terms WHERE id=$1").bind(f.term).execute(&f.pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO academic_years(year,name,status)VALUES(2998,'Unactivated year','planning')",
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
     sqlx::query("UPDATE behavior_state SET activation_date=$1 WHERE singleton")
         .bind(now - Duration::days(3))
         .execute(&f.pool)
@@ -1271,12 +1269,90 @@ async fn summaries_retain_other_term_history_and_reset_calendar_excludes_unactiv
         ),
         (5, 0, 5)
     );
-    let (terms, years) = school_academic_core::services::score_calendar::reset_boundaries(
-        &mut *f.pool.acquire().await.unwrap(),
+    sqlx::query("UPDATE behavior_cycles SET starts_on=$1,starts_at=$1::date::timestamp AT TIME ZONE 'Asia/Bangkok' WHERE side='deduction' AND state='current'")
+        .bind(closed_on).execute(&f.pool).await.unwrap();
+    let before_cutoff = closed_on - Duration::days(1);
+    let ready = BehaviorResetReadiness {
+        finalized_through: now,
+        delivered_through: now,
+    };
+    assert_eq!(
+        schedules::run_due_resets(&f.pool, now, ready.clone(), 8)
+            .await
+            .unwrap(),
+        0,
+        "academic lifecycle state never supplies an implicit Behavior cutoff"
+    );
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                deduction_reset: BehaviorResetSchedule::Scheduled,
+                deduction_reset_dates: vec![closed_on],
+                ..settings
+            },
+        },
     )
     .await
     .unwrap();
-    assert!(terms.contains(&closed_on));
-    assert!(!terms.contains(&planning_end));
-    assert!(!years.contains(&unused_year_end));
+    for (run_date, readiness) in [
+        (closed_on, ready.clone()),
+        (
+            now,
+            BehaviorResetReadiness {
+                finalized_through: before_cutoff,
+                delivered_through: now,
+            },
+        ),
+        (
+            now,
+            BehaviorResetReadiness {
+                finalized_through: now,
+                delivered_through: before_cutoff,
+            },
+        ),
+    ] {
+        assert_eq!(
+            schedules::run_due_resets(&f.pool, run_date, readiness, 8)
+                .await
+                .unwrap(),
+            0,
+            "inclusive cutoff must pass and both Attendance watermarks must be ready"
+        );
+    }
+    assert_eq!(
+        schedules::run_due_resets(&f.pool, now, ready.clone(), 8)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        schedules::run_due_resets(&f.pool, now, ready, 8)
+            .await
+            .unwrap(),
+        0,
+        "completed cutoff must not reset the next cycle again"
+    );
+    let cycles = catalog::cycles(&f.pool).await.unwrap();
+    let current = cycles
+        .iter()
+        .find(|cycle| cycle.side == BehaviorSide::Deduction && cycle.state == "current")
+        .unwrap();
+    assert_eq!(current.starts_on, now);
+    assert!(cycles
+        .iter()
+        .any(|cycle| cycle.side == BehaviorSide::Deduction
+            && cycle.state == "history"
+            && cycle.ends_on == Some(closed_on)));
+    let after_reset = summary(&f, f.a).await;
+    assert_eq!(
+        (
+            after_reset.current.deduction,
+            after_reset.history.deduction,
+            after_reset.lifetime.deduction
+        ),
+        (5, 20, 25),
+        "reset carries later facts into the new cycle and preserves older term history once"
+    );
 }

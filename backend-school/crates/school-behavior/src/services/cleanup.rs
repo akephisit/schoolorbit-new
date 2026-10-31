@@ -90,7 +90,15 @@ pub(super) async fn snapshot(
     scope: &BehaviorCleanupScope,
     current_only: bool,
 ) -> Result<Snapshot, AppError> {
-    let mut q=selection_builder(scope,current_only,QueryBuilder::new("WITH detail AS(SELECT total_id,count(*)::bigint n,COALESCE(sum(points)FILTER(WHERE cancelled_at IS NULL),0)::bigint p FROM behavior_entries GROUP BY total_id)SELECT COALESCE(md5(string_agg(md5(concat_ws(':',t.id,t.row_version,t.points,t.cycle_id)),''ORDER BY t.id)),'')checksum,count(DISTINCT t.student_id)::bigint students,count(*)::bigint records,COALESCE(sum(detail.n),0)::bigint entries,COALESCE(sum(t.points)FILTER(WHERE c.state='current' AND t.side='merit'),0)::bigint current_merit,COALESCE(sum(t.points)FILTER(WHERE c.state='current' AND t.side='deduction'),0)::bigint current_deduction,COALESCE(sum(t.points)FILTER(WHERE c.state='history' AND t.side='merit'),0)::bigint history_merit,COALESCE(sum(t.points)FILTER(WHERE c.state='history' AND t.side='deduction'),0)::bigint history_deduction,COALESCE(bool_or(COALESCE(detail.p,0)>t.points),false)invalid"),"",true);
+    let mut q = selection_builder(
+        scope,
+        current_only,
+        QueryBuilder::new(
+            "WITH detail AS(SELECT total_id,count(*)::bigint n,COALESCE(sum(points)FILTER(WHERE cancelled_at IS NULL),0)::bigint p FROM behavior_entries GROUP BY total_id)SELECT COALESCE(md5(string_agg(md5(concat_ws(':',t.id,t.row_version,t.points,t.cycle_id)),''ORDER BY t.id)),'')checksum,count(DISTINCT t.student_id)::bigint students,count(*)::bigint records,COALESCE(sum(detail.n),0)::bigint entries,COALESCE(sum(t.points)FILTER(WHERE c.state='current' AND t.side='merit'),0)::bigint current_merit,COALESCE(sum(t.points)FILTER(WHERE c.state='current' AND t.side='deduction'),0)::bigint current_deduction,COALESCE(sum(t.points)FILTER(WHERE c.state='history' AND t.side='merit'),0)::bigint history_merit,COALESCE(sum(t.points)FILTER(WHERE c.state='history' AND t.side='deduction'),0)::bigint history_deduction,COALESCE(bool_or(COALESCE(detail.p,0)>t.points),false)invalid",
+        ),
+        "",
+        true,
+    );
     let stats: Stats = DbSession::new(connection)
         .prepared_query_as("behavior.services.cleanup.snapshot", q.build_query_as())
         .fetch_one()
@@ -233,36 +241,25 @@ async fn suppress_scope(
         )
         .execute()
         .await?;
-    let (context_start, context_end): (NaiveDate, NaiveDate) = if let Some(term) =
-        scope.academic_term_id
-    {
-        DbSession::new(&mut *connection).query_as("behavior.services.cleanup.suppress_scope", "SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date)FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(term).fetch_one().await?
-    } else if let Some(year) = scope.academic_year_id {
-        DbSession::new(&mut *connection)
-            .query_as(
-                "behavior.services.cleanup.suppress_scope",
-                "SELECT start_date,end_date FROM academic_years WHERE id=$1",
-            )
-            .bind(year)
-            .fetch_one()
-            .await?
+    let (start, end) = if scope.academic_term_id.is_some() || scope.academic_year_id.is_some() {
+        (scope.start, scope.end)
     } else {
-        let activation = DbSession::new(&mut *connection)
+        let activation: NaiveDate = DbSession::new(&mut *connection)
             .scalar(
-                "behavior.services.cleanup.suppress_scope",
+                "behavior.services.cleanup.activation",
                 "SELECT activation_date FROM behavior_state WHERE singleton",
             )
             .fetch_one()
             .await?;
-        (activation, today())
+        (
+            Some(scope.start.unwrap_or(activation)),
+            Some(scope.end.unwrap_or_else(today)),
+        )
     };
-    let start = scope.start.unwrap_or(context_start).max(context_start);
-    let end = scope.end.unwrap_or(context_end).min(context_end);
-    if start <= end {
-        for side in &scope.sides {
-            for source in &scope.sources {
-                DbSession::new(&mut *connection).query("behavior.services.cleanup.suppress_scope", "INSERT INTO behavior_suppressions(start_date,end_date,side,source,academic_term_id,academic_year_id)VALUES($1,$2,$3,$4,$5,$6)").bind(start).bind(end).bind(side).bind(source).bind(scope.academic_term_id).bind(scope.academic_year_id).execute().await?;
-            }
+    for side in &scope.sides {
+        for source in &scope.sources {
+            DbSession::new(&mut *connection).query("behavior.services.cleanup.suppress_scope", "INSERT INTO behavior_suppressions(start_date,end_date,side,source,academic_term_id,academic_year_id)VALUES($1,$2,$3,$4,$5,$6)")
+                .bind(start).bind(end).bind(side).bind(source).bind(scope.academic_term_id).bind(scope.academic_year_id).execute().await?;
         }
     }
     Ok(())
@@ -417,7 +414,7 @@ pub async fn run_cleanup_jobs(pool: &PgPool, limit: u32) -> Result<bool, AppErro
             tx.commit().await?;
             return Ok(false);
         };
-        let prefix="DELETE FROM behavior_entries WHERE id IN(SELECT e.id FROM behavior_entries e WHERE e.total_id IN(SELECT t.id";
+        let prefix = "DELETE FROM behavior_entries WHERE id IN(SELECT e.id FROM behavior_entries e WHERE e.total_id IN(SELECT t.id";
         let deleted = DbSession::new(&mut *tx)
             .prepared_query(
                 "behavior.services.cleanup.run_cleanup_jobs",

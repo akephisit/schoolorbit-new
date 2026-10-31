@@ -30,8 +30,8 @@ use school_permissions::registry::codes;
 
 use school_academic_core::models::*;
 use school_academic_core::services::{
-    bell_schedules, catalog, context, curriculum, curriculum_publications, curriculum_structure,
-    homeroom_roster, progressions, student_years, workspaces, years_terms,
+    bell_schedules, catalog, context, context_settings, curriculum, curriculum_publications,
+    curriculum_structure, homeroom_roster, progressions, student_years, workspaces, years_terms,
 };
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +140,41 @@ pub async fn list_context_options(
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
     Ok(ok(context::list_options(&pool).await?))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    put,
+    path = "/api/academic/context/settings",
+    operation_id = "updateAcademicContextSettings",
+    tag = "academic",
+    request_body = UpdateAcademicContextSettingsRequest,
+    responses(
+        (status = 200, description = "Academic visibility and defaults updated atomically", body = ApiResponse<AcademicContextSettingsMutationResponse>),
+        (status = 400, description = "Invalid visible default or visibility command", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Year and term management permissions required", body = ApiErrorResponse),
+        (status = 404, description = "Academic context not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic context settings revision conflict", body = ApiErrorResponse)
+    )
+))]
+pub async fn update_context_settings(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<UpdateAcademicContextSettingsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let outcome = context_settings::update(&context.tenant.pool, &context.actor, request).await?;
+    let response = ok(outcome);
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "academic_context_settings",
+        None,
+        None,
+        None,
+    );
+    Ok(response)
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

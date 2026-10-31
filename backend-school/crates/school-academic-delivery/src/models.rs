@@ -784,6 +784,7 @@ pub struct OfferingTargetInput {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCourseOfferingRequest {
+    pub starts_on: NaiveDate,
     pub academic_term_id: Uuid,
     pub subject_version_id: Uuid,
     pub curriculum_course_requirement_id: Option<Uuid>,
@@ -796,6 +797,7 @@ pub struct CreateCourseOfferingRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateActivityOfferingRequest {
+    pub starts_on: NaiveDate,
     #[serde(default)]
     pub create_homeroom_groups: bool,
     pub academic_term_id: Uuid,
@@ -895,6 +897,7 @@ pub struct StudentActivityRegistrationQuery {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewCurriculumOfferingsRequest {
+    pub starts_on: NaiveDate,
     #[serde(default)]
     pub delivery_version_id: Option<Uuid>,
     pub academic_term_id: Uuid,
@@ -905,6 +908,7 @@ pub struct PreviewCurriculumOfferingsRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyCurriculumOfferingsRequest {
+    pub starts_on: NaiveDate,
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
     #[serde(default)]
@@ -1302,6 +1306,7 @@ pub struct CurriculumPublicationSource {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOfferingPreview {
+    pub starts_on: NaiveDate,
     pub curriculum_sources: Vec<CurriculumPublicationSource>,
     pub academic_term_id: Uuid,
     pub source_hash: String,
@@ -1613,7 +1618,7 @@ pub struct LearningGroupRosterTracking {
     pub effective_from: Option<NaiveDate>,
     pub group_row_version: i64,
     pub starts_on: NaiveDate,
-    pub ends_on: NaiveDate,
+    pub ends_on: Option<NaiveDate>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

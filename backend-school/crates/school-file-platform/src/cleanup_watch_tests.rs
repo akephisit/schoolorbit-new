@@ -216,7 +216,7 @@ async fn late_remote_put_after_client_cancel_head404_and_real039_purge_is_recove
             .unwrap();
     let repository = SqlFileRepository::new(pool.clone());
     platform.request_delete(&repository, file).await.unwrap();
-    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2988,'Watch fixture','2045-01-01','2045-12-31','planning') RETURNING id").fetch_one(&pool).await.unwrap();
+    let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status) VALUES(2988,'Watch fixture','planning') RETURNING id").fetch_one(&pool).await.unwrap();
     let campaign:Uuid=sqlx::query_scalar("INSERT INTO certificate_campaigns(academic_year_id,name,event_date,status) VALUES($1,'Watch fixture','2045-01-01','purging') RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO certificate_campaign_purge_jobs(campaign_id,status,template_count,candidate_count,request_count,open_request_count,issued_certificate_count,revoked_certificate_count,file_count,total_file_bytes) VALUES($1,'finalizing',0,0,0,0,0,0,1,$2)").bind(campaign).bind(byte_size).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO certificate_campaign_purge_files(campaign_id,file_id,object_count,byte_size) VALUES($1,$2,1,$3)").bind(campaign).bind(file).bind(byte_size).execute(&pool).await.unwrap();

@@ -582,13 +582,18 @@ impl school_academic_delivery::ports::AssessmentPublicationPort for RejectAssess
 }
 
 async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
+    prepare_delivery_runtime_fixture_through(name, school_migrations::latest_migration_version())
+        .await
+}
+
+async fn prepare_delivery_runtime_fixture_through(name: &str, version: i64) -> PgPool {
     let pool = create_named_test_pool(name).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, version).await.unwrap();
     pool
 }
 
@@ -599,7 +604,9 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     pool
 }
 
@@ -614,7 +621,13 @@ async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable()
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=COALESCE(planned_end_date,start_date) WHERE id<>$1 AND status IN ('active','closing')").bind(context.term_id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE academic_terms SET status='closed' WHERE id<>$1 AND status IN ('active','closing')",
+    )
+    .bind(context.term_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     for (year_status, term_status, writable) in [
         ("closing", "closing", true),
         ("closed", "planning", false),
@@ -628,8 +641,12 @@ async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable()
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2, closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(context.term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         for exclusive in [false, true] {
             let mut tx = pool.begin().await.unwrap();
             let result = school_academic_delivery::services::ensure_writable_term(
@@ -824,8 +841,12 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(context.term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let outcomes = [
             offerings::create(&pool, context.teacher_id, course_request(&context))
                 .await
@@ -1093,6 +1114,12 @@ async fn group_read_model_returns_effective_teacher_episodes() {
     assert!(primary_position < secondary_position);
 }
 
+fn runtime_operation_date() -> NaiveDate {
+    Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive()
+}
+
 #[derive(Debug)]
 struct RuntimeContext {
     term_id: Uuid,
@@ -1106,6 +1133,10 @@ struct RuntimeContext {
 }
 
 async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
+    planning_runtime_context_at(pool, runtime_operation_date()).await
+}
+
+async fn planning_runtime_context_at(pool: &PgPool, catalog_date: NaiveDate) -> RuntimeContext {
     let (term_id, year_id): (Uuid, Uuid) = sqlx::query_as(
         r#"SELECT term.id, term.academic_year_id
            FROM academic_terms term
@@ -1127,7 +1158,7 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
                          AND occurrence.sequence_no <= term.sequence_no
                    )
              )
-           ORDER BY term.start_date
+           ORDER BY (SELECT year FROM academic_years WHERE id=term.academic_year_id), term.sequence_no, term.id
            LIMIT 1"#,
     )
     .fetch_one(pool)
@@ -1145,11 +1176,12 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
            FROM subject_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $2::date
            ORDER BY version.id
            LIMIT 1"#,
     )
     .bind(term_id)
+    .bind(catalog_date)
     .fetch_one(pool)
     .await
     .unwrap();
@@ -1179,20 +1211,46 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
 }
 
 async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
-    let (term_id, fixture_future_start, base_version_id): (Uuid, NaiveDate, Uuid) = sqlx::query_as(
-        r#"SELECT term.id, year.end_date, version.id
+    let (term_id, base_version_id): (Uuid, Uuid) = sqlx::query_as(
+        r#"SELECT term.id, version.id
            FROM academic_terms term
            JOIN academic_years year ON year.id = term.academic_year_id
            JOIN academic_timetable_versions version
              ON version.academic_term_id = term.id
             AND version.status = 'published'
            WHERE term.status = 'active'
-           ORDER BY term.start_date, term.id, version.effective_from DESC, version.id
+           ORDER BY year.year, term.sequence_no, term.id, version.effective_from DESC, version.id
            LIMIT 1"#,
     )
     .fetch_one(pool)
     .await
     .expect("fixture must contain an active term with a published timetable base");
+    let today = runtime_operation_date();
+    configure_operational_context(
+        pool,
+        term_id,
+        base_version_id,
+        today + Duration::days(365),
+        today,
+    )
+    .await
+}
+
+// These inputs describe the predecessor schema's real availability rule, never a live fallback.
+async fn historical_operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
+    let (term,base,starts,ends):(Uuid,Uuid,NaiveDate,NaiveDate) = sqlx::query_as(
+        "SELECT term.id,version.id,term.start_date,year.end_date FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id JOIN academic_timetable_versions version ON version.academic_term_id=term.id AND version.status='published' WHERE term.status='active' ORDER BY year.year,term.sequence_no,term.id,version.effective_from DESC,version.id LIMIT 1")
+        .fetch_one(pool).await.unwrap();
+    configure_operational_context(pool, term, base, ends, starts).await
+}
+
+async fn configure_operational_context(
+    pool: &PgPool,
+    term_id: Uuid,
+    base_version_id: Uuid,
+    deferred_until: NaiveDate,
+    catalog_date: NaiveDate,
+) -> RuntimeContext {
     sqlx::query(
         r#"UPDATE learning_offerings offering
            SET starts_on = $3,
@@ -1209,7 +1267,7 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
     )
     .bind(term_id)
     .bind(base_version_id)
-    .bind(fixture_future_start)
+    .bind(deferred_until)
     .execute(pool)
     .await
     .expect("operational change fixture must defer offerings absent from its published baseline");
@@ -1218,7 +1276,7 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
         .execute(pool)
         .await
         .unwrap();
-    let context = planning_runtime_context(pool).await;
+    let context = planning_runtime_context_at(pool, catalog_date).await;
     assert_eq!(context.term_id, term_id);
     context
 }
@@ -1230,12 +1288,23 @@ async fn create_runtime_change_set(
     offset_days: i64,
     idempotency_name: &str,
 ) -> super::models::AcademicTermChangeSet {
-    let term_start: NaiveDate =
-        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id = $1")
-            .bind(term_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    create_runtime_change_set_at(
+        pool,
+        actor_id,
+        term_id,
+        runtime_operation_date() + Duration::days(offset_days),
+        idempotency_name,
+    )
+    .await
+}
+
+async fn create_runtime_change_set_at(
+    pool: &PgPool,
+    actor_id: Uuid,
+    term_id: Uuid,
+    date: NaiveDate,
+    idempotency_name: &str,
+) -> super::models::AcademicTermChangeSet {
     let created = change_sets::create_change_set(
         pool,
         actor_id,
@@ -1247,7 +1316,6 @@ async fn create_runtime_change_set(
     )
     .await
     .expect("a planning term must accept a draft operational change");
-    let date = term_start + chrono::Duration::days(offset_days);
     if created.reference_date == date {
         return created;
     }
@@ -1863,11 +1931,12 @@ async fn add_operational_change_catalog_fixture(
            FROM activity_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $2::date
            ORDER BY version.id
            LIMIT 1"#,
     )
     .bind(context.term_id)
+    .bind(runtime_operation_date())
     .fetch_one(pool)
     .await
     .unwrap();
@@ -2156,32 +2225,17 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
 }
 
 #[tokio::test]
-async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
+async fn change_set_creation_uses_explicit_dates_and_rejects_unwritable_terms() {
     let pool = prepare_delivery_runtime_fixture("academic_change_set_date_guards").await;
     let context = operational_change_runtime_context(&pool).await;
-    let (term_start, year_end): (NaiveDate, NaiveDate) = sqlx::query_as(
-        r#"SELECT term.start_date, year.end_date
-           FROM academic_terms term
-           JOIN academic_years year ON year.id = term.academic_year_id
-           WHERE term.id = $1"#,
-    )
-    .bind(context.term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
     for (name, date) in [
         (
-            "change-set:before-term",
-            term_start
-                .checked_sub_signed(chrono::Duration::days(1))
-                .unwrap(),
+            "change-set:earlier-operation",
+            runtime_operation_date() - Duration::days(730),
         ),
         (
-            "change-set:after-year",
-            year_end
-                .checked_add_signed(chrono::Duration::days(1))
-                .unwrap(),
+            "change-set:later-operation",
+            runtime_operation_date() + Duration::days(730),
         ),
     ] {
         let created = change_sets::create_change_set(
@@ -2189,13 +2243,13 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
             context.teacher_id,
             CreateAcademicTermChangeSetRequest {
                 academic_term_id: context.term_id,
-                reason: "วันที่ไม่ถูกต้อง".into(),
+                reason: "วันที่ดำเนินการที่ระบุชัดเจน".into(),
                 idempotency_key: stable_uuid(name),
             },
         )
         .await
         .unwrap();
-        let error = change_sets::update_change_set(
+        let updated = change_sets::update_change_set(
             &pool,
             context.teacher_id,
             created.id,
@@ -2206,8 +2260,8 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
             },
         )
         .await
-        .expect_err("invalid reference date must fail");
-        assert!(matches!(error, AppError::ValidationError(_)));
+        .expect("explicit operation dates have no academic containment boundary");
+        assert_eq!(updated.reference_date, date);
     }
 
     sqlx::query("UPDATE academic_terms SET status = 'closing' WHERE id = $1")
@@ -2234,8 +2288,12 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(context.term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let closed = change_sets::create_change_set(
             &pool,
             context.teacher_id,
@@ -2439,6 +2497,7 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             change_set_row_version: without_course.row_version,
             weekly_period_target: 2,
             offering: CreateActivityOfferingRequest {
+                starts_on: runtime_operation_date(),
                 create_homeroom_groups: false,
                 academic_term_id: context.term_id,
                 activity_version_id,
@@ -2976,8 +3035,12 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(context.term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let state = publication_preview(&pool, change_set.id).await.unwrap();
         assert_eq!(
             state
@@ -2992,7 +3055,7 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(context.term_id)
         .execute(&pool)
         .await
@@ -3866,16 +3929,54 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap();
-    assert_eq!(
-        first_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
+    assert!(publication_request.effective_from > runtime_operation_date());
+    assert!(first_assessment.assessment_coordinator_id.is_none());
+    assert!(first_assessment.coordinator_candidates.is_empty());
+    assert!(
+        first_assessment.id.is_none(),
+        "a future teacher episode must not invent a persisted plan today"
     );
     assert_eq!(first_assessment.phases.len(), 4);
-    // A retry must never initialize new data, even if ownership is missing by then.
-    sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=NULL WHERE learning_offering_id=$1").bind(added_offering_id).execute(&pool).await.unwrap();
-    change_sets::publish_change_set(&pool, context.teacher_id, changed.id, publication_request)
+    let accepted_facts_sql = r#"SELECT jsonb_build_object(
+        'revisions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_term_change_sets r WHERE academic_term_id=$1),
+        'versions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_delivery_versions r WHERE academic_term_id=$1),
+        'offerings',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_offerings r WHERE academic_term_id=$1),
+        'groups',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_groups r WHERE academic_term_id=$1),
+        'teachers',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_teachers r WHERE academic_term_id=$1),
+        'memberships',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_students r WHERE academic_term_id=$1),
+        'plans',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM course_assessment_plans r WHERE academic_term_id=$1),
+        'phases',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM course_assessment_phases r JOIN course_assessment_plans p ON p.id=r.plan_id WHERE p.academic_term_id=$1),
+        'audits',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_audit_events r WHERE academic_term_id=$1))"#;
+    let accepted_facts: serde_json::Value = sqlx::query_scalar(accepted_facts_sql)
+        .bind(context.term_id)
+        .fetch_one(&pool)
         .await
         .unwrap();
+    let accepted_revision = change_sets::get_change_set(&pool, changed.id)
+        .await
+        .unwrap();
+    let replay = school_academic_delivery::services::change_sets::publish_change_set(
+        &RejectAssessmentPublication,
+        &pool,
+        context.teacher_id,
+        changed.id,
+        publication_request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(accepted_revision).unwrap(),
+        "accepted replay skips even a rejecting initializer"
+    );
+    assert_eq!(
+        accepted_facts,
+        sqlx::query_scalar::<_, serde_json::Value>(accepted_facts_sql)
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
     assert!(
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
@@ -3932,10 +4033,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap();
-    assert_eq!(
-        retained_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
+    assert!(retained_assessment.assessment_coordinator_id.is_none());
     assert_eq!(retained_assessment.id, first_assessment.id);
     assert_eq!(
         serde_json::to_value(&retained_assessment.phases).unwrap(),
@@ -4068,6 +4166,7 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
 
 fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
     CreateLearningOfferingRequest::Course(CreateCourseOfferingRequest {
+        starts_on: runtime_operation_date(),
         academic_term_id: context.term_id,
         subject_version_id: context.subject_version_id,
         curriculum_course_requirement_id: None,
@@ -4085,15 +4184,31 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
 fn course_offering_wire_contract_owns_only_assessment_total() {
     let base = serde_json::json!({
         "academicTermId": Uuid::new_v4(),
+        "startsOn": "2026-10-31",
         "subjectVersionId": Uuid::new_v4(),
         "curriculumCourseRequirementId": null,
         "targets": [],
         "assessmentTotalScore": "120.50"
     });
-    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).is_ok());
+    let parsed = serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).unwrap();
+    assert_eq!(
+        parsed.starts_on,
+        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
+    );
+    let mut missing_date = base.clone();
+    missing_date.as_object_mut().unwrap().remove("startsOn");
+    assert!(
+        serde_json::from_value::<CreateCourseOfferingRequest>(missing_date)
+            .unwrap_err()
+            .to_string()
+            .contains("missing field `startsOn`")
+    );
     let mut legacy = base;
     legacy["gradingPolicy"] = serde_json::json!({"policyCode": "school_default", "totalScore": "100.00", "passingScore": "50.00"});
-    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(legacy).is_err());
+    let error = serde_json::from_value::<CreateCourseOfferingRequest>(legacy)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `gradingPolicy`"), "{error}");
 }
 
 #[tokio::test]
@@ -4227,7 +4342,7 @@ async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
            WHERE academic_year_id = $1
              AND id <> $2
              AND status = 'planning'
-           ORDER BY start_date
+           ORDER BY sequence_no, id
            LIMIT 1"#,
     )
     .bind(context.year_id)
@@ -4280,22 +4395,45 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     let parsed = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
         "kind": "course",
         "academicTermId": Uuid::nil(),
+        "startsOn": "2026-10-31",
         "subjectVersionId": Uuid::nil(),
         "targets": [],
         "assessmentTotalScore": "100.00"
     }))
     .unwrap();
-    assert!(matches!(parsed, CreateLearningOfferingRequest::Course(_)));
+    let CreateLearningOfferingRequest::Course(course) = parsed else {
+        panic!("course tag must select the course DTO")
+    };
+    assert_eq!(
+        course.starts_on,
+        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
+    );
+
+    let missing_date = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
+        "kind": "course", "academicTermId": Uuid::nil(), "subjectVersionId": Uuid::nil(),
+        "targets": [], "assessmentTotalScore": "100.00"
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(
+        missing_date.contains("missing field `startsOn`"),
+        "{missing_date}"
+    );
 
     let wrong_subtype =
         serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
             "kind": "course",
             "academicTermId": Uuid::nil(),
+            "startsOn": "2026-10-31",
             "activityVersionId": Uuid::nil(),
             "targets": [],
             "assessmentTotalScore": "100.00"
         }));
-    assert!(wrong_subtype.is_err());
+    let error = wrong_subtype.unwrap_err().to_string();
+    assert!(
+        error.contains("unknown field `activityVersionId`"),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -4323,30 +4461,25 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
 
     // The old candidate could be expired. Start-only catalogs need an explicit
-    // new future revision to retain this independent term-start denial case.
+    // new future revision to retain this independent offering-start denial case.
     let source = school_academic_core::services::catalog::get_subject_version(
         &pool,
         context.subject_version_id,
     )
     .await
     .unwrap();
-    let term_start: NaiveDate =
-        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let offering_start = runtime_operation_date();
     let future = school_academic_core::services::catalog::create_subject_version(
         &pool,
         source.subject_id,
         school_academic_core::models::CreateSubjectVersionRequest {
-            name_th: format!("{} ฉบับเริ่มหลังเปิดภาคเรียน", source.name_th),
+            name_th: format!("{} ฉบับเริ่มหลังเปิดสอนจริง", source.name_th),
             name_en: source.name_en,
             credit: source.credit,
             hours_per_semester: source.hours_per_semester,
             subject_type: source.subject_type,
             description: source.description,
-            effective_from: term_start + chrono::Duration::days(1),
+            effective_from: offering_start + chrono::Duration::days(1),
             term_code: source.term_code,
             periods_per_week: source.periods_per_week,
             grade_level_ids: source.grade_level_ids,
@@ -4363,7 +4496,7 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     )
     .await
     .unwrap();
-    assert!(future.effective_from > term_start);
+    assert!(future.effective_from > offering_start);
     let ineffective_subject_version_id = future.id;
     let mut ineffective_version_request = course_request(&context);
     let CreateLearningOfferingRequest::Course(course) = &mut ineffective_version_request else {
@@ -4844,10 +4977,11 @@ async fn catalog_start_only_former_expiry_allows_explicit_offering_pin_and_prese
     let context = planning_runtime_context(&pool).await;
     // The historical Passing fixture was imported before migration 138. Select
     // preserved finite-expiry evidence; no existing year, room or version is edited.
-    let (old_id,stable_id,code,name,credit,hours,standard,source_before,former_expiry,term_start):(Uuid,Uuid,String,String,String,Option<String>,i32,serde_json::Value,NaiveDate,NaiveDate)=sqlx::query_as(
-        "SELECT version.id,version.subject_id,subject.code,version.name_th,version.credit::text,version.hours_per_semester::text,version.periods_per_week,to_jsonb(version),(version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date,term.start_date FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.effective_from<=term.start_date AND (version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date<term.start_date AND version.periods_per_week IS NOT NULL AND version.hours_per_semester IS NOT NULL ORDER BY version.effective_from DESC,version.version_no DESC LIMIT 1"
-    ).bind(context.term_id).fetch_one(&pool).await.unwrap();
-    assert!(former_expiry < term_start);
+    let (old_id,stable_id,code,name,credit,hours,standard,source_before,former_expiry,offering_start):(Uuid,Uuid,String,String,String,Option<String>,i32,serde_json::Value,NaiveDate,NaiveDate)=sqlx::query_as(
+        "SELECT version.id,version.subject_id,subject.code,version.name_th,version.credit::text,version.hours_per_semester::text,version.periods_per_week,to_jsonb(version),(version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date,$2::date FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.effective_from<=$2::date AND (version.migration_provenance->'historicalCatalogContext'->>'effectiveUntil')::date<$2::date AND version.periods_per_week IS NOT NULL AND version.hours_per_semester IS NOT NULL ORDER BY version.effective_from DESC,version.version_no DESC LIMIT 1"
+    ).bind(context.term_id).bind(runtime_operation_date())
+    .fetch_one(&pool).await.unwrap();
+    assert!(former_expiry < offering_start);
     let mut request = course_request(&context);
     let CreateLearningOfferingRequest::Course(course) = &mut request else {
         unreachable!()
@@ -4913,7 +5047,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
            JOIN academic_years former_ending_year ON former_ending_year.id =
                (version.migration_provenance->'revisionSelection'->>'legacyEndAcademicYearId')::uuid
            JOIN academic_years selected_year ON selected_year.id = $1
-           WHERE former_ending_year.end_date < selected_year.start_date
+           WHERE former_ending_year.year < selected_year.year
            ORDER BY program.id
            LIMIT 1"#,
     )
@@ -4924,6 +5058,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let earlier_edition = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![earlier_edition_program_id],
@@ -4939,6 +5074,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -4961,6 +5097,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
@@ -4977,6 +5114,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
@@ -5004,8 +5142,20 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         source_count, applied.created_offering_count as i64,
         "retained legacy offerings must not acquire invented provenance"
     );
-    let captured:sqlx::types::Json<school_academic_delivery::models::versions::DeliverySnapshot>=sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,(SELECT start_date FROM academic_terms WHERE id=$1),$2)")
-        .bind(context.term_id).bind(sqlx::types::Json(applied.offering_ids.iter().map(|id|serde_json::json!({"id":id,"weekly_period_target":1})).collect::<Vec<_>>())).fetch_one(&pool).await.unwrap();
+    let captured: sqlx::types::Json<school_academic_delivery::models::versions::DeliverySnapshot> =
+        sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,$3,$2)")
+            .bind(context.term_id)
+            .bind(sqlx::types::Json(
+                applied
+                    .offering_ids
+                    .iter()
+                    .map(|id| serde_json::json!({"id":id,"weekly_period_target":1}))
+                    .collect::<Vec<_>>(),
+            ))
+            .bind(runtime_operation_date())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(
         captured
             .0
@@ -5022,6 +5172,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
@@ -5034,6 +5185,26 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .unwrap();
     assert_eq!(retried.offering_ids, applied.offering_ids);
     assert_eq!(retried.group_ids, applied.group_ids);
+    assert!(
+        applied.created_offering_count > 0,
+        "the first receipt must bind a newly created offering date"
+    );
+    let changed_date = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date() + Duration::days(1),
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            delivery_version_id: None,
+            source_hash: preview.source_hash.clone(),
+            idempotency_key,
+            choices: default_preparation_choices(&preview),
+        },
+    )
+    .await;
+    assert!(matches!(changed_date, Err(AppError::Conflict(_))));
+
     assert!(!applied.group_ids.is_empty());
     let course_totals: Vec<String> = sqlx::query_scalar(
         "SELECT assessment_total_score::text FROM course_offering_details WHERE learning_offering_id = ANY($1)",
@@ -5059,6 +5230,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let retained_preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -5067,16 +5239,18 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     let retained_choices = default_preparation_choices(&retained_preview);
+    let retained_key = Uuid::new_v4();
     let retained = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
-            source_hash: retained_preview.source_hash,
-            idempotency_key: Uuid::new_v4(),
-            choices: retained_choices,
+            source_hash: retained_preview.source_hash.clone(),
+            idempotency_key: retained_key,
+            choices: retained_choices.clone(),
         },
     )
     .await
@@ -5085,8 +5259,29 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     assert_eq!(retained.created_group_count, 0);
     assert_eq!(retained.offering_ids, applied.offering_ids);
 
+    let facts_before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(offering) ORDER BY id) FROM learning_offerings offering WHERE id=ANY($1)").bind(&retained.offering_ids).fetch_one(&pool).await.unwrap();
+    let retained_replay = offerings::apply_from_curriculum(
+        &pool,
+        context.teacher_id,
+        ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date() + Duration::days(30),
+            academic_term_id: context.term_id,
+            study_program_ids: vec![context.study_program_id],
+            delivery_version_id: None,
+            source_hash: retained_preview.source_hash.clone(),
+            idempotency_key: retained_key,
+            choices: retained_choices,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(retained_replay.offering_ids, retained.offering_ids);
+    assert_eq!(retained_replay.group_ids, retained.group_ids);
+    let facts_after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(offering) ORDER BY id) FROM learning_offerings offering WHERE id=ANY($1)").bind(&retained.offering_ids).fetch_one(&pool).await.unwrap();
+    assert_eq!(facts_before, facts_after);
+
     let closed_term_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM academic_terms WHERE status IN ('closed', 'cancelled') ORDER BY start_date LIMIT 1",
+        "SELECT id FROM academic_terms WHERE status IN ('closed', 'cancelled') ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1",
     )
     .fetch_one(&pool)
     .await
@@ -5170,6 +5365,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -5200,6 +5396,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
@@ -5242,6 +5439,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: None,
@@ -5307,6 +5505,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     let next_preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -5333,11 +5532,12 @@ async fn self_registration_activity_uses_common_delivery() {
            FROM activity_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $2::date
            ORDER BY version.id
            LIMIT 1"#,
     )
     .bind(context.term_id)
+    .bind(runtime_operation_date())
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -5345,6 +5545,7 @@ async fn self_registration_activity_uses_common_delivery() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: runtime_operation_date(),
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -5475,7 +5676,8 @@ async fn self_registration_activity_uses_common_delivery() {
 }
 
 #[tokio::test]
-async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() {
+async fn student_activity_registration_without_academic_date_boundaries_is_term_scoped_eligible_and_revisioned(
+) {
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
     let context = planning_runtime_context(&pool).await;
@@ -5487,24 +5689,18 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
         "activity-registration:opening",
     )
     .await;
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date = NULL, closed_on = NULL WHERE id = $1",
-    )
-    .bind(context.term_id)
-    .execute(&pool)
-    .await
-    .expect("a planning term may omit its planned and actual end dates");
     let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
     let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
         r#"SELECT version.id, version.scheduling_mode
            FROM activity_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $2::date
            ORDER BY version.id
            LIMIT 1"#,
     )
     .bind(context.term_id)
+    .bind(runtime_operation_date())
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -5513,6 +5709,7 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
         context.teacher_id,
         Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: runtime_operation_date(),
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -6230,6 +6427,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: Some(draft_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
@@ -6250,6 +6448,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
             delivery_version_id: Some(draft_version_id),
@@ -6390,7 +6589,7 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
         r#"SELECT academic_year_id, id
            FROM academic_terms
            WHERE status = 'active'
-           ORDER BY start_date, id LIMIT 1"#,
+           ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1"#,
     )
     .fetch_one(&pool)
     .await
@@ -6429,7 +6628,7 @@ async fn homeroom_alignment_uses_the_explicit_delivery_version_target() {
         r#"SELECT academic_year_id, id
            FROM academic_terms
            WHERE status = 'active'
-           ORDER BY start_date, id LIMIT 1"#,
+           ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1"#,
     )
     .fetch_one(&pool)
     .await
@@ -6542,7 +6741,7 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
              AND version.periods_per_week IS NOT NULL
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $4::date
              AND NOT EXISTS (
                  SELECT 1
                  FROM curriculum_course_requirements requirement
@@ -6565,6 +6764,7 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
     .bind(context.term_id)
     .bind(context.study_program_id)
     .bind(context.grade_level_id)
+    .bind(runtime_operation_date())
     .fetch_one(&pool)
     .await
     .expect("fixture must expose a published catalog version outside this program term");
@@ -6870,11 +7070,12 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
            FROM activity_versions version
            JOIN academic_terms term ON term.id = $1
            WHERE version.status = 'published'
-             AND version.effective_from <= term.start_date
+             AND version.effective_from <= $2::date
            ORDER BY version.id
            LIMIT 1"#,
     )
     .bind(context.term_id)
+    .bind(runtime_operation_date())
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -6882,6 +7083,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            starts_on: runtime_operation_date(),
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -7620,9 +7822,11 @@ async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_
 async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_central() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_activity_groups").await;
     let context = planning_runtime_context(&pool).await;
-    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date ORDER BY version.id LIMIT 1")
-        .bind(context.term_id).fetch_one(&pool).await.unwrap();
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= $2::date ORDER BY version.id LIMIT 1")
+        .bind(context.term_id).bind(runtime_operation_date())
+    .fetch_one(&pool).await.unwrap();
     let request = CreateActivityOfferingRequest {
+        starts_on: runtime_operation_date(),
         create_homeroom_groups: false,
         academic_term_id: context.term_id,
         activity_version_id,
@@ -7699,11 +7903,7 @@ async fn zero_workload_subject(
     use school_academic_core::{models as core_models, services::catalog};
     let group: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
         .fetch_one(pool).await.unwrap();
-    let start: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(context.term_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let start = runtime_operation_date();
     let stable = catalog::create_subject(
         pool,
         core_models::CreateCatalogSubjectRequest {
@@ -7841,6 +8041,7 @@ async fn subject_zero_workload_manual_opening_keeps_course_and_activity_zero_tar
             context.teacher_id,
             Some(opening.target_delivery_version_id),
             CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+                starts_on: runtime_operation_date(),
                 create_homeroom_groups: false,
                 academic_term_id: context.term_id,
                 activity_version_id: activity.id,
@@ -7980,6 +8181,7 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             delivery_version_id: Some(opening.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![program.id],
@@ -7994,6 +8196,7 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
+            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![program.id],
             delivery_version_id: Some(opening.target_delivery_version_id),

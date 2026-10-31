@@ -18,16 +18,12 @@ function workspace(reader = false): Workspace {
 			academicYearId: year,
 			academicTermId: term,
 			yearName: 'ปีการศึกษา 2569',
+			operationDate: '2026-10-30',
 			termName: 'ภาคเรียนที่ 1',
 			yearStatus: 'active',
 			termStatus: 'active',
 			yearRowVersion: 1,
 			termRowVersion: 1,
-			yearStartDate: '2026-05-01',
-			yearEndDate: '2027-04-30',
-			termStartDate: '2026-05-16',
-			plannedEndDate: null,
-			closedOn: null,
 			sequence: 1,
 			bellScheduleId: '40000000-0000-4000-8000-000000000001',
 			includedInYearResult: true,
@@ -124,28 +120,27 @@ async function mock(
 			if (path === '/api/academic/context/options') {
 				contextReads++;
 				const options: components['schemas']['AcademicContextOptions'] = {
-					activeAcademicYearId: year,
-					activeAcademicTermId: term,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
 					years: [
 						{
+							isVisible: true,
 							id: year,
 							year: 2569,
 							name: 'ปีการศึกษา 2569',
-							status: 'active',
-							startDate: '2026-05-01',
-							endDate: '2027-04-30'
+							status: 'active'
 						},
 						{
+							isVisible: true,
 							id: nextYear,
 							year: 2570,
 							name: 'ปีการศึกษา 2570',
-							status: 'planning',
-							startDate: '2027-05-01',
-							endDate: '2028-04-30'
+							status: 'planning'
 						}
 					],
 					terms: [
 						{
+							isVisible: true,
 							id: term,
 							academicYearId: year,
 							code: '1',
@@ -153,13 +148,11 @@ async function mock(
 							sequence: 1,
 							termType: 'regular',
 							status: current.context.termStatus,
-							startDate: '2026-05-16',
-							plannedEndDate: null,
-							closedOn: null,
 							includedInYearResult: true,
 							blocksYearClosure: true
 						},
 						{
+							isVisible: true,
 							id: nextTerm,
 							academicYearId: nextYear,
 							code: '1',
@@ -167,9 +160,6 @@ async function mock(
 							sequence: 1,
 							termType: 'regular',
 							status: 'planning',
-							startDate: '2027-05-16',
-							plannedEndDate: '2027-10-31',
-							closedOn: null,
 							includedInYearResult: true,
 							blocksYearClosure: true
 						}
@@ -177,6 +167,56 @@ async function mock(
 				};
 				return fulfill(route, options);
 			}
+			if (path === '/api/academic/years')
+				return fulfill(route, [
+					{
+						id: year,
+						year: 2569,
+						name: 'ปีการศึกษา 2569',
+						status: 'active',
+						isVisible: true,
+						rowVersion: 1,
+						schoolDays: ['MON'],
+						migrated: false,
+						createdAt: '',
+						updatedAt: ''
+					},
+					{
+						id: nextYear,
+						year: 2570,
+						name: 'ปีการศึกษา 2570',
+						status: 'planning',
+						isVisible: false,
+						rowVersion: 1,
+						schoolDays: ['MON'],
+						migrated: false,
+						createdAt: '',
+						updatedAt: ''
+					}
+				]);
+			if (path === '/api/academic/terms') {
+				const parent = new URL(route.request().url()).searchParams.get('academicYearId');
+				return fulfill(route, [
+					{
+						id: parent === nextYear ? nextTerm : term,
+						academicYearId: parent,
+						name: 'ภาคเรียนที่ 1',
+						code: '1',
+						sequence: 1,
+						termType: 'regular',
+						status: parent === nextYear ? 'planning' : current.context.termStatus,
+						isVisible: parent !== nextYear,
+						rowVersion: 1,
+						bellScheduleId: current.context.bellScheduleId,
+						includedInYearResult: true,
+						blocksYearClosure: true,
+						migrated: false,
+						createdAt: '',
+						updatedAt: ''
+					}
+				]);
+			}
+
 			if (path === '/api/academic/lifecycle/term-preparations/preview') {
 				const request: components['schemas']['PreviewTermPreparationInput'] = route
 					.request()
@@ -191,9 +231,7 @@ async function mock(
 						targetTermId: nextTerm,
 						targetYearId: nextYear,
 						targetLabel: 'ปีการศึกษา 2570 · ภาคเรียนที่ 1',
-						targetStatus: 'planning',
-						targetStartDate: '2027-05-16',
-						targetEndDate: '2027-10-31'
+						targetStatus: 'planning'
 					},
 					modules: request.modules.map((module) => ({
 						module,
@@ -270,7 +308,6 @@ async function mock(
 					context: {
 						...current.context,
 						termStatus: statuses[request.action],
-						closedOn: request.closedOn ?? null,
 						termRowVersion: 2,
 						yearRowVersion: 2
 					},
@@ -470,7 +507,6 @@ test('begin closing requires confirmation and refreshes authoritative context wi
 		expectedTermVersion: 1,
 		readinessChecksum: 'b'.repeat(64),
 		acknowledgedWarningCodes: [],
-		closedOn: null,
 		reason: null
 	});
 	await expect.poll(observed.contextReads).toBeGreaterThan(1);
@@ -495,7 +531,7 @@ test('a stale transition keeps the dialog open and requires a fresh readiness re
 	expect(observed.writes).toHaveLength(1);
 });
 
-test('final closure requires an actual date and acknowledgement of the current warnings', async ({
+test('final closure needs exact current warning acknowledgement without an academic boundary date', async ({
 	page
 }) => {
 	await page.clock.setFixedTime(new Date('2026-09-30T05:00:00Z'));
@@ -518,9 +554,9 @@ test('final closure requires an actual date and acknowledgement of the current w
 	const dialog = page.getByRole('dialog');
 	const confirm = dialog.getByRole('button', { name: 'ยืนยันปิดภาคเรียน', exact: true });
 	await expect(confirm).toBeDisabled();
-	await dialog.getByRole('button', { name: 'วันที่ปิดภาคเรียนจริง', exact: true }).click();
-	await page.locator('[data-value="2026-09-30"]').getByRole('button').click();
-	await expect(confirm).toBeDisabled();
+	await expect(
+		dialog.getByRole('button', { name: 'วันที่ปิดภาคเรียนจริง', exact: true })
+	).toHaveCount(0);
 	await dialog.getByRole('checkbox').check();
 	await expect(confirm).toBeEnabled();
 	expect(observed.writes).toHaveLength(0);
@@ -528,10 +564,10 @@ test('final closure requires an actual date and acknowledgement of the current w
 	await expect(dialog).toBeHidden();
 	expect(observed.writes[0]).toMatchObject({
 		action: 'close',
-		closedOn: '2026-09-30',
 		acknowledgedWarningCodes: ['exams.warning'],
 		readinessChecksum: 'b'.repeat(64)
 	});
+	expect(observed.writes[0]).not.toHaveProperty('closedOn');
 });
 
 test('reopening requires a reason and activation never happens just by viewing a ready term', async ({
@@ -539,7 +575,6 @@ test('reopening requires a reason and activation never happens just by viewing a
 }) => {
 	const initial = workspace();
 	initial.context.termStatus = 'closed';
-	initial.context.closedOn = '2026-09-30';
 	initial.availableActions = ['reopen'];
 	const observed = await mock(page, false, false, initial);
 	await page.goto(url);
@@ -552,7 +587,6 @@ test('reopening requires a reason and activation never happens just by viewing a
 	await expect(dialog).toBeHidden();
 	expect(observed.writes[0]).toMatchObject({
 		action: 'reopen',
-		closedOn: null,
 		reason: 'ตรวจผลแก้ไขจากฝ่ายวิชาการ'
 	});
 });
@@ -575,7 +609,6 @@ test('ready term activates only after explicit confirmation', async ({ page }) =
 	expect(observed.writes[0]).toMatchObject({
 		action: 'activate',
 		readinessChecksum: 'd'.repeat(64),
-		closedOn: null,
 		reason: null
 	});
 });
@@ -611,7 +644,6 @@ test('closed term prepares selected future modules only after preview and explic
 }) => {
 	const initial = workspace();
 	initial.context.termStatus = 'closed';
-	initial.context.closedOn = '2026-10-31';
 	initial.availableActions = ['reopen'];
 	const observed = await mock(page, false, false, initial);
 	await page.goto(url);
@@ -621,6 +653,14 @@ test('closed term prepares selected future modules only after preview and explic
 		dialog.getByRole('heading', { name: 'เตรียมข้อมูลสำหรับภาคเรียนถัดไป' })
 	).toBeVisible();
 	expect(observed.preparationWrites).toHaveLength(0);
+	await expect(dialog.getByRole('button', { name: 'ตรวจตัวอย่าง', exact: true })).toBeDisabled();
+	await dialog
+		.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม', exact: true })
+		.click();
+	await page
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^15$/ })
+		.click();
 	await dialog.getByRole('button', { name: 'ตรวจตัวอย่าง', exact: true }).click();
 	await expect(dialog.getByText('ปีการศึกษา 2570 · ภาคเรียนที่ 1')).toBeVisible();
 	await expect.poll(() => observed.preparationPreviews.length).toBe(1);
@@ -633,7 +673,11 @@ test('closed term prepares selected future modules only after preview and explic
 		targetTermId: nextTerm,
 		modules: ['delivery'],
 		sourceChecksum: 'e'.repeat(64),
-		mappings: { entities: [], dates: [] }
+		mappings: {
+			entities: [],
+			dates: [],
+			offeringStartsOn: expect.stringMatching(/^\d{4}-\d{2}-15$/)
+		}
 	});
 	expect(observed.preparationWrites[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
 });

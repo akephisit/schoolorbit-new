@@ -47,7 +47,9 @@ async fn membership_spans_scoped(
     if groups.len() > 20000 {
         return Err(AppError::ValidationError("กลุ่มเกินขนาดที่รองรับ".into()));
     }
-    let mut query = QueryBuilder::<Postgres>::new("SELECT learning_group_id,student_id,joined_at,left_at FROM learning_group_students WHERE learning_group_id=ANY(");
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT learning_group_id,student_id,joined_at,left_at FROM learning_group_students WHERE learning_group_id=ANY(",
+    );
     query
         .push_bind(groups)
         .push(") AND membership_status<>'removed' AND joined_at<=")

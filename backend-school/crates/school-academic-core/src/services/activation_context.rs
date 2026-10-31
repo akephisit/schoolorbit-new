@@ -26,7 +26,7 @@ pub async fn read_activation_state(
     }
     let context = super::lifecycle_context::read_term_context(tx, year, term).await?;
     let years: Vec<YearLifecycleContext> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state",
-        "SELECT id AS academic_year_id,year,name,start_date,end_date,status,row_version FROM academic_years ORDER BY start_date,id LIMIT 501"
+        "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years ORDER BY year,id LIMIT 501"
     ).fetch_all().await?;
     let terms: Vec<TermReference> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state",
         "SELECT id,academic_year_id,sequence_no AS sequence,status,row_version FROM academic_terms WHERE academic_year_id=$1 OR status IN ('active','closing') ORDER BY academic_year_id,sequence_no,id LIMIT 501"
@@ -48,10 +48,15 @@ pub async fn read_activation_state(
         context.year_status,
         AcademicYearStatus::Planning | AcademicYearStatus::Ready
     );
+    let selected_year = years
+        .iter()
+        .find(|row| row.academic_year_id == year)
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?
+        .year;
     let predecessor = years
         .iter()
         .rev()
-        .find(|row| row.start_date < context.year_start_date)
+        .find(|row| row.year < selected_year)
         .cloned();
     let mut issues = Vec::new();
     let push = |issues: &mut Vec<ActivationIssue>, code, count| {
@@ -98,18 +103,6 @@ pub async fn read_activation_state(
             })
             .count(),
     );
-    push(
-        &mut issues,
-        Code::YearOverlap,
-        years
-            .iter()
-            .filter(|row| {
-                row.academic_year_id != year
-                    && row.start_date <= context.year_end_date
-                    && row.end_date >= context.year_start_date
-            })
-            .count(),
-    );
     if opens_year {
         push(
             &mut issues,
@@ -117,7 +110,7 @@ pub async fn read_activation_state(
             years
                 .iter()
                 .filter(|row| {
-                    row.start_date < context.year_start_date
+                    row.year < selected_year
                         && !matches!(
                             row.status,
                             AcademicYearStatus::Closed | AcademicYearStatus::Archived
@@ -152,17 +145,12 @@ pub async fn read_activation_state(
     }
     let allowed_days: BTreeSet<_> = school_days.split(',').collect();
     let supported_days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-    let dates_invalid = context.term_start_date < context.year_start_date
-        || context.term_start_date > context.year_end_date
-        || context
-            .planned_end_date
-            .is_some_and(|date| date < context.term_start_date || date > context.year_end_date)
-        || (context.included_in_year_result && !context.blocks_year_closure)
+    let configuration_invalid = (context.included_in_year_result && !context.blocks_year_closure)
         || allowed_days.iter().any(|day| !supported_days.contains(day));
     push(
         &mut issues,
         Code::TermConfiguration,
-        usize::from(dates_invalid),
+        usize::from(configuration_invalid),
     );
     let bell: Option<BellSchedule> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,academic_year_id,code,name,is_default,status,owning_organization_unit_id,row_version,created_at,updated_at FROM bell_schedules WHERE id=$1 AND academic_year_id=$2")
         .bind(context.bell_schedule_id).bind(year).fetch_optional().await?;
@@ -235,10 +223,10 @@ pub async fn read_activation_state(
     let mut rooms: BTreeMap<Uuid, (Option<i32>, BTreeSet<Uuid>)> = BTreeMap::new();
     let mut placement_counts: BTreeMap<Uuid, usize> = BTreeMap::new();
     for row in placements.iter().filter(|row| {
-        row.start_date <= context.term_start_date
+        row.start_date <= context.operation_date
             && row
                 .end_date
-                .is_none_or(|date| date >= context.term_start_date)
+                .is_none_or(|date| date >= context.operation_date)
     }) {
         let room = rooms
             .entry(row.homeroom_id)
@@ -315,13 +303,13 @@ async fn read_enrollment(
          room.row_version AS room_row_version,room.capacity,
          COALESCE(room.academic_year_id=p.academic_year_id AND room.grade_level_id=student.grade_level_id
           AND room.study_program_id=student.study_program_id AND room.is_active IS TRUE
-          AND student.status IN ('planned','active') AND p.start_date>=$3 AND p.start_date<=$4
-          AND (p.end_date IS NULL OR (p.end_date>=p.start_date AND p.end_date<=$4)),false) AS reference_valid,
+          AND student.status IN ('planned','active')
+          AND (p.end_date IS NULL OR p.end_date>=p.start_date),false) AS reference_valid,
          (p.status='planned' AND student.status='planned' AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) AS eligible
          FROM homeroom_placements p JOIN student_academic_years student ON student.id=p.student_academic_year_id AND student.academic_year_id=p.academic_year_id
          LEFT JOIN homerooms room ON room.id=p.homeroom_id
          WHERE p.academic_year_id=$1 AND p.status IN ('planned','current') ORDER BY p.id LIMIT 20001"
-    ).bind(context.academic_year_id).bind(context.term_start_date).bind(context.year_start_date).bind(context.year_end_date).fetch_all().await?;
+    ).bind(context.academic_year_id).bind(context.operation_date).fetch_all().await?;
     if students.len() > 10_000 || placements.len() > 20_000 {
         return Err(AppError::ValidationError(
             "ข้อมูลเปิดปีเกิน 10,000 คนหรือ 20,000 รายการจัดห้อง กรุณาติดต่อผู้ดูแลระบบ".into(),

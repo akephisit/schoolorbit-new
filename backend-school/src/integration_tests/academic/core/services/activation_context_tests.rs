@@ -12,7 +12,9 @@ pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 100).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type) VALUES('E2E-LIFECYCLE-opening','!','ฝ่ายวิชาการ','ทดสอบ','staff') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     (pool, actor)
@@ -30,8 +32,6 @@ pub(crate) async fn ready_year(
         CreateAcademicYearRequest {
             year: year_number,
             custom_name: None,
-            start_date: start,
-            end_date: start + Duration::days(364),
             school_days: vec!["MON".into()],
         },
     )
@@ -45,7 +45,7 @@ pub(crate) async fn ready_term_for_existing_year(
     pool: &PgPool,
     actor: Uuid,
     academic_year_id: Uuid,
-    start: NaiveDate,
+    _start: NaiveDate,
 ) -> AcademicTerm {
     let bell = bell_schedules::create(
         pool,
@@ -83,8 +83,6 @@ pub(crate) async fn ready_term_for_existing_year(
             academic_year_id,
             term_type: AcademicTermType::Regular,
             custom_name: None,
-            start_date: start,
-            planned_end_date: None,
             included_in_year_result: true,
             blocks_year_closure: true,
             bell_schedule_id: bell.id,
@@ -125,7 +123,12 @@ async fn activation_context_initial_school_has_no_fabricated_predecessor_and_has
     assert!(before.issues.is_empty(), "{:?}", before.issues);
     assert!(before.students.is_empty());
     assert!(before.placements.is_empty());
-    assert!(before.context.planned_end_date.is_none());
+    assert_eq!(
+        before.context.operation_date,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive()
+    );
     assert_eq!(
         before.source_checksum,
         inspect(&pool, year.id, term.id).await.source_checksum
@@ -189,7 +192,7 @@ async fn activation_context_requires_closed_prior_context_and_first_future_term(
         .issues
         .iter()
         .any(|row| row.code == ActivationIssueCode::OtherRunningTerm));
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(first.id)
         .execute(&pool)
         .await
@@ -207,8 +210,6 @@ async fn activation_context_requires_closed_prior_context_and_first_future_term(
             academic_year_id: target.id,
             term_type: AcademicTermType::Summer,
             custom_name: None,
-            start_date: target.start_date + Duration::days(250),
-            planned_end_date: None,
             included_in_year_result: false,
             blocks_year_closure: false,
             bell_schedule_id: next.bell_schedule_id,
@@ -237,7 +238,7 @@ async fn activation_context_requires_closed_prior_context_and_first_future_term(
         .issues
         .iter()
         .any(|row| row.code == ActivationIssueCode::EarlierTermOpen));
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
         .bind(next.id)
         .execute(&pool)
         .await
@@ -260,6 +261,10 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
         NaiveDate::from_ymd_opt(2026, 5, 16).unwrap(),
     )
     .await;
+    let operation_date = inspect(&pool, year.id, term.id)
+        .await
+        .context
+        .operation_date;
     let grade: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year=1")
             .fetch_one(&pool)
@@ -283,7 +288,7 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
         let sy: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(uuid_generate_v4(),$1,$2,$3,$4,'planned') RETURNING id")
             .bind(student).bind(year.id).bind(grade).bind(program).fetch_one(&pool).await.unwrap();
         sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES(uuid_generate_v4(),$1,$2,$3,$4,'planned','new')")
-            .bind(sy).bind(year.id).bind(room).bind(year.start_date + Duration::days(20)).execute(&pool).await.unwrap();
+            .bind(sy).bind(year.id).bind(room).bind(operation_date + Duration::days(20)).execute(&pool).await.unwrap();
         if index == 0 {
             let future = inspect(&pool, year.id, term.id).await;
             assert!(future.issues.is_empty(), "{:?}", future.issues);
@@ -292,7 +297,7 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
             sqlx::query(
                 "UPDATE homeroom_placements SET start_date=$1 WHERE student_academic_year_id=$2",
             )
-            .bind(year.start_date)
+            .bind(operation_date)
             .bind(sy)
             .execute(&pool)
             .await
@@ -326,7 +331,7 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
         }
     }
     sqlx::query("UPDATE homeroom_placements SET start_date=$1 WHERE academic_year_id=$2")
-        .bind(year.start_date)
+        .bind(operation_date)
         .bind(year.id)
         .execute(&pool)
         .await

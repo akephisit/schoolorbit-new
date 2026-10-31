@@ -38,8 +38,12 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(ctx.academic_term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(ctx.academic_term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let history = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
         assert!(!history.can_manage && !history.can_confirm);
         assert_eq!(before.source_checksum, history.source_checksum);
@@ -159,7 +163,9 @@ async fn learner_lifecycle_guard_preserves_history_without_lazy_writes() {
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, EvaluationContext, Uuid, Uuid) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 144).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let (year,term,group,subject,teacher):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT g.academic_year_id,g.academic_term_id,g.id,d.subject_id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN course_assessment_plans p ON p.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=$1 WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$2)").bind(teacher).bind(group).execute(&pool).await.unwrap();
     let actor = ActorContext {
@@ -352,7 +358,7 @@ async fn learner_review_coordinator_keeps_configuration_after_assignment_expires
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
     };
     sqlx::query("UPDATE learning_groups SET status='draft' WHERE id IN (SELECT learning_group_id FROM learning_group_teachers WHERE teacher_id=$1)").bind(manager.user_id).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=term.start_date-10,ends_on=term.start_date-1 FROM academic_terms term WHERE teacher.academic_term_id=term.id AND teacher.teacher_id=$1").bind(manager.user_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE learning_group_teachers teacher SET starts_on=(now() AT TIME ZONE 'Asia/Bangkok')::date-10,ends_on=(now() AT TIME ZONE 'Asia/Bangkok')::date-1 FROM academic_terms term WHERE teacher.academic_term_id=term.id AND teacher.teacher_id=$1").bind(manager.user_id).execute(&pool).await.unwrap();
     let config = get_configuration(&pool, &coordinator, subject, DC, &ctx)
         .await
         .unwrap();
@@ -481,10 +487,24 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
     let unrelated = Uuid::new_v4();
     let (unrelated_subject,unrelated_version):(Uuid,Uuid)=sqlx::query_as("SELECT v.subject_id,v.id FROM subject_versions v WHERE v.subject_id<>$1 AND NOT EXISTS(SELECT 1 FROM course_offering_details d WHERE d.subject_version_id=v.id AND d.academic_term_id=$2) ORDER BY v.id LIMIT 1").bind(subject).bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO learning_offerings (id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id) SELECT $1,$2,$3,'course','UNRELATED','Unrelated subject','draft',o.owning_organization_unit_id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$4").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(group).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings (id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','UNRELATED','Unrelated subject','draft',o.owning_organization_unit_id,o.starts_on FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$4").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(group).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO course_offering_details (learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit) VALUES ($1,$2,$3,$4,$5,1)").bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(unrelated_version).bind(unrelated_subject).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES ($1,$2,$3,$4,'UNRELATED_ROOM','Unrelated room','draft','draft')").bind(unrelated).bind(unrelated_offering).bind(ctx.academic_term_id).bind(ctx.academic_year_id).execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
+    let (source_starts_on, unrelated_starts_on): (chrono::NaiveDate, chrono::NaiveDate) =
+        sqlx::query_as(
+            "SELECT source.starts_on, unrelated.starts_on
+             FROM learning_groups source_group
+             JOIN learning_offerings source ON source.id=source_group.learning_offering_id
+             CROSS JOIN learning_offerings unrelated
+             WHERE source_group.id=$1 AND unrelated.id=$2",
+        )
+        .bind(group)
+        .bind(unrelated_offering)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(unrelated_starts_on, source_starts_on);
     let control = list_controls(&pool, &manager, &ctx)
         .await
         .unwrap()
@@ -681,7 +701,11 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
         user_id: actor.user_id,
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
     };
-    sqlx::query("UPDATE learning_group_teachers SET starts_on=(SELECT start_date-10 FROM academic_terms WHERE id=$3),ends_on=(SELECT start_date-1 FROM academic_terms WHERE id=$3) WHERE learning_group_id=$1 AND teacher_id=$2").bind(group).bind(actor.user_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
+    let operation_date = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    sqlx::query("UPDATE learning_group_teachers SET starts_on=$3::date-10,ends_on=$3::date-1 WHERE learning_group_id=$1 AND teacher_id=$2")
+        .bind(group).bind(actor.user_id).bind(operation_date).execute(&pool).await.unwrap();
     let expired_coordinator = get_workspace(&pool, &teacher, group, DC, &ctx)
         .await
         .unwrap();

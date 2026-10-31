@@ -293,11 +293,6 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 	return weeks;
 }
 
-export function publicCalendarRange(month: string, year?: { startDate: string; endDate: string }) {
-	const range = calendarGridRange(month);
-	if (!year) return range;
-	return {
-		from: range.from > year.startDate ? range.from : year.startDate,
-		to: range.to < year.endDate ? range.to : year.endDate
-	};
+export function publicCalendarRange(month: string) {
+	return calendarGridRange(month);
 }

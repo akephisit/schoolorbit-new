@@ -187,6 +187,6 @@ pub async fn list_target_options(
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
     Ok(Json(ApiResponse::ok(
-        target_options::list_target_options(&context.tenant.pool, query.date).await?,
+        target_options::list_target_options(&context.tenant.pool, query.academic_year_id).await?,
     )))
 }

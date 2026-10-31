@@ -23,12 +23,11 @@ export const actionLabels: Record<BehaviorScoreAction, string> = {
 	merit: 'เพิ่มความดี',
 	deduction: 'หักคะแนน'
 };
-export const schedules: BehaviorResetSchedule[] = ['manual', 'monthly', 'term', 'year'];
+export const schedules: BehaviorResetSchedule[] = ['manual', 'monthly', 'scheduled'];
 export const scheduleLabels: Record<BehaviorResetSchedule, string> = {
 	manual: 'รีเซ็ตเอง',
 	monthly: 'ทุกเดือน',
-	term: 'ทุกภาคเรียน',
-	year: 'ทุกปีการศึกษา'
+	scheduled: 'กำหนดวันที่สิ้นสุดรอบ'
 };
 export const modes: BehaviorCleanupMode[] = ['details_only', 'archive', 'delete_effects'];
 export const modeLabels: Record<BehaviorCleanupMode, string> = {

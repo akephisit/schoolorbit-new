@@ -5,14 +5,9 @@ use school_academic_delivery::{
 };
 
 #[tokio::test]
-async fn results_current_obligation_readiness_accepts_open_term_end() {
+async fn results_current_obligation_readiness_uses_date_free_term_identity() {
     let (pool, actor, context, group, _) =
         fixture_with_unused_group("results_obligation_open_term_end", false).await;
-    sqlx::query("UPDATE academic_terms SET planned_end_date=NULL,closed_on=NULL WHERE id=$1")
-        .bind(context.academic_term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
 
     let queue = readiness(&pool, &actor, &context).await.unwrap();
     assert!(queue
@@ -39,22 +34,6 @@ async fn results_current_obligation_omitted_unused_group_does_not_block_ready_co
     let unused = unused.unwrap();
     // Keep this runtime closing fixture writable on the execution date without changing
     // historical published source graphs or bypassing Delivery's effective-date guard.
-    let today = (chrono::Utc::now() + chrono::Duration::hours(7)).date_naive();
-    let end = today + chrono::Duration::days(30);
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(ctx.academic_year_id)
-        .bind(end)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date=GREATEST(planned_end_date,$2) WHERE id=$1",
-    )
-    .bind(ctx.academic_term_id)
-    .bind(end)
-    .execute(&pool)
-    .await
-    .unwrap();
     let (offering,subject):(Uuid,Uuid)=sqlx::query_as("SELECT g.learning_offering_id,d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1").bind(group).fetch_one(&pool).await.unwrap();
     let old_source:Uuid=sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' AND EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot->'offerings') o CROSS JOIN jsonb_array_elements(o->'groups') g WHERE (g->>'id')::uuid=$2) ORDER BY effective_from DESC,id DESC LIMIT 1").bind(ctx.academic_term_id).bind(unused).fetch_one(&pool).await.expect("087 must capture the pre-cutover unused group");
     let old_bytes: String = sqlx::query_scalar(
@@ -202,21 +181,6 @@ async fn scoped_results(
         fixture_with_obligation_groups(name, true, activity, published_unused).await;
     let omitted = omitted.unwrap();
     let today = (chrono::Utc::now() + chrono::Duration::hours(7)).date_naive();
-    let end = today + chrono::Duration::days(90);
-    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
-        .bind(context.academic_year_id)
-        .bind(end)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE academic_terms SET planned_end_date=GREATEST(planned_end_date,$2) WHERE id=$1",
-    )
-    .bind(context.academic_term_id)
-    .bind(end)
-    .execute(&pool)
-    .await
-    .unwrap();
     let (offering,subject):(Uuid,Uuid)=sqlx::query_as("SELECT g.learning_offering_id,d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1").bind(kept).fetch_one(&pool).await.unwrap();
     if prepare {
         for (group, teacher) in course_subject_rooms(&pool, &context, subject)
@@ -613,15 +577,10 @@ async fn results_current_obligation_limits_apply_after_filter_and_raw_budget_ref
         "more than500 omitted groups cannot consume the500 normal course lock limit"
     );
     assert!(locked.groups.len() < 500);
-    // Select the legitimate old registry-semantic source through the existing
-    // term-clamped operation date. All synthetic groups now remain eligible.
+    // A real future publication keeps today's operation on the prior source.
+    let f = scoped_results("results_obligation_legacy_limits", true, false, false, true).await;
+    seed_unused_groups(&f, 5001).await;
     let legacy = f.date - chrono::Duration::days(1);
-    sqlx::query("UPDATE academic_terms SET planned_end_date=$2 WHERE id=$1")
-        .bind(f.context.academic_term_id)
-        .bind(legacy)
-        .execute(&f.pool)
-        .await
-        .unwrap();
     let mut connection = f.pool.acquire().await.unwrap();
     assert!(
         school_academic_delivery::services::audiences::dated_constraint_on_connection(

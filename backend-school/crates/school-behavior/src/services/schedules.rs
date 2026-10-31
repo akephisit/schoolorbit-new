@@ -190,7 +190,16 @@ pub async fn run_due_resets_on_connection(
             (BehaviorSide::Deduction, settings.deduction_reset),
         ] {
             let cycle = current_cycle(connection, side).await?;
-            if let Some(through) = reset_boundary(schedule, cycle.starts_on, now, &readiness) {
+            if let Some(through) = reset_boundary(
+                schedule,
+                cycle.starts_on,
+                now,
+                &readiness,
+                match side {
+                    BehaviorSide::Merit => &settings.merit_reset_dates,
+                    BehaviorSide::Deduction => &settings.deduction_reset_dates,
+                },
+            ) {
                 due = Some((side, through));
                 break;
             }

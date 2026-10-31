@@ -315,18 +315,6 @@ pub async fn mutate_roster(
     if years.len() != ids.len() {
         return Err(AppError::ValidationError("นักเรียนไม่อยู่ในปีการศึกษานี้".into()));
     }
-    let valid: bool = DbSession::new(&mut *tx)
-        .scalar(
-            "academic_core.services.homeroom_roster.mutate_roster",
-            "SELECT $2 BETWEEN start_date AND end_date FROM academic_years WHERE id=$1",
-        )
-        .bind(room.academic_year_id)
-        .bind(r.effective_date)
-        .fetch_one()
-        .await?;
-    if !valid {
-        return Err(AppError::ValidationError("วันที่อยู่นอกปีการศึกษา".into()));
-    }
     for s in &r.selections {
         let year = years
             .iter()

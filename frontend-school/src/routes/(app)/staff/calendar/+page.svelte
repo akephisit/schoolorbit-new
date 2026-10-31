@@ -32,6 +32,10 @@
 	import CalendarRequestDialog from '#lib/components/calendar/CalendarRequestDialog.svelte';
 	import CalendarRequestReviewDialog from '#lib/components/calendar/CalendarRequestReviewDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
+	import {
+		listPublicAcademicContextOptions,
+		type AcademicYearOption
+	} from '#lib/api/academic-context.js';
 	import CalendarSearchDialog from '#lib/components/calendar/CalendarSearchDialog.svelte';
 	import {
 		type CalendarAudienceType,
@@ -134,7 +138,8 @@
 		pendingError = $state('');
 	const pendingRequest = new LatestRequest();
 	let pendingOwner = '';
-	let optionsDate = $state('');
+	let optionsYearId = $state('');
+	let targetYears = $state<AcademicYearOption[]>([]);
 	let eventDialogSession = $state(0);
 	let categoryDialogOpen = $state(false);
 	let embedDialogOpen = $state(false);
@@ -936,13 +941,22 @@
 	}
 
 	async function ensureManageOptions(): Promise<boolean> {
-		if (!eventDialogOpen || !canManageCalendar || !optionsDate) return false;
+		if (!eventDialogOpen || !canManageCalendar) return false;
 		if (manageOptionsLoaded) return true;
 		const ticket = optionsRequest.begin();
 		manageOptionsLoading = true;
 		manageOptionsError = '';
 		const result = await captureRouteLoad(
-			listCalendarTargetOptions(optionsDate, { signal: ticket.signal }),
+			(async () => {
+				const context = await listPublicAcademicContextOptions(ticket.signal);
+				if (!optionsRequest.isCurrent(ticket.revision))
+					throw new DOMException('Aborted', 'AbortError');
+				targetYears = context.years;
+				optionsYearId ||= context.defaultAcademicYearId ?? '';
+				return optionsYearId
+					? listCalendarTargetOptions(optionsYearId, { signal: ticket.signal })
+					: { gradeLevels: [], homerooms: [] };
+			})(),
 			'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
 		);
 		if (!optionsRequest.isCurrent(ticket.revision)) return false;
@@ -969,14 +983,16 @@
 		detailOpen = false;
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
 
-		optionsDate = editingEvent?.startDate ?? selectedDate;
+		optionsYearId =
+			editingEvent?.targets.find((target) => target.academicYearId)?.academicYearId ?? '';
+		manageOptionsLoaded = false;
 		eventDialogSession++;
 		eventDialogOpen = true;
 	}
 
-	function changeOptionsDate(date: string) {
-		if (date === optionsDate) return;
-		optionsDate = date;
+	function changeOptionsYear(yearId: string) {
+		if (yearId === optionsYearId) return;
+		optionsYearId = yearId;
 		manageOptionsLoaded = false;
 		void ensureManageOptions();
 	}
@@ -1522,7 +1538,9 @@
 				{gradeLevels}
 				{homerooms}
 				initialDate={selectedDate}
-				ondatechange={changeOptionsDate}
+				onyearchange={changeOptionsYear}
+				targetYearId={optionsYearId}
+				{targetYears}
 				event={editingEvent}
 				{saving}
 				optionsLoading={manageOptionsLoading}

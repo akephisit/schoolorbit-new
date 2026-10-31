@@ -751,10 +751,11 @@ export async function listEnrollmentPending(roundId: string, options: ApiRequest
 
 export async function completeEnrollment(
 	id: string,
+	placementStartsOn: string,
 	studentCode?: string,
 	formData?: AdmissionEnrollmentFormData
 ): Promise<CompleteEnrollmentResponse> {
-	const payload: CompleteEnrollmentRequest = { studentCode, formData };
+	const payload: CompleteEnrollmentRequest = { studentCode, formData, placementStartsOn };
 	const res = await apiClient.post<CompleteEnrollmentResponse>(
 		`/api/admission/applications/${id}/enroll`,
 		payload

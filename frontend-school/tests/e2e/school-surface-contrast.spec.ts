@@ -239,7 +239,7 @@ for (const { name, appearance } of appearances) {
 	});
 }
 
-const term = academicOptions.activeAcademicTermId!,
+const term = academicOptions.defaultAcademicTermId!,
 	room = id(901),
 	pupil = id(902),
 	round = id(903),

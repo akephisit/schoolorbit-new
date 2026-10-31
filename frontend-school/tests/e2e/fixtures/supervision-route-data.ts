@@ -153,8 +153,8 @@ export async function mock(
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: null,
 					terms: options.term
 						? [
 								{
@@ -170,13 +170,11 @@ export async function mock(
 							]
 						: [],
 					years: [year, nextYear].map((value, index) => ({
+						isVisible: true,
 						id: value,
 						year: 2569 + index,
 						name: String(2569 + index),
-						status: 'open',
-						startDate: '2026-05-01',
-						plannedEndDate: '2027-04-30',
-						closedOn: null
+						status: 'open'
 					}))
 				});
 			if (resource === '/api/menu/user') return reply(route, { groups: [] });

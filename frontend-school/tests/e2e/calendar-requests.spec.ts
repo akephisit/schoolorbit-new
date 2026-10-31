@@ -3,6 +3,7 @@ import {
 	mockCalendar,
 	calendarPath,
 	nextYear,
+	year,
 	categoryId,
 	makeApprovedCalendarEvent
 } from './fixtures/calendar-route-data';
@@ -156,10 +157,10 @@ test('direct event defaults to selected date despite an unrelated header year', 
 	expect(
 		api.reads
 			.find((url) => url.pathname === '/api/calendar/target-options')
-			?.searchParams.get('date')
-	).toBe('2027-06-12');
+			?.searchParams.get('academicYearId')
+	).toBe(year);
 });
-test('manager selects event settings before approval, with date-specific targets loaded lazily', async ({
+test('manager selects event settings before approval, with explicit enrollment-year targets loaded lazily', async ({
 	page
 }) => {
 	const api = await mockCalendar(page);
@@ -189,8 +190,8 @@ test('manager selects event settings before approval, with date-specific targets
 	expect(
 		api.reads
 			.find((url) => url.pathname === '/api/calendar/target-options')
-			?.searchParams.get('date')
-	).toBe(pending.startDate);
+			?.searchParams.get('academicYearId')
+	).toBe(year);
 	expect(api.writes).toHaveLength(0);
 });
 test('rejection requires and displays a reason without creating an event', async ({ page }) => {
@@ -275,4 +276,77 @@ test('review starts with pending and excludes approvals even in all results whil
 	await expect(list.getByRole('heading', { name: 'อนุมัติก่อนแล้ว', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'คำร้องของฉัน', exact: true }).click();
 	await expect(list).toContainText('อนุมัติก่อนแล้ว');
+});
+
+test('scoped calendar targets use the chosen enrollment year independently of event dates', async ({
+	page
+}) => {
+	await mockCalendar(page);
+	await page.route('**/api/public/academic-context/options', (route) =>
+		route.fulfill({
+			json: {
+				success: true,
+				data: {
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: null,
+					years: [
+						{ id: year, year: 2569, name: 'ปีการศึกษา 2569', status: 'active', isVisible: true },
+						{
+							id: nextYear,
+							year: 2570,
+							name: 'ปีการศึกษา 2570',
+							status: 'planning',
+							isVisible: true
+						}
+					],
+					terms: []
+				}
+			}
+		})
+	);
+	const gradeId = id(990),
+		roomId = id(991);
+	const targetReads: URL[] = [];
+	await page.route('**/api/calendar/target-options?*', (route) => {
+		const url = new URL(route.request().url());
+		targetReads.push(url);
+		return route.fulfill({
+			json: {
+				success: true,
+				data: {
+					gradeLevels: [{ id: gradeId, name: 'มัธยมศึกษาปีที่ 1' }],
+					homerooms:
+						url.searchParams.get('academicYearId') === nextYear
+							? [{ id: roomId, name: 'ห้องเป้าหมายปี 2570', gradeLevelId: gradeId }]
+							: []
+				}
+			}
+		});
+	});
+	await page.goto(calendarPath(year, '2026-10'));
+	await page.getByRole('button', { name: '12 ต.ค. 2569, 0 กิจกรรม', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'เพิ่มกิจกรรม', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('กิจกรรมสำหรับห้องปีที่เลือก');
+	await dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true }).check();
+	await dialog
+		.getByRole('combobox', { name: 'ปีการศึกษาของชั้นและห้องเป้าหมาย', exact: true })
+		.click();
+	await page.getByRole('option', { name: 'ปีการศึกษา 2570', exact: true }).click();
+	await dialog.getByRole('button', { name: 'นักเรียน', exact: true }).click();
+	await dialog.getByRole('combobox').filter({ hasText: 'ทุกห้องเรียน' }).click();
+	await page.getByRole('option', { name: 'ห้องเป้าหมายปี 2570', exact: true }).click();
+	const posted = page.waitForRequest(
+		(request) =>
+			new URL(request.url()).pathname === '/api/calendar/events' && request.method() === 'POST'
+	);
+	await dialog.getByRole('button', { name: 'บันทึกและเผยแพร่', exact: true }).click();
+	const payload = (await posted).postDataJSON();
+	expect(payload.startDate).toBe('2026-10-12');
+	expect(payload.targets).toEqual([
+		{ audienceType: 'student', gradeLevelId: null, homeroomId: roomId, academicYearId: nextYear }
+	]);
+	expect(targetReads.at(-1)?.searchParams.get('academicYearId')).toBe(nextYear);
+	expect(targetReads.every((url) => !url.searchParams.has('date'))).toBe(true);
 });

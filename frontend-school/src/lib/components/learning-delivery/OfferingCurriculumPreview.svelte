@@ -20,6 +20,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -50,6 +51,7 @@
 
 	let displayOrder = $derived(curriculumPreparationOrder(options));
 
+	let startsOn = $state('');
 	let programPickerOpen = $state(false);
 	let programSearch = $state('');
 	let selectedStudyProgramIds = $state<string[]>([]);
@@ -82,7 +84,13 @@
 		visibleCurriculumPreparationProposals(preview?.proposals ?? [], preparationTarget)
 	);
 	let applyBlocked = $derived.by(() => {
-		if (!preview || choices.length !== preview.proposals.length) return true;
+		if (
+			!startsOn ||
+			!preview ||
+			preview.startsOn !== startsOn ||
+			choices.length !== preview.proposals.length
+		)
+			return true;
 		if (preparationTarget) {
 			if (displayedProposals.length !== 1) return true;
 			const focusedChoice = choices.find(
@@ -212,12 +220,13 @@
 	}
 
 	async function buildPreview() {
-		if (studyProgramIds.length === 0) return;
+		if (!startsOn || studyProgramIds.length === 0) return;
 		busy = true;
 		errorMessage = '';
 		try {
 			const result = await previewLearningOfferingsFromCurriculum({
 				academicTermId,
+				startsOn,
 				studyProgramIds,
 				deliveryVersionId
 			});
@@ -247,6 +256,7 @@
 		try {
 			const input = JSON.stringify({
 				academicTermId,
+				startsOn,
 				studyProgramIds,
 				deliveryVersionId,
 				sourceHash: preview.sourceHash,
@@ -258,6 +268,7 @@
 			}
 			await applyLearningOfferingsFromCurriculum({
 				academicTermId,
+				startsOn,
 				studyProgramIds,
 				deliveryVersionId,
 				sourceHash: preview.sourceHash,
@@ -276,6 +287,15 @@
 </script>
 
 <div class="space-y-4">
+	<div class="space-y-2">
+		<Label for="curriculum-offerings-start">วันที่เริ่มเปิดสอนจริง</Label><DatePicker
+			id="curriculum-offerings-start"
+			bind:value={startsOn}
+			ariaLabel="วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร"
+			required
+			disabled={busy}
+		/>
+	</div>
 	<div class="rounded-xl border border-primary/20 bg-primary/[0.035] p-4">
 		<div class="flex items-start gap-3">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary"><WandSparkles class="size-4" /></div>
@@ -373,10 +393,17 @@
 			variant="outline"
 			loading={busy}
 			loadingLabel="กำลังตรวจ"
-			disabled={studyProgramIds.length === 0}
+			disabled={!startsOn || studyProgramIds.length === 0}
 			onclick={buildPreview}><Eye class="size-4" /> ตรวจและจัดกลุ่มก่อน</LoadingButton
 		>
 	</div>
+
+	{#if preview && preview.startsOn !== startsOn}<p
+			role="alert"
+			class="text-sm text-amber-700 dark:text-amber-400"
+		>
+			วันที่เริ่มเปิดสอนเปลี่ยน กรุณาตรวจตัวอย่างใหม่ก่อนนำไปใช้
+		</p>{/if}
 
 	{#if preview}
 		<div class="rounded-xl border bg-muted p-3 text-sm">

@@ -256,7 +256,7 @@ fn validate_reference(
         _ => {
             return Err(AppError::ValidationError(
                 "ระบุระดับชั้นและแผนปลายทางให้ครบ".into(),
-            ))
+            ));
         }
     };
     if (decision.outcome == Outcome::Repeat && grade != source.grade_level_id)

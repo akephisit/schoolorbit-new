@@ -1,16 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import {
-		listPublicAcademicContextOptions,
-		type AcademicYearOption
-	} from '#lib/api/academic-context.js';
 	import {
 		listCalendarEvents,
 		listPublicCalendarEvents,
@@ -24,79 +19,42 @@
 	let {
 		open = $bindable(false),
 		kind,
-		yearOptions,
-		yearId = '',
 		initialQuery = '',
 		filters = {},
 		onselect
 	}: {
 		open: boolean;
 		kind: 'staff' | 'public';
-		yearOptions?: AcademicYearOption[];
-		yearId?: string;
 		initialQuery?: string;
 		filters?: CalendarEventFilters;
-		onselect: (event: { id: string; title: string; startDate: string }, yearId: string) => void;
+		onselect: (event: { id: string; title: string; startDate: string }) => void;
 	} = $props();
 	let query = $state(''),
-		selectedYearId = $state(''),
 		offset = $state(0);
-	let years = $state<AcademicYearOption[]>([]),
-		rows = $state.raw<(CalendarEvent | CalendarPublicEvent)[]>([]);
+	let rows = $state.raw<(CalendarEvent | CalendarPublicEvent)[]>([]);
 	let reading = $state(false),
-		yearsLoading = $state(false),
-		error = $state(''),
-		yearsError = $state('');
-	const request = new LatestRequest(),
-		contextRequest = new LatestRequest();
-	const selectedYear = $derived(years.find((year) => year.id === selectedYearId));
+		error = $state('');
+	const request = new LatestRequest();
 	const results = $derived(rows.slice(0, 100));
 	const hasMore = $derived(rows.length > 100 && offset < 10_000);
-	$effect(() => {
-		if (open && yearOptions !== undefined) years = yearOptions;
-	});
-
 	$effect.pre(() => {
 		const opened = open;
 		untrack(() => {
 			request.abort();
-			contextRequest.abort();
 			rows = [];
 			error = '';
 			reading = false;
-			yearsError = '';
-			yearsLoading = false;
 			if (!opened) return;
 			query = initialQuery;
-			selectedYearId = yearId;
 			offset = 0;
-			years = yearOptions ?? [];
-			if (yearOptions === undefined) void loadYears();
 		});
 		return () => {
 			request.abort();
-			contextRequest.abort();
 		};
 	});
-	async function loadYears() {
-		const ticket = contextRequest.begin();
-		yearsLoading = true;
-		yearsError = '';
-		try {
-			const result = await listPublicAcademicContextOptions(ticket.signal);
-			if (contextRequest.isCurrent(ticket.revision)) years = result.years;
-		} catch (error) {
-			if (!isAbortError(error) && contextRequest.isCurrent(ticket.revision))
-				yearsError = error instanceof Error ? error.message : 'โหลดปีไม่สำเร็จ';
-		} finally {
-			if (contextRequest.isCurrent(ticket.revision)) yearsLoading = false;
-		}
-	}
 	$effect(() => {
 		const opened = open,
 			term = query.trim(),
-			year = selectedYear,
-			id = selectedYearId,
 			pageOffset = offset;
 		request.abort();
 		untrack(() => {
@@ -109,19 +67,14 @@
 			error = 'คำค้นหายาวเกิน 200 ตัวอักษร';
 			return;
 		}
-		if (id && !year) return;
 		reading = true;
-		const timer = setTimeout(() => void searchEvents(term, year, pageOffset), 300);
+		const timer = setTimeout(() => void searchEvents(term, pageOffset), 300);
 		return () => {
 			clearTimeout(timer);
 			request.abort();
 		};
 	});
-	async function searchEvents(
-		term: string,
-		year: AcademicYearOption | undefined,
-		pageOffset: number
-	) {
+	async function searchEvents(term: string, pageOffset: number) {
 		const ticket = request.begin();
 		reading = true;
 		error = '';
@@ -132,8 +85,7 @@
 			visibility: filters.visibility,
 			search: true,
 			q: term,
-			offset: pageOffset,
-			...(year ? { from: year.startDate, to: year.endDate } : {})
+			offset: pageOffset
 		};
 		try {
 			const result =
@@ -145,8 +97,7 @@
 								q: term,
 								offset: pageOffset,
 								categoryId: filters.categoryId,
-								tagId: filters.tagId,
-								...(year ? { from: year.startDate, to: year.endDate } : {})
+								tagId: filters.tagId
 							},
 							{ signal: ticket.signal }
 						);
@@ -177,55 +128,14 @@
 					maxlength={200}
 				/>
 			</div>
-			<div class="space-y-1.5">
-				<Label for="calendar-search-year">ปีการศึกษาที่ค้นหา</Label>
-				<Select.Root
-					type="single"
-					value={selectedYearId}
-					onValueChange={(value) => {
-						selectedYearId = value;
-						offset = 0;
-					}}
-				>
-					<Select.Trigger id="calendar-search-year" class="w-full" disabled={yearsLoading}
-						>{selectedYear?.name ?? 'ทุกปี / ทุกช่วงเวลา'}</Select.Trigger
-					>
-					<Select.Content
-						><Select.Item value="">ทุกปี / ทุกช่วงเวลา</Select.Item
-						>{#each years as year (year.id)}<Select.Item value={year.id}>{year.name}</Select.Item
-							>{/each}</Select.Content
-					>
-				</Select.Root>
-				{#if selectedYear}<p class="text-xs text-muted-foreground">
-						{formatCalendarDate(selectedYear.startDate)} – {formatCalendarDate(
-							selectedYear.endDate
-						)}
-					</p>{/if}
-			</div>
-			{#if yearsError}<div
-					role="alert"
-					class="flex flex-wrap items-center gap-2 text-sm text-destructive"
-				>
-					<span>{yearsError}</span><Button size="sm" variant="outline" onclick={loadYears}
-						>ลองโหลดปีอีกครั้ง</Button
-					>
-				</div>{/if}
 			<div class="space-y-2" aria-busy={reading} aria-live="polite">
-				{#if reading || (query.trim() && selectedYearId && yearsLoading)}<PageSkeleton
-						variant="cards"
-						rows={3}
-					/>
-				{:else if selectedYearId && !selectedYear}<PageState
-						variant="error"
-						title="ไม่พบปีการศึกษาที่เลือก"
-						description="เลือกปีใหม่ หรือค้นหาทุกช่วงเวลา"
-					/>
+				{#if reading}<PageSkeleton variant="cards" rows={3} />
 				{:else if error}<PageState
 						variant="error"
 						title="ค้นหากิจกรรมไม่สำเร็จ"
 						description={error}
 						actionLabel="ลองอีกครั้ง"
-						onaction={() => void searchEvents(query.trim(), selectedYear, offset)}
+						onaction={() => void searchEvents(query.trim(), offset)}
 					/>
 				{:else if !query.trim()}<PageState
 						title="เริ่มพิมพ์เพื่อค้นหากิจกรรม"
@@ -246,7 +156,7 @@
 									variant="outline"
 									class="h-auto w-full justify-start whitespace-normal p-3 text-left"
 									onclick={() => {
-										onselect(event, selectedYearId);
+										onselect(event);
 										open = false;
 									}}
 								>

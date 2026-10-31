@@ -550,7 +550,7 @@ async fn delivery_room_scope_migration_143_to_144_preserves_all_unscoped_bytes()
     let pool = prepare_delivery_fixture("room_scope_migration", false).await;
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 143).await.unwrap();
-    let c = operational_change_runtime_context(&pool).await;
+    let c = historical_operational_change_runtime_context(&pool).await;
     let rev = historical_revision(&pool, &c, 12).await;
     let before:Value=sqlx::query_scalar("SELECT jsonb_build_object('versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM academic_delivery_versions v),'revisions',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM academic_term_change_sets c),'journal',(SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM academic_term_change_items i),'evidence',(SELECT jsonb_agg(to_jsonb(e) ORDER BY migration_version) FROM academic_delivery_version_migration_audit e))").fetch_one(&pool).await.unwrap();
     let projection: Value = sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1)")
@@ -709,25 +709,65 @@ async fn delivery_room_scope_direct_write_serializes_with_publication_and_cancel
         .contains("ACADEMIC_DELIVERY_AUDIENCE_IMMUTABLE"));
 }
 
+pub(super) async fn canonical_score_phase(pool: &PgPool, group: Uuid, actor: Uuid) -> (Uuid, Uuid) {
+    let (plan,phase):(Uuid,Uuid)=sqlx::query_as("SELECT p.id,phase.id FROM learning_groups g JOIN course_assessment_plans p ON p.learning_offering_id=g.learning_offering_id JOIN course_assessment_phases phase ON phase.plan_id=p.id AND phase.phase_code='before_midterm' WHERE g.id=$1")
+        .bind(group).fetch_one(pool).await.expect("publication must initialize one canonical plan and its phases");
+    let before: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(p) FROM course_assessment_plans p WHERE id=$1")
+            .bind(plan)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let phase_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM course_assessment_phases WHERE plan_id=$1 ORDER BY id")
+            .bind(plan)
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    assert_eq!(phase_ids.len(), 4);
+    // The synthetic item needs ten points; configure the existing unlocked phase, not its identity.
+    sqlx::query("UPDATE course_assessment_phases SET max_score=10,row_version=row_version+1,updated_by=$2,updated_at=now() WHERE id=$1 AND max_score<10")
+        .bind(phase).bind(actor).execute(pool).await.unwrap();
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT to_jsonb(p) FROM course_assessment_plans p WHERE id=$1"
+        )
+        .bind(plan)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        phase_ids,
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM course_assessment_phases WHERE plan_id=$1 ORDER BY id"
+        )
+        .bind(plan)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    );
+    (plan, phase)
+}
+
+pub(super) async fn assessment_facts(pool: &PgPool, group: Uuid) -> Value {
+    sqlx::query_scalar("SELECT jsonb_build_object('plans',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM course_assessment_plans p JOIN learning_groups g ON g.learning_offering_id=p.learning_offering_id WHERE g.id=$1),'phases',(SELECT jsonb_agg(to_jsonb(phase) ORDER BY phase.id) FROM course_assessment_phases phase JOIN course_assessment_plans p ON p.id=phase.plan_id JOIN learning_groups g ON g.learning_offering_id=p.learning_offering_id WHERE g.id=$1))")
+        .bind(group).fetch_one(pool).await.unwrap()
+}
+
 pub(super) async fn seed_retained_grade(pool: &PgPool, c: &RuntimeContext, group: Uuid) {
     let student = Uuid::new_v4();
     let year = Uuid::new_v4();
-    let starts: NaiveDate = sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id=$1")
-        .bind(c.term_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let starts:NaiveDate=sqlx::query_scalar("SELECT starts_on FROM learning_offerings WHERE id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)").bind(group).fetch_one(pool).await.unwrap();
     sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'not-a-login','Synthetic','Retained grade','student','active')").bind(student).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'active')").bind(year).bind(student).bind(c.year_id).bind(c.grade_level_id).bind(c.study_program_id).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at,published_at) VALUES($1,$2,$3,$4,$5,$6,'active','manual_add',$7,now())").bind(Uuid::new_v4()).bind(group).bind(c.term_id).bind(c.year_id).bind(year).bind(student).bind(starts).execute(pool).await.unwrap();
-    let plan = Uuid::new_v4();
-    let phase = Uuid::new_v4();
+    let (plan, phase) = canonical_score_phase(pool, group, c.teacher_id).await;
     let item = Uuid::new_v4();
-    sqlx::query("INSERT INTO course_assessment_plans(id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id) SELECT $1,g.academic_term_id,d.subject_version_id,g.learning_offering_id,g.academic_year_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$2").bind(plan).bind(group).execute(pool).await.unwrap();
-    sqlx::query("INSERT INTO course_assessment_phases(id,plan_id,phase_code,max_score,exam_arrangement) VALUES($1,$2,'before_midterm',25,'none')").bind(phase).bind(plan).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_score_items(id,learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score) SELECT $1,id,learning_offering_id,$2,$3,academic_term_id,academic_year_id,'Retained score',10 FROM learning_groups WHERE id=$4").bind(item).bind(plan).bind(phase).bind(group).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_student_scores(id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score) SELECT $1,id,learning_offering_id,academic_term_id,academic_year_id,$2,$3,7.25 FROM learning_groups WHERE id=$4").bind(Uuid::new_v4()).bind(item).bind(year).bind(group).execute(pool).await.unwrap();
 }
 pub(super) async fn retained_grade_facts(pool: &PgPool, group: Uuid) -> Value {
-    sqlx::query_scalar("SELECT jsonb_build_object('members',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_students t WHERE learning_group_id=$1),'plans',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM course_assessment_plans t WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)),'items',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_score_items t WHERE learning_group_id=$1),'scores',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_scores t WHERE learning_group_id=$1))").bind(group).fetch_one(pool).await.unwrap()
+    sqlx::query_scalar("SELECT jsonb_build_object('members',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_students t WHERE learning_group_id=$1),'plans',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM course_assessment_plans t WHERE learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)),'phases',(SELECT jsonb_agg(to_jsonb(phase) ORDER BY phase.id) FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1)),'items',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_score_items t WHERE learning_group_id=$1),'scores',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_group_student_scores t WHERE learning_group_id=$1))").bind(group).fetch_one(pool).await.unwrap()
 }

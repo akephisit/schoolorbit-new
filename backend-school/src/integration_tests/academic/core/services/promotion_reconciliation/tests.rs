@@ -56,6 +56,9 @@ async fn reconciliation_reuses_owned_target_and_placement_when_destination_chang
         user,
         year,
         target,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
         source.student_academic_year_id,
         None,
         None,
@@ -91,6 +94,9 @@ async fn reconciliation_reuses_owned_target_and_placement_when_destination_chang
         user,
         year,
         target,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
         source.student_academic_year_id,
         Some(target_student_year_id),
         None,
@@ -108,6 +114,9 @@ async fn reconciliation_reuses_owned_target_and_placement_when_destination_chang
         user,
         year,
         target,
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
         source.student_academic_year_id,
         Some(target_student_year_id),
         Some(placement_id),
@@ -163,6 +172,9 @@ async fn reconciliation_rejects_capacity_foreign_ownership_and_nonplanning_year_
             user,
             year,
             target,
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             source.student_academic_year_id,
             None,
             None,
@@ -196,6 +208,9 @@ async fn reconciliation_rejects_capacity_foreign_ownership_and_nonplanning_year_
             user,
             year,
             target,
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             source.student_academic_year_id,
             Some(Uuid::new_v4()),
             None,
@@ -218,6 +233,9 @@ async fn reconciliation_rejects_capacity_foreign_ownership_and_nonplanning_year_
             user,
             year,
             target,
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             source.student_academic_year_id,
             None,
             None,
@@ -265,6 +283,9 @@ async fn reconciliation_sets_terminal_source_status_without_creating_target_rows
             actor(&pool).await,
             year,
             target,
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive(),
             source.student_academic_year_id,
             None,
             None,

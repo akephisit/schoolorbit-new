@@ -38,11 +38,10 @@ pub async fn day_facts_on_connection(
             AND h.start_date<=$2 AND (h.end_date IS NULL OR h.end_date>=$2)
             ORDER BY h.start_date DESC,h.id LIMIT 1) p ON true
         LEFT JOIN attendance_days d ON d.academic_term_id=s.academic_term_id AND d.date=s.date
-        LEFT JOIN attendance_settings c ON c.academic_term_id=s.academic_term_id
         LEFT JOIN attendance_special_rounds special ON special.id=s.special_round_id
         LEFT JOIN attendance_special_templates template ON template.id=special.template_id
         WHERE s.academic_term_id=$1 AND s.date=$2 AND NOT s.cancelled
-          AND COALESCE(s.count_override,d.counted,COALESCE(c.configuration->'weekdays','[1,2,3,4,5]'::jsonb) @> to_jsonb(EXTRACT(ISODOW FROM s.date)::integer))
+          AND COALESCE(s.count_override,d.counted,false)
     ), daily AS (SELECT DISTINCT ON(student_id) * FROM eligible WHERE kind='arrival'
         ORDER BY student_id,(result IN ('present','late')) DESC,result,session_id)
     SELECT student_id,student_academic_year_id,'arrival'::text source_key,kind,result,true counted,

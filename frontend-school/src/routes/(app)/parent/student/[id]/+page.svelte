@@ -183,10 +183,8 @@
 	const parentHref = $derived(`${resolve('parent')}${academicYearQuery}`);
 	const termId = $derived(
 		contextOptions?.terms.find(
-			(t) => t.academicYearId === selectedYearId && t.id === contextOptions?.activeAcademicTermId
-		)?.id ??
-			contextOptions?.terms.find((t) => t.academicYearId === selectedYearId)?.id ??
-			''
+			(t) => t.academicYearId === selectedYearId && t.id === contextOptions?.defaultAcademicTermId
+		)?.id ?? ''
 	);
 	const timetableHref = $derived(
 		`${resolve(`parent/student/${studentId}/timetable`)}${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`

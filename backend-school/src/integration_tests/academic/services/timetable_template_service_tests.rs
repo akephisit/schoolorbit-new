@@ -21,12 +21,14 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 113).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
 
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (source_id, source_row_version, term_id, term_start): (Uuid, i64, Uuid, NaiveDate) =
         sqlx::query_as(
-            r#"SELECT version.id, version.row_version, term.id, term.start_date
+            r#"SELECT version.id, version.row_version, term.id, version.effective_from
                FROM academic_timetable_versions version
                JOIN academic_terms term ON term.id = version.academic_term_id
                WHERE version.status = 'published' AND term.status = 'active'
@@ -186,8 +188,12 @@ async fn template_source_apply_and_clear_are_version_scoped() {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(term_id).bind(term_status).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
+            .bind(term_id)
+            .bind(term_status)
+            .execute(&pool)
+            .await
+            .unwrap();
         let apply = timetable_template_service::apply_template(
             &pool,
             &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
@@ -230,7 +236,7 @@ async fn template_source_apply_and_clear_are_version_scoped() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='active',closed_on=NULL WHERE id=$1")
+    sqlx::query("UPDATE academic_terms SET status='active' WHERE id=$1")
         .bind(term_id)
         .execute(&pool)
         .await

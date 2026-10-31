@@ -21,17 +21,17 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterEach(() => fixture.release());
 
-test('public SSR and month navigation use actual academic-year dates and retain the workspace', async ({
+test('public SSR and month navigation use actual dates without academic boundaries and retain the workspace', async ({
 	page
 }) => {
 	await page.goto(`${fixture.baseUrl}/calendar?month=2026-05&academicYearId=${year}`);
-	await expect(page.locator('#public-calendar-year')).toContainText('ปีการศึกษา 2569');
-	await expect(page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true })).toBeDisabled();
+	await expect(page.locator('#public-calendar-year')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true })).toBeEnabled();
 	expect(
 		fixture.requests
 			.find((url) => url.pathname.endsWith('/calendar/events'))
 			?.searchParams.get('from')
-	).toBe('2026-05-14');
+	).toBe('2026-04-26');
 	await page.goto(`${fixture.baseUrl}/calendar?month=2026-10&academicYearId=${year}`);
 	await expect(page.locator('[data-calendar-date="2026-10-01"]')).toBeVisible();
 	fixture.hold();
@@ -43,13 +43,13 @@ test('public SSR and month navigation use actual academic-year dates and retain 
 	fixture.release();
 	await expect(page.locator('main [aria-busy]').last()).toHaveAttribute('aria-busy', 'false');
 	await page.goto(`${fixture.baseUrl}/calendar?month=2027-04&academicYearId=${year}`);
-	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeEnabled();
 	expect(
 		fixture.requests
 			.filter((url) => url.pathname.endsWith('/calendar/events'))
 			.at(-1)
 			?.searchParams.get('to')
-	).toBe('2027-04-09');
+	).toBe('2027-05-08');
 });
 for (const width of [375, 1280]) {
 	test(`public partial search, result navigation and theme layout at ${width}px`, async ({
@@ -64,8 +64,8 @@ for (const width of [375, 1280]) {
 		await expect(dialog.getByRole('button', { name: /ทัศนศึกษาพฤศจิกายน/ })).toBeVisible();
 		const read = fixture.requests.find((url) => url.searchParams.get('search') === 'true');
 		expect(read?.searchParams.get('q')).toBe('ทัศน');
-		expect(read?.searchParams.get('from')).toBe('2026-05-14');
-		expect(read?.searchParams.get('to')).toBe('2027-04-09');
+		expect(read?.searchParams.has('from')).toBe(false);
+		expect(read?.searchParams.has('to')).toBe(false);
 		await page.screenshot({
 			path: testInfo.outputPath(`search-${width}-light.png`),
 			animations: 'disabled'
@@ -96,20 +96,12 @@ test('a failed public first read offers a focused successful retry', async ({ pa
 	await expect(page.locator('[data-calendar-date="2026-10-01"]')).toBeVisible();
 });
 
-test('selecting an academic year jumps inside its actual date bounds', async ({ page }) => {
-	await page.goto(`${fixture.baseUrl}/calendar?month=2026-01`);
-	await expect(page.locator('#public-calendar-year')).toBeEnabled();
-	await page.locator('#public-calendar-year').click();
-	await page.getByRole('option', { name: 'ปีการศึกษา 2569', exact: true }).click();
-	await expect(page).toHaveURL(/month=2026-05/);
-	await expect(page).toHaveURL(new RegExp(`academicYearId=${year}`));
-	await expect(page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true })).toBeDisabled();
-	await expect
-		.poll(() =>
-			fixture.requests
-				.filter((url) => url.pathname.endsWith('/calendar/events'))
-				.at(-1)
-				?.searchParams.get('from')
-		)
-		.toBe('2026-05-14');
+test('an obsolete year URL never jumps or restricts the selected month', async ({ page }) => {
+	await page.goto(`${fixture.baseUrl}/calendar?month=2026-01&academicYearId=${year}`);
+	await expect(page.locator('#public-calendar-year')).toHaveCount(0);
+	await expect(page.locator('[data-calendar-date="2026-01-01"]')).toBeVisible();
+	await page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true }).click();
+	await expect(page).toHaveURL(/month=2025-12/);
+	await expect(page).not.toHaveURL(/academicYearId=/);
+	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeEnabled();
 });

@@ -782,7 +782,7 @@ pub async fn apply_roster(
                  left_at = GREATEST(joined_at, $1), row_version = row_version + 1, \
                  updated_at = now() WHERE id = $2 AND membership_status = 'active'",
                     )
-                    .bind(term.start_date)
+                    .bind(term.operation_date)
                     .bind(current_student.id)
                     .execute()
                     .await?;
@@ -817,7 +817,7 @@ pub async fn apply_roster(
                     .bind(student_year_id)
                     .bind(student_id)
                     .bind(roster_source)
-                    .bind(term.start_date)
+                    .bind(term.operation_date)
                     .execute()
                     .await?;
             }

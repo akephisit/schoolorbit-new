@@ -70,6 +70,17 @@ export type CurriculumValidationNotice = Schemas['CurriculumValidationNotice'];
 export type CurriculumStructureValidation = Schemas['CurriculumStructureValidation'];
 export type CurriculumStructureWorkspace = Schemas['CurriculumStructureWorkspace'];
 export type AcademicSetupWorkspace = Schemas['AcademicSetupWorkspace'];
+export type AcademicContextSettings = Schemas['AcademicContextSettings'];
+export type UpdateAcademicContextSettingsRequest = Schemas['UpdateAcademicContextSettingsRequest'];
+export type AcademicContextSettingsMutationResponse =
+	Schemas['AcademicContextSettingsMutationResponse'];
+
+export const updateAcademicContextSettings = (body: UpdateAcademicContextSettingsRequest) =>
+	academicData(
+		apiClient.put<AcademicContextSettingsMutationResponse>('/api/academic/context/settings', body),
+		'บันทึกตัวเลือกและค่าเริ่มต้นไม่สำเร็จ'
+	);
+
 export type Homeroom = Schemas['Homeroom'];
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
 export type HomeroomAdvisorAssignment = Schemas['HomeroomAdvisorAssignment'];

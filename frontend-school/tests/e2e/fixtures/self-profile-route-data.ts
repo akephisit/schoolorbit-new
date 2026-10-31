@@ -80,18 +80,16 @@ export async function mockSelfProfile(
 				return reply(route, 'ส่วนนี้ไม่พร้อม', 503);
 			if (kind === 'context')
 				return reply(route, {
-					activeAcademicYearId: year,
-					activeAcademicTermId: null,
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: null,
 					years: options.empty
 						? []
 						: [year, nextYear].map((id, i) => ({
+								isVisible: true,
 								id,
 								year: 2569 + i,
 								name: String(2569 + i),
-								status: 'open',
-								startDate: '2026-05-01',
-								plannedEndDate: '2027-04-30',
-								closedOn: null
+								status: 'open'
 							})),
 					terms: []
 				});

@@ -1,3 +1,4 @@
+import { resolveScopedAcademicTerm } from '#lib/academic-context/scoped-year.js';
 import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
@@ -24,10 +25,7 @@ export async function loadOwnBehavior(
 		userType === 'student'
 			? await listMyAcademicContextOptions(signal, { requestFetch, signal })
 			: await listParentAcademicContextOptions(signal, { requestFetch, signal });
-	const term =
-		context.terms.find((t) => t.id === url.searchParams.get('academicTermId')) ??
-		context.terms.find((t) => t.id === context.activeAcademicTermId) ??
-		context.terms.at(-1);
+	const term = resolveScopedAcademicTerm(context, url);
 	const children: ChildDto[] =
 		userType === 'parent' && term
 			? (await getOwnParentProfile(term.academicYearId, { requestFetch, signal })).children
