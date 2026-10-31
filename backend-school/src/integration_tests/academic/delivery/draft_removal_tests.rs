@@ -44,7 +44,7 @@ async fn delivery_draft_removal_migration_preserves_published_and_unexcluded_pro
     let pool = prepare_delivery_fixture("delivery_removal_migration", false).await;
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
     apply_migrations_through(&pool, 141).await.unwrap();
-    let context = operational_change_runtime_context(&pool).await;
+    let context = historical_operational_change_runtime_context(&pool).await;
     let revision = super::room_scope_tests::historical_revision(&pool, &context, 12).await;
     let before = preserved_facts(&pool).await;
     let projection: Value = sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1)")
@@ -1128,7 +1128,6 @@ async fn activity_zero_targets_http_preserve_scope_revisions_and_negative_valida
     use school_permissions::registry::codes;
     use tower::ServiceExt;
     let pool = prepare_delivery_runtime_fixture("activity_zero_http").await;
-    apply_migrations_through(&pool, 143).await.unwrap();
     let context = operational_change_runtime_context(&pool).await;
     let revision = create_runtime_change_set(
         &pool,
@@ -1346,7 +1345,7 @@ async fn activity_zero_targets_http_preserve_scope_revisions_and_negative_valida
         let request = json!({
             "action": "add_activity", "changeSetRowVersion": current.row_version, "weeklyPeriodTarget": target,
             "offering": {
-                "createHomeroomGroups": false, "academicTermId": context.term_id, "activityVersionId": activity_version_id,
+                "startsOn": runtime_operation_date(), "createHomeroomGroups": false, "academicTermId": context.term_id, "activityVersionId": activity_version_id,
                 "curriculumActivityRequirementId": null,
                 "targets": [{"targetKind": "homeroom", "homeroomId": context.homeroom_id,
                     "gradeLevelId": context.grade_level_id, "studyProgramId": context.study_program_id}],
@@ -1408,16 +1407,33 @@ pub(super) async fn open_activity_with_catalog_target(
     mode: ActivitySchedulingMode,
     create_groups: bool,
 ) -> school_academic_delivery::models::LearningOffering {
-    let activity_version_id: Uuid = sqlx::query_scalar("SELECT activity.id FROM activity_versions activity JOIN academic_terms term ON term.id=$1 WHERE activity.status='published' AND activity.scheduling_mode=$2 AND activity.effective_from<=(now() AT TIME ZONE 'Asia/Bangkok')::date ORDER BY activity.id LIMIT 1")
-        .bind(context.term_id).bind(mode).fetch_one(pool).await.unwrap();
+    open_activity_with_catalog_target_at(
+        pool,
+        context,
+        target_id,
+        mode,
+        create_groups,
+        runtime_operation_date(),
+    )
+    .await
+}
+
+async fn open_activity_with_catalog_target_at(
+    pool: &PgPool,
+    context: &RuntimeContext,
+    target_id: Uuid,
+    mode: ActivitySchedulingMode,
+    create_groups: bool,
+    starts_on: NaiveDate,
+) -> school_academic_delivery::models::LearningOffering {
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT activity.id FROM activity_versions activity JOIN academic_terms term ON term.id=$1 WHERE activity.status='published' AND activity.scheduling_mode=$2 AND activity.effective_from<=$3 ORDER BY activity.id LIMIT 1")
+        .bind(context.term_id).bind(mode).bind(starts_on).fetch_one(pool).await.unwrap();
     offerings::create_for_delivery(
         pool,
         context.teacher_id,
         Some(target_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: chrono::Utc::now()
-                .with_timezone(&chrono_tz::Asia::Bangkok)
-                .date_naive(),
+            starts_on,
             create_homeroom_groups: create_groups,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -1448,24 +1464,10 @@ pub(super) async fn open_activity_with_catalog_target(
 
 #[tokio::test]
 async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_and_revisions() {
-    let pool = prepare_delivery_runtime_fixture("activity_target_migration").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        12,
-        "activity-target-migration",
-    )
-    .await;
-    let sibling = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        13,
-        "activity-target-unchanged",
-    )
-    .await;
+    let pool = prepare_delivery_runtime_fixture_through("activity_target_migration", 142).await;
+    let context = historical_operational_change_runtime_context(&pool).await;
+    let revision = super::room_scope_tests::historical_revision(&pool, &context, 12).await;
+    let sibling = super::room_scope_tests::historical_revision(&pool, &context, 13).await;
     let initial = draft_version(&pool, revision.id).await;
     let excluded_group_id = initial
         .snapshot
@@ -1475,27 +1477,33 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         .next()
         .unwrap()
         .id;
-    change_sets::remove_draft_group(
-        &pool,
-        context.teacher_id,
-        revision.id,
-        excluded_group_id,
-        removal_request(&pool, revision.id).await,
-    )
-    .await
-    .unwrap();
+    // Seed the schema 142 exclusion directly; the current removal provider also owns audiences added in 144.
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("UPDATE academic_term_change_sets SET excluded_group_ids=ARRAY[$2]::uuid[],row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(revision.id).bind(excluded_group_id).execute(&mut *transaction).await.unwrap();
+    sqlx::query("UPDATE academic_delivery_versions SET snapshot=academic_delivery_revision_snapshot($1),row_version=row_version+1,updated_at=now() WHERE id=$2")
+        .bind(revision.id).bind(revision.target_delivery_version_id).execute(&mut *transaction).await.unwrap();
+    transaction.commit().await.unwrap();
+    assert!(!draft_version(&pool, revision.id)
+        .await
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .any(|group| group.id == excluded_group_id));
     let mut targets = Vec::new();
     for mode in [
         ActivitySchedulingMode::Independent,
         ActivitySchedulingMode::Synchronized,
     ] {
         for target in [0, 2] {
-            let opened = open_activity_with_catalog_target(
+            let opened = open_activity_with_catalog_target_at(
                 &pool,
                 &context,
                 revision.target_delivery_version_id,
                 mode,
                 true,
+                revision.reference_date,
             )
             .await;
             for group in groups::list(&pool, opened.id).await.unwrap() {
@@ -1534,20 +1542,14 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         }
     }
     // A terminal revision can contain the same old ignored command; never repair its recorded graph.
-    let cancelled = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "activity-target-cancelled",
-    )
-    .await;
-    let terminal_activity = open_activity_with_catalog_target(
+    let cancelled = super::room_scope_tests::historical_revision(&pool, &context, 14).await;
+    let terminal_activity = open_activity_with_catalog_target_at(
         &pool,
         &context,
         cancelled.target_delivery_version_id,
         ActivitySchedulingMode::Synchronized,
         false,
+        cancelled.reference_date,
     )
     .await;
     let terminal_current = change_sets::get_change_set(&pool, cancelled.id)

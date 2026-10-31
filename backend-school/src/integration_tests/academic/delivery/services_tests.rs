@@ -582,15 +582,18 @@ impl school_academic_delivery::ports::AssessmentPublicationPort for RejectAssess
 }
 
 async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
+    prepare_delivery_runtime_fixture_through(name, school_migrations::latest_migration_version())
+        .await
+}
+
+async fn prepare_delivery_runtime_fixture_through(name: &str, version: i64) -> PgPool {
     let pool = create_named_test_pool(name).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
+    apply_migrations_through(&pool, version).await.unwrap();
     pool
 }
 
@@ -1130,6 +1133,10 @@ struct RuntimeContext {
 }
 
 async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
+    planning_runtime_context_at(pool, runtime_operation_date()).await
+}
+
+async fn planning_runtime_context_at(pool: &PgPool, catalog_date: NaiveDate) -> RuntimeContext {
     let (term_id, year_id): (Uuid, Uuid) = sqlx::query_as(
         r#"SELECT term.id, term.academic_year_id
            FROM academic_terms term
@@ -1174,7 +1181,7 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
            LIMIT 1"#,
     )
     .bind(term_id)
-    .bind(runtime_operation_date())
+    .bind(catalog_date)
     .fetch_one(pool)
     .await
     .unwrap();
@@ -1218,7 +1225,32 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
     .fetch_one(pool)
     .await
     .expect("fixture must contain an active term with a published timetable base");
-    let fixture_future_start = runtime_operation_date() + Duration::days(365);
+    let today = runtime_operation_date();
+    configure_operational_context(
+        pool,
+        term_id,
+        base_version_id,
+        today + Duration::days(365),
+        today,
+    )
+    .await
+}
+
+// These inputs describe the predecessor schema's real availability rule, never a live fallback.
+async fn historical_operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
+    let (term,base,starts,ends):(Uuid,Uuid,NaiveDate,NaiveDate) = sqlx::query_as(
+        "SELECT term.id,version.id,term.start_date,year.end_date FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id JOIN academic_timetable_versions version ON version.academic_term_id=term.id AND version.status='published' WHERE term.status='active' ORDER BY year.year,term.sequence_no,term.id,version.effective_from DESC,version.id LIMIT 1")
+        .fetch_one(pool).await.unwrap();
+    configure_operational_context(pool, term, base, ends, starts).await
+}
+
+async fn configure_operational_context(
+    pool: &PgPool,
+    term_id: Uuid,
+    base_version_id: Uuid,
+    deferred_until: NaiveDate,
+    catalog_date: NaiveDate,
+) -> RuntimeContext {
     sqlx::query(
         r#"UPDATE learning_offerings offering
            SET starts_on = $3,
@@ -1235,7 +1267,7 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
     )
     .bind(term_id)
     .bind(base_version_id)
-    .bind(fixture_future_start)
+    .bind(deferred_until)
     .execute(pool)
     .await
     .expect("operational change fixture must defer offerings absent from its published baseline");
@@ -1244,7 +1276,7 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
         .execute(pool)
         .await
         .unwrap();
-    let context = planning_runtime_context(pool).await;
+    let context = planning_runtime_context_at(pool, catalog_date).await;
     assert_eq!(context.term_id, term_id);
     context
 }
@@ -1256,7 +1288,23 @@ async fn create_runtime_change_set(
     offset_days: i64,
     idempotency_name: &str,
 ) -> super::models::AcademicTermChangeSet {
-    let offering_start = runtime_operation_date();
+    create_runtime_change_set_at(
+        pool,
+        actor_id,
+        term_id,
+        runtime_operation_date() + Duration::days(offset_days),
+        idempotency_name,
+    )
+    .await
+}
+
+async fn create_runtime_change_set_at(
+    pool: &PgPool,
+    actor_id: Uuid,
+    term_id: Uuid,
+    date: NaiveDate,
+    idempotency_name: &str,
+) -> super::models::AcademicTermChangeSet {
     let created = change_sets::create_change_set(
         pool,
         actor_id,
@@ -1268,7 +1316,6 @@ async fn create_runtime_change_set(
     )
     .await
     .expect("a planning term must accept a draft operational change");
-    let date = offering_start + chrono::Duration::days(offset_days);
     if created.reference_date == date {
         return created;
     }
@@ -3882,16 +3929,54 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap();
-    assert_eq!(
-        first_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
+    assert!(publication_request.effective_from > runtime_operation_date());
+    assert!(first_assessment.assessment_coordinator_id.is_none());
+    assert!(first_assessment.coordinator_candidates.is_empty());
+    assert!(
+        first_assessment.id.is_none(),
+        "a future teacher episode must not invent a persisted plan today"
     );
     assert_eq!(first_assessment.phases.len(), 4);
-    // A retry must never initialize new data, even if ownership is missing by then.
-    sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=NULL WHERE learning_offering_id=$1").bind(added_offering_id).execute(&pool).await.unwrap();
-    change_sets::publish_change_set(&pool, context.teacher_id, changed.id, publication_request)
+    let accepted_facts_sql = r#"SELECT jsonb_build_object(
+        'revisions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_term_change_sets r WHERE academic_term_id=$1),
+        'versions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_delivery_versions r WHERE academic_term_id=$1),
+        'offerings',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_offerings r WHERE academic_term_id=$1),
+        'groups',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_groups r WHERE academic_term_id=$1),
+        'teachers',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_teachers r WHERE academic_term_id=$1),
+        'memberships',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_students r WHERE academic_term_id=$1),
+        'plans',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM course_assessment_plans r WHERE academic_term_id=$1),
+        'phases',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM course_assessment_phases r JOIN course_assessment_plans p ON p.id=r.plan_id WHERE p.academic_term_id=$1),
+        'audits',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_audit_events r WHERE academic_term_id=$1))"#;
+    let accepted_facts: serde_json::Value = sqlx::query_scalar(accepted_facts_sql)
+        .bind(context.term_id)
+        .fetch_one(&pool)
         .await
         .unwrap();
+    let accepted_revision = change_sets::get_change_set(&pool, changed.id)
+        .await
+        .unwrap();
+    let replay = school_academic_delivery::services::change_sets::publish_change_set(
+        &RejectAssessmentPublication,
+        &pool,
+        context.teacher_id,
+        changed.id,
+        publication_request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(accepted_revision).unwrap(),
+        "accepted replay skips even a rejecting initializer"
+    );
+    assert_eq!(
+        accepted_facts,
+        sqlx::query_scalar::<_, serde_json::Value>(accepted_facts_sql)
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
     assert!(
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
@@ -3948,10 +4033,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap();
-    assert_eq!(
-        retained_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
+    assert!(retained_assessment.assessment_coordinator_id.is_none());
     assert_eq!(retained_assessment.id, first_assessment.id);
     assert_eq!(
         serde_json::to_value(&retained_assessment.phases).unwrap(),
@@ -4102,15 +4184,31 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
 fn course_offering_wire_contract_owns_only_assessment_total() {
     let base = serde_json::json!({
         "academicTermId": Uuid::new_v4(),
+        "startsOn": "2026-10-31",
         "subjectVersionId": Uuid::new_v4(),
         "curriculumCourseRequirementId": null,
         "targets": [],
         "assessmentTotalScore": "120.50"
     });
-    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).is_ok());
+    let parsed = serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).unwrap();
+    assert_eq!(
+        parsed.starts_on,
+        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
+    );
+    let mut missing_date = base.clone();
+    missing_date.as_object_mut().unwrap().remove("startsOn");
+    assert!(
+        serde_json::from_value::<CreateCourseOfferingRequest>(missing_date)
+            .unwrap_err()
+            .to_string()
+            .contains("missing field `startsOn`")
+    );
     let mut legacy = base;
     legacy["gradingPolicy"] = serde_json::json!({"policyCode": "school_default", "totalScore": "100.00", "passingScore": "50.00"});
-    assert!(serde_json::from_value::<CreateCourseOfferingRequest>(legacy).is_err());
+    let error = serde_json::from_value::<CreateCourseOfferingRequest>(legacy)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `gradingPolicy`"), "{error}");
 }
 
 #[tokio::test]
@@ -4297,22 +4395,45 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     let parsed = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
         "kind": "course",
         "academicTermId": Uuid::nil(),
+        "startsOn": "2026-10-31",
         "subjectVersionId": Uuid::nil(),
         "targets": [],
         "assessmentTotalScore": "100.00"
     }))
     .unwrap();
-    assert!(matches!(parsed, CreateLearningOfferingRequest::Course(_)));
+    let CreateLearningOfferingRequest::Course(course) = parsed else {
+        panic!("course tag must select the course DTO")
+    };
+    assert_eq!(
+        course.starts_on,
+        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
+    );
+
+    let missing_date = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
+        "kind": "course", "academicTermId": Uuid::nil(), "subjectVersionId": Uuid::nil(),
+        "targets": [], "assessmentTotalScore": "100.00"
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(
+        missing_date.contains("missing field `startsOn`"),
+        "{missing_date}"
+    );
 
     let wrong_subtype =
         serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
             "kind": "course",
             "academicTermId": Uuid::nil(),
+            "startsOn": "2026-10-31",
             "activityVersionId": Uuid::nil(),
             "targets": [],
             "assessmentTotalScore": "100.00"
         }));
-    assert!(wrong_subtype.is_err());
+    let error = wrong_subtype.unwrap_err().to_string();
+    assert!(
+        error.contains("unknown field `activityVersionId`"),
+        "{error}"
+    );
 }
 
 #[tokio::test]

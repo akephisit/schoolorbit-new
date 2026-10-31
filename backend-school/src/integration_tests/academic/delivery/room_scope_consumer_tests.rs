@@ -48,6 +48,7 @@ async fn fixture_with_effective(name: &str, current: bool) -> ScopedFixture {
     let CreateLearningOfferingRequest::Course(mut request) = course_request(&context) else {
         unreachable!()
     };
+    request.starts_on = starts;
     request.targets = vec![OfferingTargetInput {
         target_kind: OfferingTargetKind::GradeProgram,
         homeroom_id: None,
@@ -344,18 +345,16 @@ async fn delivery_room_scope_consumer_tracking_refuses_only_new_joins_and_preser
     let existing_member = member(&f, f.combined, existing, "homeroom_tracking").await;
     let denied = student(&f, f.old_room, before).await;
     let allowed = student(&f, f.context.homeroom_id, f.boundary + Duration::days(1)).await;
-    let plan = Uuid::new_v4();
-    let phase = Uuid::new_v4();
+    let (plan, phase) =
+        super::room_scope_tests::canonical_score_phase(&f.pool, f.combined, f.context.teacher_id)
+            .await;
     let item = Uuid::new_v4();
     let score = Uuid::new_v4();
-    sqlx::query("INSERT INTO course_assessment_plans(id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id) SELECT $1,g.academic_term_id,d.subject_version_id,g.learning_offering_id,g.academic_year_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$2")
-        .bind(plan).bind(f.combined).execute(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO course_assessment_phases(id,plan_id,phase_code,max_score,exam_arrangement) VALUES($1,$2,'before_midterm',25,'none')")
-        .bind(phase).bind(plan).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_score_items(id,learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score) SELECT $1,id,learning_offering_id,$2,$3,academic_term_id,academic_year_id,'Preserved score',10 FROM learning_groups WHERE id=$4")
         .bind(item).bind(plan).bind(phase).bind(f.combined).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_student_scores(id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score) SELECT $1,id,learning_offering_id,academic_term_id,academic_year_id,$2,$3,7.25 FROM learning_groups WHERE id=$4")
         .bind(score).bind(item).bind(existing.1).bind(f.combined).execute(&f.pool).await.unwrap();
+    let assessment_before = super::room_scope_tests::assessment_facts(&f.pool, f.combined).await;
     let member_before: Value =
         sqlx::query_scalar("SELECT to_jsonb(t) FROM learning_group_students t WHERE id=$1")
             .bind(existing_member)
@@ -399,6 +398,10 @@ async fn delivery_room_scope_consumer_tracking_refuses_only_new_joins_and_preser
         .fetch_one(&f.pool)
         .await
         .unwrap()
+    );
+    assert_eq!(
+        assessment_before,
+        super::room_scope_tests::assessment_facts(&f.pool, f.combined).await
     );
     let joined: Vec<Uuid> = sqlx::query_scalar(
         "SELECT student_id FROM learning_group_students WHERE learning_group_id=$1",
@@ -644,11 +647,11 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
         .unwrap();
     let starts = today - Duration::days(30);
     let old_room = extra_room(&pool, &context, "ACTIVITY-EXCLUDED").await;
-    let opening = create_runtime_change_set(
+    let opening = create_runtime_change_set_at(
         &pool,
         context.teacher_id,
         context.term_id,
-        1,
+        starts,
         "activity-scope-opening",
     )
     .await;
@@ -660,9 +663,7 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
         context.teacher_id,
         Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: chrono::Utc::now()
-                .with_timezone(&chrono_tz::Asia::Bangkok)
-                .date_naive(),
+            starts_on: starts,
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -710,11 +711,11 @@ async fn activity_scope_fixture(name: &str) -> ActivityScopeFixture {
 }
 
 async fn restrict_activity(f: &ActivityScopeFixture, date: NaiveDate, empty: bool) {
-    let revision = create_runtime_change_set(
+    let revision = create_runtime_change_set_at(
         &f.pool,
         f.context.teacher_id,
         f.context.term_id,
-        (date - f.starts).num_days(),
+        date,
         if empty {
             "activity-scope-empty"
         } else {
@@ -775,6 +776,8 @@ async fn restrict_activity(f: &ActivityScopeFixture, date: NaiveDate, empty: boo
     )
     .await
     .unwrap();
+    assert_eq!(published.reference_date, date);
+    assert_eq!(preview.effective_from, date);
     let facts = historical_facts(&f.pool).await;
     let replay =
         change_sets::publish_change_set(&f.pool, f.context.teacher_id, revision.id, request)

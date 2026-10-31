@@ -216,14 +216,13 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
     let f = fixture("roster_tracking_history").await;
     let old = members(&f, f.groups[0]).await[0].clone();
     let shared = members(&f, f.groups[2]).await[0].clone();
-    let plan = Uuid::new_v4();
-    let phase = Uuid::new_v4();
+    let (plan, phase) =
+        super::room_scope_tests::canonical_score_phase(&f.pool, f.groups[0], f.actor).await;
     let item = Uuid::new_v4();
     let score = Uuid::new_v4();
-    sqlx::query("INSERT INTO course_assessment_plans(id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id) SELECT $1,g.academic_term_id,d.subject_version_id,g.learning_offering_id,g.academic_year_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$2").bind(plan).bind(f.groups[0]).execute(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO course_assessment_phases(id,plan_id,phase_code,max_score,exam_arrangement) VALUES($1,$2,'before_midterm',25,'none')").bind(phase).bind(plan).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_score_items(id,learning_group_id,learning_offering_id,course_assessment_plan_id,assessment_phase_id,academic_term_id,academic_year_id,name,max_score) SELECT $1,id,learning_offering_id,$2,$3,academic_term_id,academic_year_id,'Synthetic score',10 FROM learning_groups WHERE id=$4").bind(item).bind(plan).bind(phase).bind(f.groups[0]).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_student_scores(id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score) SELECT $1,id,learning_offering_id,academic_term_id,academic_year_id,$2,$3,7.25 FROM learning_groups WHERE id=$4").bind(score).bind(item).bind(old.student_academic_year_id).bind(f.groups[0]).execute(&f.pool).await.unwrap();
+    let assessment_before = super::room_scope_tests::assessment_facts(&f.pool, f.groups[0]).await;
     let recorded: serde_json::Value =
         sqlx::query_scalar("SELECT to_jsonb(s) FROM learning_group_student_scores s WHERE id=$1")
             .bind(score)
@@ -329,6 +328,10 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
             .await
             .unwrap();
     assert_eq!(recorded, retained);
+    assert_eq!(
+        assessment_before,
+        super::room_scope_tests::assessment_facts(&f.pool, f.groups[0]).await
+    );
 }
 
 #[tokio::test]
@@ -533,29 +536,112 @@ async fn room_tracking_future_cancellation_keeps_identity_and_allows_reentry_on_
 }
 
 #[tokio::test]
-async fn room_tracking_membership_end_is_bounded_by_both_offering_and_term() {
-    let f = fixture("room_tracking_end_bound").await;
-    enable(&f, f.groups[0]).await;
-    let group = groups::get(&f.pool, f.groups[0]).await.unwrap();
-    let change = change_sets::create_change_set(
-        &f.pool,
-        f.actor,
-        CreateAcademicTermChangeSetRequest {
-            academic_term_id: group.academic_term_id,
-            reason: "dated boundary fixture".into(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    sqlx::query("UPDATE learning_offerings o SET ends_on=$2,stop_reason='dated boundary fixture',stopped_at=now(),stopped_by=$3,stop_change_set_id=$4 FROM learning_groups g WHERE g.learning_offering_id=o.id AND g.id=$1")
-        .bind(f.groups[0]).bind(f.day + Duration::days(90)).bind(f.actor).bind(change.id).execute(&f.pool).await.unwrap();
-    let before = members(&f, f.groups[0]).await;
-    let student_year = before[0].student_academic_year_id;
-    move_student(&f, f.room, None, student_year, f.day + Duration::days(75))
+async fn room_tracking_membership_end_is_bounded_by_both_offering_and_placement() {
+    for (name, offering_days, placement_days) in [
+        ("room_tracking_placement_end_bound", 90, 75),
+        ("room_tracking_offering_end_bound", 60, 75),
+    ] {
+        let f = fixture(name).await;
+        enable(&f, f.groups[0]).await;
+        let group = groups::get(&f.pool, f.groups[0]).await.unwrap();
+        let change = change_sets::create_change_set(
+            &f.pool,
+            f.actor,
+            CreateAcademicTermChangeSetRequest {
+                academic_term_id: group.academic_term_id,
+                reason: "actual offering boundary fixture".into(),
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
         .await
         .unwrap();
-    let after = members(&f, f.groups[0]).await;
-    let ended = after.iter().find(|m| m.id == before[0].id).unwrap();
-    assert_eq!(ended.left_at, Some(f.day + Duration::days(60)));
+        let offering_end = f.day + Duration::days(offering_days);
+        let removal_effective_date = f.day + Duration::days(placement_days);
+        let expected_placement_end = removal_effective_date - Duration::days(1);
+        sqlx::query("UPDATE learning_offerings o SET ends_on=$2,stop_reason='actual offering boundary fixture',stopped_at=now(),stopped_by=$3,stop_change_set_id=$4 FROM learning_groups g WHERE g.learning_offering_id=o.id AND g.id=$1")
+            .bind(f.groups[0]).bind(offering_end).bind(f.actor).bind(change.id).execute(&f.pool).await.unwrap();
+        let before = members(&f, f.groups[0]).await;
+        let original = &before[0];
+        let placement_before: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(p) FROM homeroom_placements p WHERE student_academic_year_id=$1 AND homeroom_id=$2 AND status='current'")
+            .bind(original.student_academic_year_id).bind(f.room).fetch_one(&f.pool).await.unwrap();
+        let placement_id: Uuid = serde_json::from_value(placement_before["id"].clone()).unwrap();
+        let placement_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM homeroom_placements WHERE student_academic_year_id=$1 ORDER BY id",
+        )
+        .bind(original.student_academic_year_id)
+        .fetch_all(&f.pool)
+        .await
+        .unwrap();
+        move_student(
+            &f,
+            f.room,
+            None,
+            original.student_academic_year_id,
+            removal_effective_date,
+        )
+        .await
+        .unwrap();
+        let after = members(&f, f.groups[0]).await;
+        assert_eq!(
+            after.len(),
+            before.len(),
+            "ending an actual interval preserves membership history"
+        );
+        let ended = after.iter().find(|m| m.id == original.id).unwrap();
+        assert_eq!(
+            ended.left_at,
+            Some(offering_end.min(expected_placement_end))
+        );
+        assert_eq!(ended.joined_at, original.joined_at);
+        assert_eq!(ended.learning_group_id, original.learning_group_id);
+        assert_eq!(ended.published_at, original.published_at);
+        assert_eq!(ended.student_id, original.student_id);
+        assert_eq!(
+            ended.student_academic_year_id,
+            original.student_academic_year_id
+        );
+        assert_eq!(ended.roster_source, original.roster_source);
+        assert_eq!(
+            ended.membership_status,
+            super::super::models::MembershipStatus::Ended
+        );
+        let placement_after: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(p) FROM homeroom_placements p WHERE id=$1")
+                .bind(placement_id)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        let actual_placement_end: NaiveDate =
+            serde_json::from_value(placement_after["end_date"].clone()).unwrap();
+        assert_eq!(
+            actual_placement_end, expected_placement_end,
+            "removal begins after the final inclusive day of the original placement"
+        );
+        assert_eq!(ended.left_at, Some(offering_end.min(actual_placement_end)));
+        let before_updated: chrono::DateTime<Utc> =
+            serde_json::from_value(placement_before["updated_at"].clone()).unwrap();
+        let after_updated: chrono::DateTime<Utc> =
+            serde_json::from_value(placement_after["updated_at"].clone()).unwrap();
+        assert!(after_updated >= before_updated);
+        let mut expected_placement = placement_before;
+        expected_placement["status"] = serde_json::json!("ended");
+        expected_placement["end_date"] = serde_json::json!(expected_placement_end);
+        expected_placement["row_version"] =
+            serde_json::json!(expected_placement["row_version"].as_i64().unwrap() + 1);
+        expected_placement["updated_at"] = placement_after["updated_at"].clone();
+        assert_eq!(
+            placement_after, expected_placement,
+            "retain the original placement ID and every unrelated fact"
+        );
+        assert_eq!(
+            placement_ids,
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM homeroom_placements WHERE student_academic_year_id=$1 ORDER BY id"
+            )
+            .bind(original.student_academic_year_id)
+            .fetch_all(&f.pool)
+            .await
+            .unwrap()
+        );
+    }
 }
