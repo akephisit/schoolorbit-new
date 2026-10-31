@@ -271,7 +271,17 @@ async fn scoped_results(
         .unwrap();
     let intended: Vec<_> = std::iter::once(omitted).chain(omitted_activity).collect();
     for intended in intended {
-        assert!(initial_source.snapshot.offerings.iter().flat_map(|offering|&offering.groups).any(|group|group.id==intended),"fixture prerequisite: group {intended} must exist before removal in selected version {} based on {:?}",initial_source.id,initial_source.source_version_id);
+        assert!(
+            initial_source
+                .snapshot
+                .offerings
+                .iter()
+                .flat_map(|offering| &offering.groups)
+                .any(|group| group.id == intended),
+            "fixture prerequisite: group {intended} must exist before removal in selected version {} based on {:?}",
+            initial_source.id,
+            initial_source.source_version_id
+        );
     }
     for group in std::iter::once(omitted).chain(omitted_activity) {
         let current = change_sets::get_change_set(&pool, revision.id)
@@ -707,7 +717,11 @@ async fn results_current_obligation_isolated_result_evidence_preserves_bytes() {
         )
         .await
         .unwrap();
-        assert_eq!(retained,vec![target],"isolated evidence branch {branch}; result rows necessarily retain their FK-required locks");
+        assert_eq!(
+            retained,
+            vec![target],
+            "isolated evidence branch {branch}; result rows necessarily retain their FK-required locks"
+        );
         assert_eq!(
             before,
             obligation_facts(&mut tx).await,
@@ -741,7 +755,9 @@ async fn gate_writer(pool: &sqlx::PgPool, table: &str, field: &str, target: Uuid
         ("learning_group_score_items", "learning_group_id")
             | ("academic_course_result_locks", "subject_id")
     ));
-    let sql=format!("CREATE FUNCTION obligation_test_gate() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN IF NEW.{field}='{target}'::uuid THEN PERFORM pg_advisory_xact_lock({key}); END IF; RETURN NEW; END $$; CREATE TRIGGER obligation_test_gate BEFORE INSERT ON {table} FOR EACH ROW EXECUTE FUNCTION obligation_test_gate();");
+    let sql = format!(
+        "CREATE FUNCTION obligation_test_gate() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN IF NEW.{field}='{target}'::uuid THEN PERFORM pg_advisory_xact_lock({key}); END IF; RETURN NEW; END $$; CREATE TRIGGER obligation_test_gate BEFORE INSERT ON {table} FOR EACH ROW EXECUTE FUNCTION obligation_test_gate();"
+    );
     sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
         .execute(pool)
         .await

@@ -66,6 +66,14 @@ pub async fn read_lock_readiness(
             &candidates,
         )
         .await?;
+    let assignments =
+        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+            &mut tx,
+            ctx.academic_year_id,
+            ctx.academic_term_id,
+            &retained,
+        )
+        .await?;
 
     let rows: Vec<LockReadinessRow> = DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
         r#"WITH domains(domain) AS (
@@ -113,19 +121,12 @@ pub async fn read_lock_readiness(
                     WHEN confirmation.id IS NULL THEN 'group_not_confirmed'
                     WHEN NOT (
                         NOT COALESCE((confirmation.source_snapshot->>'invalidated')::boolean,false)
-                        AND COALESCE(confirmation.confirmed_by=(
-                            SELECT teacher.teacher_id
-                            FROM learning_group_teachers teacher
-                            JOIN users account ON account.id=teacher.teacher_id
-                                              AND account.status='active'
-                            JOIN academic_terms term
-                              ON term.id=teacher.academic_term_id
-                            WHERE teacher.learning_group_id=subject_groups.learning_group_id
-                              AND teacher.role='primary'
-                              AND teacher.starts_on<=$4::date
-                              AND (teacher.ends_on IS NULL OR teacher.ends_on>=$4::date)
-                            ORDER BY teacher.id LIMIT 1
-                        ),false)
+                        AND EXISTS (
+                            SELECT 1 FROM jsonb_to_recordset($4::jsonb)
+                              AS teaching(learning_group_id uuid,teacher_ids uuid[],primary_teacher_ids uuid[])
+                            WHERE teaching.learning_group_id=subject_groups.learning_group_id
+                              AND confirmation.confirmed_by=ANY(teaching.primary_teacher_ids)
+                        )
                         AND confirmation.source_snapshot->'roster'=COALESCE((
                             SELECT jsonb_agg(jsonb_build_object(
                                 'membershipId',member.id,
@@ -173,7 +174,7 @@ pub async fn read_lock_readiness(
     .bind(ctx.academic_term_id)
     .bind(ctx.academic_year_id)
     .bind(&retained)
-    .bind(date)
+    .bind(sqlx::types::Json(&assignments.groups))
     .fetch_all()
     .await?;
     if rows.len() > 5000 {

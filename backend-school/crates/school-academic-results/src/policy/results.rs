@@ -35,7 +35,7 @@ pub fn can_manage_group(actor: &ActorContext, assigned: bool) -> bool {
 
 /// Activity results have no school-wide entry-window override. School managers
 /// may inspect every group, but an outcome is still entered by a teacher who is
-/// currently assigned to that activity group.
+/// assigned to that activity group in the selected published allocation.
 pub fn can_enter_activity(actor: &ActorContext, assigned: bool) -> bool {
     assigned
         && (can_manage_school(actor)

@@ -191,15 +191,29 @@ pub async fn summary_for_actor(
     ctx: &EvaluationContext,
     student: Uuid,
 ) -> Result<StudentEvaluationSummary, AppError> {
-    crate::policy::learner_evaluation::require_student_summary_access(
+    let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
+        "academic_assessment.learner_evaluation.services.summary.summary_for_actor",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_assessment.learner_evaluation.services.summary.summary_for_actor",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
+        .await?;
+    crate::policy::learner_evaluation::require_student_summary_access_on_connection(
+        &mut tx,
         actor,
         ctx.academic_year_id,
         ctx.academic_term_id,
         student,
     )
     .await?;
-    super::summarize_student_term(pool, ctx, student).await
+    let summary = summarize_student_term_in_transaction(&mut tx, ctx, student).await?;
+    tx.commit().await?;
+    Ok(summary)
 }
 pub async fn summarize_student_term(
     pool: &PgPool,

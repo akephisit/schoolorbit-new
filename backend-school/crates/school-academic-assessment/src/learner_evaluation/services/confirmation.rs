@@ -107,7 +107,10 @@ pub async fn confirm_group(
     require_edit(
         actor,
         &scope,
-        policy::can_confirm(actor, group_scope.primary_teacher_id == Some(actor.user_id)),
+        policy::can_confirm(
+            actor,
+            group_scope.primary_teacher_ids.contains(&actor.user_id),
+        ),
     )?;
     let ws = entry::load_workspace(&mut tx, actor, &scope, group_scope, ctx).await?;
     if input.source_checksum != ws.source_checksum || input.roster_checksum != ws.roster_checksum {

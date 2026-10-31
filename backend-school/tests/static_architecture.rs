@@ -1668,6 +1668,38 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
 }
 
 #[test]
+fn academic_teacher_responsibility_consumes_delivery_ids_without_episode_or_snapshot_fallback() {
+    for relative in [
+        "crates/school-academic-assessment/src/assessment/services.rs",
+        "crates/school-academic-assessment/src/policy/assessment.rs",
+        "crates/school-academic-assessment/src/policy/learner_evaluation.rs",
+        "crates/school-academic-assessment/src/gradebook/services.rs",
+        "crates/school-academic-assessment/src/gradebook/services/workspace.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/entry.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/confirmation.rs",
+        "crates/school-academic-assessment/src/learner_evaluation/services/locking.rs",
+        "crates/school-academic-results/src/services/course_preparation.rs",
+        "crates/school-academic-results/src/services/activities.rs",
+        "crates/school-academic-results/src/services/readiness.rs",
+        "crates/school-academic-results/src/services/locking.rs",
+        "crates/school-academic-results/src/services/effective_results.rs",
+    ] {
+        let source = read_source(manifest_dir().join(relative));
+        for forbidden in [
+            "learning_group_teachers",
+            "academic_delivery_versions",
+            "snapshot->'offerings'",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{relative} must consume Delivery's typed assignment provider: {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
 fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
     let source = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery/src/services/workspaces.rs"),

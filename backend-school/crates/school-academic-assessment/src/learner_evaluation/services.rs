@@ -37,15 +37,23 @@ pub async fn list_subjects(
     )
     .await?;
     validate_context(&mut tx, ctx).await?;
+    let assignments =
+        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+            &mut tx,
+            ctx.academic_year_id,
+            ctx.academic_term_id,
+            actor.user_id,
+        )
+        .await?;
     let rows:Vec<EvaluationSubject>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.list_subjects", r#"WITH groups AS (
         SELECT d.subject_id,g.id AS learning_group_id,o.id AS learning_offering_id,o.code_snapshot AS code,o.name_snapshot AS name,g.name AS group_name,o.owning_organization_unit_id,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$3 AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)) AS assigned,
+        g.id=ANY($7::uuid[]) AS assigned,
         EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$3) AS coordinator
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id
         WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed')
         SELECT subject_id,learning_group_id,learning_offering_id,code,name,group_name,assigned FROM groups
         WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND (assigned OR coordinator))
-        ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all().await?;
+        ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).bind(&assignments.learning_group_ids).fetch_all().await?;
     if rows.len() > 1000 {
         return Err(AppError::ValidationError(
             "Subject list exceeds 1000 groups".into(),
@@ -92,12 +100,13 @@ pub(super) struct GroupScope {
     pub offering_id: Uuid,
     pub owner: Option<Uuid>,
     pub assigned: bool,
-    pub primary_teacher_id: Option<Uuid>,
+    pub primary_teacher_ids: Vec<Uuid>,
 }
 pub(super) struct SubjectScope {
     pub academic_state: AcademicWriteState,
     pub subject_id: Uuid,
     pub domain: LearnerEvaluationDomain,
+    pub delivery_version_id: Option<Uuid>,
     pub groups: Vec<GroupScope>,
     pub coordinator: bool,
     pub entry_enabled: bool,
@@ -144,7 +153,7 @@ pub(super) async fn begin_subject_with_selection(
             "Course subject not found in this context".into(),
         ));
     }
-    let operation_date = if result_locks.is_some() {
+    let (group_ids, operation_date) = if result_locks.is_some() {
         let locked_groups: Vec<Uuid> = DbSession::new(&mut *tx).scalar(
             "academic_assessment.learner_evaluation.services.begin_subject",
             "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) AND status<>'closed' ORDER BY id LIMIT $2 FOR UPDATE",
@@ -154,23 +163,36 @@ pub(super) async fn begin_subject_with_selection(
                 "Learner evaluation raw group scan exceeds its hard limit".into(),
             ));
         }
-        Some(current_obligation_date(&mut tx, ctx).await?)
+        (
+            locked_groups,
+            Some(current_obligation_date(&mut tx, ctx).await?),
+        )
     } else {
-        DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.begin_subject",
+        let locked_groups = DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject",
         "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR UPDATE",
     )
     .bind(&offerings)
-    .execute()
+    .fetch_all()
     .await?;
-        None
+        (locked_groups, None)
     };
+    let assignments =
+        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+            &mut tx,
+            ctx.academic_year_id,
+            ctx.academic_term_id,
+            &group_ids,
+        )
+        .await?;
     // Persisted subject coordination is independent of active group assignments.
     let coordinator:bool=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.begin_subject", "SELECT EXISTS(SELECT 1 FROM course_assessment_plans WHERE learning_offering_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 AND assessment_coordinator_id=$4)").bind(&offerings).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).fetch_one().await?;
     let mut groups:Vec<GroupScope>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.begin_subject", r#"SELECT g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id AS owner,
-        EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$2 AND teacher.starts_on<=COALESCE($3::date,(now() AT TIME ZONE 'Asia/Bangkok')::date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($3::date,(now() AT TIME ZONE 'Asia/Bangkok')::date))) AS assigned,
-        (SELECT teacher.teacher_id FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active' WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary' AND teacher.starts_on<=COALESCE($3::date,(now() AT TIME ZONE 'Asia/Bangkok')::date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($3::date,(now() AT TIME ZONE 'Asia/Bangkok')::date)) ORDER BY teacher.id LIMIT 1) AS primary_teacher_id
+        COALESCE($2=ANY(teaching.teacher_ids),false) AS assigned,
+        COALESCE(teaching.primary_teacher_ids,ARRAY[]::uuid[]) AS primary_teacher_ids
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
-        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).bind(operation_date).fetch_all().await?;
+        LEFT JOIN jsonb_to_recordset($3::jsonb) AS teaching(learning_group_id uuid,teacher_ids uuid[],primary_teacher_ids uuid[])
+          ON teaching.learning_group_id=g.id
+        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).bind(sqlx::types::Json(&assignments.groups)).fetch_all().await?;
     if !groups
         .iter()
         .any(|g| policy::can_read_group(&access, g.owner, g.assigned, coordinator))
@@ -213,6 +235,7 @@ pub(super) async fn begin_subject_with_selection(
             academic_state,
             subject_id: subject,
             domain,
+            delivery_version_id: assignments.delivery_version_id,
             groups,
             coordinator,
             entry_enabled,

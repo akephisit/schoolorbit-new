@@ -1,6 +1,10 @@
 use super::*;
 use crate::policy::results as access_policy;
 use school_academic_assessment::gradebook::models::{GradebookStudent, ScoreCell, ScoreItem};
+use school_academic_delivery::{
+    models::versions::PublishedTeacherAssignments,
+    services::versions::group_teacher_assignments_on_connection,
+};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use serde::Serialize;
@@ -18,7 +22,7 @@ struct CourseScope {
     assessment_total_score: String,
     owning_organization_unit_id: Option<Uuid>,
     assigned: bool,
-    primary_teacher_id: Option<Uuid>,
+    primary_teacher_ids: Vec<Uuid>,
     locked: bool,
     locked_policy_id: Option<Uuid>,
     locked_policy_snapshot: Option<sqlx::types::Json<GradingPolicyVersion>>,
@@ -35,6 +39,7 @@ struct PhaseRow {
     confirmation_source_checksum: Option<String>,
     confirmation_roster_checksum: Option<String>,
     confirmation_invalidated: Option<bool>,
+    confirmation_confirmed_by: Option<Uuid>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -112,34 +117,34 @@ async fn load_scope(
     group: Uuid,
     context: &ResultContext,
 ) -> Result<CourseScope, AppError> {
-    load_scope_at(tx, actor, group, context, None).await
+    let assignments = group_teacher_assignments_on_connection(
+        tx,
+        context.academic_year_id,
+        context.academic_term_id,
+        &[group],
+    )
+    .await?;
+    load_scope_with_assignments(tx, actor, group, context, &assignments).await
 }
 
-async fn load_scope_at(
+async fn load_scope_with_assignments(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
     group: Uuid,
     context: &ResultContext,
-    date: Option<chrono::NaiveDate>,
+    assignments: &PublishedTeacherAssignments,
 ) -> Result<CourseScope, AppError> {
     DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
                   d.assessment_total_score::text,o.owning_organization_unit_id,
-                  EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                         WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                           AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$4
-                           AND teacher.starts_on<=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date)
-                           AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date))) AS assigned,
-                  (SELECT teacher.teacher_id FROM learning_group_teachers teacher
-                     JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
-                    WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
-                      AND teacher.academic_year_id=g.academic_year_id AND teacher.role='primary'
-                      AND teacher.starts_on<=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date)
-                      AND (teacher.ends_on IS NULL OR teacher.ends_on>=COALESCE($5::date,(now() AT TIME ZONE 'Asia/Bangkok')::date))
-                    ORDER BY teacher.id LIMIT 1) AS primary_teacher_id,
+                  COALESCE($4=ANY(assignment.teacher_ids),false) AS assigned,
+                  COALESCE(assignment.primary_teacher_ids,'{}'::uuid[]) AS primary_teacher_ids,
                   lock.id IS NOT NULL AS locked,lock.policy_version_id AS locked_policy_id,
                   lock.policy_snapshot AS locked_policy_snapshot
            FROM learning_groups g
+           LEFT JOIN jsonb_to_recordset($5::jsonb)
+             AS assignment(learning_group_id uuid,teacher_ids uuid[],primary_teacher_ids uuid[])
+             ON assignment.learning_group_id=g.id
            JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course'
            JOIN course_offering_details d ON d.learning_offering_id=o.id
            JOIN academic_terms t ON t.id=g.academic_term_id
@@ -153,7 +158,7 @@ async fn load_scope_at(
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(actor.user_id)
-    .bind(date)
+    .bind(sqlx::types::Json(&assignments.groups))
     .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Course group not found in context".into()))
@@ -232,10 +237,11 @@ async fn begin_course<'a>(
     if write {
         if !access_policy::can_confirm_course(
             actor,
-            scope.primary_teacher_id == Some(actor.user_id),
+            scope.primary_teacher_ids.contains(&actor.user_id),
         ) {
             return Err(AppError::Forbidden(
-                "Current group primary teacher is required for course result preparation".into(),
+                "Published allocation primary teacher is required for course result preparation"
+                    .into(),
             ));
         }
         require_course_offering_unlocked(
@@ -302,7 +308,8 @@ async fn load_workspace(
                   confirmation.id AS confirmation_id,confirmation.row_version AS confirmation_row_version,
                   confirmation.source_checksum AS confirmation_source_checksum,
                   confirmation.roster_checksum AS confirmation_roster_checksum,
-                  COALESCE((confirmation.source_snapshot->>'invalidated')::boolean,false) AS confirmation_invalidated
+                  COALESCE((confirmation.source_snapshot->>'invalidated')::boolean,false) AS confirmation_invalidated,
+                  confirmation.confirmed_by AS confirmation_confirmed_by
            FROM course_assessment_plans plan
            JOIN course_assessment_phases phase ON phase.plan_id=plan.id
            LEFT JOIN learning_group_phase_confirmations confirmation
@@ -371,7 +378,7 @@ async fn load_workspace(
     if !policy_is_valid {
         blockers.push(blocker(ResultBlockerCode::InvalidGradingPolicy, None, None));
     }
-    if scope.primary_teacher_id.is_none() {
+    if scope.primary_teacher_ids.is_empty() {
         blockers.push(blocker(
             ResultBlockerCode::MissingPrimaryTeacher,
             None,
@@ -421,6 +428,9 @@ async fn load_workspace(
             roster_checksum = Some(current_roster.clone());
         }
         let current = phase.confirmation_id.is_some()
+            && phase
+                .confirmation_confirmed_by
+                .is_some_and(|teacher| scope.primary_teacher_ids.contains(&teacher))
             && phase.confirmation_invalidated != Some(true)
             && phase.confirmation_source_checksum.as_deref() == Some(current_source.as_str())
             && phase.confirmation_roster_checksum.as_deref() == Some(current_roster.as_str());
@@ -560,7 +570,7 @@ async fn load_workspace(
         !saved.invalidated
             && saved.source_checksum == source_checksum
             && saved.roster_checksum == roster_checksum
-            && Some(saved.confirmed_by) == scope.primary_teacher_id
+            && scope.primary_teacher_ids.contains(&saved.confirmed_by)
             && blockers.iter().all(|item| {
                 !matches!(
                     item.code,
@@ -577,7 +587,7 @@ async fn load_workspace(
         && !scope.locked
         && access_policy::can_confirm_course(
             actor,
-            scope.primary_teacher_id == Some(actor.user_id),
+            scope.primary_teacher_ids.contains(&actor.user_id),
         );
     Ok((
         CoursePreparationWorkspace {
@@ -603,9 +613,9 @@ pub(super) async fn workspace_for_lock(
     actor: &ActorContext,
     context: &ResultContext,
     group: Uuid,
-    date: chrono::NaiveDate,
+    assignments: &PublishedTeacherAssignments,
 ) -> Result<CoursePreparationWorkspace, AppError> {
-    let scope = load_scope_at(tx, actor, group, context, Some(date)).await?;
+    let scope = load_scope_with_assignments(tx, actor, group, context, assignments).await?;
     let (workspace, _) = load_workspace(tx, actor, &scope).await?;
     Ok(workspace)
 }

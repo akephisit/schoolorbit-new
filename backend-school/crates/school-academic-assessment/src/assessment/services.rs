@@ -295,6 +295,45 @@ pub async fn list_assessment_plans_on_connection(
     current_actor_id: Uuid,
 ) -> Result<Vec<AssessmentPlanSummary>, AppError> {
     let owner_ids = access.allowed_organization_unit_ids();
+    let year: Option<Uuid> = DbSession::new(connection)
+        .scalar(
+            "academic_assessment.assessment.services.list_assessment_plans_on_connection",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+        )
+        .bind(query.academic_term_id)
+        .fetch_optional()
+        .await?;
+    let Some(year) = year else {
+        return Ok(Vec::new());
+    };
+    let assigned_group_ids = if let Some(actor) = access.assigned_actor_id {
+        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+            connection,
+            year,
+            query.academic_term_id,
+            actor,
+        )
+        .await?
+        .learning_group_ids
+    } else {
+        Vec::new()
+    };
+    let instructor_group_ids = match query.instructor_id {
+        Some(instructor) if Some(instructor) == access.assigned_actor_id => {
+            assigned_group_ids.clone()
+        }
+        Some(instructor) => {
+            school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+                connection,
+                year,
+                query.academic_term_id,
+                instructor,
+            )
+            .await?
+            .learning_group_ids
+        }
+        None => Vec::new(),
+    };
     let rows: Vec<AssessmentPlanSummaryRow> = DbSession::new(connection)
         .query_as(
             "academic_assessment.assessment.services.list_assessment_plans_on_connection",
@@ -341,18 +380,15 @@ pub async fn list_assessment_plans_on_connection(
           AND ($3::uuid IS NULL OR EXISTS (
               SELECT 1
               FROM learning_groups learning_group
-              JOIN learning_group_teachers teacher
-                ON teacher.learning_group_id = learning_group.id
               WHERE learning_group.learning_offering_id = offering.id
-                AND teacher.teacher_id = $3
+                AND learning_group.id = ANY($8::uuid[])
           ))
           AND ($4 OR offering.owning_organization_unit_id = ANY($5) OR EXISTS (
               SELECT 1
               FROM learning_groups learning_group
-              JOIN learning_group_teachers teacher
-                ON teacher.learning_group_id = learning_group.id
               WHERE learning_group.learning_offering_id = offering.id
-                AND teacher.teacher_id = $6
+                AND $6::uuid IS NOT NULL
+                AND learning_group.id = ANY($9::uuid[])
           ))
         ORDER BY CASE
                      WHEN plan.assessment_coordinator_id = $7 THEN 0
@@ -370,6 +406,8 @@ pub async fn list_assessment_plans_on_connection(
         .bind(owner_ids)
         .bind(access.assigned_actor_id)
         .bind(current_actor_id)
+        .bind(&instructor_group_ids)
+        .bind(&assigned_group_ids)
         .fetch_all()
         .await?;
 

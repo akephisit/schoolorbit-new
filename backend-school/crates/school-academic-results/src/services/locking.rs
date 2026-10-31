@@ -1,6 +1,9 @@
 use super::*;
 use crate::policy::results as access_policy;
 use chrono::{DateTime, Utc};
+use school_academic_delivery::services::versions::{
+    assigned_group_ids_on_connection, group_teacher_assignments_on_connection,
+};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use serde::Serialize;
@@ -192,6 +195,13 @@ pub async fn lock_course_subject(
         ));
     }
 
+    let assigned_groups = assigned_group_ids_on_connection(
+        &mut tx,
+        context.academic_year_id,
+        context.academic_term_id,
+        actor.user_id,
+    )
+    .await?;
     let groups: Vec<CourseGroupRow> = DbSession::new(&mut *tx)
         .query_as(
             "academic_results.services.locking.lock_course_subject",
@@ -199,27 +209,16 @@ pub async fn lock_course_subject(
                   learning_group.learning_offering_id,
                   learning_group.name AS group_name,
                   offering.name_snapshot AS offering_name,
-                  EXISTS(
-                      SELECT 1
-                      FROM learning_group_teachers teacher
-                      JOIN users user_account ON user_account.id=teacher.teacher_id
-                                             AND user_account.status='active'
-                      JOIN academic_terms term ON term.id=learning_group.academic_term_id
-                      WHERE teacher.learning_group_id=learning_group.id
-                        AND teacher.teacher_id=$2
-                        AND teacher.starts_on<=$3::date
-                        AND (teacher.ends_on IS NULL OR teacher.ends_on>=$3::date)
-                  ) AS assigned
+                  learning_group.id=ANY($2::uuid[]) AS assigned
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id=learning_group.learning_offering_id
            WHERE learning_group.learning_offering_id=ANY($1)
              AND learning_group.status<>'closed'
-           ORDER BY learning_group.id LIMIT $4
+           ORDER BY learning_group.id LIMIT $3
            FOR UPDATE OF learning_group"#,
         )
         .bind(&offering_ids)
-        .bind(actor.user_id)
-        .bind(date)
+        .bind(&assigned_groups.learning_group_ids)
         .bind((school_academic_assessment::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT + 1) as i64)
         .fetch_all()
         .await?;
@@ -275,6 +274,14 @@ pub async fn lock_course_subject(
         .execute()
         .await?;
 
+    let group_ids: Vec<_> = groups.iter().map(|group| group.learning_group_id).collect();
+    let assignments = group_teacher_assignments_on_connection(
+        &mut tx,
+        context.academic_year_id,
+        context.academic_term_id,
+        &group_ids,
+    )
+    .await?;
     let mut readiness = Vec::with_capacity(groups.len());
     let mut snapshots = Vec::with_capacity(groups.len());
     let mut initial_results = Vec::new();
@@ -286,7 +293,7 @@ pub async fn lock_course_subject(
             actor,
             context,
             group.learning_group_id,
-            date,
+            &assignments,
         )
         .await?;
         let mut blockers = workspace.blockers.clone();
@@ -618,7 +625,7 @@ pub(super) async fn lock_activity_group_at(
                 .into(),
         ));
     }
-    let workspace = activities::workspace_for_lock(&mut tx, actor, context, group_id, date).await?;
+    let workspace = activities::workspace_for_lock(&mut tx, actor, context, group_id).await?;
     let mut blockers = workspace.blockers.clone();
     if workspace.confirmation.is_none() {
         blockers.push(missing_group_confirmation());

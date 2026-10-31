@@ -564,6 +564,23 @@ Delivery publication coverage remains in
 `./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests:: -- --test-threads=1`;
 it verifies initialization after publication transitions, complete rollback and accepted replay.
 
+For selected-context teacher responsibility, run
+`./scripts/test_backend_school.sh --package school-academic-delivery teacher_assignments --locked -- --test-threads=1`.
+Its single-connection fixture verifies source availability, active ID/primary sets, empty requests,
+missing/omitted/draft/future graphs and the typed SQL-binding representation. Gradebook, learner
+evaluation and Results regressions live in their existing application integration owners:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::academic::gradebook --locked -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::learner_evaluation --locked -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::results --locked -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::services::assessment_ --locked -- --test-threads=4
+```
+
+These retain real dated roster/audience coverage while checking allocation-based read/write/history
+scope, both published primaries, removed confirmers, source-unknown read preservation, existing
+invalidation, coordinator rights, organization unions, lifecycle/result locks and official history.
+
 The Operations `benchmark` task calls [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) and uses
 the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
 times, binary size, unchanged persistent-target reuse, and exact School OpenAPI equality.

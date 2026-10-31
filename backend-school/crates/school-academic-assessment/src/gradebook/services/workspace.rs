@@ -2,6 +2,13 @@ use super::*;
 use school_database::DbSession;
 use sha2::{Digest, Sha256};
 
+#[derive(sqlx::FromRow)]
+struct PhaseConfirmationRow {
+    #[sqlx(flatten)]
+    confirmation: PhaseConfirmation,
+    confirmed_by: Uuid,
+}
+
 pub async fn get_group_phase_workspace(
     pool: &PgPool,
     actor: &ActorContext,
@@ -45,12 +52,15 @@ pub(super) async fn load_workspace(
         &students,
         &scores,
     )?;
-    let confirmation:Option<PhaseConfirmation>=DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.workspace.load_workspace", "SELECT id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional().await?;
-    let confirmation_is_current = confirmation.as_ref().is_some_and(|c| {
-        !c.invalidated
+    let confirmation:Option<PhaseConfirmationRow>=DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.workspace.load_workspace", "SELECT id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated,confirmed_by FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional().await?;
+    let confirmation_is_current = confirmation.as_ref().is_some_and(|row| {
+        let c = &row.confirmation;
+        scope.primary_teacher_ids.contains(&row.confirmed_by)
+            && !c.invalidated
             && c.source_checksum == source_checksum
             && c.roster_checksum == roster_checksum
     });
+    let confirmation = confirmation.map(|row| row.confirmation);
     Ok(GroupPhaseWorkspace {
         learning_group_id: scope.group_id,
         learning_offering_id: scope.offering_id,
