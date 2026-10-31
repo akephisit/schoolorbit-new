@@ -62,6 +62,67 @@ write_marker() {
 }
 report_aggregate() {
     [[ -s $1 ]] || return 0
+    if [[ ${2:-} == migrate-tenants ]]; then
+        jq -ces --arg outcome "${3:-failure}" '
+            def integer: type == "number" and . >= 0 and . <= 9007199254740991 and floor == .;
+            def stage: IN("migration_url","owner_connection","owner_identity","migration_identity",
+                "migration_execution","permission_sync","runtime_grants","owner_schema",
+                "owner_academic_core_cutover","owner_gradebook_results_cutover",
+                "owner_delivery_timetable_cutover","owner_staff_profile_cutover","runtime_connection",
+                "runtime_identity","runtime_schema","runtime_academic_core_cutover",
+                "runtime_gradebook_results_cutover","runtime_delivery_timetable_cutover",
+                "runtime_staff_profile_cutover","admin_status");
+            def error_class: IN("database","row_not_found","pool_timeout","pool_closed","connection",
+                "decode","encode","protocol","configuration","other","source","version_missing",
+                "version_mismatch","version_not_present","version_too_old","version_too_new",
+                "dirty","migration_configuration");
+            def refusal147: IN("ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH",
+                "ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE");
+            def refusal148: IN("ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY",
+                "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH",
+                "ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE",
+                "ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE",
+                "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED",
+                "ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED",
+                "PROMOTION_RUN_HISTORY_RETAINED","PROMOTION_RUN_IDENTITY_IMMUTABLE");
+            def tuple: [.stage,.version,.error_class,.sqlstate,.code];
+            def bucket:
+                type == "object" and keys == ["code","count","error_class","sqlstate","stage","version"] and
+                (.stage | stage) and (.error_class | error_class) and
+                (.version == null or (.version | integer and . > 0)) and
+                (.sqlstate == null or (.sqlstate | type == "string" and length == 5 and test("^[0-9A-Z]{5}$"))) and
+                (.count | integer and . > 0) and
+                (.code == "unclassified" or
+                    (.stage == "migration_execution" and .error_class == "database" and
+                        ((.version == 147 and (.code | refusal147)) or
+                         (.version == 148 and (.code | refusal148)))));
+            if length != 1 then error("invalid") else .[0] end |
+            if type == "object" and
+                keys == ["failed","failures","latest_version","migrated","overflow_count","schema_version","tenants"] and
+                .schema_version == 1 and
+                ([.tenants,.migrated,.failed,.latest_version,.overflow_count] | all(.[]; integer)) and
+                .migrated + .failed == .tenants and
+                (.failures | type == "array" and length <= 64 and all(.[]; bucket)) and
+                (.failures == (.failures | sort_by(tuple))) and
+                ((.failures | unique_by(tuple) | length) == (.failures | length)) and
+                ((.failures | map(.count) | add // 0) + .overflow_count == .failed) and
+                ((.failed == 0) == ((.failures | length) == 0 and .overflow_count == 0)) and
+                (.overflow_count == 0 or (.failures | length) == 64) and
+                ($outcome != "success" or (.failed == 0 and .overflow_count == 0))
+            then {schema_version,tenants,migrated,failed,latest_version,
+                  failures:[.failures[] | {stage,version,error_class,sqlstate,code,count}],overflow_count}
+            else error("invalid") end
+        ' "$1" 2>/dev/null
+        return $?
+    fi
     # Never promote unknown fields, multiline text or malformed partial output.
     jq -ces '
         if length == 1 and (.[0] | type == "object" and .schema_version == 1) then
@@ -126,7 +187,7 @@ run_image() {
             --volume "$journal/manifests:/run/storage-namespace-manifests:rw")
     fi
     if ! podman run "${options[@]}" "$image" /app/backend-school "$@" >"$output" 2>"$scratch/command-error"; then
-        report_aggregate "$output" || true
+        report_aggregate "$output" "$operation" || true
         if podman container exists "$oneshot"; then
             report_interlock
             fail headless_operation_exists
@@ -140,7 +201,7 @@ run_image() {
     jq -e 'type == "object" and .schema_version == 1' "$output" >/dev/null 2>&1 || fail invalid_command_output
     case "$*" in
         migrate-tenants | 'storage-namespace check-admin' | 'storage-namespace attest-admin')
-            report_aggregate "$output" || fail invalid_command_output
+            report_aggregate "$output" "$operation" success || fail invalid_command_output
             ;;
     esac
 }
