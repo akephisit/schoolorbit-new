@@ -92,11 +92,15 @@ jobs:
       run_authenticated: ${{ fromJson(inputs.options).run_authenticated != false }}
   diagnostics:
     if: inputs.operation == 'diagnostics'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
     uses: ./.github/workflows/runtime-diagnostics.yml
     secrets: inherit
     with:
       run_tenant_probe: ${{ fromJson(inputs.options).run_tenant_probe == true }}
       probe_subdomain: ${{ fromJson(inputs.options).probe_subdomain || '' }}
+      observe_academic148_curriculum: ${{ fromJson(inputs.options).observe_academic148_curriculum == true }}
   benchmark:
     if: inputs.operation == 'benchmark'
     uses: ./.github/workflows/backend-build-benchmark.yml

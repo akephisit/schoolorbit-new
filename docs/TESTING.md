@@ -2341,6 +2341,23 @@ no test-only production bypass is supported. Do not log URL/key values in fixtur
 
 ## Standalone namespace operator tool
 
+For the fixed academic-148 curriculum observation collector, run
+`node --test scripts/tests/pipeline-academic148-observations.test.mjs` with the pinned Node
+runtime. This covers trusted manifest preparation, private credential transport, fixed
+read-only identity/transaction controls, bounded failures, aggregate reconciliation and
+artifact rejection. Its focused disposable PostgreSQL/TLS case reuses the existing fixture
+owner; it does not contact production. The Backend-owned
+`academic148_curriculum_observations` integration test independently checks the fixed SQL
+predicates and history/checkpoint evidence:
+
+```bash
+./scripts/test_backend_school.sh --integration academic148_curriculum_observations -- --test-threads=1
+```
+
+Deployment workflow changes also require the
+owning `./scripts/pipeline verify --scope deployment` suite. Local fixture evidence does not
+establish the cause in a real tenant; obtain that evidence through the protected Operations flag.
+
 Production release uses the main executable in the exact prepared, digest-pinned School image:
 `backend-school migrate-tenants`, then `backend-school storage-namespace check-admin`, and only
 then the matching application server. `context-admin` and offline `routing-fingerprints` expose

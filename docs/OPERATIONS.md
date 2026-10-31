@@ -1662,6 +1662,23 @@ proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fai
 
 ## Academic context visibility and date-free identities
 
+For the bounded migration-148 curriculum receipt observation, dispatch **Operations** on
+`main` with `operation=diagnostics` and `options={"observe_academic148_curriculum":true}`.
+The shared production lock and canonical owned-cleanup interlock protect the uploads and fixed
+collector, which uses normal Admin operational
+inventory/owner connections and one repeatable-read, read-only connection per tenant. It neither
+runs migrations nor changes maintenance or tenant status. Only a complete, validated aggregate
+is retained in the three-day `academic148-curriculum-<run>-<attempt>` artifact; refusal produces
+no successful evidence artifact. Keep maintenance active while investigating a failed cutover.
+The collector binds its fixed query and the exact migration-001–148 checksum manifest to the
+trusted main checkout. Predicate masks preserve receipt/output multiplicity. Before-050 timing
+is correlation rather than proof of a historical client; matching SQLx history verifies the
+immutable migration prefix rather than historical ledger authorship. Checkpoint count/hash
+matches are independent observations; legitimate later work, actor deletion or historical
+session-timezone formatting can change them. Historical checkpoint audits did not record their
+session timezone; do not guess one to force a match.
+These counts do not authorize guessed data repair or changes to applied migrations.
+
 Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql) and [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits the prior binary against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.

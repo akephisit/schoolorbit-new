@@ -187,15 +187,22 @@ def unique_object(pairs):
 
 
 def promote(kind, candidate, destination):
-    require(kind in {"runtime", "probe"})
+    require(kind in {"runtime", "probe", "academic148"})
     destination = Path(destination)
-    require(destination.name == ("runtime.json" if kind == "runtime" else "tenant-probe.json"))
+    require(destination.name == {"runtime":"runtime.json","probe":"tenant-probe.json","academic148":"academic148-curriculum.json"}[kind])
     with open(candidate, "rb") as stream:
         raw = stream.read(MAX_BYTES + 1)
     require(0 < len(raw) <= MAX_BYTES)
     report = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object, parse_constant=lambda _value: require(False))
     require(type(report) is dict)
-    (runtime if kind == "runtime" else probe)(report)
+    if kind == "academic148":
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("academic148_observations", Path(__file__).with_name("pipeline-academic148-observations.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.validate_aggregate(report)
+    else:
+        (runtime if kind == "runtime" else probe)(report)
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     require(not destination.parent.is_symlink())
     os.chmod(destination.parent, 0o700)
@@ -212,13 +219,16 @@ def promote(kind, candidate, destination):
     finally:
         if temporary is not None:
             os.unlink(temporary)
+    return report
 
 
 if __name__ == "__main__":
     try:
         require(len(sys.argv) == 4)
-        promote(*sys.argv[1:])
+        report = promote(*sys.argv[1:])
     except Exception:
         print("runtime_observation_artifact=invalid", file=sys.stderr)
         raise SystemExit(1)
+    if sys.argv[1] == "academic148":
+        print(json.dumps(report, separators=(",", ":"), allow_nan=False))
     print("runtime_observation_artifact=validated")
