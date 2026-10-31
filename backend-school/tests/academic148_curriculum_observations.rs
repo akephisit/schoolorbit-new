@@ -18,6 +18,7 @@ fn manifest() -> Value {
     Value::Array(
         sqlx::migrate!("./migrations")
             .iter()
+            .filter(|migration| migration.version<=148)
             .map(|migration| {
                 json!({"version":migration.version,"checksum":hex::encode(&migration.checksum)})
             })

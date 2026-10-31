@@ -277,16 +277,16 @@ test("historical observer preparation refuses missing, extra or symlinked149 sou
 with tempfile.TemporaryDirectory() as directory:
  root=pathlib.Path(directory);migrations=root/'backend-school/migrations';migrations.mkdir(parents=True)
  source=pathlib.Path(sys.argv[1]).parents[2]
- for path in (source/'backend-school/migrations').glob('*.sql'):os.link(path,migrations/path.name)
+ for path in (source/'backend-school/migrations').glob('*.sql'):shutil.copyfile(path,migrations/path.name)
  for name in ('pipeline-academic148-observations.py','pipeline-academic148-observations.sql'):
-  target=root/'scripts/lib'/name;target.parent.mkdir(parents=True,exist_ok=True);os.link(source/'scripts/lib'/name,target)
+  target=root/'scripts/lib'/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/'scripts/lib'/name,target)
  def refused():
   with tempfile.TemporaryDirectory() as runtime,patch.dict(os.environ,{'GITHUB_REF':'refs/heads/main','GITHUB_WORKSPACE':str(root),'RUNNER_TEMP':runtime}):
    try:m.prepare()
    except m.Refusal:pass
    else:raise AssertionError('invalid source inventory accepted')
  latest=next(migrations.glob('149_*.sql'));original=source/'backend-school/migrations'/latest.name
- latest.unlink();refused();latest.symlink_to(original);refused();latest.unlink();os.link(original,latest)
+ latest.unlink();refused();latest.symlink_to(original);refused();latest.unlink();shutil.copyfile(original,latest)
  extra=migrations/'150_unreviewed.sql';extra.write_text('private-observation-sentinel');refused();extra.unlink()
  wrong=latest.with_name('149_wrong-uppercase-NAME.sql');latest.rename(wrong);refused()`);
 });

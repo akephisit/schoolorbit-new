@@ -59,6 +59,7 @@ mod permission_sync {
 }
 
 pub use permission_sync::sync_permissions;
+mod academic149;
 
 use dashmap::DashMap;
 use sqlx::migrate::Migrator;
@@ -225,6 +226,18 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         }
         (Some(148), "PROMOTION_RUN_HISTORY_RETAINED") => "PROMOTION_RUN_HISTORY_RETAINED",
         (Some(148), "PROMOTION_RUN_IDENTITY_IMMUTABLE") => "PROMOTION_RUN_IDENTITY_IMMUTABLE",
+        (Some(149), "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE") => {
+            "ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE"
+        }
+        (Some(149), "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY") => {
+            "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY"
+        }
+        (Some(149), "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED") => {
+            "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED"
+        }
+        (Some(149), "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID") => {
+            "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID"
+        }
         _ => "unclassified",
     }
 }
@@ -345,10 +358,17 @@ pub async fn run_tenant_migrations_detailed(pool: &PgPool) -> Result<(), Migrati
     } else {
         None
     };
-    all_migrations_without_db_lock()
-        .run(pool)
-        .await
-        .map_err(migration_failure)?;
+    {
+        let mut connection = pool
+            .acquire()
+            .await
+            .map_err(|error| migration_failure(sqlx::migrate::MigrateError::Execute(error)))?;
+        academic149::run_transition(&mut connection, &all_migrations_without_db_lock())
+            .await
+            .map_err(migration_failure)?;
+        // End the owned lease before pool-based permission/grant work (including pool size one).
+        drop(connection);
+    }
 
     sync_permissions(pool).await.map_err(|error| {
         MigrationFailure::sqlx(
@@ -540,6 +560,14 @@ impl Default for MigrationTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn canonical_runner_future_remains_send_for_http_consumers() {
+        fn accept<F: std::future::Future + Send>(_: F) {}
+        fn check(pool: &PgPool) {
+            accept(run_tenant_migrations_detailed(pool));
+        }
+        let _ = check as fn(&PgPool);
+    }
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
