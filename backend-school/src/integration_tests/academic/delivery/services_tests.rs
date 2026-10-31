@@ -571,10 +571,23 @@ struct RejectAssessmentPublication;
 impl school_academic_delivery::ports::AssessmentPublicationPort for RejectAssessmentPublication {
     async fn fill_missing_coordinators(
         &self,
-        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        _actor: Uuid,
-        _offerings: &[Uuid],
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: Uuid,
+        offering_ids: &[Uuid],
     ) -> Result<(), AppError> {
+        let unpublished_revisions: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_term_change_sets revision JOIN academic_delivery_latest_published_teacher_allocations allocation ON allocation.delivery_version_id=revision.target_delivery_version_id WHERE allocation.learning_offering_id=ANY($1) AND revision.status<>'published'")
+            .bind(offering_ids).fetch_one(&mut **tx).await.unwrap();
+        assert_eq!(
+            unpublished_revisions, 0,
+            "both publication transitions precede Assessment initialization"
+        );
+        school_academic_assessment::assessment::services::fill_missing_coordinators(
+            &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            tx,
+            actor,
+            offering_ids,
+        )
+        .await?;
         Err(AppError::InternalServerError(
             "ASSESSMENT_TEST_REJECTED".into(),
         ))
@@ -3930,11 +3943,14 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
             .await
             .unwrap();
     assert!(publication_request.effective_from > runtime_operation_date());
-    assert!(first_assessment.assessment_coordinator_id.is_none());
-    assert!(first_assessment.coordinator_candidates.is_empty());
+    assert_eq!(
+        first_assessment.assessment_coordinator_id,
+        Some(context.teacher_id)
+    );
+    assert!(!first_assessment.coordinator_candidates.is_empty());
     assert!(
-        first_assessment.id.is_none(),
-        "a future teacher episode must not invent a persisted plan today"
+        first_assessment.id.is_some(),
+        "the newly published allocation initializes its teacher independent of today"
     );
     assert_eq!(first_assessment.phases.len(), 4);
     let accepted_facts_sql = r#"SELECT jsonb_build_object(
@@ -3977,12 +3993,12 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
             .await
             .unwrap()
     );
-    assert!(
+    assert_eq!(
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap()
-            .assessment_coordinator_id
-            .is_none()
+            .assessment_coordinator_id,
+        Some(context.teacher_id)
     );
     let retained = create_runtime_change_set(
         &pool,
@@ -4033,7 +4049,10 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
             .await
             .unwrap();
-    assert!(retained_assessment.assessment_coordinator_id.is_none());
+    assert_eq!(
+        retained_assessment.assessment_coordinator_id,
+        Some(context.teacher_id)
+    );
     assert_eq!(retained_assessment.id, first_assessment.id);
     assert_eq!(
         serde_json::to_value(&retained_assessment.phases).unwrap(),
@@ -4713,15 +4732,14 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         school_academic_assessment::assessment::services::get_plan_detail(&pool, offering.id)
             .await
             .unwrap();
-    assert_eq!(
-        assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
+    assert_eq!(assessment.assessment_coordinator_id, None);
+    assert!(assessment.id.is_none());
+    assert!(assessment.coordinator_candidates.is_empty());
     assert_eq!(assessment.phases.len(), 4);
     assert!(assessment
         .phases
         .iter()
-        .all(|phase| phase.max_score == "0" && phase.row_version == Some(1)));
+        .all(|phase| phase.max_score == "0.00" && phase.row_version.is_none()));
 
     let group = groups::get(&pool, group.id).await.unwrap();
     assert!(group.teachers_locked);

@@ -23,7 +23,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     record_passing_phase_a_reconciliation_marker(&pool)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 114).await.unwrap();
+    school_test_db::run_test_migrations(&pool).await;
     pool
 }
 

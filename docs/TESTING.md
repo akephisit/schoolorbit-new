@@ -554,6 +554,16 @@ transaction-scoped lifecycle operations. Its pure tests run with
 `cargo test -p school-academic-assessment --lib`; the existing application exam-schedule
 database fixtures continue to exercise the HTTP/lifecycle adapters and shared transactions.
 
+Assessment coordinator regressions use the latest published Delivery allocation in the selected
+offering's exact context, including future-effective publications. Run
+`./scripts/test_backend_school.sh --package school-academic-assessment -- --test-threads=8` and
+`./scripts/test_backend_school.sh integration_tests::academic::services::assessment_ -- --nocapture`.
+These cover dated episode preservation, shared read/save/exam membership, strict missing coverage,
+canonical names, active accounts, assignment identities and the registry-group denominator.
+Delivery publication coverage remains in
+`./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests:: -- --test-threads=1`;
+it verifies initialization after publication transitions, complete rollback and accepted replay.
+
 The Operations `benchmark` task calls [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) and uses
 the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
 times, binary size, unchanged persistent-target reuse, and exact School OpenAPI equality.

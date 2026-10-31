@@ -214,8 +214,9 @@ async fn assessment_candidates_read_canonical_name_projection() {
         .find(|candidate| candidate.teacher_id == primary)
         .unwrap();
     assert_eq!(primary_option.display_name, "นายสมชาย ทดสอบ");
-    assert_eq!(primary_option.learning_group_count, 2);
-    assert_eq!(primary_option.primary_learning_group_count, 2);
+    // The new draft group remains in the denominator, but not the published allocation.
+    assert_eq!(primary_option.learning_group_count, 1);
+    assert_eq!(primary_option.primary_learning_group_count, 1);
     let secondary_option = detail
         .coordinator_candidates
         .iter()
@@ -388,7 +389,7 @@ async fn assessment_phase_controls_read_through_the_assessment_crate_boundary() 
 async fn assessment_detail_and_summary_share_the_callers_single_connection() {
     let pool = populated_canonical_pool("assessment_borrowed_connection").await;
     let (offering, term): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT learning_offering_id,academic_term_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+        "SELECT DISTINCT plan.learning_offering_id,plan.academic_term_id FROM course_assessment_plans plan JOIN academic_delivery_latest_published_teacher_allocations allocation ON allocation.learning_offering_id=plan.learning_offering_id ORDER BY plan.learning_offering_id LIMIT 1",
     ).fetch_one(&pool).await.unwrap();
     let mut connection = pool.acquire().await.unwrap();
     let access = AcademicResourceListFilter {
