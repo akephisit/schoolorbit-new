@@ -732,6 +732,7 @@
 	function changeEvaluation(criterionId: string, studentId: string, value: number | null): void {
 		if (!evaluationWorkspace?.canManage) return;
 		if (value !== null && ![0, 1, 2, 3].includes(value)) return;
+		invalidateConfirmation();
 		const key = cellKey(studentId, criterionId);
 		evaluationValues = { ...evaluationValues, [key]: value };
 		evaluationQueue.enqueue({
@@ -843,6 +844,7 @@
 	async function createCriterion(name: string): Promise<void> {
 		const context = contextValue();
 		if (!context || activeTab === 'scores' || !evaluationConfiguration) return;
+		invalidateConfirmation();
 		if (!(await flushPendingWork())) return;
 		criteriaBusy = true;
 		try {
@@ -868,6 +870,7 @@
 	): Promise<void> {
 		const context = contextValue();
 		if (!context || activeTab === 'scores') return;
+		invalidateConfirmation();
 		if (!(await flushPendingWork())) return;
 		criteriaBusy = true;
 		try {
@@ -889,6 +892,7 @@
 	async function removeCriterion(criterion: LearnerEvaluationCriterion): Promise<void> {
 		const context = contextValue();
 		if (!context || activeTab === 'scores') return;
+		invalidateConfirmation();
 		if (!(await flushPendingWork())) return;
 		criteriaBusy = true;
 		try {
@@ -976,7 +980,7 @@
 					rosterChecksum: workspace.rosterChecksum,
 					rowVersion: workspace.confirmation?.rowVersion ?? null
 				});
-				if (!isCurrent()) return;
+				if (!isCurrent() || scoreWorkspace !== workspace) return;
 				patchScoreWorkspace({ ...workspace, confirmation, confirmationIsCurrent: true });
 				toast.success('ยืนยันคะแนนช่วงนี้แล้ว');
 			} else if (tab !== 'scores' && evaluationWorkspace) {
@@ -986,7 +990,7 @@
 					rosterChecksum: workspace.rosterChecksum,
 					rowVersion: workspace.confirmation?.rowVersion ?? null
 				});
-				if (!isCurrent()) return;
+				if (!isCurrent() || evaluationWorkspace !== workspace) return;
 				if (result.confirmation) {
 					evaluationWorkspace = {
 						...workspace,

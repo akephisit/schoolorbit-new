@@ -153,6 +153,11 @@ async function mockGradebook(
 	const scorePaths: string[] = [];
 	const workspacePaths: string[] = [];
 	const itemPaths: string[] = [];
+	const evaluationBodies: Array<{
+		cells: Array<{ qualityLevel: number | null; rowVersion: number | null }>;
+	}> = [];
+	let evaluationLevel: number | null = 2;
+	let evaluationVersion = 1;
 	const workspaces = phaseCodes.map((phase, index) =>
 		workspace(canManage && !closedTerm && phase !== closedPhase, phase, initialScores?.[index])
 	);
@@ -250,10 +255,18 @@ async function mockGradebook(
 			}
 
 			if (url.pathname.includes(`/api/academic/learner-evaluations/groups/${ids.group}/domains/`)) {
+				if (request.method() === 'PUT' && url.pathname.endsWith('/responses')) {
+					const body = request.postDataJSON() as {
+						cells: Array<{ qualityLevel: number | null; rowVersion: number | null }>;
+					};
+					evaluationBodies.push(body);
+					evaluationLevel = body.cells[0]!.qualityLevel;
+					evaluationVersion += 1;
+				}
 				await fulfill(route, {
 					learningGroupId: ids.group,
 					subjectId: ids.subject,
-					domain: url.pathname.split('/domains/')[1],
+					domain: url.pathname.split('/domains/')[1]!.split('/')[0],
 					criteria: [
 						{
 							id: ids.item,
@@ -268,15 +281,15 @@ async function mockGradebook(
 						{
 							subjectTermCriterionId: ids.item,
 							studentAcademicYearId: ids.student,
-							qualityLevel: 2,
-							rowVersion: 1
+							qualityLevel: evaluationLevel,
+							rowVersion: evaluationVersion
 						}
 					],
 					entryEnabled: true,
 					locked: false,
 					canManage: true,
 					canConfirm,
-					sourceChecksum: 'evaluation-1',
+					sourceChecksum: `evaluation-${evaluationVersion}`,
 					rosterChecksum: 'roster-1',
 					confirmation: null,
 					confirmationIsCurrent: false
@@ -359,7 +372,15 @@ async function mockGradebook(
 			await fulfill(route, {});
 		}
 	);
-	return { controlRequests, subjectRequests, scoreBodies, scorePaths, workspacePaths, itemPaths };
+	return {
+		controlRequests,
+		subjectRequests,
+		scoreBodies,
+		scorePaths,
+		workspacePaths,
+		itemPaths,
+		evaluationBodies
+	};
 }
 
 function gradebookUrl() {
@@ -956,5 +977,75 @@ for (const tab of ['scores', 'desirable_characteristic'] as const) {
 			expect(url.searchParams.get('academicTermId')).toBe(ids.term);
 		}
 		expect(requests.some((url) => url.pathname.endsWith('/confirm'))).toBe(false);
+	});
+}
+
+for (const autosaveCompleted of [false, true]) {
+	test(`a late learner confirmation preserves newer responses in the same workspace (autosave completed: ${autosaveCompleted})`, async ({
+		page
+	}) => {
+		const state = await mockGradebook(
+			page,
+			true,
+			undefined,
+			undefined,
+			undefined,
+			false,
+			roster,
+			true
+		);
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => (release = resolve));
+		const confirmationSources: string[] = [];
+		let releaseSave!: () => void;
+		const pendingSave = new Promise<void>((resolve) => (releaseSave = resolve));
+		let saveStarted = 0;
+		await page.route('**/learner-evaluations/**/responses?**', async (route) => {
+			saveStarted += 1;
+			if (!autosaveCompleted && saveStarted === 1) await pendingSave;
+			await route.fallback();
+		});
+		await page.route('**/learner-evaluations/**/confirm?**', async (route) => {
+			const body = route.request().postDataJSON() as { sourceChecksum: string };
+			confirmationSources.push(body.sourceChecksum);
+			if (confirmationSources.length === 1) await pending;
+			await fulfill(route, { confirmation: { id: ids.phase, rowVersion: 2 }, missing: [] });
+		});
+		await page.goto(`${gradebookUrl()}&tab=desirable_characteristic`);
+		await page.getByRole('button', { name: 'บันทึกผลประเมินและยืนยัน', exact: true }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+		await expect.poll(() => confirmationSources).toEqual(['evaluation-1']);
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('dialog')).toBeHidden();
+		const ledger = page.getByRole('region', { name: 'ตารางประเมินผู้เรียน', exact: true });
+		await ledger.getByRole('button', { name: 'เลือกทุกช่อง', exact: true }).click();
+		await ledger.getByRole('combobox').click();
+		await page.getByRole('option', { name: '3 · ดีเยี่ยม', exact: true }).click();
+		await expect.poll(() => saveStarted).toBe(1);
+		if (autosaveCompleted) {
+			await expect.poll(() => state.evaluationBodies.length).toBe(1);
+			await expect(page.getByText('บันทึกแล้ว', { exact: true }).first()).toBeVisible();
+		}
+		const response = page.waitForResponse((response) =>
+			new URL(response.url()).pathname.endsWith('/confirm')
+		);
+		release();
+		await (await response).finished();
+		await page.evaluate(
+			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+		);
+		await expect(ledger.getByRole('combobox')).toHaveText('3 · ดีเยี่ยม');
+		await expect(ledger.getByText('ต้องกรอกครบทุกหัวข้อก่อนยืนยัน', { exact: true })).toBeVisible();
+		releaseSave();
+		await expect.poll(() => state.evaluationBodies.length).toBe(1);
+		await expect(page.getByText('บันทึกแล้ว', { exact: true }).first()).toBeVisible();
+		await ledger.getByRole('combobox').click();
+		await page.getByRole('option', { name: '1 · ผ่าน', exact: true }).click();
+		await expect.poll(() => state.evaluationBodies.length).toBe(2);
+		expect(state.evaluationBodies[1]!.cells[0]!.rowVersion).toBe(2);
+		await ledger.getByRole('button', { name: 'บันทึกผลประเมินและยืนยัน', exact: true }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+		await expect.poll(() => confirmationSources).toEqual(['evaluation-1', 'evaluation-3']);
+		await expect(ledger.getByText('ยืนยันผลประเมินกลุ่มนี้แล้ว', { exact: true })).toBeVisible();
 	});
 }
