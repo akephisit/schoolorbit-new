@@ -29,37 +29,45 @@ async fn offering(
     number: i32,
     date_offset: i32,
 ) -> (Uuid, Vec<Uuid>, chrono::NaiveDate, chrono::NaiveDate) {
+    let mut tx = pool.begin().await.unwrap();
     let source: Uuid = sqlx::query_scalar(
         "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .unwrap();
     let term = Uuid::now_v7();
     let id = Uuid::now_v7();
     sqlx::query("UPDATE academic_years SET start_date=LEAST(start_date,current_date-400),end_date=GREATEST(end_date,current_date+400) WHERE id=(SELECT academic_year_id FROM learning_offerings WHERE id=$1)")
-        .bind(source).execute(pool).await.unwrap();
+        .bind(source).execute(&mut *tx).await.unwrap();
     let (start, end): (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
-        "INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,start_date,planned_end_date)
-         SELECT $1,academic_year_id,'Coordinator fixture',$2,'COORD-'||$2::text,'custom',false,false,'planning',current_date+$3,current_date+$3+20
-         FROM learning_offerings WHERE id=$4 RETURNING start_date,planned_end_date",
-    ).bind(term).bind(1000+number).bind(date_offset).bind(source).fetch_one(pool).await.unwrap();
+        "INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,start_date,planned_end_date,bell_schedule_id)
+         SELECT $1,offering.academic_year_id,'Coordinator fixture',$2,'COORD-'||$2::text,'custom',false,false,'planning',current_date+$3,current_date+$3+20,source_term.bell_schedule_id
+         FROM learning_offerings offering JOIN academic_terms source_term ON source_term.id=offering.academic_term_id
+         WHERE offering.id=$4 RETURNING start_date,planned_end_date",
+    ).bind(term).bind(1000+number).bind(date_offset).bind(source).fetch_one(&mut *tx).await.unwrap();
     sqlx::query(
         "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,published_at,owning_organization_unit_id,starts_on)
-         SELECT $1,$2,academic_year_id,'course','COORD-'||$3::text,'Coordinator fixture','published',now(),owning_organization_unit_id,$4 FROM learning_offerings WHERE id=$5",
-    ).bind(id).bind(term).bind(number).bind(start).bind(source).execute(pool).await.unwrap();
+         SELECT $1,$2,academic_year_id,'course','COORD-'||$3::text,'Coordinator fixture','draft',NULL,owning_organization_unit_id,$4 FROM learning_offerings WHERE id=$5",
+    ).bind(id).bind(term).bind(number).bind(start).bind(source).execute(&mut *tx).await.unwrap();
     sqlx::query(
-        "INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,standard_periods_per_week,assessment_total_score)
-         SELECT $1,$2,academic_year_id,subject_version_id,subject_id,credit,hours,standard_periods_per_week,assessment_total_score FROM course_offering_details WHERE learning_offering_id=$3",
-    ).bind(id).bind(term).bind(source).execute(pool).await.unwrap();
+        "INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score)
+         SELECT $1,$2,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE learning_offering_id=$3",
+    ).bind(id).bind(term).bind(source).execute(&mut *tx).await.unwrap();
     let mut groups = Vec::new();
     for index in 0..2 {
         let group = Uuid::now_v7();
         sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status)
             SELECT $1,id,academic_term_id,academic_year_id,$2,$2,'draft','draft' FROM learning_offerings WHERE id=$3")
-            .bind(group).bind(format!("COORD-{number}-{index}")).bind(id).execute(pool).await.unwrap();
+            .bind(group).bind(format!("COORD-{number}-{index}")).bind(id).execute(&mut *tx).await.unwrap();
         groups.push(group);
     }
+    sqlx::query("UPDATE learning_offerings SET status='published',published_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
     (id, groups, start, end)
 }
 
@@ -105,11 +113,13 @@ async fn assessment_publication_and_migration_share_suggestion_parity_and_preser
     let pool = predecessor("assessment_publication_migration_parity").await;
     // Explicit expired/inactive users never become candidates.
     let inactive = Uuid::from_u128(0x50000000000000000000000000000004);
-    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+    let inserted = sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status)
+        VALUES($1,'coordinator-inactive-fixture','fixture-not-a-login','Inactive','Coordinator','staff','inactive')")
         .bind(inactive)
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(inserted.rows_affected(), 1);
     let mut cases = Vec::new();
     for (number, scenario, offset, expected) in [
         (1, "common", -10, Some(PRIMARY)),
@@ -222,25 +232,62 @@ async fn assessment_publication_and_migration_share_suggestion_parity_and_preser
     );
 }
 
-
 #[tokio::test]
 async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked_results() {
     let pool = predecessor("assessment_publication_scope_exclusions").await;
-    let (id,groups,start,_) = offering(&pool,1,-10).await;
-    teacher(&pool,&groups,PRIMARY,start,None).await;
+    let (id, groups, start, _) = offering(&pool, 1, -10).await;
+    teacher(&pool, &groups, PRIMARY, start, None).await;
     let (year,term,subject): (Uuid,Uuid,Uuid) = sqlx::query_as("SELECT academic_year_id,academic_term_id,subject_id FROM course_offering_details WHERE learning_offering_id=$1").bind(id).fetch_one(&pool).await.unwrap();
-    for (year_status,term_status,offering_status) in [
-        ("closed","planning","published"),("archived","planning","published"),
-        ("active","closed","published"),("active","cancelled","published"),
-        ("active","planning","draft"),("active","planning","closed"),
+    for (year_status, term_status, offering_status) in [
+        ("closed", "planning", "published"),
+        ("archived", "planning", "published"),
+        ("active", "closed", "published"),
+        ("active", "cancelled", "published"),
+        ("active", "planning", "draft"),
+        ("active", "planning", "closed"),
     ] {
         let mut tx = pool.begin().await.unwrap();
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1").bind(year).bind(year_status).execute(&mut *tx).await.unwrap();
+        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
+            .bind(year)
+            .bind(year_status)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN planned_end_date ELSE NULL END WHERE id=$1").bind(term).bind(term_status).execute(&mut *tx).await.unwrap();
-        sqlx::query("UPDATE learning_offerings SET status=$2 WHERE id=$1").bind(id).bind(offering_status).execute(&mut *tx).await.unwrap();
-        fill(&mut tx,&[id]).await;
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM course_assessment_plans WHERE learning_offering_id=$1").bind(id).fetch_one(&mut *tx).await.unwrap();
-        assert_eq!(count,0,"{year_status}/{term_status}/{offering_status}");
+        sqlx::query("UPDATE learning_offerings SET status=$2 WHERE id=$1")
+            .bind(id)
+            .bind(offering_status)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        fill(&mut tx, &[id]).await;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM course_assessment_plans WHERE learning_offering_id=$1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(count, 0, "{year_status}/{term_status}/{offering_status}");
+        // Migration eligibility is independent SQL; prove each excluded source also stays
+        // untouched during deployment, then roll back its DDL with this scenario.
+        sqlx::raw_sql(include_str!(
+            "../../../../migrations/146_assessment_coordinators_and_edit_controls.sql"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let migrated_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM course_assessment_plans WHERE learning_offering_id=$1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(
+            migrated_count, 0,
+            "migration: {year_status}/{term_status}/{offering_status}"
+        );
         tx.rollback().await.unwrap();
     }
     let policy: Uuid = sqlx::query_scalar("INSERT INTO academic_grading_policy_versions(version_no,name,lifecycle) VALUES(999,'Coordinator lock fixture','draft') RETURNING id").fetch_one(&pool).await.unwrap();
@@ -248,9 +295,17 @@ async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked
         VALUES($1,$2,$3,$4,'{}',repeat('a',64),repeat('b',64),'{}',$5)")
         .bind(subject).bind(term).bind(year).bind(policy).bind(PRIMARY).execute(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    fill(&mut tx,&[id]).await;
+    fill(&mut tx, &[id]).await;
     tx.commit().await.unwrap();
-    assert!(services::get_plan_detail(&pool,id).await.unwrap().id.is_none());
-    apply_migrations_through(&pool,146).await.unwrap();
-    assert!(services::get_plan_detail(&pool,id).await.unwrap().id.is_none());
+    assert!(services::get_plan_detail(&pool, id)
+        .await
+        .unwrap()
+        .id
+        .is_none());
+    apply_migrations_through(&pool, 146).await.unwrap();
+    assert!(services::get_plan_detail(&pool, id)
+        .await
+        .unwrap()
+        .id
+        .is_none());
 }
