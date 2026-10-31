@@ -78,9 +78,26 @@ pub async fn require_course_offering_unlocked(
     academic_term_id: Uuid,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
-    let locked: bool = DbSession::new(&mut **tx)
+    if course_offering_is_locked(tx, learning_offering_id, academic_term_id, academic_year_id)
+        .await?
+    {
+        return Err(AppError::Conflict(
+            "Course results are locked and source data is read-only".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The caller holds the lifecycle and offering locks, as with result source writers.
+pub async fn course_offering_is_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    learning_offering_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+) -> Result<bool, AppError> {
+    Ok(DbSession::new(&mut **tx)
         .scalar(
-            "academic_results.services.locking.require_course_offering_unlocked",
+            "academic_results.services.locking.course_offering_is_locked",
             r#"SELECT EXISTS(
                SELECT 1
                FROM course_offering_details detail
@@ -97,13 +114,7 @@ pub async fn require_course_offering_unlocked(
         .bind(academic_term_id)
         .bind(academic_year_id)
         .fetch_one()
-        .await?;
-    if locked {
-        return Err(AppError::Conflict(
-            "Course results are locked and source data is read-only".into(),
-        ));
-    }
-    Ok(())
+        .await?)
 }
 
 pub(crate) async fn require_activity_group_unlocked(

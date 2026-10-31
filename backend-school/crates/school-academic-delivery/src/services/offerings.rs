@@ -495,6 +495,7 @@ pub async fn update(
 }
 
 pub async fn publish(
+    assessments: &dyn crate::ports::AssessmentPublicationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -574,6 +575,9 @@ pub async fn publish(
         .bind(request.idempotency_key)
         .bind(id)
         .execute()
+        .await?;
+    assessments
+        .fill_missing_coordinators(&mut transaction, actor_user_id, &[id])
         .await?;
     transaction.commit().await?;
     let mut completion = school_tenancy::TenantPool::observed_checkout_pool(

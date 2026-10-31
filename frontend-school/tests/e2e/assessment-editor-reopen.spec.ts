@@ -223,6 +223,7 @@ async function mockAssessmentApis(
 				await options.controlWriteWait;
 				if (options.failControlWriteOnce && !controlWriteFailed) {
 					controlWriteFailed = true;
+					control.rowVersion += 1;
 					await route.fulfill({
 						status: 409,
 						contentType: 'application/json',
@@ -385,7 +386,7 @@ test('closes after an in-flight autosave and opens the next subject editor', asy
 	await page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeVisible();
 
-	await page.getByLabel('คะแนนเต็ม').first().fill('21');
+	await page.getByLabel('คะแนนเต็ม', { exact: true }).first().fill('21');
 	await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
 	await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
 	await expect.poll(() => plansReadCount).toBe(1);
@@ -395,7 +396,7 @@ test('closes after an in-flight autosave and opens the next subject editor', asy
 
 	await page.getByText('ว21101 · วิทยาศาสตร์พื้นฐาน', { exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ว21101 · วิทยาศาสตร์พื้นฐาน' })).toBeVisible();
-	await expect(page.getByLabel('คะแนนเต็ม').first()).toHaveValue('20');
+	await expect(page.getByLabel('คะแนนเต็ม', { exact: true }).first()).toHaveValue('20');
 });
 
 test('school managers toggle score and exam editing independently with minimal versioned patches', async ({
@@ -452,18 +453,37 @@ test('school managers toggle score and exam editing independently with minimal v
 	await expect(page.locator('#phase-duration-midterm')).toBeEnabled();
 });
 
-test('a rejected phase-control patch keeps both saved switches unchanged', async ({ page }) => {
-	await mockAssessmentApis(page, { failControlWriteOnce: true });
+test('a rejected phase-control patch keeps saved switches and reloads the latest revision for retry', async ({
+	page
+}) => {
+	const writes: UpdateAssessmentPhaseControlRequest[] = [];
+	await mockAssessmentApis(page, {
+		failControlWriteOnce: true,
+		onControlWrite: (_id, payload) => writes.push(payload)
+	});
 	await page.goto(
 		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
 	);
 	const score = page.getByLabel('แก้คะแนนเต็ม', { exact: true }).nth(1);
 	const exam = page.getByLabel('แก้การจัดสอบและเวลาสอบ', { exact: true }).first();
 	await score.click();
-	await expect(page.getByText(/phase control conflict/)).toBeVisible();
+	const error = page.getByRole('alert').filter({ hasText: 'phase control conflict' });
+	await expect(error).toBeVisible();
 	await expect(score).toBeEnabled();
 	await expect(score).toBeChecked();
 	await expect(exam).toBeChecked();
+	expect(writes).toEqual([{ rowVersion: 1, planEditingEnabled: false }]);
+	await page.screenshot({
+		path: '/tmp/schoolorbit-assessment-controls-conflict.png',
+		fullPage: true
+	});
+	await error.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
+	await expect(error).toBeHidden();
+	await expect(score).toBeChecked();
+	await score.click();
+	await expect(score).not.toBeChecked();
+	await expect(exam).toBeChecked();
+	expect(writes[1]).toEqual({ rowVersion: 2, planEditingEnabled: false });
 });
 
 for (const theme of ['light', 'dark'] as const) {
@@ -500,6 +520,7 @@ for (const theme of ['light', 'dark'] as const) {
 		await expect(midterm).not.toContainText('ปิดแก้การจัดสอบ');
 		await expect(final).toContainText('ปิดแก้การจัดสอบ');
 		await expect(final).not.toContainText('ปิดแก้คะแนนเต็ม');
+		await page.locator('#phase-score-midterm').scrollIntoViewIfNeeded();
 		await page.screenshot({
 			path: `/tmp/schoolorbit-assessment-assigned-mobile-${theme}.png`,
 			fullPage: true

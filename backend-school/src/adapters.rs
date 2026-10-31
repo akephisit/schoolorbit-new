@@ -1,5 +1,6 @@
 pub mod academic_lifecycle;
 pub mod academic_result_locks;
+pub mod assessment_publication;
 pub mod behavior;
 pub mod facility_changes;
 pub mod notification_delivery;

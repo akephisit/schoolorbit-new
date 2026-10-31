@@ -663,8 +663,14 @@ pub async fn publish_offering(
         OfferingAction::Manage,
     )
     .await?;
-    let offering =
-        offerings::publish(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let offering = offerings::publish(
+        state.assessment_publication,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_delivery_changed(
         &state,
         &session,
@@ -1519,9 +1525,14 @@ pub async fn publish_term_change_set(
     let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
     let prior_descriptors =
         offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let change_set =
-        change_sets::publish_change_set(&context.tenant.pool, context.actor.user_id, id, request)
-            .await?;
+    let change_set = change_sets::publish_change_set(
+        state.assessment_publication,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
     Ok(ok(change_set))

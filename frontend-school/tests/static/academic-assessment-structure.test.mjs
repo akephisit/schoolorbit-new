@@ -230,7 +230,7 @@ test('assessment save sends rowVersion and keeps dirty draft on conflicts', asyn
 	assert.doesNotMatch(catchBlock, /draftPhases\s*=|dirty\s*=\s*false/);
 });
 
-test('assessment phase controls own plan editing while gradebook controls score entry', async () => {
+test('assessment controls split full-score and exam editing while gradebook controls score entry', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const gradebookApi = await readProjectFile('src/lib/api/academicGradebook.ts');
 	const service = await readRepoFile(

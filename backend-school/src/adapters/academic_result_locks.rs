@@ -28,6 +28,22 @@ impl ResultLockPort for ApplicationResultLocks {
         .await
     }
 
+    async fn course_offering_is_locked(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        learning_offering_id: Uuid,
+        academic_term_id: Uuid,
+        academic_year_id: Uuid,
+    ) -> Result<bool, AppError> {
+        school_academic_results::services::course_offering_is_locked(
+            transaction,
+            learning_offering_id,
+            academic_term_id,
+            academic_year_id,
+        )
+        .await
+    }
+
     async fn require_course_offering_unlocked(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

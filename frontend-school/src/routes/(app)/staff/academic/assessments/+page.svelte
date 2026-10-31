@@ -530,7 +530,8 @@
 			toast.success(`บันทึกสิทธิ์ช่วง${phaseLabel(saved.phaseCode)}แล้ว`);
 		} catch (error) {
 			if (termId !== academicTermId) return;
-			toast.error(error instanceof Error ? error.message : 'บันทึกสิทธิ์แก้ไขไม่สำเร็จ');
+			controlsError = error instanceof Error ? error.message : 'บันทึกสิทธิ์แก้ไขไม่สำเร็จ';
+			toast.error(controlsError);
 		} finally {
 			controlBusyId = '';
 		}

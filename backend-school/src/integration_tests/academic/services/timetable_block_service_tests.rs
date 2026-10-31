@@ -369,6 +369,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor,
         revision.id,
@@ -1216,6 +1217,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor_id,
         revision.id,
