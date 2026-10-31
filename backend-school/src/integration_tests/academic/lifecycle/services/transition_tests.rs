@@ -303,7 +303,6 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    apply_migrations_through(&pool, 109).await.unwrap();
     let execution = super::execute_run(
         &pool,
         &executor,

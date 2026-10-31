@@ -1,6 +1,4 @@
-use crate::integration_tests::academic::{
-    cutover_test_support::apply_migrations_through, results::services_tests::fixture,
-};
+use crate::integration_tests::academic::results::services_tests::fixture;
 use school_academic_results::services::*;
 use school_authorization::ActorContext;
 use school_errors::AppError;
@@ -10,8 +8,6 @@ use uuid::Uuid;
 #[tokio::test]
 async fn annual_roster_retains_missing_results_and_requires_both_school_domains() {
     let (pool, actor, context, _) = fixture("annual_roster").await;
-    apply_migrations_through(&pool, 69).await.unwrap();
-    apply_migrations_through(&pool, 95).await.unwrap();
     let office = ActorContext {
         user_id: actor.user_id,
         permissions: vec![

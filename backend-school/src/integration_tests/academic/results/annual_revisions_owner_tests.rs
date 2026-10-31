@@ -1,6 +1,4 @@
-use crate::integration_tests::academic::{
-    cutover_test_support::apply_migrations_through, results::services_tests::fixture,
-};
+use crate::integration_tests::academic::results::services_tests::fixture;
 use school_academic_results::{models::*, services::*};
 use school_authorization::ActorContext;
 use school_errors::AppError;
@@ -14,7 +12,6 @@ async fn annual_revision_preserves_zero_replays_and_invalidates_after_source_cor
             "annual_revision_history",
         )
         .await;
-    apply_migrations_through(&pool, 69).await.unwrap();
     sqlx::query(
         "UPDATE academic_terms SET included_in_year_result=(id=$2) WHERE academic_year_id=$1",
     )
@@ -309,7 +306,6 @@ async fn annual_revision_preserves_zero_replays_and_invalidates_after_source_cor
 #[tokio::test]
 async fn annual_preview_requires_current_applicable_term_revisions_and_exact_student_context() {
     let (pool, actor, context, group) = fixture("annual_preview_missing").await;
-    apply_migrations_through(&pool, 69).await.unwrap();
     let student:Uuid=sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' ORDER BY student_academic_year_id LIMIT 1").bind(group).fetch_one(&pool).await.unwrap();
     let office = ActorContext {
         user_id: actor.user_id,
@@ -382,7 +378,6 @@ async fn annual_preview_requires_current_applicable_term_revisions_and_exact_stu
 #[tokio::test]
 async fn annual_preview_ignores_nonparticipant_summer_but_requires_participant_results() {
     let (pool, actor, context, group) = fixture("annual_preview_summer").await;
-    apply_migrations_through(&pool, 69).await.unwrap();
     let student:Uuid=sqlx::query_scalar("SELECT student_academic_year_id FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' LIMIT 1").bind(group).fetch_one(&pool).await.unwrap();
     let office = ActorContext {
         user_id: actor.user_id,

@@ -14,9 +14,6 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
         lifecycle::services as lifecycle,
     };
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("year_complete_closure").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 70)
-        .await
-        .unwrap();
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());
@@ -149,12 +146,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         lifecycle::{models::LifecycleSeverity, services as lifecycle},
     };
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("lifecycle_complete_closure").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 109)
-        .await
-        .unwrap();
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());
@@ -298,9 +289,6 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
 #[tokio::test]
 async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_checksums() {
     let (pool, mut actor, ctx, _) = fixture("aggregate_batch_parity").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.push(
         school_permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
     );
@@ -487,9 +475,6 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
     use school_authorization::ActorContext;
     use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture(name).await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
         codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL.into(),
@@ -953,9 +938,6 @@ async fn aggregate_preview_missing_results_cannot_be_locked_even_with_a_hold() {
     use school_errors::AppError;
     use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture("aggregate_missing_results").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 66)
-        .await
-        .unwrap();
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
         codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL.into(),

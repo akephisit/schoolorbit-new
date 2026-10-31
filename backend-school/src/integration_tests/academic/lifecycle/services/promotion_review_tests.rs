@@ -1,8 +1,5 @@
 use super::*;
-use crate::integration_tests::academic::{
-    cutover_test_support::apply_migrations_through,
-    results::{self, models as rm, services as rs},
-};
+use crate::integration_tests::academic::results::{self, models as rm, services as rs};
 use school_permissions::registry::codes;
 
 pub(crate) fn hold(row_version: i64) -> ReviewPromotionItemInput {
@@ -56,7 +53,6 @@ async fn ready_run_cohort(
     let (pool, results_actor, context, student) =
         results::aggregate_revision_tests::ready_aggregate_fixture_with_cohort(name, extra_student)
             .await;
-    apply_migrations_through(&pool, 95).await.unwrap();
     sqlx::query(
         "UPDATE academic_terms SET included_in_year_result=(id=$2) WHERE academic_year_id=$1",
     )

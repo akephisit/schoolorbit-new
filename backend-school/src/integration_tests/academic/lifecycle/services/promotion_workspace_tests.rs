@@ -71,7 +71,7 @@ async fn promotion_workspace_reader_lists_exact_years_and_cannot_borrow_a_foreig
 async fn promotion_workspace_pagination_keeps_equal_timestamp_runs_distinct() {
     let (pool, actor, create) = fixture("promotion_workspace_pages").await;
     let run = create_run(&pool, &actor, create).await.unwrap();
-    sqlx::query("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by) SELECT source_year_id,target_year_id,policy_id,gen_random_uuid(),request_checksum,created_by FROM academic_promotion_runs CROSS JOIN generate_series(1,55) WHERE id=$1")
+    sqlx::query("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,target_placement_starts_on,policy_id,request_id,request_checksum,created_by) SELECT source_year_id,target_year_id,target_placement_starts_on,policy_id,gen_random_uuid(),request_checksum,created_by FROM academic_promotion_runs CROSS JOIN generate_series(1,55) WHERE id=$1")
         .bind(run.id).execute(&pool).await.unwrap();
     let query = PromotionRunListQuery {
         source_year_id: run.source_year_id,
@@ -99,6 +99,14 @@ async fn promotion_workspace_pagination_keeps_equal_timestamp_runs_distinct() {
         .map(|row| row.id)
         .collect();
     assert_eq!(ids.len(), 56);
+    assert!(
+        first
+            .runs
+            .iter()
+            .chain(&second.runs)
+            .all(|row| row.target_placement_starts_on == run.target_placement_starts_on),
+        "pagination clones preserve the original run's explicit placement date"
+    );
 }
 
 #[tokio::test]

@@ -1,7 +1,4 @@
-use crate::integration_tests::academic::{
-    cutover_test_support::apply_migrations_through,
-    results::aggregate_revision_tests::ready_aggregate_fixture,
-};
+use crate::integration_tests::academic::results::aggregate_revision_tests::ready_aggregate_fixture;
 use bigdecimal::BigDecimal;
 use school_academic_results::{models::*, services::*};
 use school_authorization::ActorContext;
@@ -20,7 +17,6 @@ async fn fixture(
     AnnualResultRevision,
 ) {
     let (pool, actor, context, student) = ready_aggregate_fixture(name).await;
-    apply_migrations_through(&pool, 69).await.unwrap();
     sqlx::query(
         "UPDATE academic_terms SET included_in_year_result=(id=$2) WHERE academic_year_id=$1",
     )

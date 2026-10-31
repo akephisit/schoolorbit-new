@@ -5,9 +5,6 @@ use uuid::Uuid;
 #[tokio::test]
 async fn closure_coverage_selected_students_excludes_other_learners_without_inventing_coverage() {
     let (pool, _, context, _) = fixture("closure_coverage_selected").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let all = term_closure_coverage(&mut tx, &context).await.unwrap();
     assert!(!all.students.is_empty());
@@ -30,9 +27,6 @@ async fn closure_coverage_selected_students_excludes_other_learners_without_inve
 #[tokio::test]
 async fn closure_coverage_summer_does_not_require_results_for_nonparticipants() {
     let (pool, _, context, _) = fixture("closure_coverage_summer").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let term:Uuid=sqlx::query_scalar(
             "INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)
              SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'summer-test','ภาคฤดูร้อนทดสอบ','summer',bell_schedule_id,'planning',true,true
@@ -66,9 +60,6 @@ async fn closure_coverage_summer_does_not_require_results_for_nonparticipants() 
 #[tokio::test]
 async fn closure_coverage_requires_revisions_for_expected_students() {
     let (pool, _, context, _) = fixture("closure_coverage_missing").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 67)
-        .await
-        .unwrap();
     let expected: Vec<uuid::Uuid> = sqlx::query_scalar(
             "SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status IN ('active','completed') ORDER BY id"
         ).bind(context.academic_year_id).fetch_all(&pool).await.unwrap();

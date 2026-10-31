@@ -77,12 +77,11 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO activity_versions(id,activity_id,version_no,name,activity_type,periods_per_week,hours_per_week,scheduling_mode,is_active,grade_level_ids,start_academic_year_id,effective_from,status,published_at)
-         VALUES($1,$2,1,'E2E-LIFECYCLE-opening','other',1,1,'synchronized',true,'[]'::jsonb,$3,$4,'published',now())",
+        "INSERT INTO activity_versions(id,activity_id,version_no,name,activity_type,periods_per_week,hours_per_week,scheduling_mode,is_active,grade_level_ids,effective_from,status,published_at)
+         VALUES($1,$2,1,'E2E-LIFECYCLE-opening','other',1,1,'synchronized',true,'[]'::jsonb,$3,'published',now())",
     )
     .bind(activity_version)
     .bind(activity)
-    .bind(year.id)
     .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
     .execute(&mut *setup)
     .await
