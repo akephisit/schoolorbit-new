@@ -111,6 +111,8 @@ impl Fixture {
             auth_runtime: auth.runtime.clone(),
             websocket_manager: manager.clone(),
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            assessment_publication:
+                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
         };
         let ws = AcademicWebSocketState {
@@ -1329,6 +1331,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor_id,
         revision.id,

@@ -479,6 +479,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         opening_readiness.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
         opening_revision_id,

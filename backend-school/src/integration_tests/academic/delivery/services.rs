@@ -8,6 +8,22 @@ pub mod offerings {
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    pub async fn publish(
+        pool: &PgPool,
+        actor_user_id: Uuid,
+        id: Uuid,
+        request: school_academic_delivery::models::PublishLearningOfferingRequest,
+    ) -> Result<LearningOffering, AppError> {
+        school_academic_delivery::services::offerings::publish(
+            &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+            pool,
+            actor_user_id,
+            id,
+            request,
+        )
+        .await
+    }
+
     pub async fn create(
         pool: &PgPool,
         actor_user_id: Uuid,
@@ -107,6 +123,22 @@ pub mod change_sets {
     use school_errors::AppError;
     use sqlx::PgPool;
     use uuid::Uuid;
+
+    pub async fn publish_change_set(
+        pool: &PgPool,
+        actor_user_id: Uuid,
+        id: Uuid,
+        request: school_academic_delivery::models::PublishAcademicTermChangeSetRequest,
+    ) -> Result<AcademicTermChangeSet, AppError> {
+        school_academic_delivery::services::change_sets::publish_change_set(
+            &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+            pool,
+            actor_user_id,
+            id,
+            request,
+        )
+        .await
+    }
 
     pub async fn create_change_set(
         pool: &PgPool,

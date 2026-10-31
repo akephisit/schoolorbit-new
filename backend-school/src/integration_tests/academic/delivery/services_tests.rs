@@ -566,6 +566,21 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
         .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
 }
 
+struct RejectAssessmentPublication;
+#[async_trait::async_trait]
+impl school_academic_delivery::ports::AssessmentPublicationPort for RejectAssessmentPublication {
+    async fn fill_missing_coordinators(
+        &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _actor: Uuid,
+        _offerings: &[Uuid],
+    ) -> Result<(), AppError> {
+        Err(AppError::InternalServerError(
+            "ASSESSMENT_TEST_REJECTED".into(),
+        ))
+    }
+}
+
 async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
     let pool = create_named_test_pool(name).await;
     apply_migrations_through(&pool, 40).await.unwrap();
@@ -3808,21 +3823,124 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
         .map(|finding| finding.code)
         .collect();
+    let publication_request = PublishAcademicTermChangeSetRequest {
+        effective_from: preview.effective_from,
+        row_version: preview.change_set_row_version,
+        target_delivery_version_row_version: preview.target_delivery_version_row_version,
+        preview_hash: preview.preview_hash,
+        acknowledged_warning_codes: warning_codes,
+        idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
+    };
+    let rejected = school_academic_delivery::services::change_sets::publish_change_set(
+        &RejectAssessmentPublication,
+        &pool,
+        context.teacher_id,
+        changed.id,
+        publication_request.clone(),
+    )
+    .await;
+    assert!(matches!(rejected, Err(AppError::InternalServerError(_))));
+    assert_eq!(
+        offerings::get(&pool, added_offering_id)
+            .await
+            .unwrap()
+            .status,
+        LearningOfferingStatus::Draft
+    );
+    assert!(
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
+            .await
+            .unwrap()
+            .id
+            .is_none()
+    );
     change_sets::publish_change_set(
         &pool,
         context.teacher_id,
         changed.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: preview.effective_from,
-            row_version: preview.change_set_row_version,
-            target_delivery_version_row_version: preview.target_delivery_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: warning_codes,
-            idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
+        publication_request.clone(),
+    )
+    .await
+    .unwrap();
+    let first_assessment =
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
+            .await
+            .unwrap();
+    assert_eq!(
+        first_assessment.assessment_coordinator_id,
+        Some(context.teacher_id)
+    );
+    assert_eq!(first_assessment.phases.len(), 4);
+    // A retry must never initialize new data, even if ownership is missing by then.
+    sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=NULL WHERE learning_offering_id=$1").bind(added_offering_id).execute(&pool).await.unwrap();
+    change_sets::publish_change_set(&pool, context.teacher_id, changed.id, publication_request)
+        .await
+        .unwrap();
+    assert!(
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
+            .await
+            .unwrap()
+            .assessment_coordinator_id
+            .is_none()
+    );
+    let retained = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        21,
+        "assessment-retained-target:create",
+    )
+    .await;
+    let changed_retained = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        retained.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: retained.row_version,
+            item_row_version: None,
+            learning_offering_id: added_offering_id,
+            weekly_period_target: 1,
         },
     )
     .await
-    .expect("a fully prepared added course must publish atomically");
+    .unwrap();
+    let retained_preview = publication_preview(&pool, changed_retained.id)
+        .await
+        .unwrap();
+    change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        retained.id,
+        PublishAcademicTermChangeSetRequest {
+            effective_from: retained_preview.effective_from,
+            row_version: retained_preview.change_set_row_version,
+            target_delivery_version_row_version: retained_preview
+                .target_delivery_version_row_version,
+            preview_hash: retained_preview.preview_hash,
+            acknowledged_warning_codes: retained_preview
+                .findings
+                .iter()
+                .filter(|f| f.severity == AcademicChangeFindingSeverity::Warning)
+                .map(|f| f.code)
+                .collect(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let retained_assessment =
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
+            .await
+            .unwrap();
+    assert_eq!(
+        retained_assessment.assessment_coordinator_id,
+        Some(context.teacher_id)
+    );
+    assert_eq!(retained_assessment.id, first_assessment.id);
+    assert_eq!(
+        serde_json::to_value(&retained_assessment.phases).unwrap(),
+        serde_json::to_value(&first_assessment.phases).unwrap()
+    );
 
     let published_offering = offerings::get(&pool, added_offering_id).await.unwrap();
     assert_eq!(published_offering.status, LearningOfferingStatus::Published);
@@ -4426,6 +4544,26 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     .await
     .unwrap();
 
+    let before_rejected_publication: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object('offering',to_jsonb(offering),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=offering.id)) FROM learning_offerings offering WHERE id=$1",
+    ).bind(offering.id).fetch_one(&pool).await.unwrap();
+    let rejected = school_academic_delivery::services::offerings::publish(
+        &RejectAssessmentPublication,
+        &pool,
+        context.teacher_id,
+        offering.id,
+        PublishLearningOfferingRequest {
+            row_version: offering.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await;
+    assert!(matches!(rejected, Err(AppError::InternalServerError(_))));
+    let after_rejected_publication: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object('offering',to_jsonb(offering),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=offering.id)) FROM learning_offerings offering WHERE id=$1",
+    ).bind(offering.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(before_rejected_publication, after_rejected_publication);
+
     let published = offerings::publish(
         &pool,
         context.teacher_id,
@@ -4438,6 +4576,19 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     .await
     .unwrap();
     assert_eq!(published.status, LearningOfferingStatus::Published);
+    let assessment =
+        school_academic_assessment::assessment::services::get_plan_detail(&pool, offering.id)
+            .await
+            .unwrap();
+    assert_eq!(
+        assessment.assessment_coordinator_id,
+        Some(context.teacher_id)
+    );
+    assert_eq!(assessment.phases.len(), 4);
+    assert!(assessment
+        .phases
+        .iter()
+        .all(|phase| phase.max_score == "0" && phase.row_version == Some(1)));
 
     let group = groups::get(&pool, group.id).await.unwrap();
     assert!(group.teachers_locked);

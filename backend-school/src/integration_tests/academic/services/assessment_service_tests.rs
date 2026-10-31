@@ -70,7 +70,8 @@ async fn assessment_lifecycle_guard_blocks_structure_and_window_changes() {
                 actor,
                 UpdateAssessmentPhaseControlRequest {
                     row_version: control.row_version,
-                    plan_editing_enabled: !control.plan_editing_enabled,
+                    plan_editing_enabled: Some(!control.plan_editing_enabled),
+                    exam_arrangement_editing_enabled: None,
                 }
             )
             .await,
@@ -439,7 +440,8 @@ async fn assigned_coordinator_changes_only_an_enabled_plan_phase() {
         coordinator_id,
         UpdateAssessmentPhaseControlRequest {
             row_version: before_midterm_control.row_version,
-            plan_editing_enabled: true,
+            plan_editing_enabled: Some(true),
+            exam_arrangement_editing_enabled: None,
         },
     )
     .await
@@ -505,7 +507,8 @@ async fn plan_controls_leave_gradebook_controls_unchanged_with_optimistic_versio
         actor_id,
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
-            plan_editing_enabled: true,
+            plan_editing_enabled: Some(true),
+            exam_arrangement_editing_enabled: None,
         },
     )
     .await
@@ -525,7 +528,8 @@ async fn plan_controls_leave_gradebook_controls_unchanged_with_optimistic_versio
         actor_id,
         UpdateAssessmentPhaseControlRequest {
             row_version: control.row_version,
-            plan_editing_enabled: true,
+            plan_editing_enabled: Some(true),
+            exam_arrangement_editing_enabled: None,
         },
     )
     .await;
@@ -664,4 +668,278 @@ async fn locked_course_result_makes_assessment_plan_read_only() {
             .row_version,
         Some(original_version)
     );
+}
+
+#[tokio::test]
+async fn assessment_independent_controls_enforce_all_four_combinations() {
+    use school_academic_assessment::assessment::models::AssessmentExamArrangement;
+    let pool = migrated_pool("assessment_independent_controls").await;
+    let offering: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let detail = assessment_service::get_plan_detail(&pool, offering)
+        .await
+        .unwrap();
+    let initial = save_payload(&detail);
+    let coordinator = initial.assessment_coordinator_id.unwrap();
+    assessment_adapter::save_plan(&pool, offering, coordinator, true, initial)
+        .await
+        .unwrap();
+    for (score_enabled, exam_enabled) in
+        [(false, false), (true, false), (false, true), (true, true)]
+    {
+        let mut detail = assessment_service::get_plan_detail(&pool, offering)
+            .await
+            .unwrap();
+        let control = assessment_service::list_phase_controls(&pool, detail.academic_term_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|control| control.phase_code == AssessmentPhaseCode::Midterm)
+            .unwrap();
+        assessment_service::update_phase_control(
+            &pool,
+            control.id,
+            coordinator,
+            UpdateAssessmentPhaseControlRequest {
+                row_version: control.row_version,
+                plan_editing_enabled: Some(score_enabled),
+                exam_arrangement_editing_enabled: Some(exam_enabled),
+            },
+        )
+        .await
+        .unwrap();
+        let before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(phase) ORDER BY id) FROM course_assessment_phases phase WHERE plan_id=$1")
+            .bind(detail.id).fetch_one(&pool).await.unwrap();
+        detail = assessment_adapter::save_plan(
+            &pool,
+            offering,
+            coordinator,
+            false,
+            save_payload(&detail),
+        )
+        .await
+        .unwrap();
+        let after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(phase) ORDER BY id) FROM course_assessment_phases phase WHERE plan_id=$1")
+            .bind(detail.id).fetch_one(&pool).await.unwrap();
+        assert_eq!(before, after, "unchanged phases preserve all metadata");
+        for field in ["score", "arrangement", "duration"] {
+            let mut payload = save_payload(&detail);
+            let phase = payload
+                .phases
+                .iter_mut()
+                .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+                .unwrap();
+            let allowed = if field == "score" {
+                phase.max_score = (phase.max_score.parse::<f64>().unwrap() + 1.0).to_string();
+                score_enabled
+            } else {
+                if field == "arrangement" {
+                    phase.exam_arrangement =
+                        if phase.exam_arrangement == AssessmentExamArrangement::InTimetable {
+                            AssessmentExamArrangement::OutsideTimetable
+                        } else {
+                            AssessmentExamArrangement::InTimetable
+                        };
+                    phase.exam_duration_minutes =
+                        if phase.exam_arrangement == AssessmentExamArrangement::InTimetable {
+                            Some(45)
+                        } else {
+                            None
+                        };
+                } else {
+                    // Establish an in-timetable value administratively to isolate duration permission.
+                    let mut setup = save_payload(&detail);
+                    let phase = setup
+                        .phases
+                        .iter_mut()
+                        .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+                        .unwrap();
+                    phase.exam_arrangement = AssessmentExamArrangement::InTimetable;
+                    phase.exam_duration_minutes = Some(45);
+                    detail =
+                        assessment_adapter::save_plan(&pool, offering, coordinator, true, setup)
+                            .await
+                            .unwrap();
+                    payload = save_payload(&detail);
+                    payload
+                        .phases
+                        .iter_mut()
+                        .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+                        .unwrap()
+                        .exam_duration_minutes = Some(60);
+                }
+                exam_enabled
+            };
+            let phase_before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(phase) ORDER BY id) FROM course_assessment_phases phase WHERE plan_id=$1")
+                .bind(detail.id).fetch_one(&pool).await.unwrap();
+            let result =
+                assessment_adapter::save_plan(&pool, offering, coordinator, false, payload).await;
+            if allowed {
+                let saved = result.unwrap();
+                let old = detail
+                    .phases
+                    .iter()
+                    .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+                    .unwrap();
+                let changed = saved
+                    .phases
+                    .iter()
+                    .find(|phase| phase.phase_code == AssessmentPhaseCode::Midterm)
+                    .unwrap();
+                if field == "score" {
+                    assert_eq!(changed.exam_arrangement, old.exam_arrangement);
+                    assert_eq!(changed.exam_duration_minutes, old.exam_duration_minutes);
+                } else {
+                    assert_eq!(changed.max_score, old.max_score);
+                }
+                for old in detail
+                    .phases
+                    .iter()
+                    .filter(|phase| phase.phase_code != AssessmentPhaseCode::Midterm)
+                {
+                    let current = saved
+                        .phases
+                        .iter()
+                        .find(|phase| phase.phase_code == old.phase_code)
+                        .unwrap();
+                    assert_eq!(
+                        serde_json::to_value(current).unwrap(),
+                        serde_json::to_value(old).unwrap()
+                    );
+                }
+                detail = saved;
+            } else {
+                assert!(
+                    matches!(result, Err(AppError::Forbidden(_))),
+                    "{score_enabled}/{exam_enabled} denied {field}"
+                );
+                let after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(phase) ORDER BY id) FROM course_assessment_phases phase WHERE plan_id=$1")
+                    .bind(detail.id).fetch_one(&pool).await.unwrap();
+                assert_eq!(phase_before, after);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn assessment_control_patches_preserve_the_other_flag_and_reject_invalid_phase() {
+    let pool = migrated_pool("assessment_control_partial_patches").await;
+    let term: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM course_assessment_plans LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor = Uuid::from_u128(0x50000000000000000000000000000002);
+    let controls = assessment_service::list_phase_controls(&pool, term)
+        .await
+        .unwrap();
+    let control = controls
+        .iter()
+        .find(|c| c.phase_code == AssessmentPhaseCode::Midterm)
+        .unwrap();
+    let exam = assessment_service::update_phase_control(
+        &pool,
+        control.id,
+        actor,
+        UpdateAssessmentPhaseControlRequest {
+            row_version: control.row_version,
+            plan_editing_enabled: None,
+            exam_arrangement_editing_enabled: Some(true),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!exam.plan_editing_enabled);
+    assert!(exam.exam_arrangement_editing_enabled);
+    let score = assessment_service::update_phase_control(
+        &pool,
+        control.id,
+        actor,
+        UpdateAssessmentPhaseControlRequest {
+            row_version: exam.row_version,
+            plan_editing_enabled: Some(true),
+            exam_arrangement_editing_enabled: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(score.plan_editing_enabled && score.exam_arrangement_editing_enabled);
+    assert!(matches!(
+        assessment_service::update_phase_control(
+            &pool,
+            control.id,
+            actor,
+            UpdateAssessmentPhaseControlRequest {
+                row_version: exam.row_version,
+                plan_editing_enabled: None,
+                exam_arrangement_editing_enabled: Some(false),
+            }
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    for control in controls
+        .iter()
+        .filter(|c| !c.phase_code.supports_exam_arrangement())
+    {
+        assert!(matches!(
+            assessment_service::update_phase_control(
+                &pool,
+                control.id,
+                actor,
+                UpdateAssessmentPhaseControlRequest {
+                    row_version: control.row_version,
+                    plan_editing_enabled: None,
+                    exam_arrangement_editing_enabled: Some(true),
+                }
+            )
+            .await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    assert!(matches!(
+        assessment_service::update_phase_control(
+            &pool,
+            control.id,
+            actor,
+            UpdateAssessmentPhaseControlRequest {
+                row_version: score.row_version,
+                plan_editing_enabled: None,
+                exam_arrangement_editing_enabled: None,
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+}
+
+#[test]
+fn assessment_control_patch_requires_revision_and_at_least_one_field() {
+    for wire in [
+        serde_json::json!({"planEditingEnabled":true}),
+        serde_json::json!({"rowVersion":1,"examArrangementEditingEnabled":true,"scoreEntryEnabled":true}),
+    ] {
+        assert!(serde_json::from_value::<UpdateAssessmentPhaseControlRequest>(wire).is_err());
+    }
+    for wire in [
+        serde_json::json!({"rowVersion":1}),
+        serde_json::json!({"rowVersion":0,"planEditingEnabled":true}),
+    ] {
+        let payload = serde_json::from_value::<UpdateAssessmentPhaseControlRequest>(wire).unwrap();
+        assert!(matches!(
+            assessment_service::validate_phase_control_payload(&payload),
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    for wire in [
+        serde_json::json!({"rowVersion":1,"planEditingEnabled":false}),
+        serde_json::json!({"rowVersion":1,"examArrangementEditingEnabled":false}),
+    ] {
+        let payload = serde_json::from_value::<UpdateAssessmentPhaseControlRequest>(wire).unwrap();
+        assessment_service::validate_phase_control_payload(&payload).unwrap();
+    }
 }

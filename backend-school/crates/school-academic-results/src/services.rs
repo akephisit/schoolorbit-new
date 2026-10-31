@@ -59,7 +59,7 @@ pub use cutover::{
 };
 pub use effective_results::search_effective_results;
 pub(crate) use locking::require_activity_group_unlocked;
-pub use locking::require_course_offering_unlocked;
+pub use locking::{course_offering_is_locked, require_course_offering_unlocked};
 pub use locking::{lock_activity_group, lock_all_ready_activities, lock_course_subject};
 pub use policies::{activate_policy, create_policy, derive_grade, list_policies, validate_policy};
 pub use readiness::readiness;

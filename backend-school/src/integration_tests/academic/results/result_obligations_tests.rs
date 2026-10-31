@@ -129,6 +129,7 @@ async fn results_current_obligation_omitted_unused_group_does_not_block_ready_co
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
         revision.id,
@@ -341,6 +342,7 @@ async fn scoped_results(
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
         revision.id,
@@ -476,6 +478,7 @@ async fn results_current_obligation_classifier_context_dates_empty_and_legacy() 
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &f.pool,
         f.actor.user_id,
         revision.id,

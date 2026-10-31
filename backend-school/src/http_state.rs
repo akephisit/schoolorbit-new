@@ -23,6 +23,8 @@ impl FromRef<AppState> for AcademicHttpState {
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
             result_locks: &RESULT_LOCKS,
+            assessment_publication:
+                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             placement_rosters: &PLACEMENT_ROSTERS,
             lifecycle_providers: &LIFECYCLE_PROVIDERS,
         }

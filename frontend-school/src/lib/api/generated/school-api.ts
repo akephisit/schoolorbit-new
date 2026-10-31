@@ -9744,6 +9744,7 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
+				examArrangementEditingEnabled: boolean;
 				/** Format: uuid */
 				id: string;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
@@ -14316,6 +14317,7 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
+				examArrangementEditingEnabled: boolean;
 				/** Format: uuid */
 				id: string;
 				phaseCode: components['schemas']['AssessmentPhaseCode'];
@@ -16553,6 +16555,7 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
+			examArrangementEditingEnabled: boolean;
 			/** Format: uuid */
 			id: string;
 			phaseCode: components['schemas']['AssessmentPhaseCode'];
@@ -27785,7 +27788,10 @@ export interface components {
 			termCode?: string | null;
 		};
 		UpdateAssessmentPhaseControlRequest: {
-			planEditingEnabled: boolean;
+			/** @description Changes only the exam arrangement and duration editing control when supplied. */
+			examArrangementEditingEnabled?: boolean | null;
+			/** @description Changes only the maximum-score editing control when supplied. */
+			planEditingEnabled?: boolean | null;
 			/** Format: int64 */
 			rowVersion: number;
 		};

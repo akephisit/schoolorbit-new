@@ -2526,3 +2526,25 @@ loss. Journals stay private under `/opt/stack/deployment/owned-load-cleanup`; no
 credentials or test-result attestations are uploaded. The common interlock refuses a surviving
 fixed-name PostgreSQL client and malformed or unresolved cleanup evidence. The cleanup owner
 additionally refuses unresolved release, rollout, TLS and DNS recovery work before starting.
+
+## Assessment coordinators and editing controls
+
+Deploy [migration 146](../backend-school/migrations/146_assessment_coordinators_and_edit_controls.sql)
+with the matching School backend, API contracts and frontend under the existing universal
+maintenance and all-tenant migration gates. It copies the former editing value into the
+new exam-arrangement control for midterm/final, leaves other exam controls disabled, and
+preserves existing control versions, plan phases and gradebook controls.
+
+The migration fills missing coordinators on published course offerings in writable academic
+contexts, excluding locked course results. It uses the Assessment suggestion rule: exactly
+one active primary teacher covers every nonclosed group at the current date clamped to the
+term. Ambiguous cases remain unassigned; every existing owner is retained. An existing plan
+only gains its coordinator and revision; a newly created plan starts with four zero-score,
+no-exam phases. Both publication paths apply the same Assessment-owned operation atomically
+for missing owners, including retained targets; an idempotent replay performs no new fill.
+
+`ASSESSMENT_146_PRESERVATION_FAILED` aborts the migration if preserved rows drift. Keep
+maintenance active, investigate bounded evidence on an owned copy, and recover through a
+compatible forward release. After the split is used, retain a runtime that respects both
+controls; an older writer could couple the two decisions again. Never edit applied migrations
+or republish existing offerings to trigger the deployment backfill.

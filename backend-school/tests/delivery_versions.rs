@@ -4,6 +4,11 @@ pub use school_test_db::cutover_test_support;
 #[path = "../src/adapters/staff_directory.rs"]
 mod staff_directory;
 
+#[path = "../src/adapters/academic_result_locks.rs"]
+mod academic_result_locks;
+#[path = "../src/adapters/assessment_publication.rs"]
+mod assessment_publication;
+
 use school_academic_delivery::services::versions;
 use school_test_db::create_named_test_pool_with_max_connections;
 use sqlx::PgPool;
@@ -501,6 +506,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         preview.findings
     );
     let receipt = change_sets::publish_change_set(
+        &assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor,
         updated.id,
@@ -1160,6 +1166,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         preview.findings
     );
     let receipt = change_sets::publish_change_set(
+        &assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor,
         updated.id,

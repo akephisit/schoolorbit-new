@@ -463,6 +463,125 @@ pub async fn get_plan_detail_on_connection(
     fetch_plan_detail(connection, offering_id).await
 }
 
+/// Initializes only missing coordinators, using the same dated suggestion as plan reads.
+/// Delivery owns the transaction and publishes teacher episodes before invoking this operation.
+pub async fn fill_missing_coordinators(
+    result_locks: &dyn crate::ports::ResultLockPort,
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    offering_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let mut offering_ids = offering_ids.to_vec();
+    offering_ids.sort_unstable();
+    offering_ids.dedup();
+    if offering_ids.is_empty() {
+        return Ok(());
+    }
+    let contexts: Vec<(Uuid, Uuid)> = DbSession::new(&mut **transaction).query_as(
+        "academic_assessment.assessment.services.fill_missing_coordinators",
+        "SELECT DISTINCT academic_year_id,academic_term_id FROM learning_offerings WHERE id=ANY($1) AND kind='course' ORDER BY academic_year_id,academic_term_id",
+    ).bind(&offering_ids).fetch_all().await?;
+    let mut writable_terms = Vec::new();
+    for (year, term) in contexts {
+        if lifecycle_guard::lock_context(transaction, year, term)
+            .await?
+            .is_writable()
+        {
+            writable_terms.push(term);
+        }
+    }
+    #[derive(FromRow)]
+    struct PublicationOfferingScope {
+        offering_id: Uuid,
+        academic_term_id: Uuid,
+        academic_year_id: Uuid,
+        subject_version_id: Uuid,
+    }
+    let scopes: Vec<PublicationOfferingScope> = DbSession::new(&mut **transaction).query_as(
+        "academic_assessment.assessment.services.fill_missing_coordinators",
+        r#"SELECT offering.id AS offering_id,offering.academic_term_id,offering.academic_year_id,
+                  detail.subject_version_id
+           FROM learning_offerings offering
+           JOIN course_offering_details detail ON detail.learning_offering_id=offering.id
+           WHERE offering.id=ANY($1) AND offering.academic_term_id=ANY($2)
+             AND offering.kind='course' AND offering.status='published'
+           ORDER BY offering.id FOR UPDATE OF offering"#,
+    ).bind(&offering_ids).bind(&writable_terms).fetch_all().await?;
+    let eligible_ids = scopes
+        .iter()
+        .map(|scope| scope.offering_id)
+        .collect::<Vec<_>>();
+    let mut candidates = load_coordinator_candidates(&mut **transaction, &eligible_ids).await?;
+    let group_counts: Vec<(Uuid, i64)> = DbSession::new(&mut **transaction).query_as(
+        "academic_assessment.assessment.services.fill_missing_coordinators",
+        "SELECT learning_offering_id,count(*)::bigint FROM learning_groups WHERE learning_offering_id=ANY($1) AND status<>'closed' GROUP BY learning_offering_id",
+    ).bind(&eligible_ids).fetch_all().await?;
+    let group_counts = group_counts.into_iter().collect::<HashMap<_, _>>();
+    for scope in scopes {
+        if result_locks
+            .course_offering_is_locked(
+                transaction,
+                scope.offering_id,
+                scope.academic_term_id,
+                scope.academic_year_id,
+            )
+            .await?
+        {
+            continue;
+        }
+        let existing = load_plan_in_tx(transaction, scope.offering_id).await?;
+        if existing
+            .as_ref()
+            .is_some_and(|plan| plan.assessment_coordinator_id.is_some())
+        {
+            continue;
+        }
+        let (coordinator_id, _) = suggested_coordinator(
+            &candidates.remove(&scope.offering_id).unwrap_or_default(),
+            group_counts.get(&scope.offering_id).copied().unwrap_or(0),
+        );
+        let Some(coordinator_id) = coordinator_id else {
+            continue;
+        };
+        if let Some(plan) = existing {
+            DbSession::new(&mut **transaction).query(
+                "academic_assessment.assessment.services.fill_missing_coordinators",
+                "UPDATE course_assessment_plans SET assessment_coordinator_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1 AND assessment_coordinator_id IS NULL",
+            ).bind(plan.id).bind(coordinator_id).execute().await?;
+        } else {
+            let plan_id = Uuid::now_v7();
+            DbSession::new(&mut **transaction)
+                .query(
+                    "academic_assessment.assessment.services.fill_missing_coordinators",
+                    r#"INSERT INTO course_assessment_plans(
+                    id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id,
+                    assessment_coordinator_id,row_version,migration_provenance,created_at,updated_at
+                ) VALUES($1,$2,$3,$4,$5,$6,1,'{}'::jsonb,now(),now())"#,
+                )
+                .bind(plan_id)
+                .bind(scope.academic_term_id)
+                .bind(scope.subject_version_id)
+                .bind(scope.offering_id)
+                .bind(scope.academic_year_id)
+                .bind(coordinator_id)
+                .execute()
+                .await?;
+            let phases = default_phases()
+                .into_iter()
+                .map(|phase| SaveAssessmentPhaseRequest {
+                    id: None,
+                    phase_code: phase.phase_code,
+                    max_score: phase.max_score,
+                    exam_arrangement: phase.exam_arrangement,
+                    exam_duration_minutes: phase.exam_duration_minutes,
+                })
+                .collect::<Vec<_>>();
+            replace_plan_phases(transaction, plan_id, actor_user_id, &phases, None).await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn save_plan(
     result_locks: &dyn crate::ports::ResultLockPort,
     pool: &PgPool,
@@ -616,7 +735,7 @@ pub async fn list_phase_controls_on_connection(
         .query_as(
             "academic_assessment.assessment.services.list_phase_controls_on_connection",
             r#"SELECT id, academic_term_id, academic_year_id, phase_code,
-                  plan_editing_enabled, row_version
+                  plan_editing_enabled, exam_arrangement_editing_enabled, row_version
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            ORDER BY CASE phase_code
@@ -639,32 +758,42 @@ pub async fn update_phase_control(
     actor_user_id: Uuid,
     payload: UpdateAssessmentPhaseControlRequest,
 ) -> Result<AssessmentPhaseControl, AppError> {
+    validate_phase_control_payload(&payload)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_assessment.assessment.services.update_phase_control",
     )
     .await?;
-    let (year, term): (Uuid, Uuid) = DbSession::new(&mut *transaction).query_as("academic_assessment.assessment.services.update_phase_control",
-        "SELECT academic_year_id,academic_term_id FROM academic_assessment_phase_controls WHERE id=$1",
+    let (year, term, phase_code): (Uuid, Uuid, String) = DbSession::new(&mut *transaction).query_as("academic_assessment.assessment.services.update_phase_control",
+        "SELECT academic_year_id,academic_term_id,phase_code FROM academic_assessment_phase_controls WHERE id=$1",
     ).bind(control_id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบการตั้งค่าช่วงคะแนน".into()))?;
     lifecycle_guard::require_term_write(&mut transaction, year, term).await?;
+    if payload.exam_arrangement_editing_enabled == Some(true)
+        && !matches!(phase_code.as_str(), "midterm" | "final")
+    {
+        return Err(AppError::ValidationError(
+            "เปิดการแก้รูปแบบสอบได้เฉพาะช่วงกลางภาคและปลายภาค".to_string(),
+        ));
+    }
     let row: AssessmentPhaseControlRow = DbSession::new(&mut *transaction)
         .query_as(
             "academic_assessment.assessment.services.update_phase_control",
             r#"UPDATE academic_assessment_phase_controls
-           SET plan_editing_enabled = $2,
+           SET plan_editing_enabled = coalesce($2, plan_editing_enabled),
+               exam_arrangement_editing_enabled = coalesce($5, exam_arrangement_editing_enabled),
                row_version = row_version + 1,
                updated_by = $3,
                updated_at = now()
            WHERE id = $1 AND row_version = $4
            RETURNING id, academic_term_id, academic_year_id, phase_code,
-                     plan_editing_enabled, row_version"#,
+                     plan_editing_enabled, exam_arrangement_editing_enabled, row_version"#,
         )
         .bind(control_id)
         .bind(payload.plan_editing_enabled)
         .bind(actor_user_id)
         .bind(payload.row_version)
+        .bind(payload.exam_arrangement_editing_enabled)
         .fetch_optional()
         .await?
         .ok_or_else(|| {
@@ -673,6 +802,23 @@ pub async fn update_phase_control(
     let result = phase_control_from_row(row)?;
     transaction.commit().await?;
     Ok(result)
+}
+
+pub fn validate_phase_control_payload(
+    payload: &UpdateAssessmentPhaseControlRequest,
+) -> Result<(), AppError> {
+    if payload.row_version < 1 {
+        return Err(AppError::ValidationError(
+            "rowVersion ต้องมากกว่า 0".to_string(),
+        ));
+    }
+    if payload.plan_editing_enabled.is_none() && payload.exam_arrangement_editing_enabled.is_none()
+    {
+        return Err(AppError::ValidationError(
+            "ต้องระบุการตั้งค่าที่ต้องการแก้ไขอย่างน้อยหนึ่งรายการ".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn require_phase_controls_read_access(actor: &ActorContext) -> Result<(), AppError> {
@@ -783,10 +929,10 @@ async fn require_enabled_plan_phase_changes(
     plan_id: Option<Uuid>,
     phases: &[SaveAssessmentPhaseRequest],
 ) -> Result<HashSet<String>, AppError> {
-    let controls: Vec<(String, bool)> = DbSession::new(&mut **transaction)
+    let controls: Vec<(String, bool, bool)> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_assessment.assessment.services.require_enabled_plan_phase_changes",
-            r#"SELECT phase_code, plan_editing_enabled
+            r#"SELECT phase_code, plan_editing_enabled, exam_arrangement_editing_enabled
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            FOR SHARE"#,
@@ -799,10 +945,13 @@ async fn require_enabled_plan_phase_changes(
             "การตั้งค่าช่วงคะแนนของภาคเรียนไม่ครบถ้วน".to_string(),
         ));
     }
-    let plan_editing_by_code = controls.into_iter().collect::<HashMap<_, _>>();
-    let editable_phase_codes = plan_editing_by_code
+    let editing_by_code = controls
+        .into_iter()
+        .map(|(code, score, exam)| (code, (score, exam)))
+        .collect::<HashMap<_, _>>();
+    let editable_phase_codes = editing_by_code
         .iter()
-        .filter(|(_, enabled)| **enabled)
+        .filter(|(_, (score, exam))| *score || *exam)
         .map(|(phase_code, _)| phase_code.clone())
         .collect::<HashSet<_>>();
     let existing_phases: Vec<super::models::AssessmentPhaseRow> = if let Some(plan_id) = plan_id {
@@ -827,31 +976,38 @@ async fn require_enabled_plan_phase_changes(
         .collect::<HashMap<_, _>>();
 
     for phase in phases {
-        if plan_editing_by_code
+        let (score_enabled, exam_enabled) = editing_by_code
             .get(phase.phase_code.as_str())
             .copied()
-            .unwrap_or(false)
-        {
-            continue;
-        }
+            .unwrap_or((false, false));
         let requested_max_score = validate_canonical_decimal(&phase.max_score, 2)?;
-        let changed = if plan_id.is_some() {
+        let (score_changed, exam_changed) = if plan_id.is_some() {
             let existing = existing_by_code
                 .get(phase.phase_code.as_str())
                 .ok_or_else(|| {
                     AppError::InternalServerError("โครงสร้างคะแนนของรายวิชาไม่ครบถ้วน".to_string())
                 })?;
-            existing.max_score != requested_max_score
-                || existing.exam_arrangement != phase.exam_arrangement.as_str()
-                || existing.exam_duration_minutes != phase.exam_duration_minutes
+            (
+                existing.max_score != requested_max_score,
+                existing.exam_arrangement != phase.exam_arrangement.as_str()
+                    || existing.exam_duration_minutes != phase.exam_duration_minutes,
+            )
         } else {
-            requested_max_score != BigDecimal::from(0)
-                || phase.exam_arrangement != AssessmentExamArrangement::None
-                || phase.exam_duration_minutes.is_some()
+            (
+                requested_max_score != BigDecimal::from(0),
+                phase.exam_arrangement != AssessmentExamArrangement::None
+                    || phase.exam_duration_minutes.is_some(),
+            )
         };
-        if changed {
+        if score_changed && !score_enabled {
             return Err(AppError::Forbidden(format!(
-                "ปิดการแก้โครงสร้างคะแนนช่วง{}อยู่",
+                "ปิดการแก้คะแนนสูงสุดช่วง{}อยู่",
+                phase.phase_code.label_th()
+            )));
+        }
+        if exam_changed && !exam_enabled {
+            return Err(AppError::Forbidden(format!(
+                "ปิดการแก้รูปแบบสอบช่วง{}อยู่",
                 phase.phase_code.label_th()
             )));
         }
@@ -891,7 +1047,7 @@ async fn replace_plan_phases(
         {
             continue;
         }
-        let phase_id = existing_id.unwrap_or_else(Uuid::new_v4);
+        let phase_id = existing_id.unwrap_or_else(Uuid::now_v7);
         let max_score = validate_canonical_decimal(&phase.max_score, 2)?;
         DbSession::new(&mut **transaction)
             .query(
@@ -1258,6 +1414,7 @@ fn phase_control_from_row(
         academic_year_id: row.academic_year_id,
         phase_code,
         plan_editing_enabled: row.plan_editing_enabled,
+        exam_arrangement_editing_enabled: row.exam_arrangement_editing_enabled,
         row_version: row.row_version,
     })
 }

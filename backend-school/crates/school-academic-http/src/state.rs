@@ -12,6 +12,8 @@ pub struct AcademicHttpState {
     pub auth_runtime: AuthRuntime,
     pub websocket_manager: Arc<dyn AcademicRealtimePort>,
     pub result_locks: &'static dyn ResultLockPort,
+    pub assessment_publication:
+        &'static dyn school_academic_delivery::ports::AssessmentPublicationPort,
     pub lifecycle_providers: &'static dyn ExternalLifecyclePort,
 }
 
