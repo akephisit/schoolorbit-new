@@ -514,12 +514,21 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    let target_number:i32=sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1").bind(calculation.run.target_year_id).fetch_one(&pool).await.unwrap();
+    let target_number: i32 = sqlx::query_scalar("SELECT year FROM academic_years WHERE id=$1")
+        .bind(calculation.run.target_year_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let intervening:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM academic_years WHERE year>(SELECT year FROM academic_years WHERE id=$1) AND year<$2 ORDER BY year,id").bind(calculation.run.source_year_id).bind(target_number).fetch_all(&pool).await.unwrap();
-    for (index,year) in intervening.into_iter().enumerate() {
-        sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1").bind(year).bind(target_number+1+index as i32).execute(&pool).await.unwrap();
+    for (index, year) in intervening.into_iter().enumerate() {
+        sqlx::query("UPDATE academic_years SET year=$2 WHERE id=$1")
+            .bind(year)
+            .bind(target_number + 1 + index as i32)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
-    let target_start=calculation.run.target_placement_starts_on;
+    let target_start = calculation.run.target_placement_starts_on;
     let term = ready_term_for_existing_year(
         &pool,
         executor.user_id,

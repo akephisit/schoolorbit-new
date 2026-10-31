@@ -5563,3 +5563,288 @@ async fn attendance_explicit_calendar_keeps_reports_digests_and_score_facts_cons
         assert_eq!(pending[0].academic_term_id, TERM);
     }
 }
+
+async fn explicit_special(f: &Fixture, date: NaiveDate) {
+    let mut source = seed(f, AttendanceKind::Special, date);
+    source.session.count_override = Some(true);
+    let definition = SpecialAttendanceDefinition {
+        scoring: None,
+        title: "รอบนับเฉพาะวันที่".into(),
+        dates: vec![date],
+        start_time: NaiveTime::MIN,
+        end_time: NaiveTime::from_hms_opt(1, 0, 0).unwrap(),
+        counted: true,
+        notify: true,
+        groups: vec![SpecialAttendanceGroup {
+            name: "กลุ่ม".into(),
+            teacher_ids: vec![TEACHER],
+            homeroom_ids: vec![],
+            audience_group_ids: vec![],
+            student_ids: f.students.iter().map(|s| s.student_id).collect(),
+            use_homeroom_advisors: false,
+        }],
+    };
+    specials::create_template(&f.pool, TEACHER, TERM, definition, vec![vec![source]])
+        .await
+        .unwrap();
+}
+
+async fn attendance_closure_complete(pool: &PgPool, date: NaiveDate) -> Result<(), AppError> {
+    use school_academic_lifecycle::ports::ExternalLifecyclePort;
+    let mut tx = pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, true, true).await?;
+    let result = crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await;
+    tx.rollback().await.unwrap();
+    result
+}
+
+#[tokio::test]
+async fn attendance_finalization_counted_overrides_drive_scheduling_without_calendar_defaults() {
+    use chrono::TimeZone;
+    use school_attendance::services::{finalization as progress, score_changes};
+    for explicit_false in [false, true] {
+        let f = fixture(&format!("attendance_override_work_{explicit_false}")).await;
+        let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+        let special_date = date.succ_opt().unwrap();
+        let excluded_date = special_date.succ_opt().unwrap();
+        let midnight = Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap();
+        sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1,coverage_start=$1")
+            .bind(date)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+            .bind(TERM)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let time = NaiveTime::from_hms_opt(16, 0, 0).unwrap();
+        let config = AttendanceConfiguration {
+            enabled: true,
+            digest_times: vec![time],
+            ..Default::default()
+        };
+        sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3)")
+            .bind(TERM).bind(sqlx::types::Json(config)).bind(TEACHER).execute(&f.pool).await.unwrap();
+        if explicit_false {
+            sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,false),($1,$3,false)")
+                .bind(TERM).bind(date).bind(special_date).execute(&f.pool).await.unwrap();
+        }
+        let mut saved = seed(&f, AttendanceKind::Arrival, date);
+        saved.session.count_override = Some(true);
+        let saved = sessions::ensure(&f.pool, &f.actor, saved).await.unwrap();
+        explicit_special(&f, special_date).await;
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_sessions WHERE kind='special'"
+            )
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            0,
+            "special participants exist before any capture"
+        );
+        // None/false/cancelled rounds on another missing date do not become work.
+        sessions::ensure(
+            &f.pool,
+            &f.actor,
+            seed(&f, AttendanceKind::Arrival, excluded_date),
+        )
+        .await
+        .unwrap();
+        explicit_special(&f, excluded_date).await;
+        let mut suppressed = specials::seeds(&f.pool, TERM, excluded_date)
+            .await
+            .unwrap()
+            .remove(0);
+        suppressed.session.count_override = Some(false);
+        let suppressed = sessions::ensure(&f.pool, &f.actor, suppressed)
+            .await
+            .unwrap();
+        explicit_special(&f, excluded_date).await;
+        let cancelled = specials::seeds(&f.pool, TERM, excluded_date)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|s| s.session.id != suppressed.id)
+            .unwrap();
+        let cancelled = sessions::ensure(&f.pool, &f.actor, cancelled)
+            .await
+            .unwrap();
+        sessions::cancel(
+            &f.pool,
+            &f.actor,
+            cancelled.id,
+            AttendanceCancellation {
+                session: session_context(&cancelled),
+                roster_token: cancelled.roster_token.clone(),
+                row_version: cancelled.row_version,
+                cancelled: true,
+                reason: "งดรอบทดสอบ".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            matches!(
+                attendance_closure_complete(&f.pool, date.pred_opt().unwrap()).await,
+                Err(AppError::Conflict(_))
+            ),
+            "future counted overrides block closure"
+        );
+        assert!(
+            matches!(
+                attendance_closure_complete(&f.pool, special_date).await,
+                Err(AppError::Conflict(_))
+            ),
+            "counted overrides block closure before finalization"
+        );
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                special_date.succ_opt().unwrap()
+            )
+            .await
+            .unwrap(),
+            date.pred_opt().unwrap()
+        );
+        let generation = sessions::module_generation(&f.pool).await.unwrap();
+        for day in [date, special_date] {
+            assert!(school_attendance::runtime::queue_scheduled_digest(
+                &f.pool, TERM, day, time, generation
+            )
+            .await
+            .unwrap());
+            assert!(school_attendance::runtime::queue_scheduled_digest(
+                &f.pool, TERM, day, time, generation
+            )
+            .await
+            .unwrap());
+        }
+        assert!(!school_attendance::runtime::queue_scheduled_digest(
+            &f.pool,
+            TERM,
+            excluded_date,
+            time,
+            generation
+        )
+        .await
+        .unwrap());
+        let messages:Vec<String>=sqlx::query_scalar("SELECT notice.message FROM attendance_notifications ledger JOIN notifications notice ON notice.id=ledger.notification_id WHERE ledger.recipient_id=$1 AND ledger.dedup_key LIKE 'digest:%' ORDER BY ledger.dedup_key")
+            .bind(TEACHER).fetch_all(&f.pool).await.unwrap();
+        assert_eq!(
+            messages.len(),
+            2,
+            "one idempotent digest per actual counted date"
+        );
+        assert!(messages.iter().all(|m| m.contains("ยังไม่เช็ค 2")),"saved and uncaptured special rosters are scheduled without ordinary virtual coverage: {messages:?}");
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight - chrono::Duration::seconds(1),
+                4
+            )
+            .await
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(&f.pool, midnight, 4)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                excluded_date
+            )
+            .await
+            .unwrap(),
+            date
+        );
+        assert!(attendance_closure_complete(&f.pool, special_date)
+            .await
+            .is_err());
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight + chrono::Duration::days(1),
+                4
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        let rows:Vec<(Uuid,Uuid,String,String)>=sqlx::query_as("SELECT r.session_id,r.student_id,r.result,r.origin FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1 ORDER BY r.session_id,r.student_id")
+            .bind(TERM).fetch_all(&f.pool).await.unwrap();
+        assert_eq!(
+            rows.len(),
+            4,
+            "only saved counted and explicit special rounds become absences"
+        );
+        assert!(rows.iter().all(|r| r.2 == "absent" && r.3 == "automatic"));
+        assert_eq!(rows.iter().filter(|r| r.0 == saved.id).count(), 2);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1"
+            )
+            .bind(TERM)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            5,
+            "no ordinary virtual rounds are persisted on missing/false days"
+        );
+        assert_eq!(
+            school_attendance::application::finalization::catch_up(
+                &f.pool,
+                midnight + chrono::Duration::days(3),
+                4
+            )
+            .await
+            .unwrap(),
+            0
+        );
+        progress::require_finalized_through(
+            &mut *f.pool.acquire().await.unwrap(),
+            TERM,
+            special_date,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            progress::ready_through_on_connection(
+                &mut *f.pool.acquire().await.unwrap(),
+                excluded_date
+            )
+            .await
+            .unwrap(),
+            special_date
+        );
+        assert!(
+            score_changes::require_drained(&mut *f.pool.acquire().await.unwrap(), TERM)
+                .await
+                .is_err()
+        );
+        assert!(
+            attendance_closure_complete(&f.pool, special_date)
+                .await
+                .is_err(),
+            "closure waits for score delivery after finalization"
+        );
+        crate::adapters::behavior::run(&f.pool).await.unwrap();
+        assert!(
+            score_changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+                .await
+                .unwrap()
+                .is_empty(),
+            "actual source delivery acknowledges its accepted revisions"
+        );
+        attendance_closure_complete(&f.pool, special_date)
+            .await
+            .unwrap();
+    }
+}

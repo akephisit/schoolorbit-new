@@ -416,7 +416,9 @@ async fn delivery_room_scope_consumer_explicit_empty_never_falls_back_for_pinned
     let f = fixture("room_scope_consumer_empty").await;
     let pupil = student(&f, f.context.homeroom_id, f.boundary - Duration::days(1)).await;
     member(&f, f.combined, pupil, "manual_add").await;
-    let start=chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive();
+    let start = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
     let revision = create_runtime_change_set(
         &f.pool,
         f.context.teacher_id,
@@ -766,7 +768,6 @@ async fn restrict_activity(f: &ActivityScopeFixture, date: NaiveDate, empty: boo
         idempotency_key: Uuid::new_v4(),
     };
     let published = change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &f.pool,
         f.context.teacher_id,
         revision.id,
@@ -776,9 +777,7 @@ async fn restrict_activity(f: &ActivityScopeFixture, date: NaiveDate, empty: boo
     .unwrap();
     let facts = historical_facts(&f.pool).await;
     let replay =
-        change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &f.pool, f.context.teacher_id, revision.id, request)
+        change_sets::publish_change_set(&f.pool, f.context.teacher_id, revision.id, request)
             .await
             .unwrap();
     assert_eq!(

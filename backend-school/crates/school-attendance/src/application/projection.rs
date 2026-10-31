@@ -91,8 +91,8 @@ async fn project(
 ) -> Result<(Vec<AttendanceExpectedSummary>, Vec<AttendanceHistoryItem>), AppError> {
     let term = context.settings.academic_term_id;
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
-    let (term_start,term_end,coverage_start):(Option<NaiveDate>,Option<NaiveDate>,NaiveDate)=DbSession::new(&mut *connection).query_as("attendance.application.projection.calendar", "SELECT min(day.date),max(day.date),module.coverage_start FROM academic_terms term CROSS JOIN attendance_module_state module LEFT JOIN attendance_days day ON day.academic_term_id=term.id WHERE term.id=$1 AND module.singleton GROUP BY module.coverage_start")
-        .bind(term).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบภาคเรียน".into()))?;
+    let (term_start, term_end, coverage_start) =
+        crate::services::processing_dates::bounds_on_connection(connection, term, range).await?;
     let (Some(term_start), Some(term_end)) = (term_start, term_end) else {
         return Ok((vec![], vec![]));
     };
@@ -140,16 +140,22 @@ async fn project(
     .into_iter()
     .collect()
     };
-    let placements = if let Some((student, _)) = history_scope {
-        core::placement_spans_for_student(connection, term, start, end, student).await?
+    // No ordinary virtual round exists without an explicitly counted calendar day.
+    let (placements, rooms, spans) = if overrides.values().any(|counted| *counted) {
+        let placements = if let Some((student, _)) = history_scope {
+            core::placement_spans_for_student(connection, term, start, end, student).await?
+        } else {
+            core::placement_spans(connection, term, start, end).await?
+        };
+        let rooms = core::rooms_on_connection(connection, term).await?;
+        let spans = school_academic_timetable::services::attendance::published_spans(
+            connection, term, start, end,
+        )
+        .await?;
+        (placements, rooms, spans)
     } else {
-        core::placement_spans(connection, term, start, end).await?
+        (Vec::new(), Vec::new(), Vec::new())
     };
-    let rooms = core::rooms_on_connection(connection, term).await?;
-    let spans = school_academic_timetable::services::attendance::published_spans(
-        connection, term, start, end,
-    )
-    .await?;
     let mut source_groups = BTreeMap::<Uuid, HashSet<Uuid>>::new();
     for span in &spans {
         let groups = source_groups.entry(span.delivery_version_id).or_default();

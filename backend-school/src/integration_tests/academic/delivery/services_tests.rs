@@ -754,8 +754,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                 .await
                 .map(|_| ()),
                 _ => offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &worker_pool,
+                    &worker_pool,
                     actor,
                     offering.id,
                     PublishLearningOfferingRequest {
@@ -910,8 +909,7 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
             .await
             .map(|_| ()),
             offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool,
+                &pool,
                 context.teacher_id,
                 offering.id,
                 PublishLearningOfferingRequest {
@@ -1705,7 +1703,6 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         .unwrap();
     let opening_preview = publication_preview(&pool, changed.id).await.unwrap();
     let published = change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         changed.id,
@@ -3501,9 +3498,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
         idempotency_key,
     };
     let published =
-        change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool, context.teacher_id, changed.id, request.clone())
+        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, request.clone())
             .await
             .expect("a ready stop change must publish atomically");
     assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
@@ -3555,9 +3550,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     assert_eq!(base_status, "published");
 
     let retried =
-        change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool, context.teacher_id, changed.id, request.clone())
+        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, request.clone())
             .await
             .expect("the same publication request must be idempotent");
     assert_eq!(retried.id, published.id);
@@ -3566,9 +3559,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     changed_retry.acknowledged_warning_codes =
         vec![AcademicChangeFindingCode::MissingDeliveryGroup];
     let conflicting_retry =
-        change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool, context.teacher_id, changed.id, changed_retry)
+        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, changed_retry)
             .await
             .expect_err("the publication key cannot be reused with a different request");
     assert!(matches!(conflicting_retry, AppError::Conflict(_)));
@@ -3720,7 +3711,6 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
         .map(|finding| finding.code)
         .collect();
     let failed = change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         changed.id,
@@ -3881,7 +3871,6 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
             .is_none()
     );
     change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         changed.id,
@@ -3900,9 +3889,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
     assert_eq!(first_assessment.phases.len(), 4);
     // A retry must never initialize new data, even if ownership is missing by then.
     sqlx::query("UPDATE course_assessment_plans SET assessment_coordinator_id=NULL WHERE learning_offering_id=$1").bind(added_offering_id).execute(&pool).await.unwrap();
-    change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool, context.teacher_id, changed.id, publication_request)
+    change_sets::publish_change_set(&pool, context.teacher_id, changed.id, publication_request)
         .await
         .unwrap();
     assert!(
@@ -3937,7 +3924,6 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         .await
         .unwrap();
     change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         retained.id,
@@ -4065,7 +4051,6 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
         .map(|finding| finding.code)
         .collect();
     let stale = change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         changed.id,
@@ -4437,7 +4422,6 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     .unwrap();
 
     let missing_primary_teacher = offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -4593,7 +4577,6 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
     assert_eq!(before_rejected_publication, after_rejected_publication);
 
     let published = offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -4782,7 +4765,6 @@ async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
     .await
     .unwrap();
     offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -5510,7 +5492,6 @@ async fn self_registration_activity_uses_common_delivery() {
     .await
     .unwrap();
     offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -5743,7 +5724,6 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     );
 
     offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -5934,7 +5914,6 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     .await
     .unwrap();
     let published_offering = offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,
@@ -7362,7 +7341,6 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
         preview.findings
     );
     change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         revision.id,
@@ -7702,7 +7680,6 @@ async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_
     assert!(after.effective_from.is_none());
     assert_eq!(before.reference_date, after.reference_date);
     let stale = change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         revision.id,

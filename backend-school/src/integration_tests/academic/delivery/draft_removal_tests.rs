@@ -832,7 +832,6 @@ async fn delivery_draft_removal_publication_only_promotes_groups_in_the_graph() 
         preview.findings
     );
     change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         revision.id,
@@ -1878,8 +1877,7 @@ async fn http_pending_three_group_removal(command: &str) {
             preview.findings
         );
         change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool,
+            &pool,
             context.teacher_id,
             initial.id,
             PublishAcademicTermChangeSetRequest {

@@ -354,6 +354,58 @@ test('menu destinations complete the context required by the target route', asyn
 	);
 });
 
+test('menu destinations preserve invalid explicit context instead of substituting school defaults', async () => {
+	const { academicContextualMenuPath } = await importRouteContext();
+	const options = contextOptions();
+	for (const selected of [
+		{ academicYearId: 'malformed', academicTermId: 'also-malformed' },
+		{ academicYearId: 'year-hidden', academicTermId: 'term-hidden' },
+		{ academicYearId: 'year-active', academicTermId: 'term-unavailable' },
+		{ academicYearId: 'year-active', academicTermId: 'term-planning' },
+		{ academicYearId: '', academicTermId: '' }
+	]) {
+		for (const requirement of ['term_required', 'term_optional']) {
+			const result = new URL(
+				academicContextualMenuPath(
+					'/staff/target?view=list#details',
+					selected,
+					options,
+					() => requirement
+				),
+				'https://school.test'
+			);
+			assert.equal(result.searchParams.get('academicYearId'), selected.academicYearId);
+			assert.equal(result.searchParams.get('academicTermId'), selected.academicTermId);
+			assert.equal(result.searchParams.get('view'), 'list');
+			assert.equal(result.hash, '#details');
+		}
+		const yearOnly = new URL(
+			academicContextualMenuPath('/staff/target', selected, options, () => 'year_required'),
+			'https://school.test'
+		);
+		assert.equal(yearOnly.searchParams.get('academicYearId'), selected.academicYearId);
+		assert.equal(yearOnly.searchParams.has('academicTermId'), false);
+	}
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/target',
+			{ academicYearId: null, academicTermId: 'term-hidden' },
+			options,
+			() => 'term_required'
+		),
+		'/staff/target?academicYearId=year-active&academicTermId=term-hidden'
+	);
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/target',
+			{ academicYearId: 'year-planning', academicTermId: null },
+			options,
+			() => 'term_required'
+		),
+		'/staff/target?academicYearId=year-planning'
+	);
+});
+
 test('incomplete required context holds the page only while URL repair can finish', async () => {
 	const { shouldHoldAcademicContextPage } = await importRouteContext();
 	const missingTerm = new URL(

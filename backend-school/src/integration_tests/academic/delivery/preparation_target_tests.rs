@@ -280,7 +280,6 @@ async fn facts(f: &PreparationFixture) -> Value {
 async fn publish(f: &PreparationFixture) {
     let offering = offerings::get(&f.pool, f.offering_id).await.unwrap();
     offerings::publish(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &f.pool,
         f.context.teacher_id,
         f.offering_id,
@@ -303,7 +302,6 @@ async fn publish(f: &PreparationFixture) {
         preview.findings
     );
     change_sets::publish_change_set(
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &f.pool,
         f.context.teacher_id,
         f.initial_revision.id,

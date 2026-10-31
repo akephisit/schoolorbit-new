@@ -4,7 +4,10 @@ import {
 } from './fixtures/delivery-navigation-route-data';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type { UpdateAcademicTermRequest } from '../../src/lib/api/academic-core';
+import type {
+	UpdateAcademicContextSettingsRequest,
+	UpdateAcademicTermRequest
+} from '../../src/lib/api/academic-core';
 import {
 	fillSubjectVersion,
 	installSubjectCatalog,
@@ -600,6 +603,133 @@ test('hidden drafts expose separate visibility and default actions and retain an
 		defaultAcademicYearId: future.id,
 		defaultAcademicTermId: draftTerm.id
 	});
+});
+
+test('a single visible year clears term and all defaults explicitly with pending and conflict recovery', async ({
+	page
+}) => {
+	let settings = {
+		rowVersion: 1,
+		defaultAcademicYearId: ids.year as string | null,
+		defaultAcademicTermId: ids.term as string | null
+	};
+	const writes: UpdateAcademicContextSettingsRequest[] = [];
+	let release: () => void = () => {};
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [year],
+				terms: [term],
+				bellSchedules: [],
+				contextSettings: settings
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/context/settings') {
+			const body = route.request().postDataJSON() as UpdateAcademicContextSettingsRequest;
+			writes.push(body);
+			if (writes.length === 1) {
+				await pending;
+				settings = { ...settings, rowVersion: 2 };
+				await fulfill(route, 'ข้อมูลเปลี่ยนแปลง กรุณาโหลดข้อมูลล่าสุด', 409);
+				return true;
+			}
+			if (body.rowVersion !== settings.rowVersion)
+				throw new Error('Settings revision was not refreshed');
+			settings = {
+				rowVersion: settings.rowVersion + 1,
+				defaultAcademicYearId: body.defaultAcademicYearId,
+				defaultAcademicTermId: body.defaultAcademicTermId
+			};
+			await fulfill(route, {
+				settings,
+				years: [],
+				terms: [],
+				contextOptions: { ...settings, years: [year], terms: [term] }
+			});
+			return true;
+		}
+		return false;
+	});
+	const query = `?academicYearId=${ids.year}&academicTermId=${ids.term}`;
+	await page.goto(`/staff/academic/core${query}`);
+	const controls = page.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น' });
+	await controls.screenshot({ path: '/tmp/schoolorbit-context-clear-defaults-desktop.png' });
+	await page.setViewportSize({ width: 390, height: 844 });
+	for (const theme of ['light', 'dark'] as const) {
+		if (theme === 'dark') {
+			await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+			await expect(page.locator('html')).toHaveClass(/dark/);
+		}
+		for (const name of ['ล้างค่าเริ่มต้นภาคเรียน', 'ล้างค่าเริ่มต้นทั้งหมด']) {
+			await expect
+				.poll(async () => {
+					const bounds = await controls.getByRole('button', { name, exact: true }).boundingBox();
+					return bounds !== null && bounds.x >= 0 && bounds.x + bounds.width <= 390;
+				})
+				.toBe(true);
+		}
+		await controls.screenshot({
+			path: `/tmp/schoolorbit-context-clear-defaults-mobile-${theme}.png`
+		});
+	}
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2572');
+	await controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นภาคเรียน', exact: true }).click();
+	try {
+		await expect.poll(() => writes.length).toBe(1);
+		await expect(
+			controls.getByRole('button', { name: 'กำลังล้างค่า...', exact: true })
+		).toBeDisabled();
+		await expect(
+			controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นทั้งหมด', exact: true })
+		).toBeDisabled();
+		expect(writes[0]).toEqual({
+			rowVersion: 1,
+			defaultAcademicYearId: ids.year,
+			defaultAcademicTermId: null,
+			years: [],
+			terms: []
+		});
+	} finally {
+		release();
+	}
+	await expect(controls.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนแปลง');
+	await expect(controls.getByText('ค่าเริ่มต้นของโรงเรียน', { exact: true })).toHaveCount(2);
+	await controls.getByRole('button', { name: 'โหลดข้อมูลล่าสุด', exact: true }).click();
+	await expect(controls.getByRole('alert')).toHaveCount(0);
+	await controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นภาคเรียน', exact: true }).click();
+	await expect(controls.getByText('ค่าเริ่มต้นของโรงเรียน', { exact: true })).toHaveCount(1);
+	await expect(
+		controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นภาคเรียน', exact: true })
+	).toBeDisabled();
+	await controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นทั้งหมด', exact: true }).click();
+	await expect(controls.getByText('ค่าเริ่มต้นของโรงเรียน', { exact: true })).toHaveCount(0);
+	await expect(controls.getByRole('button', { name: 'ซ่อนจากตัวเลือก', exact: true })).toHaveCount(
+		2
+	);
+	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
+	await expect(page).toHaveURL(`/staff/academic/core${query}`);
+	expect(writes.slice(1)).toEqual([
+		{
+			rowVersion: 2,
+			defaultAcademicYearId: ids.year,
+			defaultAcademicTermId: null,
+			years: [],
+			terms: []
+		},
+		{
+			rowVersion: 3,
+			defaultAcademicYearId: null,
+			defaultAcademicTermId: null,
+			years: [],
+			terms: []
+		}
+	]);
 });
 
 test('a settings response with concurrent year metadata requires review before rebasing the preserved draft', async ({

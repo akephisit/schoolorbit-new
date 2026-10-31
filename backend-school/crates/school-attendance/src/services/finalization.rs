@@ -66,17 +66,11 @@ pub(crate) async fn finalize_guarded(
     if !date_is_due(date, start.max(coverage), processed_at) {
         return Err(invalid("วันที่นี้ยังไม่ถึงกำหนดปิดยอดอัตโนมัติ"));
     }
-    let valid: bool = DbSession::new(&mut **tx)
-        .scalar(
-            "attendance.services.finalization.finalize_guarded",
-            "SELECT EXISTS(SELECT 1 FROM attendance_days WHERE academic_term_id=$1 AND date=$2)",
-        )
-        .bind(term)
-        .bind(date)
-        .fetch_one()
-        .await?;
-    if !valid {
-        return Err(invalid("วันปิดยอดไม่อยู่ในภาคเรียน"));
+    if super::processing_dates::on_connection(&mut *tx, term, date)
+        .await?
+        .is_none()
+    {
+        return Err(invalid("วันที่นี้ไม่มีปฏิทินหรือรอบเช็กชื่อที่นับ"));
     }
     let complete: bool = DbSession::new(&mut **tx).scalar("attendance.services.finalization.finalize_guarded", "SELECT EXISTS(SELECT 1 FROM attendance_finalized_dates WHERE generation=$1 AND academic_term_id=$2 AND date=$3)")
         .bind(generation).bind(term).bind(date).fetch_one().await?;
@@ -179,19 +173,9 @@ pub async fn require_finalized_through(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<(), AppError> {
-    let configured: bool = DbSession::new(&mut *connection)
-        .scalar(
-            "attendance.services.finalization.require_finalized_through",
-            "SELECT EXISTS(SELECT 1 FROM attendance_settings WHERE academic_term_id=$1)",
-        )
-        .bind(term)
-        .fetch_one()
-        .await?;
-    if !configured {
-        return Ok(());
-    }
-    let pending: bool = DbSession::new(&mut *connection).scalar("attendance.services.finalization.require_finalized_through", "SELECT EXISTS(SELECT 1 FROM attendance_days day CROSS JOIN attendance_module_state module WHERE day.academic_term_id=$1 AND ((day.counted AND day.date>$2) OR (day.date BETWEEN GREATEST(module.auto_finalize_from,module.coverage_start) AND $2 AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates finalized WHERE finalized.generation=module.generation AND finalized.academic_term_id=day.academic_term_id AND finalized.date=day.date))))")
-        .bind(term).bind(date).fetch_one().await?;
+    let pending: bool = DbSession::new(connection).scalar("attendance.services.finalization.require_finalized_through",
+        super::processing_dates::query("SELECT EXISTS(SELECT 1 FROM processing_dates day CROSS JOIN attendance_module_state module WHERE (day.counted_round OR EXISTS(SELECT 1 FROM attendance_settings settings WHERE settings.academic_term_id=day.academic_term_id)) AND (((day.calendar_counted OR day.counted_round) AND day.date>$4) OR (day.date BETWEEN GREATEST(module.auto_finalize_from,module.coverage_start) AND $4 AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates finalized WHERE finalized.generation=module.generation AND finalized.academic_term_id=day.academic_term_id AND finalized.date=day.date))))"))
+        .bind(Some(term)).bind(None::<NaiveDate>).bind(None::<NaiveDate>).bind(date).fetch_one().await?;
     if pending {
         return Err(AppError::Conflict(
             "ยังปิดยอดเช็กชื่อไม่ครบถึงวันสุดท้าย กรุณารอการปิดยอดหลังเที่ยงคืน".into(),
@@ -214,8 +198,17 @@ pub async fn due_dates_on_connection(
         .date_naive()
         .pred_opt()
         .ok_or_else(|| invalid("วันที่ปิดยอดไม่ถูกต้อง"))?;
-    Ok(DbSession::new(&mut *connection).query_as("attendance.services.finalization.due_dates_on_connection", "SELECT t.id,day.date,m.generation FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id JOIN attendance_days day ON day.academic_term_id=t.id CROSS JOIN attendance_module_state m WHERE day.date BETWEEN GREATEST(m.auto_finalize_from,m.coverage_start) AND $1 AND t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=day.date) ORDER BY day.date,t.id LIMIT $2")
-        .bind(yesterday).bind(limit).fetch_all().await?)
+    pending_through(connection, yesterday, limit).await
+}
+
+async fn pending_through(
+    connection: &mut PgConnection,
+    through: NaiveDate,
+    limit: i64,
+) -> Result<Vec<(Uuid, NaiveDate, Uuid)>, AppError> {
+    Ok(DbSession::new(connection).query_as("attendance.services.finalization.pending_through",
+        super::processing_dates::query("SELECT t.id,day.date,m.generation FROM processing_dates day JOIN academic_terms t ON t.id=day.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m WHERE day.date>=GREATEST(m.auto_finalize_from,m.coverage_start) AND (day.counted_round OR EXISTS(SELECT 1 FROM attendance_settings s WHERE s.academic_term_id=t.id)) AND t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=day.date) ORDER BY day.date,t.id LIMIT $4"))
+        .bind(None::<Uuid>).bind(None::<NaiveDate>).bind(Some(through)).bind(limit).fetch_all().await?)
 }
 
 pub async fn ready_through_on_connection(
@@ -223,8 +216,10 @@ pub async fn ready_through_on_connection(
     today: NaiveDate,
 ) -> Result<NaiveDate, AppError> {
     let yesterday = today.pred_opt().ok_or_else(|| invalid("วันที่ไม่ถูกต้อง"))?;
-    let earliest: Option<NaiveDate> = DbSession::new(&mut *connection).scalar("attendance.services.finalization.ready_through_on_connection", "SELECT min(day.date) FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id JOIN attendance_settings s ON s.academic_term_id=t.id JOIN attendance_days day ON day.academic_term_id=t.id CROSS JOIN attendance_module_state m WHERE day.date BETWEEN GREATEST(m.auto_finalize_from,m.coverage_start) AND $1 AND t.status IN ('active','closing') AND y.status NOT IN ('closed','archived') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) AND NOT EXISTS(SELECT 1 FROM attendance_finalized_dates f WHERE f.generation=m.generation AND f.academic_term_id=t.id AND f.date=day.date)")
-        .bind(yesterday).fetch_one().await?;
+    let earliest = pending_through(connection, yesterday, 1)
+        .await?
+        .first()
+        .map(|row| row.1);
     Ok(earliest
         .and_then(|d| d.pred_opt())
         .map_or(yesterday, |d| d.min(yesterday)))

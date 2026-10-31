@@ -23,19 +23,13 @@ use school_errors::AppError;
 use school_notifications::events::TenantNotificationEvent;
 use school_tenancy::background::TenantJobKind;
 use sqlx::{types::Json, PgPool};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 #[derive(Clone)]
 struct TermSchedule {
     term: Uuid,
-    start: NaiveDate,
-    end: NaiveDate,
     configuration: AttendanceConfiguration,
-    days: Vec<AttendanceDay>,
 }
 #[derive(Clone)]
 struct Registration {
@@ -62,26 +56,12 @@ pub async fn touch(
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(&pool, "attendance.runtime.touch")
             .await?;
-    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT s.academic_term_id,calendar.starts_on,calendar.ends_on,s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id JOIN (SELECT academic_term_id,min(date) AS starts_on,max(date) AS ends_on FROM attendance_days GROUP BY academic_term_id) calendar ON calendar.academic_term_id=t.id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all().await?;
-    let ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
-    let day_rows: Vec<(Uuid,NaiveDate,bool,String)> = DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT academic_term_id,date,counted,note FROM attendance_days WHERE academic_term_id=ANY($1) ORDER BY academic_term_id,date")
-        .bind(&ids).fetch_all().await?;
-    let mut days_by_term = HashMap::<Uuid, Vec<AttendanceDay>>::new();
-    for (term, date, counted, note) in day_rows {
-        days_by_term.entry(term).or_default().push(AttendanceDay {
-            date,
-            counted,
-            note,
-        });
-    }
+    let rows: Vec<(Uuid,Json<AttendanceConfiguration>)> = DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT s.academic_term_id,s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all().await?;
     let terms = rows
         .into_iter()
-        .map(|(term, start, end, c)| TermSchedule {
+        .map(|(term, configuration)| TermSchedule {
             term,
-            start,
-            end,
-            configuration: c.0,
-            days: days_by_term.remove(&term).unwrap_or_default(),
+            configuration: configuration.0,
         })
         .collect();
     let module_generation = DbSession::new(&mut *connection)
@@ -241,13 +221,6 @@ async fn run(
         );
     }
     for t in r.terms.clone() {
-        if date < t.start || date > t.end {
-            continue;
-        }
-        let day = t.days.iter().find(|d| d.date == date).map(|d| d.counted);
-        if !crate::rules::counted(&t.configuration, date, day) {
-            continue;
-        }
         if !t.configuration.enabled {
             continue;
         }
@@ -256,26 +229,10 @@ async fn run(
             let current = now.hour() * 60 + now.minute();
             let due = time.hour() * 60 + time.minute();
             if digest_due(current, due, r.digests.contains(&key)) {
-                let mut tx = school_tenancy::TenantPool::begin_observed(
-                    pool,
-                    "attendance.runtime.transaction",
-                )
-                .await?;
-                crate::services::lock_term(&mut tx, t.term, false, true).await?;
-                let expected =
-                    crate::application::projection::expected(&mut *tx, t.term, Some((date, date)))
-                        .await?;
-                notifications::queue_digest_in_transaction(
-                    tx,
-                    t.term,
-                    date,
-                    time,
-                    r.module_generation,
-                    &expected,
-                )
-                .await?;
-                school_notifications::runtime::wake_after_commit(tenant);
-                r.digests.insert(key);
+                if queue_scheduled_digest(pool, t.term, date, time, r.module_generation).await? {
+                    school_notifications::runtime::wake_after_commit(tenant);
+                    r.digests.insert(key);
+                }
             }
         }
     }
@@ -286,6 +243,40 @@ async fn run(
     }
     Ok(())
 }
+/// Accept one due schedule slot using live finite Attendance eligibility. The runtime
+/// owns the time window/cache; this transaction owns source, generation and inbox acceptance.
+pub async fn queue_scheduled_digest(
+    pool: &PgPool,
+    term: Uuid,
+    date: NaiveDate,
+    time: chrono::NaiveTime,
+    generation: Uuid,
+) -> Result<bool, AppError> {
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.runtime.transaction").await?;
+    crate::services::lock_term(&mut tx, term, true, true).await?;
+    if !crate::services::processing_dates::on_connection(&mut tx, term, date)
+        .await?
+        .is_some_and(|day| day.counted())
+    {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let context = crate::services::settings::AttendanceReadContext::load(&mut tx, term).await?;
+    if !context.settings.configuration.enabled {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    let expected = crate::application::projection::expected_with_context(
+        &mut tx,
+        &context,
+        Some((date, date)),
+    )
+    .await?;
+    notifications::queue_digest_in_transaction(tx, term, date, time, generation, &expected).await?;
+    Ok(true)
+}
+
 fn digest_due(current: u32, due: u32, delivered: bool) -> bool {
     !delivered && current >= due && current <= due + 60
 }

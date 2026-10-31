@@ -113,6 +113,29 @@
 							defaultAcademicTermId: null
 						})}>ตั้งเป็นค่าเริ่มต้น</LoadingButton
 				>
+				{#if yearIsDefault}
+					<LoadingButton
+						type="button"
+						size="sm"
+						variant="outline"
+						loading={pending === 'clear-term'}
+						loadingLabel="กำลังล้างค่า..."
+						disabled={!!pending || settings.defaultAcademicTermId === null}
+						onclick={() => save('clear-term', { defaultAcademicTermId: null })}
+						>ล้างค่าเริ่มต้นภาคเรียน</LoadingButton
+					>
+					<LoadingButton
+						type="button"
+						size="sm"
+						variant="outline"
+						loading={pending === 'clear-all'}
+						loadingLabel="กำลังล้างค่า..."
+						disabled={!!pending}
+						onclick={() =>
+							save('clear-all', { defaultAcademicYearId: null, defaultAcademicTermId: null })}
+						>ล้างค่าเริ่มต้นทั้งหมด</LoadingButton
+					>
+				{/if}
 			</div>
 		{/if}
 	</div>

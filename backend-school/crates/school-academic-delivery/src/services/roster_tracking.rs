@@ -466,7 +466,14 @@ mod tests {
             today
         )
         .is_err());
-        assert!(validate(RosterTrackingMode::Homeroom, Some(today+chrono::Duration::days(400)), starts, None, today).is_ok());
+        assert!(validate(
+            RosterTrackingMode::Homeroom,
+            Some(today + chrono::Duration::days(400)),
+            starts,
+            None,
+            today
+        )
+        .is_ok());
         assert!(validate(RosterTrackingMode::Homeroom, None, starts, ends, today).is_err());
         assert!(validate(RosterTrackingMode::Manual, Some(today), starts, ends, today).is_err());
     }

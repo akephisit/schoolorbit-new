@@ -110,7 +110,7 @@ fn validate_targets_rejects_empty_targets() {
 fn validate_targets_accepts_student_grade_target() {
     let grade_level_id = Uuid::new_v4();
     let targets = vec![CalendarEventTargetInput {
-            academic_year_id: Some(Uuid::from_u128(1)),
+        academic_year_id: Some(Uuid::from_u128(1)),
         audience_type: CalendarAudienceType::Student,
         grade_level_id: Some(grade_level_id),
         homeroom_id: None,
@@ -122,7 +122,7 @@ fn validate_targets_accepts_student_grade_target() {
 #[test]
 fn validate_targets_rejects_student_or_parent_with_grade_and_classroom_filter() {
     let targets = vec![CalendarEventTargetInput {
-            academic_year_id: Some(Uuid::from_u128(1)),
+        academic_year_id: Some(Uuid::from_u128(1)),
         audience_type: CalendarAudienceType::Parent,
         grade_level_id: Some(Uuid::new_v4()),
         homeroom_id: Some(Uuid::new_v4()),
@@ -134,13 +134,13 @@ fn validate_targets_rejects_student_or_parent_with_grade_and_classroom_filter() 
 #[test]
 fn validate_targets_rejects_all_with_grade_or_classroom_filter() {
     let grade_targets = vec![CalendarEventTargetInput {
-            academic_year_id: Some(Uuid::from_u128(1)),
+        academic_year_id: Some(Uuid::from_u128(1)),
         audience_type: CalendarAudienceType::All,
         grade_level_id: Some(Uuid::new_v4()),
         homeroom_id: None,
     }];
     let classroom_targets = vec![CalendarEventTargetInput {
-            academic_year_id: Some(Uuid::from_u128(1)),
+        academic_year_id: Some(Uuid::from_u128(1)),
         audience_type: CalendarAudienceType::All,
         grade_level_id: None,
         homeroom_id: Some(Uuid::new_v4()),
@@ -244,7 +244,7 @@ fn validate_targets_rejects_duplicate_classroom_targets() {
 #[test]
 fn validate_targets_rejects_staff_with_classroom_filter() {
     let targets = vec![CalendarEventTargetInput {
-            academic_year_id: Some(Uuid::from_u128(1)),
+        academic_year_id: Some(Uuid::from_u128(1)),
         audience_type: CalendarAudienceType::Staff,
         grade_level_id: None,
         homeroom_id: Some(Uuid::new_v4()),

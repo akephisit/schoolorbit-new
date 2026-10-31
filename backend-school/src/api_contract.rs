@@ -3541,30 +3541,106 @@ mod tests {
         }
 
         let schemas = &document["components"]["schemas"];
-        assert_eq!(required(&schemas["AcademicYear"]),vec!["createdAt","id","isVisible","migrated","name","rowVersion","schoolDays","status","updatedAt","year"]);
-        assert_eq!(required(&schemas["AcademicTerm"]),vec!["academicYearId","bellScheduleId","blocksYearClosure","code","createdAt","id","includedInYearResult","isVisible","migrated","name","rowVersion","sequence","status","termType","updatedAt"]);
-        for schema_name in ["AcademicYear","AcademicTerm","AcademicYearOption","AcademicTermOption","CreateAcademicYearRequest","UpdateAcademicYearRequest","CreateAcademicTermRequest","UpdateAcademicTermRequest"] {
-            for retired_field in ["startDate","endDate","plannedEndDate","closedOn","semesterId","classroomCourseId","isActive"] {
-                assert!(schemas[schema_name]["properties"][retired_field].is_null(),"{schema_name}.{retired_field} must stay retired");
+        assert_eq!(
+            required(&schemas["AcademicYear"]),
+            vec![
+                "createdAt",
+                "id",
+                "isVisible",
+                "migrated",
+                "name",
+                "rowVersion",
+                "schoolDays",
+                "status",
+                "updatedAt",
+                "year"
+            ]
+        );
+        assert_eq!(
+            required(&schemas["AcademicTerm"]),
+            vec![
+                "academicYearId",
+                "bellScheduleId",
+                "blocksYearClosure",
+                "code",
+                "createdAt",
+                "id",
+                "includedInYearResult",
+                "isVisible",
+                "migrated",
+                "name",
+                "rowVersion",
+                "sequence",
+                "status",
+                "termType",
+                "updatedAt"
+            ]
+        );
+        for schema_name in [
+            "AcademicYear",
+            "AcademicTerm",
+            "AcademicYearOption",
+            "AcademicTermOption",
+            "CreateAcademicYearRequest",
+            "UpdateAcademicYearRequest",
+            "CreateAcademicTermRequest",
+            "UpdateAcademicTermRequest",
+        ] {
+            for retired_field in [
+                "startDate",
+                "endDate",
+                "plannedEndDate",
+                "closedOn",
+                "semesterId",
+                "classroomCourseId",
+                "isActive",
+            ] {
+                assert!(
+                    schemas[schema_name]["properties"][retired_field].is_null(),
+                    "{schema_name}.{retired_field} must stay retired"
+                );
             }
         }
-        for schema_name in ["CreateAcademicYearRequest","UpdateAcademicYearRequest","CreateAcademicTermRequest","UpdateAcademicTermRequest","UpdateAcademicContextSettingsRequest"] {
-            assert_eq!(schemas[schema_name]["additionalProperties"],serde_json::json!(false));
+        for schema_name in [
+            "CreateAcademicYearRequest",
+            "UpdateAcademicYearRequest",
+            "CreateAcademicTermRequest",
+            "UpdateAcademicTermRequest",
+            "UpdateAcademicContextSettingsRequest",
+        ] {
+            assert_eq!(
+                schemas[schema_name]["additionalProperties"],
+                serde_json::json!(false)
+            );
         }
-        for field in ["defaultAcademicYearId","defaultAcademicTermId"] {
+        for field in ["defaultAcademicYearId", "defaultAcademicTermId"] {
             assert!(required(&schemas["AcademicContextOptions"]).contains(&field));
-            assert!(contains_null(&schemas["AcademicContextOptions"]["properties"][field]));
+            assert!(contains_null(
+                &schemas["AcademicContextOptions"]["properties"][field]
+            ));
             assert!(required(&schemas["UpdateAcademicContextSettingsRequest"]).contains(&field));
-            assert!(contains_null(&schemas["UpdateAcademicContextSettingsRequest"]["properties"][field]));
+            assert!(contains_null(
+                &schemas["UpdateAcademicContextSettingsRequest"]["properties"][field]
+            ));
         }
         assert!(schemas["AcademicContextOptions"]["properties"]["activeAcademicYearId"].is_null());
         assert!(schemas["AcademicContextOptions"]["properties"]["activeAcademicTermId"].is_null());
-        assert_eq!(required(&schemas["AcademicContextSettingsMutationResponse"]),vec!["contextOptions","settings","terms","years"]);
-        assert_eq!(document["paths"]["/api/academic/context/settings"]["put"]["operationId"],"updateAcademicContextSettings");
-        for field in ["startDate","endDate","plannedEndDate","closedOn"] {
-            let mut request=serde_json::json!({"year":2570,"customName":null,"schoolDays":["MON"]});
-            request[field]=serde_json::json!("2027-05-01");
-            assert!(serde_json::from_value::<school_academic_core::models::CreateAcademicYearRequest>(request).is_err());
+        assert_eq!(
+            required(&schemas["AcademicContextSettingsMutationResponse"]),
+            vec!["contextOptions", "settings", "terms", "years"]
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/context/settings"]["put"]["operationId"],
+            "updateAcademicContextSettings"
+        );
+        for field in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
+            let mut request =
+                serde_json::json!({"year":2570,"customName":null,"schoolDays":["MON"]});
+            request[field] = serde_json::json!("2027-05-01");
+            assert!(serde_json::from_value::<
+                school_academic_core::models::CreateAcademicYearRequest,
+            >(request)
+            .is_err());
         }
 
         let success = &document["paths"]["/api/academic/offerings"]["get"]["responses"]["200"]

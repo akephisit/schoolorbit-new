@@ -113,7 +113,9 @@ async fn scoped_fixture_with_catalog(
         .bind(unused).bind(group).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at) SELECT gen_random_uuid(),$1,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_at FROM learning_group_teachers WHERE learning_group_id=$2 AND role='primary' ORDER BY id LIMIT 1")
         .bind(unused).bind(group).execute(&pool).await.unwrap();
-    apply_migrations_through(&pool,school_migrations::latest_migration_version()).await.unwrap();
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let actor = ActorContext {
         user_id: teacher,
         permissions: vec![

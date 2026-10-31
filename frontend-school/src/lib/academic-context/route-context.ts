@@ -101,33 +101,26 @@ export function academicContextualMenuPath(
 	const requirement = resolveRequirement(`/(app)${target.pathname}`);
 	if (requirement === 'none') return path;
 
-	const selectedYearIsValid =
-		!options || options.years.some((year) => year.id === selected.academicYearId);
 	const defaultYearIsValid = options?.years.some(
 		(year) => year.id === options.defaultAcademicYearId
 	);
-	const academicYearId = selectedYearIsValid
-		? selected.academicYearId
-		: defaultYearIsValid
-			? (options?.defaultAcademicYearId ?? null)
-			: null;
-	const selectedTerm = options?.terms.find((term) => term.id === selected.academicTermId);
+	const academicYearId =
+		selected.academicYearId ??
+		(defaultYearIsValid ? (options?.defaultAcademicYearId ?? null) : null);
 	const defaultTerm = options?.terms.find((term) => term.id === options.defaultAcademicTermId);
 	const academicTermId =
-		selected.academicTermId && (!options || selectedTerm?.academicYearId === academicYearId)
-			? selected.academicTermId
-			: requirement === 'term_required' && defaultTerm?.academicYearId === academicYearId
-				? defaultTerm.id
-				: null;
+		selected.academicTermId ??
+		(requirement === 'term_required' && defaultTerm?.academicYearId === academicYearId
+			? defaultTerm.id
+			: null);
 
 	target.searchParams.delete('academicYearId');
 	target.searchParams.delete('academicTermId');
-	if (academicYearId) {
+	if (academicYearId !== null) {
 		target.searchParams.set('academicYearId', academicYearId);
 	}
 	if (
-		academicYearId &&
-		academicTermId &&
+		academicTermId !== null &&
 		(requirement === 'term_required' || requirement === 'term_optional')
 	) {
 		target.searchParams.set('academicTermId', academicTermId);
