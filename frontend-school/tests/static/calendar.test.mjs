@@ -344,7 +344,10 @@ test('public calendar route delegates to the shared page-mode view', async () =>
 	assert.match(publicView, /mode === 'embed'/);
 	assert.match(publicView, /data-calendar-mode=\{mode\}/);
 	assert.match(publicView, /max-w-screen-2xl/);
-	assert.match(publicView, /h-dvh overflow-hidden/);
+	const publicMain = publicView.match(/<main\b[\s\S]*?>/)?.[0];
+	assert.ok(publicMain, 'Expected the public calendar scroll owner');
+	assert.match(publicMain, /h-dvh overflow-y-auto/);
+	assert.doesNotMatch(publicMain, /\boverflow-hidden\b/);
 	assert.match(publicView, /fillHeight/);
 	assert.match(publicView, /CalendarDayTimelineDialog/);
 	assert.match(publicView, /CalendarColorKey/);
@@ -354,7 +357,7 @@ test('public calendar route delegates to the shared page-mode view', async () =>
 		/const colorKeyItems = \$derived\(buildCalendarColorKey\(selectedMonth, events\)\)/
 	);
 	assert.match(publicView, /<CalendarColorKey items=\{colorKeyItems\} \/>/);
-	assert.match(publicView, /function selectDate\(date: string\)/);
+	assert.match(publicView, /function selectDate\(date: string\b/);
 	assert.match(publicView, /hidden min-h-0[\s\S]*lg:flex/);
 	assert.doesNotMatch(publicView, /grid-rows-\[minmax\(0,2fr\)/);
 	assert.match(publicView, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
