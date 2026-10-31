@@ -28,7 +28,7 @@ Accepted lifecycle audits/readiness/checksums remain immutable; only active repl
 
 ## Migration and recovery
 
-Add forward migrations after 145; never alter applied migrations. Inspect the complete 001–145 timeline and current dependent functions/views before DDL. Retain existing context foreign keys and composite context constraints. Map a missing scoped relationship only when its original semantic date identifies exactly one existing year/term; refuse zero or multiple matches atomically. Calendar's deliberately global targets are not missing relationships.
+Add forward migrations after 145; never alter applied migrations. Inspect the complete 001–146 timeline and current dependent functions/views before DDL. Retain existing context foreign keys and composite context constraints. Map a missing scoped relationship only when its original semantic date identifies exactly one existing year/term; refuse zero or multiple matches atomically. Calendar's deliberately global targets are not missing relationships.
 
 Before destructive cleanup, snapshot stable IDs, retained facts, relationship identities and aggregate digests. Materialize domain-specific dated intent using old dates only as migration input. Reconcile row counts, original facts, every pre-existing nonnull link and all transformed intent. Drop/rebuild only explicitly identified date-dependent functions/views/constraints; an unexpected dependency refuses cleanup. Remove all retired columns and runtime fields only after reconciliation succeeds in the same migration transaction. Replaying an applied migration is a no-op through the canonical runner.
 

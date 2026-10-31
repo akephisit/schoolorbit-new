@@ -2441,6 +2441,7 @@ pub fn render_school_api() -> Result<String, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
+    use school_academic_timetable::models::collaboration::DraftAnchor;
     use serde_json::Value;
     use std::collections::{BTreeSet, HashSet};
 

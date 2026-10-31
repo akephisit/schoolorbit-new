@@ -159,8 +159,12 @@ pub struct SaveAssessmentPhaseRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAssessmentPhaseControlRequest {
+    #[cfg_attr(feature = "api-docs", schema(minimum = 1))]
     pub row_version: i64,
-    pub plan_editing_enabled: bool,
+    /// Changes only the maximum-score editing control when supplied.
+    pub plan_editing_enabled: Option<bool>,
+    /// Changes only the exam arrangement and duration editing control when supplied.
+    pub exam_arrangement_editing_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -256,6 +260,7 @@ pub struct AssessmentPhaseControl {
     pub academic_year_id: Uuid,
     pub phase_code: AssessmentPhaseCode,
     pub plan_editing_enabled: bool,
+    pub exam_arrangement_editing_enabled: bool,
     pub row_version: i64,
 }
 
@@ -298,5 +303,6 @@ pub(crate) struct AssessmentPhaseControlRow {
     pub academic_year_id: Uuid,
     pub phase_code: String,
     pub plan_editing_enabled: bool,
+    pub exam_arrangement_editing_enabled: bool,
     pub row_version: i64,
 }

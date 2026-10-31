@@ -106,6 +106,7 @@ async fn fixture(name: &str) -> Fixture {
     }
     let offering = offerings::get(&pool, offering.id).await.unwrap();
     offerings::publish(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         offering.id,

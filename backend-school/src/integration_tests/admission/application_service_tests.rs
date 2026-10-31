@@ -106,7 +106,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        let year_sql = if version < 147 {
+        let year_sql = if version < 148 {
             "INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','2027-05-01','2028-03-31','MON,TUE,WED,THU,FRI','planning') RETURNING id"
         } else {
             "INSERT INTO academic_years(year,name,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"

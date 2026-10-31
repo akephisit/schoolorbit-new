@@ -30,7 +30,7 @@ DO $$ BEGIN
        OR EXISTS (
            SELECT 1 FROM academic_terms term WHERE term.status IN ('active','closing')
              AND NOT EXISTS (SELECT 1 FROM academic_years year WHERE year.id=term.academic_year_id AND year.status IN ('active','closing'))
-       ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_146_RUNNING_CONTEXT_MISMATCH'; END IF;
+       ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH'; END IF;
 END $$;
 INSERT INTO academic_context_settings(singleton,default_academic_year_id,default_academic_term_id)
 SELECT true,
@@ -74,5 +74,5 @@ DO $$ BEGIN
             SELECT 1 FROM academic_terms term WHERE term.id=settings.default_academic_term_id
               AND term.academic_year_id=settings.default_academic_year_id
         )
-    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_146_RUNNING_CONTEXT_MISMATCH'; END IF;
+    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH'; END IF;
 END $$;

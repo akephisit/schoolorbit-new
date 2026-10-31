@@ -200,6 +200,7 @@ async fn omit(
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor.user_id,
         revision.id,
@@ -404,6 +405,16 @@ async fn learner_current_obligation_all_omitted_refuses_before_lazy_configuratio
     struct NoCurrent;
     #[async_trait::async_trait]
     impl ResultLockPort for NoCurrent {
+        async fn course_offering_is_locked(
+            &self,
+            _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            _offering: Uuid,
+            _term: Uuid,
+            _year: Uuid,
+        ) -> Result<bool, AppError> {
+            Ok(false)
+        }
+
         async fn require_course_offering_unlocked(
             &self,
             _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -571,6 +582,7 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
         revision.id,

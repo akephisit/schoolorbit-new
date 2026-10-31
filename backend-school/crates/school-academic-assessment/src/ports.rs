@@ -19,6 +19,14 @@ pub trait ResultLockPort: Send + Sync {
         candidate_group_ids: &[Uuid],
     ) -> Result<Vec<Uuid>, AppError>;
 
+    async fn course_offering_is_locked(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        learning_offering_id: Uuid,
+        academic_term_id: Uuid,
+        academic_year_id: Uuid,
+    ) -> Result<bool, AppError>;
+
     async fn require_course_offering_unlocked(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

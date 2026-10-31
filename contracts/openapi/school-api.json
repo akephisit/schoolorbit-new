@@ -4058,6 +4058,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "examArrangementEditingEnabled": {
+                "type": "boolean"
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -4079,6 +4082,7 @@
               "academicYearId",
               "phaseCode",
               "planEditingEnabled",
+              "examArrangementEditingEnabled",
               "rowVersion"
             ],
             "type": "object"
@@ -21105,6 +21109,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "examArrangementEditingEnabled": {
+                  "type": "boolean"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -21126,6 +21133,7 @@
                 "academicYearId",
                 "phaseCode",
                 "planEditingEnabled",
+                "examArrangementEditingEnabled",
                 "rowVersion"
               ],
               "type": "object"
@@ -29370,6 +29378,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "examArrangementEditingEnabled": {
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -29391,6 +29402,7 @@
           "academicYearId",
           "phaseCode",
           "planEditingEnabled",
+          "examArrangementEditingEnabled",
           "rowVersion"
         ],
         "type": "object"
@@ -70086,17 +70098,28 @@
       "UpdateAssessmentPhaseControlRequest": {
         "additionalProperties": false,
         "properties": {
+          "examArrangementEditingEnabled": {
+            "description": "Changes only the exam arrangement and duration editing control when supplied.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "planEditingEnabled": {
-            "type": "boolean"
+            "description": "Changes only the maximum-score editing control when supplied.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "rowVersion": {
             "format": "int64",
+            "minimum": 1,
             "type": "integer"
           }
         },
         "required": [
-          "rowVersion",
-          "planEditingEnabled"
+          "rowVersion"
         ],
         "type": "object"
       },

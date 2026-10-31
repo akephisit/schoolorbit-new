@@ -7,7 +7,7 @@ use sqlx::{types::Json, PgPool};
 
 use crate::models::ReconciliationCheck;
 
-pub const CONTEXT_CUTOVER_VERSION: i64 = 147;
+pub const CONTEXT_CUTOVER_VERSION: i64 = 148;
 #[derive(Debug, Clone)]
 pub struct AcademicContextCutoverAuditStatus {
     pub completed: bool,

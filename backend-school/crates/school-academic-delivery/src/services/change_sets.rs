@@ -223,6 +223,7 @@ pub async fn preview_change_set_at(
 }
 
 pub async fn publish_change_set(
+    assessments: &dyn crate::ports::AssessmentPublicationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -405,6 +406,19 @@ pub async fn publish_change_set(
         .filter_map(|item| item.learning_offering_id)
         .collect::<Vec<_>>();
 
+    let mut affected_offering_ids = add_offering_ids.clone();
+    affected_offering_ids.extend(&stop_offering_ids);
+    affected_offering_ids.sort_unstable();
+    affected_offering_ids.dedup();
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.change_sets.publish_change_set",
+            "SELECT id FROM learning_offerings WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(&affected_offering_ids)
+        .execute()
+        .await?;
+
     if !add_offering_ids.is_empty() {
         let added_group_ids = target_graph
             .offerings
@@ -486,6 +500,10 @@ pub async fn publish_change_set(
         .map(|change| change.learning_group_id)
         .collect::<Vec<_>>();
     super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
+
+    assessments
+        .fill_missing_coordinators(&mut transaction, actor_user_id, &add_offering_ids)
+        .await?;
 
     let published_version = DbSession::new(&mut *transaction)
         .query(

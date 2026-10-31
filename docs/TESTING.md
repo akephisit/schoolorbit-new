@@ -965,6 +965,9 @@ From the repository root, disposable Core integration recipes cover atomic setti
 concurrent writes, denied permissions and hidden planning defaults, plus populated migration
 preservation, explicit attendance dates/notes, scoped target links, refusal and retry:
 
+The context cutover uses `147_academic_context_visibility_defaults.sql` followed by
+`148_academic_context_boundary_cleanup.sql`; migration 146 remains the Assessment controls migration.
+
 ```bash
 ./scripts/test_backend_school.sh --package school-academic-core --test context_settings_persistence -- --nocapture
 ./scripts/test_backend_school.sh --package school-academic-core --test context_migration_preservation -- --nocapture
@@ -2425,3 +2428,20 @@ future added rooms, publication locks, scoped preview/apply replay and stale has
 actual HTTP permission/revision guards, and dated/pinned consumer eligibility. Published history,
 manual roster facts and grading evidence remain unchanged. Keep the API export/generation and
 consumer checks serialized with Rust source writers; use the existing target directory.
+
+### Assessment publication ownership and independent editing controls
+
+Run the owned PostgreSQL fixtures serially:
+
+```bash
+./scripts/test_backend_school.sh assessment_publication -- --test-threads=1
+./scripts/test_backend_school.sh assessment_independent_controls -- --test-threads=1
+./scripts/test_backend_school.sh assessment_control_ -- --test-threads=1
+./scripts/test_backend_school.sh publishing_an_added_course_preserves_the_separate_roster_publication -- --test-threads=1
+./scripts/test_backend_school.sh offering_group_and_roster_publish_are_revisioned_and_idempotent -- --test-threads=1
+```
+
+These cover the migration/runtime suggestion parity, accepted plan/phase preservation,
+partial control patches, all four score/exam editing combinations, publication rollback,
+retained offerings, and publication replay. Regenerate/check/test the API contracts and
+compile the affected Academic owners in default and `api-docs` modes.

@@ -1662,11 +1662,11 @@ proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fai
 
 ## Academic context visibility and date-free identities
 
-Deploy migrations [146](../backend-school/migrations/146_academic_context_visibility_defaults.sql) and [147](../backend-school/migrations/147_academic_context_boundary_cleanup.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits the prior binary against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
+Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql) and [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits the prior binary against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
-Migration147 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.
+Migration148 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.
 
 Attendance owns explicit dated counting decisions after cutover. Migration materializes the old weekday/default/override meaning across the old term range and finite persisted Attendance fact dates into `attendance_days`, retaining original override notes and saved rosters. Future counted dates are explicitly saved in the Attendance calendar; saved weekdays are a preset for explicit range generation. A missing date is uncounted, with explicit session overrides retaining precedence and captures remaining independently available. Behavior's old term/year reset intent becomes explicit inclusive cycle-end dates under its own scheduled policy; the following cycle starts on the next date after existing readiness gates. Empty scheduled lists create no invented resets. Promotion retains its intended placement date; new Admission/Promotion/Delivery commands supply actual placement/offering dates. Timetable/publication/membership intervals and official result snapshot dates remain with their existing owners.
 
@@ -1674,7 +1674,7 @@ Original lifecycle audit payloads, accepted readiness and request checksums rema
 
 Curriculum and preparation receipts preserve an accepted explicit offering-date constraint only for new requests that create offerings. All legacy requests predate that input and migrate with a null constraint, as do new retained-only results; publication can legitimately change an offering's actual date later. Exact transaction creation identity, output IDs and counts still prove the original created subset. Preparation may also create a separately dated Delivery revision/version. Actual offering/reference dates, links and original creation audits remain intact. Preparation verifies its original normalized module/mapping request and checksum; malformed, altered or unprovable history refuses cutover without retiming or rewriting it.
 
-Before dropping any boundary column, migration147 compares row counts and SHA256 summaries for the complete affected foreign-key relation graph, verifies every original nonnull link, compares each newly mapped target and promotion date, and checks exact Attendance calendar and Behavior schedule transformations. It repeats retained-fact and transformed-link checks after cleanup, stores only immutable hashes/counts in `academic_context_cutover_audit`, and exposes bounded reconciliation checks through the internal migration status. The deployment gate requires all five `academicContextCutover` checks to pass for every tenant. A receipt records the atomic migration reconciliation; it is not an archive of retired boundary values or a claim that mutable business data never changes after release. Applied migrations replay without transforming data again.
+Before dropping any boundary column, migration148 compares row counts and SHA256 summaries for the complete affected foreign-key relation graph, verifies every original nonnull link, compares each newly mapped target and promotion date, and checks exact Attendance calendar and Behavior schedule transformations. It repeats retained-fact and transformed-link checks after cleanup, stores only immutable hashes/counts in `academic_context_cutover_audit`, and exposes bounded reconciliation checks through the internal migration status. The deployment gate requires all five `academicContextCutover` checks to pass for every tenant. A receipt records the atomic migration reconciliation; it is not an archive of retired boundary values or a claim that mutable business data never changes after release. Applied migrations replay without transforming data again.
 
 ## Tenant Migrations
 
@@ -2542,3 +2542,25 @@ loss. Journals stay private under `/opt/stack/deployment/owned-load-cleanup`; no
 credentials or test-result attestations are uploaded. The common interlock refuses a surviving
 fixed-name PostgreSQL client and malformed or unresolved cleanup evidence. The cleanup owner
 additionally refuses unresolved release, rollout, TLS and DNS recovery work before starting.
+
+## Assessment coordinators and editing controls
+
+Deploy [migration 146](../backend-school/migrations/146_assessment_coordinators_and_edit_controls.sql)
+with the matching School backend, API contracts and frontend under the existing universal
+maintenance and all-tenant migration gates. It copies the former editing value into the
+new exam-arrangement control for midterm/final, leaves other exam controls disabled, and
+preserves existing control versions, plan phases and gradebook controls.
+
+The migration fills missing coordinators on published course offerings in writable academic
+contexts, excluding locked course results. It uses the Assessment suggestion rule: exactly
+one active primary teacher covers every nonclosed group at the current date clamped to the
+term. Ambiguous cases remain unassigned; every existing owner is retained. An existing plan
+only gains its coordinator and revision; a newly created plan starts with four zero-score,
+no-exam phases. Both publication paths apply the same Assessment-owned operation atomically
+for missing owners, including retained targets; an idempotent replay performs no new fill.
+
+`ASSESSMENT_146_PRESERVATION_FAILED` aborts the migration if preserved rows drift. Keep
+maintenance active, investigate bounded evidence on an owned copy, and recover through a
+compatible forward release. After the split is used, retain a runtime that respects both
+controls; an older writer could couple the two decisions again. Never edit applied migrations
+or republish existing offerings to trigger the deployment backfill.

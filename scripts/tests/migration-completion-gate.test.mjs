@@ -33,13 +33,13 @@ async function accepts(report) {
   });
 }
 
-function validReport(version = 147) {
+function validReport(version = 148) {
   const school = {
     migration_version: version,
     migration_status: "migrated",
     migration_error: null,
     academicContextCutover: {
-      migrationVersion: 147,
+      migrationVersion: 148,
       status: "cutoverCompleted",
       passed: true,
       checks: Array.from({length:5},()=>({passed:true})),
@@ -83,7 +83,7 @@ function validReport(version = 147) {
 test("fully migrated tenants pass without a retired personnel report", async () => {
   assert.equal(await accepts(validReport()), true);
   assert.equal(
-    await accepts(validReport(148)),
+    await accepts(validReport(149)),
     true,
     "future SQL migrations use the same completion gate",
   );
@@ -212,7 +212,7 @@ test("staff profile cutover refuses missing or incomplete preservation proof", a
 test("academic context cutover refuses absent, stale, incomplete and failed evidence",async()=>{
   const mutations=[
     report=>{delete report.schools[0].academicContextCutover;},
-    report=>{report.schools[0].academicContextCutover.migrationVersion=146;},
+    report=>{report.schools[0].academicContextCutover.migrationVersion=147;},
     report=>{report.schools[0].academicContextCutover.status="pendingMigration";},
     report=>{report.schools[0].academicContextCutover.passed=false;},
     report=>{report.schools[0].academicContextCutover.checks=[];},

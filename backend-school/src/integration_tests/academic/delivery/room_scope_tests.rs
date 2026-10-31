@@ -85,6 +85,7 @@ pub(super) async fn publish(pool: &PgPool, actor: Uuid, revision: Uuid) {
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor,
         revision,
@@ -629,7 +630,8 @@ async fn delivery_room_scope_direct_write_serializes_with_publication_and_cancel
     let actor = c.teacher_id;
     let mut publisher = tokio::spawn(async move {
         change_sets::publish_change_set(
-            &publish_pool,
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+        &publish_pool,
             actor,
             rev.id,
             PublishAcademicTermChangeSetRequest {

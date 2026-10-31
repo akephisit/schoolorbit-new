@@ -534,6 +534,7 @@ fn academic_router(
         websocket_manager: websocket_manager.clone(),
         collaboration: websocket_manager.collaboration(),
         result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        assessment_publication: &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
     };
     axum::Router::new()
@@ -831,6 +832,7 @@ async fn delivery_draft_removal_publication_only_promotes_groups_in_the_graph() 
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         context.teacher_id,
         revision.id,
@@ -1876,7 +1878,8 @@ async fn http_pending_three_group_removal(command: &str) {
             preview.findings
         );
         change_sets::publish_change_set(
-            &pool,
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+        &pool,
             context.teacher_id,
             initial.id,
             PublishAcademicTermChangeSetRequest {

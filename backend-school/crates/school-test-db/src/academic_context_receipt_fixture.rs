@@ -1,4 +1,4 @@
-//! Sanitized accepted receipts from schema 145, shared by migration and runtime replay tests.
+//! Sanitized accepted receipts from schema 146, shared by migration and runtime replay tests.
 //! These requests predate explicit offering-date inputs. Output dates may evolve through publication.
 use chrono::NaiveDate;
 use sha2::{Digest, Sha256};

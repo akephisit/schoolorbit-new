@@ -7,7 +7,7 @@ LOCK TABLE academic_years,academic_terms,calendar_events,calendar_event_targets,
 
 -- Compare the actual predecessor view to its exact 060 definition. A known
 -- name alone cannot authorize replacing a locally changed business predicate.
-CREATE TEMP VIEW academic147_expected_exam_sources AS
+CREATE TEMP VIEW academic148_expected_exam_sources AS
 WITH ready_plan AS (
     SELECT plan.id,
            plan.learning_offering_id,
@@ -86,10 +86,10 @@ WHERE phase.phase_code IN ('midterm', 'final')
   AND phase.exam_duration_minutes > 0;
 DO $$ BEGIN
     IF pg_get_viewdef('academic_exam_eligible_sources'::regclass,false)
-       IS DISTINCT FROM pg_get_viewdef('academic147_expected_exam_sources'::regclass,false)
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_UNKNOWN_DATE_DEPENDENCY'; END IF;
+       IS DISTINCT FROM pg_get_viewdef('academic148_expected_exam_sources'::regclass,false)
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY'; END IF;
 END $$;
-DROP VIEW academic147_expected_exam_sources;
+DROP VIEW academic148_expected_exam_sources;
 
 DO $$ BEGIN
     IF EXISTS(
@@ -101,7 +101,7 @@ DO $$ BEGIN
                OR (function_record.prosrc ~* '\m(start_date|end_date|planned_end_date|closed_on)\M' AND EXISTS(
                    SELECT 1 FROM pg_trigger trigger_record WHERE trigger_record.tgfoid=function_record.oid
                      AND trigger_record.tgrelid IN('academic_years'::regclass,'academic_terms'::regclass))))
-    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_UNKNOWN_DATE_DEPENDENCY'; END IF;
+    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY'; END IF;
 END $$;
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM pg_constraint rule WHERE rule.conrelid IN('academic_years'::regclass,'academic_terms'::regclass)
@@ -115,20 +115,20 @@ DO $$ BEGIN
         AND pg_get_indexdef(index_record.indexrelid) ~* '\m(start_date|end_date|planned_end_date|closed_on)\M')
        OR EXISTS(SELECT 1 FROM pg_proc function_record JOIN pg_namespace namespace ON namespace.oid=function_record.pronamespace
         WHERE namespace.nspname=current_schema() AND ((function_record.proname='academic_assert_term_within_year' AND encode(sha256(convert_to(function_record.prosrc,'UTF8')),'hex')<>'72cf708c0dfd2df8916342573625724a797bc472d325c3dcef26584ccf844bfb') OR (function_record.proname='academic_validate_offering_availability' AND encode(sha256(convert_to(function_record.prosrc,'UTF8')),'hex')<>'b51ff23a6686b7a91f88530cb16fbecb77806a85ad5e0fc6f6b184905e93947a')))
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_UNKNOWN_DATE_DEPENDENCY'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY'; END IF;
 END $$;
-CREATE TEMP TABLE academic147_expected_promotion_dates ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_promotion_dates ON COMMIT DROP AS
 SELECT run.id,year.start_date AS target_placement_starts_on FROM academic_promotion_runs run
 JOIN academic_years year ON year.id=run.target_year_id;
-CREATE TEMP TABLE academic147_existing_targets ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_existing_targets ON COMMIT DROP AS
 SELECT * FROM calendar_event_targets;
-CREATE TEMP TABLE academic147_existing_days ON COMMIT DROP AS SELECT * FROM attendance_days;
+CREATE TEMP TABLE academic148_existing_days ON COMMIT DROP AS SELECT * FROM attendance_days;
 -- Arrival results and scan evidence own their dates through the session FK.
 -- Finalization can retain a dated fact after its captured details are removed.
-CREATE TEMP TABLE academic147_attendance_fact_dates ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_attendance_fact_dates ON COMMIT DROP AS
 SELECT academic_term_id,date FROM attendance_sessions
 UNION SELECT academic_term_id,date FROM attendance_finalized_dates;
-CREATE TEMP TABLE academic147_calendar_mapping ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_calendar_mapping ON COMMIT DROP AS
 SELECT target.id,
        count(year.id)::bigint AS candidate_count,
        min(year.id::text)::uuid AS academic_year_id
@@ -142,33 +142,33 @@ WHERE target.academic_year_id IS NULL
   AND (target.grade_level_id IS NOT NULL OR target.homeroom_id IS NOT NULL)
 GROUP BY target.id;
 DO $$ BEGIN
-    IF EXISTS(SELECT 1 FROM academic147_calendar_mapping WHERE candidate_count<>1) THEN
-        RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CALENDAR_YEAR_UNMAPPABLE';
+    IF EXISTS(SELECT 1 FROM academic148_calendar_mapping WHERE candidate_count<>1) THEN
+        RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE';
     END IF;
     IF EXISTS(
         SELECT 1 FROM calendar_event_targets target JOIN homerooms room ON room.id=target.homeroom_id
         WHERE target.academic_year_id IS NOT NULL AND target.academic_year_id<>room.academic_year_id
-    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CALENDAR_ROOM_YEAR_MISMATCH'; END IF;
+    ) THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH'; END IF;
     IF (SELECT COALESCE(sum(GREATEST(0,COALESCE(term.closed_on,term.planned_end_date,year.end_date)-term.start_date+1)),0)
         FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id)
-       +(SELECT count(*) FROM academic147_attendance_fact_dates fact
+       +(SELECT count(*) FROM academic148_attendance_fact_dates fact
           JOIN academic_terms term ON term.id=fact.academic_term_id
           JOIN academic_years year ON year.id=term.academic_year_id
           WHERE fact.date NOT BETWEEN term.start_date AND COALESCE(term.closed_on,term.planned_end_date,year.end_date))>2500000 THEN
-        RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CALENDAR_MATERIALIZATION_TOO_LARGE';
+        RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE';
     END IF;
 END $$;
 
 -- Preserve the old range and every finite persisted fact date. A later term
 -- closure could precede an already captured session, whose old report/score
 -- weekday meaning must survive. Unreferenced dates beyond that range are absent.
-CREATE TEMP TABLE academic147_expected_days ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_days ON COMMIT DROP AS
 WITH dates AS (
     SELECT term.id AS academic_term_id,day.date::date AS date
     FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id
     CROSS JOIN LATERAL generate_series(term.start_date::timestamp,
         COALESCE(term.closed_on,term.planned_end_date,year.end_date)::timestamp,interval '1 day') day(date)
-    UNION SELECT academic_term_id,date FROM academic147_attendance_fact_dates
+    UNION SELECT academic_term_id,date FROM academic148_attendance_fact_dates
 )
 SELECT dates.academic_term_id,dates.date,
        COALESCE(existing.counted,COALESCE(settings.configuration->'weekdays','[1,2,3,4,5]'::jsonb)
@@ -179,7 +179,7 @@ LEFT JOIN attendance_days existing ON existing.academic_term_id=dates.academic_t
 
 -- Old checksums retain their accepted meaning. Recover the exact full request
 -- from the original audit, then store one current canonical replay request.
-CREATE FUNCTION pg_temp.academic147_compact_json(input json) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
+CREATE FUNCTION pg_temp.academic148_compact_json(input json) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE source text:=input::text; result text:=''; quoted boolean:=false; escaped boolean:=false; character text; position integer;
 BEGIN
     FOR position IN 1..length(source) LOOP
@@ -195,23 +195,23 @@ BEGIN
     END LOOP;
     RETURN result;
 END $$;
-CREATE FUNCTION pg_temp.academic147_strip_intent_dates(document jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
+CREATE FUNCTION pg_temp.academic148_strip_intent_dates(document jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE result jsonb; member record;
 BEGIN
     IF jsonb_typeof(document)='object' THEN
         result:='{}'::jsonb;
         FOR member IN SELECT * FROM jsonb_each(document) LOOP
-            IF member.key<>'targetPlacementStartsOn' THEN result:=result||jsonb_build_object(member.key,pg_temp.academic147_strip_intent_dates(member.value)); END IF;
+            IF member.key<>'targetPlacementStartsOn' THEN result:=result||jsonb_build_object(member.key,pg_temp.academic148_strip_intent_dates(member.value)); END IF;
         END LOOP;RETURN result;
     ELSIF jsonb_typeof(document)='array' THEN
-        SELECT COALESCE(jsonb_agg(pg_temp.academic147_strip_intent_dates(value) ORDER BY position),'[]'::jsonb) INTO result FROM jsonb_array_elements(document) WITH ORDINALITY items(value,position);
+        SELECT COALESCE(jsonb_agg(pg_temp.academic148_strip_intent_dates(value) ORDER BY position),'[]'::jsonb) INTO result FROM jsonb_array_elements(document) WITH ORDINALITY items(value,position);
         RETURN result;
     END IF;RETURN document;
 END $$;
-CREATE FUNCTION pg_temp.academic147_strip_replay_context(document jsonb) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+CREATE FUNCTION pg_temp.academic148_strip_replay_context(document jsonb) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
     SELECT CASE WHEN jsonb_typeof(document->'context')='object' THEN jsonb_set(document,'{context}',(document->'context')-ARRAY['startDate','endDate','yearStartDate','yearEndDate','termStartDate','plannedEndDate','closedOn','operationDate']) ELSE document END
 $$;
-CREATE TEMP TABLE academic147_term_request_sources ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_term_request_sources ON COMMIT DROP AS
 SELECT receipt.request_id,receipt.academic_year_id,receipt.academic_term_id,receipt.actor_user_id,receipt.action,receipt.request_checksum,receipt.outcome,
        receipt.created_at,
        CASE WHEN jsonb_typeof(audit.payload)='array' THEN audit.payload->0 ELSE audit.payload->'request' END AS original_request,
@@ -223,8 +223,8 @@ JOIN academic_audit_events audit ON audit.actor_user_id=receipt.actor_user_id
  AND audit.event_code='academic.term.'||receipt.action
  AND (CASE WHEN jsonb_typeof(audit.payload)='array' THEN audit.payload->0 ELSE audit.payload->'request' END)->>'requestId'=receipt.request_id::text;
 DO $$ BEGIN
-    IF EXISTS(SELECT receipt.request_id FROM academic_term_transition_receipts receipt LEFT JOIN academic147_term_request_sources source ON source.request_id=receipt.request_id GROUP BY receipt.request_id HAVING count(source.request_id)<>1)
-       OR EXISTS(SELECT 1 FROM academic147_term_request_sources source WHERE
+    IF EXISTS(SELECT receipt.request_id FROM academic_term_transition_receipts receipt LEFT JOIN academic148_term_request_sources source ON source.request_id=receipt.request_id GROUP BY receipt.request_id HAVING count(source.request_id)<>1)
+       OR EXISTS(SELECT 1 FROM academic148_term_request_sources source WHERE
         jsonb_typeof(original_request)<>'object'
         OR NOT original_request ?& ARRAY['academicYearId','requestId','action','expectedYearVersion','expectedTermVersion','readinessChecksum','acknowledgedWarningCodes','closedOn','reason']
         OR original_request-ARRAY['academicYearId','requestId','action','expectedYearVersion','expectedTermVersion','readinessChecksum','acknowledgedWarningCodes','closedOn','reason']<>'{}'::jsonb
@@ -233,27 +233,27 @@ DO $$ BEGIN
         OR original_outcome IS DISTINCT FROM outcome
         OR outcome->'context'->>'academicYearId' IS DISTINCT FROM academic_year_id::text
         OR outcome->'context'->>'academicTermId' IS DISTINCT FROM academic_term_id::text
-        OR request_checksum<>encode(sha256(convert_to(pg_temp.academic147_compact_json(json_build_array(actor_user_id,academic_term_id,json_build_object(
+        OR request_checksum<>encode(sha256(convert_to(pg_temp.academic148_compact_json(json_build_array(actor_user_id,academic_term_id,json_build_object(
             'academicYearId',original_request->'academicYearId','requestId',original_request->'requestId','action',original_request->'action',
             'expectedYearVersion',original_request->'expectedYearVersion','expectedTermVersion',original_request->'expectedTermVersion',
             'readinessChecksum',original_request->'readinessChecksum','acknowledgedWarningCodes',original_request->'acknowledgedWarningCodes',
             'closedOn',original_request->'closedOn','reason',original_request->'reason'))),'UTF8')),'hex'))
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_TERM_RECEIPT_SOURCE_UNMAPPABLE'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE'; END IF;
 END $$;
-CREATE TEMP TABLE academic147_expected_term_receipts ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_term_receipts ON COMMIT DROP AS
 SELECT request_id,original_request-'closedOn' AS canonical_request,
-       jsonb_set(pg_temp.academic147_strip_replay_context(outcome),'{context}',
-         (pg_temp.academic147_strip_replay_context(outcome)->'context')||jsonb_build_object('operationDate',(created_at AT TIME ZONE 'Asia/Bangkok')::date)) AS outcome
-FROM academic147_term_request_sources;
-CREATE TEMP TABLE academic147_expected_year_receipts ON COMMIT DROP AS
-SELECT receipt.request_id,CASE WHEN receipt.action='activate' THEN term.outcome ELSE pg_temp.academic147_strip_replay_context(receipt.outcome) END AS outcome
-FROM academic_year_transition_receipts receipt LEFT JOIN academic147_expected_term_receipts term ON term.request_id=receipt.request_id;
+       jsonb_set(pg_temp.academic148_strip_replay_context(outcome),'{context}',
+         (pg_temp.academic148_strip_replay_context(outcome)->'context')||jsonb_build_object('operationDate',(created_at AT TIME ZONE 'Asia/Bangkok')::date)) AS outcome
+FROM academic148_term_request_sources;
+CREATE TEMP TABLE academic148_expected_year_receipts ON COMMIT DROP AS
+SELECT receipt.request_id,CASE WHEN receipt.action='activate' THEN term.outcome ELSE pg_temp.academic148_strip_replay_context(receipt.outcome) END AS outcome
+FROM academic_year_transition_receipts receipt LEFT JOIN academic148_expected_term_receipts term ON term.request_id=receipt.request_id;
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_year_transition_receipts year LEFT JOIN academic_term_transition_receipts term ON term.request_id=year.request_id
         WHERE year.action='activate' AND (term.request_id IS NULL OR term.actor_user_id<>year.actor_user_id OR term.academic_year_id<>year.academic_year_id OR term.action<>'activate' OR term.outcome IS DISTINCT FROM year.outcome OR term.request_checksum<>year.request_checksum))
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE'; END IF;
 END $$;
-CREATE TEMP TABLE academic147_expected_promotion_item_dates ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_promotion_item_dates ON COMMIT DROP AS
 SELECT item.id,item.run_id,
        CASE WHEN receipt.target_placement_id IS NOT NULL THEN placement.start_date
             WHEN item.status<>'executed' AND item.decision->>'targetHomeroomId' IS NOT NULL THEN year.start_date END AS target_placement_starts_on
@@ -263,46 +263,46 @@ LEFT JOIN homeroom_placements placement ON placement.id=receipt.target_placement
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_promotion_run_items item LEFT JOIN academic_promotion_execution_receipts receipt ON receipt.item_id=item.id AND receipt.run_id=item.run_id
        WHERE (item.status='executed') IS DISTINCT FROM (receipt.item_id IS NOT NULL))
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PROMOTION_ITEM_INTENT_UNMAPPABLE'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE'; END IF;
 END $$;
-CREATE FUNCTION pg_temp.academic147_canonical_promotion(document jsonb,owner uuid) RETURNS jsonb LANGUAGE plpgsql AS $$
+CREATE FUNCTION pg_temp.academic148_canonical_promotion(document jsonb,owner uuid) RETURNS jsonb LANGUAGE plpgsql AS $$
 DECLARE result jsonb; member record; expected_date date; matching boolean;
 BEGIN
     IF jsonb_typeof(document)='object' THEN
         result:='{}'::jsonb;
         FOR member IN SELECT * FROM jsonb_each(document) LOOP
-            result:=result||jsonb_build_object(member.key,pg_temp.academic147_canonical_promotion(member.value,owner));
+            result:=result||jsonb_build_object(member.key,pg_temp.academic148_canonical_promotion(member.value,owner));
         END LOOP;
         IF document ?& ARRAY['id','sourceYearId','targetYearId','policyId','status','createdBy'] AND NOT document ? 'runId' THEN
             SELECT expected.target_placement_starts_on,run.source_year_id::text=document->>'sourceYearId' AND run.target_year_id::text=document->>'targetYearId' AND run.policy_id::text=document->>'policyId'
-              INTO expected_date,matching FROM academic147_expected_promotion_dates expected JOIN academic_promotion_runs run ON run.id=expected.id
+              INTO expected_date,matching FROM academic148_expected_promotion_dates expected JOIN academic_promotion_runs run ON run.id=expected.id
               WHERE expected.id=owner AND owner::text=document->>'id';
-            IF matching IS DISTINCT FROM true THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE'; END IF;
+            IF matching IS DISTINCT FROM true THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE'; END IF;
             result:=result||jsonb_build_object('targetPlacementStartsOn',expected_date);
         ELSIF document ?& ARRAY['id','runId','studentAcademicYearId','recommendation','decision'] THEN
             SELECT CASE WHEN document->'decision' IS NOT DISTINCT FROM item.decision AND document->>'status'<>'calculated' THEN expected.target_placement_starts_on END,
                    item.run_id=owner AND item.student_academic_year_id::text=document->>'studentAcademicYearId'
-              INTO expected_date,matching FROM academic147_expected_promotion_item_dates expected JOIN academic_promotion_run_items item ON item.id=expected.id
+              INTO expected_date,matching FROM academic148_expected_promotion_item_dates expected JOIN academic_promotion_run_items item ON item.id=expected.id
               WHERE expected.id::text=document->>'id' AND document->>'runId'=owner::text;
-            IF matching IS DISTINCT FROM true THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE'; END IF;
+            IF matching IS DISTINCT FROM true THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE'; END IF;
             result:=result||jsonb_build_object('targetPlacementStartsOn',expected_date);
         END IF;RETURN result;
     ELSIF jsonb_typeof(document)='array' THEN
-        SELECT COALESCE(jsonb_agg(pg_temp.academic147_canonical_promotion(value,owner) ORDER BY position),'[]'::jsonb) INTO result FROM jsonb_array_elements(document) WITH ORDINALITY items(value,position);
+        SELECT COALESCE(jsonb_agg(pg_temp.academic148_canonical_promotion(value,owner) ORDER BY position),'[]'::jsonb) INTO result FROM jsonb_array_elements(document) WITH ORDINALITY items(value,position);
         RETURN result;
     END IF;RETURN document;
 END $$;
-CREATE TEMP TABLE academic147_expected_promotion_commands ON COMMIT DROP AS
-SELECT request_id,pg_temp.academic147_canonical_promotion(outcome,run_id) AS outcome FROM academic_promotion_run_commands;
-CREATE TEMP TABLE academic147_expected_promotion_approvals ON COMMIT DROP AS
-SELECT id,pg_temp.academic147_canonical_promotion(intent,run_id) AS intent FROM academic_promotion_run_approvals;
+CREATE TEMP TABLE academic148_expected_promotion_commands ON COMMIT DROP AS
+SELECT request_id,pg_temp.academic148_canonical_promotion(outcome,run_id) AS outcome FROM academic_promotion_run_commands;
+CREATE TEMP TABLE academic148_expected_promotion_approvals ON COMMIT DROP AS
+SELECT id,pg_temp.academic148_canonical_promotion(intent,run_id) AS intent FROM academic_promotion_run_approvals;
 
 -- Legacy accepted requests had no explicit offering-date constraint. Publication
 -- may legitimately retime those outputs, so retain their actual dates and leave
 -- the new accepted constraint unbound. Still prove the created subset with exact
 -- IDs, counts and transaction-default timestamps; never infer request intent from
 -- mutable current output dates.
-CREATE TEMP TABLE academic147_expected_apply_dates ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_apply_dates ON COMMIT DROP AS
 SELECT ledger.idempotency_key,
        NULL::date AS starts_on,
        ledger.created_offering_count,created.created_count,
@@ -316,13 +316,13 @@ CROSS JOIN LATERAL(
     WHERE offering.academic_term_id=ledger.academic_term_id AND offering.created_at=ledger.created_at
 ) created;
 DO $$ BEGIN
-    IF EXISTS(SELECT 1 FROM academic147_expected_apply_dates WHERE created_count<>created_offering_count OR all_created_count<>created_count OR invalid_output_count<>0 OR NOT unique_outputs)
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_CURRICULUM_CREATED_INTENT_UNMAPPABLE'; END IF;
+    IF EXISTS(SELECT 1 FROM academic148_expected_apply_dates WHERE created_count<>created_offering_count OR all_created_count<>created_count OR invalid_output_count<>0 OR NOT unique_outputs)
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;
 -- 079 stored the complete normalized identity. Reconstruct Serde field and
 -- enum order, rather than hashing jsonb's different object ordering or accepting
 -- a corrupted legacy checksum. Original evidence is verified, never rewritten.
-CREATE FUNCTION pg_temp.academic147_preparation_identity_valid(
+CREATE FUNCTION pg_temp.academic148_preparation_identity_valid(
     actor_id uuid,nonce uuid,source_id uuid,target_id uuid,modules text[],mappings jsonb,
     source_hash text,request_hash text
 ) RETURNS boolean LANGUAGE plpgsql AS $$
@@ -367,24 +367,24 @@ BEGIN
     INTO dates FROM jsonb_array_elements(mappings->'dates') entry;
     normalized_dates:=dates::jsonb;
     IF normalized_dates IS DISTINCT FROM mappings->'dates' THEN RETURN false; END IF;
-    expected_hash:=encode(sha256(convert_to(pg_temp.academic147_compact_json(json_build_array(actor_id,nonce,
+    expected_hash:=encode(sha256(convert_to(pg_temp.academic148_compact_json(json_build_array(actor_id,nonce,
         json_build_object('source_term_id',source_id,'target_term_id',target_id,'modules',modules,
           'mappings',json_build_object('entities',entities,'dates',dates)),source_hash)),'UTF8')),'hex');
     RETURN expected_hash=request_hash;
 EXCEPTION WHEN data_exception THEN RETURN false;
 END $$;
 DO $$ BEGIN
-    IF EXISTS(SELECT 1 FROM academic_term_preparation_runs ledger WHERE NOT pg_temp.academic147_preparation_identity_valid(
+    IF EXISTS(SELECT 1 FROM academic_term_preparation_runs ledger WHERE NOT pg_temp.academic148_preparation_identity_valid(
         ledger.actor_user_id,ledger.request_id,ledger.source_academic_term_id,ledger.target_academic_term_id,ledger.selected_modules,ledger.mappings,ledger.source_checksum,ledger.request_checksum))
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PREPARATION_REQUEST_UNMAPPABLE'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE'; END IF;
 END $$;
-CREATE TEMP TABLE academic147_preparation_delivery_outputs ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_preparation_delivery_outputs ON COMMIT DROP AS
 SELECT ledger.id,ledger.target_academic_term_id,ledger.created_at,
        (module->>'createdCount')::bigint AS created_count,
        ARRAY(SELECT value::uuid FROM jsonb_array_elements_text(module->'targetIds')) AS target_ids
 FROM academic_term_preparation_runs ledger CROSS JOIN LATERAL jsonb_array_elements(ledger.outcome) module
 WHERE module->>'module'='delivery';
-CREATE TEMP TABLE academic147_preparation_created_proof ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_preparation_created_proof ON COMMIT DROP AS
 SELECT output.id,created.offerings,created.groups,created.revisions,
        output.created_count,
        (SELECT count(*) FROM unnest(output.target_ids) candidate(id)
@@ -408,7 +408,7 @@ SELECT output.id,created.offerings,created.groups,created.revisions,
              UNION ALL SELECT revision.id FROM academic_term_change_sets revision WHERE revision.id=candidate.id AND revision.academic_term_id=output.target_academic_term_id
          ) matching)<>1) AS invalid_output_count,
        cardinality(output.target_ids)=(SELECT count(DISTINCT candidate.id) FROM unnest(output.target_ids) candidate(id)) AS unique_outputs
-FROM academic147_preparation_delivery_outputs output
+FROM academic148_preparation_delivery_outputs output
 JOIN academic_term_preparation_runs ledger ON ledger.id=output.id
 CROSS JOIN LATERAL(
     SELECT count(DISTINCT offering.id) FILTER(WHERE offering.created_at=output.created_at) AS offerings,
@@ -420,21 +420,21 @@ CROSS JOIN LATERAL(
     LEFT JOIN academic_term_change_sets revision ON revision.id=candidate.id AND revision.academic_term_id=output.target_academic_term_id
 ) created;
 DO $$ BEGIN
-    IF EXISTS(SELECT ledger.id FROM academic_term_preparation_runs ledger LEFT JOIN academic147_preparation_delivery_outputs output ON output.id=ledger.id
+    IF EXISTS(SELECT ledger.id FROM academic_term_preparation_runs ledger LEFT JOIN academic148_preparation_delivery_outputs output ON output.id=ledger.id
         GROUP BY ledger.id,ledger.selected_modules HAVING count(output.id)<>CASE WHEN 'delivery'=ANY(ledger.selected_modules) THEN 1 ELSE 0 END)
-       OR EXISTS(SELECT 1 FROM academic147_preparation_created_proof WHERE
+       OR EXISTS(SELECT 1 FROM academic148_preparation_created_proof WHERE
          offerings+groups+revisions<>created_count OR revisions<>1 OR proven_versions<>1 OR offerings<>all_created_offerings
          OR invalid_output_count<>0 OR NOT unique_outputs)
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_PREPARATION_CREATED_INTENT_UNMAPPABLE'; END IF;
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE'; END IF;
 END $$;
-CREATE TEMP TABLE academic147_expected_preparation_dates ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_preparation_dates ON COMMIT DROP AS
 SELECT ledger.id,NULL::date AS offering_starts_on
 FROM academic_term_preparation_runs ledger;
 
 -- Snapshot retained facts for the complete dependent relation graph. Only the
 -- explicitly transformed fields are normalized; evidence contains hashes, no PII.
-CREATE TEMP TABLE academic147_preservation_tables(table_name text PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO academic147_preservation_tables
+CREATE TEMP TABLE academic148_preservation_tables(table_name text PRIMARY KEY) ON COMMIT DROP;
+INSERT INTO academic148_preservation_tables
 WITH RECURSIVE dependent_relations(oid) AS (
     SELECT 'academic_years'::regclass::oid UNION SELECT 'academic_terms'::regclass::oid
     UNION SELECT constraint_record.conrelid FROM pg_constraint constraint_record
@@ -446,14 +446,14 @@ JOIN pg_class relation ON relation.oid=dependency.oid
 JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
 WHERE namespace.nspname=current_schema() AND relation.relkind IN('r','p')
   AND relation.relname<>'attendance_days';
-INSERT INTO academic147_preservation_tables VALUES('calendar_events'),('behavior_settings'),('behavior_cycles'),('behavior_entries')
+INSERT INTO academic148_preservation_tables VALUES('calendar_events'),('behavior_settings'),('behavior_cycles'),('behavior_entries')
 ON CONFLICT DO NOTHING;
-CREATE TEMP TABLE academic147_before(table_name text PRIMARY KEY,row_count bigint,facts_sha256 text) ON COMMIT DROP;
-CREATE FUNCTION pg_temp.academic147_snapshot()
+CREATE TEMP TABLE academic148_before(table_name text PRIMARY KEY,row_count bigint,facts_sha256 text) ON COMMIT DROP;
+CREATE FUNCTION pg_temp.academic148_snapshot()
 RETURNS TABLE(table_name text,row_count bigint,facts_sha256 text) LANGUAGE plpgsql AS $$
 DECLARE item record; normalized text;
 BEGIN
-    FOR item IN SELECT preservation.table_name FROM academic147_preservation_tables preservation ORDER BY preservation.table_name LOOP
+    FOR item IN SELECT preservation.table_name FROM academic148_preservation_tables preservation ORDER BY preservation.table_name LOOP
         normalized := 'to_jsonb(fact)';
         IF item.table_name='academic_years' THEN
             normalized := normalized || ' - ARRAY[''start_date'',''end_date'']';
@@ -470,11 +470,11 @@ BEGIN
         ELSIF item.table_name='academic_promotion_run_items' THEN
             normalized := normalized || ' - ''target_placement_starts_on''';
         ELSIF item.table_name='academic_promotion_run_commands' THEN
-            normalized := normalized || ' || jsonb_build_object(''outcome'',pg_temp.academic147_strip_intent_dates(fact.outcome))';
+            normalized := normalized || ' || jsonb_build_object(''outcome'',pg_temp.academic148_strip_intent_dates(fact.outcome))';
         ELSIF item.table_name='academic_promotion_run_approvals' THEN
-            normalized := normalized || ' || jsonb_build_object(''intent'',pg_temp.academic147_strip_intent_dates(fact.intent))';
+            normalized := normalized || ' || jsonb_build_object(''intent'',pg_temp.academic148_strip_intent_dates(fact.intent))';
         ELSIF item.table_name IN('academic_term_transition_receipts','academic_year_transition_receipts') THEN
-            normalized := '(' || normalized || ' - ''canonical_request'') || jsonb_build_object(''outcome'',pg_temp.academic147_strip_replay_context(fact.outcome))';
+            normalized := '(' || normalized || ' - ''canonical_request'') || jsonb_build_object(''outcome'',pg_temp.academic148_strip_replay_context(fact.outcome))';
         ELSIF item.table_name='behavior_settings' THEN
             normalized := normalized || ' || jsonb_build_object(''merit_reset'',CASE WHEN fact.merit_reset IN(''term'',''year'') THEN ''scheduled'' ELSE fact.merit_reset END,''deduction_reset'',CASE WHEN fact.deduction_reset IN(''term'',''year'') THEN ''scheduled'' ELSE fact.deduction_reset END)';
         END IF;
@@ -483,33 +483,33 @@ BEGIN
             item.table_name,normalized,current_schema(),item.table_name);
     END LOOP;
 END $$;
-INSERT INTO academic147_before SELECT * FROM pg_temp.academic147_snapshot();
+INSERT INTO academic148_before SELECT * FROM pg_temp.academic148_snapshot();
 
 ALTER TABLE calendar_event_targets DISABLE TRIGGER update_calendar_event_targets_updated_at;
 UPDATE calendar_event_targets target SET academic_year_id=mapping.academic_year_id
-FROM academic147_calendar_mapping mapping WHERE mapping.id=target.id;
+FROM academic148_calendar_mapping mapping WHERE mapping.id=target.id;
 ALTER TABLE calendar_event_targets ENABLE TRIGGER update_calendar_event_targets_updated_at;
 ALTER TABLE calendar_event_targets ADD CONSTRAINT calendar_scoped_targets_explicit_year
 CHECK ((grade_level_id IS NULL AND homeroom_id IS NULL) OR academic_year_id IS NOT NULL);
 INSERT INTO attendance_days(academic_term_id,date,counted,note)
-SELECT academic_term_id,date,counted,note FROM academic147_expected_days ON CONFLICT DO NOTHING;
+SELECT academic_term_id,date,counted,note FROM academic148_expected_days ON CONFLICT DO NOTHING;
 
 ALTER TABLE learning_delivery_apply_runs ADD COLUMN starts_on date;
 UPDATE learning_delivery_apply_runs ledger SET starts_on=expected.starts_on
-FROM academic147_expected_apply_dates expected WHERE expected.idempotency_key=ledger.idempotency_key;
+FROM academic148_expected_apply_dates expected WHERE expected.idempotency_key=ledger.idempotency_key;
 ALTER TABLE academic_term_preparation_runs ADD COLUMN offering_starts_on date;
 ALTER TABLE academic_term_preparation_runs DISABLE TRIGGER academic_term_preparation_runs_immutable;
 UPDATE academic_term_preparation_runs ledger SET offering_starts_on=expected.offering_starts_on
-FROM academic147_expected_preparation_dates expected WHERE expected.id=ledger.id;
+FROM academic148_expected_preparation_dates expected WHERE expected.id=ledger.id;
 ALTER TABLE academic_term_preparation_runs ENABLE TRIGGER academic_term_preparation_runs_immutable;
 
 ALTER TABLE academic_term_transition_receipts ADD COLUMN canonical_request jsonb;
 ALTER TABLE academic_term_transition_receipts DISABLE TRIGGER academic_term_transition_receipts_immutable;
 ALTER TABLE academic_year_transition_receipts DISABLE TRIGGER academic_year_transition_receipts_immutable;
 UPDATE academic_term_transition_receipts receipt SET canonical_request=expected.canonical_request,outcome=expected.outcome
-FROM academic147_expected_term_receipts expected WHERE expected.request_id=receipt.request_id;
+FROM academic148_expected_term_receipts expected WHERE expected.request_id=receipt.request_id;
 UPDATE academic_year_transition_receipts receipt SET outcome=expected.outcome
-FROM academic147_expected_year_receipts expected WHERE expected.request_id=receipt.request_id;
+FROM academic148_expected_year_receipts expected WHERE expected.request_id=receipt.request_id;
 ALTER TABLE academic_term_transition_receipts ENABLE TRIGGER academic_term_transition_receipts_immutable;
 ALTER TABLE academic_year_transition_receipts ENABLE TRIGGER academic_year_transition_receipts_immutable;
 ALTER TABLE academic_term_transition_receipts ALTER COLUMN canonical_request SET NOT NULL;
@@ -518,14 +518,14 @@ ALTER TABLE academic_term_transition_receipts ADD CHECK(jsonb_typeof(canonical_r
 ALTER TABLE academic_promotion_run_items ADD COLUMN target_placement_starts_on date;
 ALTER TABLE academic_promotion_run_items DISABLE TRIGGER academic_promotion_run_items_identity;
 UPDATE academic_promotion_run_items item SET target_placement_starts_on=expected.target_placement_starts_on
-FROM academic147_expected_promotion_item_dates expected WHERE expected.id=item.id;
+FROM academic148_expected_promotion_item_dates expected WHERE expected.id=item.id;
 ALTER TABLE academic_promotion_run_items ENABLE TRIGGER academic_promotion_run_items_identity;
 ALTER TABLE academic_promotion_run_commands DISABLE TRIGGER academic_promotion_run_commands_immutable;
 ALTER TABLE academic_promotion_run_approvals DISABLE TRIGGER academic_promotion_run_approvals_immutable;
 UPDATE academic_promotion_run_commands command SET outcome=expected.outcome
-FROM academic147_expected_promotion_commands expected WHERE expected.request_id=command.request_id;
+FROM academic148_expected_promotion_commands expected WHERE expected.request_id=command.request_id;
 UPDATE academic_promotion_run_approvals approval SET intent=expected.intent
-FROM academic147_expected_promotion_approvals expected WHERE expected.id=approval.id;
+FROM academic148_expected_promotion_approvals expected WHERE expected.id=approval.id;
 ALTER TABLE academic_promotion_run_commands ENABLE TRIGGER academic_promotion_run_commands_immutable;
 ALTER TABLE academic_promotion_run_approvals ENABLE TRIGGER academic_promotion_run_approvals_immutable;
 
@@ -552,7 +552,7 @@ CREATE TABLE behavior_reset_dates(
     resets_on date NOT NULL,
     PRIMARY KEY(side,resets_on)
 );
-CREATE TEMP TABLE academic147_expected_resets ON COMMIT DROP AS
+CREATE TEMP TABLE academic148_expected_resets ON COMMIT DROP AS
 SELECT DISTINCT policy.side,term.boundary AS resets_on FROM behavior_settings settings
 CROSS JOIN LATERAL (VALUES('merit',settings.merit_reset),('deduction',settings.deduction_reset)) policy(side,schedule)
 CROSS JOIN LATERAL (
@@ -562,7 +562,7 @@ CROSS JOIN LATERAL (
     UNION SELECT year.end_date FROM academic_years year
     WHERE policy.schedule='year' AND year.status IN('active','closing','closed','archived')
 ) term;
-INSERT INTO behavior_reset_dates SELECT * FROM academic147_expected_resets;
+INSERT INTO behavior_reset_dates SELECT * FROM academic148_expected_resets;
 ALTER TABLE behavior_settings DROP CONSTRAINT behavior_settings_merit_reset_check,
     DROP CONSTRAINT behavior_settings_deduction_reset_check;
 UPDATE behavior_settings SET
@@ -572,22 +572,22 @@ ALTER TABLE behavior_settings ADD CHECK(merit_reset IN('manual','monthly','sched
     ADD CHECK(deduction_reset IN('manual','monthly','scheduled'));
 
 DO $$ BEGIN
-    IF EXISTS(SELECT id,academic_year_id FROM academic147_calendar_mapping EXCEPT SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic147_calendar_mapping mapping ON mapping.id=target.id)
-       OR EXISTS(SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic147_calendar_mapping mapping ON mapping.id=target.id EXCEPT SELECT id,academic_year_id FROM academic147_calendar_mapping)
-       OR EXISTS(SELECT * FROM academic147_expected_promotion_dates EXCEPT SELECT id,target_placement_starts_on FROM academic_promotion_runs)
-       OR EXISTS(SELECT id,target_placement_starts_on FROM academic_promotion_runs EXCEPT SELECT * FROM academic147_expected_promotion_dates)
-       OR EXISTS(SELECT * FROM academic147_expected_days EXCEPT SELECT academic_term_id,date,counted,note FROM attendance_days)
-       OR EXISTS(SELECT * FROM academic147_existing_days EXCEPT SELECT academic_term_id,date,counted,note FROM attendance_days)
+    IF EXISTS(SELECT id,academic_year_id FROM academic148_calendar_mapping EXCEPT SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic148_calendar_mapping mapping ON mapping.id=target.id)
+       OR EXISTS(SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic148_calendar_mapping mapping ON mapping.id=target.id EXCEPT SELECT id,academic_year_id FROM academic148_calendar_mapping)
+       OR EXISTS(SELECT * FROM academic148_expected_promotion_dates EXCEPT SELECT id,target_placement_starts_on FROM academic_promotion_runs)
+       OR EXISTS(SELECT id,target_placement_starts_on FROM academic_promotion_runs EXCEPT SELECT * FROM academic148_expected_promotion_dates)
+       OR EXISTS(SELECT * FROM academic148_expected_days EXCEPT SELECT academic_term_id,date,counted,note FROM attendance_days)
+       OR EXISTS(SELECT * FROM academic148_existing_days EXCEPT SELECT academic_term_id,date,counted,note FROM attendance_days)
        OR EXISTS(SELECT academic_term_id,date,counted,note FROM attendance_days EXCEPT
-           (SELECT * FROM academic147_expected_days UNION SELECT * FROM academic147_existing_days))
-       OR EXISTS(SELECT * FROM academic147_expected_resets EXCEPT SELECT * FROM behavior_reset_dates)
-       OR EXISTS(SELECT * FROM behavior_reset_dates EXCEPT SELECT * FROM academic147_expected_resets)
+           (SELECT * FROM academic148_expected_days UNION SELECT * FROM academic148_existing_days))
+       OR EXISTS(SELECT * FROM academic148_expected_resets EXCEPT SELECT * FROM behavior_reset_dates)
+       OR EXISTS(SELECT * FROM behavior_reset_dates EXCEPT SELECT * FROM academic148_expected_resets)
        OR EXISTS(
-           SELECT 1 FROM academic147_existing_targets old LEFT JOIN calendar_event_targets current ON current.id=old.id
+           SELECT 1 FROM academic148_existing_targets old LEFT JOIN calendar_event_targets current ON current.id=old.id
            WHERE current.id IS NULL OR (old.academic_year_id IS NOT NULL AND current.academic_year_id IS DISTINCT FROM old.academic_year_id)
-       ) OR EXISTS(SELECT * FROM academic147_before EXCEPT SELECT * FROM pg_temp.academic147_snapshot())
-       OR EXISTS(SELECT * FROM pg_temp.academic147_snapshot() EXCEPT SELECT * FROM academic147_before)
-    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_RECONCILIATION_FAILED'; END IF;
+       ) OR EXISTS(SELECT * FROM academic148_before EXCEPT SELECT * FROM pg_temp.academic148_snapshot())
+       OR EXISTS(SELECT * FROM pg_temp.academic148_snapshot() EXCEPT SELECT * FROM academic148_before)
+    THEN RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED'; END IF;
 END $$;
 
 ALTER TABLE behavior_suppressions ALTER COLUMN start_date DROP NOT NULL,ALTER COLUMN end_date DROP NOT NULL;
@@ -605,8 +605,8 @@ CREATE TABLE academic_context_cutover_audit(
     checked_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO academic_context_cutover_audit(singleton,retained_facts,mapped_calendar_targets,materialized_attendance_days,scheduled_behavior_resets)
-SELECT true,(SELECT jsonb_object_agg(table_name,jsonb_build_object('rowCount',row_count,'sha256',facts_sha256)) FROM academic147_before),
-       (SELECT count(*) FROM academic147_calendar_mapping),(SELECT count(*) FROM academic147_expected_days),(SELECT count(*) FROM academic147_expected_resets);
+SELECT true,(SELECT jsonb_object_agg(table_name,jsonb_build_object('rowCount',row_count,'sha256',facts_sha256)) FROM academic148_before),
+       (SELECT count(*) FROM academic148_calendar_mapping),(SELECT count(*) FROM academic148_expected_days),(SELECT count(*) FROM academic148_expected_resets);
 
 DROP TRIGGER academic_terms_within_year ON academic_terms;
 DROP FUNCTION academic_assert_term_within_year();
@@ -691,26 +691,26 @@ ALTER TABLE academic_years DROP COLUMN start_date,DROP COLUMN end_date;
 ALTER TABLE academic_terms DROP COLUMN start_date,DROP COLUMN planned_end_date,DROP COLUMN closed_on;
 
 DO $$ BEGIN
-    IF EXISTS(SELECT * FROM academic147_expected_promotion_dates EXCEPT SELECT id,target_placement_starts_on FROM academic_promotion_runs)
-       OR EXISTS(SELECT id,target_placement_starts_on FROM academic_promotion_runs EXCEPT SELECT * FROM academic147_expected_promotion_dates)
-       OR EXISTS(SELECT id,academic_year_id FROM academic147_calendar_mapping EXCEPT SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic147_calendar_mapping mapping ON mapping.id=target.id)
-       OR EXISTS(SELECT idempotency_key,starts_on FROM learning_delivery_apply_runs EXCEPT SELECT idempotency_key,starts_on FROM academic147_expected_apply_dates)
-       OR EXISTS(SELECT idempotency_key,starts_on FROM academic147_expected_apply_dates EXCEPT SELECT idempotency_key,starts_on FROM learning_delivery_apply_runs)
-       OR EXISTS(SELECT id,offering_starts_on FROM academic_term_preparation_runs EXCEPT SELECT * FROM academic147_expected_preparation_dates)
-       OR EXISTS(SELECT * FROM academic147_expected_preparation_dates EXCEPT SELECT id,offering_starts_on FROM academic_term_preparation_runs)
-       OR EXISTS(SELECT request_id,canonical_request,outcome FROM academic_term_transition_receipts EXCEPT SELECT * FROM academic147_expected_term_receipts)
-       OR EXISTS(SELECT * FROM academic147_expected_term_receipts EXCEPT SELECT request_id,canonical_request,outcome FROM academic_term_transition_receipts)
-       OR EXISTS(SELECT request_id,outcome FROM academic_year_transition_receipts EXCEPT SELECT * FROM academic147_expected_year_receipts)
-       OR EXISTS(SELECT * FROM academic147_expected_year_receipts EXCEPT SELECT request_id,outcome FROM academic_year_transition_receipts)
-       OR EXISTS(SELECT id,run_id,target_placement_starts_on FROM academic_promotion_run_items EXCEPT SELECT * FROM academic147_expected_promotion_item_dates)
-       OR EXISTS(SELECT * FROM academic147_expected_promotion_item_dates EXCEPT SELECT id,run_id,target_placement_starts_on FROM academic_promotion_run_items)
-       OR EXISTS(SELECT request_id,outcome FROM academic_promotion_run_commands EXCEPT SELECT * FROM academic147_expected_promotion_commands)
-       OR EXISTS(SELECT * FROM academic147_expected_promotion_commands EXCEPT SELECT request_id,outcome FROM academic_promotion_run_commands)
-       OR EXISTS(SELECT id,intent FROM academic_promotion_run_approvals EXCEPT SELECT * FROM academic147_expected_promotion_approvals)
-       OR EXISTS(SELECT * FROM academic147_expected_promotion_approvals EXCEPT SELECT id,intent FROM academic_promotion_run_approvals)
-       OR EXISTS(SELECT * FROM academic147_before EXCEPT SELECT * FROM pg_temp.academic147_snapshot())
-       OR EXISTS(SELECT * FROM pg_temp.academic147_snapshot() EXCEPT SELECT * FROM academic147_before) THEN
-        RAISE EXCEPTION 'ACADEMIC_CONTEXT_147_POST_CLEANUP_RECONCILIATION_FAILED';
+    IF EXISTS(SELECT * FROM academic148_expected_promotion_dates EXCEPT SELECT id,target_placement_starts_on FROM academic_promotion_runs)
+       OR EXISTS(SELECT id,target_placement_starts_on FROM academic_promotion_runs EXCEPT SELECT * FROM academic148_expected_promotion_dates)
+       OR EXISTS(SELECT id,academic_year_id FROM academic148_calendar_mapping EXCEPT SELECT target.id,target.academic_year_id FROM calendar_event_targets target JOIN academic148_calendar_mapping mapping ON mapping.id=target.id)
+       OR EXISTS(SELECT idempotency_key,starts_on FROM learning_delivery_apply_runs EXCEPT SELECT idempotency_key,starts_on FROM academic148_expected_apply_dates)
+       OR EXISTS(SELECT idempotency_key,starts_on FROM academic148_expected_apply_dates EXCEPT SELECT idempotency_key,starts_on FROM learning_delivery_apply_runs)
+       OR EXISTS(SELECT id,offering_starts_on FROM academic_term_preparation_runs EXCEPT SELECT * FROM academic148_expected_preparation_dates)
+       OR EXISTS(SELECT * FROM academic148_expected_preparation_dates EXCEPT SELECT id,offering_starts_on FROM academic_term_preparation_runs)
+       OR EXISTS(SELECT request_id,canonical_request,outcome FROM academic_term_transition_receipts EXCEPT SELECT * FROM academic148_expected_term_receipts)
+       OR EXISTS(SELECT * FROM academic148_expected_term_receipts EXCEPT SELECT request_id,canonical_request,outcome FROM academic_term_transition_receipts)
+       OR EXISTS(SELECT request_id,outcome FROM academic_year_transition_receipts EXCEPT SELECT * FROM academic148_expected_year_receipts)
+       OR EXISTS(SELECT * FROM academic148_expected_year_receipts EXCEPT SELECT request_id,outcome FROM academic_year_transition_receipts)
+       OR EXISTS(SELECT id,run_id,target_placement_starts_on FROM academic_promotion_run_items EXCEPT SELECT * FROM academic148_expected_promotion_item_dates)
+       OR EXISTS(SELECT * FROM academic148_expected_promotion_item_dates EXCEPT SELECT id,run_id,target_placement_starts_on FROM academic_promotion_run_items)
+       OR EXISTS(SELECT request_id,outcome FROM academic_promotion_run_commands EXCEPT SELECT * FROM academic148_expected_promotion_commands)
+       OR EXISTS(SELECT * FROM academic148_expected_promotion_commands EXCEPT SELECT request_id,outcome FROM academic_promotion_run_commands)
+       OR EXISTS(SELECT id,intent FROM academic_promotion_run_approvals EXCEPT SELECT * FROM academic148_expected_promotion_approvals)
+       OR EXISTS(SELECT * FROM academic148_expected_promotion_approvals EXCEPT SELECT id,intent FROM academic_promotion_run_approvals)
+       OR EXISTS(SELECT * FROM academic148_before EXCEPT SELECT * FROM pg_temp.academic148_snapshot())
+       OR EXISTS(SELECT * FROM pg_temp.academic148_snapshot() EXCEPT SELECT * FROM academic148_before) THEN
+        RAISE EXCEPTION 'ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED';
     END IF;
 END $$;
 CREATE TRIGGER academic_context_cutover_audit_immutable

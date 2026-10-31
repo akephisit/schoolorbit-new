@@ -1,3 +1,4 @@
+mod assessment_publication_tests;
 #[cfg(test)]
 mod assessment_service_tests;
 pub use school_academic_assessment::exam_schedule::services as exam_schedule_service;

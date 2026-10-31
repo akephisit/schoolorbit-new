@@ -72,10 +72,10 @@ async fn academic_context_cutover_status(
     pool: Option<&PgPool>,
     version: i32,
 ) -> AcademicContextCutoverStatus {
-    if version < 147 {
+    if version < 148 {
         return AcademicContextCutoverStatus {
             status: "pendingMigration".into(),
-            migration_version: 147,
+            migration_version: 148,
             passed: None,
             checks: vec![],
         };
@@ -92,7 +92,7 @@ async fn academic_context_cutover_status(
                     "cutoverFailed"
                 }
                 .into(),
-                migration_version: 147,
+                migration_version: 148,
                 passed: Some(audit.completed),
                 checks: audit.checks,
             };
@@ -100,7 +100,7 @@ async fn academic_context_cutover_status(
     }
     AcademicContextCutoverStatus {
         status: "unavailable".into(),
-        migration_version: 147,
+        migration_version: 148,
         passed: Some(false),
         checks: vec![],
     }
@@ -992,7 +992,7 @@ mod tests {
         let value = serde_json::to_value(SchoolMigrationStatus {
             academic_context_cutover: AcademicContextCutoverStatus {
                 status: "pendingMigration".into(),
-                migration_version: 147,
+                migration_version: 148,
                 passed: None,
                 checks: vec![],
             },

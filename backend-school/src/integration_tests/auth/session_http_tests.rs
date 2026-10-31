@@ -1718,6 +1718,8 @@ pub(crate) mod protected_router {
             collaboration: websocket_manager.collaboration(),
             placement_rosters: &ROSTERS,
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            assessment_publication:
+                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
         };
         let app = Router::new()
@@ -1865,6 +1867,8 @@ pub(crate) mod protected_router {
             collaboration: websocket_manager.collaboration(),
             placement_rosters: &ROSTERS,
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+            assessment_publication:
+                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
         };
         let app = Router::new()

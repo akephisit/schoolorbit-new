@@ -14,7 +14,7 @@ const ACTOR: Uuid = Uuid::from_u128(0x50000000000000000000000000000001);
 async fn predecessor(name: &str) -> PgPool {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 145).await.unwrap();
+    apply_migrations_through(&pool, 146).await.unwrap();
     pool
 }
 async fn scoped_target(pool: &PgPool, date: &str, year: Option<Uuid>) -> Uuid {
@@ -24,7 +24,7 @@ async fn scoped_target(pool: &PgPool, date: &str, year: Option<Uuid>) -> Uuid {
         .bind(event).bind(year).fetch_one(pool).await.unwrap()
 }
 async fn assert_refusal(pool: &PgPool, code: &str) {
-    let error = apply_migrations_through(pool, 147).await.unwrap_err();
+    let error = apply_migrations_through(pool, 148).await.unwrap_err();
     assert!(
         error.to_string().contains(code),
         "expected {code}, received {error}"
@@ -32,7 +32,7 @@ async fn assert_refusal(pool: &PgPool, code: &str) {
     let retained:i64=sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='academic_terms' AND column_name IN('start_date','planned_end_date','closed_on')").fetch_one(pool).await.unwrap();
     assert_eq!(retained, 3, "destructive cleanup must roll back atomically");
     let applied: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE version=147")
+        sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE version=148")
             .fetch_one(pool)
             .await
             .unwrap();
@@ -48,7 +48,7 @@ async fn assert_refusal(pool: &PgPool, code: &str) {
 
 #[tokio::test]
 async fn populated_cutover_preserves_actual_facts_links_calendars_defaults_and_replays() {
-    let pool = predecessor("context147_populated").await;
+    let pool = predecessor("context148_populated").await;
     let target = scoped_target(&pool, "2025-05-02", None).await;
     let explicit = scoped_target(&pool, "2025-05-03", Some(NEXT_YEAR)).await;
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,'{\"enabled\":true,\"weekdays\":[],\"lateAfter\":\"08:00:00\",\"digestTimes\":[],\"evidenceDays\":30,\"faceDistance\":0.45,\"faceMargin\":0.1,\"activityCountsAsPresent\":true}',$2)").bind(TERM).bind(ACTOR).execute(&pool).await.unwrap();
@@ -63,7 +63,7 @@ async fn populated_cutover_preserves_actual_facts_links_calendars_defaults_and_r
     sqlx::query("INSERT INTO academic_promotion_policy_versions(id,name,rules,progression_row_version,reviewed_by) VALUES($1,'Migration policy','[{}]',1,$2)").bind(policy).bind(ACTOR).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_promotion_runs(id,source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by) VALUES($1,$2,$3,$4,$5,repeat('a',64),$6)").bind(run).bind(YEAR).bind(NEXT_YEAR).bind(policy).bind(Uuid::new_v4()).bind(ACTOR).execute(&pool).await.unwrap();
     let preserved:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM homeroom_placements),(SELECT count(*) FROM learning_offerings),(SELECT count(*) FROM academic_timetable_versions)").fetch_one(&pool).await.unwrap();
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     let mapped: (Uuid, String) = sqlx::query_as(
         "SELECT academic_year_id,updated_at::date::text FROM calendar_event_targets WHERE id=$1",
     )
@@ -124,7 +124,7 @@ async fn populated_cutover_preserves_actual_facts_links_calendars_defaults_and_r
             .fetch_one(&pool)
             .await
             .unwrap();
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     let replay: serde_json::Value =
         sqlx::query_scalar("SELECT retained_facts FROM academic_context_cutover_audit")
             .fetch_one(&pool)
@@ -137,9 +137,9 @@ async fn populated_cutover_preserves_actual_facts_links_calendars_defaults_and_r
 async fn missing_calendar_year_refuses_zero_or_ambiguous_historical_matches() {
     for ambiguous in [false, true] {
         let pool = predecessor(if ambiguous {
-            "context147_ambiguous"
+            "context148_ambiguous"
         } else {
-            "context147_missing"
+            "context148_missing"
         })
         .await;
         if ambiguous {
@@ -155,7 +155,7 @@ async fn missing_calendar_year_refuses_zero_or_ambiguous_historical_matches() {
             None,
         )
         .await;
-        assert_refusal(&pool, "ACADEMIC_CONTEXT_147_CALENDAR_YEAR_UNMAPPABLE").await;
+        assert_refusal(&pool, "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE").await;
         let year: Option<Uuid> =
             sqlx::query_scalar("SELECT academic_year_id FROM calendar_event_targets WHERE id=$1")
                 .bind(id)
@@ -175,8 +175,8 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
         "tampered_known_view",
         "view",
     ] {
-        let pool = predecessor(&format!("context147_unknown_{kind}")).await;
-        apply_migrations_through(&pool, 146).await.unwrap();
+        let pool = predecessor(&format!("context148_unknown_{kind}")).await;
+        apply_migrations_through(&pool, 147).await.unwrap();
         let original_exam_view: String = sqlx::query_scalar(
             "SELECT pg_get_viewdef('academic_exam_eligible_sources'::regclass,false)",
         )
@@ -216,7 +216,7 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
             if kind == "view" {
                 "depend"
             } else {
-                "ACADEMIC_CONTEXT_147_UNKNOWN_DATE_DEPENDENCY"
+                "ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY"
             },
         )
         .await;
@@ -251,17 +251,17 @@ async fn unknown_date_functions_checks_and_views_refuse_cleanup() {
                     .unwrap();
             }
         }
-        apply_migrations_through(&pool, 147).await.unwrap();
+        apply_migrations_through(&pool, 148).await.unwrap();
     }
 }
 
 #[tokio::test]
 async fn transformed_target_reassignment_refuses_even_when_foreign_keys_are_valid() {
-    let pool = predecessor("context147_wrong_target").await;
+    let pool = predecessor("context148_wrong_target").await;
     let id = scoped_target(&pool, "2025-05-02", None).await;
-    apply_migrations_through(&pool, 146).await.unwrap();
+    apply_migrations_through(&pool, 147).await.unwrap();
     sqlx::raw_sql("CREATE FUNCTION surprise_mapping() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.academic_year_id:='10000000-0000-0000-0000-000000000026'; RETURN NEW; END $$; CREATE TRIGGER surprise_mapping BEFORE UPDATE ON calendar_event_targets FOR EACH ROW EXECUTE FUNCTION surprise_mapping()").execute(&pool).await.unwrap();
-    assert_refusal(&pool, "ACADEMIC_CONTEXT_147_RECONCILIATION_FAILED").await;
+    assert_refusal(&pool, "ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED").await;
     let year: Option<Uuid> =
         sqlx::query_scalar("SELECT academic_year_id FROM calendar_event_targets WHERE id=$1")
             .bind(id)
@@ -275,7 +275,7 @@ async fn transformed_target_reassignment_refuses_even_when_foreign_keys_are_vali
     .execute(&pool)
     .await
     .unwrap();
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
 }
 
 #[derive(serde::Serialize)]
@@ -333,9 +333,9 @@ async fn old_term_receipt(
 
 #[tokio::test]
 async fn historical_term_request_mapping_preserves_full_checksum_and_real_event_day() {
-    let pool = predecessor("context147_term_receipt").await;
+    let pool = predecessor("context148_term_receipt").await;
     let (id, mut request, old_outcome, old_checksum) = old_term_receipt(&pool, true).await;
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     request.as_object_mut().unwrap().remove("closedOn");
     let(canonical,outcome,checksum,evidence):(serde_json::Value,serde_json::Value,String,serde_json::Value)=sqlx::query_as("SELECT canonical_request,outcome,request_checksum,accepted_readiness FROM academic_term_transition_receipts WHERE request_id=$1").bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(canonical, request);
@@ -352,23 +352,23 @@ async fn historical_term_request_mapping_preserves_full_checksum_and_real_event_
         audit[1], old_outcome,
         "original audit is not replaced by a fabricated current result"
     );
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
 }
 
 #[tokio::test]
 async fn missing_or_changed_original_term_request_refuses_before_cleanup() {
     for missing in [true, false] {
         let pool = predecessor(if missing {
-            "context147_receipt_missing"
+            "context148_receipt_missing"
         } else {
-            "context147_receipt_changed"
+            "context148_receipt_changed"
         })
         .await;
         let (id, _, _, _) = old_term_receipt(&pool, !missing).await;
         if !missing {
             sqlx::query("UPDATE academic_audit_events SET payload=jsonb_set(payload,'{0,reason}','\"changed evidence\"') WHERE entity_id=$1 AND event_code='academic.term.reopen'").bind(TERM).execute(&pool).await.unwrap();
         }
-        assert_refusal(&pool, "ACADEMIC_CONTEXT_147_TERM_RECEIPT_SOURCE_UNMAPPABLE").await;
+        assert_refusal(&pool, "ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE").await;
         let same: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM academic_term_transition_receipts WHERE request_id=$1",
         )
@@ -382,11 +382,11 @@ async fn missing_or_changed_original_term_request_refuses_before_cleanup() {
 
 #[tokio::test]
 async fn preparation_mapping_checksum_and_independent_revision_dates_are_preserved() {
-    let pool = predecessor("context147_preparation_valid").await;
+    let pool = predecessor("context148_preparation_valid").await;
     let (nonce, version, revision, checksum) = seed_legacy_preparation_receipt(&pool, 0).await;
     let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$1),(SELECT to_jsonb(r) FROM academic_term_change_sets r WHERE id=$2))")
         .bind(version).bind(revision).fetch_one(&pool).await.unwrap();
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     let(date,stored):(Option<NaiveDate>,String)=sqlx::query_as("SELECT offering_starts_on,request_checksum FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap();
     assert_eq!(
         date, None,
@@ -401,7 +401,7 @@ async fn preparation_mapping_checksum_and_independent_revision_dates_are_preserv
 #[tokio::test]
 async fn preparation_tampered_checksum_mapping_or_version_proof_refuses_cleanup() {
     for kind in ["checksum", "mapping", "version"] {
-        let pool = predecessor(&format!("context147_preparation_{kind}")).await;
+        let pool = predecessor(&format!("context148_preparation_{kind}")).await;
         let (nonce, version, _, _) = seed_legacy_preparation_receipt(&pool, 0).await;
         sqlx::raw_sql("ALTER TABLE academic_term_preparation_runs DISABLE TRIGGER academic_term_preparation_runs_immutable").execute(&pool).await.unwrap();
         match kind {
@@ -419,9 +419,9 @@ async fn preparation_tampered_checksum_mapping_or_version_proof_refuses_cleanup(
         assert_refusal(
             &pool,
             if kind == "version" {
-                "ACADEMIC_CONTEXT_147_PREPARATION_CREATED_INTENT_UNMAPPABLE"
+                "ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE"
             } else {
-                "ACADEMIC_CONTEXT_147_PREPARATION_REQUEST_UNMAPPABLE"
+                "ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE"
             },
         )
         .await;
@@ -430,12 +430,12 @@ async fn preparation_tampered_checksum_mapping_or_version_proof_refuses_cleanup(
 
 #[tokio::test]
 async fn preparation_mixed_retained_and_created_offerings_keep_distinct_dates() {
-    let pool = predecessor("context147_preparation_mixed").await;
+    let pool = predecessor("context148_preparation_mixed").await;
     let (nonce, version, revision, checksum) = seed_legacy_preparation_receipt(&pool, 1).await;
     let before:Vec<(Uuid,NaiveDate)>=sqlx::query_as("SELECT id,starts_on FROM learning_offerings WHERE id IN(SELECT value::uuid FROM academic_term_preparation_runs ledger CROSS JOIN LATERAL jsonb_array_elements_text(ledger.outcome->0->'targetIds') value WHERE ledger.request_id=$1) ORDER BY id").bind(nonce).fetch_all(&pool).await.unwrap();
     assert_eq!(before.len(), 2);
     assert_ne!(before[0].1, before[1].1);
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     let(date,stored):(Option<NaiveDate>,String)=sqlx::query_as("SELECT offering_starts_on,request_checksum FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap();
     assert_eq!(
         date, None,
@@ -457,7 +457,7 @@ async fn preparation_mixed_retained_and_created_offerings_keep_distinct_dates() 
             NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()
         )
     );
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
 }
 
 fn camel_record(value: serde_json::Value) -> serde_json::Value {
@@ -538,10 +538,10 @@ async fn old_promotion_history(pool: &PgPool) -> (Uuid, Vec<(Uuid, Option<NaiveD
 }
 #[tokio::test]
 async fn promotion_mixed_executed_dates_hold_and_pending_default_are_preserved() {
-    let pool = predecessor("context147_promotion_mixed").await;
+    let pool = predecessor("context148_promotion_mixed").await;
     let (run, expected) = old_promotion_history(&pool).await;
     let placements:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(placement) ORDER BY placement.id) FROM homeroom_placements placement").fetch_one(&pool).await.unwrap();
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     for (item, date) in expected {
         let actual: Option<NaiveDate> = sqlx::query_scalar(
             "SELECT target_placement_starts_on FROM academic_promotion_run_items WHERE id=$1",
@@ -566,7 +566,7 @@ async fn promotion_mixed_executed_dates_hold_and_pending_default_are_preserved()
 }
 #[tokio::test]
 async fn promotion_receipt_for_nonexecuted_item_refuses_cleanup() {
-    let pool = predecessor("context147_promotion_receipt_status").await;
+    let pool = predecessor("context148_promotion_receipt_status").await;
     let (_, items) = old_promotion_history(&pool).await;
     sqlx::raw_sql("ALTER TABLE academic_promotion_run_items DISABLE TRIGGER academic_promotion_run_items_identity").execute(&pool).await.unwrap();
     sqlx::query("UPDATE academic_promotion_run_items SET status='reviewed' WHERE id=$1")
@@ -577,7 +577,7 @@ async fn promotion_receipt_for_nonexecuted_item_refuses_cleanup() {
     sqlx::raw_sql("ALTER TABLE academic_promotion_run_items ENABLE TRIGGER academic_promotion_run_items_identity").execute(&pool).await.unwrap();
     assert_refusal(
         &pool,
-        "ACADEMIC_CONTEXT_147_PROMOTION_ITEM_INTENT_UNMAPPABLE",
+        "ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE",
     )
     .await;
 }
@@ -588,7 +588,7 @@ async fn assert_retimed_legacy_receipts_preserved(created: usize) {
         seed_legacy_curriculum_receipt,
     };
     for preparation in [false, true] {
-        let pool = predecessor(&format!("context147_retimed_{created}_{preparation}")).await;
+        let pool = predecessor(&format!("context148_retimed_{created}_{preparation}")).await;
         let (nonce, target, original_hash) = if preparation {
             let (nonce, _, _, checksum) = seed_legacy_preparation_receipt(&pool, created).await;
             let target:Uuid=sqlx::query_scalar("SELECT target_academic_term_id FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap();
@@ -607,7 +607,7 @@ async fn assert_retimed_legacy_receipts_preserved(created: usize) {
             assert_ne!(actual_dates[0].1, actual_dates[1].1);
         }
         let before = legacy_offering_receipt_facts(&pool, target).await;
-        apply_migrations_through(&pool, 147).await.unwrap();
+        apply_migrations_through(&pool, 148).await.unwrap();
         let (bound, checksum): (Option<NaiveDate>, String) = if preparation {
             sqlx::query_as("SELECT offering_starts_on,request_checksum FROM academic_term_preparation_runs WHERE request_id=$1").bind(nonce).fetch_one(&pool).await.unwrap()
         } else {
@@ -616,7 +616,7 @@ async fn assert_retimed_legacy_receipts_preserved(created: usize) {
         assert_eq!(bound,None,"legacy DTOs accepted no explicit offering date, even when the receipt created offerings");
         assert_eq!(checksum, original_hash);
         assert_eq!(legacy_offering_receipt_facts(&pool,target).await,before,"all evolved output dates, exact identities, request hashes and original audit facts remain unchanged");
-        apply_migrations_through(&pool, 147).await.unwrap();
+        apply_migrations_through(&pool, 148).await.unwrap();
         assert_eq!(legacy_offering_receipt_facts(&pool, target).await, before);
     }
 }
@@ -633,7 +633,7 @@ async fn legacy_divergent_publication_subsets_preserve_unbound_receipts() {
 
 #[tokio::test]
 async fn attendance_captured_dates_after_later_closure_keep_their_old_counting_meaning() {
-    let pool = predecessor("context147_attendance_captured_dates").await;
+    let pool = predecessor("context148_attendance_captured_dates").await;
     let captured = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(); // Thursday, captured before the later backdated closure.
     let finalized = captured.succ_opt().unwrap();
     let (student_year,student):(Uuid,Uuid)=sqlx::query_as("SELECT id,student_id FROM student_academic_years WHERE academic_year_id=$1 ORDER BY id LIMIT 1").bind(YEAR).fetch_one(&pool).await.unwrap();
@@ -681,7 +681,7 @@ async fn attendance_captured_dates_after_later_closure_keep_their_old_counting_m
         .unwrap(),
         0
     );
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     for date in [captured, finalized] {
         let decision: Option<bool> = sqlx::query_scalar(
             "SELECT counted FROM attendance_days WHERE academic_term_id=$1 AND date=$2",
@@ -709,7 +709,7 @@ async fn attendance_captured_dates_after_later_closure_keep_their_old_counting_m
         .await
         .unwrap();
     assert_eq!(after, before);
-    apply_migrations_through(&pool, 147).await.unwrap();
+    apply_migrations_through(&pool, 148).await.unwrap();
     assert_eq!(
         sqlx::query_scalar::<_, serde_json::Value>(facts_sql)
             .fetch_one(&pool)
