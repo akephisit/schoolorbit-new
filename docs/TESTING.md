@@ -2378,7 +2378,15 @@ visibility, existing-148 nonnull dates, fresh provisioning, pool size one, and m
 
 ```bash
 ./scripts/test_backend_school.sh --integration academic149_receipt_recovery -- --test-threads=1
+./scripts/test_backend_school.sh --integration academic149_receipt_recovery_refusals -- --test-threads=1
+BACKEND_SCHOOL_TEST_BIN=backend-school ./scripts/test_backend_school.sh \
+  context_status_is_pending_below149_and_unavailable_without_its_pool -- --test-threads=1
 ```
+
+The separate refusal target checks unsupported receipt states and dependency/trigger drift without
+weakening the unchanged migration-148 predicates. The status filter belongs to the application
+binary, not either integration-test target; it checks pending status below 149 and unavailable
+status when the version-149 pool is absent.
 
 Select further migration-unit, Academic Core context and architecture checks with the Backend
 implementation. No fixture may use a production database or edit applied migration/history bytes.

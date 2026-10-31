@@ -1690,7 +1690,7 @@ and distinct-output totals use different units and must not be equated. No recei
 timestamps or hashes are published, and the read-only observation still performs no repair.
 These counts do not authorize guessed data repair or changes to applied migrations.
 
-Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and 149 with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
+Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and [149](../backend-school/migrations/149_academic_receipt_recovery.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
@@ -1708,7 +1708,8 @@ admits only pure mask-1 cases with original count `N` greater than current times
 with `N` no greater than distinct nonnull output cardinality and all other predicates passing.
 All receipts participate in preservation. It preflights receipt shape, triggers and dependencies, retains the
 original physical count column with its identity/default/checks, and derives a same-name `M`
-projection. Before native unchanged 148, complete original receipt JSON must reconstruct exactly
+projection. Unknown triggers or dependencies refuse before projection; never suppress that refusal
+or remove an object to force the transition. Before native unchanged 148, complete original receipt JSON must reconstruct exactly
 by bidirectional `EXCEPT ALL`, count and SHA proofs. Preparation changes no other domain relation.
 One outer transaction and connection span preparation, native SQLx 148 and 149 restoration.
 The 148 audit truthfully records the projected phase; immutable 149 evidence links original,
