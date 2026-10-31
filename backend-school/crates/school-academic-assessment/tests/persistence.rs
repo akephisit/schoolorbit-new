@@ -43,11 +43,45 @@ fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
 #[tokio::test]
 async fn assessment_candidates_read_canonical_name_projection() {
     let pool = populated_canonical_pool("assessment_canonical_names").await;
-    let (offering, term): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT learning_offering_id, academic_term_id FROM course_assessment_plans ORDER BY id LIMIT 1",
-    ).fetch_one(&pool).await.unwrap();
+    // Migration 146 can add another subject's plan ahead of the retained Math UUID.
+    let mut math_plans: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT plan.learning_offering_id,plan.academic_term_id
+         FROM course_assessment_plans plan
+         JOIN course_offering_details detail ON detail.learning_offering_id=plan.learning_offering_id
+         JOIN subjects subject ON subject.id=detail.subject_id
+         JOIN academic_terms term ON term.id=plan.academic_term_id
+         WHERE subject.code='MATH-CORE' AND term.status='active'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(math_plans.len(), 1);
+    let (offering, term) = math_plans.pop().unwrap();
     let primary = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let secondary = Uuid::parse_str("50000000-0000-0000-0000-000000000003").unwrap();
+    assert_eq!(sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM learning_groups WHERE learning_offering_id=$1 AND status<>'closed'",
+    ).bind(offering).fetch_one(&pool).await.unwrap(), 2);
+    let assignments: Vec<(String, Uuid, String)> = sqlx::query_as(
+        "SELECT learning_group.status,teacher.teacher_id,teacher.role
+         FROM learning_groups learning_group
+         JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id
+         WHERE learning_group.learning_offering_id=$1 AND learning_group.status<>'closed'
+           AND teacher.starts_on<=(now() AT TIME ZONE 'Asia/Bangkok')::date
+           AND (teacher.ends_on IS NULL OR teacher.ends_on>=(now() AT TIME ZONE 'Asia/Bangkok')::date)
+         ORDER BY teacher.teacher_id",
+    )
+    .bind(offering)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        assignments,
+        vec![
+            ("published".into(), primary, "primary".into()),
+            ("published".into(), secondary, "primary".into())
+        ]
+    );
     sqlx::query(
         "UPDATE users SET title='นาย', first_name='สมชาย', last_name='ทดสอบ',
              title_en='Mr.', first_name_en='Somchai', last_name_en='Example' WHERE id=$1",
@@ -65,7 +99,12 @@ async fn assessment_candidates_read_canonical_name_projection() {
     .await
     .unwrap();
     // Add a draft group without changing the immutable published assignments.
-    sqlx::query(
+    let today: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let draft_group: Uuid = sqlx::query_scalar(
         "WITH inserted_group AS (
              INSERT INTO learning_groups (
                  id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status
@@ -76,10 +115,21 @@ async fn assessment_candidates_read_canonical_name_projection() {
          ) INSERT INTO learning_group_teachers (
              id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on
          ) SELECT uuidv7(),inserted_group.id,inserted_group.academic_term_id,
-                  inserted_group.academic_year_id,$2,'primary',(now() AT TIME ZONE 'Asia/Bangkok')::date
-           FROM inserted_group",
-    ).bind(offering).bind(primary)
-            .execute(&pool).await.unwrap();
+                  inserted_group.academic_year_id,$2,'primary',$3
+           FROM inserted_group RETURNING learning_group_id",
+    ).bind(offering).bind(primary).bind(today)
+            .fetch_one(&pool).await.unwrap();
+    let draft: (String, chrono::NaiveDate) = sqlx::query_as(
+        "SELECT learning_group.status,teacher.starts_on FROM learning_groups learning_group
+         JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id
+         WHERE learning_group.id=$1 AND teacher.teacher_id=$2",
+    )
+    .bind(draft_group)
+    .bind(primary)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(draft, ("draft".into(), today));
     sqlx::query(
         "UPDATE course_assessment_plans SET assessment_coordinator_id=$2 WHERE learning_offering_id=$1",
     ).bind(offering).bind(primary).execute(&pool).await.unwrap();

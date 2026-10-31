@@ -707,10 +707,14 @@ mod tests {
                 .await
                 .unwrap();
             if stage == "role_write" {
-                // The cutover fixture intentionally has no default parent role. Seed one so
-                // this fault reaches the real role INSERT rather than the optional-None branch.
-                sqlx::query("INSERT INTO roles(code,name,user_type,is_active) VALUES('PARENT','Guardian fixture','parent',true)")
-                    .execute(&fixture.pool).await.unwrap();
+                // The current fixture provisions PARENT through migration 102. Verify that
+                // the injected failure will reach the real user_roles INSERT.
+                assert!(sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM roles WHERE code='PARENT' AND user_type='parent' AND is_active)",
+                )
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap());
             }
             sqlx::raw_sql(sqlx::AssertSqlSafe(setup))
                 .execute(&fixture.pool)

@@ -223,8 +223,10 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         "calendar day note"
     );
     apply_migrations_through(&f.pool, 108).await.unwrap();
-    // Current saves use the ledger-only contract after central dispatch takes ownership.
-    apply_migrations_through(&f.pool, 120).await.unwrap();
+    // Historical preservation is verified above; current saves require the current dispatch schema.
+    apply_migrations_through(&f.pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let detail = sessions::detail(&f.pool, &f.actor, saved_session.id)
         .await
         .unwrap();
@@ -2218,12 +2220,20 @@ mod retention_tests {
         platform_types::DownloadGrant,
         storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
     };
+    use sha2::{Digest, Sha256};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
     use url::Url;
 
     #[derive(Default)]
-    struct RetentionStorage(AtomicUsize);
+    struct RetentionStorage {
+        deleted_objects: AtomicUsize,
+        objects: Mutex<HashSet<String>>,
+    }
     #[async_trait]
     impl StorageProvider for RetentionStorage {
         fn namespace(
@@ -2252,11 +2262,29 @@ mod retention_tests {
         async fn get(&self, _: &StoredObject, _: u64) -> Result<Bytes, StorageError> {
             panic!("retention must not read bytes")
         }
-        async fn head(&self, _: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
-            panic!("retention must not inspect objects")
+        async fn head(
+            &self,
+            object: &StoredObject,
+        ) -> Result<Option<ObjectMetadata>, StorageError> {
+            Ok(self
+                .objects
+                .lock()
+                .unwrap()
+                .contains(object.object_key.as_str())
+                .then(|| ObjectMetadata {
+                    content_type: Some(object.content_type.clone()),
+                    content_length: Some(50_000),
+                }))
         }
-        async fn delete(&self, _: &StoredObject) -> Result<(), StorageError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
+        async fn delete(&self, object: &StoredObject) -> Result<(), StorageError> {
+            if self
+                .objects
+                .lock()
+                .unwrap()
+                .remove(object.object_key.as_str())
+            {
+                self.deleted_objects.fetch_add(1, Ordering::SeqCst);
+            }
             Ok(())
         }
         async fn private_download_grant(
@@ -2284,10 +2312,18 @@ mod retention_tests {
         let f = fixture("attendance_file_cleaner_capacity").await;
         let pool = f.pool;
         let actor = f.actor.user_id;
+        let storage = Arc::new(RetentionStorage::default());
+        let mut version_ids = Vec::new();
         for _ in 0..105 {
             let file = Uuid::new_v4();
+            let object_key = format!(
+                "tenants/{}/attendance/evidence/{file}/v1/original.jpg",
+                Uuid::new_v4()
+            );
+            assert!(storage.objects.lock().unwrap().insert(object_key.clone()));
             sqlx::query("INSERT INTO files(id,owner_user_id,purpose_code,display_filename,visibility,lifecycle_status,retention_class,created_by,expires_at,inspection_metadata) VALUES($1,$2,'attendance_evidence','fixture.jpg','private','ready','temporary',$2,now()-interval '1 minute','{\"kind\":\"image\",\"width_px\":640,\"height_px\":480}')").bind(file).bind(actor).execute(&pool).await.unwrap();
-            let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(format!("tenants/{}/attendance/evidence/{file}/v1/original.jpg", Uuid::new_v4())).bind(actor).fetch_one(&pool).await.unwrap();
+            let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(object_key).bind(actor).fetch_one(&pool).await.unwrap();
+            version_ids.push(version);
             sqlx::query("UPDATE files SET current_version_id=$2 WHERE id=$1")
                 .bind(file)
                 .bind(version)
@@ -2295,13 +2331,53 @@ mod retention_tests {
                 .await
                 .unwrap();
         }
+        // All locators and their fake provider routing are owned by this fixture.
+        // Bind that evidence through the real owner/revision/identity checks.
+        let namespaces =
+            school_file_platform::namespace_binding::ConfiguredNamespaces::from_provider(
+                storage.as_ref(),
+            )
+            .unwrap();
+        let watch_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM file_storage_cleanup_watches WHERE target_kind='version' AND target_id=ANY($1) ORDER BY id")
+            .bind(&version_ids).fetch_all(&pool).await.unwrap();
+        assert_eq!(watch_ids.len(), 105);
+        let mut object_keys = storage
+            .objects
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        object_keys.sort();
+        let attestation = hex::encode(Sha256::digest(
+            serde_json::to_vec(&("fixture", "https://fixture.invalid", "private", object_keys))
+                .unwrap(),
+        ));
+        let manifest = school_file_platform::namespace_binding::prepare_binding_manifest(
+            &pool,
+            &watch_ids,
+            attestation,
+            &namespaces,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            school_file_platform::namespace_binding::bind_attested_namespaces(
+                &pool,
+                &manifest,
+                &namespaces,
+                true
+            )
+            .await
+            .unwrap(),
+            105
+        );
         assert_eq!(
             school_attendance::services::faces::expire_evidence(&pool)
                 .await
                 .unwrap(),
             100
         );
-        let storage = Arc::new(RetentionStorage::default());
         let platform = Arc::new(FilePlatform::new(
             storage.clone(),
             Arc::new(RetentionScanner),
@@ -2309,8 +2385,11 @@ mod retention_tests {
         FileCleaner::new(pool.clone(), platform)
             .reconcile_file_operations()
             .await;
-        assert_eq!(storage.0.load(Ordering::SeqCst), 105);
+        // Ordinary deletes and cleanup watches may repeat an idempotent provider request.
+        assert_eq!(storage.deleted_objects.load(Ordering::SeqCst), 105);
+        assert!(storage.objects.lock().unwrap().is_empty());
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM files WHERE lifecycle_status='deleted' AND purpose_code='attendance_evidence'").fetch_one(&pool).await.unwrap(), 105);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM file_operations WHERE operation_type='delete_object' AND status='succeeded'").fetch_one(&pool).await.unwrap(), 105);
     }
 }
 
@@ -2938,6 +3017,10 @@ async fn attendance_migration_preserves_explicit_legacy_ceremony_facts_and_retri
         ("present".into(), "teacher".into(), "preserved".into(), 7)
     );
     apply_migrations_through(&pool, 108).await.unwrap();
+    // The current reader uses explicit dates materialized from preserved legacy counting rules.
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let report = reports::summaries(&pool, TERM, Some(STUDENT), None)
         .await
         .unwrap();
@@ -3847,6 +3930,25 @@ async fn attendance_prefetched_score_change_reloads_reset_before_new_generation_
     )
     .await
     .unwrap();
+    assert!(settings::days(&f.pool, TERM, date, date)
+        .await
+        .unwrap()
+        .is_empty());
+    settings::save_days(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceDays {
+            row_version: 0,
+            days: vec![AttendanceDay {
+                date,
+                counted: true,
+                note: String::new(),
+            }],
+        },
+    )
+    .await
+    .unwrap();
     let new_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
     assert_eq!(old_session.id, new_session.id);
     let new_detail = sessions::detail(&f.pool, &f.actor, new_session.id)
@@ -4151,6 +4253,18 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
     use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
     let f = fixture("attendance_lifecycle_delivery_gate").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    // This gate scenario owns one counted day, rather than the migrated fixture's full calendar.
+    sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true)")
+        .bind(TERM)
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
         .bind(TERM)

@@ -195,7 +195,16 @@ async fn gradebook_lifecycle_guard_preserves_history_and_rejects_all_ordinary_wr
 
 #[tokio::test]
 async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
-    let (pool, actor, _, _, _) = fixture("gradebook_default_scopes").await;
+    // Customize the original broad grants before migrations 064 and 065 narrow defaults.
+    let pool = create_named_test_pool_with_max_connections("gradebook_default_scopes", 4).await;
+    seed_release_two_predecessor(&pool).await.unwrap();
+    apply_migrations_through(&pool, 60).await.unwrap();
+    let actor_id: Uuid = sqlx::query_scalar(
+        "SELECT teacher_id FROM learning_group_teachers WHERE role='primary' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let unit: Uuid = sqlx::query_scalar("SELECT id FROM organization_units WHERE code='SUBJ-SC'")
         .fetch_one(&pool)
         .await
@@ -210,11 +219,11 @@ async fn gradebook_defaults_limit_generated_subject_group_reads_to_heads() {
         .bind(customized_source).bind(vec![codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT, codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT, codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT, codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT]).execute(&pool).await.unwrap();
     // A later school edit must survive even if the broad position was retained.
     sqlx::query("UPDATE organization_permission_grants g SET created_by=$1 FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$2 AND p.code=$3")
-        .bind(actor.user_id).bind(other).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+        .bind(actor_id).bind(other).bind(codes::ACADEMIC_GRADEBOOK_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     sqlx::query("UPDATE organization_permission_grants g SET created_at=g.created_at+interval '1 day' FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$1 AND p.code=$2")
         .bind(other).bind(codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     sqlx::query("UPDATE organization_permission_grants g SET created_by=$1 FROM permissions p WHERE g.permission_id=p.id AND g.organization_unit_id=$2 AND p.code=$3")
-        .bind(actor.user_id).bind(other).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+        .bind(actor_id).bind(other).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
     // Existing head grants must not cause unique-key failure or be duplicated.
     sqlx::query("INSERT INTO organization_permission_grants (organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=$2 ON CONFLICT DO NOTHING")
         .bind(unit).bind(codes::ACADEMIC_RESULT_READ_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
