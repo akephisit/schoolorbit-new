@@ -364,7 +364,7 @@ async fn publish_in_permit(
             "ตารางยังไม่พร้อมเผยแพร่ กรุณาแก้รายการที่แจ้งก่อน".into(),
         ));
     }
-    let written = DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.publish", "UPDATE academic_timetable_versions SET effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
+    let written = DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.publish", "UPDATE academic_timetable_versions SET publication_no=(SELECT COALESCE(max(publication_no),0)+1 FROM academic_timetable_versions WHERE academic_term_id=(SELECT academic_term_id FROM academic_timetable_versions WHERE id=$1) AND status='published'),effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
         .bind(id).bind(request.effective_from).bind(actor).bind(request.idempotency_key).bind(&request_hash) .bind(request.row_version).execute().await?;
     if written.rows_affected() != 1 {
         return Err(AppError::Conflict(
@@ -550,20 +550,10 @@ async fn build_preview(
         true
     };
     let mut findings = readiness(&source.snapshot, &blocks);
-    let duplicate:bool=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.publication_date","SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' AND effective_from=$2)").bind(context.academic_term_id).bind(date).fetch_one().await?;
     if !delivery::contains_date(&source, date) {
         findings.push(finding(
             TimetablePublicationFindingCode::DeliveryDateMismatch,
             "วันที่เริ่มใช้ไม่ตรงกับช่วงที่รุ่นเปิดสอนอ้างอิงมีผล กรุณาอัปเดตรุ่นเปิดสอนหรือเลือกวันที่ใหม่",
-            None,
-            None,
-            None,
-        ));
-    }
-    if duplicate {
-        findings.push(finding(
-            TimetablePublicationFindingCode::DateAlreadyPublished,
-            "มีตารางที่เผยแพร่ในวันที่นี้แล้ว",
             None,
             None,
             None,
@@ -616,6 +606,23 @@ async fn build_preview(
         ));
     }
     let source_issues = timetable_source::source_issues(&source.snapshot, &blocks);
+    let date_rules = school_academic_delivery::services::publication::date_rules_on_connection(
+        &mut **tx,
+        context.academic_term_id,
+    )
+    .await?;
+    if date_rules
+        .minimum_effective_from
+        .is_some_and(|minimum| date < minimum)
+    {
+        findings.push(finding(
+            TimetablePublicationFindingCode::InvalidDate,
+            "ภาคเรียนที่เปิดใช้งานแล้วไม่สามารถกำหนดวันที่เริ่มใช้ย้อนหลังได้",
+            None,
+            None,
+            None,
+        ));
+    }
     let preview_hash = hash(&(
         id,
         context.row_version,
@@ -628,9 +635,24 @@ async fn build_preview(
         (&teacher_states, &resource_evidence),
         &findings,
         &source_issues,
-        duplicate,
     ))?;
+    let latest_delivery_publication =
+        school_academic_delivery::services::publication::context_on_connection(
+            &mut **tx, latest_id,
+        )
+        .await?;
+    let delivery_publication = school_academic_delivery::services::publication::context(&source)?;
+    let applicable_delivery_publication =
+        school_academic_delivery::services::publication::applicable_on_connection(
+            &mut **tx,
+            context.academic_term_id,
+            date,
+        )
+        .await?;
     Ok(TimetablePublicationPreview {
+        delivery_publication,
+        latest_delivery_publication,
+        applicable_delivery_publication,
         timetable_version_id: id,
         row_version: context.row_version,
         delivery_version_id: source.id,

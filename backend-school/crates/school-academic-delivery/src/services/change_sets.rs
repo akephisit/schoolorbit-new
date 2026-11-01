@@ -38,6 +38,7 @@ struct ChangeSetRow {
     academic_year_id: Uuid,
     effective_from: NaiveDate,
     publication_effective_from: Option<NaiveDate>,
+    publication_no: Option<i64>,
     reason: String,
     status: AcademicTermChangeSetStatus,
     base_delivery_version_id: Option<Uuid>,
@@ -54,11 +55,14 @@ struct ChangeSetRow {
 
 #[derive(Debug, FromRow)]
 struct ChangeSetSummaryRow {
+    published_at: Option<chrono::DateTime<Utc>>,
+    published_by: Option<Uuid>,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     effective_from: NaiveDate,
     publication_effective_from: Option<NaiveDate>,
+    publication_no: Option<i64>,
     reason: String,
     status: AcademicTermChangeSetStatus,
     target_delivery_version_id: Option<Uuid>,
@@ -82,25 +86,12 @@ struct ChangeItemRow {
     updated_at: chrono::DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, serde::Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TeacherEpisodeAuditSnapshot {
-    role: LearningTeacherRole,
-    starts_on: NaiveDate,
-    ends_on: Option<NaiveDate>,
-    row_version: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TeacherEpisodeAuditChange {
-    action: AcademicTermChangeActionKind,
-    item_id: Uuid,
-    episode_id: Uuid,
-    learning_group_id: Uuid,
-    teacher_id: Uuid,
-    before: Option<TeacherEpisodeAuditSnapshot>,
-    after: TeacherEpisodeAuditSnapshot,
+struct PublicationEffectivityEvidence {
+    cutoff_assignment_ids: Vec<Uuid>,
+    created_assignment_ids: Vec<Uuid>,
+    affected_group_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,6 +102,7 @@ struct NormalizedCreateRequest<'a> {
 }
 
 const CHANGE_SET_COLUMNS: &str = r#"
+    (SELECT publication_no FROM academic_delivery_versions WHERE id=target_delivery_version_id) AS publication_no,
     id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
     base_delivery_version_id, target_delivery_version_id, row_version,
     created_by, published_by, published_at, cancelled_by, cancelled_at,
@@ -134,7 +126,7 @@ pub async fn list_change_set_summaries_on_connection(
     academic_term_id: Uuid,
 ) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
     let rows = DbSession::new(connection).query_as::<ChangeSetSummaryRow>("academic_delivery.services.change_sets.list_change_set_summaries_on_connection",
-        r#"SELECT id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
+        r#"SELECT published_at,published_by,(SELECT publication_no FROM academic_delivery_versions WHERE id=target_delivery_version_id) AS publication_no,id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
                   target_delivery_version_id, updated_at
            FROM academic_term_change_sets
            WHERE academic_term_id = $1 AND target_delivery_version_id IS NOT NULL
@@ -147,6 +139,9 @@ pub async fn list_change_set_summaries_on_connection(
     rows.into_iter()
         .map(|row| {
             Ok(AcademicTermChangeSetSummary {
+                publication_no: row.publication_no,
+                published_at: row.published_at,
+                published_by: row.published_by,
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,
@@ -306,6 +301,19 @@ pub async fn publish_change_set(
     )
     .await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
+    let receipt: Option<(Uuid,String)> = DbSession::new(&mut *transaction)
+        .query_as("academic_delivery.services.change_sets.publish_change_set.receipt", "SELECT id,publication_request_hash FROM academic_term_change_sets WHERE publication_idempotency_key=$1")
+        .bind(request.idempotency_key).fetch_optional().await?;
+    if let Some((accepted, hash)) = receipt {
+        if accepted != id || hash != publication_request_hash {
+            return Err(AppError::Conflict(
+                "idempotencyKey การเผยแพร่นี้ถูกใช้กับคำขออื่นแล้ว".into(),
+            ));
+        }
+        let result = get_change_set_on_connection(&mut transaction, id).await?;
+        transaction.commit().await?;
+        return Ok(result);
+    }
     let preview =
         build_preview_in_transaction(&mut transaction, id, true, Some(request.effective_from))
             .await?;
@@ -464,48 +472,22 @@ pub async fn publish_change_set(
         }
     }
 
-    if !stop_offering_ids.is_empty() {
-        let ends_on = change_set
-            .effective_from
-            .checked_sub_signed(chrono::Duration::days(1))
-            .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่ถูกต้อง".to_string()))?;
-        let stopped = DbSession::new(&mut *transaction)
-            .query(
-                "academic_delivery.services.change_sets.publish_change_set",
-                r#"UPDATE learning_offerings
-               SET ends_on = $1, stop_reason = $2, stopped_at = now(),
-                   stopped_by = $3, stop_change_set_id = $4,
-                   row_version = row_version + 1, updated_at = now()
-               WHERE id = ANY($5) AND status = 'published' AND ends_on IS NULL"#,
-            )
-            .bind(ends_on)
-            .bind(&change_set.reason)
-            .bind(actor_user_id)
-            .bind(change_set.id)
-            .bind(&stop_offering_ids)
-            .execute()
-            .await?;
-        if stopped.rows_affected() != stop_offering_ids.len() as u64 {
-            return Err(AppError::Conflict(
-                "รายการเปิดสอนที่จะหยุดเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
-            ));
-        }
-    }
-
     let teacher_episode_changes =
         apply_teacher_episode_changes(&mut transaction, &change_set, &item_rows, actor_user_id)
             .await?;
-    let teacher_group_ids = teacher_episode_changes
-        .iter()
-        .map(|change| change.learning_group_id)
-        .collect::<Vec<_>>();
-    super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
+    super::invalidate_group_academic_confirmations(
+        &mut transaction,
+        &teacher_episode_changes.affected_group_ids,
+    )
+    .await?;
+    let publication_no: i64=DbSession::new(&mut *transaction).scalar("academic_delivery.services.change_sets.publish_change_set.number", "SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
+        .bind(academic_term_id).fetch_one().await?;
 
     let published_version = DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.change_sets.publish_change_set",
             r#"UPDATE academic_delivery_versions
-           SET status = 'published', effective_from=$6, published_by = $1, published_at = now(),
+           SET status = 'published', publication_no=$7, effective_from=$6, published_by = $1, published_at = now(),
                publication_idempotency_key=$4,publication_request_hash=$5,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $2 AND status = 'draft' AND row_version = $3"#,
@@ -516,6 +498,7 @@ pub async fn publish_change_set(
         .bind(request.idempotency_key)
         .bind(&publication_request_hash)
         .bind(request.effective_from)
+        .bind(publication_no)
         .execute()
         .await?;
     if published_version.rows_affected() != 1 {
@@ -596,179 +579,20 @@ pub async fn publish_change_set(
 async fn apply_teacher_episode_changes(
     transaction: &mut Transaction<'_, Postgres>,
     change_set: &ChangeSetRow,
-    items: &[ChangeItemRow],
+    _items: &[ChangeItemRow],
     actor_user_id: Uuid,
-) -> Result<Vec<TeacherEpisodeAuditChange>, AppError> {
-    let mut teacher_items = items
-        .iter()
-        .filter(|item| {
-            matches!(
-                item.action_kind,
-                AcademicTermChangeActionKind::AddGroupTeacher
-                    | AcademicTermChangeActionKind::AdjustGroupTeacherRole
-                    | AcademicTermChangeActionKind::StopGroupTeacher
-            )
-        })
-        .collect::<Vec<_>>();
-    if teacher_items.is_empty() {
-        return Ok(Vec::new());
-    }
-    DbSession::new(&mut **transaction)
-        .query(
-            "academic_delivery.services.change_sets.apply_teacher_episode_changes",
-            "SELECT set_config('schoolorbit.academic_change_set_id', $1, true)",
-        )
-        .bind(change_set.id.to_string())
-        .execute()
-        .await?;
-    teacher_items.sort_by_key(|item| {
-        (
-            match item.action_kind {
-                AcademicTermChangeActionKind::StopGroupTeacher => 0,
-                AcademicTermChangeActionKind::AdjustGroupTeacherRole => 1,
-                AcademicTermChangeActionKind::AddGroupTeacher => 2,
-                _ => 3,
-            },
-            item.learning_group_id,
-            item.teacher_id,
-            item.id,
-        )
-    });
-    let ends_on = change_set
-        .effective_from
-        .checked_sub_signed(chrono::Duration::days(1))
-        .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่ถูกต้อง".to_string()))?;
-    let mut changes = Vec::new();
-
-    for item in teacher_items.iter().filter(|item| {
-        matches!(
-            item.action_kind,
-            AcademicTermChangeActionKind::StopGroupTeacher
-                | AcademicTermChangeActionKind::AdjustGroupTeacherRole
-        )
-    }) {
-        let episode_id = required_change_item_field(
-            item.learning_group_teacher_id,
-            "รายการเปลี่ยนครูไม่มีช่วงการสอนเดิม",
-        )?;
-        let before: (
-            Uuid,
-            Uuid,
-            LearningTeacherRole,
-            NaiveDate,
-            Option<NaiveDate>,
-            i64,
-        ) = DbSession::new(&mut **transaction)
-            .query_as(
-                "academic_delivery.services.change_sets.apply_teacher_episode_changes",
-                r#"SELECT learning_group_id, teacher_id, role, starts_on, ends_on, row_version
-                   FROM learning_group_teachers
-                   WHERE id = $1
-                   FOR UPDATE"#,
-            )
-            .bind(episode_id)
-            .fetch_optional()
-            .await?
-            .ok_or_else(|| AppError::Conflict("ช่วงการสอนเดิมไม่พบแล้ว".to_string()))?;
-        if Some(before.0) != item.learning_group_id || Some(before.1) != item.teacher_id {
-            return Err(AppError::Conflict(
-                "บริบทช่วงการสอนเดิมเปลี่ยนแปลงแล้ว".to_string(),
-            ));
-        }
-        let updated = DbSession::new(&mut **transaction)
-            .query(
-                "academic_delivery.services.change_sets.apply_teacher_episode_changes",
-                r#"UPDATE learning_group_teachers
-               SET ends_on = $1, ended_by_change_set_id = $2,
-                   row_version = row_version + 1,
-                   updated_by = $3, updated_at = now()
-               WHERE id = $4
-                 AND starts_on < $5
-                 AND (ends_on IS NULL OR ends_on >= $5)
-                 AND ended_by_change_set_id IS NULL"#,
-            )
-            .bind(ends_on)
-            .bind(change_set.id)
-            .bind(actor_user_id)
-            .bind(episode_id)
-            .bind(change_set.effective_from)
-            .execute()
-            .await?;
-        if updated.rows_affected() != 1 {
-            return Err(AppError::Conflict(
-                "ช่วงการสอนเดิมเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
-            ));
-        }
-        changes.push(TeacherEpisodeAuditChange {
-            action: item.action_kind,
-            item_id: item.id,
-            episode_id,
-            learning_group_id: before.0,
-            teacher_id: before.1,
-            before: Some(TeacherEpisodeAuditSnapshot {
-                role: before.2,
-                starts_on: before.3,
-                ends_on: before.4,
-                row_version: before.5,
-            }),
-            after: TeacherEpisodeAuditSnapshot {
-                role: before.2,
-                starts_on: before.3,
-                ends_on: Some(ends_on),
-                row_version: before.5 + 1,
-            },
-        });
-    }
-
-    for item in teacher_items.iter().filter(|item| {
-        matches!(
-            item.action_kind,
-            AcademicTermChangeActionKind::AddGroupTeacher
-                | AcademicTermChangeActionKind::AdjustGroupTeacherRole
-        )
-    }) {
-        let learning_group_id =
-            required_change_item_field(item.learning_group_id, "รายการเพิ่มช่วงการสอนไม่มีกลุ่มเรียน")?;
-        let teacher_id = required_change_item_field(item.teacher_id, "รายการเพิ่มช่วงการสอนไม่มีครู")?;
-        let role = required_change_item_field(item.teacher_role, "รายการเพิ่มช่วงการสอนไม่มีบทบาท")?;
-        let episode_id = Uuid::new_v5(&item.id, b"delivery-teacher-episode");
+) -> Result<PublicationEffectivityEvidence, AppError> {
+    let evidence: sqlx::types::Json<PublicationEffectivityEvidence> =
         DbSession::new(&mut **transaction)
-            .query(
+            .scalar(
                 "academic_delivery.services.change_sets.apply_teacher_episode_changes",
-                r#"INSERT INTO learning_group_teachers (
-                   id, learning_group_id, academic_term_id, academic_year_id,
-                   teacher_id, role, starts_on, started_by_change_set_id,
-                   created_by, updated_by
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)"#,
+                "SELECT academic_delivery_accept_effectivity($1,$2)",
             )
-            .bind(episode_id)
-            .bind(learning_group_id)
-            .bind(change_set.academic_term_id)
-            .bind(change_set.academic_year_id)
-            .bind(teacher_id)
-            .bind(role)
-            .bind(change_set.effective_from)
             .bind(change_set.id)
             .bind(actor_user_id)
-            .execute()
+            .fetch_one()
             .await?;
-        changes.push(TeacherEpisodeAuditChange {
-            action: item.action_kind,
-            item_id: item.id,
-            episode_id,
-            learning_group_id,
-            teacher_id,
-            before: None,
-            after: TeacherEpisodeAuditSnapshot {
-                role,
-                starts_on: change_set.effective_from,
-                ends_on: None,
-                row_version: 1,
-            },
-        });
-    }
-
-    Ok(changes)
+    Ok(evidence.0)
 }
 
 #[derive(Serialize)]
@@ -944,16 +768,14 @@ async fn build_preview_in_transaction(
             Some(id),
         ));
     }
-    let latest: Option<(Uuid,NaiveDate)> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.change_sets.build_preview_in_transaction", "SELECT id,effective_from FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+    let latest: Option<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.build_preview_in_transaction", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(term_id).fetch_optional().await?;
-    if latest.is_some_and(|(latest_id, date)| {
-        revision.base_delivery_version_id != Some(latest_id) || effective_from <= date
-    }) {
+    if latest != revision.base_delivery_version_id {
         findings.push(change_finding(
             AcademicChangeFindingCode::BaseDeliveryVersionStale,
             AcademicChangeFindingSeverity::Blocking,
-            "มีรุ่นเปิดสอนใหม่หรือวันที่เริ่มใช้ซ้ำ",
-            "สร้างร่างจากรุ่นเปิดสอนล่าสุด และเลือกวันเริ่มใช้หลังรุ่นนั้น",
+            "มีรุ่นเปิดสอนที่เผยแพร่ใหม่",
+            "สร้างร่างจากรุ่นเปิดสอนที่เผยแพร่ล่าสุด",
             1,
             None,
             None,
@@ -1053,7 +875,7 @@ async fn build_preview_in_transaction(
          FROM academic_term_change_items item LEFT JOIN learning_group_teachers episode ON episode.id=item.learning_group_teacher_id
          WHERE item.change_set_id=$1 AND item.action_kind IN('adjust_group_teacher_role','stop_group_teacher')
            AND (episode.id IS NULL OR episode.learning_group_id<>item.learning_group_id OR episode.teacher_id<>item.teacher_id
-                OR episode.academic_term_id<>$3 OR episode.starts_on>=$2 OR (episode.ends_on IS NOT NULL AND episode.ends_on<$2)) ORDER BY item.id")
+                OR episode.academic_term_id<>$3 OR $2::date IS NULL) ORDER BY item.id")
         .bind(id).bind(effective_from).bind(term_id).fetch_all().await?;
     for (offering, group, episode) in invalid_episodes {
         findings.push(change_finding(
@@ -1347,6 +1169,7 @@ fn finding_code_text(code: AcademicChangeFindingCode) -> &'static str {
         AcademicChangeFindingCode::ChangeSetNoItems => "change_set_no_items",
         AcademicChangeFindingCode::TermNotWritable => "term_not_writable",
         AcademicChangeFindingCode::EffectiveDateInvalid => "effective_date_invalid",
+        AcademicChangeFindingCode::ConsumedHistoryConflict => "consumed_history_conflict",
         AcademicChangeFindingCode::BaseDeliveryVersionStale => "base_delivery_version_stale",
         AcademicChangeFindingCode::ResourceStale => "resource_stale",
         AcademicChangeFindingCode::MissingDeliveryTarget => "missing_delivery_target",
@@ -1391,15 +1214,9 @@ pub async fn create_change_set_in_transaction(
         if existing_hash!=request_hash { return Err(AppError::Conflict("idempotencyKey นี้ถูกใช้กับคำขออื่นแล้ว".into())); }
         return Ok(existing_id);
     }
-    let base_id: Option<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1 FOR SHARE")
+    let base_id: Option<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1 FOR SHARE")
         .bind(term.id).fetch_optional().await?;
-    let latest_date: Option<NaiveDate>=DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.create_change_set_in_transaction", "SELECT max(effective_from) FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
-        .bind(term.id).fetch_one().await?;
-    let reference_date = bangkok_today().max(
-        latest_date
-            .and_then(|date| date.succ_opt())
-            .unwrap_or_else(bangkok_today),
-    );
+    let reference_date = bangkok_today();
     let revision_id = Uuid::now_v7();
     let target_id = Uuid::now_v7();
     DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
@@ -1891,19 +1708,16 @@ pub async fn upsert_change_item(
             let overlapping_episode_id: Option<Uuid> = DbSession::new(&mut *transaction)
                 .scalar(
                     "academic_delivery.services.change_sets.upsert_change_item",
-                    r#"SELECT id
-                   FROM learning_group_teachers
-                   WHERE learning_group_id = $1
-                     AND teacher_id = $2
-                     AND starts_on <= $3
-                     AND (ends_on IS NULL OR ends_on >= $3)
-                   ORDER BY starts_on DESC, id
-                   LIMIT 1
-                   FOR UPDATE"#,
+                    r#"SELECT (t->>'assignmentId')::uuid FROM academic_term_change_sets c
+                    JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id,
+                    jsonb_array_elements(b.snapshot->'offerings') o,jsonb_array_elements(o->'groups') g,
+                    jsonb_array_elements(g->'teachers') t
+                    WHERE (g->>'id')::uuid=$1 AND (t->>'teacherId')::uuid=$2 AND c.id=$3
+                    LIMIT 1"#,
                 )
                 .bind(learning_group_id)
                 .bind(teacher_id)
-                .bind(row.effective_from)
+                .bind(change_set_id)
                 .fetch_optional()
                 .await?;
             if let Some(episode_id) = overlapping_episode_id {
@@ -2569,7 +2383,7 @@ async fn require_effective_teacher_episode(
     learning_group_id: Uuid,
     learning_group_teacher_id: Uuid,
     teacher_id: Uuid,
-    effective_from: NaiveDate,
+    _effective_from: NaiveDate,
 ) -> Result<(), AppError> {
     let episode: Option<(NaiveDate, Option<NaiveDate>)> = DbSession::new(&mut **transaction)
         .query_as(
@@ -2590,16 +2404,11 @@ async fn require_effective_teacher_episode(
         .bind(term.academic_year_id)
         .fetch_optional()
         .await?;
-    let Some((starts_on, ends_on)) = episode else {
+    let Some((_starts_on, _ends_on)) = episode else {
         return Err(AppError::NotFound(
             "ไม่พบช่วงการสอนของครูในกลุ่มเรียนนี้".to_string(),
         ));
     };
-    if effective_from <= starts_on || ends_on.is_some_and(|end| effective_from > end) {
-        return Err(AppError::ValidationError(
-            "วันที่เริ่มใช้ต้องอยู่หลังวันเริ่มช่วงการสอนเดิมและไม่เกินวันสิ้นสุดเดิม".to_string(),
-        ));
-    }
     Ok(())
 }
 
@@ -2708,7 +2517,7 @@ async fn require_stoppable_offering(
         "หยุดและปรับจำนวนคาบของรายการเดียวกันในชุดเดียวไม่ได้",
     )
     .await?;
-    let (offering_term_id, offering_year_id, status, starts_on, ends_on): (
+    let (offering_term_id, offering_year_id, status, _starts_on, _ends_on): (
         Uuid,
         Uuid,
         LearningOfferingStatus,
@@ -2736,11 +2545,7 @@ async fn require_stoppable_offering(
             "หยุดได้เฉพาะรายการเปิดสอนที่เผยแพร่แล้ว".to_string(),
         ));
     }
-    if effective_from < starts_on || ends_on.is_some_and(|end| effective_from > end) {
-        return Err(AppError::ValidationError(
-            "รายการเปิดสอนไม่ได้เปิดใช้งานในวันที่เลือก".to_string(),
-        ));
-    }
+    let _ = effective_from;
     Ok(())
 }
 
@@ -3261,9 +3066,24 @@ async fn hydrate_many(
         &graphs.values().collect::<Vec<_>>(),
     )
     .await?;
+    let mut date_rules = HashMap::new();
+    for term in rows
+        .iter()
+        .map(|r| r.academic_term_id)
+        .collect::<BTreeSet<_>>()
+    {
+        date_rules.insert(
+            term,
+            super::publication::date_rules_on_connection(connection, term).await?,
+        );
+    }
     rows.into_iter()
         .map(|row| {
             Ok(AcademicTermChangeSet {
+                publication_no: row.publication_no,
+                publication_date_rules: date_rules.get(&row.academic_term_id).cloned().ok_or_else(
+                    || AppError::InternalServerError("Missing publication date policy".into()),
+                )?,
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,

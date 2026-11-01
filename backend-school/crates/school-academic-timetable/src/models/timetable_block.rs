@@ -330,6 +330,11 @@ pub struct TimetableBlockSummary {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableBlockWorkspace {
+    pub publication_date_rules: school_academic_delivery::models::versions::PublicationDateRules,
+    pub delivery_publication:
+        school_academic_delivery::models::versions::DeliveryPublicationContext,
+    pub latest_delivery_publication:
+        school_academic_delivery::models::versions::DeliveryPublicationContext,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub total_draft_block_count: Option<i64>,
     pub source_issues: Vec<super::timetable_source::TimetableSourceIssue>,

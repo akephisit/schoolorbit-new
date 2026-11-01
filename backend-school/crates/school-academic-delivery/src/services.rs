@@ -16,6 +16,7 @@ pub mod effective_teachers;
 pub mod groups;
 pub mod offerings;
 pub mod opening;
+pub mod publication;
 pub mod roster_memberships;
 pub mod roster_tracking;
 pub mod version_changes;

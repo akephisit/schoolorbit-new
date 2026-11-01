@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { deliveryPublicationLabel } from '#lib/academic/publication-presentation.js';
 	import type { PageData } from './$types';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -102,7 +103,7 @@
 		}
 	}
 	function deliveryVersionLabel(version: DeliveryVersionSummary): string {
-		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${version.effectiveFrom ? formatDate(version.effectiveFrom) : 'เลือกวันตอนเผยแพร่'} · ${version.offeringCount} รายการ`;
+		return `${deliveryPublicationLabel(version)} · ${version.offeringCount} รายการ`;
 	}
 	function selectDeliveryVersion(id: string): void {
 		cancelPreparation();
@@ -272,12 +273,6 @@
 		actionLabel: 'ตรวจหลักสูตรและแผนการเรียน',
 		href: '/staff/academic/curricula'
 	};
-
-	function formatDate(value: string): string {
-		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
-			new Date(`${value}T00:00:00`)
-		);
-	}
 
 	function updateSelectedChangeSetUrl(id: string) {
 		const url = new URL(overviewUrl);

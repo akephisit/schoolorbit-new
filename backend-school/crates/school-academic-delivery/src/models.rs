@@ -307,6 +307,9 @@ pub enum AcademicTermChangeItem {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSet {
+    pub publication_date_rules: versions::PublicationDateRules,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub publication_no: Option<i64>,
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
@@ -334,6 +337,12 @@ pub struct AcademicTermChangeSet {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSetSummary {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub published_at: Option<DateTime<Utc>>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub published_by: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub publication_no: Option<i64>,
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
@@ -552,6 +561,7 @@ pub enum AcademicChangeFindingCode {
     ChangeSetNoItems,
     TermNotWritable,
     EffectiveDateInvalid,
+    ConsumedHistoryConflict,
     BaseDeliveryVersionStale,
     ResourceStale,
     MissingDeliveryTarget,

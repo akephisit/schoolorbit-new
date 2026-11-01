@@ -29,8 +29,8 @@ pub struct PublishTimetableVersionRequest {
 #[serde(rename_all = "snake_case")]
 pub enum TimetablePublicationFindingCode {
     InvalidDate,
+    ConsumedHistoryConflict,
     DeliveryDateMismatch,
-    DateAlreadyPublished,
     NoContentChange,
     SourceNeedsReview,
     PeriodCountMismatch,
@@ -58,6 +58,13 @@ pub struct TimetablePublicationFinding {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TimetablePublicationPreview {
+    pub delivery_publication:
+        school_academic_delivery::models::versions::DeliveryPublicationContext,
+    pub latest_delivery_publication:
+        school_academic_delivery::models::versions::DeliveryPublicationContext,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub applicable_delivery_publication:
+        Option<school_academic_delivery::models::versions::DeliveryPublicationContext>,
     pub timetable_version_id: Uuid,
     pub row_version: i64,
     pub delivery_version_id: Uuid,

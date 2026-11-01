@@ -353,7 +353,7 @@ async fn load_workspace_context(
                      OR ($3::uuid IS NULL AND candidate.status IN ('draft', 'published'))
                  )
                ORDER BY CASE WHEN candidate.status='draft' THEN 0 ELSE 1 END,
-                   candidate.effective_from DESC,candidate.created_at DESC,candidate.id
+                   candidate.publication_no DESC NULLS FIRST,candidate.created_at DESC,candidate.id
                LIMIT 1
            ) version ON TRUE"#,
     )

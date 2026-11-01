@@ -13,6 +13,7 @@ pub enum TimetableVersionDisplayState {
     Current,
     Upcoming,
     Historical,
+    Superseded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -30,6 +31,8 @@ pub struct TimetableVersionTarget {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableVersion {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub publication_no: Option<i64>,
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,

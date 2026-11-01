@@ -19,6 +19,7 @@ use crate::models::{LearningOfferingKind, LearningOfferingSnapshot, LearningTeac
 
 #[derive(sqlx::FromRow)]
 struct VersionRow {
+    publication_no: Option<i64>,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -39,6 +40,11 @@ struct VersionRow {
 impl From<VersionRow> for DeliveryVersion {
     fn from(row: VersionRow) -> Self {
         Self {
+            publication_no: row.publication_no,
+            is_superseded: row
+                .effective_from
+                .zip(row.effective_until)
+                .is_some_and(|(start, end)| end < start),
             id: row.id,
             academic_term_id: row.academic_term_id,
             academic_year_id: row.academic_year_id,
@@ -58,10 +64,10 @@ impl From<VersionRow> for DeliveryVersion {
     }
 }
 
-const VERSION_SELECT: &str = "SELECT version.id,version.academic_term_id,version.academic_year_id,version.source_version_id,version.effective_from,version.status,version.row_version,version.created_by,version.published_by,version.published_at,version.created_at,version.updated_at,version.snapshot, COALESCE(version.reference_date,version.effective_from) AS reference_date, (
+const VERSION_SELECT: &str = "SELECT version.publication_no,version.id,version.academic_term_id,version.academic_year_id,version.source_version_id,version.effective_from,version.status,version.row_version,version.created_by,version.published_by,version.published_at,version.created_at,version.updated_at,version.snapshot, COALESCE(version.reference_date,version.effective_from) AS reference_date, (
     SELECT min(next.effective_from)-1 FROM academic_delivery_versions next
     WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
-      AND next.effective_from>version.effective_from
+      AND next.publication_no>version.publication_no
     ) AS effective_until FROM academic_delivery_versions version";
 
 /// Reads only the latest published graph in each requested offering's exact context.
@@ -116,7 +122,7 @@ async fn teacher_memberships_on_connection(
             r#"WITH latest AS (
                    SELECT id FROM academic_delivery_versions
                    WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
-                   ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1
+                   ORDER BY publication_no DESC LIMIT 1
                )
                SELECT latest.id AS delivery_version_id,
                       membership.learning_group_id,membership.teacher_id,membership.role
@@ -261,7 +267,11 @@ pub async fn list_versions_on_connection(
             ORDER BY revision.created_at DESC,revision.id LIMIT 1) AS change_set_id,
         version.effective_from,COALESCE(version.reference_date,version.effective_from) AS reference_date,(SELECT min(next.effective_from)-1 FROM academic_delivery_versions next
             WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
-                AND next.effective_from>version.effective_from) AS effective_until,
+                AND next.publication_no>version.publication_no) AS effective_until,
+        version.publication_no,version.published_at,version.published_by,
+        COALESCE((SELECT min(next.effective_from) FROM academic_delivery_versions next
+            WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
+              AND next.publication_no>version.publication_no)<=version.effective_from,false) AS is_superseded,
         version.status,version.row_version,version.updated_at,
         jsonb_array_length(version.visible_offerings)::bigint AS offering_count,
         (SELECT count(*) FROM jsonb_array_elements(version.visible_offerings) offering,
@@ -270,7 +280,7 @@ pub async fn list_versions_on_connection(
             jsonb_array_elements(offering->'groups') source_group,
             jsonb_array_elements(source_group->'teachers') teacher) AS teacher_assignment_count
         FROM visible_versions version
-        ORDER BY version.effective_from DESC,version.created_at DESC,version.id"
+        ORDER BY version.publication_no DESC NULLS FIRST,version.created_at DESC,version.id"
     )
         .bind(term_id)
         .bind(access.includes_school_owned)
@@ -452,7 +462,7 @@ pub async fn latest_published_id(
     tx: &mut Transaction<'_, Postgres>,
     term_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_id", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC, published_at DESC, id DESC LIMIT 1")
+    DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_id", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(term_id)
         .fetch_optional()
         .await?
@@ -463,7 +473,7 @@ pub async fn latest_published_source(
     tx: &mut Transaction<'_, Postgres>,
     term_id: Uuid,
 ) -> Result<Option<DeliveryVersion>, AppError> {
-    let id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_source", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
+    let id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_source", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(term_id).fetch_optional().await?;
     match id {
         Some(id) => Ok(Some(published_source(tx, id, term_id).await?)),
@@ -495,7 +505,7 @@ pub async fn latest_published_for_term_on_connection(
     connection: &mut sqlx::PgConnection,
     term_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    Ok(DbSession::new(connection).scalar("academic_delivery.services.versions.latest_published_for_term_on_connection", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
+    Ok(DbSession::new(connection).scalar("academic_delivery.services.versions.latest_published_for_term_on_connection", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(term_id).fetch_optional().await?)
 }
 

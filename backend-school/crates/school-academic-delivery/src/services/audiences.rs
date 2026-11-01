@@ -119,7 +119,7 @@ async fn dated_constraints_for_dates(
     if dates.is_empty() || offerings.is_empty() {
         return Ok(result);
     }
-    let rows:Vec<(Uuid,NaiveDate,Option<Uuid>)>=DbSession::new(&mut *connection).query_as("academic_delivery.services.audiences.dated_constraints_for_dates", "SELECT o.id,requested.day,selected.id FROM learning_offerings o CROSS JOIN unnest($2::date[]) requested(day) LEFT JOIN LATERAL(SELECT v.id FROM academic_delivery_versions v WHERE v.academic_term_id=o.academic_term_id AND v.status='published' AND v.effective_from<=requested.day ORDER BY v.effective_from DESC,v.id DESC LIMIT 1) selected ON true WHERE o.id=ANY($1) ORDER BY requested.day,o.id")
+    let rows:Vec<(Uuid,NaiveDate,Option<Uuid>)>=DbSession::new(&mut *connection).query_as("academic_delivery.services.audiences.dated_constraints_for_dates", "SELECT o.id,requested.day,selected.id FROM learning_offerings o CROSS JOIN unnest($2::date[]) requested(day) LEFT JOIN LATERAL(SELECT v.id FROM academic_delivery_versions v WHERE v.academic_term_id=o.academic_term_id AND v.status='published' AND v.effective_from<=requested.day ORDER BY v.publication_no DESC LIMIT 1) selected ON true WHERE o.id=ANY($1) ORDER BY requested.day,o.id")
         .bind(offerings).bind(&dates).fetch_all().await?;
     let unique: std::collections::HashSet<_> = offerings.iter().collect();
     if rows.len() != unique.len() * dates.len() {

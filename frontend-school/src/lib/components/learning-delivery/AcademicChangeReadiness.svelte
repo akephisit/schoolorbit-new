@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { publicationDateRulesLabel } from '#lib/academic/publication-presentation.js';
 	import { untrack, onDestroy } from 'svelte';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import { deliveryFindingHref } from '#lib/navigation/learning-delivery.js';
@@ -96,13 +97,7 @@
 	function openPublication() {
 		previewOpen = false;
 		clearPreview();
-		const today = new Intl.DateTimeFormat('en-CA', {
-			timeZone: 'Asia/Bangkok',
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit'
-		}).format(new Date());
-		selectedDate = changeSet.referenceDate > today ? changeSet.referenceDate : today;
+		selectedDate = changeSet.publicationDateRules.today;
 		publishOpen = true;
 	}
 	async function recover(message: string) {
@@ -366,12 +361,16 @@
 		<div class="space-y-2">
 			<Label for="delivery-publication-date">วันที่เริ่มใช้</Label><DatePicker
 				id="delivery-publication-date"
+				minValue={changeSet.publicationDateRules.minimumEffectiveFrom ?? undefined}
 				value={selectedDate}
 				onValueChange={dateChanged}
 				ariaLabel="วันที่เริ่มใช้รุ่นเปิดสอน"
 				disabled={publishing}
 			/>
 		</div>
+		<p class="text-sm text-muted-foreground">
+			{publicationDateRulesLabel(changeSet.publicationDateRules)} · เผยแพร่หลายรุ่นในวันเดียวกันได้ รุ่นใหม่จะแทนแผนเดิมตั้งแต่วันที่เลือก
+		</p>
 		<LoadingButton
 			variant="outline"
 			loading={loadingPreview}

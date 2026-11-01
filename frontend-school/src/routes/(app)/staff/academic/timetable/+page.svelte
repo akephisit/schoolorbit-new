@@ -1,5 +1,11 @@
 <script lang="ts">
 	import {
+		publicationDateRulesLabel,
+		publicationEffectiveLabel,
+		publicationSourceLabel,
+		timetablePublicationLabel
+	} from '#lib/academic/publication-presentation.js';
+	import {
 		orderTimetableHomerooms,
 		relatedSynchronizedDemands
 	} from '#lib/academic/timetable/demand-ordering.js';
@@ -614,17 +620,7 @@
 			: 'homeroom';
 	}
 
-	function versionLabel(version: TimetableVersion): string {
-		const state =
-			version.status === 'draft'
-				? 'แบบร่าง'
-				: version.status === 'published'
-					? 'เผยแพร่'
-					: 'ยกเลิก';
-		return version.effectiveFrom
-			? `${state} · เริ่ม ${version.effectiveFrom}`
-			: `${state} · ${new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(version.createdAt))}`;
-	}
+	const versionLabel = timetablePublicationLabel;
 
 	function initializeController(workspace: TimetableBlockWorkspace): void {
 		const previous = controller?.workspace.version;
@@ -1800,27 +1796,7 @@
 		const reportFailure = lifecycleFailureReporter();
 		if (controller.workspace.version.status === 'draft') {
 			if (!canManage) return;
-			if (
-				canManageSchool &&
-				controller.workspace.latestDeliveryVersionId !==
-					controller.workspace.version.deliveryVersionId
-			) {
-				busy = true;
-				try {
-					const version = await savedVersion();
-					await updateTimetableDeliverySource(version.id, {
-						rowVersion: version.rowVersion,
-						deliveryVersionId: controller.workspace.latestDeliveryVersionId
-					});
-					await refreshVersions();
-					await loadVersion(version.id, true);
-					controller?.setEditing(true);
-				} catch (error) {
-					reportFailure(error, 'อัปเดตข้อมูลเปิดสอนก่อนแก้ไขไม่สำเร็จ');
-				} finally {
-					busy = false;
-				}
-			} else controller.setEditing(true);
+			controller.setEditing(true);
 			return;
 		}
 		if (!canManageSchool) return;
@@ -1863,18 +1839,19 @@
 			busy = false;
 		}
 	}
-	async function updateDeliverySource(): Promise<void> {
-		if (!controller?.editing || !canManageSchool || busy) return;
+	async function updateDeliverySource(deliveryVersionId?: string): Promise<void> {
+		if (controller?.workspace.version.status !== 'draft' || !canManageSchool || busy) return;
 		busy = true;
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			const version = await savedVersion();
-			const latest = controller?.workspace.latestDeliveryVersionId;
+			const latest = deliveryVersionId ?? controller?.workspace.latestDeliveryVersionId;
 			if (!latest) throw new Error('ยังไม่มีรุ่นเปิดสอนที่เผยแพร่');
 			await updateTimetableDeliverySource(version.id, {
 				rowVersion: version.rowVersion,
 				deliveryVersionId: latest
 			});
+			publicationPreview = null;
 			await reload(undefined, false);
 			if (refreshError) throw new Error(refreshError);
 			await refreshVersions();
@@ -1891,8 +1868,8 @@
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			await savedVersion();
-			const now = new Date();
-			publicationDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+			if (!controller) return;
+			publicationDate = controller.workspace.publicationDateRules.today;
 			publicationPreview = null;
 			publicationKey = crypto.randomUUID();
 			publishOpen = true;
@@ -3114,10 +3091,10 @@
 					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm"
 				>
 					<span>ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม</span>
-					{#if controller.editing && canManageSchool}<Button
+					{#if canManageSchool}<Button
 							variant="outline"
 							disabled={busy}
-							onclick={updateDeliverySource}>อัปเดตข้อมูลเปิดสอน</Button
+							onclick={() => updateDeliverySource()}>อัปเดตข้อมูลเปิดสอน</Button
 						>{/if}
 				</div>
 			{/if}
@@ -3706,11 +3683,33 @@
 			<div class="space-y-2">
 				<Label for="timetable-publication-date">วันที่เริ่มใช้</Label><DatePicker
 					id="timetable-publication-date"
+					minValue={controller.workspace.publicationDateRules.minimumEffectiveFrom ?? undefined}
 					bind:value={publicationDate}
 					disabled={busy}
 					onValueChange={() => (publicationPreview = null)}
 					ariaLabel="เลือกวันที่เริ่มใช้ตาราง"
 				/>
+			</div>
+			<div
+				class="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
+				aria-label="รุ่นเปิดสอนที่ใช้อ้างอิง"
+			>
+				<p class="font-medium">ข้อมูลเปิดสอนที่ตารางนี้อ้างอิง</p>
+				<p>{publicationSourceLabel(controller.workspace.deliveryPublication)}</p>
+				<p class="text-muted-foreground">
+					{publicationEffectiveLabel(controller.workspace.deliveryPublication)}
+				</p>
+				<p class="text-muted-foreground">
+					{publicationDateRulesLabel(controller.workspace.publicationDateRules)}
+				</p>
+				{#if draftHasNewDelivery}<p class="text-muted-foreground">
+						แผนเปิดสอนล่าสุด: {publicationSourceLabel(
+							controller.workspace.latestDeliveryPublication
+						)}
+					</p>{/if}
+				<p class="text-muted-foreground">
+					เผยแพร่หลายรุ่นในวันเดียวกันได้ รุ่นใหม่จะแทนแผนเดิมตั้งแต่วันที่เลือก
+				</p>
 			</div>
 			<Button variant="outline" disabled={busy || !publicationDate} onclick={checkPublication}
 				>ตรวจความพร้อม</Button
@@ -3720,6 +3719,20 @@
 					aria-live="polite"
 					class="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm"
 				>
+					{#if publicationPreview.applicableDeliveryPublication && publicationPreview.applicableDeliveryPublication.id !== publicationPreview.deliveryPublication.id}
+						<p>
+							รุ่นเปิดสอนที่มีผลในวันที่เลือก: {publicationSourceLabel(
+								publicationPreview.applicableDeliveryPublication
+							)}
+						</p>
+						{#if canManageSchool}<Button
+								variant="outline"
+								disabled={busy}
+								onclick={() =>
+									updateDeliverySource(publicationPreview?.applicableDeliveryPublication?.id)}
+								>ใช้รุ่นที่มีผลในวันที่เลือก</Button
+							>{/if}
+					{/if}
 					{#if publicationPreview.canPublish}<p>
 							พร้อมเผยแพร่ {publicationPreview.blockCount} คาบ
 						</p>{:else}{#each publicationPreview.findings as finding, index (`${finding.code}:${index}`)}<p

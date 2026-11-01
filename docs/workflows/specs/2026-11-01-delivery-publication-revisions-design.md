@@ -67,6 +67,17 @@ number is projected from its exact target version, not independently persisted o
 Expose `publishedAt` and `publishedBy` on list summaries as well as existing detail DTOs.
 Use required nullable schema fields where absence is a valid unpublished state. Keep
 `effectiveFrom`, `referenceDate`, `effectiveUntil`, UUID pins and `rowVersion` distinct.
+Delivery version/detail summaries also expose `isSuperseded` for an empty logical interval.
+`PublicationDateRules { today, minimumEffectiveFrom }` is Delivery-owned and appears on change-set
+detail and the timetable workspace; the minimum is today only for an active term, otherwise null.
+`DeliveryPublicationContext { id, publicationNo, effectiveFrom, effectiveUntil, publishedAt,
+isSuperseded }` describes a published source without resource counts or personal data. Workspace
+adds `deliveryPublication` and `latestDeliveryPublication`; timetable preview adds both and nullable
+`applicableDeliveryPublication` for its chosen date. Keep existing FK fields. Read these through
+the same owning connection/transaction, with no frontend catalog/admin fetch or parallel state.
+The date picker does not narrow dates to a future latest source: a user can choose an earlier date
+and then explicitly adopt its applicable source. Cloning and resuming preserve the selected exact
+Delivery pin; only the explicit source-update operation changes it.
 Extend `TimetableVersionDisplayState` with `superseded` for a published logical interval whose
 end precedes its start. Classify this before upcoming/current states and exclude it from default
 selection. Existing explicit UUID history remains available.
@@ -103,6 +114,8 @@ revision-owned assignment with the retained teacher and role, and reference that
 the candidate/published snapshot. This includes carried future-start and already-ended assignments.
 Same-day stop/role replacement therefore retains the old identity and gives it an empty later
 effective slice without rewriting its original facts.
+An obsolete finite/future cutoff must not truncate a retained replacement plan later: materialize
+a carried episode when necessary to escape such a boundary, even if the old episode covers D.
 
 Existing deterministic teacher-command episode IDs remain unchanged. Stable carried assignment
 IDs use UUIDv5 of the change-set UUID and `carried-teacher-episode:<source assignment UUID>`.
@@ -123,6 +136,13 @@ starting November 1 can be selected by an October 30 replacement without rewriti
 start. Stopping it at/before that start must record an empty effective slice without violating the
 original interval check. Dated offering providers, lifecycle readiness and guards consume the
 Delivery-owned activation/cutoff projection. Raw registry dates remain preserved provenance.
+The canonical offering projection is the union of nonempty publication spans in whose immutable
+graph the offering appears. On each date, the highest eligible publication number owns membership.
+The append-only activation/cutoff ledger records accepted transitions; global minimum activation
+and cutoff dates are not availability truth. For example, X in A, a future stop in B on November 5,
+and newer C retaining X on November 1 must keep X available after November 5. Recurring gaps remain
+distinct spans. Roster validators/tracking use dated membership rather than singular raw bounds;
+preserve accepted joined dates and exact historical pins.
 Earlier activation still validates the pinned catalog version's start against the newly chosen
 date; preserving a source UUID does not authorize using that catalog before its own eligibility.
 

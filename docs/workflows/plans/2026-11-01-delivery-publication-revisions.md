@@ -55,6 +55,13 @@ Add nullable `publicationNo` to Delivery versions/summaries, target-derived chan
 summaries and timetable versions. Add publication actor/time to summaries. Remove obsolete
 timetable date-collision findings and expose the typed consumed-history finding. Inputs remain
 the existing explicit-date, preview-hash, revision and idempotency shapes.
+Add Delivery `isSuperseded`, typed publication date rules on change-set detail/workspace, bounded
+pinned/latest publication contexts on the workspace, and pinned/latest/applicable contexts on
+preview. The dated winner owns offering availability through unioned nonempty publication spans;
+the immutable transition ledger never folds global minimum cutoffs into current truth. Test the
+A-present/B-future-stop/C-earlier-retain counterexample and recurring gaps. Preserve selected pins
+when cloning/resuming; source upgrade remains explicit.
+
 Add the truthful `superseded` timetable display state for an empty logical interval, classify it
 before upcoming/current and prevent it from becoming the default. Keep explicit history reads.
 

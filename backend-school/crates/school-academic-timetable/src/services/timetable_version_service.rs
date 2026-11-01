@@ -35,6 +35,7 @@ pub async fn pending_term_work(
 
 #[derive(Debug, Clone, FromRow)]
 struct TimetableVersionRow {
+    publication_no: Option<i64>,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -54,6 +55,7 @@ struct TimetableVersionRow {
 
 #[derive(Debug, Clone, FromRow)]
 struct CloneSourceRow {
+    delivery_version_id: Uuid,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -63,7 +65,7 @@ struct CloneSourceRow {
 }
 
 const VERSION_SELECT: &str = r#"
-    SELECT version.id,
+    SELECT version.publication_no,version.id,
            version.academic_term_id,
            version.academic_year_id,
            version.effective_from,
@@ -74,7 +76,7 @@ const VERSION_SELECT: &str = r#"
                        FROM academic_timetable_versions next_version
                        WHERE next_version.academic_term_id = version.academic_term_id
                          AND next_version.status = 'published'
-                         AND next_version.effective_from > version.effective_from
+                         AND next_version.publication_no > version.publication_no
                        ORDER BY next_version.effective_from, next_version.id
                        LIMIT 1
                    )
@@ -100,7 +102,9 @@ pub(crate) fn derive_display_state(
     effective_until: Option<NaiveDate>,
     today: NaiveDate,
 ) -> TimetableVersionDisplayState {
-    if today < effective_from {
+    if effective_until.is_some_and(|end| end < effective_from) {
+        TimetableVersionDisplayState::Superseded
+    } else if today < effective_from {
         TimetableVersionDisplayState::Upcoming
     } else if effective_until.is_some_and(|end| today > end) {
         TimetableVersionDisplayState::Historical
@@ -127,7 +131,7 @@ pub async fn list_versions_on_connection(
 ) -> Result<Vec<TimetableVersion>, AppError> {
     let sql = format!(
         "{VERSION_SELECT} WHERE version.academic_term_id = $1 \
-         ORDER BY version.effective_from DESC, \
+         ORDER BY version.publication_no DESC NULLS FIRST, \
                   CASE version.status WHEN 'draft' THEN 0 WHEN 'published' THEN 1 ELSE 2 END, \
                   version.id"
     );
@@ -260,7 +264,7 @@ pub async fn resolve_version_id_for_date_on_connection(
            WHERE academic_term_id = $1
              AND status = 'published'
              AND effective_from <= $2
-           ORDER BY effective_from DESC, id
+           ORDER BY publication_no DESC
            LIMIT 1"#,
     )
     .bind(term_id)
@@ -438,7 +442,7 @@ pub async fn clone_draft_in_transaction(
     let source: CloneSourceRow = DbSession::new(&mut **transaction)
         .query_as(
             "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
-            r#"SELECT source.id,
+            r#"SELECT source.delivery_version_id,source.id,
                   source.academic_term_id,
                   source.academic_year_id,
                   source.status,
@@ -466,11 +470,7 @@ pub async fn clone_draft_in_transaction(
             source_row_version, source.row_version
         )));
     }
-    let delivery_version_id = school_academic_delivery::services::versions::latest_published_id(
-        transaction,
-        source.academic_term_id,
-    )
-    .await?;
+    let delivery_version_id = source.delivery_version_id;
     let drafts: Vec<(Uuid, i64)> = DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "SELECT id,row_version FROM academic_timetable_versions WHERE source_version_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
         .bind(source.id).fetch_all().await?;
     let resume = match request.resume_draft_id {
@@ -495,13 +495,6 @@ pub async fn clone_draft_in_transaction(
             .is_some_and(|expected| expected != revision)
         {
             return Err(AppError::Conflict("แบบร่างถูกแก้ไข กรุณาโหลดข้อมูลใหม่".into()));
-        }
-        let updated=DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1 AND delivery_version_id<>$2")
-            .bind(id).bind(delivery_version_id).execute().await?;
-        if updated.rows_affected() == 1 {
-            DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.source_updated','academic_timetable_version',$1,$2,$3,$4,$5)")
-                .bind(id).bind(source.academic_year_id).bind(source.academic_term_id).bind(actor_id)
-                .bind(sqlx::types::Json(serde_json::json!({"deliveryVersionId":delivery_version_id,"sourceVersionId":source.id,"resumed":true}))).execute().await?;
         }
         return Ok(id);
     }
@@ -853,6 +846,7 @@ async fn hydrate_versions(
                 .filter(|_| row.status == TimetableVersionStatus::Published)
                 .map(|date| derive_display_state(date, row.effective_until, display_date));
             TimetableVersion {
+                publication_no: row.publication_no,
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,

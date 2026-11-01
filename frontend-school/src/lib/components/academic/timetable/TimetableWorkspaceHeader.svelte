@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+		publicationEffectiveLabel,
+		publicationTime
+	} from '#lib/academic/publication-presentation.js';
 	import type { Snippet } from 'svelte';
 	import type { TimetableVersion } from '#lib/api/timetable.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -28,15 +32,6 @@
 		controls: Snippet;
 		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
-
-	const thaiDate = (value: string | null) => {
-		if (!value) return 'ต่อเนื่อง';
-		return new Intl.DateTimeFormat('th-TH', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		}).format(new Date(`${value}T00:00:00`));
-	};
 </script>
 
 <header
@@ -48,6 +43,9 @@
 		<div class="w-full min-w-0 space-y-2 sm:w-auto sm:min-w-72 sm:flex-1 sm:basis-72">
 			<div class="flex min-h-8 flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
+				{#if version.publicationNo !== null}<span class="text-sm font-medium"
+						>รุ่นที่ {version.publicationNo}</span
+					>{/if}
 
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
 					{version.status === 'draft'
@@ -66,10 +64,12 @@
 			<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
 				<span class="inline-flex items-center gap-1.5">
 					<CalendarRange class="size-4" />
-					{#if version.effectiveFrom}เริ่มใช้ {thaiDate(version.effectiveFrom)} – {thaiDate(
-							version.effectiveUntil
-						)}{:else}เลือกวันที่เริ่มใช้ตอนเผยแพร่{/if}
+					{publicationEffectiveLabel({
+						...version,
+						isSuperseded: version.displayState === 'superseded'
+					})}
 				</span>
+				{#if version.publishedAt}<span>เผยแพร่ {publicationTime(version.publishedAt)}</span>{/if}
 				<span class="inline-flex items-center gap-1.5" aria-live="polite">
 					{#if isSaving}
 						<LoaderCircle class="size-4 animate-spin" /> กำลังบันทึก

@@ -87,6 +87,9 @@ export function summarizeAcademicTermChangeSet(
 ): AcademicTermChangeSetSummary {
 	return {
 		id: detail.id,
+		publicationNo: detail.publicationNo,
+		publishedAt: detail.publishedAt,
+		publishedBy: detail.publishedBy,
 		academicTermId: detail.academicTermId,
 		academicYearId: detail.academicYearId,
 		effectiveFrom: detail.effectiveFrom,
@@ -105,7 +108,13 @@ export function selectDeliveryVersion(
 	if (requestedId) return versions.find((version) => version.id === requestedId) ?? null;
 	return (
 		versions.find((version) => version.status === 'draft') ??
-		versions.find((version) => version.status === 'published') ??
+		versions
+			.filter((version) => version.status === 'published' && !version.isSuperseded)
+			.toSorted((left, right) => {
+				if (left.publicationNo === null) return 1;
+				if (right.publicationNo === null) return -1;
+				return right.publicationNo - left.publicationNo;
+			})[0] ??
 		null
 	);
 }
