@@ -2,10 +2,12 @@ import { sessionState } from './fixtures/session-state';
 import { expect, test, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { PDFDocument } from 'pdf-lib';
 import {
-	expectRoundedTimetablePdf,
+	expectSquareTimetablePdf,
 	expectTimetablePdfPresentation,
-	expectTimetablePdfTextColors
+	expectTimetablePdfTextColors,
+	expectExternalTimetablePdfHeaders
 } from './timetable-pdf-assertions';
 
 import {
@@ -211,8 +213,10 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const downloadPromise = page.waitForEvent('download');
 	await downloadButton.click();
 	const download = await downloadPromise;
-	await download.saveAs('/tmp/staff-own-round.pdf');
-	await expectRoundedTimetablePdf(download, [1]);
+	await download.saveAs('/tmp/staff-own-square.pdf');
+	await expectSquareTimetablePdf(download, [1]);
+	const crest = await (await PDFDocument.create()).embedPng(logoPng);
+	await expectExternalTimetablePdfHeaders(download, crest.width / crest.height, [1]);
 	await expectTimetablePdfPresentation(download, ['จันทร์', 'เสาร์']);
 	await expectTimetablePdfTextColors(download, {
 		ค21101: '#1e3a8a',

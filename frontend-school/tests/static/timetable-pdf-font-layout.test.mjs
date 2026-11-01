@@ -8,8 +8,10 @@ import { stripTypeScriptTypes } from 'node:module';
 import pdfmake from 'pdfmake';
 import { PDFDocument } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { createTimetablePdfCorners } from '../../src/lib/utils/timetable-pdf-corners.ts';
-import { expectCenteredTimetablePdfLogos } from '../e2e/timetable-pdf-assertions.ts';
+import {
+	expectExternalTimetablePdfHeaders,
+	expectSquareTimetablePdf
+} from '../e2e/timetable-pdf-assertions.ts';
 import { createHash } from 'node:crypto';
 import * as fontkit from 'fontkit';
 
@@ -25,6 +27,7 @@ test('ships genuine unmodified TH Sarabun New styles with the original embedding
 		const font = fontkit.create(bytes);
 		assert.equal(font.familyName, 'TH Sarabun New');
 		assert.equal(font.postscriptName, `THSarabunNew${style}`);
+		assert.equal((font.ascent - font.descent) / font.unitsPerEm, 1.301);
 		assert.ok(font.hasGlyphForCodePoint('ก'.codePointAt(0)));
 		assert.ok(notice.includes(createHash('sha256').update(bytes).digest('hex')));
 	}
@@ -37,7 +40,6 @@ test('ships genuine unmodified TH Sarabun New styles with the original embedding
 const sourceUrl = new URL('../../src/lib/utils/pdf.ts', import.meta.url);
 let source = readFileSync(sourceUrl, 'utf8');
 for (const specifier of [
-	'./timetable-pdf-corners.ts',
 	'./timetable-pdf-class-label.ts',
 	'../academic/timetable/teacher-label.ts',
 	'#lib/utils/timetable-pdf-days.js',
@@ -60,9 +62,13 @@ for (const [specifier, name] of [
 }
 const builders = await import(
 	`data:text/javascript;base64,${Buffer.from(
-		stripTypeScriptTypes(source + '\nexport { buildPageContent, buildPortraitPageContent };', {
-			mode: 'transform'
-		})
+		stripTypeScriptTypes(
+			source +
+				'\nexport { buildPageContent, buildMiniTable, buildPortraitPageContent, keepTimetableHeaderWithGrid };\nexport function installMetricMeasurement(context) { measureCtx = context; thSarabunMeasureReady = context !== null; }',
+			{
+				mode: 'transform'
+			}
+		)
 	).toString('base64')}`
 );
 const fonts = Object.fromEntries(
@@ -77,7 +83,8 @@ pdfmake.addFonts({ THSarabunNew: fonts });
 
 function pageFixture() {
 	return {
-		headerContext: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+		// A three-line fixture even under the deliberately conservative no-DOM width fallback.
+		headerContext: 'ภาคเรียนที่ 1/2569',
 		headerOwnerLabel: 'นายพิสิษฐ สกุลทดสอบ',
 		viewMode: 'INSTRUCTOR',
 		periods: Array.from({ length: 10 }, (_, i) => ({
@@ -91,29 +98,35 @@ function pageFixture() {
 	};
 }
 
-async function renderTimetable(pages, layout, logo) {
-	const corners = createTimetablePdfCorners();
+async function renderTimetable(
+	pages,
+	layout,
+	logoDataUrl,
+	aspect = 48 / 160,
+	schoolName = 'โรงเรียนทดสอบ'
+) {
+	const logo = logoDataUrl ? { dataUrl: logoDataUrl, aspectRatio: aspect } : null;
 	const content =
 		layout === 'full'
-			? pages.flatMap((page, i) =>
-					builders.buildPageContent(page, i === 0, logo, 'โรงเรียนทดสอบ', corners)
-				)
-			: builders.buildPortraitPageContent(
-					pages,
-					true,
-					logo,
-					'โรงเรียนทดสอบ',
-					'โรงเรียนทดสอบ',
-					'ตารางสอนภาคเรียนที่ 1 ปีการศึกษา 2569',
-					corners
-				);
+			? pages.flatMap((page, i) => builders.buildPageContent(page, i === 0, logo, schoolName, i))
+			: Array.from({ length: Math.ceil(pages.length / 6) }, (_, i) =>
+					builders.buildPortraitPageContent(
+						pages.slice(i * 6, i * 6 + 6),
+						i === 0,
+						logo,
+						schoolName,
+						schoolName,
+						'ตารางสอนภาคเรียนที่ 1 ปีการศึกษา 2569',
+						i
+					)
+				).flat();
 	return pdfmake
 		.createPdf({
 			pageSize: 'A4',
 			pageOrientation: layout === 'full' ? 'landscape' : 'portrait',
 			pageMargins: [10, 30, 10, 20],
 			content,
-			pageBreakBefore: corners.capture,
+			pageBreakBefore: builders.keepTimetableHeaderWithGrid,
 			defaultStyle: { font: 'THSarabunNew' }
 		})
 		.getBuffer();
@@ -133,15 +146,22 @@ for (const [shape, logo, aspect] of [
 		['full', 1],
 		['portrait-2col', 6]
 	]) {
-		test(`actual ${layout} PDF centers a ${shape} crest in its enclosing three-row header`, async () => {
-			const bytes = await renderTimetable(Array.from({ length: count }, pageFixture), layout, logo);
+		test(`actual ${layout} PDF places a ${shape} crest beside its external three-line header`, async () => {
+			const bytes = await renderTimetable(
+				Array.from({ length: count }, pageFixture),
+				layout,
+				logo,
+				aspect
+			);
+			writeFileSync(`/tmp/timetable-external-${shape}-${layout}.pdf`, bytes);
 			const pdf = await PDFDocument.load(bytes);
 			assert.equal(pdf.getPageCount(), 1);
 			const directory = mkdtempSync(join(tmpdir(), 'timetable-pdf-layout-'));
 			try {
 				const path = join(directory, 'output.pdf');
 				writeFileSync(path, bytes);
-				await expectCenteredTimetablePdfLogos({ path: async () => path }, aspect, [count]);
+				await expectExternalTimetablePdfHeaders({ path: async () => path }, aspect, [count]);
+				await expectSquareTimetablePdf({ path: async () => path }, [count]);
 			} finally {
 				rmSync(directory, { recursive: true, force: true });
 			}
@@ -181,3 +201,227 @@ test('an oversized timetable retains the final day and its content across page b
 	assert.ok(text.includes('ศุกร์'));
 	await loading.destroy();
 });
+
+async function withPdfArtifact(bytes, name, verify) {
+	const path = join(tmpdir(), `timetable-external-${name}.pdf`);
+	writeFileSync(path, bytes);
+	await verify({ path: async () => path });
+}
+
+for (const layout of ['full', 'portrait-2col']) {
+	test(`${layout} wraps long school names beside a proportional crest without a header border`, async () => {
+		const school = 'โรงเรียนทดสอบวิทยาศาสตร์และเทคโนโลยีเพื่อการเรียนรู้ตลอดชีวิต '
+			.repeat(3)
+			.trim();
+		const bytes = await renderTimetable([pageFixture()], layout, tallCrest, 48 / 160, school);
+		await withPdfArtifact(bytes, `long-name-${layout}`, async (download) => {
+			await expectExternalTimetablePdfHeaders(download, 48 / 160, [1]);
+			await expectSquareTimetablePdf(download, [1]);
+		});
+		const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+		const content = await (await (await loading.promise).getPage(1)).getTextContent();
+		const text = content.items
+			.map((item) => ('str' in item ? item.str : ''))
+			.join('')
+			.replace(/\s/g, '');
+		assert.ok(text.includes(school.replace(/\s/g, '')));
+		await loading.destroy();
+	});
+	test(`${layout} preserves square grids and all school/owner text with no configured logo`, async () => {
+		const bytes = await renderTimetable([pageFixture()], layout, null);
+		await withPdfArtifact(bytes, `no-logo-${layout}`, async (download) => {
+			await expectExternalTimetablePdfHeaders(download, 1, [0]);
+			await expectSquareTimetablePdf(download, [1]);
+		});
+		const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+		const content = await (await (await loading.promise).getPage(1)).getTextContent();
+		const text = content.items
+			.map((item) => ('str' in item ? item.str : ''))
+			.join('')
+			.replace(/\s/g, '');
+		assert.ok(text.includes('โรงเรียนทดสอบ'));
+		assert.ok(text.includes(pageFixture().headerOwnerLabel.replace(/\s/g, '')));
+		await loading.destroy();
+	});
+}
+
+test('31 ordinary dense teacher timetables produce 31 complete full pages with one external header each', async () => {
+	const pages = Array.from({ length: 31 }, (_, index) => {
+		const page = pageFixture();
+		page.headerOwnerLabel = `นายผู้สอนหมายเลข${index + 1} สกุลทดสอบ`;
+		page.homeroomNames = { room: 'ม.1/1' };
+		page.timetableBlocks = Array.from({ length: 50 }, (_, i) => ({
+			blockKind: 'course',
+			isActive: true,
+			bellSchedulePeriodId: `period-${i % 10}`,
+			dayOfWeek: ['MON', 'TUE', 'WED', 'THU', 'FRI'][Math.floor(i / 10)],
+			offeringCode: 'ค21101',
+			offeringName: 'คณิตศาสตร์',
+			groups: [
+				{
+					homeroomIds: ['room'],
+					homeroomNames: ['ม.1/1'],
+					roomName: 'ห้องคณิตศาสตร์',
+					instructors: []
+				}
+			],
+			homerooms: [],
+			teachers: []
+		}));
+		return page;
+	});
+	const bytes = await renderTimetable(pages, 'full', tallCrest);
+	await withPdfArtifact(bytes, '31-teachers-full', async (download) => {
+		await expectExternalTimetablePdfHeaders(download, 48 / 160, Array(31).fill(1));
+		await expectSquareTimetablePdf(download, Array(31).fill(1));
+	});
+	const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+	const pdf = await loading.promise;
+	assert.equal(pdf.numPages, 31);
+	for (let i = 1; i <= 31; i++) {
+		const content = await (await pdf.getPage(i)).getTextContent();
+		const text = content.items
+			.map((item) => ('str' in item ? item.str : ''))
+			.join('')
+			.replace(/\s/g, '');
+		assert.ok(text.includes(pages[i - 1].headerOwnerLabel.replace(/\s/g, '')));
+		assert.ok(text.includes('ศุกร์'));
+		assert.ok(text.includes('SchoolOrbitTimeTable'));
+	}
+	await loading.destroy();
+});
+
+test('seven compact timetables paginate six then one without detached external headers', async () => {
+	const bytes = await renderTimetable(
+		Array.from({ length: 7 }, pageFixture),
+		'portrait-2col',
+		tallCrest
+	);
+	await withPdfArtifact(bytes, '7-teachers-compact', async (download) => {
+		await expectExternalTimetablePdfHeaders(download, 48 / 160, [6, 1]);
+		await expectSquareTimetablePdf(download, [6, 1]);
+	});
+});
+
+test('a compact external header moves with its grid when the previous content leaves too little room', async () => {
+	const bytes = await pdfmake
+		.createPdf({
+			pageSize: 'A4',
+			pageMargins: [10, 30, 10, 20],
+			defaultStyle: { font: 'THSarabunNew' },
+			pageBreakBefore: builders.keepTimetableHeaderWithGrid,
+			content: [
+				{ text: 'PRECEDING_CONTENT', margin: [0, 0, 0, 720] },
+				{
+					columns: [
+						{
+							width: 282,
+							stack: [
+								builders.buildMiniTable(
+									pageFixture(),
+									282,
+									{ dataUrl: tallCrest, aspectRatio: 48 / 160 },
+									'โรงเรียนทดสอบ',
+									0
+								)
+							]
+						}
+					]
+				}
+			]
+		})
+		.getBuffer();
+	await withPdfArtifact(bytes, 'orphan-prevention', (download) =>
+		expectExternalTimetablePdfHeaders(download, 48 / 160, [0, 1])
+	);
+});
+
+// The conservative no-DOM fallback cannot expose regular-versus-bold boundary errors.
+// Adapt Canvas measurement to the real fontkit advances from the same embedded TTFs.
+const metricFaces = {
+	normal: fontkit.openSync(fonts.normal),
+	bold: fontkit.openSync(fonts.bold)
+};
+for (const field of ['school', 'owner']) {
+	test(`actual bold ${field} metrics keep mini-header text within its allocated width`, async () => {
+		const boundary = `${field === 'school' ? 'โรงเรียน' : 'นาย'}${'พัฒนา'.repeat(13)}วิทยาคม`;
+		const page = pageFixture();
+		const school = field === 'school' ? boundary : 'โรงเรียนทดสอบ';
+		if (field === 'owner') page.headerOwnerLabel = boundary;
+		const weights = new Set();
+		const context = {
+			font: '',
+			measureText(text) {
+				const weight = this.font.startsWith('bold ') ? 'bold' : 'normal';
+				weights.add(weight);
+				const size = Number(this.font.match(/([\d.]+)px/)[1]);
+				const face = metricFaces[weight];
+				const advance = face
+					.layout(text)
+					.positions.reduce((total, glyph) => total + glyph.xAdvance, 0);
+				return { width: (advance / face.unitsPerEm) * size };
+			}
+		};
+		const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		// No DOM calls are needed: the adapter supplies the existing Canvas measurement boundary.
+		Object.defineProperty(globalThis, 'document', { value: {}, configurable: true });
+		builders.installMetricMeasurement(context);
+		let mini;
+		const crestBytes = readFileSync(
+			new URL('../../static/notification-badge.png', import.meta.url)
+		);
+		try {
+			mini = builders.buildMiniTable(
+				page,
+				282,
+				{ dataUrl: `data:image/png;base64,${crestBytes.toString('base64')}`, aspectRatio: 1 },
+				school,
+				0
+			);
+		} finally {
+			builders.installMetricMeasurement(null);
+			if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+			else delete globalThis.document;
+		}
+		const bytes = await pdfmake
+			.createPdf({
+				pageSize: 'A4',
+				pageMargins: [10, 30, 10, 20],
+				defaultStyle: { font: 'THSarabunNew' },
+				pageBreakBefore: builders.keepTimetableHeaderWithGrid,
+				content: [{ columns: [{ width: 281, stack: [mini] }] }]
+			})
+			.getBuffer();
+		writeFileSync(join(tmpdir(), `timetable-external-bold-${field}-boundary.pdf`), bytes);
+		const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+		try {
+			const pdf = await loading.promise;
+			assert.equal(pdf.numPages, 1);
+			const content = await (await pdf.getPage(1)).getTextContent();
+			const header = content.items.filter(
+				(item) => 'str' in item && item.str.trim() && Math.abs(item.height - 9) < 0.01
+			);
+			for (const item of header) {
+				assert.ok(item.transform[4] >= 10 - 0.01, `left edge: ${item.str}`);
+				assert.ok(
+					item.transform[4] + item.width <= 291 + 0.01,
+					`right edge ${item.transform[4] + item.width}: ${item.str}`
+				);
+			}
+			assert.ok(header.length >= 4, 'boundary field must wrap at its rendered bold width');
+			assert.ok(
+				header
+					.map((item) => item.str)
+					.join('')
+					.replace(/\s/g, '')
+					.includes(boundary)
+			);
+			assert.deepEqual([...weights].sort(), ['bold', 'normal']);
+			await withPdfArtifact(bytes, `bold-${field}-boundary`, (download) =>
+				expectExternalTimetablePdfHeaders(download, 1, [1])
+			);
+		} finally {
+			await loading.destroy();
+		}
+	});
+}

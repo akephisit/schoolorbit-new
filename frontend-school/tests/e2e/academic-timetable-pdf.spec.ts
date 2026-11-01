@@ -1,10 +1,11 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {
-	expectRoundedTimetablePdf,
+	expectSquareTimetablePdf,
 	expectTimetablePdfPresentation,
 	expectTimetablePdfTextColors,
-	expectCenteredTimetablePdfLogos
+	expectExternalTimetablePdfHeaders
 } from './timetable-pdf-assertions';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -142,7 +143,7 @@ for (const width of [1543, 390]) {
 				await openDownload(page);
 				await confirmDownload(page);
 				const download = await pending;
-				await expectRoundedTimetablePdf(download, [1]);
+				await expectSquareTimetablePdf(download, [1]);
 				expect(download.suggestedFilename()).toMatch(/แบบร่าง\.pdf$/);
 				await download.saveAs(`/tmp/academic-timetable-${width}-${theme}-${view}.pdf`);
 				const text = await pdfText(download);
@@ -189,7 +190,7 @@ for (const width of [1543, 390]) {
 					const compactPending = page.waitForEvent('download');
 					await confirmDownload(page);
 					const compactDownload = await compactPending;
-					await expectRoundedTimetablePdf(compactDownload, [1]);
+					await expectSquareTimetablePdf(compactDownload, [1]);
 					expect(compactDownload.suggestedFilename()).not.toBe(download.suggestedFilename());
 					expect(compactDownload.suggestedFilename()).toContain('6ต่อหน้า');
 					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
@@ -385,7 +386,7 @@ for (const width of [1543, 390]) {
 			let download = await pending;
 			let pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(2);
-			await expectRoundedTimetablePdf(download, [1, 1]);
+			await expectSquareTimetablePdf(download, [1, 1]);
 			const rooms = await pdfText(download);
 			expect(rooms).toContain('ระดับชั้นมัธยมศึกษาปีที่1/1');
 			expect(rooms).toContain('ระดับชั้นมัธยมศึกษาปีที่1/2');
@@ -417,7 +418,7 @@ for (const width of [1543, 390]) {
 			await download.saveAs(`/tmp/pdf-options-${width}-${theme}-6.pdf`);
 			pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(1);
-			await expectRoundedTimetablePdf(download, [6]);
+			await expectSquareTimetablePdf(download, [6]);
 			let text = await pdfText(download);
 			expect(text).toContain('นายพิสิษฐ');
 			for (const teacher of staff.slice(0, 6)) {
@@ -436,7 +437,7 @@ for (const width of [1543, 390]) {
 			download = await pending;
 			pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(2);
-			await expectRoundedTimetablePdf(download, [6, 1]);
+			await expectSquareTimetablePdf(download, [6, 1]);
 			text = await pdfText(download);
 			expect(text).toContain('นางสาวผู้สอน6');
 			for (const teacher of staff) {
@@ -456,7 +457,7 @@ for (const [shape, width, height] of [
 	['tall', 48, 160],
 	['wide', 160, 48]
 ] as const) {
-	test(`centers a ${shape} crest in dense ten-period full and six-up PDF headers`, async ({
+	test(`places a ${shape} crest beside external headers in dense full and six-up PDFs`, async ({
 		page
 	}) => {
 		const fixture = await PDFDocument.create();
@@ -526,9 +527,9 @@ for (const [shape, width, height] of [
 		await confirmDownload(page);
 		let download = await pending;
 		await download.saveAs(`/tmp/timetable-dense-${shape}-full.pdf`);
-		await expectRoundedTimetablePdf(download, [1]);
+		await expectSquareTimetablePdf(download, [1]);
 		await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
-		await expectCenteredTimetablePdfLogos(download, width / height, [1]);
+		await expectExternalTimetablePdfHeaders(download, width / height, [1]);
 		await expectTimetablePdfTextColors(download, {
 			ค21101: '#1e3a8a',
 			'ม.1/1': '#d97706',
@@ -542,9 +543,9 @@ for (const [shape, width, height] of [
 		await confirmDownload(page);
 		download = await pending;
 		await download.saveAs(`/tmp/timetable-dense-${shape}-six.pdf`);
-		await expectRoundedTimetablePdf(download, [6]);
+		await expectSquareTimetablePdf(download, [6]);
 		await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
-		await expectCenteredTimetablePdfLogos(download, width / height, [6]);
+		await expectExternalTimetablePdfHeaders(download, width / height, [6]);
 		await expectTimetablePdfTextColors(download, {
 			ค21101: '#1e3a8a',
 			'ม.1/1': '#d97706',
@@ -553,3 +554,158 @@ for (const [shape, width, height] of [
 		expect(brandingReads).toBe(2);
 	});
 }
+
+test('exports 31 selected teachers as 31 complete pages with an external crest and heading on each', async ({
+	page
+}) => {
+	test.setTimeout(60_000);
+	const staff = Array.from({ length: 31 }, (_, i) => ({
+		id:
+			i === 0
+				? timetableIds.teacherA
+				: `c1000000-0000-4000-8000-${String(701 + i).padStart(12, '0')}`,
+		displayName: `นายผู้สอนหมายเลข${i + 1} สกุลทดสอบ`,
+		subjectGroups: [],
+		status: 'active'
+	}));
+	await installTimetableMock(page, {
+		requestedWorkspaceVersion: true,
+		permissions: ['academic_timetable.read.school'],
+		periodCount: 10,
+		staff,
+		blocks: staff.map((teacher, i) =>
+			makeTimetableBlock(
+				`c1000000-0000-4000-8000-${String(801 + i).padStart(12, '0')}`,
+				timetableIds.period1,
+				{ instructorIds: [teacher.id] }
+			)
+		)
+	});
+	const logoId = '80000000-0000-4000-8000-000000000001';
+	const logoBytes = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
+	const asset = await (await PDFDocument.create()).embedPng(logoBytes);
+	let brandingReads = 0;
+	await page.route('**/api/school/public', (route) => {
+		brandingReads++;
+		return route.fulfill({
+			json: { success: true, data: { schoolName: 'โรงเรียนทดสอบ', logoFileId: logoId } }
+		});
+	});
+	await page.route(`**/api/public/files/${logoId}/delivery`, (route) =>
+		route.fulfill({
+			json: { success: true, data: { url: 'https://public-files.example.test/batch-crest.png' } }
+		})
+	);
+	await page.route('https://public-files.example.test/batch-crest.png', (route) =>
+		route.fulfill({
+			contentType: 'image/png',
+			headers: { 'access-control-allow-origin': '*' },
+			body: logoBytes
+		})
+	);
+	await page.goto(url('teacher'));
+	const dialog = await openDownload(page);
+	await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+	await expect(dialog.getByRole('status')).toHaveText('เลือกแล้ว 31 / 31 รายการ');
+	const pending = page.waitForEvent('download');
+	await confirmDownload(page);
+	const download = await pending;
+	await download.saveAs('/tmp/timetable-external-31-teachers-browser.pdf');
+	await expectSquareTimetablePdf(download, Array(31).fill(1));
+	await expectExternalTimetablePdfHeaders(download, asset.width / asset.height, Array(31).fill(1));
+	await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
+	const pdf = await PDFDocument.load(readFileSync((await download.path())!));
+	expect(pdf.getPageCount()).toBe(31);
+	const text = await pdfText(download);
+	for (const teacher of staff) expect(text).toContain(teacher.displayName.replace(/\s/g, ''));
+	expect(brandingReads).toBe(1);
+});
+
+test('wraps school and owner using their loaded bold measurement face within the mini header', async ({
+	page
+}) => {
+	const schoolName = `โรงเรียน${'พัฒนา'.repeat(13)}วิทยาคม`;
+	const ownerName = `นาย${'พัฒนา'.repeat(13)}วิทยาคม`;
+	await installTimetableMock(page, {
+		requestedWorkspaceVersion: true,
+		permissions: ['academic_timetable.read.school'],
+		periodCount: 10,
+		staff: [
+			{ id: timetableIds.teacherA, displayName: ownerName, subjectGroups: [], status: 'active' }
+		],
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	const logoId = '80000000-0000-4000-8000-000000000001';
+	const logoBytes = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
+	const crest = await (await PDFDocument.create()).embedPng(logoBytes);
+	expect(crest.width / crest.height).toBe(1);
+	await page.route('**/api/school/public', (route) =>
+		route.fulfill({
+			json: { success: true, data: { schoolName, logoFileId: logoId } }
+		})
+	);
+	await page.route(`**/api/public/files/${logoId}/delivery`, (route) =>
+		route.fulfill({
+			json: { success: true, data: { url: 'https://public-files.example.test/bold-crest.png' } }
+		})
+	);
+	await page.route('https://public-files.example.test/bold-crest.png', (route) =>
+		route.fulfill({
+			contentType: 'image/png',
+			headers: { 'access-control-allow-origin': '*' },
+			body: logoBytes
+		})
+	);
+	await page.goto(url('teacher'));
+	const dialog = await openDownload(page);
+	await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+	await expect(dialog.getByRole('status')).toHaveText('เลือกแล้ว 1 / 1 รายการ');
+	await dialog.getByRole('button', { name: '6 ตารางต่อหน้า', exact: true }).click();
+	const pending = page.waitForEvent('download');
+	await confirmDownload(page);
+	const download = await pending;
+	await download.saveAs('/tmp/timetable-external-bold-browser-boundary.pdf');
+	const faces = await page.evaluate(() =>
+		Array.from(document.fonts)
+			.filter((face) => face.family === 'THSarabunNewMeasure')
+			.map((face) => ({ weight: face.weight, status: face.status }))
+	);
+	expect(faces).toHaveLength(2);
+	expect(faces.every((face) => face.status === 'loaded')).toBe(true);
+	expect(faces.some((face) => face.weight === 'bold' || face.weight === '700')).toBe(true);
+	expect(faces.some((face) => face.weight === 'normal' || face.weight === '400')).toBe(true);
+	await expectSquareTimetablePdf(download, [1]);
+	await expectExternalTimetablePdfHeaders(download, 1, [1]);
+	const loading = getDocument({
+		data: new Uint8Array(readFileSync((await download.path())!)),
+		useSystemFonts: false
+	});
+	try {
+		const pdf = await loading.promise;
+		expect(pdf.numPages).toBe(1);
+		const content = await (await pdf.getPage(1)).getTextContent();
+		const header = content.items.filter(
+			(item) =>
+				'str' in item &&
+				item.str.trim() &&
+				Math.abs(item.height - 9) < 0.01 &&
+				item.transform[4] < 300
+		);
+		expect(header.length).toBeGreaterThanOrEqual(5);
+		for (const item of header) {
+			if (!('str' in item)) continue;
+			expect(item.transform[4], item.str).toBeGreaterThanOrEqual(10 - 0.01);
+			expect(item.transform[4] + item.width, item.str).toBeLessThanOrEqual(291 + 0.01);
+		}
+		const text = header
+			.map((item) => ('str' in item ? item.str : ''))
+			.join('')
+			.replace(/\s/g, '');
+		expect(text).toContain(schoolName);
+		expect(text).toContain(ownerName);
+	} finally {
+		await loading.destroy();
+	}
+});
