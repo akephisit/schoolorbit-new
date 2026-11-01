@@ -23,3 +23,53 @@ export async function expectRoundedTimetablePdf(download: Download, tablesPerPag
 		expect(arcs, `rounded corners on PDF page ${index + 1}`).toHaveLength(tablesPerPage[index] * 4);
 	}
 }
+
+/** Check actual page operators: black text, white cells and the existing neutral period fill.
+ * Embedded crest images are separate XObjects and retain their original colors. */
+export async function expectMonochromeTimetablePdf(download: Download) {
+	const pdf = await PDFDocument.load(readFileSync((await download.path())!));
+	for (const [index, page] of pdf.getPages().entries()) {
+		const contents = page.node.Contents();
+		expect(contents).toBeDefined();
+		const streams = contents instanceof PDFArray ? contents.asArray() : [contents!];
+		let fill = [0, 0, 0];
+		const savedFills: number[][] = [];
+		let textRuns = 0;
+		for (const entry of streams) {
+			const stream = pdf.context.lookup(entry);
+			if (!(stream instanceof PDFRawStream)) throw new Error('Expected a PDF content stream');
+			const operators = Buffer.from(decodePDFRawStream(stream).decode()).toString();
+			for (const line of operators.split('\n').map((line) => line.trim())) {
+				if (line === 'q') savedFills.push([...fill]);
+				if (line === 'Q') fill = savedFills.pop() ?? [0, 0, 0];
+				const rgb = line.match(/^([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(?:scn|rg)$/);
+				const gray = line.match(/^([\d.]+)\s+g$/);
+				if (rgb) {
+					fill = rgb.slice(1, 4).map(Number);
+				} else if (gray) {
+					fill = Array(3).fill(Number(gray[1]));
+				}
+				if (rgb || gray) {
+					const allowedFills = [
+						[0, 0, 0],
+						[1, 1, 1],
+						[243 / 255, 244 / 255, 246 / 255]
+					];
+					// PDFKit serializes RGB channels to six decimal places.
+					const allowed = allowedFills.some((expected) =>
+						expected.every((channel, index) => Math.abs(channel - fill[index]) < 0.000001)
+					);
+					expect(
+						allowed,
+						`approved neutral fill on PDF page ${index + 1}: ${fill.join(', ')}`
+					).toBe(true);
+				}
+				if (/(?:^|\s)(?:Tj|TJ)$/.test(line)) {
+					textRuns++;
+					expect(fill, `black text on PDF page ${index + 1}`).toEqual([0, 0, 0]);
+				}
+			}
+		}
+		expect(textRuns, `text operators on PDF page ${index + 1}`).toBeGreaterThan(0);
+	}
+}

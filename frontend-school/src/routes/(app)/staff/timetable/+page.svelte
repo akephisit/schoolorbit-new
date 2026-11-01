@@ -116,6 +116,7 @@
 		if (!canDownloadPdf || !selectedTerm || !selectedYear) return;
 		const download = buildStaffOwnTimetablePdfDownload({
 			teacherName: userName,
+			teacherDisplayName: $authStore.user?.displayName ?? '',
 			termName: selectedTerm.name,
 			termCode: selectedTerm.code,
 			academicYearName: selectedYear.name,

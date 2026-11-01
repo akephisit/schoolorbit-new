@@ -8,6 +8,7 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 	const blocks = [{ id: 'block-1', room_code: 'MATH-1' }];
 	const result = module.buildStaffOwnTimetablePdfDownload({
 		teacherName: 'สายใจ / วิทยา',
+		teacherDisplayName: 'สายใจ / วิทยา',
 		termName: '',
 		termCode: '1',
 		academicYearName: 'ปีการศึกษา 2569',
@@ -29,6 +30,8 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 		{
 			title: 'ตารางสอน ครูสายใจ / วิทยา',
 			subTitle: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+			headerContext: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+			headerOwnerLabel: 'สายใจ / วิทยา',
 			dayValues: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
 			periods: [
 				{
@@ -152,4 +155,43 @@ test('reports a successful PDF download before clearing exporting state', async 
 	assert.deepEqual(exportingStates, [true, false]);
 	assert.equal(successCount, 1);
 	assert.equal(errorCount, 0);
+});
+
+test('keeps the original teacher honorific in the header while preserving the filename', async () => {
+	const { buildStaffOwnTimetablePdfDownload } =
+		await import('../../src/lib/utils/staff-own-timetable-pdf.ts');
+	const result = buildStaffOwnTimetablePdfDownload({
+		teacherName: 'สายใจ วิทยา',
+		teacherDisplayName: '  นายสายใจ วิทยา  ',
+		termName: 'ภาคเรียนที่ 2',
+		academicYearName: '2569',
+		blocks: [],
+		dayValues: [],
+		periods: []
+	});
+	assert.equal(result.pages[0].headerOwnerLabel, 'นายสายใจ วิทยา');
+	assert.equal(result.pages[0].headerContext, 'ภาคเรียนที่ 2 ปีการศึกษา 2569');
+	assert.equal(result.fileName, 'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 2 2569');
+});
+
+test('preserves a custom staff title only in the header and keeps the existing filename identity', async () => {
+	const { buildStaffOwnTimetablePdfDownload } =
+		await import('../../src/lib/utils/staff-own-timetable-pdf.ts');
+	const input = {
+		teacherName: 'สายใจ วิทยา',
+		teacherDisplayName: 'สายใจ วิทยา',
+		termName: 'ภาคเรียนที่ 1',
+		academicYearName: 'ปีการศึกษา 2569',
+		blocks: [],
+		dayValues: [],
+		periods: []
+	};
+	const original = buildStaffOwnTimetablePdfDownload(input);
+	const titled = buildStaffOwnTimetablePdfDownload({
+		...input,
+		teacherDisplayName: 'ผู้ช่วยศาสตราจารย์สายใจ วิทยา'
+	});
+	assert.equal(titled.pages[0].headerOwnerLabel, 'ผู้ช่วยศาสตราจารย์สายใจ วิทยา');
+	assert.equal(titled.fileName, original.fileName);
+	assert.equal(titled.fileName, 'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569');
 });
