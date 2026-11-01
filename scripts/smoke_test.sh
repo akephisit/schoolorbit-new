@@ -114,9 +114,14 @@ failures=0
 cookie_jar="$(mktemp)"
 tmp_dir="$(mktemp -d)"
 file_smoke_id=
+file_transfer_device_id=
+file_transfer_status=
 csrf_token=
 
 cleanup() {
+    if [[ -n $file_transfer_device_id ]]; then
+        cleanup_file_transfer_device
+    fi
     if [[ -n $file_smoke_id ]]; then
         local -a cleanup_csrf_options=()
         if [[ -n $csrf_token ]]; then
@@ -387,6 +392,187 @@ PY
         fail "$name expected a successful API envelope"
     fi
 }
+
+# Staff file-transfer smoke start
+# Inline because deployment verification copies this self-contained script.
+file_transfer_request() {
+    local method=$1 endpoint=$2 headers=$3 body=$4
+    shift 4
+    : >"$headers"
+    : >"$body"
+    chmod 0600 "$headers" "$body"
+    local -a csrf_options=()
+    if [[ $method != GET ]]; then
+        csrf_options=(-H "X-CSRF-Token: $csrf_token")
+    fi
+    if ! file_transfer_status="$(curl -sS --max-time "$SMOKE_TIMEOUT_SECONDS" \
+        "${school_api_curl_options[@]}" -X "$method" \
+        -b "$cookie_jar" -c "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+        "${csrf_options[@]}" -D "$headers" -o "$body" -w '%{http_code}' \
+        "$@" "$SMOKE_API_URL$endpoint" 2>"$tmp_dir/file-transfer-curl.error")"; then
+        fail "file-transfer $method request failed"
+        return 1
+    fi
+    refresh_csrf_if_present "$headers"
+}
+
+cleanup_file_transfer_device() {
+    [[ -n $file_transfer_device_id ]] || return 0
+    if file_transfer_request DELETE "/api/staff/file-transfer/devices/$file_transfer_device_id" \
+        "$tmp_dir/file-transfer-delete.headers" "$tmp_dir/file-transfer-delete.body"; then
+        case "$file_transfer_status" in
+            200 | 404)
+                file_transfer_device_id=
+                pass "file-transfer temporary device cleaned"
+                ;;
+            *) fail "file-transfer temporary device cleanup refused" ;;
+        esac
+    fi
+    return 0
+}
+
+run_file_transfer_smoke() {
+    local registration_headers="$tmp_dir/file-transfer-register.headers"
+    local registration_body="$tmp_dir/file-transfer-register.body"
+    local stream_headers="$tmp_dir/file-transfer-stream.headers"
+    local stream_body="$tmp_dir/file-transfer-stream.body"
+    local stream_status stream_result
+    : >"$registration_body"
+    : >"$stream_body"
+    : >"$stream_headers"
+    chmod 0600 "$registration_body" "$stream_body" "$stream_headers"
+    if ! file_transfer_request POST /api/staff/file-transfer/devices \
+        "$registration_headers" "$registration_body" \
+        -H 'Content-Type: application/json' --data '{"label":"SchoolOrbit smoke"}'; then
+        return 0
+    fi
+    if [[ $file_transfer_status != 200 ]]; then
+        fail "file-transfer temporary device registration refused"
+        return 0
+    fi
+    # Retain our own identity before validating any other response field, so a
+    # malformed later field can never bypass cleanup of a successful registration.
+    if ! file_transfer_device_id="$(
+        python3 - "$registration_body" <<'PY'
+import json
+import sys
+import uuid
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        value = json.load(handle)["data"]["device"]["id"]
+    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+        raise ValueError()
+except (OSError, KeyError, TypeError, ValueError):
+    raise SystemExit(1)
+print(value)
+PY
+    )"; then
+        file_transfer_device_id=
+        fail "file-transfer registration identity invalid"
+        return 0
+    fi
+    if python3 - "$registration_body" <<'PY'; then
+import datetime
+import json
+import sys
+import uuid
+def require(condition):
+    if not condition:
+        raise ValueError()
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        value = json.load(handle)
+    snapshot = value["data"]
+    device = snapshot["device"]
+    require(value["success"] is True)
+    require(str(uuid.UUID(device["userId"])) == device["userId"])
+    require(isinstance(device["displayName"], str) and device["displayName"])
+    require(device["label"] == "SchoolOrbit smoke")
+    require(isinstance(snapshot["pairingCode"], str) and len(snapshot["pairingCode"]) == 10)
+    require(all(c in "0123456789ABCDEF" for c in snapshot["pairingCode"]))
+    datetime.datetime.fromisoformat(snapshot["expiresAt"].replace("Z", "+00:00"))
+    require(isinstance(snapshot["peers"], list) and snapshot["pairs"] == [])
+except (OSError, KeyError, TypeError, ValueError, AssertionError):
+    raise SystemExit(1)
+PY
+        pass "file-transfer own temporary device registered"
+    else
+        fail "file-transfer registration snapshot invalid"
+        cleanup_file_transfer_device
+        return 0
+    fi
+    if stream_status="$(curl -sS --no-buffer --max-time 5 --max-filesize 262144 \
+        "${school_api_curl_options[@]}" -X GET \
+        -b "$cookie_jar" -c "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+        -D "$stream_headers" -o "$stream_body" -w '%{http_code}' \
+        "$SMOKE_API_URL/api/staff/file-transfer/devices/$file_transfer_device_id/events" \
+        2>"$tmp_dir/file-transfer-stream.error")"; then
+        stream_result=0
+    else
+        stream_result=$?
+    fi
+    if [[ $stream_status == 200 && ($stream_result == 0 || $stream_result == 28) ]]; then
+        pass "file-transfer SSE bounded status 200"
+    else
+        fail "file-transfer SSE transport or status failed"
+    fi
+    expect_header_contains_ci "file-transfer SSE" "$stream_headers" content-type text/event-stream
+    expect_header "file-transfer SSE" "$stream_headers" cache-control no-store
+    expect_cors_header "file-transfer SSE" "$stream_headers" access-control-allow-origin "$SMOKE_ORIGIN"
+    expect_cors_header "file-transfer SSE" "$stream_headers" access-control-allow-credentials true
+    if python3 - "$registration_body" "$stream_body" "$file_transfer_device_id" <<'PY'; then
+import json
+import sys
+def require(condition):
+    if not condition:
+        raise ValueError()
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        registered = json.load(handle)["data"]
+    with open(sys.argv[2], "rb") as handle:
+        raw = handle.read(262145)
+    require(len(raw) <= 262144)
+    text = raw.decode("utf-8-sig")
+    event, data, ready = "message", [], False
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[:-1]:
+        # Only a blank terminated SSE frame can prove flush before the deadline.
+        if not line:
+            if data and event == "file_transfer":
+                value = json.loads("\n".join(data))
+                require(isinstance(value, dict) and isinstance(value.get("data"), dict))
+                require(value.get("type") not in ("session_invalid", "session_unavailable"))
+                if value.get("type") == "ready":
+                    snapshot = value["data"]
+                    require(snapshot["device"] == registered["device"])
+                    require(snapshot["device"]["id"] == sys.argv[3])
+                    require(snapshot["pairingCode"] == registered["pairingCode"])
+                    require(isinstance(snapshot["expiresAt"], str))
+                    require(isinstance(snapshot["peers"], list) and isinstance(snapshot["pairs"], list))
+                    ready = True
+                    break
+            event, data = "message", []
+        elif not line.startswith(":"):
+            key, separator, value = line.partition(":")
+            if value.startswith(" "):
+                value = value[1:]
+            if key == "event":
+                event = value
+            elif key == "data":
+                data.append(value)
+    require(ready)
+except (OSError, KeyError, TypeError, ValueError, AssertionError):
+    raise SystemExit(1)
+PY
+        pass "file-transfer typed ready event flushed within five seconds"
+    else
+        fail "file-transfer typed ready event missing or invalid"
+    fi
+    refresh_csrf_if_present "$stream_headers"
+    cleanup_file_transfer_device
+}
+# Staff file-transfer smoke end
 
 # Timetable WebSocket read-only smoke start
 # Kept inline: the DNS verification owner hashes/copies this script alone.
@@ -1073,6 +1259,8 @@ PY
     expect_cors_header "notification SSE" "$sse_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_cors_header "notification SSE" "$sse_headers" "access-control-allow-credentials" "true"
     refresh_csrf_if_present "$sse_headers"
+
+    run_file_transfer_smoke
 
     if [[ -n $FILE_SMOKE_PNG ]]; then
         if [[ ! -r $FILE_SMOKE_PNG ]]; then
