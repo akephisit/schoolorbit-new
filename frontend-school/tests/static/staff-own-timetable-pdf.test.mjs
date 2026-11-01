@@ -8,6 +8,7 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 	const blocks = [{ id: 'block-1', room_code: 'MATH-1' }];
 	const result = module.buildStaffOwnTimetablePdfDownload({
 		teacherName: 'สายใจ / วิทยา',
+		teacherDisplayName: 'สายใจ / วิทยา',
 		termName: '',
 		termCode: '1',
 		academicYearName: 'ปีการศึกษา 2569',
@@ -160,7 +161,8 @@ test('keeps the original teacher honorific in the header while preserving the fi
 	const { buildStaffOwnTimetablePdfDownload } =
 		await import('../../src/lib/utils/staff-own-timetable-pdf.ts');
 	const result = buildStaffOwnTimetablePdfDownload({
-		teacherName: '  นายสายใจ วิทยา  ',
+		teacherName: 'สายใจ วิทยา',
+		teacherDisplayName: '  นายสายใจ วิทยา  ',
 		termName: 'ภาคเรียนที่ 2',
 		academicYearName: '2569',
 		blocks: [],
@@ -170,4 +172,26 @@ test('keeps the original teacher honorific in the header while preserving the fi
 	assert.equal(result.pages[0].headerOwnerLabel, 'นายสายใจ วิทยา');
 	assert.equal(result.pages[0].headerContext, 'ภาคเรียนที่ 2 ปีการศึกษา 2569');
 	assert.equal(result.fileName, 'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 2 2569');
+});
+
+test('preserves a custom staff title only in the header and keeps the existing filename identity', async () => {
+	const { buildStaffOwnTimetablePdfDownload } =
+		await import('../../src/lib/utils/staff-own-timetable-pdf.ts');
+	const input = {
+		teacherName: 'สายใจ วิทยา',
+		teacherDisplayName: 'สายใจ วิทยา',
+		termName: 'ภาคเรียนที่ 1',
+		academicYearName: 'ปีการศึกษา 2569',
+		blocks: [],
+		dayValues: [],
+		periods: []
+	};
+	const original = buildStaffOwnTimetablePdfDownload(input);
+	const titled = buildStaffOwnTimetablePdfDownload({
+		...input,
+		teacherDisplayName: 'ผู้ช่วยศาสตราจารย์สายใจ วิทยา'
+	});
+	assert.equal(titled.pages[0].headerOwnerLabel, 'ผู้ช่วยศาสตราจารย์สายใจ วิทยา');
+	assert.equal(titled.fileName, original.fileName);
+	assert.equal(titled.fileName, 'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569');
 });

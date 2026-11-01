@@ -4,7 +4,10 @@ import type { TimetableBlock, TimetablePeriodSummary } from '#lib/api/timetable.
 import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
 
 export interface StaffOwnTimetablePdfInput {
+	/** Existing name used by the download filename policy. */
 	teacherName: string;
+	/** Authoritative staff identity, including any original/custom title. */
+	teacherDisplayName: string;
 	termName?: string | null;
 	termCode?: string | null;
 	academicYearName?: string | null;
@@ -96,7 +99,7 @@ export function buildStaffOwnTimetablePdfDownload(
 				title,
 				subTitle,
 				headerContext: timetablePdfHeaderContext(termName || termCode || '', academicYearLabel),
-				headerOwnerLabel: input.teacherName.trim(),
+				headerOwnerLabel: input.teacherDisplayName.trim(),
 				dayValues: input.dayValues,
 				periods: input.periods.map((period, orderIndex) => ({
 					id: period.id,
