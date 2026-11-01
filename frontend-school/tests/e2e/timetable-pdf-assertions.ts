@@ -24,7 +24,7 @@ export async function expectRoundedTimetablePdf(download: Download, tablesPerPag
 	}
 }
 
-/** Check actual page operators: text is black and vector fills have no color tint.
+/** Check actual page operators: black text, white cells and the existing neutral period fill.
  * Embedded crest images are separate XObjects and retain their original colors. */
 export async function expectMonochromeTimetablePdf(download: Download) {
 	const pdf = await PDFDocument.load(readFileSync((await download.path())!));
@@ -46,10 +46,23 @@ export async function expectMonochromeTimetablePdf(download: Download) {
 				const gray = line.match(/^([\d.]+)\s+g$/);
 				if (rgb) {
 					fill = rgb.slice(1, 4).map(Number);
-					expect(fill[0], `neutral fill on PDF page ${index + 1}`).toBe(fill[1]);
-					expect(fill[1], `neutral fill on PDF page ${index + 1}`).toBe(fill[2]);
 				} else if (gray) {
 					fill = Array(3).fill(Number(gray[1]));
+				}
+				if (rgb || gray) {
+					const allowedFills = [
+						[0, 0, 0],
+						[1, 1, 1],
+						[243 / 255, 244 / 255, 246 / 255]
+					];
+					// PDFKit serializes RGB channels to six decimal places.
+					const allowed = allowedFills.some((expected) =>
+						expected.every((channel, index) => Math.abs(channel - fill[index]) < 0.000001)
+					);
+					expect(
+						allowed,
+						`approved neutral fill on PDF page ${index + 1}: ${fill.join(', ')}`
+					).toBe(true);
 				}
 				if (/(?:^|\s)(?:Tj|TJ)$/.test(line)) {
 					textRuns++;

@@ -115,7 +115,7 @@
 	async function downloadPdf(): Promise<void> {
 		if (!canDownloadPdf || !selectedTerm || !selectedYear) return;
 		const download = buildStaffOwnTimetablePdfDownload({
-			teacherName: userName,
+			teacherName: $authStore.user?.displayName ?? '',
 			termName: selectedTerm.name,
 			termCode: selectedTerm.code,
 			academicYearName: selectedYear.name,
