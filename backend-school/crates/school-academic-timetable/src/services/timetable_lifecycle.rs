@@ -13,7 +13,7 @@ use school_academic_delivery::services::versions as delivery;
 use school_errors::AppError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::{timetable_block_queries, timetable_source, timetable_version_service};
@@ -318,10 +318,23 @@ pub async fn publish(
 ) -> Result<TimetableVersion, AppError> {
     let request_hash = publication_request_fingerprint(id, &request)?;
     let key = request.idempotency_key;
-    context.execute_publication(pool,id,
-        move |pool| async move {read_publication_receipt(&pool,id,key,&request_hash).await},
-        move |pool,permit|async move {publish_in_permit(history,&pool,permit,id,request).await},
-    ).await
+    context
+        .execute_publication(
+            pool,
+            id,
+            move |pool| async move {
+                let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                    &pool,
+                    "academic_timetable.services.timetable_lifecycle.publication_receipt",
+                )
+                .await?;
+                read_publication_receipt(&mut connection, id, key, &request_hash).await
+            },
+            move |pool, permit| async move {
+                publish_in_permit(history, &pool, permit, id, request).await
+            },
+        )
+        .await
 }
 
 fn publication_request_fingerprint(
@@ -337,17 +350,12 @@ fn publication_request_fingerprint(
 }
 
 async fn read_publication_receipt(
-    pool: &PgPool,
+    connection: &mut PgConnection,
     id: Uuid,
     key: Uuid,
     fingerprint: &str,
 ) -> Result<Option<TimetableVersion>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_timetable.services.timetable_lifecycle.publication_receipt",
-    )
-    .await?;
-    let receipt:Option<(Uuid,String)>=DbSession::new(&mut connection).query_as("academic_timetable.services.timetable_lifecycle.publication_receipt.lookup",
+    let receipt:Option<(Uuid,String)>=DbSession::new(&mut *connection).query_as("academic_timetable.services.timetable_lifecycle.publication_receipt.lookup",
         "SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 AND status='published'")
         .bind(key).fetch_optional().await?;
     match receipt {
@@ -357,7 +365,7 @@ async fn read_publication_receipt(
             }
             Ok(Some(
                 timetable_version_service::get_version_on_connection(
-                    &mut connection,
+                    connection,
                     id,
                     timetable_version_service::bangkok_today(),
                 )
