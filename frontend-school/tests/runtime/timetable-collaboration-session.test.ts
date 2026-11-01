@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDraftCollaborationSession } from '../../src/lib/academic/timetable/collaboration-session.ts';
+import {
+	createDraftCollaborationSession,
+	DraftLeaseError
+} from '../../src/lib/academic/timetable/collaboration-session.ts';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import type {
 	DraftClientMessage,
@@ -380,3 +383,16 @@ test('presence-only updates retain existing participant order while joins append
 		[users[0].userId, users[2].userId, users[3].userId, joined.userId]
 	);
 });
+
+for (const code of ['delivery_source_outdated', 'reserved', null]) {
+	test(`claim rejection preserves typed code ${String(code)} for deliberate recovery`, async () => {
+		const h = harness();
+		const pending = h.session.claim(source, candidate, 'edit');
+		h.reply({ accepted: false, code });
+		await assert.rejects(
+			pending,
+			(error: unknown) => error instanceof DraftLeaseError && error.code === code
+		);
+		assert.equal(h.sent.filter((message) => message.type === 'ClientClaim').length, 1);
+	});
+}

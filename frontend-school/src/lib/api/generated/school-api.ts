@@ -9431,6 +9431,15 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict: {
+			/** @description Present only when a latest-source guard rejected the operation before any write. */
+			data?: {
+				code: components['schemas']['TimetableDraftSourceConflictCode'];
+			};
+			error: string;
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_AcademicContextOptions: {
 			data: {
 				/** Format: uuid */
@@ -27589,6 +27598,12 @@ export interface components {
 			status: string;
 			subjectGroups: components['schemas']['TimetableSubjectGroup'][];
 		};
+		/** @description Present only when a latest-source guard rejected the operation before any write. */
+		TimetableDraftSourceConflict: {
+			code: components['schemas']['TimetableDraftSourceConflictCode'];
+		};
+		/** @enum {string} */
+		TimetableDraftSourceConflictCode: 'TIMETABLE_DELIVERY_SOURCE_OUTDATED';
 		TimetableOfferingSubjectGroup: {
 			/** Format: uuid */
 			learningOfferingId: string;
@@ -42610,7 +42625,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -42682,7 +42697,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -43838,7 +43853,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -43879,7 +43894,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -43921,7 +43936,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -43963,7 +43978,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44041,7 +44056,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44100,6 +44115,15 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable conflict or obsolete opening source */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44166,7 +44190,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44226,7 +44250,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44266,7 +44290,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44333,7 +44357,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44373,7 +44397,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44440,7 +44464,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};
@@ -44822,7 +44846,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict'];
 				};
 			};
 		};

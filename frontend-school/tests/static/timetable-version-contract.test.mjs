@@ -169,8 +169,24 @@ test('latest alignment uses owner resolution and explicit lifecycle admission, n
 	);
 	assert.match(page, /const admission = sourceAdmission\(target\)/);
 	assert.match(page, /await waitForSaves\(\)/);
-	assert.match(page, /if \(saveError\) throw/);
+	assert.match(page, /if \(saveError && !\(allowSourceRejection && saveError.sourceRejected\)\)/);
 	assert.match(page, /publicationDate = initialTimetablePublicationDate\(target.workspace\)/);
 	assert.doesNotMatch(page, /applicableDeliveryPublication|ใช้รุ่นที่มีผลในวันที่เลือก/);
 	assert.doesNotMatch(loader, /updateTimetableDeliverySource/);
+});
+
+test('source recovery keeps typed evidence and never clears an unrelated failed batch', async () => {
+	const api = await read('src/lib/api/timetable.ts');
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	assert.match(api, /response.errorData/);
+	assert.match(api, /error.status === 409/);
+	assert.match(api, /TIMETABLE_DELIVERY_SOURCE_OUTDATED/);
+	assert.doesNotMatch(page, /saveError = null/);
+	const discard = page.slice(
+		page.indexOf('async function discardFailedSave'),
+		page.indexOf('function lockedTeacherTargetIds')
+	);
+	assert.match(discard, /await reload/);
+	assert.doesNotMatch(discard, /ensureLatestDeliverySource|updateTimetableDeliverySource/);
+	assert.match(discard, /automaticAlignmentPaused = target/);
 });

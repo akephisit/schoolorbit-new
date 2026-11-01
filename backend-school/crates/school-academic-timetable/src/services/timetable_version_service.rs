@@ -500,9 +500,7 @@ pub(crate) async fn require_current_draft_write(
         school_academic_delivery::services::versions::latest_published_id(transaction, term)
             .await?;
     if source != latest {
-        return Err(AppError::Conflict(
-            "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
-        ));
+        return Err(super::timetable_source::outdated_draft_source());
     }
     Ok(())
 }

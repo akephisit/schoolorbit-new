@@ -9,7 +9,7 @@ use school_tenancy::TenantPool;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{CommitPermit, MutationScope, TimetableCollaborationRuntime};
+use super::{CommitPermit, DraftRoom, MutationScope, TimetableCollaborationRuntime};
 use crate::models::collaboration::DraftMutationIdentity;
 use crate::models::timetable_block::TimetableBlock;
 use crate::ports::StaffDirectoryPort;
@@ -24,6 +24,23 @@ struct OperationOutcome<T> {
     value: T,
     blocks: Vec<TimetableBlock>,
     lifecycle_changed: bool,
+}
+
+/// Cache publication is after the business COMMIT. Its failure can only request
+/// reconciliation; it must never turn an accepted result into a rejected write.
+pub(super) fn publish_committed_blocks(
+    room: &DraftRoom,
+    blocks: Vec<TimetableBlock>,
+    version: Result<Option<crate::models::timetable_version::TimetableVersion>, AppError>,
+    connection_id: Option<Uuid>,
+    mutation_id: Uuid,
+) {
+    if version
+        .and_then(|version| room.publish_blocks(blocks, version, connection_id, mutation_id))
+        .is_err()
+    {
+        room.invalidate();
+    }
 }
 
 #[async_trait]
@@ -409,18 +426,14 @@ impl TimetableMutationContext {
             };
             if invalidate && lifecycle_changed {
                 room.invalidate();
-            } else if !blocks.is_empty()
-                && room
-                    .publish_blocks(
-                        blocks,
-                        permit.version_snapshot()?,
-                        connection_id,
-                        mutation_id,
-                    )
-                    .is_err()
-            {
-                // A committed business result stays successful; clients receive reconciliation.
-                room.invalidate();
+            } else if !blocks.is_empty() {
+                publish_committed_blocks(
+                    &room,
+                    blocks,
+                    permit.version_snapshot(),
+                    connection_id,
+                    mutation_id,
+                );
             }
             permit.settle();
             drop(permit);

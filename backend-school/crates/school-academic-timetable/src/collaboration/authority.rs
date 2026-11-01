@@ -181,9 +181,7 @@ impl DraftRoom {
             && state.workspace.version.delivery_version_id
                 != state.workspace.latest_delivery_version_id
         {
-            return Err(AppError::Conflict(
-                "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
-            ));
+            return Err(crate::services::timetable_source::outdated_draft_source());
         }
         let expected_purpose = match &scope {
             MutationScope::Blocks(_) | MutationScope::Series(_) => {

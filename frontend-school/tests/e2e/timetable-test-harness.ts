@@ -1,3 +1,4 @@
+import type { AcademicContextOptionsResponse } from '../../src/lib/api/academic-context.js';
 import type { SessionState } from '../../src/lib/api/auth.js';
 import { sessionState } from './fixtures/session-state.ts';
 import type { Page, Route } from '@playwright/test';
@@ -48,6 +49,8 @@ export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
 	versions?: TimetableVersion[];
 	deliveryPublications?: TimetableBlockWorkspace['deliveryPublication'][];
+	deliveryPublicationsByTerm?: Record<string, TimetableBlockWorkspace['deliveryPublication'][]>;
+	terms?: AcademicContextOptionsResponse['terms'];
 	publicationDateRules?: TimetableBlockWorkspace['publicationDateRules'];
 	permissions?: string[];
 	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
@@ -378,17 +381,22 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		const synchronizedScheduledPeriods = blocks.filter(
 			(block) => block.learningOfferingId === timetableIds.offeringSync
 		).length;
+		const scopedPublications =
+			options.deliveryPublicationsByTerm?.[version.academicTermId] ?? deliveryPublications;
+		const latestId =
+			version.academicTermId === selectedVersion.academicTermId
+				? latestDeliveryVersionId
+				: scopedPublications.toSorted((left, right) => right.publicationNo - left.publicationNo)[0]
+						.id;
 		return {
 			version,
 			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
-			latestDeliveryVersionId,
-			deliveryPublication: deliveryPublications.find(
+			latestDeliveryVersionId: latestId,
+			deliveryPublication: scopedPublications.find(
 				(item) => item.id === version.deliveryVersionId
 			)!,
-			latestDeliveryPublication: deliveryPublications.find(
-				(item) => item.id === latestDeliveryVersionId
-			)!,
+			latestDeliveryPublication: scopedPublications.find((item) => item.id === latestId)!,
 			publicationDateRules,
 			bellPeriods: options.bellPeriods ?? periods(options.periodCount),
 			blocks,
@@ -573,7 +581,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							status: 'active'
 						}
 					],
-					terms: [
+					terms: options.terms ?? [
 						{
 							isVisible: true,
 							id: timetableIds.term,
@@ -591,7 +599,12 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-versions') {
-				await fulfill(route, versions);
+				await fulfill(
+					route,
+					versions.filter(
+						(version) => version.academicTermId === url.searchParams.get('academicTermId')
+					)
+				);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {

@@ -2069,6 +2069,9 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         TimetablePublicationFindingCode,
         TimetableSourceIssue,
         TimetableSourceIssueCode,
+        TimetableDraftSourceConflict,
+        TimetableDraftSourceConflictCode,
+        ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>,
         ApiResponse<Vec<TimetableVersion>>,
         ApiResponse<TimetableVersion>,
         ApiResponse<TimetableVersionTarget>,
@@ -5225,6 +5228,54 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&serde_json::json!("delivery_source_outdated")));
+        assert_eq!(
+            schemas["TimetableDraftSourceConflictCode"]["enum"],
+            serde_json::json!(["TIMETABLE_DELIVERY_SOURCE_OUTDATED"])
+        );
+        let source_conflict = &schemas["TimetableDraftSourceConflict"];
+        assert_eq!(required(source_conflict), vec!["code"]);
+        assert_eq!(source_conflict["properties"].as_object().unwrap().len(), 1);
+        assert_eq!(source_conflict["additionalProperties"], false);
+        assert_eq!(
+            source_conflict["properties"]["code"]["$ref"],
+            "#/components/schemas/TimetableDraftSourceConflictCode"
+        );
+        let envelope = &schemas["ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"];
+        assert!(
+            !required(envelope).contains(&"data"),
+            "ordinary409 has no definitive source code"
+        );
+        assert_eq!(required(&envelope["properties"]["data"]), vec!["code"]);
+        assert_eq!(
+            envelope["properties"]["data"]["properties"]["code"]["$ref"],
+            "#/components/schemas/TimetableDraftSourceConflictCode"
+        );
+        for (path, method) in [
+            ("/api/academic/timetable-blocks/ordinary", "post"),
+            ("/api/academic/timetable-blocks/synchronized", "post"),
+            ("/api/academic/timetable-blocks/structural", "post"),
+            ("/api/academic/timetable-blocks/{block_id}", "put"),
+            ("/api/academic/timetable-blocks/{block_id}", "delete"),
+            (
+                "/api/academic/timetable-blocks/{block_id}/targets",
+                "delete",
+            ),
+            ("/api/academic/timetable-blocks/{block_id}/sync", "post"),
+            ("/api/academic/timetable-blocks/{block_id}/restore", "post"),
+            (
+                "/api/academic/timetable-blocks/series/{series_id}",
+                "delete",
+            ),
+            ("/api/academic/timetable-blocks/swap", "post"),
+            (
+                "/api/academic/timetable-templates/{template_id}/apply",
+                "post",
+            ),
+            ("/api/academic/timetable-blocks/clear", "delete"),
+            ("/api/academic/teacher-handoffs/{id}/apply", "post"),
+        ] {
+            assert_eq!(document["paths"][path][method]["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],"#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict","{method} {path}");
+        }
         assert!(schemas["TimetableVersion"]["properties"]["changeSetId"].is_null());
         assert!(
             schemas["AcademicTermChangeSet"]["properties"]["targetTimetableVersionId"].is_null()

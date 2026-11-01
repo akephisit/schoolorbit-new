@@ -4,6 +4,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+#[cfg(feature = "api-docs")]
+use school_academic_timetable::models::timetable_source::TimetableDraftSourceConflict;
 use uuid::Uuid;
 
 use crate::realtime::TimetableEvent;
@@ -28,10 +30,10 @@ use school_academic_timetable::services::{
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_auth_http::origin::extract_subdomain_from_request;
-#[cfg(feature = "api-docs")]
-use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, ApiErrorResponseWithOptionalData};
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,
@@ -76,7 +78,7 @@ pub async fn get_workspace(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -129,7 +131,7 @@ pub async fn preview_placement(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -172,7 +174,7 @@ pub async fn create_ordinary(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -218,7 +220,7 @@ pub async fn create_synchronized(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -265,7 +267,7 @@ pub async fn create_structural(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Resource not found", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -311,7 +313,7 @@ pub async fn update_block(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Resource not found", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -354,7 +356,7 @@ pub async fn remove_target(
     operation_id = "retryTimetableBlockSync",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RetryTimetableBlockSyncRequest,
-    responses((status = 200, description = "Timetable block synchronization retry result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
+    responses((status = 200, description = "Timetable block synchronization retry result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
     tag = "academic"
 ))]
 pub async fn retry_sync(
@@ -380,7 +382,7 @@ pub async fn retry_sync(
     operation_id = "restoreTimetableBlockGroup",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RestoreTimetableBlockGroupRequest,
-    responses((status = 200, description = "Timetable block group restoration result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
+    responses((status = 200, description = "Timetable block group restoration result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
     tag = "academic"
 ))]
 pub async fn restore_group(
@@ -405,7 +407,7 @@ pub async fn restore_group(
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "deleteTimetableBlock",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path), DeleteTimetableBlockQuery),
-    responses((status = 200, description = "Timetable block deletion result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
+    responses((status = 200, description = "Timetable block deletion result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
     tag = "academic"
 ))]
 pub async fn delete_block(
@@ -435,7 +437,7 @@ pub async fn delete_block(
     path = "/api/academic/timetable-blocks/series/{series_id}",
     operation_id = "deleteTimetableBlockSeries",
     params(crate::mutation::TimetableMutationHeaders, ("series_id" = Uuid, Path), DeleteTimetableBlockSeriesQuery),
-    responses((status = 200, description = "Timetable block series deletion result returned", body = ApiResponse<Vec<TimetableBlock>>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
+    responses((status = 200, description = "Timetable block series deletion result returned", body = ApiResponse<Vec<TimetableBlock>>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
     tag = "academic"
 ))]
 pub async fn delete_series(
@@ -479,7 +481,7 @@ pub async fn delete_series(
     params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Timetable block swap result returned", body = ApiResponse<school_academic_timetable::models::timetable_block::SwapTimetableBlocksResponse>),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]

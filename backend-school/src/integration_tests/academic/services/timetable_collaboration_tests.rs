@@ -410,6 +410,22 @@ async fn publisher_only_http_latest_source_alignment_preserves_children_and_othe
           'sync',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_group_sync x))").fetch_one(pool).await.unwrap()
     };
     let children = child_facts().await;
+    let rejected_save = fixture
+        .update(None, "must wait for the latest opening")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected_save.status(), 409);
+    let rejected_save: Value = rejected_save.json().await.unwrap();
+    assert_eq!(
+        rejected_save["data"],
+        json!({"code":"TIMETABLE_DELIVERY_SOURCE_OUTDATED"})
+    );
+    assert_eq!(
+        children,
+        child_facts().await,
+        "the typed code certifies that the rejected save changed no business row"
+    );
     let path = format!(
         "/api/academic/timetable-versions/{}/delivery-source",
         fixture.version

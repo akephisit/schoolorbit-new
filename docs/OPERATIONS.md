@@ -1353,6 +1353,11 @@ rewrites published timetable pins. Changed alignment requires a fresh authorized
 room epoch after outstanding edits settle; do not force-release another editor's reservation or
 retry an uncertain write. An unchanged alignment does not churn the room. A future latest opening
 can be used for planning, but publication must respect its start and the existing history guards.
+Only the typed `TIMETABLE_DELIVERY_SOURCE_OUTDATED` save conflict certifies a pre-write source
+rejection. Its retained edit needs review and a fresh explicit Save after alignment. Other save or
+transport failures may have committed: reconcile and review or explicitly discard the captured
+intent, without automatic replay. A postcommit cache failure preserves accepted success and
+requests a fresh snapshot; it does not turn the business write into a source rejection.
 
 A process restart discards roster, leases and replay history and creates a new epoch. Clients join
 with a fresh authorized snapshot; committed timetable data is preserved in PostgreSQL. Do not scale

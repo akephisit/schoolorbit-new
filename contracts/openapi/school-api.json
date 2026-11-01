@@ -2823,6 +2823,37 @@
         ],
         "type": "object"
       },
+      "ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "description": "Present only when a latest-source guard rejected the operation before any write.",
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/TimetableDraftSourceConflictCode"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object"
+      },
       "ApiResponse_AcademicContextOptions": {
         "properties": {
           "data": {
@@ -69350,6 +69381,25 @@
         ],
         "type": "object"
       },
+      "TimetableDraftSourceConflict": {
+        "additionalProperties": false,
+        "description": "Present only when a latest-source guard rejected the operation before any write.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TimetableDraftSourceConflictCode"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "TimetableDraftSourceConflictCode": {
+        "enum": [
+          "TIMETABLE_DELIVERY_SOURCE_OUTDATED"
+        ],
+        "type": "string"
+      },
       "TimetableOfferingSubjectGroup": {
         "properties": {
           "learningOfferingId": {
@@ -91793,7 +91843,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -91885,7 +91935,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93358,7 +93408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93486,7 +93536,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93576,7 +93626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93666,7 +93716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93796,7 +93846,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93902,6 +93952,16 @@
               }
             },
             "description": "Timetable manage permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
+                }
+              }
+            },
+            "description": "Timetable conflict or obsolete opening source"
           }
         },
         "tags": [
@@ -94008,7 +94068,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94078,7 +94138,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94167,7 +94227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94278,7 +94338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94359,7 +94419,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94470,7 +94530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94980,7 +95040,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },

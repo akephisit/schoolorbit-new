@@ -269,7 +269,7 @@ fn status_code(error: &AppError) -> StatusCode {
             StatusCode::INTERNAL_SERVER_ERROR
         }
         AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-        AppError::Conflict(_) => StatusCode::CONFLICT,
+        AppError::Conflict(_) | AppError::ConflictWithCode { .. } => StatusCode::CONFLICT,
         AppError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
         AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -295,7 +295,8 @@ fn public_message(error: &AppError) -> &str {
         | AppError::NotFound(message)
         | AppError::ValidationError(message)
         | AppError::BadRequest(message)
-        | AppError::Conflict(message) => message,
+        | AppError::Conflict(message)
+        | AppError::ConflictWithCode { message, .. } => message,
         AppError::InternalServerError(_) => "Internal server error",
         AppError::ConfigError(_) => "System configuration error",
         AppError::ServiceUnavailable(_) => "Service temporarily unavailable",
@@ -334,11 +335,27 @@ impl IntoResponse for HttpError {
 
         let status = self.status_code();
         let retry_after = self.retry_after_seconds();
-        let mut response = (
-            status,
-            Json(ApiErrorResponse::new(self.public_message().to_string())),
-        )
-            .into_response();
+        #[derive(Serialize)]
+        struct ConflictData {
+            code: &'static str,
+        }
+        let mut response = match &self.0 {
+            AppError::ConflictWithCode { code, .. } => (
+                status,
+                Json(ApiErrorResponseWithData {
+                    success: false,
+                    error: self.public_message().to_string(),
+                    message: None,
+                    data: ConflictData { code },
+                }),
+            )
+                .into_response(),
+            _ => (
+                status,
+                Json(ApiErrorResponse::new(self.public_message().to_string())),
+            )
+                .into_response(),
+        };
 
         if let Some(seconds) = retry_after {
             response
@@ -382,6 +399,35 @@ mod tests {
             }
             .retry_after_seconds(),
             Some(30)
+        );
+    }
+
+    #[tokio::test]
+    async fn coded_conflicts_retain_producer_data_and_ordinary_conflicts_remain_unclassified() {
+        let response = HttpError::from(AppError::ConflictWithCode {
+            code: "PRODUCER_PREWRITE_REJECTION",
+            message: "Review the changed source".into(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"success":false,"error":"Review the changed source","data":{"code":"PRODUCER_PREWRITE_REJECTION"}})
+        );
+        let response =
+            HttpError::from(AppError::Conflict("Review the changed source".into())).into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"success":false,"error":"Review the changed source"})
+        );
+        assert!(
+            value.get("data").is_none(),
+            "a human-readable message or409 alone never proves a coded rejection"
         );
     }
 

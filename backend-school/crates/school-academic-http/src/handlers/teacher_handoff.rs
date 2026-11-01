@@ -10,11 +10,13 @@ use axum::{
 use school_academic_delivery::models::{ApplyTeacherHandoffRequest, PreviewTeacherHandoffRequest};
 #[cfg(feature = "api-docs")]
 use school_academic_delivery::models::{ApplyTeacherHandoffResponse, TeacherHandoffPreview};
+#[cfg(feature = "api-docs")]
+use school_academic_timetable::models::timetable_source::TimetableDraftSourceConflict;
 use school_academic_timetable::services::teacher_handoff;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
-use school_http::ApiErrorResponse;
+use school_http::{ApiErrorResponse, ApiErrorResponseWithOptionalData};
 use school_http::{ApiResponse, HttpError as AppError};
 use uuid::Uuid;
 fn ok<T: serde::Serialize>(data: T) -> Response {
@@ -34,7 +36,7 @@ fn ok<T: serde::Serialize>(data: T) -> Response {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
-        (status = 409, description = "Teacher handoff conflict", body = ApiErrorResponse)
+        (status = 409, description = "Teacher handoff conflict", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     )
 ))]
 pub async fn preview_teacher_handoff(
@@ -77,7 +79,7 @@ pub async fn preview_teacher_handoff(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
-        (status = 409, description = "Teacher handoff conflict or stale preview", body = ApiErrorResponse)
+        (status = 409, description = "Teacher handoff conflict or stale preview", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     )
 ))]
 pub async fn apply_teacher_handoff(

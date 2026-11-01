@@ -26,6 +26,10 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// A producer-owned machine code; its meaning must be documented by that API.
+    #[error("Conflict: {message}")]
+    ConflictWithCode { code: &'static str, message: String },
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 

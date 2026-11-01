@@ -4,6 +4,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+#[cfg(feature = "api-docs")]
+use school_academic_timetable::models::timetable_source::TimetableDraftSourceConflict;
 use uuid::Uuid;
 
 use crate::realtime::TimetableEvent;
@@ -19,7 +21,7 @@ use school_auth_http::origin::extract_subdomain_from_request;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
-use school_http::{ApiErrorResponse, EmptyData};
+use school_http::{ApiErrorResponse, ApiErrorResponseWithOptionalData, EmptyData};
 use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -204,7 +206,7 @@ pub async fn from_current(
         (status = 400, description = "Template cannot be applied", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Timetable conflict", body = ApiErrorResponse)
+        (status = 409, description = "Timetable conflict", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]
@@ -251,7 +253,8 @@ pub async fn apply_template(
         (status = 200, description = "Cleared timetable blocks", body = ApiResponse<Vec<school_academic_timetable::models::timetable_block::TimetableBlock>>),
         (status = 400, description = "Invalid clear request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Timetable conflict or obsolete opening source", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
     ),
     tag = "academic"
 ))]

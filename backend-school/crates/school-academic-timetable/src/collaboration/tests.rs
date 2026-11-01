@@ -214,6 +214,34 @@ fn claim_with_purpose(
 }
 
 #[test]
+fn postcommit_version_snapshot_failure_invalidates_instead_of_publishing_a_failed_patch() {
+    let (room, _, _) = fixture();
+    let mut signals = room.subscribe();
+    let before = room.lock().unwrap().workspace.clone();
+    let sequence = room.lock().unwrap().seq;
+    let mut changed = before.blocks[0].clone();
+    changed.note = Some("The database commit has already succeeded".into());
+    super::mutation::publish_committed_blocks(
+        &room,
+        vec![changed],
+        Err(AppError::Conflict(
+            "Draft snapshot mutex unavailable".into(),
+        )),
+        None,
+        Uuid::new_v4(),
+    );
+    let state = room.lock().unwrap();
+    assert!(!state.valid);
+    assert_eq!(
+        state.seq, sequence,
+        "an unavailable committed revision cannot produce a speculative delta"
+    );
+    assert!(Arc::ptr_eq(&state.workspace, &before));
+    assert!(matches!(signals.try_recv(), Ok(DraftSignal::Invalidated)));
+    assert!(signals.try_recv().is_err());
+}
+
+#[test]
 fn stale_source_blocks_cold_claim_and_content_admission_but_keeps_lifecycle_authority() {
     let (room, _, actor) = fixture();
     {
@@ -234,7 +262,10 @@ fn stale_source_blocks_cold_claim_and_content_admission_but_keeps_lifecycle_auth
             None,
             MutationScope::Blocks(vec![block_id])
         ),
-        Err(AppError::Conflict(_))
+        Err(AppError::ConflictWithCode {
+            code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED",
+            ..
+        })
     ));
     let permit = room
         .begin_commit(actor, viewer.session_id, None, MutationScope::WholeDraft)

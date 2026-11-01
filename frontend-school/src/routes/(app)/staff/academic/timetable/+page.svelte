@@ -73,6 +73,7 @@
 		swapTimetableBlocksOptimistically
 	} from '#lib/academic/timetable/optimistic-block.js';
 
+	import { DraftLeaseError } from '#lib/academic/timetable/collaboration-session.js';
 	import { placementFailureMessage } from '#lib/academic/timetable/placement-preview.js';
 
 	import {
@@ -88,6 +89,8 @@
 		previewTimetablePublication,
 		publishTimetableVersion,
 		updateTimetableDeliverySource,
+		isTimetableDeliverySourceOutdated,
+		TimetableDeliverySourceOutdatedError,
 		type TimetablePublicationPreview,
 		createOrdinaryTimetableBlock,
 		createStructuralTimetableBlocks,
@@ -196,6 +199,8 @@
 	};
 	type OptimisticPlacementOperation = {
 		controller: TimetableWorkspaceController;
+		admission: ReturnType<typeof sourceAdmission>;
+		recoveryId: string | null;
 		dragSource: TimetableDragSource;
 		dayOfWeek: string;
 		periodId: string;
@@ -209,6 +214,8 @@
 	};
 	type OptimisticRemovalOperation = {
 		controller: TimetableWorkspaceController;
+		admission: ReturnType<typeof sourceAdmission>;
+		recoveryId: string | null;
 		mode: RemovalMode;
 		originalBlocks: TimetableBlock[];
 		pendingBlockIds: string[];
@@ -219,6 +226,9 @@
 	};
 	type OptimisticBlockEditOperation = {
 		controller: TimetableWorkspaceController;
+		admission: ReturnType<typeof sourceAdmission>;
+		recoveryId: string | null;
+		input: DetailsInput;
 		originalBlock: TimetableBlock;
 		request: UpdateTimetableBlockRequest;
 		interaction: LocalInteraction;
@@ -241,6 +251,42 @@
 		academic: 'กิจกรรมวิชาการ',
 		other: 'กิจกรรมอื่น'
 	};
+	type DetailsInput = {
+		title: string;
+		note: string;
+		roomId: string;
+		instructorIds: string[];
+		teacherIds: string[];
+	};
+	type FailedIntent =
+		| { kind: 'details'; blockId: string; input: DetailsInput }
+		| {
+				kind: 'placement';
+				source: TimetableDragSource;
+				dayOfWeek: string;
+				periodId: string;
+				targetBlockId: string | null;
+		  }
+		| {
+				kind: 'removal';
+				blockId: string;
+				mode: RemovalMode;
+				target: OptimisticRemovalOperation['target'];
+				seriesId: string | null;
+		  }
+		| { kind: 'structural'; form: StructuralForm };
+	type FailedSave = {
+		id: string;
+		controller: TimetableWorkspaceController;
+		context: string;
+		epoch: number;
+		versionId: string;
+		intent: FailedIntent;
+		sourceRejected: boolean;
+		message: string;
+		reviewError?: string;
+	};
+
 	const missingGroupsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-learning-groups',
 		status: 'missing',
@@ -312,7 +358,30 @@
 		count: number;
 		label: string;
 	} | null>(null);
-	let saveError = $state<{ message: string } | null>(null);
+	let failedSaves = $state.raw<FailedSave[]>([]);
+	let retainedRemovalTarget = $state.raw<OptimisticRemovalOperation['target']>(null);
+	let reviewedIntentId = $state<string | null>(null);
+	let automaticAlignmentPaused: TimetableWorkspaceController | null = null;
+	let recoveryEpoch = authStore.sessionEpoch;
+	let lifecycleToken: symbol | null = null;
+	const currentFailedSaves = $derived(
+		failedSaves.filter(
+			(failure) =>
+				failure.controller === controller &&
+				failure.context === activeContextKey &&
+				failure.epoch === authStore.sessionEpoch
+		)
+	);
+	const saveError = $derived(
+		currentFailedSaves.length
+			? {
+					message: (
+						currentFailedSaves.find((failure) => !failure.sourceRejected) ?? currentFailedSaves[0]
+					).message,
+					sourceRejected: currentFailedSaves.every((failure) => failure.sourceRejected)
+				}
+			: null
+	);
 	let publicationDate = $state('');
 	let sourceSyncTarget = $state.raw<TimetableWorkspaceController | null>(null);
 	let sourceFailure = $state.raw<{
@@ -326,8 +395,9 @@
 		controller: TimetableWorkspaceController;
 		promise: Promise<boolean>;
 		token: symbol;
+		admission: ReturnType<typeof sourceAdmission>;
+		reconcileRequested: boolean;
 	} | null = null;
-	let sourceReconcileRequested = false;
 	let reclaimEditor = $state.raw<TimetableWorkspaceController | null>(null);
 	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
 	let publicationKey = '';
@@ -544,7 +614,14 @@
 			: ''
 	);
 	const canEdit = $derived(
-		Boolean(canManage && controller?.canEdit && !busy && sourceCurrent && !sourceSyncing)
+		Boolean(
+			canManage &&
+			controller?.canEdit &&
+			!busy &&
+			sourceCurrent &&
+			!sourceSyncing &&
+			(!saveError || (saveError.sourceRejected && reviewedIntentId !== null))
+		)
 	);
 	const selectedVersion = $derived(controller?.workspace.version ?? null);
 	const canDownloadPdf = $derived(
@@ -803,10 +880,20 @@
 		)
 			return;
 
+		const termId = academicTermId;
+		const yearId = academicYearId;
+		const context = activeContextKey;
+		const epoch = authStore.sessionEpoch;
 		const { revision, signal } = request.begin();
+		const current = () =>
+			!disposed &&
+			request.isCurrent(revision) &&
+			activeContextKey === context &&
+			authStore.sessionEpoch === epoch;
 		workspaceRevision += 1;
 		workspaceReadVersionId = versionId;
 		await waitForSaves();
+		if (!current()) return;
 		const retainCurrent = controller?.workspace.version.id === versionId;
 		if (!retainCurrent) {
 			controller = null;
@@ -816,19 +903,19 @@
 		errorMessage = '';
 		try {
 			const workspace = await getTimetableBlockWorkspace(
-				{ academicYearId, academicTermId, timetableVersionId: versionId },
+				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: versionId },
 				{ signal }
 			);
-			if (!request.isCurrent(revision)) return;
+			if (!current()) return;
 			initializeController(workspace);
 			syncUrl();
 		} catch (error) {
-			if (!isAbortError(error) && request.isCurrent(revision)) {
+			if (!isAbortError(error) && current()) {
 				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ';
 				notifyReadFailure(errorMessage, () => loadVersion(versionId, true));
 			}
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (current()) loading = false;
 		}
 	}
 
@@ -903,7 +990,7 @@
 		reloadRequest.abort();
 		controller?.setRefreshing(false);
 		loading = false;
-		if (pendingOperationCount === 0) saveError = null;
+
 		pendingOperationCount += 1;
 		pendingBlockIds = new Set([...pendingBlockIds, ...blockIds]);
 		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
@@ -933,6 +1020,8 @@
 			for (const resolvePending of pendingWaiters) resolvePending();
 			pendingWaiters.clear();
 		}
+		if (pendingOperationCount === 0 && currentFailedSaves.some((failure) => failure.sourceRejected))
+			requestDraftSnapshot();
 		if (pendingOperationCount === 0 && reconcileAfterPending) {
 			reconcileAfterPending = false;
 			void reload();
@@ -1081,8 +1170,11 @@
 
 	function startPlacement(
 		source: TimetableBlockPlacementSource,
-		candidate: TimetableBlockPlacementCandidate
+		candidate: TimetableBlockPlacementCandidate,
+		recoveryId: string | null = null
 	): void {
+		reviewedIntentId = recoveryId;
+		retainedRemovalTarget = null;
 		if (!controller || !canEdit || sourceLockLabel(source)) return;
 		cancelPlacement();
 		disposeInteraction(editInteraction);
@@ -1133,6 +1225,15 @@
 					interactionRevision++;
 				}
 				if (removeInteraction === interaction) removeInteraction = null;
+				if (
+					error instanceof DraftLeaseError &&
+					error.code === 'delivery_source_outdated' &&
+					controller === interaction.controller &&
+					controller.editing
+				) {
+					requestDraftSnapshot();
+					return;
+				}
 				toast.error(error instanceof Error ? error.message : 'ยังจองคาบนี้ไม่ได้');
 			});
 		return interaction;
@@ -1511,10 +1612,7 @@
 			}
 		} catch (error) {
 			cancelPlacement();
-			saveError = {
-				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ'
-			};
-			toast.error(saveError.message);
+			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
 			return;
 		}
 
@@ -1547,6 +1645,8 @@
 		cancelPlacement();
 		void persistOptimisticPlacement({
 			controller: operationController,
+			admission: sourceAdmission(operationController),
+			recoveryId: reviewedIntentId,
 			dragSource,
 			dayOfWeek,
 			periodId,
@@ -1566,6 +1666,13 @@
 		const { dragSource } = operation;
 		try {
 			const preview = await operation.previewPromise;
+			if (!operation.admission.current()) return;
+			if (
+				preview.conflicts.some((conflict) => conflict.code === 'TIMETABLE_DELIVERY_SOURCE_OUTDATED')
+			)
+				throw new TimetableDeliverySourceOutdatedError(
+					'ข้อมูลเปิดสอนเปลี่ยนก่อนวางคาบ กรุณาทบทวนกับข้อมูลล่าสุด'
+				);
 			const failureMessage = placementFailureMessage(preview);
 			if (failureMessage) throw new Error(failureMessage);
 
@@ -1577,6 +1684,7 @@
 				throw new Error('ข้อมูลในช่องเปลี่ยนแปลงแล้ว กรุณาลองวางใหม่');
 			}
 			const lease = await operation.interaction.claim;
+			if (!operation.admission.current()) return;
 			if (
 				!sameDraftTarget(lease.target, {
 					dayOfWeek: operation.dayOfWeek,
@@ -1652,7 +1760,7 @@
 				];
 			}
 
-			if (!disposed && controller === operation.controller) {
+			if (operation.admission.current()) {
 				let workspace = operation.controller.workspace;
 				if (operation.temporaryBlockId) {
 					workspace = setTimetableWorkspaceBlocks(
@@ -1662,10 +1770,11 @@
 				}
 				operation.controller.setWorkspace(patchTimetableWorkspaceBlocks(workspace, savedBlocks));
 			}
-			if (!disposed && controller === operation.controller) toast.success('บันทึกตำแหน่งคาบแล้ว');
+			if (operation.admission.current()) toast.success('บันทึกตำแหน่งคาบแล้ว');
+			if (operation.admission.current()) completeRetainedIntent(operation.recoveryId);
 		} catch (error) {
-			if (disposed || controller !== operation.controller) return;
-			if (!disposed && controller === operation.controller) {
+			if (!operation.admission.current()) return;
+			if (operation.admission.current()) {
 				let workspace = operation.controller.workspace;
 				if (operation.temporaryBlockId) {
 					workspace = setTimetableWorkspaceBlocks(
@@ -1677,10 +1786,19 @@
 					patchTimetableWorkspaceBlocks(workspace, operation.originalBlocks)
 				);
 			}
-			saveError = {
-				message: error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ'
-			};
-			toast.error(saveError.message);
+			rememberFailedSave(
+				error,
+				operation.admission,
+				operation.controller,
+				{
+					kind: 'placement',
+					source: operation.dragSource,
+					dayOfWeek: operation.dayOfWeek,
+					periodId: operation.periodId,
+					targetBlockId: operation.targetBlock?.id ?? null
+				},
+				operation.recoveryId
+			);
 		} finally {
 			pendingPlacementSources = new Set(
 				[...pendingPlacementSources].filter(
@@ -1774,6 +1892,51 @@
 		};
 	}
 
+	function beginLifecycle(): () => void {
+		const token = Symbol();
+		lifecycleToken = token;
+		busy = true;
+		return () => {
+			if (lifecycleToken === token) {
+				lifecycleToken = null;
+				busy = false;
+			}
+		};
+	}
+	function invalidateLifecycle(): void {
+		if (lifecycleToken) {
+			lifecycleToken = null;
+			busy = false;
+		}
+	}
+	function rememberFailedSave(
+		error: unknown,
+		admission: ReturnType<typeof sourceAdmission>,
+		target: TimetableWorkspaceController,
+		intent: FailedIntent,
+		recoveryId: string | null
+	): void {
+		if (!admission.current()) return;
+		const failure: FailedSave = {
+			id: recoveryId ?? crypto.randomUUID(),
+			controller: target,
+			context: admission.context,
+			epoch: admission.epoch,
+			versionId: admission.versionId,
+			intent: structuredClone($state.snapshot(intent)),
+			sourceRejected:
+				isTimetableDeliverySourceOutdated(error) ||
+				(error instanceof DraftLeaseError && error.code === 'delivery_source_outdated'),
+			message: error instanceof Error ? error.message : 'บันทึกรายการไม่สำเร็จ'
+		};
+		failedSaves = [...failedSaves.filter((item) => item.id !== failure.id), failure];
+		toast.error(failure.message);
+	}
+	function completeRetainedIntent(id: string | null): void {
+		if (id) failedSaves = failedSaves.filter((failure) => failure.id !== id);
+		if (reviewedIntentId === id) reviewedIntentId = null;
+	}
+
 	async function createFirstTable(): Promise<void> {
 		if (!academicTermId || busy || !canManageSchool) return;
 		const context = activeContextKey;
@@ -1782,7 +1945,7 @@
 		const current = () =>
 			!disposed && activeContextKey === context && authStore.sessionEpoch === epoch;
 		const termId = academicTermId;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		try {
 			const version = await createTimetableVersion({ academicTermId: termId });
 			if (!current() || controller !== origin) return;
@@ -1801,7 +1964,7 @@
 		} catch (error) {
 			if (current()) toast.error(error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 
@@ -1819,7 +1982,10 @@
 			sameContext() && controller === target && target.workspace.version.id === versionId;
 		return { context, epoch, versionId, current, sameContext };
 	}
-	async function savedVersion(target = controller): Promise<TimetableVersion> {
+	async function savedVersion(
+		target = controller,
+		allowSourceRejection = false
+	): Promise<TimetableVersion> {
 		if (!target) throw new Error('กรุณาเลือกรุ่นตารางสอน');
 		const admission = sourceAdmission(target);
 		const requireCurrent = () => {
@@ -1827,7 +1993,8 @@
 		};
 		await waitForSaves();
 		requireCurrent();
-		if (saveError) throw new Error(saveError.message);
+		if (saveError && !(allowSourceRejection && saveError.sourceRejected))
+			throw new Error(saveError.message);
 		await releaseIdleInteractions();
 		requireCurrent();
 		await reload(undefined, false);
@@ -1848,9 +2015,14 @@
 			sourceFailure = null;
 	}
 	function queueLatestDeliveryReconcile(): void {
-		if (!controller?.editing || controller.workspace.version.status !== 'draft') return;
-		if (sourceSyncTask) {
-			sourceReconcileRequested = true;
+		if (
+			!controller?.editing ||
+			controller.workspace.version.status !== 'draft' ||
+			automaticAlignmentPaused === controller
+		)
+			return;
+		if (sourceSyncTask?.controller === controller && sourceSyncTask.admission.current()) {
+			sourceSyncTask.reconcileRequested = true;
 			return;
 		}
 		void ensureLatestDeliverySource(controller, false);
@@ -1861,6 +2033,7 @@
 	): Promise<boolean> {
 		const admission = sourceAdmission(target);
 		if (!admission.current()) return false;
+		if (retry && automaticAlignmentPaused === target) automaticAlignmentPaused = null;
 		if (
 			!retry &&
 			sourceFailure?.controller === target &&
@@ -1869,17 +2042,14 @@
 			sourceFailure.latestId === target.workspace.latestDeliveryVersionId
 		)
 			return false;
-		if (sourceSyncTask) {
-			if (sourceSyncTask.controller === target) return sourceSyncTask.promise;
-			await sourceSyncTask.promise;
-			if (!admission.current()) return false;
-		}
+		if (sourceSyncTask?.controller === target && sourceSyncTask.admission.current())
+			return sourceSyncTask.promise;
 		sourceSyncTarget = target;
 		const preserveEditor = editOpen && selectedBlockId !== null;
 		const token = Symbol();
 		const promise = (async () => {
 			try {
-				const version = await savedVersion(target);
+				const version = await savedVersion(target, true);
 				if (!admission.current()) return false;
 				if (version.status !== 'draft') return false;
 				if (timetableSourceIsCurrent(target.workspace)) {
@@ -1917,13 +2087,13 @@
 					};
 				return false;
 			} finally {
-				if (sourceSyncTask?.token === token) {
+				const completed = sourceSyncTask?.token === token ? sourceSyncTask : null;
+				if (completed) {
 					sourceSyncTask = null;
 					sourceSyncTarget = null;
 				}
 				if (admission.current() && preserveEditor && editOpen) reclaimEditor = target;
-				const again = sourceReconcileRequested;
-				sourceReconcileRequested = false;
+				const again = completed?.reconcileRequested ?? false;
 				if (
 					again &&
 					admission.current() &&
@@ -1934,7 +2104,7 @@
 					queueMicrotask(queueLatestDeliveryReconcile);
 			}
 		})();
-		sourceSyncTask = { controller: target, promise, token };
+		sourceSyncTask = { controller: target, promise, token, admission, reconcileRequested: false };
 		return promise;
 	}
 
@@ -1977,12 +2147,12 @@
 			if (!canManage) return;
 			const target = controller;
 			const admission = sourceAdmission(target);
-			busy = true;
+			const finishBusy = beginLifecycle();
 			try {
 				if ((await ensureLatestDeliverySource(target, true)) && admission.current() && canManage)
 					target.setEditing(true);
 			} finally {
-				busy = false;
+				finishBusy();
 			}
 			return;
 		}
@@ -1994,7 +2164,7 @@
 		}
 		const target = controller;
 		const admission = sourceAdmission(target);
-		busy = true;
+		const finishBusy = beginLifecycle();
 		try {
 			const source = await savedVersion(target);
 			if (!admission.current() || !canManageSchool) return;
@@ -2023,12 +2193,12 @@
 		} catch (error) {
 			reportFailure(error, 'เปิดแบบร่างไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 	async function finishEditing(): Promise<void> {
 		if (!controller || busy) return;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			const target = controller;
@@ -2038,7 +2208,7 @@
 		} catch (error) {
 			reportFailure(error, 'บันทึกตารางไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 
@@ -2046,15 +2216,19 @@
 		if (!canPublish || busy || !controller) return;
 		const target = controller;
 		const admission = sourceAdmission(target);
-		busy = true;
+		const finishBusy = beginLifecycle();
 		try {
 			if (!(await ensureLatestDeliverySource(target, true)) || !admission.current()) return;
+			if (currentFailedSaves.length) {
+				toast.error('ยังมีรายการที่ไม่ได้บันทึก กรุณาทบทวนหรือละทิ้งรายการก่อนเผยแพร่');
+				return;
+			}
 			publicationDate = initialTimetablePublicationDate(target.workspace);
 			publicationPreview = null;
 			publicationKey = crypto.randomUUID();
 			publishOpen = true;
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 	async function checkPublication(): Promise<void> {
@@ -2062,7 +2236,7 @@
 		const target = controller;
 		const admission = sourceAdmission(target);
 		const chosenDate = publicationDate;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		publicationPreview = null;
 		try {
 			if (
@@ -2093,7 +2267,7 @@
 					message: error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ'
 				};
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 
@@ -2102,7 +2276,7 @@
 		const target = controller;
 		const admission = sourceAdmission(target);
 		const preview = publicationPreview;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			await waitForSaves();
@@ -2124,12 +2298,12 @@
 			reportFailure(error, 'เผยแพร่ตารางสอนไม่สำเร็จ');
 			if (admission.current()) publicationPreview = null;
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 	async function openDeleteDraft(): Promise<void> {
 		if (!controller || busy || !canManageSchool) return;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			const version = await savedVersion();
@@ -2145,12 +2319,12 @@
 		} catch (error) {
 			reportFailure(error, 'ตรวจแบบร่างไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 	async function confirmDeleteDraft(): Promise<void> {
 		if (!controller || busy || !canManageSchool || !deleteDraftConfirmation) return;
-		busy = true;
+		const finishBusy = beginLifecycle();
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			await waitForSaves();
@@ -2169,7 +2343,7 @@
 		} catch (error) {
 			reportFailure(error, 'ลบแบบร่างไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishBusy();
 		}
 	}
 	function sourceIssueLabel(code: TimetableBlockWorkspace['sourceIssues'][number]['code']): string {
@@ -2185,7 +2359,13 @@
 		} satisfies Record<TimetableBlockWorkspace['sourceIssues'][number]['code'], string>;
 		return labels[code];
 	}
-	function openEditor(block: TimetableBlock, originHomeroomId?: string): void {
+	function openEditor(
+		block: TimetableBlock,
+		originHomeroomId?: string,
+		recoveryId: string | null = null,
+		input?: DetailsInput
+	): void {
+		reviewedIntentId = recoveryId;
 		cancelPlacement();
 		disposeInteraction(editInteraction);
 		editInteraction = null;
@@ -2221,13 +2401,17 @@
 			group.instructors.map((teacher) => teacher.teacherId)
 		);
 		editTeacherIds = blockTargetTeacherIds(block);
+		if (input) {
+			editTitle = input.title;
+			editNote = input.note;
+			editRoomId = input.roomId;
+			editInstructorIds = [...input.instructorIds];
+			editTeacherIds = [...input.teacherIds];
+			editRoomLabel =
+				workspace?.rooms.find((room) => room.id === editRoomId)?.name.trim() || 'ไม่พบชื่อห้อง';
+		}
 		editOpen = true;
-		if (canEdit && !pendingBlockIds.has(block.id) && !blockLockLabel(block.id))
-			editInteraction = createInteraction(
-				{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
-				candidateForBlock(block),
-				'edit'
-			);
+		reclaimEditorLease();
 	}
 
 	function reclaimEditorLease(): void {
@@ -2289,8 +2473,186 @@
 		if (!admission.current()) return;
 		await reload(undefined, false);
 		if (!admission.current() || refreshError) return;
-		saveError = null;
 		await ensureLatestDeliverySource(target, true);
+	}
+
+	function retainedIntentLabel(intent: FailedIntent): string {
+		switch (intent.kind) {
+			case 'details':
+				return `รายละเอียดคาบ: ${intent.input.title || 'คาบที่เลือก'}`;
+			case 'placement':
+				return `วางคาบวัน${days.find((day) => day.id === intent.dayOfWeek)?.label ?? intent.dayOfWeek} ${controller?.workspace.bellPeriods.find((period) => period.id === intent.periodId)?.name ?? ''}`;
+			case 'removal':
+				return intent.mode === 'series' ? 'นำชุดคาบออก' : 'นำรายการออกจากคาบ';
+			case 'structural':
+				return `คาบพิเศษ: ${intent.form.title}`;
+		}
+	}
+	function freshRemovalTarget(
+		block: TimetableBlock,
+		target: NonNullable<OptimisticRemovalOperation['target']>
+	): OptimisticRemovalOperation['target'] {
+		if (target.kind === 'teacher') {
+			const item = block.teachers.find((item) => item.id === target.id);
+			return item
+				? { kind: target.kind, id: item.id, rowVersion: item.rowVersion, label: item.displayName }
+				: null;
+		}
+		if (target.kind === 'homeroom') {
+			const item = block.homerooms.find((item) => item.id === target.id);
+			return item
+				? { kind: target.kind, id: item.id, rowVersion: item.rowVersion, label: item.name }
+				: null;
+		}
+		const item = block.groups.find((item) => item.id === target.id);
+		return item
+			? { kind: target.kind, id: item.id, rowVersion: item.rowVersion, label: item.name }
+			: null;
+	}
+	async function reviewFailedSave(failure: FailedSave): Promise<void> {
+		if (
+			!controller ||
+			busy ||
+			sourceSyncing ||
+			!canManage ||
+			!failure.sourceRejected ||
+			!currentFailedSaves.includes(failure)
+		)
+			return;
+		const target = controller;
+		const admission = sourceAdmission(target);
+		const finishBusy = beginLifecycle();
+		try {
+			if (!(await ensureLatestDeliverySource(target, true)) || !admission.current()) return;
+			if (currentFailedSaves.some((item) => !item.sourceRejected))
+				throw new Error('กรุณาตรวจข้อมูลล่าสุดและละทิ้งรายการที่ยังไม่ยืนยันก่อน');
+			const workspace = target.workspace;
+			const intent = failure.intent;
+			const missing = () =>
+				new Error(
+					'รายการเดิมบางส่วนไม่มีอยู่ในข้อมูลล่าสุด จึงยังคืนรายการนี้ไม่ได้ กรุณาตรวจตารางแล้วละทิ้งรายการนี้หากไม่ต้องการเก็บไว้'
+				);
+			const peopleAvailable = (ids: string[]) =>
+				ids.every((id) => workspace.staff.some((person) => person.id === id));
+			const roomAvailable = (id: string | null | undefined) =>
+				!id || id === noRoomValue || workspace.rooms.some((room) => room.id === id);
+			let restore: () => void;
+			if (intent.kind === 'details') {
+				const block = workspace.blocks.find((block) => block.id === intent.blockId);
+				if (
+					!block ||
+					!roomAvailable(intent.input.roomId) ||
+					!peopleAvailable([...intent.input.instructorIds, ...intent.input.teacherIds])
+				)
+					throw missing();
+				restore = () => openEditor(block, undefined, failure.id, intent.input);
+			} else if (intent.kind === 'placement') {
+				let source = intent.source.source;
+				if (source.kind === 'existing_block') {
+					const blockId = source.blockId;
+					const block = workspace.blocks.find((block) => block.id === blockId);
+					if (!block) throw missing();
+					source = { kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion };
+				} else if (source.kind === 'ordinary_demand') {
+					const groupId = source.learningGroupId;
+					if (!workspace.ordinaryDemands.some((item) => item.learningGroupId === groupId))
+						throw missing();
+				} else {
+					const offeringId = source.learningOfferingId;
+					if (!workspace.synchronizedDemands.some((item) => item.learningOfferingId === offeringId))
+						throw missing();
+				}
+				const candidate = intent.source.candidate;
+				if (
+					!workspace.bellPeriods.some((period) => period.id === intent.periodId) ||
+					(intent.targetBlockId &&
+						!workspace.blocks.some((block) => block.id === intent.targetBlockId)) ||
+					!roomAvailable(candidate.roomId) ||
+					!peopleAvailable([...(candidate.instructorIds ?? []), ...(candidate.teacherIds ?? [])]) ||
+					!(candidate.homeroomIds ?? []).every((id) =>
+						workspace.homerooms.some((room) => room.id === id)
+					)
+				)
+					throw missing();
+				const freshSource = source;
+				restore = () => {
+					startPlacement(freshSource, structuredClone(candidate), failure.id);
+					previewPlacement(intent.dayOfWeek, intent.periodId);
+				};
+			} else if (intent.kind === 'removal') {
+				const block = workspace.blocks.find((block) => block.id === intent.blockId);
+				if (!block || (intent.mode === 'series' && block.seriesId !== intent.seriesId))
+					throw missing();
+				const removalTarget = intent.target ? freshRemovalTarget(block, intent.target) : null;
+				if (intent.mode === 'target' && !removalTarget) throw missing();
+				restore = () => {
+					requestRemove(block, failure.id);
+					retainedRemovalTarget = removalTarget;
+					removeMode = intent.mode;
+				};
+			} else {
+				if (
+					!roomAvailable(intent.form.roomId) ||
+					!peopleAvailable(intent.form.teacherIds) ||
+					!intent.form.homeroomIds.every((id) =>
+						workspace.homerooms.some((room) => room.id === id)
+					) ||
+					!intent.form.slots.every((slot) =>
+						workspace.bellPeriods.some((period) => period.id === slot.split(':')[1])
+					)
+				)
+					throw missing();
+				restore = () => {
+					reviewedIntentId = failure.id;
+					structuralForm = structuredClone(intent.form);
+					structuralOpen = true;
+				};
+			}
+			if (!admission.current()) return;
+			failedSaves = failedSaves.map((item) =>
+				item.id === failure.id ? { ...item, reviewError: undefined } : item
+			);
+			finishBusy();
+			target.setEditing(true);
+			restore();
+		} catch (error) {
+			if (admission.current())
+				failedSaves = failedSaves.map((item) =>
+					item.id === failure.id
+						? {
+								...item,
+								reviewError: error instanceof Error ? error.message : 'คืนรายการเดิมไม่สำเร็จ'
+							}
+						: item
+				);
+		} finally {
+			finishBusy();
+		}
+	}
+	async function discardFailedSave(failure: FailedSave): Promise<void> {
+		if (!controller || busy || sourceSyncing || !currentFailedSaves.includes(failure)) return;
+		const target = controller;
+		const admission = sourceAdmission(target);
+		automaticAlignmentPaused = target;
+		const finishBusy = beginLifecycle();
+		try {
+			await waitForSaves();
+			if (!admission.current()) return;
+			await releaseIdleInteractions();
+			if (!admission.current()) return;
+			await reload(undefined, false);
+			if (!admission.current() || refreshError) return;
+			completeRetainedIntent(failure.id);
+			sourceFailure = null;
+			if (!currentFailedSaves.length) {
+				target.setEditing(false);
+				editOpen = false;
+				removeOpen = false;
+				structuralOpen = false;
+			}
+		} finally {
+			finishBusy();
+		}
 	}
 
 	function lockedTeacherTargetIds(block: TimetableBlock | null): string[] {
@@ -2388,6 +2750,15 @@
 		beginPendingOperation([originalBlock.id]);
 		void persistOptimisticBlockEdit({
 			controller: operationController,
+			admission: sourceAdmission(operationController),
+			recoveryId: reviewedIntentId,
+			input: {
+				title: editTitle,
+				note: editNote,
+				roomId: editRoomId,
+				instructorIds: [...editInstructorIds],
+				teacherIds: [...editTeacherIds]
+			},
 			originalBlock,
 			request,
 			interaction
@@ -2403,28 +2774,33 @@
 				bellSchedulePeriodId: operation.originalBlock.bellSchedulePeriodId,
 				blockId: null
 			});
+			if (!operation.admission.current()) return;
 			const saved = await updateTimetableBlock(
 				operation.originalBlock.id,
 				operation.request,
 				timetableMutationOptions(draftMutationIdentity(lease))
 			);
-			if (!disposed && controller === operation.controller) {
+			if (operation.admission.current()) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
 				);
 			}
-			if (!disposed && controller === operation.controller) toast.success('แก้รายละเอียดคาบแล้ว');
+			if (operation.admission.current()) toast.success('แก้รายละเอียดคาบแล้ว');
+			if (operation.admission.current()) completeRetainedIntent(operation.recoveryId);
 		} catch (error) {
-			if (disposed || controller !== operation.controller) return;
-			if (!disposed && controller === operation.controller) {
+			if (!operation.admission.current()) return;
+			if (operation.admission.current()) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [operation.originalBlock])
 				);
 			}
-			saveError = {
-				message: error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ'
-			};
-			toast.error(saveError.message);
+			rememberFailedSave(
+				error,
+				operation.admission,
+				operation.controller,
+				{ kind: 'details', blockId: operation.originalBlock.id, input: operation.input },
+				operation.recoveryId
+			);
 		} finally {
 			operation.interaction.captured = false;
 			disposeInteraction(operation.interaction);
@@ -2473,7 +2849,9 @@
 			: null;
 	}
 
-	function requestRemove(block: TimetableBlock): void {
+	function requestRemove(block: TimetableBlock, recoveryId: string | null = null): void {
+		reviewedIntentId = recoveryId;
+		retainedRemovalTarget = null;
 		if (!controller || !canEdit || pendingBlockIds.has(block.id) || blockLockLabel(block.id))
 			return;
 		cancelPlacement();
@@ -2498,6 +2876,7 @@
 			!controller ||
 			!selectedBlock ||
 			!removeInteraction ||
+			!canEdit ||
 			busy ||
 			pendingBlockIds.has(selectedBlock.id)
 		)
@@ -2506,7 +2885,8 @@
 		const interaction = removeInteraction;
 		const block = selectedBlock;
 		const mode = removeMode;
-		const target = mode === 'target' ? currentRemovalTarget(block) : null;
+		const target =
+			mode === 'target' ? (retainedRemovalTarget ?? currentRemovalTarget(block)) : null;
 		if (mode === 'target' && !target) {
 			toast.error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
 			return;
@@ -2549,6 +2929,8 @@
 		beginPendingOperation(pendingIds, pendingCells);
 		void persistOptimisticRemoval({
 			controller: operationController,
+			admission: sourceAdmission(operationController),
+			recoveryId: reviewedIntentId,
 			mode,
 			originalBlocks,
 			pendingBlockIds: pendingIds,
@@ -2568,9 +2950,11 @@
 		try {
 			if (!operation.interaction) throw new Error('ยังไม่ได้จองคาบที่จะนำออก กรุณาลองใหม่');
 			const lease = await operation.interaction.claim;
+			if (!operation.admission.current()) return;
 			let identity: DraftMutationIdentity | undefined;
 			if (operation.mode === 'series') await releaseDraftLease(lease);
 			else identity = draftMutationIdentity(lease);
+			if (!operation.admission.current()) return;
 			const options = timetableMutationOptions(identity);
 			if (operation.mode === 'target') {
 				if (!operation.target) throw new Error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
@@ -2585,7 +2969,7 @@
 					},
 					options
 				);
-				if (!disposed && controller === operation.controller) {
+				if (operation.admission.current()) {
 					const workspace = saved.isActive
 						? patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
 						: setTimetableWorkspaceBlocks(
@@ -2600,19 +2984,28 @@
 			} else {
 				await deleteTimetableBlock(block.id, block.rowVersion, operation.versionId, options);
 			}
-			if (!disposed && controller === operation.controller)
-				toast.success('นำรายการออกจากตารางแล้ว');
+			if (operation.admission.current()) toast.success('นำรายการออกจากตารางแล้ว');
+			if (operation.admission.current()) completeRetainedIntent(operation.recoveryId);
 		} catch (error) {
-			if (disposed || controller !== operation.controller) return;
-			if (!disposed && controller === operation.controller) {
+			if (!operation.admission.current()) return;
+			if (operation.admission.current()) {
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, operation.originalBlocks)
 				);
 			}
-			saveError = {
-				message: error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ'
-			};
-			toast.error(saveError.message);
+			rememberFailedSave(
+				error,
+				operation.admission,
+				operation.controller,
+				{
+					kind: 'removal',
+					blockId: block.id,
+					mode: operation.mode,
+					target: operation.target,
+					seriesId: block.seriesId ?? null
+				},
+				operation.recoveryId
+			);
 		} finally {
 			if (operation.interaction) {
 				operation.interaction.captured = false;
@@ -2624,6 +3017,7 @@
 	}
 
 	function openStructuralDialog(): void {
+		reviewedIntentId = null;
 		structuralForm = newStructuralForm();
 		structuralOpen = true;
 	}
@@ -2655,8 +3049,11 @@
 	}
 
 	async function createStructural(): Promise<void> {
-		if (!controller || !academicTermId || busy) return;
+		if (!controller || !academicTermId || busy || !canEdit) return;
 		const operationController = controller;
+		const admission = sourceAdmission(operationController);
+		const retainedForm = structuredClone($state.snapshot(structuralForm));
+		const recoveryId = reviewedIntentId;
 		if (!structuralForm.title.trim() || structuralForm.slots.length === 0) {
 			toast.error('กรอกชื่อและเลือกอย่างน้อย 1 ช่องเวลา');
 			return;
@@ -2682,10 +3079,13 @@
 			})
 		};
 		beginPendingOperation([]);
-		busy = true;
+		const finishBusy = beginLifecycle();
 		try {
 			await releaseIdleInteractions();
+			if (!admission.current()) return;
 			const blocks = await createStructuralTimetableBlocks(body);
+			if (!admission.current()) return;
+			completeRetainedIntent(recoveryId);
 			if (controller === operationController)
 				operationController.setWorkspace(
 					patchTimetableWorkspaceBlocks(operationController.workspace, blocks)
@@ -2693,13 +3093,16 @@
 			structuralOpen = false;
 			toast.success('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
 		} catch (error) {
-			if (disposed || controller !== operationController || isAbortError(error)) return;
-			saveError = {
-				message: error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ'
-			};
-			toast.error(saveError.message);
+			if (!admission.current()) return;
+			rememberFailedSave(
+				error,
+				admission,
+				operationController,
+				{ kind: 'structural', form: retainedForm },
+				recoveryId
+			);
 		} finally {
-			busy = false;
+			finishBusy();
 			finishPendingOperation([]);
 		}
 	}
@@ -2711,6 +3114,19 @@
 	function handleKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Escape') cancelPlacement();
 	}
+
+	$effect(() => {
+		void $authStore.user;
+		const epoch = authStore.sessionEpoch;
+		if (recoveryEpoch !== epoch)
+			untrack(() => {
+				recoveryEpoch = epoch;
+				failedSaves = [];
+				reviewedIntentId = null;
+				automaticAlignmentPaused = null;
+				invalidateLifecycle();
+			});
+	});
 
 	$effect.pre(() => {
 		const yearId = data.academicYearId;
@@ -2725,6 +3141,9 @@
 		let current = true;
 		untrack(() => {
 			if (activeContextKey !== contextKey) {
+				invalidateLifecycle();
+				failedSaves = [];
+				reviewedIntentId = null;
 				activeContextKey = contextKey;
 				versions = [];
 				controller = null;
@@ -2740,6 +3159,9 @@
 				versionSelectionChanged &&
 				(!requestedVersionId || controller?.workspace.version.id !== requestedVersionId)
 			) {
+				invalidateLifecycle();
+				failedSaves = [];
+				reviewedIntentId = null;
 				controller = null;
 				boardRetryVersionId = requestedVersionId ?? '';
 			}
@@ -3356,6 +3778,40 @@
 				{/snippet}
 			</TimetableWorkspaceHeader>
 
+			{#if currentFailedSaves.length}
+				<div
+					role="alert"
+					class="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm"
+				>
+					<p class="font-medium">
+						ยังมีรายการที่ไม่ได้ยืนยันการบันทึก ({currentFailedSaves.length})
+					</p>
+					{#each currentFailedSaves as failure (failure.id)}
+						<div class="space-y-2">
+							<p>{retainedIntentLabel(failure.intent)}</p>
+							<p class="text-muted-foreground">
+								{failure.sourceRejected
+									? 'รายการนี้ยังไม่ได้บันทึกเนื่องจากข้อมูลเปิดสอนเปลี่ยน ทบทวนรายการกับข้อมูลล่าสุดแล้วกดบันทึกอีกครั้ง'
+									: 'ยังยืนยันผลการบันทึกไม่ได้ การละทิ้งจะโหลดตารางล่าสุดและเลิกเก็บรายการที่ค้างนี้ โดยไม่ย้อนคืนงานที่บันทึกสำเร็จแล้ว'}
+							</p>
+							{#if failure.reviewError}<p class="text-destructive">{failure.reviewError}</p>{/if}
+							<div class="flex flex-wrap gap-2">
+								{#if failure.sourceRejected && canManage}<Button
+										variant="outline"
+										disabled={busy || sourceSyncing || pendingOperationCount > 0}
+										onclick={() => reviewFailedSave(failure)}>ทบทวนรายการ</Button
+									>{/if}
+								<Button
+									variant="ghost"
+									disabled={busy || sourceSyncing || pendingOperationCount > 0}
+									onclick={() => discardFailedSave(failure)}>โหลดข้อมูลล่าสุดและละทิ้งรายการ</Button
+								>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
 			{#if draftHasNewDelivery || sourceError}
 				<div role="status" class="space-y-2 rounded-xl border bg-muted/30 p-3 text-sm">
 					<p>
@@ -3492,7 +3948,7 @@
 								onChooseDemand={chooseDemand}
 								{sourceLockLabel}
 								onSelectionChange={updateDemandSelection}
-								onDragStartDemand={startPlacement}
+								onDragStartDemand={(source, candidate) => startPlacement(source, candidate)}
 								onCancelDrag={finishPlacementDrag}
 								onOpenStructural={openStructuralDialog}
 							/>
@@ -3875,7 +4331,7 @@
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<div class="space-y-2 py-2">
-				{#if currentRemovalTarget(selectedBlock) && (selectedBlock?.blockKind !== 'course' || (selectedBlock?.groups.length ?? 0) > 1)}
+				{#if (retainedRemovalTarget ?? currentRemovalTarget(selectedBlock)) && (selectedBlock?.blockKind !== 'course' || (selectedBlock?.groups.length ?? 0) > 1)}
 					<button
 						type="button"
 						class={[
@@ -3885,7 +4341,7 @@
 						onclick={() => (removeMode = 'target')}
 					>
 						<p class="text-sm font-medium">
-							นำออกเฉพาะ {currentRemovalTarget(selectedBlock)?.label}
+							นำออกเฉพาะ {(retainedRemovalTarget ?? currentRemovalTarget(selectedBlock))?.label}
 						</p>
 						<p class="text-xs text-muted-foreground">
 							ห้องหรือครูอื่นที่เพิ่มมาพร้อมกันยังอยู่ตามเดิม
