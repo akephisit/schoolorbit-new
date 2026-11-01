@@ -339,6 +339,7 @@
 	const request = new LatestRequest();
 	const versionsRequest = new LatestRequest();
 	const reloadRequest = new LatestRequest();
+	const routePromiseEpochs = new WeakMap<object, number>();
 	let workspaceReadVersionId: string | null = null;
 
 	let versions = $state<TimetableVersion[]>([]);
@@ -461,6 +462,8 @@
 	let domRevision = $state(0);
 	let queuedDraftEvents: DraftEventEnvelope[] = [];
 	let draftQueueOverflow = false;
+	let queuedDraftSessionEpoch = authStore.sessionEpoch;
+	let draftSocketSessionEpoch: number | null = null;
 	let disposed = false;
 	let jumpIntent = 0;
 	let lastPointerPoint: { x: number; y: number } | null = null;
@@ -791,7 +794,13 @@
 	}
 
 	async function loadContext(termId: string, yearId: string): Promise<void> {
+		const admission = readContextAdmission();
 		const { revision, signal } = request.begin();
+		const current = () =>
+			admission.current() &&
+			request.isCurrent(revision) &&
+			academicTermId === termId &&
+			academicYearId === yearId;
 		workspaceRevision += 1;
 		versionsRevision += 1;
 		loading = true;
@@ -800,7 +809,7 @@
 		versionsError = '';
 		try {
 			const loadedVersions = await listTimetableVersions(termId, { signal });
-			if (!request.isCurrent(revision)) return;
+			if (!current()) return;
 			versions = loadedVersions;
 			versionsLoading = false;
 			const selected = selectPreferredBoardVersion(
@@ -816,17 +825,17 @@
 				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: selected.id },
 				{ signal }
 			);
-			if (!request.isCurrent(revision)) return;
+			if (!current()) return;
 			initializeController(workspace);
 			boardRetryVersionId = workspace.version.id;
 			syncUrl();
 		} catch (error) {
-			if (!isAbortError(error) && request.isCurrent(revision)) {
+			if (!isAbortError(error) && current()) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 				notifyReadFailure(errorMessage, () => loadContext(termId, yearId));
 			}
 		} finally {
-			if (request.isCurrent(revision)) {
+			if (current()) {
 				loading = false;
 				versionsLoading = false;
 			}
@@ -836,13 +845,18 @@
 	async function refreshVersions(): Promise<void> {
 		if (!academicTermId) return;
 		const termId = academicTermId;
+		const admission = readContextAdmission();
+		const originController = controller;
+		const selectionRevision = workspaceRevision;
 		const { revision, signal } = versionsRequest.begin();
+		const current = () =>
+			admission.current() && versionsRequest.isCurrent(revision) && academicTermId === termId;
 		versionsRevision += 1;
 		versionsLoading = true;
 		versionsError = '';
 		try {
 			const loaded = await listTimetableVersions(termId, { signal });
-			if (!versionsRequest.isCurrent(revision) || academicTermId !== termId) return;
+			if (!current()) return;
 			versions = loaded.map((version) =>
 				controller?.workspace.version.id === version.id &&
 				controller.workspace.version.rowVersion > version.rowVersion
@@ -850,30 +864,42 @@
 					: version
 			);
 			if (
-				controller &&
-				!loaded.some((version) => version.id === controller?.workspace.version.id) &&
-				pendingOperationCount === 0
-			) {
-				const sourceId = controller.workspace.version.sourceVersionId;
-				controller = null;
-				const next = selectPreferredBoardVersion(loaded, sourceId);
-				if (next) await loadVersion(next.id, true);
-			}
+				workspaceRevision !== selectionRevision ||
+				controller !== originController ||
+				pendingOperationCount > 0
+			)
+				return;
+			const missingVersion =
+				originController &&
+				!loaded.some((version) => version.id === originController.workspace.version.id);
+			if (missingVersion) controller = null;
 			if (!controller) {
 				const preferred = selectPreferredBoardVersion(
 					loaded,
-					boardRetryVersionId ||
-						(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
+					missingVersion
+						? originController.workspace.version.sourceVersionId
+						: boardRetryVersionId ||
+								(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
 				);
-				if (preferred) void loadVersion(preferred.id, true);
+				if (preferred) {
+					const ownedSelectionRevision = workspaceRevision + 1;
+					await loadVersion(preferred.id, true);
+					if (
+						!current() ||
+						workspaceRevision !== ownedSelectionRevision ||
+						selectedVersion?.id !== preferred.id
+					)
+						return;
+				}
+				if (missingVersion && current()) toast.info('แบบร่างนี้ถูกลบแล้ว กลับไปดูตารางต้นทาง');
 			}
 		} catch (error) {
-			if (!isAbortError(error) && versionsRequest.isCurrent(revision)) {
+			if (!isAbortError(error) && current()) {
 				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
 				notifyReadFailure(versionsError, refreshVersions);
 			}
 		} finally {
-			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
+			if (current()) versionsLoading = false;
 		}
 	}
 
@@ -927,24 +953,33 @@
 	async function reload(message?: string, notifyFailure = true): Promise<void> {
 		if (!controller || !academicTermId || !academicYearId) return;
 		const targetController = controller;
+		const admission = sourceAdmission(targetController);
+		const yearId = academicYearId;
+		const termId = academicTermId;
+		const selectionRevision = workspaceRevision;
 		if (pendingOperationCount > 0) {
+			ensureQueuedDraftSession();
 			reconcileAfterPending = true;
 			if (message) toast.success(message);
 			return;
 		}
 		const { revision, signal } = reloadRequest.begin();
+		const current = () =>
+			admission.current() &&
+			reloadRequest.isCurrent(revision) &&
+			workspaceRevision === selectionRevision;
 		targetController.setRefreshing(true);
 		refreshError = '';
 		try {
 			const workspace = await getTimetableBlockWorkspace(
 				{
-					academicYearId,
-					academicTermId,
-					timetableVersionId: targetController.workspace.version.id
+					academicYearId: yearId,
+					academicTermId: termId,
+					timetableVersionId: admission.versionId
 				},
 				{ signal }
 			);
-			if (disposed || !reloadRequest.isCurrent(revision) || controller !== targetController) return;
+			if (!current()) return;
 			if (pendingOperationCount > 0) {
 				reconcileAfterPending = true;
 				return;
@@ -960,21 +995,13 @@
 			}
 			if (message) toast.success(message);
 		} catch (error) {
-			if (disposed || !reloadRequest.isCurrent(revision) || isAbortError(error)) return;
+			if (!current() || isAbortError(error)) return;
 			if (
 				error instanceof ApiClientError &&
 				error.status === 404 &&
 				controller === targetController
 			) {
-				const sourceId = targetController.workspace.version.sourceVersionId;
-				controller = null;
 				await refreshVersions();
-				const nextId =
-					sourceId && versions.some((version) => version.id === sourceId)
-						? sourceId
-						: selectPreferredBoardVersion(versions, null)?.id;
-				if (nextId) await loadVersion(nextId, true);
-				toast.info('แบบร่างนี้ถูกลบแล้ว กลับไปดูตารางต้นทาง');
 				return;
 			}
 			if (controller === targetController) {
@@ -982,7 +1009,7 @@
 				if (notifyFailure) notifyReadFailure(refreshError, () => reload());
 			}
 		} finally {
-			if (reloadRequest.isCurrent(revision)) targetController.setRefreshing(false);
+			if (current()) targetController.setRefreshing(false);
 		}
 	}
 
@@ -1001,10 +1028,21 @@
 		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
 	}
 
+	function clearQueuedDraftSession(): void {
+		queuedDraftEvents = [];
+		draftQueueOverflow = false;
+		reconcileAfterPending = false;
+		queuedDraftSessionEpoch = authStore.sessionEpoch;
+	}
+	function ensureQueuedDraftSession(): void {
+		if (queuedDraftSessionEpoch !== authStore.sessionEpoch) clearQueuedDraftSession();
+	}
+
 	function finishPendingOperation(
 		blockIds: readonly string[],
 		cellKeys: readonly string[] = []
 	): void {
+		ensureQueuedDraftSession();
 		pendingBlockIds = new Set(
 			[...pendingBlockIds].filter((blockId) => !blockIds.includes(blockId))
 		);
@@ -1038,6 +1076,7 @@
 	}
 
 	function requestReconcile(): void {
+		ensureQueuedDraftSession();
 		if (pendingOperationCount > 0) {
 			reconcileAfterPending = true;
 			return;
@@ -1047,6 +1086,8 @@
 	}
 
 	function receiveDraftEvent(event: DraftEventEnvelope): void {
+		if (draftSocketSessionEpoch !== authStore.sessionEpoch) return;
+		ensureQueuedDraftSession();
 		if (event.type !== 'DraftStateSync' && event.type !== 'DraftPatched') return;
 		const versionId =
 			event.type === 'DraftStateSync'
@@ -1891,17 +1932,21 @@
 		}
 	}
 
+	function readContextAdmission() {
+		const context = activeContextKey;
+		const epoch = authStore.sessionEpoch;
+		return {
+			context,
+			epoch,
+			current: () => !disposed && activeContextKey === context && authStore.sessionEpoch === epoch
+		};
+	}
+
 	function lifecycleFailureReporter(): (error: unknown, fallback: string) => void {
-		const contextKey = activeContextKey;
+		const admission = readContextAdmission();
 		const targetController = controller;
 		return (error, fallback) => {
-			if (
-				disposed ||
-				isAbortError(error) ||
-				activeContextKey !== contextKey ||
-				controller !== targetController
-			)
-				return;
+			if (!admission.current() || isAbortError(error) || controller !== targetController) return;
 			toast.error(error instanceof Error ? error.message : fallback);
 		};
 	}
@@ -1991,15 +2036,19 @@
 		return new Promise((resolvePending) => pendingWaiters.add(resolvePending));
 	}
 	function sourceAdmission(target: TimetableWorkspaceController) {
-		const context = activeContextKey;
-		const epoch = authStore.sessionEpoch;
+		const admission = readContextAdmission();
 		const versionId = target.workspace.version.id;
-		const sameContext = () =>
-			!disposed && activeContextKey === context && authStore.sessionEpoch === epoch;
 		const current = () =>
-			sameContext() && controller === target && target.workspace.version.id === versionId;
-		return { context, epoch, versionId, current, sameContext };
+			admission.current() && controller === target && target.workspace.version.id === versionId;
+		return {
+			context: admission.context,
+			epoch: admission.epoch,
+			versionId,
+			current,
+			sameContext: admission.current
+		};
 	}
+
 	async function savedVersion(
 		target = controller,
 		allowReviewableFailure = false
@@ -3150,12 +3199,24 @@
 		if (recoveryEpoch !== epoch)
 			untrack(() => {
 				recoveryEpoch = epoch;
+				clearQueuedDraftSession();
 				failedSaves = [];
 				reviewedIntentId = null;
 				automaticAlignmentPaused = null;
 				invalidateLifecycle();
+				if (!controller && academicTermId && academicYearId)
+					void loadContext(academicTermId, academicYearId);
+				else if (versionsLoading) void refreshVersions();
 			});
 	});
+
+	function routePromiseEpoch(promise: object): number {
+		const existing = routePromiseEpochs.get(promise);
+		if (existing !== undefined) return existing;
+		const epoch = authStore.sessionEpoch;
+		routePromiseEpochs.set(promise, epoch);
+		return epoch;
+	}
 
 	$effect.pre(() => {
 		const yearId = data.academicYearId;
@@ -3164,6 +3225,12 @@
 		const routeVersions = data.versions;
 		const routeWorkspace = data.workspace;
 		const contextKey = `${yearId}:${termId}`;
+		const routeEpoch = authStore.sessionEpoch;
+		if (
+			(routeVersions && routePromiseEpoch(routeVersions) !== routeEpoch) ||
+			(routeWorkspace && routePromiseEpoch(routeWorkspace) !== routeEpoch)
+		)
+			return;
 		const versionSelectionChanged = activeRouteVersionId !== requestedVersionId;
 		const initialVersionsRevision = versionsRevision;
 		const initialWorkspaceRevision = workspaceRevision;
@@ -3204,7 +3271,14 @@
 		});
 		if (routeVersions) {
 			void routeVersions.then((result) => {
-				if (!current) return;
+				if (
+					!current ||
+					disposed ||
+					authStore.sessionEpoch !== routeEpoch ||
+					activeContextKey !== contextKey ||
+					activeRouteVersionId !== requestedVersionId
+				)
+					return;
 				untrack(() => {
 					if (versionsRevision === initialVersionsRevision) {
 						if (result.ok) {
@@ -3227,7 +3301,14 @@
 		}
 		if (routeWorkspace) {
 			void routeWorkspace.then((result) => {
-				if (!current) return;
+				if (
+					!current ||
+					disposed ||
+					authStore.sessionEpoch !== routeEpoch ||
+					activeContextKey !== contextKey ||
+					activeRouteVersionId !== requestedVersionId
+				)
+					return;
 				untrack(() => {
 					if (workspaceRevision === initialWorkspaceRevision) {
 						if (result.ok && result.data) {
@@ -3426,9 +3507,11 @@
 			const termId = academicTermId;
 			const userId = $authStore.user?.id;
 			if (!termId || !userId || !canRead) {
+				draftSocketSessionEpoch = null;
 				disconnectTimetableSocket();
 				return;
 			}
+			draftSocketSessionEpoch = authStore.sessionEpoch;
 			connectTimetableSocket({
 				academicTermId: termId,
 				currentUserId: userId,
@@ -3436,7 +3519,10 @@
 			});
 		});
 		return () => {
-			if (key) disconnectTimetableSocket();
+			if (key) {
+				draftSocketSessionEpoch = null;
+				disconnectTimetableSocket();
+			}
 		};
 	});
 	$effect(() => {

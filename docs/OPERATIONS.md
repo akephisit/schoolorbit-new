@@ -1924,8 +1924,12 @@ current-generation finalized day at/after the selected date refuse that correcti
 pinned timetable and grade/result facts remain accessible.
 
 After any new revision/effectivity semantics are accepted, recover with a compatible forward
-runtime. Older date-ranked writers cannot preserve these guarantees. Timetable source adoption
-remains explicit and never follows automatically from opening publication or cloning a table.
+runtime. Older date-ranked writers cannot preserve these guarantees. Active timetable create,
+clone, resume, Edit and Publish workflows align drafts with the latest opening through the
+authorized lifecycle owner. Opening publication remains independent and never directly rewrites
+timetable pointers or children. Alignment preserves placed lessons, teachers and origin links;
+remaining mismatches need review. Published timetable source pins remain immutable, while dormant
+or read-only GETs retain stored draft pointers until an authorized active workflow aligns them.
 
 ### Delivery and timetable version cutover
 
@@ -1984,9 +1988,10 @@ Deploy the backend, generated contracts and matched frontend together under the 
 maintenance/all-tenant migration procedure. Rehearse room removal, reviewed curriculum reopening,
 and inherited scope only on owned disposable fixtures or protected copies. Production acceptance
 uses the existing read-only schema/provider smoke gates; it does not delete or reopen live courses
-or groups. Timetable attendance uses its pinned Delivery source; adopting a newer source requires
-the existing explicit timetable reconciliation. No
-roster or timetable is automatically published. After any audience intent is written, old binaries
+or groups. Published timetable attendance retains its exact pinned Delivery source. Active drafts
+align automatically at authorized workflow boundaries; changing the operational source requires
+an explicit new timetable publication under the existing date and history guards. No roster or
+timetable is automatically published. After any audience intent is written, old binaries
 are unsafe because they do not enforce it: keep maintenance active on failure and recover by
 rolling forward with 144-compatible providers. Do not erase scope parents, rewrite a published
 snapshot, or restore raw registry coverage as recovery.
