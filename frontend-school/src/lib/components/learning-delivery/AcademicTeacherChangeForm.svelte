@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	function formatDate(value: string): string {
-		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
-			new Date(`${value}T00:00:00`)
-		);
-	}
+	import { teacherChangeSelection } from '#lib/academic/teacher-change-selection.js';
+
 	import {
 		upsertAcademicTermChangeItem,
 		type AcademicTermChangeSet,
@@ -65,61 +62,29 @@
 		publishedGroups.map((group) => ({
 			id: group.id,
 			label: group.name,
-			description: `${group.teacherAssignments.length} ช่วงความรับผิดชอบ`
+			description: `${changeSet.baseTeacherAssignments.filter((assignment) => assignment.learningGroupId === group.id).length} รายการครูในรุ่นต้นทาง`
 		}))
 	);
 	let selectedGroup = $derived(
 		publishedGroups.find((group) => group.id === learningGroupId) ?? null
 	);
-	let pendingEpisodeIds = $derived.by(() => {
-		return changeSet.items.flatMap((item) =>
-			(item.actionKind === 'adjust_group_teacher_role' ||
-				item.actionKind === 'stop_group_teacher') &&
-			item.learningGroupTeacherId
-				? [item.learningGroupTeacherId]
-				: []
-		);
-	});
-	let effectiveAssignments = $derived(
-		(selectedGroup?.teacherAssignments ?? []).filter(
-			(assignment) =>
-				assignment.startsOn < changeSet.referenceDate &&
-				(!assignment.endsOn || assignment.endsOn >= changeSet.referenceDate) &&
-				!pendingEpisodeIds.includes(assignment.id)
-		)
-	);
+	let selection = $derived(teacherChangeSelection(changeSet, learningGroupId));
+	let effectiveAssignments = $derived(selection.availableAssignments);
 	let assignmentOptions = $derived(
 		effectiveAssignments.map((assignment) => ({
-			id: assignment.id,
+			id: assignment.assignmentId,
 			label: assignment.displayName,
-			description: `${roleLabel(assignment.role)} · เริ่ม ${formatDate(assignment.startsOn)}`
+			description: `${roleLabel(assignment.role)} · รุ่นต้นทาง`
 		}))
 	);
 	let selectedAssignment = $derived(
-		effectiveAssignments.find((assignment) => assignment.id === learningGroupTeacherId) ?? null
+		effectiveAssignments.find((assignment) => assignment.assignmentId === learningGroupTeacherId) ??
+			null
 	);
-	let activeTeacherIds = $derived(
-		(selectedGroup?.teacherAssignments ?? [])
-			.filter(
-				(assignment) =>
-					assignment.startsOn <= changeSet.referenceDate &&
-					(!assignment.endsOn || assignment.endsOn >= changeSet.referenceDate)
-			)
-			.map((assignment) => assignment.teacherId)
-	);
-	let pendingAddedTeacherIds = $derived(
-		changeSet.items.flatMap((item) =>
-			item.actionKind === 'add_group_teacher' && item.learningGroupId === learningGroupId
-				? [item.teacherId]
-				: []
-		)
-	);
+
 	let teacherOptions = $derived(
 		managementOptions.teachers
-			.filter(
-				(teacher) =>
-					!activeTeacherIds.includes(teacher.id) && !pendingAddedTeacherIds.includes(teacher.id)
-			)
+			.filter((teacher) => !selection.blockedTeacherIds.has(teacher.id))
 			.map((teacher) => ({
 				id: teacher.id,
 				label: teacher.name,
@@ -158,15 +123,15 @@
 
 	function changeAssignment(value: string) {
 		learningGroupTeacherId = value;
-		const assignment = effectiveAssignments.find((item) => item.id === value);
+		const assignment = effectiveAssignments.find((item) => item.assignmentId === value);
 		teacherId = assignment?.teacherId ?? '';
 		teacherRole = assignment?.role ?? 'primary';
 	}
 
 	function buildRequest(): UpsertAcademicTermChangeItemRequest | null {
-		if (!learningGroupId) return null;
+		if (!selectedGroup) return null;
 		if (action === 'add_group_teacher') {
-			if (!teacherId) return null;
+			if (!teacherOptions.some((teacher) => teacher.id === teacherId)) return null;
 			return {
 				action,
 				changeSetRowVersion: changeSet.rowVersion,
@@ -304,11 +269,11 @@
 					</div>
 				{:else}
 					<div class="space-y-2">
-						<Label>ครูและช่วงความรับผิดชอบเดิม</Label>
+						<Label>ครูในรุ่นต้นทาง</Label>
 						<DeliveryOptionCombobox
 							bind:value={() => learningGroupTeacherId, changeAssignment}
 							options={assignmentOptions}
-							placeholder="เลือกครูจากช่วงที่ใช้งานอยู่"
+							placeholder="เลือกครูจากรุ่นต้นทาง"
 							searchPlaceholder="ค้นหาครู..."
 						/>
 					</div>

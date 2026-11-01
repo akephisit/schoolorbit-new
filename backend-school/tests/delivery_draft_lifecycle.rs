@@ -85,10 +85,12 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
     apply_migrations_through(&pool, 89).await.unwrap();
     let after:String=sqlx::query_scalar("SELECT md5(jsonb_agg(jsonb_build_object('id',id,'snapshot',snapshot,'date',effective_from,'revision',row_version) ORDER BY id)::text) FROM academic_delivery_versions WHERE status='published'").fetch_one(&pool).await.unwrap();
     assert_eq!(before, after);
-    let version = versions::get_version(&pool, draft).await.unwrap();
-    assert_eq!(version.effective_from, None);
-    assert_eq!(version.reference_date, date.succ_opt().unwrap());
-    assert_eq!(version.row_version, 1);
+    let (version_effective_from,version_reference_date,version_row_version):(Option<chrono::NaiveDate>,chrono::NaiveDate,i64)=sqlx::query_as(
+        "SELECT effective_from,reference_date,row_version FROM academic_delivery_versions WHERE id=$1",
+    ).bind(draft).fetch_one(&pool).await.unwrap();
+    assert_eq!(version_effective_from, None);
+    assert_eq!(version_reference_date, date.succ_opt().unwrap());
+    assert_eq!(version_row_version, 1);
     // Assert the 089 journal contract directly: current hydration requires later schema views.
     let (effective_from, reference_date): (Option<chrono::NaiveDate>, chrono::NaiveDate) =
         sqlx::query_as(
@@ -99,7 +101,7 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
         .await
         .unwrap();
     assert_eq!(effective_from, None);
-    assert_eq!(reference_date, version.reference_date);
+    assert_eq!(reference_date, version_reference_date);
     assert!(
         sqlx::query("DELETE FROM academic_delivery_versions WHERE id=$1")
             .bind(source)
@@ -109,11 +111,32 @@ async fn migration_preserves_published_graphs_and_moves_only_draft_dates() {
             .to_string()
             .contains("IMMUTABLE")
     );
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
+    let version = versions::get_version(&pool, draft).await.unwrap();
+    assert_eq!(
+        (
+            version.effective_from,
+            version.reference_date,
+            version.row_version
+        ),
+        (
+            version_effective_from,
+            version_reference_date,
+            version_row_version
+        )
+    );
+    assert_eq!(version.publication_no, None);
 }
 
 #[tokio::test]
 async fn cancelled_cleanup_preflights_all_and_keeps_active_drafts_and_published_rows() {
-    let pool = fixture("cancelled_cleanup_atomic", 144).await;
+    let pool = fixture(
+        "cancelled_cleanup_atomic",
+        school_migrations::latest_migration_version(),
+    )
+    .await;
     let (source, year, term, user) = context(&pool).await;
     sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(term)
@@ -234,7 +257,11 @@ async fn cancelled_cleanup_preflights_all_and_keeps_active_drafts_and_published_
 
 #[tokio::test]
 async fn cancelled_opening_is_immutable_until_hard_deleted_and_stale_revision_is_rejected() {
-    let pool = fixture("cancelled_opening_guards", 144).await;
+    let pool = fixture(
+        "cancelled_opening_guards",
+        school_migrations::latest_migration_version(),
+    )
+    .await;
     let (_, _, term, user) = context(&pool).await;
     sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
         .bind(term)

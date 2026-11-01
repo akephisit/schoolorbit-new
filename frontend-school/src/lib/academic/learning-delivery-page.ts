@@ -2,6 +2,7 @@ import type {
 	AcademicTermChangeSet,
 	AcademicTermChangeSetSummary,
 	DeliveryVersionSummary,
+	LearningGroup,
 	UpsertAcademicTermChangeItemRequest
 } from '#lib/api/learning-delivery.js';
 
@@ -21,9 +22,13 @@ export function currentDeliveryDate(now = new Date()): string {
 	}).format(now);
 }
 
-export function defaultRosterTrackingDate(startsOn?: string | null, now = new Date()): string {
+export function defaultRosterTrackingDate(
+	resourceStatus: LearningGroup['status'],
+	startsOn?: string | null,
+	now = new Date()
+): string {
 	const today = currentDeliveryDate(now);
-	return startsOn && startsOn > today ? startsOn : today;
+	return resourceStatus === 'draft' && startsOn && startsOn > today ? startsOn : today;
 }
 
 export function deliveryVersionEffectiveLabel(effectiveFrom: string | null): string {

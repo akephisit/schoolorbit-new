@@ -118,6 +118,21 @@ mod tests {
             })
             .collect()
     }
+    #[tokio::test]
+    async fn no_eligible_publication_is_none_without_a_null_decode_error() {
+        use school_test_db::cutover_test_support::{
+            apply_migrations_through, seed_release_two_predecessor,
+        };
+        let pool = school_test_db::create_named_test_pool("publication_no_eligible").await;
+        seed_release_two_predecessor(&pool).await.unwrap();
+        apply_migrations_through(&pool, 151).await.unwrap();
+        let (term,date):(Uuid,NaiveDate)=sqlx::query_as("SELECT academic_term_id,min(effective_from)-1 FROM academic_delivery_versions WHERE status='published' GROUP BY academic_term_id ORDER BY academic_term_id LIMIT 1").fetch_one(&pool).await.unwrap();
+        let mut connection = pool.acquire().await.unwrap();
+        assert!(applicable_on_connection(&mut connection, term, date)
+            .await
+            .unwrap()
+            .is_none());
+    }
     #[test]
     fn preservation_requires_every_exact_successful_check_without_duplicate_codes() {
         let mut evidence = checks();
@@ -147,8 +162,15 @@ pub async fn applicable_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Option<DeliveryPublicationContext>, AppError> {
-    let id: Option<Uuid> = DbSession::new(&mut *connection).scalar("academic_delivery.services.publication.applicable", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' AND effective_from<=$2 ORDER BY publication_no DESC LIMIT 1")
-        .bind(term).bind(date).fetch_optional().await?;
+    let id: Option<Uuid> = DbSession::new(&mut *connection)
+        .scalar::<Option<Uuid>>(
+            "academic_delivery.services.publication.applicable",
+            "SELECT academic_delivery_applicable_publication($1,$2)",
+        )
+        .bind(term)
+        .bind(date)
+        .fetch_one()
+        .await?;
     match id {
         Some(id) => Ok(Some(context_on_connection(connection, id).await?)),
         None => Ok(None),

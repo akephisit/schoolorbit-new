@@ -138,9 +138,22 @@ CROSS JOIN LATERAL (SELECT min(n.effective_from)-1 ends_on FROM academic_deliver
 CROSS JOIN LATERAL jsonb_array_elements(v.snapshot->'offerings') o
 WHERE v.status='published' AND (bounds.ends_on IS NULL OR bounds.ends_on>=v.effective_from);
 
+CREATE FUNCTION academic_delivery_applicable_publication(term UUID,on_date DATE) RETURNS UUID LANGUAGE SQL STABLE AS $$
+    SELECT id FROM academic_delivery_versions WHERE academic_term_id=term AND status='published' AND effective_from<=on_date
+    ORDER BY publication_no DESC LIMIT 1;
+$$;
+CREATE FUNCTION academic_timetable_applicable_publication(term UUID,on_date DATE) RETURNS UUID LANGUAGE SQL STABLE AS $$
+    SELECT id FROM academic_timetable_versions WHERE academic_term_id=term AND status='published' AND effective_from<=on_date
+    ORDER BY publication_no DESC LIMIT 1;
+$$;
+CREATE FUNCTION academic_timetable_latest_publication(term UUID) RETURNS UUID LANGUAGE SQL STABLE AS $$
+    SELECT id FROM academic_timetable_versions WHERE academic_term_id=term AND status='published' ORDER BY publication_no DESC LIMIT 1;
+$$;
 CREATE FUNCTION academic_delivery_offering_available(offering UUID,on_date DATE) RETURNS BOOLEAN LANGUAGE SQL STABLE AS $$
-    SELECT EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans s
-        WHERE s.learning_offering_id=offering AND s.starts_on<=on_date AND (s.ends_on IS NULL OR s.ends_on>=on_date));
+    SELECT COALESCE((SELECT EXISTS(SELECT 1 FROM jsonb_array_elements(version.snapshot->'offerings') entry WHERE (entry->>'id')::uuid=offering)
+        FROM learning_offerings registry JOIN academic_delivery_versions version
+            ON version.id=academic_delivery_applicable_publication(registry.academic_term_id,on_date)
+        WHERE registry.id=offering),false);
 $$;
 
 ALTER TABLE learning_group_teachers DROP CONSTRAINT learning_group_teachers_episode_key;
@@ -185,7 +198,7 @@ CREATE FUNCTION academic_delivery_inherit_teachers(graph JSONB,revision UUID) RE
         SELECT jsonb_agg(jsonb_set(g,'{teachers}',COALESCE((SELECT bg->'teachers'
             FROM academic_term_change_sets c JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id,
                 jsonb_array_elements(b.snapshot->'offerings') bo,jsonb_array_elements(bo->'groups') bg
-            WHERE c.id=revision AND bg->>'id'=g->>'id'),g->'teachers')) ORDER BY g->>'id')
+            WHERE c.id=revision AND (bg->>'id')::uuid=(g->>'id')::uuid),g->'teachers')) ORDER BY g->>'id')
         FROM jsonb_array_elements(o->'groups') g),'[]'::jsonb)) ORDER BY o->>'id'),'[]'::jsonb))
     FROM jsonb_array_elements(graph->'offerings') o;
 $$;
@@ -194,7 +207,7 @@ CREATE FUNCTION academic_delivery_project_teacher_ids(graph JSONB,revision UUID,
         SELECT jsonb_agg(jsonb_set(g,'{teachers}',COALESCE((SELECT jsonb_agg(
             CASE WHEN EXISTS(SELECT 1 FROM academic_delivery_effective_teacher_episodes e WHERE e.id=(t->>'assignmentId')::uuid
                 AND (e.starts_on>on_date OR e.effective_ends_on IS NOT NULL))
-            THEN jsonb_set(t,'{assignmentId}',to_jsonb(uuid_generate_v5(revision,'carried-teacher-episode:'||(t->>'assignmentId')))) ELSE t END
+            THEN jsonb_set(t,'{assignmentId}',to_jsonb(uuid_generate_v5(revision,'carried-teacher-episode:'||((t->>'assignmentId')::uuid)::text))) ELSE t END
             ORDER BY t->>'teacherId',t->>'assignmentId') FROM jsonb_array_elements(g->'teachers') t),'[]'::jsonb)) ORDER BY g->>'id')
         FROM jsonb_array_elements(o->'groups') g),'[]'::jsonb)) ORDER BY o->>'id'),'[]'::jsonb))
     FROM jsonb_array_elements(graph->'offerings') o;
@@ -235,8 +248,7 @@ BEGIN
     IF source.id IS NULL OR source.status<>'published' OR source.academic_term_id<>NEW.academic_term_id OR source.academic_year_id<>NEW.academic_year_id
     THEN RAISE EXCEPTION 'ACADEMIC_TIMETABLE_DELIVERY_SOURCE_INVALID' USING ERRCODE='check_violation'; END IF;
     IF NEW.status='published' AND (TG_OP='INSERT' OR OLD.status<>'published') THEN
-        SELECT id INTO applicable FROM academic_delivery_versions WHERE academic_term_id=NEW.academic_term_id AND status='published'
-            AND effective_from<=NEW.effective_from ORDER BY publication_no DESC LIMIT 1;
+        SELECT academic_delivery_applicable_publication(NEW.academic_term_id,NEW.effective_from) INTO applicable;
         IF applicable IS DISTINCT FROM source.id THEN RAISE EXCEPTION 'ACADEMIC_TIMETABLE_DELIVERY_DATE_MISMATCH' USING ERRCODE='check_violation'; END IF;
     END IF;
     RETURN NEW;

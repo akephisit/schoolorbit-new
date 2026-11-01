@@ -8886,6 +8886,7 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			baseDeliveryVersionId?: string | null;
+			baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 			/** Format: date-time */
 			cancelledAt?: string | null;
 			/** Format: uuid */
@@ -9523,6 +9524,7 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				baseDeliveryVersionId?: string | null;
+				baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -14113,6 +14115,7 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				baseDeliveryVersionId?: string | null;
+				baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -17040,6 +17043,17 @@ export interface components {
 			lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 			sessions: components['schemas']['AttendanceSession'][];
 			settings: components['schemas']['AttendanceSettings'];
+		};
+		/** @description Scoped immutable base membership for teacher commands, independent of raw episode dates. */
+		BaseTeacherAssignment: {
+			/** Format: uuid */
+			assignmentId: string;
+			displayName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			role: components['schemas']['LearningTeacherRole'];
+			/** Format: uuid */
+			teacherId: string;
 		};
 		BehaviorAttendanceRule: {
 			action: components['schemas']['BehaviorScoreAction'];

@@ -303,10 +303,23 @@ pub enum AcademicTermChangeItem {
     },
 }
 
+/// Scoped immutable base membership for teacher commands, independent of raw episode dates.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BaseTeacherAssignment {
+    pub assignment_id: Uuid,
+    pub learning_group_id: Uuid,
+    pub teacher_id: Uuid,
+    pub display_name: String,
+    pub role: LearningTeacherRole,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSet {
+    pub base_teacher_assignments: Vec<BaseTeacherAssignment>,
     pub publication_date_rules: versions::PublicationDateRules,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub publication_no: Option<i64>,

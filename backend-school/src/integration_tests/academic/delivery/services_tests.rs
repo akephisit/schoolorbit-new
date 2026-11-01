@@ -1388,7 +1388,7 @@ async fn table_preview(
     }).await.unwrap()
 }
 
-async fn fill_change_set_target_deficits(
+pub(crate) async fn fill_change_set_target_deficits(
     pool: &PgPool,
     actor_user_id: Uuid,
     academic_term_id: Uuid,
@@ -8270,3 +8270,6 @@ mod room_scope_tests;
 
 #[path = "room_scope_consumer_tests.rs"]
 mod room_scope_consumer_tests;
+
+#[path = "publication_revision_tests.rs"]
+mod publication_revision_tests;

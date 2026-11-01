@@ -40,6 +40,15 @@ function teacherChangeSet() {
 		updatedAt: '2026-08-31T00:00:00Z'
 	};
 	return {
+		baseTeacherAssignments: [
+			{
+				assignmentId: ids.assignmentA,
+				learningGroupId: ids.group,
+				teacherId: ids.teacherA,
+				displayName: 'ครูเอ คนเดิม',
+				role: 'primary'
+			}
+		],
 		id: ids.changeSet,
 		academicTermId: ids.term,
 		academicYearId: ids.year,

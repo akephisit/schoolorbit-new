@@ -316,11 +316,56 @@ pub async fn publish(
     id: Uuid,
     request: PublishTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
-    context
-        .execute_lifecycle(pool, id, move |pool, permit| async move {
-            publish_in_permit(history, &pool, permit, id, request).await
-        })
-        .await
+    let request_hash = publication_request_fingerprint(id, &request)?;
+    let key = request.idempotency_key;
+    context.execute_publication(pool,id,
+        move |pool| async move {read_publication_receipt(&pool,id,key,&request_hash).await},
+        move |pool,permit|async move {publish_in_permit(history,&pool,permit,id,request).await},
+    ).await
+}
+
+fn publication_request_fingerprint(
+    id: Uuid,
+    request: &PublishTimetableVersionRequest,
+) -> Result<String, AppError> {
+    hash(&(
+        id,
+        &request.row_version,
+        &request.effective_from,
+        &request.preview_hash,
+    ))
+}
+
+async fn read_publication_receipt(
+    pool: &PgPool,
+    id: Uuid,
+    key: Uuid,
+    fingerprint: &str,
+) -> Result<Option<TimetableVersion>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_lifecycle.publication_receipt",
+    )
+    .await?;
+    let receipt:Option<(Uuid,String)>=DbSession::new(&mut connection).query_as("academic_timetable.services.timetable_lifecycle.publication_receipt.lookup",
+        "SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 AND status='published'")
+        .bind(key).fetch_optional().await?;
+    match receipt {
+        Some((accepted, hash)) => {
+            if accepted != id || hash != fingerprint {
+                return Err(AppError::Conflict("idempotencyKey ถูกใช้กับคำขออื่นแล้ว".into()));
+            }
+            Ok(Some(
+                timetable_version_service::get_version_on_connection(
+                    &mut connection,
+                    id,
+                    timetable_version_service::bangkok_today(),
+                )
+                .await?,
+            ))
+        }
+        None => Ok(None),
+    }
 }
 
 async fn publish_in_permit(
@@ -332,12 +377,7 @@ async fn publish_in_permit(
 ) -> Result<TimetableVersion, AppError> {
     let actor = permit.actor_id;
     permit.require_version(id)?;
-    let request_hash = hash(&(
-        id,
-        &request.row_version,
-        &request.effective_from,
-        &request.preview_hash,
-    ))?;
+    let request_hash = publication_request_fingerprint(id, &request)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_lifecycle.publish",
@@ -548,19 +588,22 @@ async fn build_preview(
     let latest_id = delivery::latest_published_id(tx, context.academic_term_id).await?;
     let blocks = blocks(tx, id).await?;
     let content = timetable_source::content_hash(source.id, &blocks)?;
-    let changed = if let Some(original_id) = context.source_version_id {
-        let original_source: Uuid = DbSession::new(&mut **tx)
-            .scalar(
+    let (changed, earlier_activation) = if let Some(original_id) = context.source_version_id {
+        let (original_source, original_date): (Uuid, NaiveDate) = DbSession::new(&mut **tx)
+            .query_as(
                 "academic_timetable.services.timetable_lifecycle.build_preview",
-                "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+                "SELECT delivery_version_id,effective_from FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
             )
             .bind(original_id)
             .fetch_one()
             .await?;
         let original_blocks = self::blocks(tx, original_id).await?;
-        content != timetable_source::content_hash(original_source, &original_blocks)?
+        (
+            content != timetable_source::content_hash(original_source, &original_blocks)?,
+            date < original_date,
+        )
     } else {
-        true
+        (true, false)
     };
     let mut findings = readiness(&source.snapshot, &blocks);
     if !delivery::contains_date(&source, date) {
@@ -572,7 +615,7 @@ async fn build_preview(
             None,
         ));
     }
-    if !changed {
+    if !changed && !earlier_activation {
         findings.push(finding(
             TimetablePublicationFindingCode::NoContentChange,
             "คาบและรุ่นเปิดสอนยังตรงกับตารางต้นทาง",

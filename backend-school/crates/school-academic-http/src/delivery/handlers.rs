@@ -133,6 +133,26 @@ pub(crate) async fn require_term_change_set_access(
     Ok(offering_ids)
 }
 
+async fn visible_change_set_metadata(
+    context: &ActorTenantContext,
+    action: OfferingAction,
+    mut change_set: AcademicTermChangeSet,
+) -> Result<AcademicTermChangeSet, AppError> {
+    let access = learning_offering_access_policy::learning_offering_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        action,
+    )
+    .await?;
+    change_set.base_teacher_assignments = change_sets::visible_base_teacher_assignments(
+        &context.tenant.pool,
+        change_set.base_delivery_version_id,
+        &access,
+    )
+    .await?;
+    Ok(change_set)
+}
+
 async fn signal_term_change_set_changed(
     state: &AcademicHttpState,
     session: &AuthenticatedSession,
@@ -1151,7 +1171,9 @@ pub async fn create_term_change_set(
         change_sets::create_change_set(&context.tenant.pool, context.actor.user_id, request)
             .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &[]).await?;
-    Ok(created(change_set))
+    Ok(created(
+        visible_change_set_metadata(&context, OfferingAction::Manage, change_set).await?,
+    ))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1176,9 +1198,12 @@ pub async fn get_term_change_set(
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_term_change_set_access(&context, id, OfferingAction::Read).await?;
-    Ok(ok(
-        change_sets::get_change_set(&context.tenant.pool, id).await?
-    ))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Read,
+        change_sets::get_change_set(&context.tenant.pool, id).await?,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1212,7 +1237,12 @@ pub async fn update_term_change_set(
             .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
-    Ok(ok(change_set))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        change_set,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1292,7 +1322,12 @@ pub async fn upsert_term_change_item(
             .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
-    Ok(ok(change_set))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        change_set,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1334,7 +1369,12 @@ pub async fn delete_term_change_item(
     .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
-    Ok(ok(change_set))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        change_set,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1377,7 +1417,12 @@ pub async fn remove_draft_offering(
     .await?;
     signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
         .await?;
-    Ok(ok(changed))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        changed,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1422,7 +1467,12 @@ pub async fn remove_draft_offering_homeroom(
     .await?;
     signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
         .await?;
-    Ok(ok(changed))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        changed,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1465,7 +1515,12 @@ pub async fn remove_draft_group(
     .await?;
     signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
         .await?;
-    Ok(ok(changed))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        changed,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1537,7 +1592,12 @@ pub async fn publish_term_change_set(
     .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
-    Ok(ok(change_set))
+    Ok(ok(visible_change_set_metadata(
+        &context,
+        OfferingAction::Manage,
+        change_set,
+    )
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

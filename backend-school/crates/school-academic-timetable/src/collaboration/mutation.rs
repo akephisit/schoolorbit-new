@@ -200,8 +200,15 @@ impl TimetableMutationContext {
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(T, Vec<TimetableBlock>), AppError>> + Send + 'static,
     {
-        self.execute_inner(pool, version_id, scope, false, operation)
-            .await
+        self.execute_inner(
+            pool,
+            version_id,
+            scope,
+            false,
+            |_| async { Ok(None) },
+            operation,
+        )
+        .await
     }
 
     pub async fn execute_lifecycle<T, F, Fut>(
@@ -220,21 +227,53 @@ impl TimetableMutationContext {
             version_id,
             MutationScope::WholeDraft,
             true,
+            |_| async { Ok(None) },
             move |pool, permit| async move { Ok((operation(pool, permit).await?, Vec::new())) },
         )
         .await
     }
 
-    async fn execute_inner<T, F, Fut>(
+    /// Publication alone has an immutable receipt read at the draft gate. A known
+    /// accepted result needs no new mutation permit; all new writes retain the full
+    /// reservation, authority, cancellation and commit path below.
+    pub async fn execute_publication<T, R, ReceiptFuture, F, Fut>(
+        &self,
+        pool: &PgPool,
+        version_id: Uuid,
+        receipt: R,
+        operation: F,
+    ) -> Result<T, AppError>
+    where
+        T: Send + 'static,
+        R: FnOnce(PgPool) -> ReceiptFuture + Send + 'static,
+        ReceiptFuture: Future<Output = Result<Option<T>, AppError>> + Send + 'static,
+        F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, AppError>> + Send + 'static,
+    {
+        self.execute_inner(
+            pool,
+            version_id,
+            MutationScope::WholeDraft,
+            true,
+            receipt,
+            move |pool, permit| async move { Ok((operation(pool, permit).await?, Vec::new())) },
+        )
+        .await
+    }
+
+    async fn execute_inner<T, F, Fut, R, ReceiptFuture>(
         &self,
         pool: &PgPool,
         version_id: Uuid,
         scope: MutationScope,
         invalidate: bool,
+        receipt: R,
         operation: F,
     ) -> Result<T, AppError>
     where
         T: Send + 'static,
+        R: FnOnce(PgPool) -> ReceiptFuture + Send + 'static,
+        ReceiptFuture: Future<Output = Result<Option<T>, AppError>> + Send + 'static,
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(T, Vec<TimetableBlock>), AppError>> + Send + 'static,
     {
@@ -260,6 +299,18 @@ impl TimetableMutationContext {
                 .authorization
                 .validate_admission(&context.actor)
                 .await?;
+            let accepted =
+                tokio::time::timeout(std::time::Duration::from_secs(60), receipt(pool.clone()))
+                    .await
+                    .map_err(|_| {
+                        AppError::ServiceUnavailable(
+                            "Timetable publication receipt lookup exceeded its admission deadline"
+                                .into(),
+                        )
+                    })??;
+            if let Some(value) = accepted {
+                return Ok(value);
+            }
             let permit = Arc::new(room.begin_commit(
                 context.actor.user_id,
                 context.session_id,

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "publication_source_tests.rs"]
+mod publication_source_tests;
 use crate::integration_tests::academic::{
     core::services_tests::prepare_core_fixture_through,
     cutover_test_support::apply_migrations_through,

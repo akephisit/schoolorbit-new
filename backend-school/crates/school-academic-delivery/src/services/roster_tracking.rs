@@ -143,7 +143,7 @@ pub(super) async fn configuration_conflicts(
             DbSession::new(connection)
                 .scalar(
                     "academic_delivery.services.roster_tracking.date_availability",
-                    "SELECT academic_delivery_offering_available($1,$2)",
+                    "SELECT CASE WHEN status='draft' THEN starts_on<=$2 AND (ends_on IS NULL OR ends_on>=$2) ELSE academic_delivery_offering_available(id,$2) END FROM learning_offerings WHERE id=$1",
                 )
                 .bind(offering)
                 .bind(date)

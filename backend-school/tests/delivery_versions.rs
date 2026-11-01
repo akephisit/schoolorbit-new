@@ -29,6 +29,23 @@ async fn predecessor(name: &str) -> PgPool {
     pool
 }
 
+// Migration assertions project the immutable graph at their historical boundary.
+// Current version hydration also needs the publication-number schema from 151.
+async fn cutover_snapshot(
+    pool: &PgPool,
+    id: Uuid,
+) -> school_academic_delivery::models::versions::DeliverySnapshot {
+    sqlx::query_scalar::<
+        _,
+        sqlx::types::Json<school_academic_delivery::models::versions::DeliverySnapshot>,
+    >("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .0
+}
+
 async fn add_placement_version(pool: &PgPool, published: bool, source: bool) -> Uuid {
     let id = Uuid::new_v4();
     let source_id: Uuid = sqlx::query_scalar("SELECT id FROM academic_timetable_versions v WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_version_targets t WHERE t.timetable_version_id=v.id) AND EXISTS(SELECT 1 FROM academic_timetable_blocks b WHERE b.timetable_version_id=v.id) ORDER BY effective_from,id LIMIT 1")
@@ -68,14 +85,11 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
             .await
             .unwrap();
     apply_migrations_through(&pool, 89).await.unwrap();
-    let deliveries = versions::list_versions(
-        &pool,
-        term_id,
-        &school_authorization::AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
+    let deliveries: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 ORDER BY id",
     )
+    .bind(term_id)
+    .fetch_all(&pool)
     .await
     .unwrap();
     assert_eq!(
@@ -83,12 +97,9 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
         1,
         "only positions changed, so both tables share a graph"
     );
-    let delivery = versions::get_version(&pool, deliveries[0].id)
-        .await
-        .unwrap();
-    assert!(!delivery.snapshot.offerings.is_empty());
-    assert!(delivery
-        .snapshot
+    let historical_snapshot = cutover_snapshot(&pool, deliveries[0]).await;
+    assert!(!historical_snapshot.offerings.is_empty());
+    assert!(historical_snapshot
         .offerings
         .iter()
         .flat_map(|offering| &offering.groups)
@@ -96,7 +107,7 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
     let tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM academic_timetable_versions WHERE delivery_version_id=$1",
     )
-    .bind(deliveries[0].id)
+    .bind(deliveries[0])
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -112,7 +123,7 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
     assert!(passing);
     let immutable =
         sqlx::query("UPDATE academic_delivery_versions SET snapshot='{}'::jsonb WHERE id=$1")
-            .bind(deliveries[0].id)
+            .bind(deliveries[0])
             .execute(&pool)
             .await
             .unwrap_err();
@@ -147,6 +158,28 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
             .await
             .unwrap()
             .completed
+    );
+    // The old cutover/receipt assertions above remain at 089. Current providers
+    // run only after all of their owning schema and projection migrations exist.
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
+    let current = versions::list_versions(
+        &pool,
+        term_id,
+        &school_authorization::AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0].id, deliveries[0]);
+    let delivery = versions::get_version(&pool, deliveries[0]).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&delivery.snapshot).unwrap(),
+        serde_json::to_value(&historical_snapshot).unwrap()
     );
     let versions = school_academic_timetable::services::timetable_version_service::list_versions(
         &pool, term_id,
@@ -441,12 +474,28 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
     let pool = predecessor("independent_delivery_publish").await;
     apply_migrations_through(&pool, 96).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let historical_pin: Uuid = sqlx::query_scalar(
+        "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+    )
+    .bind(source_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let historical_snapshot = cutover_snapshot(&pool, historical_pin).await;
+    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+        .await
+        .unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
         .unwrap();
     let base = versions::get_version(&pool, source.delivery_version_id)
         .await
         .unwrap();
+    assert_eq!(source.delivery_version_id, historical_pin);
+    assert_eq!(
+        serde_json::to_value(&base.snapshot).unwrap(),
+        serde_json::to_value(historical_snapshot).unwrap()
+    );
     let draft = tables::clone_draft(
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
@@ -466,11 +515,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
             .fetch_all(&pool)
             .await
             .unwrap();
-    // Exercise an active lifecycle with the preserved historical fixture IDs.
-    // Publication dates follow the current clock rather than a stale fixture date.
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
+    // Exercise the current lifecycle with preserved historical fixture IDs.
     let revision = change_sets::create_change_set(
         &pool,
         actor,
@@ -687,17 +732,21 @@ async fn mixed_legacy_revision_preserves_opening_commands_and_its_placed_draft()
     let (pinned,opening_draft,status):(Uuid,Uuid,String)=sqlx::query_as("SELECT timetable.delivery_version_id,revision.target_delivery_version_id,opening.status FROM academic_timetable_versions timetable JOIN academic_term_change_sets revision ON revision.id=$2 JOIN academic_delivery_versions opening ON opening.id=revision.target_delivery_version_id WHERE timetable.id=$1").bind(draft).bind(revision).fetch_one(&pool).await.unwrap();
     assert_eq!(status, "draft");
     assert_ne!(pinned, opening_draft);
-    let source = versions::get_version(&pool, pinned).await.unwrap();
-    let pending = versions::get_version(&pool, opening_draft).await.unwrap();
-    assert_eq!(pending.source_version_id, Some(pinned));
+    let source = cutover_snapshot(&pool, pinned).await;
+    let pending = cutover_snapshot(&pool, opening_draft).await;
+    let source_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT source_version_id FROM academic_delivery_versions WHERE id=$1")
+            .bind(opening_draft)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(source_id, Some(pinned));
     let original = source
-        .snapshot
         .offerings
         .iter()
         .find(|row| row.id == offering)
         .unwrap();
     let changed = pending
-        .snapshot
         .offerings
         .iter()
         .find(|row| row.id == offering)
@@ -759,17 +808,13 @@ async fn explicit_legacy_target_inclusions_become_opening_commands_without_rewri
     let (pinned,pending):(Uuid,Uuid)=sqlx::query_as("SELECT timetable.delivery_version_id,revision.target_delivery_version_id FROM academic_timetable_versions timetable JOIN academic_term_change_sets revision ON revision.id=$2 WHERE timetable.id=$1")
         .bind(draft).bind(revision).fetch_one(&pool).await.unwrap();
     assert_ne!(pinned, pending);
-    assert!(!versions::get_version(&pool, pinned)
+    assert!(!cutover_snapshot(&pool, pinned)
         .await
-        .unwrap()
-        .snapshot
         .offerings
         .iter()
         .any(|offering| offering.id == added));
-    assert!(versions::get_version(&pool, pending)
+    assert!(cutover_snapshot(&pool, pending)
         .await
-        .unwrap()
-        .snapshot
         .offerings
         .iter()
         .any(|offering| offering.id == added));
@@ -822,10 +867,8 @@ async fn pre_effective_groups_are_preserved_when_a_timetable_was_published_early
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(versions::get_version(&pool, source)
+    assert!(cutover_snapshot(&pool, source)
         .await
-        .unwrap()
-        .snapshot
         .offerings
         .iter()
         .flat_map(|offering| &offering.groups)
@@ -856,9 +899,8 @@ async fn late_imported_groups_use_exact_dated_placement_evidence_and_preserve_id
     .fetch_one(&pool)
     .await
     .unwrap();
-    let source = versions::get_version(&pool, source).await.unwrap();
+    let source = cutover_snapshot(&pool, source).await;
     let imported = source
-        .snapshot
         .offerings
         .iter()
         .flat_map(|offering| &offering.groups)

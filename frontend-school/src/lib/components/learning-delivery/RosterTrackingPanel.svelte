@@ -175,7 +175,7 @@
 	function changeMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';
 		if (mode === 'homeroom' && !effectiveFrom && tracking) {
-			effectiveFrom = defaultRosterTrackingDate(tracking.startsOn);
+			effectiveFrom = defaultRosterTrackingDate(group.status, tracking.startsOn);
 		}
 		saved = '';
 	}
@@ -231,7 +231,7 @@
 	{:else}
 		<p class="mt-2 text-sm text-muted-foreground">
 			{tracking.mode === 'homeroom'
-				? `ติดตามนักเรียนจากห้องต้นทาง ${group.homeroomIds.length} ห้อง เริ่ม ${formatCalendarDate(tracking.effectiveFrom ?? tracking.startsOn)} การเพิ่ม ย้าย และนำออกจากห้องจะปรับรายชื่อกลุ่มนี้พร้อมกัน`
+				? `ติดตามนักเรียนจากห้องต้นทาง ${group.homeroomIds.length} ห้อง ${tracking.effectiveFrom ? `เริ่ม ${formatCalendarDate(tracking.effectiveFrom)}` : 'ยังไม่ได้กำหนดวันเริ่มติดตาม'} การเพิ่ม ย้าย และนำออกจากห้องจะปรับรายชื่อกลุ่มนี้พร้อมกัน`
 				: 'จัดรายชื่อเอง: เพิ่มและกำหนดวันสิ้นสุดเป็นรายคน การเปลี่ยนห้องจะไม่เปลี่ยนรายชื่อกลุ่มนี้'}
 		</p>
 		{#if editable}
@@ -278,9 +278,7 @@
 			{#if mode === 'homeroom'}<p class="mt-3 text-xs text-muted-foreground">
 					สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
 					โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
-					เริ่มติดตามได้ตั้งแต่วันนี้ ภายใน {formatCalendarDate(tracking.startsOn)} – {tracking.endsOn
-						? formatCalendarDate(tracking.endsOn)
-						: 'ไม่กำหนดวันสิ้นสุด'}{group.rosterStatus !== 'published'
+					ระบบจะตรวจข้อมูลเปิดสอนที่มีผลตามวันที่เลือก{group.rosterStatus !== 'published'
 						? ' และเริ่มปรับรายชื่ออัตโนมัติหลังเผยแพร่รายชื่อกลุ่ม'
 						: ''}
 				</p>{/if}

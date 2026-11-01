@@ -281,6 +281,7 @@ export async function mockDeliveryNavigation(
 		route: `/staff/academic/delivery/${findingOffering}?deliveryVersionId=${navigationIds.version}`
 	};
 	const changeSet: AcademicTermChangeSet = {
+		baseTeacherAssignments: [],
 		id: navigationIds.changeSet,
 		academicYearId: navigationIds.year,
 		academicTermId: navigationIds.term,

@@ -188,6 +188,37 @@ pub async fn get_change_set_on_connection(
         .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดชุดการเปลี่ยนแปลงได้".to_string()))
 }
 
+/// HTTP display metadata follows the existing immutable snapshot visibility owner.
+/// This projection is never input to authoritative teacher membership or publication.
+pub async fn visible_base_teacher_assignments(
+    pool: &PgPool,
+    base: Option<Uuid>,
+    access: &school_authorization::AcademicResourceListFilter,
+) -> Result<Vec<crate::models::BaseTeacherAssignment>, AppError> {
+    let Some(base) = base else {
+        return Ok(Vec::new());
+    };
+    let version = versions::visible_version(pool, base, access).await?;
+    Ok(version
+        .snapshot
+        .offerings
+        .into_iter()
+        .flat_map(|offering| offering.groups.into_iter())
+        .flat_map(|group| {
+            group
+                .teachers
+                .into_iter()
+                .map(move |teacher| crate::models::BaseTeacherAssignment {
+                    assignment_id: teacher.assignment_id,
+                    learning_group_id: group.id,
+                    teacher_id: teacher.teacher_id,
+                    display_name: teacher.display_name,
+                    role: teacher.role,
+                })
+        })
+        .collect())
+}
+
 pub async fn preview_change_set(
     history: &dyn crate::ports::PublicationHistoryPort,
     pool: &PgPool,
@@ -828,16 +859,18 @@ async fn build_preview_in_transaction(
         ));
     }
     let unchanged = if let Some(base_id) = revision.base_delivery_version_id {
-        let base: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
-            DbSession::new(&mut **transaction)
-                .scalar(
-                    "academic_delivery.services.change_sets.build_preview_in_transaction",
-                    "SELECT snapshot FROM academic_delivery_versions WHERE id=$1",
-                )
-                .bind(base_id)
-                .fetch_one()
-                .await?;
-        stable_hash(&base.0)? == stable_hash(&snapshot.0)?
+        let (base, base_effective_from): (
+            sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
+            NaiveDate,
+        ) = DbSession::new(&mut **transaction)
+            .query_as(
+                "academic_delivery.services.change_sets.build_preview_in_transaction",
+                "SELECT snapshot,effective_from FROM academic_delivery_versions WHERE id=$1",
+            )
+            .bind(base_id)
+            .fetch_one()
+            .await?;
+        stable_hash(&base.0)? == stable_hash(&snapshot.0)? && effective_from >= base_effective_from
     } else {
         snapshot.0.offerings.is_empty()
     };
@@ -3114,6 +3147,7 @@ async fn hydrate_many(
     rows.into_iter()
         .map(|row| {
             Ok(AcademicTermChangeSet {
+                base_teacher_assignments: Vec::new(),
                 publication_no: row.publication_no,
                 publication_date_rules: date_rules.get(&row.academic_term_id).cloned().ok_or_else(
                     || AppError::InternalServerError("Missing publication date policy".into()),

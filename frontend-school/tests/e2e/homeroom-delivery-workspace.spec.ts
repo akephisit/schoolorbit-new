@@ -149,6 +149,7 @@ function changeSetSummary() {
 
 function changeSetDetail() {
 	return {
+		baseTeacherAssignments: [],
 		...changeSetSummary(),
 		publicationDateRules: { today: '2027-08-01', minimumEffectiveFrom: '2027-08-01' },
 		baseDeliveryVersionId: ids.version,

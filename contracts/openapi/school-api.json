@@ -888,6 +888,12 @@
               "null"
             ]
           },
+          "baseTeacherAssignments": {
+            "items": {
+              "$ref": "#/components/schemas/BaseTeacherAssignment"
+            },
+            "type": "array"
+          },
           "cancelledAt": {
             "format": "date-time",
             "type": [
@@ -987,6 +993,7 @@
           }
         },
         "required": [
+          "baseTeacherAssignments",
           "publicationDateRules",
           "publicationNo",
           "id",
@@ -3159,6 +3166,12 @@
                   "null"
                 ]
               },
+              "baseTeacherAssignments": {
+                "items": {
+                  "$ref": "#/components/schemas/BaseTeacherAssignment"
+                },
+                "type": "array"
+              },
               "cancelledAt": {
                 "format": "date-time",
                 "type": [
@@ -3258,6 +3271,7 @@
               }
             },
             "required": [
+              "baseTeacherAssignments",
               "publicationDateRules",
               "publicationNo",
               "id",
@@ -20298,6 +20312,12 @@
                     "null"
                   ]
                 },
+                "baseTeacherAssignments": {
+                  "items": {
+                    "$ref": "#/components/schemas/BaseTeacherAssignment"
+                  },
+                  "type": "array"
+                },
                 "cancelledAt": {
                   "format": "date-time",
                   "type": [
@@ -20397,6 +20417,7 @@
                 }
               },
               "required": [
+                "baseTeacherAssignments",
                 "publicationDateRules",
                 "publicationNo",
                 "id",
@@ -31016,6 +31037,37 @@
           "sessions",
           "lessonChoices",
           "settings"
+        ],
+        "type": "object"
+      },
+      "BaseTeacherAssignment": {
+        "description": "Scoped immutable base membership for teacher commands, independent of raw episode dates.",
+        "properties": {
+          "assignmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LearningTeacherRole"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignmentId",
+          "learningGroupId",
+          "teacherId",
+          "displayName",
+          "role"
         ],
         "type": "object"
       },

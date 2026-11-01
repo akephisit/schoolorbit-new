@@ -265,18 +265,12 @@ pub async fn resolve_version_id_for_date_on_connection(
     term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<Uuid, AppError> {
-    DbSession::new(connection).scalar("academic_timetable.services.timetable_version_service.resolve_version_id_for_date_on_connection",
-        r#"SELECT id
-           FROM academic_timetable_versions
-           WHERE academic_term_id = $1
-             AND status = 'published'
-             AND effective_from <= $2
-           ORDER BY publication_no DESC
-           LIMIT 1"#,
+    DbSession::new(connection).scalar::<Option<Uuid>>("academic_timetable.services.timetable_version_service.resolve_version_id_for_date_on_connection",
+        "SELECT academic_timetable_applicable_publication($1,$2)",
     )
     .bind(term_id)
     .bind(on_date)
-    .fetch_optional()
+    .fetch_one()
     .await?
     .ok_or_else(|| AppError::NotFound(format!("ไม่พบตารางเรียนที่เผยแพร่และมีผลในวันที่ {on_date}")))
 }
@@ -537,8 +531,7 @@ pub async fn clone_draft_in_transaction(
         .bind(source.bell_schedule_id)
         .bind(actor_id)
         .execute()
-        .await
-        .map_err(map_clone_write_error)?;
+        .await?;
 
     // UUIDv5 maps each source identity consistently across the bulk child copies.
     // Read the source graph directly: runtime roles intentionally cannot create TEMP tables.
@@ -885,20 +878,32 @@ async fn hydrate_versions(
         .collect())
 }
 
-fn map_clone_write_error(error: sqlx::Error) -> AppError {
-    if let sqlx::Error::Database(database) = &error {
-        if database.constraint() == Some("academic_timetable_versions_live_effective_key") {
-            return AppError::Conflict("มีรุ่นตารางเรียนแบบร่างหรือเผยแพร่ในวันที่นี้แล้ว".to_string());
-        }
-    }
-    AppError::DbError(error)
-}
-
 #[cfg(test)]
 mod tests {
     use super::derive_display_state;
     use crate::models::timetable_version::TimetableVersionDisplayState;
     use chrono::NaiveDate;
+
+    #[test]
+    fn bangkok_display_date_and_superseded_future_plan_are_truthful() {
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-10-31T18:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let today = super::bangkok_date_at(instant);
+        assert_eq!(today, NaiveDate::from_ymd_opt(2026, 11, 1).unwrap());
+        assert_eq!(
+            derive_display_state(today, None, today),
+            TimetableVersionDisplayState::Current
+        );
+        assert_eq!(
+            derive_display_state(
+                today + chrono::Duration::days(4),
+                Some(today - chrono::Duration::days(1)),
+                today
+            ),
+            TimetableVersionDisplayState::Superseded
+        );
+    }
 
     #[test]
     fn display_state_uses_the_effective_interval() {

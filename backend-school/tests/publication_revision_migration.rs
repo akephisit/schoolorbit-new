@@ -42,7 +42,7 @@ const FACT_TABLES: &[&str] = &[
 ];
 
 async fn predecessor(name: &str) -> PgPool {
-    let pool = school_test_db::create_named_test_pool(name).await;
+    let pool = school_test_db::create_named_test_pool(&name.to_ascii_lowercase()).await;
     seed_release_two_predecessor(&pool).await.unwrap();
     apply_migrations_through(&pool, 150).await.unwrap();
     pool
@@ -247,12 +247,14 @@ async fn revision(pool: &PgPool, target: Uuid, source: Uuid, actor: Uuid, status
         r#"INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,
             base_delivery_version_id,target_delivery_version_id,effective_from,reference_date,
             reason,idempotency_key,creation_request_hash,created_by,status,published_by,published_at,cancelled_by,cancelled_at,
+            publication_idempotency_key,publication_request_hash,
             created_at,updated_at)
            SELECT $1,academic_term_id,academic_year_id,$3,id,
              CASE WHEN $5='published' THEN effective_from END,reference_date,
              'sanitized publication migration fixture',$1::text,repeat('c',64),$4,$5,
              CASE WHEN $5='published' THEN $4 END,CASE WHEN $5='published' THEN '2002-01-01'::timestamptz END,
              CASE WHEN $5='cancelled' THEN $4 END,CASE WHEN $5='cancelled' THEN '2002-01-02'::timestamptz END,
+             CASE WHEN $5='published' THEN $1 END,CASE WHEN $5='published' THEN repeat('d',64) END,
              '2000-04-05T06:07:08Z','2001-04-05T06:07:08Z'
            FROM academic_delivery_versions WHERE id=$2"#,
     )
@@ -305,11 +307,11 @@ async fn seed_history(pool: &PgPool) {
            WITH session AS (
              INSERT INTO attendance_sessions(academic_term_id,date,kind,source_key,title,teacher_ids,
                  learning_group_id,offering_id,start_time,end_time,saved_at,saved_by,roster)
-             SELECT g.academic_term_id,term.start_date+1,'lesson','publication151-fixture','Sanitized saved lesson',
+             SELECT g.academic_term_id,'2025-05-02','lesson','publication151-fixture','Sanitized saved lesson',
                  ARRAY['50000000-0000-0000-0000-000000000002'::uuid],g.id,g.learning_offering_id,
                  '08:30','09:20','2003-04-01','50000000-0000-0000-0000-000000000002','[]'
-             FROM learning_groups g JOIN academic_terms term ON term.id=g.academic_term_id
-             WHERE EXISTS(SELECT 1 FROM learning_group_students s WHERE s.learning_group_id=g.id)
+             FROM learning_groups g WHERE g.academic_term_id='11000000-0000-0000-0000-000000000251'
+             AND EXISTS(SELECT 1 FROM learning_group_students s WHERE s.learning_group_id=g.id)
              ORDER BY g.id LIMIT 1 RETURNING *)
            INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin,observed_at,updated_by)
            SELECT session.id,year.student_id,student.student_academic_year_id,'late','teacher','2003-04-01',
@@ -512,6 +514,65 @@ enum Malformed {
 }
 
 #[tokio::test]
+async fn dated_timetable_owner_returns_only_the_winner_and_keeps_schedule_context_strict() {
+    let pool = predecessor("publication151_dated_timetable_owner").await;
+    let (a,term,year,actor,delivery,schedule,date):(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,chrono::NaiveDate)=sqlx::query_as(
+        "SELECT id,academic_term_id,academic_year_id,published_by,delivery_version_id,bell_schedule_id,effective_from \
+         FROM academic_timetable_versions WHERE status='published' AND academic_term_id='11000000-0000-0000-0000-000000000251' ORDER BY effective_from,id LIMIT 1",
+    ).fetch_one(&pool).await.unwrap();
+    let next = date + chrono::Duration::days(7);
+    let b = timetable(
+        &pool,
+        term,
+        actor,
+        Some(a),
+        delivery,
+        &next.to_string(),
+        "published",
+        "2005-01-01",
+    )
+    .await;
+    let original = facts(&pool).await;
+    canonical(&pool).await;
+    assert_eq!(facts(&pool).await, original);
+    let mut transaction = pool.begin().await.unwrap();
+    let before = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
+        &mut transaction,year,term,next-chrono::Duration::days(1),schedule,
+    ).await.unwrap();
+    let after = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
+        &mut transaction,year,term,next+chrono::Duration::days(1),schedule,
+    ).await.unwrap();
+    assert_eq!(before.count(), 1);
+    assert_eq!(
+        after.count(),
+        1,
+        "dated source evidence must contain the selected winner, not all accepted history"
+    );
+    assert_ne!(before.source_checksum, after.source_checksum);
+    let other_schedule: Uuid =
+        sqlx::query_scalar("SELECT id FROM bell_schedules WHERE id<>$1 ORDER BY id LIMIT 1")
+            .bind(schedule)
+            .fetch_one(&mut *transaction)
+            .await
+            .unwrap();
+    let wrong = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
+        &mut transaction,year,term,next+chrono::Duration::days(1),other_schedule,
+    ).await.unwrap();
+    assert_eq!(wrong.count(), 0);
+    transaction.rollback().await.unwrap();
+    assert_eq!(school_academic_timetable::services::timetable_version_service::resolve_version_id_for_date(&pool,term,next).await.unwrap(),b);
+    let stored:i64=sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published'")
+        .bind(term).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored, 2, "archived accepted versions remain intact");
+    let guard:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='academic_timetable_versions'::regclass AND conname='academic_timetable_versions_term_schedule_fkey')")
+        .fetch_one(&pool).await.unwrap();
+    assert!(
+        guard,
+        "the real schedule context foreign key must remain enforced"
+    );
+}
+
+#[tokio::test]
 async fn malformed_published_assignments_refuse_atomically_and_corrected_evidence_retries() {
     for malformed in [
         Malformed::MissingAssignment,
@@ -590,10 +651,11 @@ async fn malformed_published_assignments_refuse_atomically_and_corrected_evidenc
             .await
             .unwrap_err();
         assert_eq!(error.diagnostic.version, Some(151), "{malformed:?}");
-        assert!(
-            format!("{error:?}").contains("PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID"),
+        assert_eq!(
+            error.diagnostic.code, "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
             "{malformed:?}: {error:?}"
         );
+        assert_eq!(error.diagnostic.sqlstate.as_deref(), Some("23514"));
         assert_eq!(
             facts(&pool).await,
             before,

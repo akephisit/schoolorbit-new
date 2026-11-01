@@ -247,6 +247,7 @@ async function mockRoomScope(
 		return result;
 	}
 	let changeSet: AcademicTermChangeSet = {
+		baseTeacherAssignments: [],
 		publicationNo: null,
 		publishedAt: null,
 		publishedBy: null,

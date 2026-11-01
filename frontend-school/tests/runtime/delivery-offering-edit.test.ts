@@ -19,13 +19,16 @@ const adjustment = {
 	createdBy: 'actor'
 };
 
-test('tracking defaults use Bangkok civil dates across UTC midnight and future start bounds', () => {
+test('tracking defaults use Bangkok today for published resources and retain explicit draft preparation dates', () => {
 	const now = new Date('2026-10-26T18:00:00Z');
 	assert.equal(currentDeliveryDate(now), '2026-10-27');
-	assert.equal(defaultRosterTrackingDate(undefined, now), '2026-10-27');
-	assert.equal(defaultRosterTrackingDate(null, now), '2026-10-27');
-	assert.equal(defaultRosterTrackingDate('2026-05-01', now), '2026-10-27');
-	assert.equal(defaultRosterTrackingDate('2026-11-01', now), '2026-11-01');
+	for (const status of ['draft', 'published'] as const) {
+		assert.equal(defaultRosterTrackingDate(status, undefined, now), '2026-10-27');
+		assert.equal(defaultRosterTrackingDate(status, null, now), '2026-10-27');
+		assert.equal(defaultRosterTrackingDate(status, '2026-05-01', now), '2026-10-27');
+	}
+	assert.equal(defaultRosterTrackingDate('published', '2026-11-01', now), '2026-10-27');
+	assert.equal(defaultRosterTrackingDate('draft', '2026-11-01', now), '2026-11-01');
 	assert.equal(currentDeliveryDate(new Date('2026-10-27T17:00:00Z')), '2026-10-28');
 });
 

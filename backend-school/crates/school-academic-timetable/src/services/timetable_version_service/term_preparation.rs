@@ -97,7 +97,7 @@ pub async fn apply(
 ) -> Result<TermPreparationModuleOutcome, AppError> {
     let actor = permit.actor_id();
     let source: Option<SourceVersion> = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
-        "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1",
+        "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE id=academic_timetable_latest_publication($1)",
     )
     .bind(context.source_term_id)
     .fetch_optional()

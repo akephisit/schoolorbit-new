@@ -78,6 +78,10 @@ the same owning connection/transaction, with no frontend catalog/admin fetch or 
 The date picker does not narrow dates to a future latest source: a user can choose an earlier date
 and then explicitly adopt its applicable source. Cloning and resuming preserve the selected exact
 Delivery pin; only the explicit source-update operation changes it.
+Change-set HTTP detail also includes required `baseTeacherAssignments`, containing exact immutable
+base `assignmentId`, `learningGroupId`, `teacherId`, `displayName` and `role`. Hydrate this array
+once through the route's existing read/manage resource visibility projection on every detail
+response. Internal unscoped DTOs do not supply authoritative membership evidence.
 Extend `TimetableVersionDisplayState` with `superseded` for a published logical interval whose
 end precedes its start. Classify this before upcoming/current states and exclude it from default
 selection. Existing explicit UUID history remains available.
@@ -196,6 +200,10 @@ the plan before consumption under the normal guarded workflow. Any correction of
 legacy evidence requires a separately reviewed recovery with actual evidence.
 For example, a deliberate publication 6 based on the existing November 5 snapshot can start on
 November 1 and supersede the old future plans while retaining every original November 1–5 record.
+An unchanged graph is publishable when the chosen start is strictly earlier than its immutable
+base's start; it needs no artificial teacher or weekly-target edit. The same rule applies to
+unchanged timetable placements with an exact retained Delivery pin. Same-date and later-date
+unchanged plans remain no-ops. All normal source, lifecycle and consumed-history guards still apply.
 
 Deploy matching backend, generated contracts and frontend under existing maintenance and exact
 migration/readiness gates. Once new sequence/effectivity semantics are accepted, recover forward

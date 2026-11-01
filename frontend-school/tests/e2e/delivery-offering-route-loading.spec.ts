@@ -157,6 +157,7 @@ async function mockOffering(
 		permissions?: string[];
 		trackingMode?: 'manual' | 'homeroom';
 		failTrackingSave?: boolean;
+		resourceDraft?: boolean;
 		saveGate?: Promise<void>;
 	} = {}
 ) {
@@ -249,7 +250,11 @@ async function mockOffering(
 				}
 				return void (await fulfill(route, tracking));
 			}
-			if (path === paths.offering) return void (await fulfill(route, offering()));
+			if (path === paths.offering)
+				return void (await fulfill(route, {
+					...offering(),
+					status: options.resourceDraft ? 'draft' : 'published'
+				}));
 			if (path === paths.groups)
 				return void (await fulfill(route, [
 					group(ids.groupA, options.published),
@@ -560,17 +565,22 @@ async function mockBulkSetup(
 		trackingRefreshGate?: Promise<void>;
 		trackingSaveGate?: Promise<void>;
 		trackingStartsOn?: string;
+		resourceDraft?: boolean;
 	} = {}
 ) {
-	const count = await mockOffering(page, { permissions: ['*'] });
+	const count = await mockOffering(page, {
+		permissions: ['*'],
+		resourceDraft: options.resourceDraft,
+		published: options.resourceDraft === false
+	});
 	let rows = [
 		{
-			...group(ids.groupA),
+			...group(ids.groupA, options.resourceDraft === false),
 			name: 'ม.1/1',
 			teacherAssignments: [bulkTeacher('assistant', 'assistant', 'ครูผู้ช่วยเดิม')]
 		},
 		{
-			...group(ids.groupB),
+			...group(ids.groupB, options.resourceDraft === false),
 			name: 'ม.1/2',
 			teacherAssignments: [
 				bulkTeacher(existingPrimaryId, 'primary', 'ครูหลักเดิม'),
@@ -1542,6 +1552,7 @@ async function mockWeeklyPeriods(
 		createdBy: ids.year
 	};
 	let changeSet: AcademicTermChangeSet = {
+		baseTeacherAssignments: [],
 		publicationNo: null,
 		publishedAt: null,
 		publishedBy: null,
@@ -2004,26 +2015,27 @@ test('bulk tracking dates retain custom choices through mode flips and refresh e
 	await expect(date).toContainText('29 ต.ค. 2569');
 });
 
-test('single and bulk tracking defaults respect the already-loaded future teaching start', async ({
-	page
-}) => {
-	await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
-	await mockBulkSetup(page, { trackingStartsOn: '2026-11-01' });
-	await page.goto(url());
-	const panel = page.getByTestId('roster-tracking');
-	await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
-	await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
-	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toContainText(
-		'1 พ.ย. 2569'
-	);
-	await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
-	const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
-	await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
-	await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
-	await expect(
-		dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
-	).toContainText('1 พ.ย. 2569');
-});
+for (const resourceDraft of [false, true])
+	test(`single and bulk tracking ${resourceDraft ? 'draft defaults retain the explicit future start' : 'published defaults use today despite a future raw start'}`, async ({
+		page
+	}) => {
+		await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
+		await mockBulkSetup(page, { trackingStartsOn: '2026-11-01', resourceDraft });
+		await page.goto(url());
+		const panel = page.getByTestId('roster-tracking');
+		await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+		await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+		await expect(
+			panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })
+		).toContainText(resourceDraft ? '1 พ.ย. 2569' : '27 ต.ค. 2569');
+		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
+		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
+		await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
+		await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
+		await expect(
+			dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
+		).toContainText(resourceDraft ? '1 พ.ย. 2569' : '27 ต.ค. 2569');
+	});
 
 test('rendering an existing past tracking date preserves the saved configuration', async ({
 	page

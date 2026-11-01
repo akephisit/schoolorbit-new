@@ -330,12 +330,12 @@ async fn module_source_fingerprint(
                 "version",
                 json_rows(
                     tx,
-                    "SELECT to_jsonb(version)::text FROM academic_timetable_versions version WHERE version.id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1)",
+                    "SELECT to_jsonb(version)::text FROM academic_timetable_versions version WHERE version.id=(SELECT academic_timetable_latest_publication($1))",
                     term_id,
                 )
                 .await?,
             ));
-            let source_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.module_source_fingerprint", "SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
+            let source_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.module_source_fingerprint", "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=academic_timetable_latest_publication($1)")
                 .bind(term_id).fetch_optional().await?;
             let target_source =
                 school_academic_delivery::services::versions::latest_published_source(tx, term_id)
@@ -361,23 +361,23 @@ async fn module_source_fingerprint(
             for (name, sql) in [
                 (
                     "blocks",
-                    "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) AND block.is_active ORDER BY block.id",
+                    "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT academic_timetable_latest_publication($1)) AND block.is_active ORDER BY block.id",
                 ),
                 (
                     "groups",
-                    "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id",
+                    "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT academic_timetable_latest_publication($1)) AND block.is_active AND block_group.is_active ORDER BY block_group.id",
                 ),
                 (
                     "instructors",
-                    "SELECT to_jsonb(instructor)::text FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY instructor.id",
+                    "SELECT to_jsonb(instructor)::text FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups block_group ON block_group.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT academic_timetable_latest_publication($1)) AND block.is_active AND block_group.is_active ORDER BY instructor.id",
                 ),
                 (
                     "homerooms",
-                    "SELECT to_jsonb(homeroom)::text FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id",
+                    "SELECT to_jsonb(homeroom)::text FROM academic_timetable_block_homerooms homeroom JOIN academic_timetable_blocks block ON block.id=homeroom.block_id WHERE block.timetable_version_id=(SELECT academic_timetable_latest_publication($1)) AND block.is_active AND homeroom.is_active ORDER BY homeroom.id",
                 ),
                 (
                     "teachers",
-                    "SELECT to_jsonb(teacher)::text FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) AND block.is_active AND teacher.is_active ORDER BY teacher.id",
+                    "SELECT to_jsonb(teacher)::text FROM academic_timetable_block_teachers teacher JOIN academic_timetable_blocks block ON block.id=teacher.block_id WHERE block.timetable_version_id=(SELECT academic_timetable_latest_publication($1)) AND block.is_active AND teacher.is_active ORDER BY teacher.id",
                 ),
             ] {
                 tables.push((name, json_rows(tx, sql, term_id).await?));
@@ -1098,7 +1098,7 @@ async fn add_timetable_mapping_seeds(
     context: &ContextRow,
     result: &mut Vec<(TermPreparationMappingKind, Vec<MappingSeed>)>,
 ) -> Result<(), AppError> {
-    let source_delivery_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", "SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
+    let source_delivery_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=academic_timetable_latest_publication($1)")
         .bind(context.source_term_id).fetch_optional().await?;
     let offering_ids = match source_delivery_id {
         Some(id) => school_academic_delivery::services::versions::published_source(
@@ -1114,7 +1114,8 @@ async fn add_timetable_mapping_seeds(
         .collect::<Vec<_>>(),
         None => Vec::new(),
     };
-    let source_cte = "WITH source_version AS (SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1) ";
+    let source_cte =
+        "WITH source_version AS (SELECT academic_timetable_latest_publication($1) AS id) ";
     result.push((TermPreparationMappingKind::LearningOffering, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
                   (SELECT target.id FROM learning_offerings target

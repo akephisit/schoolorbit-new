@@ -42,8 +42,8 @@ pub async fn published_for_term(
             "academic_timetable.services.timetable_version_service.opening.published_for_term",
             "SELECT id,effective_from,bell_schedule_id,row_version,published_at
          FROM academic_timetable_versions
-         WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
-           AND effective_from<=$3 AND bell_schedule_id=$4
+         WHERE id=academic_timetable_applicable_publication($2,$3) AND academic_year_id=$1
+           AND bell_schedule_id=$4
          ORDER BY effective_from,id LIMIT 501",
         )
         .bind(academic_year_id)
