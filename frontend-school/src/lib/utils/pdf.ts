@@ -350,7 +350,7 @@ function buildTimetableHeader(
 ): ContentColumns & { id: string } {
 	const gap = fontSize === 16 ? 8 : 4;
 	const qrWidth = showQrCode ? 65 : 0;
-	const logoInset = logo ? 4 : 0;
+	const logoInset = logo ? (fontSize === 16 ? 12 : 4) : 0;
 	const maxLogoWidth = width * 0.42;
 	let logoWidth = logo
 		? Math.min(3 * fontSize * SARABUN_LINE_HEIGHT * logo.aspectRatio, maxLogoWidth)
@@ -502,6 +502,7 @@ function buildPageContent(
 	const timeRow: TableCell[] = [
 		{
 			text: 'เวลา',
+			bold: true,
 			fontSize: 10,
 			color: '#4b5563',
 			alignment: 'center',
@@ -765,6 +766,7 @@ function buildMiniTable(
 	const timeRow: TableCell[] = [
 		{
 			text: 'เวลา',
+			bold: true,
 			fontSize: 6,
 			color: '#4b5563',
 			alignment: 'center',

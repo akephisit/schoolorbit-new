@@ -94,6 +94,30 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 			}
 		}
 
+		// PDFJS fontName identifies the actual embedded glyph resource, independent of its size.
+		const textItems = text.items.filter((item) => 'str' in item);
+		const boldFonts = new Set(
+			textItems.filter((item) => item.str === 'คาบ').map((item) => item.fontName)
+		);
+		const regularFonts = new Set(
+			textItems.filter((item) => /^ตาราง(?:เรียน|สอน)/.test(item.str)).map((item) => item.fontName)
+		);
+		const timeLabelFonts = new Set(
+			textItems.filter((item) => item.str === 'เวลา').map((item) => item.fontName)
+		);
+		const timeValueFonts = new Set(
+			textItems.filter((item) => /^\d{2}:\d{2}/.test(item.str)).map((item) => item.fontName)
+		);
+		expect(
+			[...timeLabelFonts].every((font) => boldFonts.has(font)),
+			'เวลา uses the bold period-heading resource'
+		).toBe(true);
+		expect(timeValueFonts.size, 'time values are present').toBeGreaterThan(0);
+		expect(
+			[...timeValueFonts].every((font) => regularFonts.has(font) && !boldFonts.has(font)),
+			'time values retain the regular context resource'
+		).toBe(true);
+
 		const fontSize = page.getWidth() > page.getHeight() ? 16 : 9;
 		const schools = text.items.filter(
 			(item) =>
@@ -426,7 +450,7 @@ export async function expectExternalTimetablePdfHeaders(
 			);
 			expect(width).toBeDefined();
 			expect(image.x - width!.left, 'crest is inset from its timetable leading edge').toBeCloseTo(
-				4,
+				fontSize === 16 ? 12 : 4,
 				3
 			);
 		}
