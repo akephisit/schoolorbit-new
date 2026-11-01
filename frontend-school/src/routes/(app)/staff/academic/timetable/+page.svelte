@@ -1,5 +1,9 @@
 <script lang="ts">
 	import {
+		initialTimetablePublicationDate,
+		timetableSourceIsCurrent
+	} from '#lib/academic/timetable/latest-delivery-source.js';
+	import {
 		publicationDateRulesLabel,
 		publicationEffectiveLabel,
 		publicationSourceLabel,
@@ -310,6 +314,21 @@
 	} | null>(null);
 	let saveError = $state<{ message: string } | null>(null);
 	let publicationDate = $state('');
+	let sourceSyncTarget = $state.raw<TimetableWorkspaceController | null>(null);
+	let sourceFailure = $state.raw<{
+		controller: TimetableWorkspaceController;
+		context: string;
+		epoch: number;
+		latestId: string;
+		message: string;
+	} | null>(null);
+	let sourceSyncTask: {
+		controller: TimetableWorkspaceController;
+		promise: Promise<boolean>;
+		token: symbol;
+	} | null = null;
+	let sourceReconcileRequested = false;
+	let reclaimEditor = $state.raw<TimetableWorkspaceController | null>(null);
 	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
 	let publicationKey = '';
 	const pendingWaiters = new SvelteSet<() => void>();
@@ -515,7 +534,18 @@
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
 		)
 	);
-	const canEdit = $derived(Boolean(canManage && controller?.canEdit && !busy));
+	const sourceCurrent = $derived(!controller || timetableSourceIsCurrent(controller.workspace));
+	const sourceSyncing = $derived(controller !== null && sourceSyncTarget === controller);
+	const sourceError = $derived(
+		sourceFailure?.controller === controller &&
+			sourceFailure.context === activeContextKey &&
+			sourceFailure.epoch === authStore.sessionEpoch
+			? sourceFailure.message
+			: ''
+	);
+	const canEdit = $derived(
+		Boolean(canManage && controller?.canEdit && !busy && sourceCurrent && !sourceSyncing)
+	);
 	const selectedVersion = $derived(controller?.workspace.version ?? null);
 	const canDownloadPdf = $derived(
 		Boolean(
@@ -542,6 +572,7 @@
 	);
 	const canManageSchool = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL));
 	const canPublish = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL));
+	const canAlignLatest = $derived(canManageSchool || canPublish);
 	const sameSourceDrafts = $derived(
 		versions.filter(
 			(version) => version.status === 'draft' && version.sourceVersionId === selectedVersion?.id
@@ -639,6 +670,7 @@
 		const ownerId = (page.shallow?.url ?? page.url).searchParams.get('ownerId');
 		if (ownerId && activeView !== 'wholeSchool') next.selectOwner(ownerId);
 		controller = next;
+		invalidatePublicationPreview(workspace);
 	}
 
 	function syncUrl(): void {
@@ -827,6 +859,7 @@
 			}
 			const previousOwnerId = targetController.selectedOwnerId;
 			targetController.setWorkspace(workspace);
+			invalidatePublicationPreview(workspace);
 			if (previousOwnerId !== targetController.selectedOwnerId) {
 				cancelPlacement();
 				currentAnchor = null;
@@ -967,6 +1000,13 @@
 			pointerOwnerId = null;
 			syncUrl();
 		}
+		invalidatePublicationPreview(controller.workspace);
+		if (
+			event.type === 'DraftStateSync' &&
+			controller.editing &&
+			!timetableSourceIsCurrent(controller.workspace)
+		)
+			queueLatestDeliveryReconcile();
 		const version = controller.workspace.version;
 		versions = versions.map((item) => (item.id === version.id ? version : item));
 		return true;
@@ -1736,31 +1776,166 @@
 
 	async function createFirstTable(): Promise<void> {
 		if (!academicTermId || busy || !canManageSchool) return;
+		const context = activeContextKey;
+		const epoch = authStore.sessionEpoch;
+		const origin = controller;
+		const current = () =>
+			!disposed && activeContextKey === context && authStore.sessionEpoch === epoch;
+		const termId = academicTermId;
 		busy = true;
-		const reportFailure = lifecycleFailureReporter();
 		try {
-			const version = await createTimetableVersion({ academicTermId });
-			await refreshVersions();
+			const version = await createTimetableVersion({ academicTermId: termId });
+			if (!current() || controller !== origin) return;
+			versions = [...versions.filter((item) => item.id !== version.id), version];
 			await loadVersion(version.id, true);
-			controller?.setEditing(true);
+			const target = controller;
+			if (
+				current() &&
+				target?.workspace.version.id === version.id &&
+				(await ensureLatestDeliverySource(target, true)) &&
+				current() &&
+				controller === target &&
+				canManage
+			)
+				target.setEditing(true);
 		} catch (error) {
-			reportFailure(error, 'สร้างตารางสอนไม่สำเร็จ');
+			if (current()) toast.error(error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
 	}
+
 	function waitForSaves(): Promise<void> {
 		if (pendingOperationCount === 0) return Promise.resolve();
 		return new Promise((resolvePending) => pendingWaiters.add(resolvePending));
 	}
-	async function savedVersion(): Promise<TimetableVersion> {
-		await releaseIdleInteractions();
+	function sourceAdmission(target: TimetableWorkspaceController) {
+		const context = activeContextKey;
+		const epoch = authStore.sessionEpoch;
+		const versionId = target.workspace.version.id;
+		const sameContext = () =>
+			!disposed && activeContextKey === context && authStore.sessionEpoch === epoch;
+		const current = () =>
+			sameContext() && controller === target && target.workspace.version.id === versionId;
+		return { context, epoch, versionId, current, sameContext };
+	}
+	async function savedVersion(target = controller): Promise<TimetableVersion> {
+		if (!target) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+		const admission = sourceAdmission(target);
+		const requireCurrent = () => {
+			if (!admission.current()) throw new Error('บริบทตารางสอนเปลี่ยนไป');
+		};
 		await waitForSaves();
+		requireCurrent();
 		if (saveError) throw new Error(saveError.message);
-		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+		await releaseIdleInteractions();
+		requireCurrent();
 		await reload(undefined, false);
+		requireCurrent();
 		if (refreshError) throw new Error(refreshError);
-		return controller.workspace.version;
+		return target.workspace.version;
+	}
+	function invalidatePublicationPreview(workspace: TimetableBlockWorkspace): void {
+		if (
+			publicationPreview &&
+			(publicationPreview.timetableVersionId !== workspace.version.id ||
+				publicationPreview.rowVersion !== workspace.version.rowVersion ||
+				publicationPreview.deliveryVersionId !== workspace.version.deliveryVersionId ||
+				publicationPreview.latestDeliveryVersionId !== workspace.latestDeliveryVersionId)
+		)
+			publicationPreview = null;
+		if (timetableSourceIsCurrent(workspace) && sourceFailure?.controller === controller)
+			sourceFailure = null;
+	}
+	function queueLatestDeliveryReconcile(): void {
+		if (!controller?.editing || controller.workspace.version.status !== 'draft') return;
+		if (sourceSyncTask) {
+			sourceReconcileRequested = true;
+			return;
+		}
+		void ensureLatestDeliverySource(controller, false);
+	}
+	async function ensureLatestDeliverySource(
+		target: TimetableWorkspaceController,
+		retry: boolean
+	): Promise<boolean> {
+		const admission = sourceAdmission(target);
+		if (!admission.current()) return false;
+		if (
+			!retry &&
+			sourceFailure?.controller === target &&
+			sourceFailure.context === admission.context &&
+			sourceFailure.epoch === admission.epoch &&
+			sourceFailure.latestId === target.workspace.latestDeliveryVersionId
+		)
+			return false;
+		if (sourceSyncTask) {
+			if (sourceSyncTask.controller === target) return sourceSyncTask.promise;
+			await sourceSyncTask.promise;
+			if (!admission.current()) return false;
+		}
+		sourceSyncTarget = target;
+		const preserveEditor = editOpen && selectedBlockId !== null;
+		const token = Symbol();
+		const promise = (async () => {
+			try {
+				const version = await savedVersion(target);
+				if (!admission.current()) return false;
+				if (version.status !== 'draft') return false;
+				if (timetableSourceIsCurrent(target.workspace)) {
+					sourceFailure = null;
+					return true;
+				}
+				if (!canAlignLatest)
+					throw new Error(
+						'แบบร่างต้องใช้ข้อมูลเปิดสอนล่าสุด ให้ผู้จัดการตารางระดับโรงเรียนหรือผู้เผยแพร่ดำเนินการก่อนแก้ไข'
+					);
+				publicationPreview = null;
+				const aligned = await updateTimetableDeliverySource(version.id, {
+					rowVersion: version.rowVersion
+				});
+				if (!admission.current()) return false;
+				versions = versions.map((item) =>
+					item.id === aligned.id && item.rowVersion <= aligned.rowVersion ? aligned : item
+				);
+				requestDraftSnapshot();
+				await reload(undefined, false);
+				if (!admission.current()) return false;
+				if (refreshError) throw new Error(refreshError);
+				if (!timetableSourceIsCurrent(target.workspace))
+					throw new Error('ข้อมูลเปิดสอนเปลี่ยนอีกครั้ง กรุณาตรวจข้อมูลล่าสุดแล้วลองใหม่');
+				sourceFailure = null;
+				return true;
+			} catch (error) {
+				if (admission.current())
+					sourceFailure = {
+						controller: target,
+						context: admission.context,
+						epoch: admission.epoch,
+						latestId: target.workspace.latestDeliveryVersionId,
+						message: error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนล่าสุดไม่สำเร็จ'
+					};
+				return false;
+			} finally {
+				if (sourceSyncTask?.token === token) {
+					sourceSyncTask = null;
+					sourceSyncTarget = null;
+				}
+				if (admission.current() && preserveEditor && editOpen) reclaimEditor = target;
+				const again = sourceReconcileRequested;
+				sourceReconcileRequested = false;
+				if (
+					again &&
+					admission.current() &&
+					target.editing &&
+					!sourceFailure &&
+					!timetableSourceIsCurrent(target.workspace)
+				)
+					queueMicrotask(queueLatestDeliveryReconcile);
+			}
+		})();
+		sourceSyncTask = { controller: target, promise, token };
+		return promise;
 	}
 
 	async function releaseIdleInteractions(): Promise<void> {
@@ -1781,6 +1956,10 @@
 				interaction.abort.abort();
 				continue;
 			}
+			if (!ownsDraftLease(lease)) {
+				interaction.abort.abort();
+				continue;
+			}
 			try {
 				await releaseDraftLease(lease);
 			} catch {
@@ -1796,7 +1975,15 @@
 		const reportFailure = lifecycleFailureReporter();
 		if (controller.workspace.version.status === 'draft') {
 			if (!canManage) return;
-			controller.setEditing(true);
+			const target = controller;
+			const admission = sourceAdmission(target);
+			busy = true;
+			try {
+				if ((await ensureLatestDeliverySource(target, true)) && admission.current() && canManage)
+					target.setEditing(true);
+			} finally {
+				busy = false;
+			}
 			return;
 		}
 		if (!canManageSchool) return;
@@ -1805,9 +1992,12 @@
 			draftChoiceOpen = true;
 			return;
 		}
+		const target = controller;
+		const admission = sourceAdmission(target);
 		busy = true;
 		try {
-			const source = await savedVersion();
+			const source = await savedVersion(target);
+			if (!admission.current() || !canManageSchool) return;
 			const resume = draftId
 				? versions.find((version) => version.id === draftId)
 				: sameSourceDrafts[0];
@@ -1816,9 +2006,19 @@
 				resumeDraftId: resume?.id,
 				draftRowVersion: resume?.rowVersion
 			});
-			await refreshVersions();
+			if (!admission.current()) return;
+			versions = [...versions.filter((item) => item.id !== draft.id), draft];
 			await loadVersion(draft.id, true);
-			if (controller?.workspace.version.id === draft.id) controller.setEditing(true);
+			const resumed = controller;
+			if (
+				admission.sameContext() &&
+				resumed?.workspace.version.id === draft.id &&
+				(await ensureLatestDeliverySource(resumed, true)) &&
+				admission.sameContext() &&
+				controller === resumed &&
+				canManage
+			)
+				resumed.setEditing(true);
 			draftChoiceOpen = false;
 		} catch (error) {
 			reportFailure(error, 'เปิดแบบร่างไม่สำเร็จ');
@@ -1831,106 +2031,98 @@
 		busy = true;
 		const reportFailure = lifecycleFailureReporter();
 		try {
-			await savedVersion();
-			controller?.setEditing(false);
+			const target = controller;
+			const admission = sourceAdmission(target);
+			await savedVersion(target);
+			if (admission.current()) target.setEditing(false);
 		} catch (error) {
 			reportFailure(error, 'บันทึกตารางไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
 	}
-	async function updateDeliverySource(
-		deliveryVersionId?: string,
-		expectedPreview?: TimetablePublicationPreview
-	): Promise<void> {
-		if (controller?.workspace.version.status !== 'draft' || !canManageSchool || busy) return;
-		busy = true;
-		const reportFailure = lifecycleFailureReporter();
-		try {
-			const version = await savedVersion();
-			if (
-				expectedPreview &&
-				(publicationPreview !== expectedPreview ||
-					version.id !== expectedPreview.timetableVersionId ||
-					version.rowVersion !== expectedPreview.rowVersion ||
-					publicationDate !== expectedPreview.effectiveFrom ||
-					deliveryVersionId !== expectedPreview.applicableDeliveryPublication?.id)
-			) {
-				publicationPreview = null;
-				throw new Error('ข้อมูลเปลี่ยน กรุณาตรวจความพร้อมตามวันที่เลือกอีกครั้ง');
-			}
-			const latest = deliveryVersionId ?? controller?.workspace.latestDeliveryVersionId;
-			if (!latest) throw new Error('ยังไม่มีรุ่นเปิดสอนที่เผยแพร่');
-			await updateTimetableDeliverySource(version.id, {
-				rowVersion: version.rowVersion,
-				deliveryVersionId: latest
-			});
-			publicationPreview = null;
-			await reload(undefined, false);
-			if (refreshError) throw new Error(refreshError);
-			await refreshVersions();
-			toast.success('อัปเดตข้อมูลเปิดสอนแล้ว กรุณาตรวจคาบที่มีเครื่องหมาย');
-		} catch (error) {
-			reportFailure(error, 'อัปเดตข้อมูลเปิดสอนไม่สำเร็จ');
-		} finally {
-			busy = false;
-		}
-	}
+
 	async function openPublication(): Promise<void> {
-		if (!canPublish || busy) return;
+		if (!canPublish || busy || !controller) return;
+		const target = controller;
+		const admission = sourceAdmission(target);
 		busy = true;
-		const reportFailure = lifecycleFailureReporter();
 		try {
-			await savedVersion();
-			if (!controller) return;
-			publicationDate = controller.workspace.publicationDateRules.today;
+			if (!(await ensureLatestDeliverySource(target, true)) || !admission.current()) return;
+			publicationDate = initialTimetablePublicationDate(target.workspace);
 			publicationPreview = null;
 			publicationKey = crypto.randomUUID();
 			publishOpen = true;
-		} catch (error) {
-			reportFailure(error, 'โหลดตารางไม่สำเร็จ');
 		} finally {
 			busy = false;
 		}
 	}
 	async function checkPublication(): Promise<void> {
 		if (!controller || busy || !publicationDate) return;
+		const target = controller;
+		const admission = sourceAdmission(target);
+		const chosenDate = publicationDate;
 		busy = true;
-		const reportFailure = lifecycleFailureReporter();
 		publicationPreview = null;
 		try {
-			const version = await savedVersion();
-			publicationPreview = await previewTimetablePublication(version.id, {
+			if (
+				!(await ensureLatestDeliverySource(target, true)) ||
+				!admission.current() ||
+				publicationDate !== chosenDate
+			)
+				return;
+			const version = target.workspace.version;
+			const preview = await previewTimetablePublication(version.id, {
 				rowVersion: version.rowVersion,
-				effectiveFrom: publicationDate
+				effectiveFrom: chosenDate
 			});
+			if (
+				!admission.current() ||
+				publicationDate !== chosenDate ||
+				target.workspace.version.rowVersion !== preview.rowVersion
+			)
+				return;
+			publicationPreview = preview;
 		} catch (error) {
-			reportFailure(error, 'ตรวจความพร้อมไม่สำเร็จ');
+			if (admission.current())
+				sourceFailure = {
+					controller: target,
+					context: admission.context,
+					epoch: admission.epoch,
+					latestId: target.workspace.latestDeliveryVersionId,
+					message: error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ'
+				};
 		} finally {
 			busy = false;
 		}
 	}
+
 	async function publishVersion(): Promise<void> {
 		if (!publicationPreview?.canPublish || !controller || busy || !canPublish) return;
+		const target = controller;
+		const admission = sourceAdmission(target);
+		const preview = publicationPreview;
 		busy = true;
 		const reportFailure = lifecycleFailureReporter();
 		try {
 			await waitForSaves();
-			const preview = publicationPreview;
+			if (!admission.current() || publicationPreview !== preview || !canPublish) return;
 			const version = await publishTimetableVersion(preview.timetableVersionId, {
 				rowVersion: preview.rowVersion,
 				effectiveFrom: preview.effectiveFrom,
 				previewHash: preview.previewHash,
 				idempotencyKey: publicationKey
 			});
-			controller.setEditing(false);
+			if (!admission.current()) return;
+			target.setEditing(false);
 			publishOpen = false;
-			await refreshVersions();
+			versions = versions.map((item) => (item.id === version.id ? version : item));
 			await loadVersion(version.id, true);
-			toast.success('เผยแพร่เวอร์ชันตารางสอนใหม่แล้ว');
+			if (admission.sameContext() && controller?.workspace.version.id === version.id)
+				toast.success('เผยแพร่เวอร์ชันตารางสอนใหม่แล้ว');
 		} catch (error) {
 			reportFailure(error, 'เผยแพร่ตารางสอนไม่สำเร็จ');
-			publicationPreview = null;
+			if (admission.current()) publicationPreview = null;
 		} finally {
 			busy = false;
 		}
@@ -2036,6 +2228,69 @@
 				candidateForBlock(block),
 				'edit'
 			);
+	}
+
+	function reclaimEditorLease(): void {
+		const block = selectedBlock;
+		if (
+			!controller ||
+			!editOpen ||
+			!block ||
+			!canEdit ||
+			editInteraction ||
+			pendingBlockIds.has(block.id) ||
+			blockLockLabel(block.id) ||
+			!$draftSessionState.ready
+		)
+			return;
+		const candidate = {
+			...candidateForBlock(block),
+			roomId: editRoomId === noRoomValue ? null : editRoomId,
+			instructorIds:
+				block.blockKind !== 'structural' &&
+				block.schedulingMode !== 'synchronized' &&
+				block.groups.length === 1
+					? [...editInstructorIds]
+					: blockInstructorIds(block),
+			teacherIds:
+				block.schedulingMode === 'synchronized' ? [...editTeacherIds] : blockTargetTeacherIds(block)
+		};
+		editInteraction = createInteraction(
+			{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
+			candidate,
+			'edit'
+		);
+	}
+	$effect(() => {
+		const target = reclaimEditor;
+		const ready = $draftSessionState.ready;
+		const currentSource = sourceCurrent;
+		const syncing = sourceSyncing;
+		if (
+			target &&
+			target === controller &&
+			ready &&
+			currentSource &&
+			!syncing &&
+			editOpen &&
+			canEdit
+		) {
+			untrack(() => {
+				reclaimEditor = null;
+				reclaimEditorLease();
+			});
+		}
+	});
+	async function retryLatestDeliverySource(): Promise<void> {
+		if (!controller || sourceSyncing || busy) return;
+		const target = controller;
+		const admission = sourceAdmission(target);
+		await waitForSaves();
+		if (!admission.current()) return;
+		await reload(undefined, false);
+		if (!admission.current() || refreshError) return;
+		saveError = null;
+		await ensureLatestDeliverySource(target, true);
 	}
 
 	function lockedTeacherTargetIds(block: TimetableBlock | null): string[] {
@@ -2479,6 +2734,8 @@
 				removeOpen = false;
 				structuralOpen = false;
 				refreshError = '';
+				publishOpen = false;
+				publicationPreview = null;
 			} else if (
 				versionSelectionChanged &&
 				(!requestedVersionId || controller?.workspace.version.id !== requestedVersionId)
@@ -3099,20 +3356,20 @@
 				{/snippet}
 			</TimetableWorkspaceHeader>
 
-			{#if draftHasNewDelivery}
-				<div
-					role="status"
-					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm"
-				>
-					<span>ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม</span>
-					{#if canManageSchool}<Button
+			{#if draftHasNewDelivery || sourceError}
+				<div role="status" class="space-y-2 rounded-xl border bg-muted/30 p-3 text-sm">
+					<p>
+						{sourceError ||
+							'แบบร่างนี้รอใช้ข้อมูลเปิดสอนล่าสุด ระบบจะอัปเดตก่อนเริ่มแก้ไขหรือตรวจเผยแพร่'}
+					</p>
+					{#if sourceError && canAlignLatest}<Button
 							variant="outline"
-							disabled={busy}
-							onclick={() => updateDeliverySource()}>อัปเดตข้อมูลเปิดสอน</Button
+							disabled={busy || sourceSyncing}
+							onclick={retryLatestDeliverySource}>ตรวจข้อมูลล่าสุดแล้วลองอีกครั้ง</Button
 						>{/if}
 				</div>
 			{/if}
-			{#if controller.workspace.sourceIssues.length > 0}
+			{#if sourceCurrent && controller.workspace.sourceIssues.length > 0}
 				<div role="alert" class="space-y-2 rounded-xl border border-destructive/30 p-3 text-sm">
 					<p class="font-medium">
 						มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่ ({controller.workspace.sourceIssues.length})
@@ -3198,9 +3455,10 @@
 														colors={lessonColors}
 														rowId={homeroom.id}
 														targetLabel={null}
-														needsReview={controller.workspace.sourceIssues.some(
-															(issue) => issue.blockId === block.id
-														)}
+														needsReview={sourceCurrent &&
+															controller.workspace.sourceIssues.some(
+																(issue) => issue.blockId === block.id
+															)}
 														onSelect={(block) => openEditor(block, homeroom.id)}
 														lockedBy={blockLockLabel(block.id)}
 													/>
@@ -3342,7 +3600,7 @@
 							{:else if editRoomLoading}
 								กำลังตรวจสอบห้องว่าง…
 							{:else if !editCanEdit || !editRoomOptions.ready}
-								ขณะนี้แก้ไขคาบนี้ไม่ได้ กรุณาปิดแล้วเปิดใหม่เพื่อลองอีกครั้ง
+								ขณะนี้แก้ไขคาบนี้ไม่ได้ ข้อมูลที่กรอกยังอยู่ ตรวจสิทธิ์แก้ไขคาบอีกครั้งได้
 							{:else if !editRoomSelectionValid}
 								ห้องที่เลือกไม่ว่างหรือใช้งานไม่ได้แล้ว กรุณาเลือกห้องใหม่หรือไม่ระบุห้อง
 							{:else if editRoomOptions.rooms.length === 0}
@@ -3388,6 +3646,17 @@
 					/>
 				</div>
 			</div>
+			{#if sourceError}<p role="alert" class="text-sm text-destructive">{sourceError}</p>
+				{#if canAlignLatest}<Button
+						variant="outline"
+						disabled={sourceSyncing || busy}
+						onclick={retryLatestDeliverySource}>ตรวจข้อมูลล่าสุดแล้วลองอีกครั้ง</Button
+					>{/if}
+			{:else if controller?.editing && sourceCurrent && !editInteraction && !editRoomLoading}<Button
+					variant="outline"
+					disabled={sourceSyncing || busy || !$draftSessionState.ready}
+					onclick={reclaimEditorLease}>ตรวจสิทธิ์แก้ไขคาบอีกครั้ง</Button
+				>{/if}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (editOpen = false)}>ปิด</Button>
 				{#if canEdit}
@@ -3726,27 +3995,16 @@
 						เผยแพร่หลายรุ่นในวันเดียวกันได้ รุ่นใหม่จะแทนแผนเดิมตั้งแต่วันที่เลือก
 					</p>
 				</div>
+				{#if sourceError}<p role="alert" class="text-sm text-destructive">{sourceError}</p>{/if}
 				<Button variant="outline" disabled={busy || !publicationDate} onclick={checkPublication}
 					>ตรวจความพร้อม</Button
 				>
 				{#if busy}<p role="status" class="text-sm text-muted-foreground">กำลังดำเนินการ...</p>{/if}
-				{#if publicationPreview}{@const checkedPublication = publicationPreview}
+				{#if publicationPreview}
 					<div
 						aria-live="polite"
 						class="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm"
 					>
-						{#if checkedPublication.applicableDeliveryPublication && checkedPublication.applicableDeliveryPublication.id !== checkedPublication.deliveryPublication.id}
-							{@const applicablePublication = checkedPublication.applicableDeliveryPublication}
-							<p>
-								รุ่นเปิดสอนที่มีผลในวันที่เลือก: {publicationSourceLabel(applicablePublication)}
-							</p>
-							{#if canManageSchool}<Button
-									variant="outline"
-									disabled={busy}
-									onclick={() => updateDeliverySource(applicablePublication.id, checkedPublication)}
-									>ใช้รุ่นที่มีผลในวันที่เลือก</Button
-								>{/if}
-						{/if}
 						{#if publicationPreview.canPublish}<p>
 								พร้อมเผยแพร่ {publicationPreview.blockCount} คาบ
 							</p>{:else}{#each publicationPreview.findings as finding, index (`${finding.code}:${index}`)}<p

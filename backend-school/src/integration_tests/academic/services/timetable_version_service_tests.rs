@@ -269,7 +269,7 @@ async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_re
 }
 
 #[tokio::test]
-async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_changes() {
+async fn timetable_source_alignment_rejects_source_choice_and_ignores_unpublished_drafts() {
     let pool = migrated_pool("timetable_version_source_update_guard").await;
     // This exercises the current change-set service, including revision audience ownership.
     school_test_db::run_test_migrations(&pool).await;
@@ -309,10 +309,28 @@ async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_
     )
     .await
     .unwrap();
-    let failure=school_academic_timetable::services::timetable_lifecycle::update_source(&pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor),cloned.id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {
-        row_version:cloned.row_version,delivery_version_id:opening.target_delivery_version_id
-    }).await.unwrap_err();
-    assert!(matches!(failure, AppError::ValidationError(_)));
+    use school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest;
+    assert!(
+        serde_json::from_value::<UpdateTimetableDeliverySourceRequest>(serde_json::json!({
+            "rowVersion":cloned.row_version,"deliveryVersionId":opening.target_delivery_version_id
+        }))
+        .is_err(),
+        "a client cannot select even a same-term opening UUID"
+    );
+    let aligned = school_academic_timetable::services::timetable_lifecycle::update_source(
+        &pool,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
+        cloned.id,
+        UpdateTimetableDeliverySourceRequest {
+            row_version: cloned.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(aligned.delivery_version_id, source.delivery_version_id);
+    assert_eq!(aligned.row_version, cloned.row_version);
     let unchanged = timetable_version_service::get_version(&pool, cloned.id, date)
         .await
         .unwrap();

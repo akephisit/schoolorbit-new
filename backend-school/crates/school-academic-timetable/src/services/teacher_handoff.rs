@@ -231,7 +231,7 @@ async fn apply_in_permit(
 
     // Completed retries above only return retained receipts. New mutations must
     // take the academic boundary before locking the change set or timetable.
-    super::timetable_version_service::require_version_term_write(
+    super::timetable_version_service::require_current_draft_write(
         &mut transaction,
         request.timetable_version_id,
     )

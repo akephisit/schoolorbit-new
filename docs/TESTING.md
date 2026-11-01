@@ -530,7 +530,7 @@ migration and concurrent writers against disposable PostgreSQL using:
 
 The focused `zero_` version cases cover courses plus independent and synchronized activities:
 zero demand preserves catalog, groups, teachers, rosters, evaluations/results and published history;
-existing lessons survive explicit source adoption and must be removed before publication. Both
+existing lessons survive latest-source alignment and must be removed before publication. Both
 ordinary and synchronized creation reject zero-demand placements. The HTTP case verifies zero
 acceptance, negative rejection, management scope and stale revisions. The manual-opening fixture
 also checks explicit zero inclusion; opening defaults are not inferred from curriculum hours.
@@ -747,6 +747,16 @@ For published-to-draft cloning under the runtime database role, run
 `./scripts/test_backend_school.sh --integration timetable_clone_runtime_permissions -- --test-threads=1`.
 The fixture owns a separate disposable database, denies runtime TEMP/schema creation, and checks
 the complete copied child graph, other-term isolation, resume/stale revisions, audit and rollback.
+
+Latest-opening draft regressions additionally exercise the existing `timetable_version_service_tests`,
+`timetable_block_service_tests` and real `timetable_collaboration_tests` filters. They must prove
+rowVersion-only source alignment, school Manager/Publisher scope without other editing grants,
+unchanged full child rows and published/origin pins, ExistingPermit resumption, no-op epoch
+stability, obsolete-source refusal before new writes/publication, source changes while queued,
+conflicting leases, revoked authority, cancellation, exact accepted replay and future-date/history
+guards. Read-only stale workspaces remain truthful and perform no alignment writes. Run API
+generation/check and the affected contract tests when changing these DTOs; generated files are
+never edited by hand.
 
 The cross-language native-frame regression requires the Node version pinned in the root
 `.node-version` on `PATH`. It imports the actual TypeScript decoder using built-in type stripping;

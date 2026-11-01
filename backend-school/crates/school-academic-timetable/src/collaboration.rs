@@ -23,6 +23,7 @@ use crate::models::timetable_block::{
 use crate::policy::{TimetableAccessFilter, TimetableVisibility};
 
 pub use authority::{CommitPermit, MutationScope};
+pub(crate) use mutation::LifecycleOutcome;
 pub use mutation::{
     CreationPermit, MutationAuthorizationPort, TimetableMutationContext, VersionMutationPermit,
 };

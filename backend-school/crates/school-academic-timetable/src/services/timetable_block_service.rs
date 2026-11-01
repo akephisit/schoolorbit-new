@@ -18,7 +18,7 @@ use school_errors::AppError;
 use super::timetable_block_conflicts::{canonical_ids, map_write_error, normalize_day};
 use super::timetable_block_queries;
 use super::timetable_block_sync;
-use super::timetable_version_service::require_version_term_write;
+use super::timetable_version_service::require_current_draft_write;
 
 #[derive(Debug, FromRow)]
 struct VersionContext {
@@ -1484,7 +1484,7 @@ async fn ensure_draft_version_id(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
 ) -> Result<(), AppError> {
-    require_version_term_write(transaction, version_id).await?;
+    require_current_draft_write(transaction, version_id).await?;
     let editable: bool = DbSession::new(&mut **transaction)
         .scalar(
             "academic_timetable.services.timetable_block_service.ensure_draft_version_id",
@@ -1613,7 +1613,7 @@ async fn lock_draft_version(
     academic_term_id: Uuid,
     period_id: Uuid,
 ) -> Result<VersionContext, AppError> {
-    require_version_term_write(transaction, version_id).await?;
+    require_current_draft_write(transaction, version_id).await?;
     let version: VersionContext = DbSession::new(&mut **transaction)
         .query_as(
             "academic_timetable.services.timetable_block_service.lock_draft_version",

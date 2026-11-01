@@ -177,6 +177,14 @@ impl DraftRoom {
         if !state.valid {
             return Err(stale());
         }
+        if !matches!(&scope, MutationScope::WholeDraft)
+            && state.workspace.version.delivery_version_id
+                != state.workspace.latest_delivery_version_id
+        {
+            return Err(AppError::Conflict(
+                "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
+            ));
+        }
         let expected_purpose = match &scope {
             MutationScope::Blocks(_) | MutationScope::Series(_) => {
                 Some(DraftReservationPurpose::Edit)
@@ -977,6 +985,16 @@ pub(super) fn lease_command(
         lease_token: None,
         expires_at: None,
     };
+    if !matches!(&command, DraftClientMessage::ClientRelease(_))
+        && state.workspace.version.delivery_version_id != state.workspace.latest_delivery_version_id
+    {
+        result.code = Some("delivery_source_outdated".into());
+        return Ok(vec![DraftEventEnvelope {
+            epoch: state.epoch,
+            seq: state.seq,
+            event: DraftServerMessage::DraftCommandResult(result),
+        }]);
+    }
     match command {
         DraftClientMessage::ClientClaim(claim) => {
             result.source = Some(claim.source.clone());

@@ -5209,6 +5209,22 @@ mod tests {
         );
         let schemas = &document["components"]["schemas"];
         assert!(required(&schemas["TimetableVersion"]).contains(&"deliveryVersionId"));
+        let alignment = &schemas["UpdateTimetableDeliverySourceRequest"];
+        assert_eq!(required(alignment), vec!["rowVersion"]);
+        assert_eq!(alignment["properties"].as_object().unwrap().len(), 1);
+        assert_eq!(alignment["properties"]["rowVersion"]["type"], "integer");
+        assert_eq!(alignment["properties"]["rowVersion"]["format"], "int64");
+        assert_eq!(alignment["additionalProperties"], false);
+        let preview = &schemas["TimetablePublicationPreview"];
+        assert!(preview["properties"]
+            .get("applicableDeliveryPublication")
+            .is_none());
+        assert!(required(preview).contains(&"deliveryPublication"));
+        assert!(required(preview).contains(&"latestDeliveryPublication"));
+        assert!(schemas["TimetablePublicationFindingCode"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("delivery_source_outdated")));
         assert!(schemas["TimetableVersion"]["properties"]["changeSetId"].is_null());
         assert!(
             schemas["AcademicTermChangeSet"]["properties"]["targetTimetableVersionId"].is_null()

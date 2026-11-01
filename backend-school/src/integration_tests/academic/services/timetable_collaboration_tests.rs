@@ -281,6 +281,369 @@ async fn grant(pool: &sqlx::PgPool, actor: Uuid, codes: &[&str]) {
         .unwrap();
 }
 
+async fn publish_newer_opening(fixture: &Fixture) -> Uuid {
+    use school_academic_delivery::{
+        models::*,
+        services::{change_sets, versions},
+    };
+    let pool = &fixture.auth.tenant_a_pool;
+    let actor = Uuid::parse_str(ACTOR).unwrap();
+    let revision = change_sets::create_change_set(
+        pool,
+        actor,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: fixture.term,
+            reason: "New opening for latest-source authority".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let base = versions::get_version(pool, revision.base_delivery_version_id.unwrap())
+        .await
+        .unwrap();
+    let offering = base.snapshot.offerings.first().unwrap();
+    let changed = change_sets::upsert_change_item(
+        pool,
+        actor,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: revision.row_version,
+            item_row_version: None,
+            learning_offering_id: offering.id,
+            weekly_period_target: offering.weekly_period_target + 1,
+        },
+    )
+    .await
+    .unwrap();
+    let date = school_academic_timetable::services::timetable_version_service::bangkok_today()
+        + chrono::Duration::days(3);
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        pool,
+        changed.id,
+        Some(date),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+        pool,
+        actor,
+        changed.id,
+        PublishAcademicTermChangeSetRequest {
+            effective_from: date,
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: preview
+                .findings
+                .iter()
+                .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+                .map(|finding| finding.code)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    .target_delivery_version_id
+}
+
+#[tokio::test]
+async fn publisher_only_http_latest_source_alignment_preserves_children_and_other_permissions() {
+    let fixture = Fixture::new("collaboration_publisher_latest_source").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let publisher = fixture
+        .auth
+        .insert_user(pool, "latest-source-publisher", "active")
+        .await;
+    grant(pool, publisher, &["academic_timetable.publish.school"]).await;
+    let (session, token) = fixture
+        .auth
+        .insert_session(pool, publisher, 241, false)
+        .await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let csrf = fixture.auth.csrf(session);
+    let request = |method: reqwest::Method, path: String, body: Value| {
+        reqwest::Client::new()
+            .request(method, format!("http://{}{}", fixture.address, path))
+            .header("origin", "http://localhost:5173")
+            .header("x-school-subdomain", "tenant-a")
+            .header("cookie", &cookie)
+            .header("x-csrf-token", &csrf)
+            .json(&body)
+    };
+    let latest = publish_newer_opening(&fixture).await;
+    let (mut socket, sync) = fixture.socket_with_cookie(&cookie).await;
+    let source = uuid(&sync["payload"]["workspace"]["version"]["deliveryVersionId"]);
+    let row = sync["payload"]["workspace"]["version"]["rowVersion"]
+        .as_i64()
+        .unwrap();
+    let origin = sync["payload"]["workspace"]["version"]["sourceVersionId"].clone();
+    assert_ne!(source, latest);
+    assert_eq!(
+        uuid(&sync["payload"]["workspace"]["latestDeliveryPublication"]["id"]),
+        latest
+    );
+    let child_facts = || async {
+        sqlx::query_scalar::<_,Value>("SELECT jsonb_build_object(\
+          'blocks',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_blocks x),\
+          'groups',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_groups x),\
+          'instructors',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_group_instructors x),\
+          'homerooms',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_homerooms x),\
+          'teachers',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_teachers x),\
+          'sync',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM academic_timetable_block_group_sync x))").fetch_one(pool).await.unwrap()
+    };
+    let children = child_facts().await;
+    let path = format!(
+        "/api/academic/timetable-versions/{}/delivery-source",
+        fixture.version
+    );
+    let rejected = request(
+        reqwest::Method::PUT,
+        path.clone(),
+        json!({"rowVersion":row,"deliveryVersionId":source}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(rejected.status(), 422);
+    let rejection = rejected.text().await.unwrap();
+    assert!(
+        rejection.contains("unknown field `deliveryVersionId`"),
+        "{rejection}"
+    );
+    for (index, (label, codes)) in [
+        ("reader", vec!["academic_timetable.read.school"]),
+        (
+            "scoped",
+            vec![
+                "academic_timetable.read.school",
+                "academic_timetable.manage.assigned",
+            ],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let actor = fixture
+            .auth
+            .insert_user(pool, &format!("latest-source-{label}"), "active")
+            .await;
+        grant(pool, actor, &codes).await;
+        let (session, token) = fixture
+            .auth
+            .insert_session(pool, actor, 242 + index as u8, false)
+            .await;
+        let denied = reqwest::Client::new()
+            .put(format!("http://{}{}", fixture.address, path))
+            .header("origin", "http://localhost:5173")
+            .header("x-school-subdomain", "tenant-a")
+            .header(
+                "cookie",
+                format!(
+                    "__Host-schoolorbit_session={}",
+                    token.encode().expose_for_cookie()
+                ),
+            )
+            .header("x-csrf-token", fixture.auth.csrf(session))
+            .json(&json!({"rowVersion":row}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), 403, "{}", denied.text().await.unwrap());
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1"
+        )
+        .bind(fixture.version)
+        .fetch_one(pool)
+        .await
+        .unwrap(),
+        source,
+        "read-only StateSync and denied requests leave the persisted source untouched"
+    );
+    let aligned = request(
+        reqwest::Method::PUT,
+        path.clone(),
+        json!({"rowVersion":row}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(aligned.status(), 200, "{}", aligned.text().await.unwrap());
+    let aligned: Value = aligned.json().await.unwrap();
+    let revision = aligned["data"]["rowVersion"].as_i64().unwrap();
+    assert_eq!(revision, row + 1);
+    assert_eq!(uuid(&aligned["data"]["deliveryVersionId"]), latest);
+    assert_eq!(aligned["data"]["sourceVersionId"], origin);
+    assert_eq!(children, child_facts().await);
+    event(&mut socket, "DraftReconcileRequired").await;
+    socket.close(None).await.unwrap();
+    let (mut fresh, fresh_sync) = fixture.socket_with_cookie(&cookie).await;
+    assert_ne!(fresh_sync["epoch"], sync["epoch"]);
+    assert_eq!(
+        uuid(&fresh_sync["payload"]["workspace"]["deliveryPublication"]["id"]),
+        latest
+    );
+    let retained = fixture.room();
+    let no_op = request(
+        reqwest::Method::PUT,
+        path.clone(),
+        json!({"rowVersion":revision}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(no_op.status(), 200, "{}", no_op.text().await.unwrap());
+    let no_op: Value = no_op.json().await.unwrap();
+    assert_eq!(no_op["data"]["rowVersion"], revision);
+    assert!(Arc::ptr_eq(&retained, &fixture.room()));
+    let forbidden=request(reqwest::Method::PUT,format!("/api/academic/timetable-blocks/{}",fixture.block.id),json!({"timetableVersionId":fixture.version,"rowVersion":fixture.block.row_version,"note":"publisher must not edit"})).send().await.unwrap();
+    assert_eq!(
+        forbidden.status(),
+        403,
+        "{}",
+        forbidden.text().await.unwrap()
+    );
+    let forbidden = request(
+        reqwest::Method::POST,
+        "/api/academic/timetable-versions".into(),
+        json!({"academicTermId":fixture.term}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(
+        forbidden.status(),
+        403,
+        "{}",
+        forbidden.text().await.unwrap()
+    );
+    let forbidden = request(
+        reqwest::Method::POST,
+        format!(
+            "/api/academic/timetable-versions/{}/delete-draft",
+            fixture.version
+        ),
+        json!({"rowVersion":revision,"expectedBlockCount":2}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(
+        forbidden.status(),
+        403,
+        "{}",
+        forbidden.text().await.unwrap()
+    );
+    let source_id = uuid(&origin);
+    let source_revision: i64 =
+        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id=$1")
+            .bind(source_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let published = request(
+        reqwest::Method::PUT,
+        format!("/api/academic/timetable-versions/{source_id}/delivery-source"),
+        json!({"rowVersion":source_revision}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(
+        published.status(),
+        409,
+        "{}",
+        published.text().await.unwrap()
+    );
+    let (count,actor):(i64,Uuid)=sqlx::query_as("SELECT count(*),min(actor_user_id::text)::uuid FROM academic_audit_events WHERE event_code='academic_timetable_version.source_updated' AND entity_id=$1").bind(fixture.version).fetch_one(pool).await.unwrap();
+    assert_eq!((count, actor), (1, publisher));
+    assert_eq!(children, child_facts().await);
+    fresh.close(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn queued_latest_source_alignment_revalidates_the_publishers_authorization_generation() {
+    let fixture = Fixture::new("collaboration_queued_alignment_generation").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let publisher = fixture
+        .auth
+        .insert_user(pool, "queued-source-publisher", "active")
+        .await;
+    grant(pool, publisher, &["academic_timetable.publish.school"]).await;
+    let (session, token) = fixture
+        .auth
+        .insert_session(pool, publisher, 244, false)
+        .await;
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let (mut socket, sync) = fixture.socket_with_cookie(&cookie).await;
+    let room = fixture.room();
+    let gate = room.mutation_gate().await;
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1")
+            .bind(fixture.version)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let request = reqwest::Client::new()
+        .put(format!(
+            "http://{}/api/academic/timetable-versions/{}/delivery-source",
+            fixture.address, fixture.version
+        ))
+        .header("origin", "http://localhost:5173")
+        .header("x-school-subdomain", "tenant-a")
+        .header("cookie", cookie)
+        .header("x-csrf-token", fixture.auth.csrf(session))
+        .json(&json!({"rowVersion":sync["payload"]["workspace"]["version"]["rowVersion"]}));
+    let worker = tokio::spawn(async move { request.send().await.unwrap() });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while Arc::strong_count(&room) < 4 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    fixture
+        .auth
+        .runtime
+        .invalidate_permission_user("tenant-a", publisher);
+    drop(gate);
+    let response = worker.await.unwrap();
+    assert_eq!(response.status(), 403, "{}", response.text().await.unwrap());
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1"
+        )
+        .bind(fixture.version)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    );
+    socket.close(None).await.unwrap();
+}
+
 async fn event(socket: &mut Socket, kind: &str) -> Value {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -1359,7 +1722,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
     )
     .await
     .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,}).await.unwrap();
 
     sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT(homeroom_id,user_id) DO NOTHING").bind(homeroom_id).bind(scoped_actor).execute(pool).await.unwrap();
     grant(
@@ -1675,7 +2038,6 @@ async fn all_draft_bulk_lifecycle_and_resume_owners_observe_the_same_active_rese
     let row = sync["payload"]["workspace"]["version"]["rowVersion"]
         .as_i64()
         .unwrap();
-    let delivery = uuid(&sync["payload"]["workspace"]["version"]["deliveryVersionId"]);
     let source = uuid(&sync["payload"]["workspace"]["version"]["sourceVersionId"]);
     let source_row: i64 =
         sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id=$1")
@@ -1718,10 +2080,7 @@ async fn all_draft_bulk_lifecycle_and_resume_owners_observe_the_same_active_rese
             pool,
             &context,
             fixture.version,
-            UpdateTimetableDeliverySourceRequest {
-                row_version: row,
-                delivery_version_id: delivery,
-            },
+            UpdateTimetableDeliverySourceRequest { row_version: row },
         )
         .await,
     );

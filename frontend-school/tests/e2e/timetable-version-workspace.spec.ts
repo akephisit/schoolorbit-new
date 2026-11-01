@@ -144,20 +144,11 @@ test('keeps compact context filters in the top desktop header row', async ({ pag
 	}
 });
 
-test('notifies of a newer opening without changing an in-progress draft and keeps review placements', async ({
-	page
-}) => {
+test('aligns a newer opening during editing and keeps all review placements', async ({ page }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, { blocks: [block] });
 	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await expect(page.getByText(/ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่/)).toHaveCount(0);
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	mock.publishNewOpening();
-	await revalidatePage(page);
-	await expect(
-		page.getByText('ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม')
-	).toBeVisible();
-	expect(mock.sourceUpdateRequestCount()).toBe(0);
 	mock.setSourceIssues([
 		{
 			blockId: block.id,
@@ -166,10 +157,12 @@ test('notifies of a newer opening without changing an in-progress draft and keep
 			code: 'ineligible_instructor'
 		}
 	]);
-	await page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true }).click();
+	mock.publishNewOpening();
 	await expect(page.getByText(/มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่/)).toBeVisible();
 	await expect(page.locator('article[data-block-id]')).toHaveCount(1);
-	expect(mock.sourceUpdateRequestCount()).toBe(1);
+	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
+	expect(mock.workspace().version.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
+	expect(mock.blocks()).toEqual([block]);
 });
 
 test('deletes only a confirmed draft then returns to its source', async ({ page }) => {
@@ -313,42 +306,49 @@ for (const viewport of [
 	}
 }
 
-test('Edit preserves a future source and publication explicitly adopts the dated source', async ({
+test('Edit aligns an old source to latest, preserving blocks and defaulting to its future start', async ({
 	page
 }) => {
-	const draft = {
-		...makeTimetableVersion('draft'),
-		deliveryVersionId: timetableIds.newDeliveryVersion
-	};
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, {
-		versions: [makeTimetableVersion('published'), draft],
+		blocks: [block],
 		deliveryPublications: [
 			makeDeliveryPublication(),
 			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
 		]
 	});
 	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toBeVisible();
+	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
+	expect(mock.blocks()).toEqual([block]);
 	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
 	await expect(
 		dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true })
-	).toContainText('1 พ.ย. 2569');
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'ใช้รุ่นที่มีผลในวันที่เลือก', exact: true }).click();
-	expect(mock.sourceUpdateRequestCount()).toBe(1);
-	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 1');
+	).toContainText('5 พ.ย. 2569');
 	await expect(
 		dialog.getByRole('button', { name: 'ใช้รุ่นที่มีผลในวันที่เลือก', exact: true })
 	).toHaveCount(0);
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
 	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
 	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-	await dialog.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
-	expect(mock.publicationRequestCount()).toBe(1);
+	expect(mock.sourceUpdateRequestCount()).toBe(1);
+	await dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true }).click();
+	await page.getByRole('button', { name: 'วันอาทิตย์ที่ 1 พฤศจิกายน 2569', exact: true }).click();
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
+	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
+	await dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true }).click();
+	await page.getByRole('button', { name: 'วันศุกร์ที่ 6 พฤศจิกายน 2569', exact: true }).click();
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+	await expect(
+		dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true })
+	).toContainText('6 พ.ย. 2569');
+	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
+	expect(mock.sourceUpdateRequestCount()).toBe(1);
 });
 
 test('same-day published versions retain distinct numbers and superseded history stays accessible', async ({
@@ -398,25 +398,24 @@ test('changing the timetable date invalidates readiness without altering the sel
 	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
 });
 
-test('publication permission alone cannot adopt a different opening source', async ({ page }) => {
-	await installTimetableMock(page, {
+test('publication permission alone aligns latest on publication entry without child edit rights', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page, {
 		permissions: ['academic_timetable.read.school', 'academic_timetable.publish.school'],
-		versions: [
-			makeTimetableVersion('published'),
-			{ ...makeTimetableVersion('draft'), deliveryVersionId: timetableIds.newDeliveryVersion }
-		],
 		deliveryPublications: [
 			makeDeliveryPublication(),
 			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
 		]
 	});
 	await page.goto(timetableUrl(timetableIds.draftVersion));
+	expect(mock.sourceUpdateRequestCount()).toBe(0);
+	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
+	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
 	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog).toContainText('รุ่นเปิดสอนที่มีผลในวันที่เลือก:');
-	await expect(
-		dialog.getByRole('button', { name: 'ใช้รุ่นที่มีผลในวันที่เลือก', exact: true })
-	).toHaveCount(0);
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
+	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
+	expect(mock.updateRequestCount()).toBe(0);
 });

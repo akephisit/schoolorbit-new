@@ -11,7 +11,7 @@ use crate::models::timetable::{
 };
 use school_errors::AppError;
 
-use super::timetable_version_service::require_version_term_write;
+use super::timetable_version_service::require_current_draft_write;
 use super::{timetable_block_conflicts::map_write_error, timetable_block_queries};
 
 #[derive(Debug, FromRow)]
@@ -398,7 +398,7 @@ async fn apply_template_in_permit(
         "academic_timetable.services.timetable_template_service.apply_template",
     )
     .await?;
-    require_version_term_write(&mut transaction, request.timetable_version_id).await?;
+    require_current_draft_write(&mut transaction, request.timetable_version_id).await?;
     let (academic_year_id, bell_schedule_id, delivery_version_id): (
         Uuid,
         Uuid,
@@ -732,7 +732,7 @@ async fn clear_timetable_in_permit(
         "academic_timetable.services.timetable_template_service.clear_timetable",
     )
     .await?;
-    require_version_term_write(&mut transaction, request.timetable_version_id).await?;
+    require_current_draft_write(&mut transaction, request.timetable_version_id).await?;
     let is_draft: bool = DbSession::new(&mut *transaction)
         .scalar(
             "academic_timetable.services.timetable_template_service.clear_timetable",

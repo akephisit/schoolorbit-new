@@ -658,7 +658,7 @@ pub(crate) async fn get_canonical_workspace(
         .into_iter()
         .collect::<Vec<_>>();
     let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
-    let publication_date_rules =
+    let mut publication_date_rules =
         school_academic_delivery::services::publication::date_rules_on_connection(
             connection,
             query.academic_term_id,
@@ -671,6 +671,15 @@ pub(crate) async fn get_canonical_workspace(
             latest_delivery_version_id,
         )
         .await?;
+    if version.status == school_academic_core::models::TimetableVersionStatus::Draft {
+        publication_date_rules.minimum_effective_from = Some(
+            publication_date_rules
+                .minimum_effective_from
+                .map_or(latest_delivery_publication.effective_from, |minimum| {
+                    minimum.max(latest_delivery_publication.effective_from)
+                }),
+        );
+    }
     let visibility = crate::policy::TimetableVisibility {
         source: source.snapshot,
         homeroom_advisors,

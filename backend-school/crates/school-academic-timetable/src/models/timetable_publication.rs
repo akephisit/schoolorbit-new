@@ -30,6 +30,7 @@ pub struct PublishTimetableVersionRequest {
 pub enum TimetablePublicationFindingCode {
     InvalidDate,
     ConsumedHistoryConflict,
+    DeliverySourceOutdated,
     DeliveryDateMismatch,
     NoContentChange,
     SourceNeedsReview,
@@ -62,9 +63,6 @@ pub struct TimetablePublicationPreview {
         school_academic_delivery::models::versions::DeliveryPublicationContext,
     pub latest_delivery_publication:
         school_academic_delivery::models::versions::DeliveryPublicationContext,
-    #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub applicable_delivery_publication:
-        Option<school_academic_delivery::models::versions::DeliveryPublicationContext>,
     pub timetable_version_id: Uuid,
     pub row_version: i64,
     pub delivery_version_id: Uuid,

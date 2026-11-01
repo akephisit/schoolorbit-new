@@ -19707,16 +19707,6 @@
         "properties": {
           "data": {
             "properties": {
-              "applicableDeliveryPublication": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/DeliveryPublicationContext"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "blockCount": {
                 "minimum": 0,
                 "type": "integer"
@@ -19772,7 +19762,6 @@
             "required": [
               "deliveryPublication",
               "latestDeliveryPublication",
-              "applicableDeliveryPublication",
               "timetableVersionId",
               "rowVersion",
               "deliveryVersionId",
@@ -69475,6 +69464,7 @@
         "enum": [
           "invalid_date",
           "consumed_history_conflict",
+          "delivery_source_outdated",
           "delivery_date_mismatch",
           "no_content_change",
           "source_needs_review",
@@ -69488,16 +69478,6 @@
       },
       "TimetablePublicationPreview": {
         "properties": {
-          "applicableDeliveryPublication": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/DeliveryPublicationContext"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "blockCount": {
             "minimum": 0,
             "type": "integer"
@@ -69553,7 +69533,6 @@
         "required": [
           "deliveryPublication",
           "latestDeliveryPublication",
-          "applicableDeliveryPublication",
           "timetableVersionId",
           "rowVersion",
           "deliveryVersionId",
@@ -72426,18 +72405,13 @@
       "UpdateTimetableDeliverySourceRequest": {
         "additionalProperties": false,
         "properties": {
-          "deliveryVersionId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "rowVersion",
-          "deliveryVersionId"
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -95571,7 +95545,7 @@
                 }
               }
             },
-            "description": "Timetable version delivery source updated"
+            "description": "Draft aligned with the latest opening publication; stored placements are preserved"
           },
           "400": {
             "content": {
@@ -95601,7 +95575,7 @@
                 }
               }
             },
-            "description": "Permission denied"
+            "description": "School-wide timetable management or publication permission required"
           },
           "404": {
             "content": {

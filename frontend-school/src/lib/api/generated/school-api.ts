@@ -13944,7 +13944,6 @@ export interface components {
 		};
 		ApiResponse_TimetablePublicationPreview: {
 			data: {
-				applicableDeliveryPublication: components['schemas']['DeliveryPublicationContext'] | null;
 				blockCount: number;
 				canPublish: boolean;
 				contentChanged: boolean;
@@ -27625,6 +27624,7 @@ export interface components {
 		TimetablePublicationFindingCode:
 			| 'invalid_date'
 			| 'consumed_history_conflict'
+			| 'delivery_source_outdated'
 			| 'delivery_date_mismatch'
 			| 'no_content_change'
 			| 'source_needs_review'
@@ -27634,7 +27634,6 @@ export interface components {
 			| 'collision'
 			| 'inactive_resource';
 		TimetablePublicationPreview: {
-			applicableDeliveryPublication: components['schemas']['DeliveryPublicationContext'] | null;
 			blockCount: number;
 			canPublish: boolean;
 			contentChanged: boolean;
@@ -28362,8 +28361,6 @@ export interface components {
 			title?: string | null;
 		};
 		UpdateTimetableDeliverySourceRequest: {
-			/** Format: uuid */
-			deliveryVersionId: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};
@@ -45167,7 +45164,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Timetable version delivery source updated */
+			/** @description Draft aligned with the latest opening publication; stored placements are preserved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45194,7 +45191,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Permission denied */
+			/** @description School-wide timetable management or publication permission required */
 			403: {
 				headers: {
 					[name: string]: unknown;

@@ -1,7 +1,6 @@
-use crate::collaboration::{CreationPermit, TimetableMutationContext, VersionMutationPermit};
+use crate::collaboration::{LifecycleOutcome, TimetableMutationContext, VersionMutationPermit};
 use school_database::DbSession;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -62,7 +61,6 @@ struct TimetableVersionRow {
 
 #[derive(Debug, Clone, FromRow)]
 struct CloneSourceRow {
-    delivery_version_id: Uuid,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -282,18 +280,47 @@ pub async fn create_initial_draft(
     context: &TimetableMutationContext,
     request: CreateTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
-    context
-        .execute_creation(pool, move |pool, permit| async move {
-            create_initial_draft_in_permit(&pool, permit, request).await
-        })
-        .await
+    let drafts: Vec<Uuid> = {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool, "academic_timetable.services.timetable_version_service.create_initial_draft.resolve_destination",
+        ).await?;
+        DbSession::new(&mut connection).scalar("academic_timetable.services.timetable_version_service.create_initial_draft.resolve_destination",
+            "SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at,id")
+            .bind(request.academic_term_id).fetch_all().await?
+    };
+    if let [id] = drafts.as_slice() {
+        context
+            .execute_lifecycle_outcome(pool, *id, move |pool, permit| async move {
+                create_initial_draft_in_permit(
+                    &pool,
+                    VersionMutationPermit::Existing(permit),
+                    request,
+                )
+                .await
+            })
+            .await
+    } else {
+        context
+            .execute_creation(pool, move |pool, permit| async move {
+                let outcome = create_initial_draft_in_permit(
+                    &pool,
+                    VersionMutationPermit::Creation(permit),
+                    request,
+                )
+                .await?;
+                Ok(match outcome {
+                    LifecycleOutcome::Changed(value) | LifecycleOutcome::Unchanged(value) => value,
+                })
+            })
+            .await
+    }
 }
 
 async fn create_initial_draft_in_permit(
     pool: &PgPool,
-    permit: Arc<CreationPermit>,
+    permit: VersionMutationPermit,
     request: CreateTimetableVersionRequest,
-) -> Result<TimetableVersion, AppError> {
+) -> Result<LifecycleOutcome<TimetableVersion>, AppError> {
     let actor = permit.actor_id();
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -320,16 +347,24 @@ async fn create_initial_draft_in_permit(
             "มีตารางที่เผยแพร่แล้ว กรุณาเปิดรุ่นต้นทางแล้วกดแก้ไข".into(),
         ));
     }
-    let drafts: Vec<Uuid> = DbSession::new(&mut *tx).scalar("academic_timetable.services.timetable_version_service.create_initial_draft", "SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
+    let drafts: Vec<(Uuid,i64)> = DbSession::new(&mut *tx).query_as("academic_timetable.services.timetable_version_service.create_initial_draft", "SELECT id,row_version FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
         .bind(request.academic_term_id).fetch_all().await?;
     if drafts.len() > 1 {
         return Err(AppError::Conflict(
             "มีหลายแบบร่าง กรุณาเลือกแบบร่างที่จะจัดต่อ".into(),
         ));
     }
-    let id = if let Some(id) = drafts.first() {
-        *id
+    let (id, changed) = if let Some((id, revision)) = drafts.first() {
+        let changed =
+            super::timetable_lifecycle::align_resumed_source(&mut tx, &permit, *id, *revision)
+                .await?;
+        (*id, changed)
     } else {
+        if matches!(&permit, VersionMutationPermit::Existing(_)) {
+            return Err(AppError::Conflict(
+                "แบบร่างที่เลือกถูกลบแล้ว กรุณาโหลดข้อมูลใหม่".into(),
+            ));
+        }
         let delivery = school_academic_delivery::services::versions::latest_published_id(
             &mut tx,
             request.academic_term_id,
@@ -340,11 +375,15 @@ async fn create_initial_draft_in_permit(
             .bind(id).bind(request.academic_term_id).bind(year).bind(delivery).bind(bell).bind(actor).execute().await?;
         DbSession::new(&mut *tx).query("academic_timetable.services.timetable_version_service.create_initial_draft", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.draft_created','academic_timetable_version',$1,$2,$3,$4,$5)")
             .bind(id).bind(year).bind(request.academic_term_id).bind(actor).bind(serde_json::json!({"deliveryVersionId":delivery})).execute().await?;
-        id
+        (id, true)
     };
     let version = get_version_on_connection(&mut tx, id, bangkok_today()).await?;
     permit.commit(tx).await?;
-    Ok(version)
+    Ok(if changed {
+        LifecycleOutcome::Changed(version)
+    } else {
+        LifecycleOutcome::Unchanged(version)
+    })
 }
 
 pub async fn clone_draft(
@@ -366,7 +405,7 @@ pub async fn clone_draft(
         .or_else(|| (existing.len() == 1).then(|| existing[0]));
     if let Some(id) = target {
         context
-            .execute_lifecycle(pool, id, move |pool, permit| async move {
+            .execute_lifecycle_outcome(pool, id, move |pool, permit| async move {
                 clone_draft_in_permit(
                     &pool,
                     VersionMutationPermit::Existing(permit),
@@ -379,13 +418,16 @@ pub async fn clone_draft(
     } else {
         context
             .execute_creation(pool, move |pool, permit| async move {
-                clone_draft_in_permit(
+                let outcome = clone_draft_in_permit(
                     &pool,
                     VersionMutationPermit::Creation(permit),
                     source_id,
                     request,
                 )
-                .await
+                .await?;
+                Ok(match outcome {
+                    LifecycleOutcome::Changed(value) | LifecycleOutcome::Unchanged(value) => value,
+                })
             })
             .await
     }
@@ -396,16 +438,21 @@ async fn clone_draft_in_permit(
     permit: VersionMutationPermit,
     source_id: Uuid,
     request: CloneTimetableVersionRequest,
-) -> Result<TimetableVersion, AppError> {
+) -> Result<LifecycleOutcome<TimetableVersion>, AppError> {
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_version_service.clone_draft",
     )
     .await?;
-    let id = clone_draft_in_transaction(&mut transaction, &permit, source_id, request).await?;
+    let (id, changed) =
+        clone_draft_in_transaction(&mut transaction, &permit, source_id, request).await?;
     let result = get_version_on_connection(&mut transaction, id, bangkok_today()).await?;
     permit.commit(transaction).await?;
-    Ok(result)
+    Ok(if changed {
+        LifecycleOutcome::Changed(result)
+    } else {
+        LifecycleOutcome::Unchanged(result)
+    })
 }
 
 /// Coordinate before version/block locks. Resolve immutable IDs without row
@@ -434,12 +481,38 @@ pub(crate) async fn require_version_term_write(
         .require_writable()
 }
 
-pub async fn clone_draft_in_transaction(
+/// Content decisions hold the term before reading the latest publication and the draft.
+/// Alignment and deletion intentionally use the independent lifecycle write guard.
+pub(crate) async fn require_current_draft_write(
+    transaction: &mut Transaction<'_, Postgres>,
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    require_version_term_write(transaction, version_id).await?;
+    let (term, source, status): (Uuid, Uuid, TimetableVersionStatus) = DbSession::new(&mut **transaction)
+        .query_as("academic_timetable.services.timetable_version_service.require_current_draft_write",
+            "SELECT academic_term_id,delivery_version_id,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE")
+        .bind(version_id).fetch_optional().await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".into()))?;
+    if status != TimetableVersionStatus::Draft {
+        return Err(AppError::Conflict("แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่าง".into()));
+    }
+    let latest =
+        school_academic_delivery::services::versions::latest_published_id(transaction, term)
+            .await?;
+    if source != latest {
+        return Err(AppError::Conflict(
+            "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn clone_draft_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     permit: &VersionMutationPermit,
     source_id: Uuid,
     request: CloneTimetableVersionRequest,
-) -> Result<Uuid, AppError> {
+) -> Result<(Uuid, bool), AppError> {
     let actor_id = permit.actor_id();
     let source_row_version = request.source_row_version;
     if source_row_version <= 0 {
@@ -452,7 +525,7 @@ pub async fn clone_draft_in_transaction(
     let source: CloneSourceRow = DbSession::new(&mut **transaction)
         .query_as(
             "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
-            r#"SELECT source.delivery_version_id,source.id,
+            r#"SELECT source.id,
                   source.academic_term_id,
                   source.academic_year_id,
                   source.status,
@@ -480,7 +553,11 @@ pub async fn clone_draft_in_transaction(
             source_row_version, source.row_version
         )));
     }
-    let delivery_version_id = source.delivery_version_id;
+    let delivery_version_id = school_academic_delivery::services::versions::latest_published_id(
+        transaction,
+        source.academic_term_id,
+    )
+    .await?;
     let drafts: Vec<(Uuid, i64)> = DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "SELECT id,row_version FROM academic_timetable_versions WHERE source_version_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
         .bind(source.id).fetch_all().await?;
     let resume = match request.resume_draft_id {
@@ -506,7 +583,10 @@ pub async fn clone_draft_in_transaction(
         {
             return Err(AppError::Conflict("แบบร่างถูกแก้ไข กรุณาโหลดข้อมูลใหม่".into()));
         }
-        return Ok(id);
+        let changed =
+            super::timetable_lifecycle::align_resumed_source(transaction, permit, id, revision)
+                .await?;
+        return Ok((id, changed));
     }
 
     if matches!(permit, VersionMutationPermit::Existing(_)) {
@@ -748,7 +828,7 @@ pub async fn clone_draft_in_transaction(
     DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.draft_created','academic_timetable_version',$1,$2,$3,$4,$5)")
         .bind(new_version_id).bind(source.academic_year_id).bind(source.academic_term_id).bind(actor_id)
         .bind(sqlx::types::Json(serde_json::json!({"sourceVersionId":source.id,"deliveryVersionId":delivery_version_id,"copiedBlockCount":cloned_block_count}))).execute().await?;
-    Ok(new_version_id)
+    Ok((new_version_id, true))
 }
 
 pub async fn get_version(

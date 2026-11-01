@@ -14,6 +14,18 @@ use crate::models::collaboration::DraftMutationIdentity;
 use crate::models::timetable_block::TimetableBlock;
 use crate::ports::StaffDirectoryPort;
 
+/// A lifecycle owner may retain the room only after proving no persisted change.
+pub(crate) enum LifecycleOutcome<T> {
+    Changed(T),
+    Unchanged(T),
+}
+
+struct OperationOutcome<T> {
+    value: T,
+    blocks: Vec<TimetableBlock>,
+    lifecycle_changed: bool,
+}
+
 #[async_trait]
 pub trait MutationAuthorizationPort: Send + Sync {
     /// The application revalidates the central session and its accepted authorization scope.
@@ -206,7 +218,14 @@ impl TimetableMutationContext {
             scope,
             false,
             |_| async { Ok(None) },
-            operation,
+            move |pool, permit| async move {
+                let (value, blocks) = operation(pool, permit).await?;
+                Ok(OperationOutcome {
+                    value,
+                    blocks,
+                    lifecycle_changed: false,
+                })
+            },
         )
         .await
     }
@@ -222,13 +241,40 @@ impl TimetableMutationContext {
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, AppError>> + Send + 'static,
     {
+        self.execute_lifecycle_outcome(pool, version_id, move |pool, permit| async move {
+            Ok(LifecycleOutcome::Changed(operation(pool, permit).await?))
+        })
+        .await
+    }
+
+    pub(crate) async fn execute_lifecycle_outcome<T, F, Fut>(
+        &self,
+        pool: &PgPool,
+        version_id: Uuid,
+        operation: F,
+    ) -> Result<T, AppError>
+    where
+        T: Send + 'static,
+        F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<LifecycleOutcome<T>, AppError>> + Send + 'static,
+    {
         self.execute_inner(
             pool,
             version_id,
             MutationScope::WholeDraft,
             true,
             |_| async { Ok(None) },
-            move |pool, permit| async move { Ok((operation(pool, permit).await?, Vec::new())) },
+            move |pool, permit| async move {
+                let (value, lifecycle_changed) = match operation(pool, permit).await? {
+                    LifecycleOutcome::Changed(value) => (value, true),
+                    LifecycleOutcome::Unchanged(value) => (value, false),
+                };
+                Ok(OperationOutcome {
+                    value,
+                    blocks: Vec::new(),
+                    lifecycle_changed,
+                })
+            },
         )
         .await
     }
@@ -256,7 +302,13 @@ impl TimetableMutationContext {
             MutationScope::WholeDraft,
             true,
             receipt,
-            move |pool, permit| async move { Ok((operation(pool, permit).await?, Vec::new())) },
+            move |pool, permit| async move {
+                Ok(OperationOutcome {
+                    value: operation(pool, permit).await?,
+                    blocks: Vec::new(),
+                    lifecycle_changed: true,
+                })
+            },
         )
         .await
     }
@@ -275,7 +327,7 @@ impl TimetableMutationContext {
         R: FnOnce(PgPool) -> ReceiptFuture + Send + 'static,
         ReceiptFuture: Future<Output = Result<Option<T>, AppError>> + Send + 'static,
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<(T, Vec<TimetableBlock>), AppError>> + Send + 'static,
+        Fut: Future<Output = Result<OperationOutcome<T>, AppError>> + Send + 'static,
     {
         let context = self.clone();
         let pool = pool.clone();
@@ -334,7 +386,11 @@ impl TimetableMutationContext {
                 operation(pool, permit.clone()),
             )
             .await;
-            let (value, blocks) = match outcome {
+            let OperationOutcome {
+                value,
+                blocks,
+                lifecycle_changed,
+            } = match outcome {
                 Ok(Ok(outcome)) => outcome,
                 Ok(Err(error)) => {
                     if permit.possibly_committed() {
@@ -351,7 +407,7 @@ impl TimetableMutationContext {
                     ));
                 }
             };
-            if invalidate {
+            if invalidate && lifecycle_changed {
                 room.invalidate();
             } else if !blocks.is_empty()
                 && room

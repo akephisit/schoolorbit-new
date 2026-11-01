@@ -620,8 +620,8 @@ curriculum workload, credits, groups, teachers, rosters and assessments/results 
 recurring weekly timetable demand becomes zero. Zero does not waive activity evaluation or
 attendance requirements. It does not create weekly timetable-derived attendance sessions.
 Opening defaults stay unchanged; select zero explicitly when an activity has no weekly slot.
-Publish the opening revision and explicitly update a timetable draft's opening source before the
-new target applies there. Existing placed lessons and published history are preserved; remove
+Publish the opening revision; active timetable draft workflows align with the latest opening before
+the new target applies there. Existing placed lessons and published history are preserved; remove
 zero-target lessons from the draft before publishing it.
 
 Migration [143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) also fixes
@@ -1343,6 +1343,16 @@ remain authoritative. A failed/ambiguous COMMIT or unavailable publication inval
 draft and asks clients to reconcile; never retry a possibly committed create automatically. Cold
 recovery waits on the version row before reading its canonical graph. Upstream source and central
 permission changes invalidate retained rooms even when they have no members.
+
+Active timetable drafts align with the term's latest opening publication through the existing
+source-alignment lifecycle operation. School-wide timetable managers or publishers can align;
+scoped managers and readers cannot change the whole draft's source. A read-only or dormant draft
+may truthfully show an older persisted source until an authorized workflow aligns it. Alignment
+preserves all placed lessons and teachers; resolve any remaining source issues explicitly. It never
+rewrites published timetable pins. Changed alignment requires a fresh authorized workspace and
+room epoch after outstanding edits settle; do not force-release another editor's reservation or
+retry an uncertain write. An unchanged alignment does not churn the room. A future latest opening
+can be used for planning, but publication must respect its start and the existing history guards.
 
 A process restart discards roster, leases and replay history and creates a new epoch. Clients join
 with a fresh authorized snapshot; committed timetable data is preserved in PostgreSQL. Do not scale

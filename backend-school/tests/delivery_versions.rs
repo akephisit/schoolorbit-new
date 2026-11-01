@@ -584,7 +584,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
             .await
             .unwrap()
             .delivery_version_id,
-        "a running draft never silently upgrades"
+        "a read-only GET preserves the stored pointer until admitted alignment"
     );
     let reloaded = tables::get_version(&pool, draft.id, chrono::Utc::now().date_naive())
         .await
@@ -597,7 +597,6 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         draft.id,
         UpdateTimetableDeliverySourceRequest {
             row_version: reloaded.row_version,
-            delivery_version_id: receipt.target_delivery_version_id,
         },
     )
     .await
@@ -1242,7 +1241,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
             .await
             .unwrap()
             .delivery_version_id,
-        "a running draft never silently upgrades"
+        "a read-only GET preserves the stored pointer until admitted alignment"
     );
     let reloaded = tables::get_version(&pool, draft.id, chrono::Utc::now().date_naive())
         .await
@@ -1255,7 +1254,6 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         draft.id,
         UpdateTimetableDeliverySourceRequest {
             row_version: reloaded.row_version,
-            delivery_version_id: receipt.target_delivery_version_id,
         },
     )
     .await

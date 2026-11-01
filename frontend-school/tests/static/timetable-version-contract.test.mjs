@@ -92,7 +92,7 @@ test('published timetable revisions and teacher load export remain available aft
 test('placement preview does not disable the active drop target', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(page, /controller\?\.canEdit\s*&&\s*!busy\)/);
+	assert.match(page, /controller\?\.canEdit\s*&&\s*!busy\s*&&\s*sourceCurrent/);
 	assert.doesNotMatch(page, /controller\?\.canEdit\s*&&\s*!busy\s*&&\s*!previewing/);
 });
 
@@ -155,18 +155,22 @@ test('whole-school view derives from the same canonical workspace without a seco
 	assert.doesNotMatch(api, /getWholeSchoolTimetableOverview/);
 });
 
-test('publication source changes remain explicit and date rules come from the owning contract', async () => {
+test('latest alignment uses owner resolution and explicit lifecycle admission, never a dated source choice', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
-	const opening = await read('src/lib/components/learning-delivery/AcademicChangeReadiness.svelte');
-	const edit = page.slice(
-		page.indexOf('async function startEditing'),
-		page.indexOf('async function finishEditing')
+	const loader = await read('src/routes/(app)/staff/academic/timetable/+page.ts');
+	const openapi = JSON.parse(await read('../contracts/openapi/school-api.json'));
+	assert.deepEqual(
+		Object.keys(openapi.components.schemas.UpdateTimetableDeliverySourceRequest.properties),
+		['rowVersion']
 	);
-	assert.doesNotMatch(edit, /updateTimetableDeliverySource/);
-	assert.match(page, /publicationDate = controller.workspace.publicationDateRules.today/);
-	assert.match(opening, /selectedDate = changeSet.publicationDateRules.today/);
-	assert.doesNotMatch(opening, /referenceDate > today/);
-	assert.match(page, /updateDeliverySource\(applicablePublication.id, checkedPublication\)/);
-	assert.match(page, /version.id !== expectedPreview.timetableVersionId/);
-	assert.match(page, /publicationPreview !== expectedPreview/);
+	assert.match(
+		page,
+		/updateTimetableDeliverySource\(version.id,\s*\{\s*rowVersion: version.rowVersion\s*\}\)/
+	);
+	assert.match(page, /const admission = sourceAdmission\(target\)/);
+	assert.match(page, /await waitForSaves\(\)/);
+	assert.match(page, /if \(saveError\) throw/);
+	assert.match(page, /publicationDate = initialTimetablePublicationDate\(target.workspace\)/);
+	assert.doesNotMatch(page, /applicableDeliveryPublication|ใช้รุ่นที่มีผลในวันที่เลือก/);
+	assert.doesNotMatch(loader, /updateTimetableDeliverySource/);
 });

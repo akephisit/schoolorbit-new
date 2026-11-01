@@ -38,6 +38,7 @@ pub enum TimetableAction {
     Read,
     Manage,
     Publish,
+    AlignDeliverySource,
 }
 
 enum ScopedTimetableAction {
@@ -155,6 +156,13 @@ fn scoped_action(
     action: TimetableAction,
 ) -> Result<Option<ScopedTimetableAction>, AppError> {
     let action = match action {
+        TimetableAction::AlignDeliverySource => {
+            actor.require_any_permission(&[
+                codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
+                codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL,
+            ])?;
+            return Ok(None);
+        }
         TimetableAction::Publish => {
             actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
             return Ok(None);
@@ -526,6 +534,59 @@ mod tests {
             .await,
             Err(AppError::Forbidden(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn alignment_accepts_only_school_manage_or_publish_without_granting_other_actions() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        for permission in [
+            codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
+            codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL,
+        ] {
+            let actor = actor(&[permission]);
+            let filter = timetable_list_access(&pool, &actor, TimetableAction::AlignDeliverySource)
+                .await
+                .unwrap();
+            assert!(filter.includes_school_owned);
+            let unrelated = if permission == codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL {
+                TimetableAction::Manage
+            } else {
+                TimetableAction::Publish
+            };
+            assert!(matches!(
+                require_timetable_resources(
+                    &pool,
+                    &actor,
+                    unrelated,
+                    &TimetableResourceSet {
+                        requires_school_scope: true,
+                        ..Default::default()
+                    }
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
+        for permissions in [
+            vec![],
+            vec![codes::ACADEMIC_TIMETABLE_READ_SCHOOL],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE],
+        ] {
+            assert!(matches!(
+                timetable_list_access(
+                    &pool,
+                    &actor(&permissions),
+                    TimetableAction::AlignDeliverySource
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
     }
 
     #[tokio::test]

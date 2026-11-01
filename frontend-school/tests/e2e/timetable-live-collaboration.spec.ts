@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import { sessionState } from './fixtures/session-state.ts';
-import { revalidatePage } from './fixtures/page-revalidation.ts';
 import {
 	createDraftRelay,
 	startNativeDraftRelay,
@@ -1545,11 +1544,6 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 	const mock = await installTimetableMock(page);
 	await page.goto(url());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	mock.publishNewOpening();
-	await revalidatePage(page);
-	await expect(
-		page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true })
-	).toBeVisible();
 	let release!: () => void;
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1566,7 +1560,7 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 		await route.fulfill({ json: { success: true, data: captured } });
 	});
 	try {
-		await page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true }).click();
+		mock.publishNewOpening();
 		await expect.poll(() => readStarted).toBe(true);
 		const workspace = structuredClone(mock.workspace());
 		workspace.blocks = [makeTimetableBlock(timetableIds.blockB, timetableIds.period2)];
@@ -1581,9 +1575,7 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 		await invalidatedRead;
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toBeVisible();
 		release();
-		await expect(
-			page.getByText('อัปเดตข้อมูลเปิดสอนแล้ว กรุณาตรวจคาบที่มีเครื่องหมาย', { exact: true })
-		).toBeVisible();
+		expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(1);
 		await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
 		// A later lifecycle save must use the patch's authoritative version, not the older list/read.
