@@ -49,7 +49,7 @@ async fn seed_source_graph(pool: &PgPool) {
                         '93000000-0000-0000-0000-000000000004');
            INSERT INTO timetable_entry_instructors(id, entry_id, instructor_id, role)
            VALUES (gen_random_uuid(), '83000000-0000-0000-0000-000000000001',
-                   '50000000-0000-0000-0000-000000000003', 'assistant');"#,
+                   '50000000-0000-0000-0000-000000000003', 'secondary');"#,
     )
     .execute(pool)
     .await
