@@ -169,7 +169,7 @@ test('latest alignment uses owner resolution and explicit lifecycle admission, n
 	);
 	assert.match(page, /const admission = sourceAdmission\(target\)/);
 	assert.match(page, /await waitForSaves\(\)/);
-	assert.match(page, /if \(saveError && !\(allowSourceRejection && saveError.sourceRejected\)\)/);
+	assert.match(page, /if \(saveError && !\(allowReviewableFailure && saveError.reviewable\)\)/);
 	assert.match(page, /publicationDate = initialTimetablePublicationDate\(target.workspace\)/);
 	assert.doesNotMatch(page, /applicableDeliveryPublication|ใช้รุ่นที่มีผลในวันที่เลือก/);
 	assert.doesNotMatch(loader, /updateTimetableDeliverySource/);

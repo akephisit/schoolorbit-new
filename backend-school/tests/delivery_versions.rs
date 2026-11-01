@@ -601,6 +601,10 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
     )
     .await
     .unwrap();
+    assert_eq!(
+        updated.delivery_version_id, receipt.target_delivery_version_id,
+        "the owner selects the exact latest published opening"
+    );
     assert_ne!(updated.delivery_version_id, source.delivery_version_id);
     assert_eq!(
         before,
@@ -1258,6 +1262,10 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     )
     .await
     .unwrap();
+    assert_eq!(
+        updated.delivery_version_id, receipt.target_delivery_version_id,
+        "the owner selects the exact latest published opening"
+    );
     assert_ne!(updated.delivery_version_id, source.delivery_version_id);
     assert_eq!(
         before,

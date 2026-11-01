@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	initialTimetablePublicationDate,
+	draftSaveOutcome,
 	timetableSourceIsCurrent
 } from '../../src/lib/academic/timetable/latest-delivery-source.ts';
 import { collaborationWorkspace } from './timetable-collaboration-fixture.ts';
@@ -30,4 +31,11 @@ test('drafts require the exact latest pin while published history retains its or
 	workspace.version.status = 'published';
 	assert.equal(timetableSourceIsCurrent(workspace), true);
 	assert.equal(workspace.version.deliveryVersionId, timetableIds.deliveryVersion);
+});
+
+test('only dispatched writes without definitive rejection remain ambiguous', () => {
+	assert.equal(draftSaveOutcome(false, false), 'not_submitted');
+	assert.equal(draftSaveOutcome(true, false), 'unknown');
+	assert.equal(draftSaveOutcome(false, true), 'source_rejected');
+	assert.equal(draftSaveOutcome(true, true), 'source_rejected');
 });

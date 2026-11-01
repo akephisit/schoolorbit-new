@@ -759,8 +759,10 @@ generation/check and the affected contract tests when changing these DTOs; gener
 never edited by hand.
 The coded-source rejection contract also uses `cargo test --manifest-path backend-school/Cargo.toml
 -p school-errors -p school-http --locked`, default/`api-docs` workspace compilation, and the focused
-real HTTP alignment case. Assert optional typed409 data only for definitive pre-write guards,
-ordinary conflicts without that data, retained failed intent, and successful commit plus failed
+real HTTP alignment case. Assert optional typed409 data only for definitive server pre-write guards,
+separate local no-submission proof before child HTTP dispatch, retained intent and explicit review
+after alignment for both safe classes, and an unknown-outcome fence after dispatch. Cover ordinary
+conflicts without that data and successful commit plus failed
 cached revision/delta publication requesting reconciliation rather than a false rejected result.
 
 The cross-language native-frame regression requires the Node version pinned in the root

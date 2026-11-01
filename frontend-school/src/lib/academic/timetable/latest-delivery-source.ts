@@ -16,3 +16,10 @@ export function timetableSourceIsCurrent(
 		workspace.version.deliveryVersionId === workspace.latestDeliveryVersionId
 	);
 }
+
+export function draftSaveOutcome(
+	mutationSent: boolean,
+	sourceRejected: boolean
+): 'source_rejected' | 'not_submitted' | 'unknown' {
+	return sourceRejected ? 'source_rejected' : mutationSent ? 'unknown' : 'not_submitted';
+}

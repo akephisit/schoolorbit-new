@@ -549,7 +549,12 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 		holdNew = true;
 		await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 		await expect.poll(() => newStarted).toBe(true);
+		const oldResponse = page.waitForResponse((response) =>
+			new URL(response.url()).pathname.endsWith('/delivery-source')
+		);
 		releaseOld();
+		await (await oldResponse).finished();
+		await page.evaluate(() => undefined);
 		await expect(
 			page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true })
 		).toBeDisabled();
@@ -565,8 +570,51 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 			page.getByRole('dialog').getByRole('button', { name: 'ตรวจความพร้อม', exact: true })
 		).toBeEnabled();
 		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${nextVersion}`));
+		expect(
+			workspaceQueries.some(
+				(query) =>
+					query.get('academicTermId') === nextTerm &&
+					query.get('timetableVersionId') === timetableIds.draftVersion
+			)
+		).toBe(false);
 	} finally {
 		releaseOld();
 		releaseNew();
 	}
+});
+
+test('a captured held claim reset before HTTP is not submitted and can align without replaying its placement', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page);
+	await page.goto(url());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	mock.relay.holdClaim();
+	const tray = page.locator('aside article[data-timetable-source-kind="ordinary_demand"]').first();
+	const target = page.locator('td[aria-label^="วันจันทร์ คาบ 2"]').first();
+	const transfer = await page.evaluateHandle(() => new DataTransfer());
+	await tray.dispatchEvent('dragstart', { dataTransfer: transfer });
+	await target.dispatchEvent('dragover', { dataTransfer: transfer });
+	await target.dispatchEvent('drop', { dataTransfer: transfer });
+	await tray.dispatchEvent('dragend', { dataTransfer: transfer });
+	await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible();
+	await expect
+		.poll(() => mock.relay.received.filter((item) => item.message.type === 'ClientClaim').length)
+		.toBe(1);
+	mock.publishNewOpening();
+	await expect(page.getByText(/ยังไม่ได้ส่งรายการนี้ไปบันทึก/)).toBeVisible();
+	await expect.poll(mock.sourceUpdateRequestCount).toBe(1);
+	await expect(page.getByRole('button', { name: 'ทบทวนรายการ', exact: true })).toBeEnabled();
+	expect(mock.createRequestCount()).toBe(0);
+	expect(mock.previewRequestCount()).toBe(0);
+	expect(mock.blocks()).toHaveLength(0);
+	await page.getByRole('button', { name: 'ทบทวนรายการ', exact: true }).click();
+	await expect(target).toHaveAttribute('data-state', 'move');
+	expect(mock.createRequestCount()).toBe(0);
+	await target.click();
+	await expect.poll(mock.createRequestCount).toBe(1);
+	expect(mock.previewRequestCount()).toBe(1);
+	expect(mock.lastCreateBody()?.bellSchedulePeriodId).toBe(timetableIds.period2);
+	expect(mock.sourceUpdateRequestCount()).toBe(1);
+	await expect(page.getByText(/ยังมีรายการที่ไม่ได้ยืนยันการบันทึก/)).toHaveCount(0);
 });
