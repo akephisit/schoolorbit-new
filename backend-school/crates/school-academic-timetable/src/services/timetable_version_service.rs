@@ -531,32 +531,8 @@ pub async fn clone_draft_in_transaction(
         .await
         .map_err(map_clone_write_error)?;
 
-    DbSession::new(&mut **transaction)
-        .query(
-            "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
-            r#"CREATE TEMP TABLE timetable_clone_block_map ON COMMIT DROP AS
-           SELECT block.id AS source_id,
-                  uuid_generate_v5($1, 'block:' || block.id::text) AS target_id
-           FROM academic_timetable_blocks block
-           WHERE block.timetable_version_id = $2 AND block.is_active"#,
-        )
-        .bind(new_version_id)
-        .bind(source.id)
-        .execute()
-        .await?;
-    DbSession::new(&mut **transaction)
-        .query(
-            "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
-            r#"CREATE TEMP TABLE timetable_clone_group_map ON COMMIT DROP AS
-           SELECT block_group.id AS source_id,
-                  uuid_generate_v5($1, 'block-group:' || block_group.id::text) AS target_id
-           FROM academic_timetable_block_groups block_group
-           JOIN timetable_clone_block_map block_map ON block_map.source_id = block_group.block_id
-           WHERE block_group.is_active"#,
-        )
-        .bind(new_version_id)
-        .execute()
-        .await?;
+    // UUIDv5 maps each source identity consistently across the bulk child copies.
+    // Read the source graph directly: runtime roles intentionally cannot create TEMP tables.
     DbSession::new(&mut **transaction)
         .query(
             "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
@@ -567,7 +543,8 @@ pub async fn clone_draft_in_transaction(
                title, note, series_id, row_version, is_active, migration_provenance,
                created_by, updated_by, created_at, updated_at
            )
-           SELECT block_map.target_id, $1, source.academic_term_id, source.academic_year_id,
+           SELECT uuid_generate_v5($1, 'block:' || source.id::text),
+                  $1, source.academic_term_id, source.academic_year_id,
                   source.bell_schedule_id, source.bell_schedule_period_id, source.day_of_week,
                   source.block_kind, source.scheduling_mode, source.learning_offering_id,
                   source.structural_kind, source.title, source.note,
@@ -579,8 +556,8 @@ pub async fn clone_draft_in_transaction(
                       'sourceVersionId', $2::text
                   ),
                   $3, $3, now(), now()
-           FROM timetable_clone_block_map block_map
-           JOIN academic_timetable_blocks source ON source.id = block_map.source_id"#,
+           FROM academic_timetable_blocks source
+           WHERE source.timetable_version_id = $2 AND source.is_active"#,
         )
         .bind(new_version_id)
         .bind(source.id)
@@ -597,7 +574,9 @@ pub async fn clone_draft_in_transaction(
                is_active, migration_provenance, created_by, updated_by,
                created_at, updated_at
            )
-           SELECT group_map.target_id, block_map.target_id, source.learning_group_id,
+           SELECT uuid_generate_v5($1, 'block-group:' || source.id::text),
+                  uuid_generate_v5($1, 'block:' || source.block_id::text),
+                  source.learning_group_id,
                   source.learning_offering_id, source.academic_term_id,
                   source.academic_year_id, source.room_id, 1, source.homeroom_ids, true,
                   source.migration_provenance || jsonb_build_object(
@@ -605,9 +584,9 @@ pub async fn clone_draft_in_transaction(
                       'sourceVersionId', $2::text
                   ),
                   $3, $3, now(), now()
-           FROM timetable_clone_group_map group_map
-           JOIN academic_timetable_block_groups source ON source.id = group_map.source_id
-           JOIN timetable_clone_block_map block_map ON block_map.source_id = source.block_id"#,
+           FROM academic_timetable_block_groups source
+           JOIN academic_timetable_blocks block ON block.id = source.block_id
+           WHERE block.timetable_version_id = $2 AND block.is_active AND source.is_active"#,
         )
         .bind(new_version_id)
         .bind(source.id)
@@ -622,12 +601,16 @@ pub async fn clone_draft_in_transaction(
                id, block_group_id, instructor_id, role, display_order,
                row_version, created_at, updated_at
            )
-           SELECT gen_random_uuid(), group_map.target_id, source.instructor_id,
+           SELECT gen_random_uuid(), uuid_generate_v5($1, 'block-group:' || source.block_group_id::text),
+                  source.instructor_id,
                   source.role, source.display_order, 1, now(), now()
-           FROM timetable_clone_group_map group_map
-           JOIN academic_timetable_block_group_instructors source
-             ON source.block_group_id = group_map.source_id"#,
+           FROM academic_timetable_block_group_instructors source
+           JOIN academic_timetable_block_groups block_group ON block_group.id = source.block_group_id
+           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+           WHERE block.timetable_version_id = $2 AND block.is_active AND block_group.is_active"#,
         )
+        .bind(new_version_id)
+        .bind(source.id)
         .execute()
         .await
         .map_err(map_write_error)?;
@@ -640,7 +623,8 @@ pub async fn clone_draft_in_transaction(
                created_by, updated_by, created_at, updated_at
            )
            SELECT uuid_generate_v5($1, 'homeroom-target:' || source.id::text),
-                  block_map.target_id, source.homeroom_id, source.academic_term_id,
+                  uuid_generate_v5($1, 'block:' || source.block_id::text),
+                  source.homeroom_id, source.academic_term_id,
                   source.academic_year_id, source.target_kind, source.room_id,
                   1, true,
                   source.migration_provenance || jsonb_build_object(
@@ -648,10 +632,9 @@ pub async fn clone_draft_in_transaction(
                       'sourceVersionId', $2::text
                   ),
                   $3, $3, now(), now()
-           FROM timetable_clone_block_map block_map
-           JOIN academic_timetable_block_homerooms source
-             ON source.block_id = block_map.source_id
-           WHERE source.is_active"#,
+           FROM academic_timetable_block_homerooms source
+           JOIN academic_timetable_blocks block ON block.id = source.block_id
+           WHERE block.timetable_version_id = $2 AND block.is_active AND source.is_active"#,
         )
         .bind(new_version_id)
         .bind(source.id)
@@ -668,17 +651,17 @@ pub async fn clone_draft_in_transaction(
                created_by, updated_by, created_at, updated_at
            )
            SELECT uuid_generate_v5($1, 'teacher-target:' || source.id::text),
-                  block_map.target_id, source.teacher_id, source.academic_term_id,
+                  uuid_generate_v5($1, 'block:' || source.block_id::text),
+                  source.teacher_id, source.academic_term_id,
                   source.academic_year_id, 1, true,
                   source.migration_provenance || jsonb_build_object(
                       'clonedFromTargetId', source.id::text,
                       'sourceVersionId', $2::text
                   ),
                   $3, $3, now(), now()
-           FROM timetable_clone_block_map block_map
-           JOIN academic_timetable_block_teachers source
-             ON source.block_id = block_map.source_id
-           WHERE source.is_active"#,
+           FROM academic_timetable_block_teachers source
+           JOIN academic_timetable_blocks block ON block.id = source.block_id
+           WHERE block.timetable_version_id = $2 AND block.is_active AND source.is_active"#,
         )
         .bind(new_version_id)
         .bind(source.id)
@@ -696,16 +679,23 @@ pub async fn clone_draft_in_transaction(
                row_version, created_by, updated_by, created_at, updated_at
            )
            SELECT uuid_generate_v5($1, 'sync:' || source.id::text),
-                  block_map.target_id, source.learning_group_id,
+                  uuid_generate_v5($1, 'block:' || source.block_id::text),
+                  source.learning_group_id,
                   source.learning_offering_id, source.academic_term_id,
-                  source.academic_year_id, source.status, group_map.target_id,
+                  source.academic_year_id, source.status,
+                  uuid_generate_v5($1, 'block-group:' || linked_group.id::text),
                   source.conflict_code, source.conflict_message,
                   source.attempted_group_row_version, 1, $3, $3, now(), now()
-           FROM timetable_clone_block_map block_map
-           JOIN academic_timetable_block_group_sync source
-             ON source.block_id = block_map.source_id
-           LEFT JOIN timetable_clone_group_map group_map
-             ON group_map.source_id = source.linked_block_group_id"#,
+           FROM academic_timetable_block_group_sync source
+           JOIN academic_timetable_blocks block ON block.id = source.block_id
+           LEFT JOIN (
+               SELECT block_group.id
+               FROM academic_timetable_block_groups block_group
+               JOIN academic_timetable_blocks source_block ON source_block.id = block_group.block_id
+               WHERE source_block.timetable_version_id = $2
+                 AND source_block.is_active AND block_group.is_active
+           ) linked_group ON linked_group.id = source.linked_block_group_id
+           WHERE block.timetable_version_id = $2 AND block.is_active"#,
         )
         .bind(new_version_id)
         .bind(source.id)

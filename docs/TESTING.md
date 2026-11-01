@@ -701,6 +701,11 @@ complete build/push/deployment time.
 
 ### Timetable draft collaboration
 
+For published-to-draft cloning under the runtime database role, run
+`./scripts/test_backend_school.sh --integration timetable_clone_runtime_permissions -- --test-threads=1`.
+The fixture owns a separate disposable database, denies runtime TEMP/schema creation, and checks
+the complete copied child graph, other-term isolation, resume/stale revisions, audit and rollback.
+
 The cross-language native-frame regression requires the Node version pinned in the root
 `.node-version` on `PATH`. It imports the actual TypeScript decoder using built-in type stripping;
 no npm install is needed for this focused backend test.
