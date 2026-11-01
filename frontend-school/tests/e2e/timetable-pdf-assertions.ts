@@ -11,7 +11,7 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 	for (const [index, page] of pdf.getPages().entries()) {
 		const operators = pageOperators(pdf, index);
 		expect(operators).not.toMatch(/(?:-?\d+(?:\.\d+)?\s+){6}c(?:\s|$)/);
-		const { segments } = geometry(operators, page.getHeight());
+		const { segments, rectangles } = geometry(operators, page.getHeight());
 		const horizontal = segments.filter((line) => line.y1 === line.y2 && line.x1 !== line.x2);
 		expect(horizontal.length).toBeGreaterThan(0);
 		for (const line of horizontal) {
@@ -29,12 +29,71 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 			}
 		}
 		const text = await (await rendered.getPage(index + 1)).getTextContent();
+		const firstGridTop = Math.min(...horizontal.map((line) => line.y1));
+		const qrSquares = rectangles.filter(
+			(rect) => rect.y < firstGridTop && rect.color.every((channel) => channel === 0)
+		);
+		const captions = text.items.filter((item) => 'str' in item && item.str.startsWith('สแกนดู'));
+		if (qrSquares.length || captions.length) {
+			expect(qrSquares.length, 'QR fill rectangles are present').toBeGreaterThan(0);
+			expect(captions.length, 'QR has a complete caption').toBeGreaterThan(0);
+			const qrBounds = {
+				left: Math.min(...qrSquares.map((rect) => rect.x)),
+				right: Math.max(...qrSquares.map((rect) => rect.x + rect.width)),
+				top: Math.min(...qrSquares.map((rect) => rect.y)),
+				bottom: Math.max(...qrSquares.map((rect) => rect.y + rect.height))
+			};
+			expect(qrBounds.left, 'QR left margin').toBeGreaterThanOrEqual(10 - 0.01);
+			expect(qrBounds.right, 'QR right margin').toBeLessThanOrEqual(page.getWidth() - 10 + 0.01);
+			expect(qrBounds.top, 'QR top margin').toBeGreaterThanOrEqual(30 - 0.01);
+			expect(qrBounds.bottom, 'QR bottom margin').toBeLessThanOrEqual(page.getHeight() - 20 + 0.01);
+			for (const item of captions) {
+				if (!('str' in item)) continue;
+				expect(item.str, 'caption must not be clipped at the page edge').toBe('สแกนดูตาราง');
+				expect(item.transform[4], 'caption left margin').toBeGreaterThanOrEqual(10 - 0.01);
+				expect(item.transform[4] + item.width, 'caption right margin').toBeLessThanOrEqual(
+					page.getWidth() - 10 + 0.01
+				);
+				const top = page.getHeight() - item.transform[5] - item.height * 0.844;
+				const bottom = page.getHeight() - item.transform[5] + item.height * 0.457;
+				expect(top, 'caption top margin').toBeGreaterThanOrEqual(30 - 0.01);
+				expect(bottom, 'caption bottom margin').toBeLessThanOrEqual(page.getHeight() - 20 + 0.01);
+			}
+		}
 		const firstPeriods = text.items.filter(
 			(item) => 'str' in item && /^คาบ(?:ที่)?\s*1$/.test(item.str.trim())
 		);
 		expect(firstPeriods, 'one period-name grid start per timetable').toHaveLength(
 			tablesPerPage[index]
 		);
+		// These fixtures have single-line period names/ranges; a blank default12pt cell must not enlarge them.
+		const full = page.getWidth() > page.getHeight();
+		for (const [label, size, margins] of [
+			['คาบ', full ? 9 : 7, full ? 4 : 0],
+			['เวลา', full ? 10 : 6, full ? 2 : 0]
+		] as const) {
+			const labels = text.items.filter((item) => 'str' in item && item.str === label);
+			expect(labels, `one ${label} heading per timetable`).toHaveLength(tablesPerPage[index]);
+			for (const item of labels) {
+				if (!('str' in item)) continue;
+				expect(item.height).toBeCloseTo(size, 3);
+				const cx = item.transform[4] + item.width / 2;
+				const cy = page.getHeight() - item.transform[5] - item.height / 4;
+				const boundaries = horizontal.filter(
+					(line) => Math.min(line.x1, line.x2) < cx && Math.max(line.x1, line.x2) > cx
+				);
+				const top = Math.max(...boundaries.filter((line) => line.y1 < cy).map((line) => line.y1));
+				const bottom = Math.min(
+					...boundaries.filter((line) => line.y1 > cy).map((line) => line.y1)
+				);
+				const singleLineHeight = size * 1.301 + margins + (full ? 5 : 2.5);
+				expect(bottom - top, `${label} row fits one Sarabun line plus its padding`).toBeCloseTo(
+					singleLineHeight,
+					3
+				);
+			}
+		}
+
 		const fontSize = page.getWidth() > page.getHeight() ? 16 : 9;
 		const schools = text.items.filter(
 			(item) =>
@@ -351,6 +410,25 @@ export async function expectExternalTimetablePdfHeaders(
 			expect(Number.isFinite(gridTop), 'header stays with its following grid').toBe(true);
 			expect(gridTop - bottom).toBeGreaterThanOrEqual(fontSize === 16 ? 6 : 3);
 			expect(gridTop - bottom).toBeLessThan(20);
+			const runs = segments
+				.filter((line) => line.y1 === gridTop && line.y2 === gridTop)
+				.map((line) => ({ left: Math.min(line.x1, line.x2), right: Math.max(line.x1, line.x2) }))
+				.sort((a, b) => a.left - b.left);
+			const gridWidths: Array<{ left: number; right: number }> = [];
+			for (const run of runs) {
+				const previous = gridWidths.at(-1);
+				if (previous && run.left <= previous.right + 0.001)
+					previous.right = Math.max(previous.right, run.right);
+				else gridWidths.push({ ...run });
+			}
+			const width = gridWidths.find(
+				(run) => run.left < image.x + image.width / 2 && run.right > image.x + image.width / 2
+			);
+			expect(width).toBeDefined();
+			expect(image.x - width!.left, 'crest is inset from its timetable leading edge').toBeCloseTo(
+				4,
+				3
+			);
 		}
 	}
 }
