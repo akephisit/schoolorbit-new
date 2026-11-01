@@ -4,25 +4,63 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-/** Verify the delivered PDF has four vector corner arcs per table on every page. */
-export async function expectRoundedTimetablePdf(download: Download, tablesPerPage: number[]) {
-	const pdf = await PDFDocument.load(readFileSync((await download.path())!));
+/** Verify square grids, complete border intersections and the expected tables on every page. */
+export async function expectSquareTimetablePdf(download: Download, tablesPerPage: number[]) {
+	const { pdf, rendered } = await deliveredPdf(download);
 	expect(pdf.getPageCount()).toBe(tablesPerPage.length);
 	for (const [index, page] of pdf.getPages().entries()) {
-		const contents = page.node.Contents();
-		expect(contents).toBeDefined();
-		const streams = contents instanceof PDFArray ? contents.asArray() : [contents!];
-		const operators = streams
-			.map((entry) => {
-				const stream = pdf.context.lookup(entry);
-				if (!(stream instanceof PDFRawStream)) throw new Error('Expected a PDF content stream');
-				return Buffer.from(decodePDFRawStream(stream).decode()).toString();
-			})
-			.join('\n');
-		const number = '-?\\d+(?:\\.\\d+)?';
-		const arcs =
-			operators.match(new RegExp(`(?:${number}\\s+){2}m\\s+(?:${number}\\s+){6}c\\s+S`, 'g')) ?? [];
-		expect(arcs, `rounded corners on PDF page ${index + 1}`).toHaveLength(tablesPerPage[index] * 4);
+		const operators = pageOperators(pdf, index);
+		expect(operators).not.toMatch(/(?:-?\d+(?:\.\d+)?\s+){6}c(?:\s|$)/);
+		const { segments } = geometry(operators, page.getHeight());
+		const horizontal = segments.filter((line) => line.y1 === line.y2 && line.x1 !== line.x2);
+		expect(horizontal.length).toBeGreaterThan(0);
+		for (const line of horizontal) {
+			for (const x of [line.x1, line.x2]) {
+				expect(
+					segments.some(
+						(edge) =>
+							Math.abs(edge.x1 - x) <= 0.501 &&
+							edge.x2 === edge.x1 &&
+							Math.min(edge.y1, edge.y2) <= line.y1 + 0.001 &&
+							Math.max(edge.y1, edge.y2) >= line.y1 - 0.001
+					),
+					'square border intersection'
+				).toBe(true);
+			}
+		}
+		const text = await (await rendered.getPage(index + 1)).getTextContent();
+		const firstPeriods = text.items.filter(
+			(item) => 'str' in item && /^คาบ(?:ที่)?\s*1$/.test(item.str.trim())
+		);
+		expect(firstPeriods, 'one period-name grid start per timetable').toHaveLength(
+			tablesPerPage[index]
+		);
+		const fontSize = page.getWidth() > page.getHeight() ? 16 : 9;
+		const schools = text.items.filter(
+			(item) =>
+				'str' in item && item.str.startsWith('โรงเรียน') && Math.abs(item.height - fontSize) < 0.01
+		);
+		for (const school of schools) {
+			if (!('str' in school)) continue;
+			const top = page.getHeight() - school.transform[5] - fontSize * 0.844;
+			const bottom = page.getHeight() - school.transform[5] + fontSize * 0.457;
+			const left =
+				fontSize === 16 || school.transform[4] < page.getWidth() / 2 ? 10 : page.getWidth() / 2 + 5;
+			const right =
+				fontSize === 16 || school.transform[4] > page.getWidth() / 2
+					? page.getWidth() - 10
+					: page.getWidth() / 2 - 5;
+			expect(
+				segments.filter(
+					(line) =>
+						Math.max(line.x1, line.x2) > left &&
+						Math.min(line.x1, line.x2) < right &&
+						Math.max(line.y1, line.y2) > top + 0.01 &&
+						Math.min(line.y1, line.y2) < bottom - 0.01
+				),
+				'header is outside the grid even without a logo'
+			).toHaveLength(0);
+		}
 	}
 }
 
@@ -242,45 +280,77 @@ export async function expectTimetablePdfTextColors(
 		);
 }
 
-/** Compare the drawn crest against its actual enclosing header border, preserving aspect. */
-export async function expectCenteredTimetablePdfLogos(
+/** Verify the external crest matches the rendered header line boxes above the square grid. */
+export async function expectExternalTimetablePdfHeaders(
 	download: Download,
 	aspect: number,
 	counts: number[]
 ) {
-	const { pdf } = await deliveredPdf(download);
+	const { pdf, rendered } = await deliveredPdf(download);
+	expect(pdf.getPageCount()).toBe(counts.length);
 	for (let index = 0; index < pdf.getPageCount(); index++) {
-		const { images, segments } = geometry(
-			pageOperators(pdf, index),
-			pdf.getPages()[index].getHeight()
-		);
+		const page = pdf.getPages()[index];
+		const { images, segments } = geometry(pageOperators(pdf, index), page.getHeight());
+		const content = await (await rendered.getPage(index + 1)).getTextContent();
+		const fontSize = page.getWidth() > page.getHeight() ? 16 : 9;
 		expect(images).toHaveLength(counts[index]);
 		for (const image of images) {
-			const cx = image.x + image.width / 2;
-			const cy = image.y + image.height / 2;
-			const horizontal = segments.filter(
-				(line) =>
-					line.y1 === line.y2 && Math.min(line.x1, line.x2) < cx && Math.max(line.x1, line.x2) > cx
+			const areaRight =
+				fontSize === 16 || image.x > page.getWidth() / 2
+					? page.getWidth() - 10
+					: page.getWidth() / 2 - 5;
+			const header = content.items.filter((item) => {
+				if (!('str' in item) || !item.str.trim() || Math.abs(item.height - fontSize) > 0.01)
+					return false;
+				const top = page.getHeight() - item.transform[5] - fontSize * 0.844;
+				return (
+					item.transform[4] >= image.x + image.width - 0.01 &&
+					item.transform[4] + item.width <= areaRight + 0.01 &&
+					top >= image.y - 0.01 &&
+					top < image.y + image.height - 0.01
+				);
+			});
+			expect(header.length).toBeGreaterThanOrEqual(3);
+			const tops = header.map((item) =>
+				'str' in item ? page.getHeight() - item.transform[5] - fontSize * 0.844 : 0
 			);
-			const top = Math.max(...horizontal.filter((line) => line.y1 < cy).map((line) => line.y1));
-			const bottom = Math.min(...horizontal.filter((line) => line.y1 > cy).map((line) => line.y1));
-			const middle = (top + bottom) / 2;
-			const vertical = segments.filter(
-				(line) =>
-					line.x1 === line.x2 &&
-					Math.min(line.y1, line.y2) <= middle &&
-					Math.max(line.y1, line.y2) >= middle
+			const bottoms = header.map((item) =>
+				'str' in item ? page.getHeight() - item.transform[5] + fontSize * 0.457 : 0
 			);
-			const left = Math.max(...vertical.filter((line) => line.x1 < cx).map((line) => line.x1));
-			const right = Math.min(...vertical.filter((line) => line.x1 > cx).map((line) => line.x1));
-			expect(Number.isFinite(top + bottom + left + right)).toBe(true);
-			expect(Math.abs(cx - (left + right) / 2)).toBeLessThan(0.6);
-			expect(Math.abs(cy - middle)).toBeLessThan(0.6);
+			const top = Math.min(...tops),
+				bottom = Math.max(...bottoms);
+			expect(Math.abs(image.y - top), 'crest starts at the school header line').toBeLessThan(0.01);
+			expect(
+				Math.abs(image.height - (bottom - top)),
+				'crest height matches actual header line boxes'
+			).toBeLessThan(0.01);
 			expect(image.width / image.height).toBeCloseTo(aspect, 3);
-			expect(image.x).toBeGreaterThan(left);
-			expect(image.y).toBeGreaterThan(top);
-			expect(image.x + image.width).toBeLessThan(right);
-			expect(image.y + image.height).toBeLessThan(bottom);
+			expect(image.y).toBeGreaterThanOrEqual(30 - 0.01);
+			expect(image.y + image.height).toBeLessThan(page.getHeight() - 20);
+			const bordersInHeader = segments.filter(
+				(line) =>
+					Math.max(line.x1, line.x2) > image.x + 0.01 &&
+					Math.min(line.x1, line.x2) < areaRight &&
+					Math.max(line.y1, line.y2) > top + 0.01 &&
+					Math.min(line.y1, line.y2) < bottom - 0.01
+			);
+			expect(bordersInHeader, 'school, owner and crest are outside every grid border').toHaveLength(
+				0
+			);
+			const gridTop = Math.min(
+				...segments
+					.filter(
+						(line) =>
+							line.y1 === line.y2 &&
+							line.y1 > bottom &&
+							Math.min(line.x1, line.x2) <= image.x + image.width / 2 &&
+							Math.max(line.x1, line.x2) >= image.x + image.width / 2
+					)
+					.map((line) => line.y1)
+			);
+			expect(Number.isFinite(gridTop), 'header stays with its following grid').toBe(true);
+			expect(gridTop - bottom).toBeGreaterThanOrEqual(fontSize === 16 ? 6 : 3);
+			expect(gridTop - bottom).toBeLessThan(20);
 		}
 	}
 }

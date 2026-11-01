@@ -4,7 +4,11 @@ import type {
 	TDocumentDefinitions,
 	CustomTableLayout,
 	TableCell,
-	Content
+	Content,
+	Column,
+	ContentColumns,
+	ContentStack,
+	ContentTable
 } from 'pdfmake/interfaces';
 import type { TimetableBlock } from '#lib/api/timetable.js';
 import { getRequiredPublicSchoolInfo } from '#lib/api/school.js';
@@ -325,7 +329,7 @@ function buildTimetableHeader(
 	fontSize: number,
 	showQrCode: boolean,
 	id: string
-): Content {
+): ContentColumns & { id: string } {
 	const gap = fontSize === 16 ? 8 : 4;
 	const qrWidth = showQrCode ? 65 : 0;
 	const maxLogoWidth = width * 0.42;
@@ -349,7 +353,7 @@ function buildTimetableHeader(
 		if (nextLogoWidth <= logoWidth) break;
 		logoWidth = nextLogoWidth;
 	}
-	const columns: Content[] = [];
+	const columns: Column[] = [];
 	if (logo) {
 		columns.push({ image: logo.dataUrl, fit: [logoWidth, height], width: logoWidth });
 	}
@@ -391,7 +395,9 @@ const keepTimetableHeaderWithGrid: NonNullable<TDocumentDefinitions['pageBreakBe
 	queries
 ) => {
 	if (!node.id?.startsWith('timetable-header-')) return false;
-	const gridId = node.id.replace('timetable-header-', 'timetable-grid-');
+	// Header-row transactions retain provisional table positions; the ordinary first day
+	// is laid out after that transaction and identifies the actual grid page.
+	const gridId = node.id.replace('timetable-header-', 'timetable-body-');
 	return (
 		!queries.getFollowingNodesOnPage().some((next) => next.id === gridId) &&
 		queries.getNodesOnNextPage().some((next) => next.id === gridId)
@@ -473,9 +479,14 @@ function buildPageContent(
 
 	// Data rows follow the configured school week; legacy callers default to Monday-Friday.
 	renderedDays.forEach((day) => {
+		const firstDayIdentity =
+			day === renderedDays[0]
+				? { id: headerId.replace('timetable-header-', 'timetable-body-') }
+				: {};
 		const row: TableCell[] = [];
 
 		row.push({
+			...firstDayIdentity,
 			text: day.label,
 			margin: [0, 2],
 			bold: true,
@@ -603,7 +614,7 @@ function buildPageContent(
 			: null;
 
 	// Normal row layout preserves every detail when a timetable exceeds one page.
-	const tableContent: Content = {
+	const tableContent: ContentTable = {
 		table: {
 			// Repeat only the period and time rows when content continues.
 			headerRows: 2,
@@ -616,14 +627,14 @@ function buildPageContent(
 			body: tableBody
 		},
 		layout: tableLayout
-	} as Content;
+	};
 
 	return [
 		{
 			...header,
 			...(isFirst ? {} : { pageBreak: 'before' as const })
 		},
-		{ ...tableContent, id: headerId.replace('timetable-header-', 'timetable-grid-') },
+		tableContent,
 		...(signatureBlock ? [signatureBlock] : []),
 		{
 			columns: [
@@ -645,7 +656,7 @@ function buildMiniTable(
 	logo: TimetablePdfLogo | null,
 	schoolName: string,
 	index = 0
-): Content {
+): ContentStack {
 	const {
 		dayValues,
 		periods,
@@ -734,8 +745,13 @@ function buildMiniTable(
 		SUN: 'อา'
 	};
 	renderedDays.forEach((day) => {
+		const firstDayIdentity =
+			day === renderedDays[0]
+				? { id: headerId.replace('timetable-header-', 'timetable-body-') }
+				: {};
 		const row: TableCell[] = [
 			{
+				...firstDayIdentity,
 				text: dayShort[day.value] || day.label.slice(0, 1),
 				bold: true,
 				alignment: 'center',
@@ -830,18 +846,17 @@ function buildMiniTable(
 	const widths = [DAY_COL, ...periods.map(() => periodWidth)];
 
 	// row height ลดลงเหลือ 24pt — content น้อยลง (ตัดชื่อวิชาออก เหลือ code + ครูชื่อแรก + ห้อง)
-	const table: Content = {
+	const table: ContentTable = {
 		table: {
 			headerRows: 2,
 			widths,
 			heights: ['auto', 'auto', ...renderedDays.map(() => (renderedDays.length > 5 ? 18 : 24))],
 			body: tableBody
 		},
-		layout: miniTableLayout,
-		width: '*'
-	} as unknown as Content;
+		layout: miniTableLayout
+	};
 	return {
-		stack: [header, { ...table, id: headerId.replace('timetable-header-', 'timetable-grid-') }]
+		stack: [header, table]
 	};
 }
 
@@ -921,7 +936,7 @@ function buildPortraitPageContent(
 			schoolName,
 			index * MINIS_PER_PORTRAIT_PAGE + i
 		);
-		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
+		return { ...mini, margin: [0, 0, 0, 8] };
 	});
 
 	// Newspaper order: index 0,2,4 → ซ้าย, 1,3,5 → ขวา
