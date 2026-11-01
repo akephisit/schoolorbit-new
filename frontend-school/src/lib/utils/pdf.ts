@@ -350,6 +350,7 @@ function buildTimetableHeader(
 ): ContentColumns & { id: string } {
 	const gap = fontSize === 16 ? 8 : 4;
 	const qrWidth = showQrCode ? 65 : 0;
+	const logoInset = logo ? 4 : 0;
 	const maxLogoWidth = width * 0.42;
 	let logoWidth = logo
 		? Math.min(3 * fontSize * SARABUN_LINE_HEIGHT * logo.aspectRatio, maxLogoWidth)
@@ -357,7 +358,8 @@ function buildTimetableHeader(
 	let lines: string[];
 	let height: number;
 	while (true) {
-		const textWidth = width - logoWidth - qrWidth - (logo ? gap : 0) - (showQrCode ? gap : 0);
+		const textWidth =
+			width - logoWidth - logoInset - qrWidth - (logo ? gap : 0) - (showQrCode ? gap : 0);
 		lines = [
 			schoolName,
 			`${page.viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${page.headerContext}`,
@@ -375,7 +377,12 @@ function buildTimetableHeader(
 	}
 	const columns: Column[] = [];
 	if (logo) {
-		columns.push({ image: logo.dataUrl, fit: [logoWidth, height], width: logoWidth });
+		columns.push({
+			image: logo.dataUrl,
+			fit: [logoWidth, height],
+			width: logoWidth + logoInset,
+			margin: [logoInset, 0, 0, 0]
+		});
 	}
 	columns.push({
 		width: '*',
@@ -467,7 +474,16 @@ function buildPageContent(
 	);
 
 	// Period names are the first bordered row.
-	const periodNameRow: TableCell[] = [''];
+	const periodNameRow: TableCell[] = [
+		{
+			text: 'คาบ',
+			fontSize: 9,
+			bold: true,
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 2]
+		}
+	];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
 		periodNameRow.push({
@@ -483,7 +499,16 @@ function buildPageContent(
 
 	// Time row follows period names.
 	// fitTimeRange จัดให้พอดี cellContentWidth (1 บรรทัดก่อน, fallback 2 บรรทัด)
-	const timeRow: TableCell[] = [''];
+	const timeRow: TableCell[] = [
+		{
+			text: 'เวลา',
+			fontSize: 10,
+			color: '#4b5563',
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 1]
+		}
+	];
 	periods.forEach((p) => {
 		const fitted = fitTimeRange(p.start_time, p.end_time, cellContentWidth);
 		timeRow.push({
@@ -712,7 +737,16 @@ function buildMiniTable(
 	);
 
 	// Period names are the first bordered row.
-	const periodNameRow: TableCell[] = [''];
+	const periodNameRow: TableCell[] = [
+		{
+			text: 'คาบ',
+			fontSize: 7,
+			bold: true,
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 0]
+		}
+	];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
 		periodNameRow.push({
@@ -728,7 +762,16 @@ function buildMiniTable(
 
 	// === Row 2: Time row ===
 	// fitTimeRangeMini: ลองสั้น "08:30-09:20" @ 4pt → 3.5pt → fallback 2 บรรทัด
-	const timeRow: TableCell[] = [''];
+	const timeRow: TableCell[] = [
+		{
+			text: 'เวลา',
+			fontSize: 6,
+			color: '#4b5563',
+			alignment: 'center',
+			fillColor: '#f3f4f6',
+			margin: [0, 0]
+		}
+	];
 	periods.forEach((p) => {
 		const s = formatTime(p.start_time);
 		const e = formatTime(p.end_time);
