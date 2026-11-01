@@ -348,7 +348,7 @@ function buildPageContent(
 	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
 	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
 
-	const logoFrame = logos.register(DAY_COL, 2);
+	const logoFrame = logos.register(DAY_COL, 2, BORDER);
 	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
 
 	const titleCellInner = {
@@ -657,7 +657,7 @@ function buildMiniTable(
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	const logoFrame = logos.register(DAY_COL, 1);
+	const logoFrame = logos.register(DAY_COL, 1, BORDER);
 	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
 	const titleRow: TableCell[] = [
 		logoCell,

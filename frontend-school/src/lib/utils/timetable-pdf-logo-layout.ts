@@ -4,6 +4,7 @@ type PdfDocument = Awaited<ReturnType<TCreatedPdf['getStream']>>;
 interface LogoFrame {
 	width: number;
 	padding: number;
+	lineWidth: number;
 	top?: Node['startPosition'];
 	bottom?: Node['startPosition'];
 }
@@ -13,8 +14,8 @@ export function createTimetablePdfLogoLayout(logo: string | null) {
 	const frames: LogoFrame[] = [];
 	const markers = new Map<string, { frame: LogoFrame; edge: 'top' | 'bottom' }>();
 	return {
-		register(width: number, padding: number) {
-			const frame: LogoFrame = { width, padding };
+		register(width: number, padding: number, lineWidth: number) {
+			const frame: LogoFrame = { width, padding, lineWidth };
 			const index = frames.push(frame) - 1;
 			const marker = (edge: 'top' | 'bottom'): ContentCanvas & { id: string } => {
 				const id = `timetable-logo-${index}-${edge}`;
@@ -28,7 +29,17 @@ export function createTimetablePdfLogoLayout(logo: string | null) {
 		},
 		capture(node: Node): void {
 			const marker = node.id ? markers.get(node.id) : undefined;
-			if (marker) marker.frame[marker.edge] = node.startPosition;
+			if (!marker) return;
+			const vector = node.canvas?.[0];
+			// Unbreakable table rows report the outer context as startPosition. The
+			// final vector carries the actual cell coordinates after table layout.
+			if (vector?.type === 'line') {
+				marker.frame[marker.edge] = {
+					...node.startPosition,
+					left: vector.x1,
+					top: vector.y1
+				};
+			}
 		},
 		draw(document: PdfDocument): void {
 			if (!logo) return;
@@ -39,11 +50,16 @@ export function createTimetablePdfLogoLayout(logo: string | null) {
 				const height = frame.bottom.top - frame.top.top;
 				if (height <= 4) throw new Error('ขนาดช่องตราโรงเรียนใน PDF ไม่ถูกต้อง');
 				document.switchToPage(frame.top.pageNumber - 1);
-				document.image(logo, frame.top.left + 2, frame.top.top - frame.padding + 2, {
-					fit: [frame.width - 4, height - 4],
-					align: 'center',
-					valign: 'center'
-				});
+				document.image(
+					logo,
+					frame.top.left + 2,
+					frame.top.top - frame.padding - frame.lineWidth / 2 + 2,
+					{
+						fit: [frame.width - 4, height - 4],
+						align: 'center',
+						valign: 'center'
+					}
+				);
 			}
 		}
 	};

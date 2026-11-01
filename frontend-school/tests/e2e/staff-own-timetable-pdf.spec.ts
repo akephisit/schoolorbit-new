@@ -213,7 +213,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const download = await downloadPromise;
 	await download.saveAs('/tmp/staff-own-round.pdf');
 	await expectRoundedTimetablePdf(download, [1]);
-	await expectTimetablePdfPresentation(download);
+	await expectTimetablePdfPresentation(download, ['จันทร์', 'เสาร์']);
 	await expectTimetablePdfTextColors(download, {
 		ค21101: '#1e3a8a',
 		คณิตศาสตร์พื้นฐาน: '#000000',

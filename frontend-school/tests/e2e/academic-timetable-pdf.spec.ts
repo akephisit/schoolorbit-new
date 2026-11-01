@@ -24,7 +24,7 @@ async function pdfText(download: Download) {
 	const path = await download.path();
 	expect(path).toBeTruthy();
 	expect(readFileSync(path!).subarray(0, 5).toString()).toBe('%PDF-');
-	await expectTimetablePdfPresentation(download);
+	await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
 	return execFileSync('pdftotext', ['-raw', path!, '-'], { encoding: 'utf8' }).replace(/\s/g, '');
 }
 
@@ -527,7 +527,7 @@ for (const [shape, width, height] of [
 		let download = await pending;
 		await download.saveAs(`/tmp/timetable-dense-${shape}-full.pdf`);
 		await expectRoundedTimetablePdf(download, [1]);
-		await expectTimetablePdfPresentation(download);
+		await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
 		await expectCenteredTimetablePdfLogos(download, width / height, [1]);
 		await expectTimetablePdfTextColors(download, {
 			ค21101: '#1e3a8a',
@@ -543,7 +543,7 @@ for (const [shape, width, height] of [
 		download = await pending;
 		await download.saveAs(`/tmp/timetable-dense-${shape}-six.pdf`);
 		await expectRoundedTimetablePdf(download, [6]);
-		await expectTimetablePdfPresentation(download);
+		await expectTimetablePdfPresentation(download, ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสฯ', 'ศุกร์']);
 		await expectCenteredTimetablePdfLogos(download, width / height, [6]);
 		await expectTimetablePdfTextColors(download, {
 			ค21101: '#1e3a8a',

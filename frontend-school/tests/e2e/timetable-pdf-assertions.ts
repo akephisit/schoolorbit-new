@@ -119,7 +119,10 @@ function geometry(operators: string, pageHeight: number) {
 }
 
 /** Assert delivered font bytes, equal rendered header sizes and actual white day cells. */
-export async function expectTimetablePdfPresentation(download: Download) {
+export async function expectTimetablePdfPresentation(
+	download: Download,
+	expectedDayLabels: readonly string[]
+) {
 	const { pdf, rendered, path } = await deliveredPdf(download);
 	const fonts = execFileSync('pdffonts', [path], { encoding: 'utf8' }).trim().split('\n').slice(2);
 	expect(fonts.length).toBeGreaterThanOrEqual(2);
@@ -149,7 +152,26 @@ export async function expectTimetablePdfPresentation(download: Download) {
 		const items = content.items.filter((item) => 'str' in item && item.str.trim());
 		const { rectangles } = geometry(pageOperators(pdf, index), pdf.getPages()[index].getHeight());
 		const days = items.filter((item) => 'str' in item && dayNames.has(item.str.trim()));
-		expect(days.length).toBeGreaterThanOrEqual(5);
+		const landscape = pdf.getPages()[index].getWidth() > pdf.getPages()[index].getHeight();
+		const shortDays: Record<string, string> = {
+			จันทร์: 'จ',
+			อังคาร: 'อ',
+			พุธ: 'พ',
+			พฤหัสฯ: 'พฤ',
+			ศุกร์: 'ศ',
+			เสาร์: 'ส',
+			อาทิตย์: 'อา'
+		};
+		const expectedLabels = expectedDayLabels.map((day) => (landscape ? day : shortDays[day]));
+		const schoolCount = items.filter(
+			(item) => 'str' in item && item.str.startsWith('โรงเรียน')
+		).length;
+		const tableCount = landscape ? schoolCount : schoolCount - 1;
+		expect(tableCount).toBeGreaterThan(0);
+		expect(days).toHaveLength(expectedLabels.length * tableCount);
+		expect([...new Set(days.map((item) => ('str' in item ? item.str.trim() : '')))].sort()).toEqual(
+			[...expectedLabels].sort()
+		);
 		for (const item of days) {
 			if (!('str' in item)) continue;
 			const x = item.transform[4] + item.width / 2;
