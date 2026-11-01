@@ -357,7 +357,14 @@ export class FileTransferSession {
 		this.publish({ pair });
 		if (pair.status === 'pending') {
 			if (!previous) this.armDeadline(60_000, 'คำขอหมดอายุ กรุณาส่งคำขอใหม่');
-			this.publish({ phase: pair.initiator.id === id ? 'waiting' : 'consent' });
+			this.publish({
+				phase:
+					pair.initiator.id === id
+						? 'waiting'
+						: this.consented === pair.id
+							? 'connecting'
+							: 'consent'
+			});
 		} else if (pair.initiator.id === id && this.negotiating !== pair.id) {
 			if (
 				!this.file ||
@@ -401,9 +408,6 @@ export class FileTransferSession {
 			if (this.current(generation, attempt)) this.publish({ pending: false });
 		}
 	}
-	private isConnecting() {
-		return this.state.phase === 'connecting';
-	}
 	async accept() {
 		const pair = this.state.pair,
 			device = this.state.snapshot?.device;
@@ -426,13 +430,17 @@ export class FileTransferSession {
 			if (!this.current(generation, attempt)) return;
 			this.applyPair(accepted);
 		} catch (error) {
-			if (this.current(generation, attempt) && this.isConnecting() && !this.peer) {
-				this.clearDeadline();
-				this.consented = '';
-				this.publish({
-					phase: 'consent',
-					error: this.message(error, 'ตอบรับไม่สำเร็จ กรุณาลองใหม่')
-				});
+			if (this.current(generation, attempt) && this.consented === pair.id) {
+				// A failed response cannot revoke the user's consent or prove acceptance failed.
+				// The authorized snapshot and SSE may already report the accepted pair.
+				if (this.state.pair?.status !== 'accepted')
+					this.publish({
+						error: this.message(
+							error,
+							'ยังยืนยันการตอบรับกับระบบไม่ได้ กำลังรอการเชื่อมต่อ หากไม่สำเร็จกรุณายกเลิกแล้วส่งคำขอใหม่'
+						)
+					});
+				await this.refresh(generation);
 			}
 		} finally {
 			if (this.current(generation, attempt)) this.publish({ pending: false });
@@ -581,7 +589,7 @@ export class FileTransferSession {
 		const open = () => {
 			if (opened || !this.current(generation, attempt)) return;
 			opened = true;
-			this.publish({ phase: sending ? 'sending' : 'receiving' });
+			this.publish({ phase: sending ? 'sending' : 'receiving', error: '' });
 			this.armDeadline(30_000, 'การรับส่งไฟล์หยุดนานเกินไป กรุณาจับคู่และส่งใหม่');
 			if (sending) void this.sendBytes(channel, pair, generation, attempt);
 		};

@@ -20,6 +20,11 @@ export async function fileTransferFixture() {
 	const devices = new Map<string, DeviceEntry>();
 	const pairs = new Map<string, TransferPair>();
 	let holdAccept = false;
+	let failAccept = false;
+	let holdAcceptedEvents = false;
+	const heldAcceptedEvents: TransferPair[] = [];
+	let holdSignals = false;
+	const heldSignals: { recipientId: string; event: TransferEvent }[] = [];
 	let holdRequest = false;
 	let releaseRequest: (() => void) | null = null;
 	let failSenderClose = false;
@@ -169,12 +174,16 @@ export async function fileTransferFixture() {
 			const input: { deviceId: string; type: 'offer' | 'answer'; sdp: string } = JSON.parse(body);
 			if (match[2] === 'accept') {
 				pair.status = 'accepted';
-				pairEvent(pair);
+				if (holdAcceptedEvents) heldAcceptedEvents.push(structuredClone(pair));
+				else pairEvent(pair);
 				if (holdAccept)
 					await new Promise<void>((resolve) => {
 						releaseAccept = resolve;
 					});
-				send(pair);
+				if (failAccept) {
+					failAccept = false;
+					send('fixture unavailable', 503);
+				} else send(pair);
 				return;
 			}
 			if (match[2] === 'close') {
@@ -193,11 +202,14 @@ export async function fileTransferFixture() {
 				return;
 			}
 			const recipient = input.deviceId === pair.initiator.id ? pair.recipient : pair.initiator;
-			if (!blockSignals)
-				emit(recipient.id, {
+			if (!blockSignals) {
+				const event: TransferEvent = {
 					type: 'signal',
 					data: { pairId: pair.id, type: input.type, sdp: input.sdp }
-				});
+				};
+				if (holdSignals) heldSignals.push({ recipientId: recipient.id, event });
+				else emit(recipient.id, event);
+			}
 			send({});
 			return;
 		}
@@ -223,6 +235,26 @@ export async function fileTransferFixture() {
 			});
 		},
 		emit,
+		failAcceptResponse() {
+			failAccept = true;
+		},
+		holdAcceptedEvents() {
+			holdAcceptedEvents = true;
+		},
+		releaseAcceptedEvents() {
+			holdAcceptedEvents = false;
+			for (const pair of heldAcceptedEvents.splice(0)) pairEvent(pair);
+		},
+		holdSignalDispatch() {
+			holdSignals = true;
+		},
+		releaseSignalDispatch() {
+			holdSignals = false;
+			for (const signal of heldSignals.splice(0)) emit(signal.recipientId, signal.event);
+		},
+		get heldSignals() {
+			return heldSignals.length;
+		},
 		failSenderClose() {
 			failSenderClose = true;
 		},

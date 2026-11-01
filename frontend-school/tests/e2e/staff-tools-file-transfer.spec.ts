@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import jsQR from 'jsqr';
 import { readFile } from 'node:fs/promises';
+import type { TransferEvent } from '../../src/lib/api/file-transfer.js';
 import { fileTransferFixture } from './fixtures/file-transfer';
 
 const path = '/staff/tools/file-transfer';
@@ -356,6 +357,144 @@ test('malformed oversized binary frames over a real peer channel are refused wit
 			0
 		);
 	} finally {
+		await receiver.close();
+		await api.close();
+	}
+});
+
+for (const ordering of ['accepted-event-first', 'failed-response-first'] as const)
+	test(`explicit consent survives an uncertain accept response with ${ordering}`, async ({
+		context,
+		page
+	}) => {
+		const api = await fileTransferFixture(),
+			receiver = await context.newPage();
+		const cdp = await context.newCDPSession(receiver);
+		const acceptedEvents = new Set<string>();
+		await cdp.send('Network.enable');
+		cdp.on('Network.eventSourceMessageReceived', (message) => {
+			if (message.eventName !== 'file_transfer') return;
+			const event: TransferEvent = JSON.parse(message.data);
+			if (event.type === 'pair_changed' && event.data.status === 'accepted')
+				acceptedEvents.add(event.data.id);
+		});
+		try {
+			await api.setup(page);
+			await api.setup(receiver);
+			api.failAcceptResponse();
+			api.holdSignalDispatch();
+			if (ordering === 'accepted-event-first') api.holdAccept();
+			else api.holdAcceptedEvents();
+			await open(page, 'ผู้ส่ง');
+			await open(receiver, 'ผู้รับ');
+			const bytes = Buffer.from('explicit consent survives uncertain RPC '.repeat(1000));
+			await choose(page, bytes);
+			await request(page, 'ผู้รับ');
+			const pair = structuredClone(api.pairs[0]);
+			const failedResponse = receiver.waitForResponse(
+				(response) =>
+					response.url().endsWith(`/pairs/${pair.id}/accept`) && response.status() === 503
+			);
+			const reconciled = receiver.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname.endsWith(`/devices/${pair.recipient.id}`) &&
+					response.request().method() === 'GET'
+			);
+			await receiver.getByRole('button', { name: 'รับไฟล์', exact: true }).click();
+			if (ordering === 'accepted-event-first') {
+				await expect.poll(() => acceptedEvents.has(pair.id)).toBe(true);
+				api.releaseAccept();
+			}
+			await failedResponse;
+			await reconciled;
+			await expect(receiver.getByRole('button', { name: 'รับไฟล์', exact: true })).toHaveCount(0);
+			await expect(receiver.getByText('กำลังเชื่อมต่อโดยตรง', { exact: true })).toBeVisible();
+			if (ordering === 'failed-response-first') {
+				expect(acceptedEvents.has(pair.id)).toBe(false);
+				api.releaseAcceptedEvents();
+				await expect.poll(() => acceptedEvents.has(pair.id)).toBe(true);
+			}
+			await expect.poll(() => api.heldSignals).toBe(1);
+			api.releaseSignalDispatch();
+			await expect(
+				receiver.getByRole('button', { name: 'ดาวน์โหลดไฟล์', exact: true })
+			).toBeVisible();
+			await expect(page.getByText('รับส่งไฟล์สำเร็จ', { exact: true })).toBeVisible();
+			const downloaded = receiver.waitForEvent('download');
+			await receiver.getByRole('button', { name: 'ดาวน์โหลดไฟล์', exact: true }).click();
+			const savedPath = await (await downloaded).path();
+			if (!savedPath) throw new Error('Download missing');
+			expect(await readFile(savedPath)).toEqual(bytes);
+			expect(
+				api.requests.filter((entry) => entry.path.endsWith(`/pairs/${pair.id}/accept`))
+			).toHaveLength(1);
+		} finally {
+			api.releaseAccept();
+			api.releaseAcceptedEvents();
+			api.releaseSignalDispatch();
+			await cdp.detach();
+			await receiver.close();
+			await api.close();
+		}
+	});
+
+test('cancelling an uncertain acceptance fences a late accepted event and real native offer', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	const cdp = await context.newCDPSession(receiver);
+	const observedOffers = new Set<string>();
+	await cdp.send('Network.enable');
+	cdp.on('Network.eventSourceMessageReceived', (message) => {
+		if (message.eventName !== 'file_transfer') return;
+		const event: TransferEvent = JSON.parse(message.data);
+		if (event.type === 'signal' && event.data.type === 'offer')
+			observedOffers.add(event.data.pairId);
+	});
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		api.failAcceptResponse();
+		api.holdSignalDispatch();
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, Buffer.from('cancel before late offer'));
+		await request(page, 'ผู้รับ');
+		const pair = structuredClone(api.pairs[0]);
+		const failedResponse = receiver.waitForResponse(
+			(response) => response.url().endsWith(`/pairs/${pair.id}/accept`) && response.status() === 503
+		);
+		const reconciled = receiver.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname.endsWith(`/devices/${pair.recipient.id}`) &&
+				response.request().method() === 'GET'
+		);
+		await receiver.getByRole('button', { name: 'รับไฟล์', exact: true }).click();
+		await failedResponse;
+		await reconciled;
+		await expect.poll(() => api.heldSignals).toBe(1);
+		const accepted = structuredClone(api.pairs[0]);
+		await receiver.getByRole('button', { name: 'ยกเลิกการรับส่ง', exact: true }).click();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		api.emit(pair.recipient.id, { type: 'pair_changed', data: accepted });
+		api.releaseSignalDispatch();
+		await expect.poll(() => observedOffers.has(pair.id)).toBe(true);
+		await receiver.evaluate(
+			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+		);
+		await expect(receiver.getByText('สิ้นสุดคำขอ', { exact: true })).toBeVisible();
+		await expect(receiver.getByRole('button', { name: 'รับไฟล์', exact: true })).toHaveCount(0);
+		await expect(receiver.getByRole('button', { name: 'ดาวน์โหลดไฟล์', exact: true })).toHaveCount(
+			0
+		);
+		expect(
+			api.requests.filter((entry) => entry.path.endsWith(`/pairs/${pair.id}/accept`))
+		).toHaveLength(1);
+	} finally {
+		api.releaseSignalDispatch();
+		await cdp.detach();
 		await receiver.close();
 		await api.close();
 	}
