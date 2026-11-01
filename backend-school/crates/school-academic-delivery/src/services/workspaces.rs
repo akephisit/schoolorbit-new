@@ -54,13 +54,22 @@ struct StaffOptionRow {
     display_name: String,
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug)]
 struct OfferingAggregateRow {
-    learning_offering_id: Uuid,
     group_count: i64,
     teacher_assignment_count: i64,
     groups_without_primary_teacher: i64,
     published_roster_count: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct OverviewGroupRow {
+    id: Uuid,
+    learning_offering_id: Uuid,
+    status: LearningOfferingStatus,
+    roster_status: RosterStatus,
+    registry_teacher_count: i64,
+    registry_has_primary: bool,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -353,7 +362,7 @@ async fn load_workspace_context(
                      OR ($3::uuid IS NULL AND candidate.status IN ('draft', 'published'))
                  )
                ORDER BY CASE WHEN candidate.status='draft' THEN 0 ELSE 1 END,
-                   candidate.effective_from DESC,candidate.created_at DESC,candidate.id
+                   candidate.publication_no DESC NULLS FIRST,candidate.created_at DESC,candidate.id
                LIMIT 1
            ) version ON TRUE"#,
     )
@@ -1155,71 +1164,93 @@ pub async fn delivery_overview_on_connection(
         ));
     }
 
-    let aggregates: Vec<OfferingAggregateRow> = DbSession::new(connection)
+    let group_rows: Vec<OverviewGroupRow> = DbSession::new(connection)
         .query_as(
             "academic_delivery.services.workspaces.delivery_overview_on_connection",
             r#"
-        WITH selected_offerings AS (
-            SELECT unnest($1::uuid[]) AS learning_offering_id
-        ),
-        group_summary AS (
-            SELECT learning_group.learning_offering_id,
-                   count(*)::bigint AS group_count,
-                   count(*) FILTER (
-                       WHERE NOT EXISTS (
-                           SELECT 1
-                           FROM learning_group_teachers primary_teacher
-                           JOIN users teacher ON teacher.id = primary_teacher.teacher_id
-                           WHERE primary_teacher.learning_group_id = learning_group.id
-                             AND primary_teacher.role = 'primary'
-                             AND teacher.user_type = 'staff'
-                             AND teacher.status = 'active'
-                       )
-                   )::bigint AS groups_without_primary_teacher,
-                   count(*) FILTER (
-                       WHERE learning_group.roster_status = 'published'
-                   )::bigint AS published_roster_count
-            FROM learning_groups learning_group
-            WHERE learning_group.learning_offering_id = ANY($1)
-            GROUP BY learning_group.learning_offering_id
-        ),
-        teacher_summary AS (
-            SELECT learning_group.learning_offering_id,
-                   count(*)::bigint AS teacher_assignment_count
-            FROM learning_groups learning_group
-            JOIN learning_group_teachers teacher
-              ON teacher.learning_group_id = learning_group.id
-            WHERE learning_group.learning_offering_id = ANY($1)
-            GROUP BY learning_group.learning_offering_id
-        )
-        SELECT selected.learning_offering_id,
-               coalesce(groups.group_count, 0)::bigint AS group_count,
-               coalesce(teachers.teacher_assignment_count, 0)::bigint
-                   AS teacher_assignment_count,
-               coalesce(groups.groups_without_primary_teacher, 0)::bigint
-                   AS groups_without_primary_teacher,
-               coalesce(groups.published_roster_count, 0)::bigint AS published_roster_count
-        FROM selected_offerings selected
-        LEFT JOIN group_summary groups
-          ON groups.learning_offering_id = selected.learning_offering_id
-        LEFT JOIN teacher_summary teachers
-          ON teachers.learning_offering_id = selected.learning_offering_id
-        ORDER BY selected.learning_offering_id
+        SELECT g.id,g.learning_offering_id,g.status,g.roster_status,
+               count(assignment.id)::bigint AS registry_teacher_count,
+               coalesce(bool_or(assignment.role='primary' AND account.user_type='staff'
+                   AND account.status='active'),false) AS registry_has_primary
+        FROM learning_groups g
+        LEFT JOIN learning_group_teachers assignment ON assignment.learning_group_id=g.id
+            AND g.status<>'published'
+        LEFT JOIN users account ON account.id=assignment.teacher_id
+        WHERE g.learning_offering_id=ANY($1)
+        GROUP BY g.id ORDER BY g.id LIMIT 2001
         "#,
         )
         .bind(&offering_ids)
         .fetch_all()
         .await?;
-    let total_groups: i64 = aggregates.iter().map(|item| item.group_count).sum();
-    if total_groups > MAX_WORKSPACE_GROUPS {
+    if group_rows.len() > MAX_WORKSPACE_GROUPS as usize {
         return Err(AppError::ValidationError(
             "จำนวนกลุ่มเรียนในพื้นที่ทำงานเกิน 2000 กลุ่ม กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
         ));
     }
-    let mut aggregates_by_id: HashMap<Uuid, OfferingAggregateRow> = aggregates
-        .into_iter()
-        .map(|item| (item.learning_offering_id, item))
+    let published_groups = group_rows
+        .iter()
+        .filter(|group| group.status == LearningOfferingStatus::Published)
+        .map(|group| group.id)
+        .collect::<Vec<_>>();
+    let year = offerings
+        .first()
+        .ok_or_else(|| AppError::InternalServerError("ไม่พบปีของรายการเปิดสอน".into()))?
+        .academic_year_id;
+    let published = super::versions::group_teacher_assignments_on_connection(
+        connection,
+        year,
+        academic_term_id,
+        &published_groups,
+    )
+    .await?
+    .groups
+    .into_iter()
+    .map(|group| (group.learning_group_id, group))
+    .collect::<HashMap<_, _>>();
+    let mut aggregates_by_id: HashMap<Uuid, OfferingAggregateRow> = offering_ids
+        .iter()
+        .map(|id| {
+            (
+                *id,
+                OfferingAggregateRow {
+                    group_count: 0,
+                    teacher_assignment_count: 0,
+                    groups_without_primary_teacher: 0,
+                    published_roster_count: 0,
+                },
+            )
+        })
         .collect();
+    for group in group_rows {
+        let aggregate = aggregates_by_id
+            .get_mut(&group.learning_offering_id)
+            .ok_or_else(|| AppError::InternalServerError("ไม่พบรายการเปิดสอนของกลุ่ม".into()))?;
+        let (teacher_count, has_primary) = match group.status {
+            LearningOfferingStatus::Published => published
+                .get(&group.id)
+                .map(|source| {
+                    (
+                        source.teacher_ids.len() as i64,
+                        !source.primary_teacher_ids.is_empty(),
+                    )
+                })
+                .unwrap_or((0, false)),
+            LearningOfferingStatus::Draft => {
+                (group.registry_teacher_count, group.registry_has_primary)
+            }
+            // Closed/cancelled registry rows remain archival facts, not a fallback
+            // for a published group's current planning membership.
+            LearningOfferingStatus::Closed | LearningOfferingStatus::Cancelled => {
+                (group.registry_teacher_count, group.registry_has_primary)
+            }
+        };
+        aggregate.group_count += 1;
+        aggregate.teacher_assignment_count += teacher_count;
+        aggregate.groups_without_primary_teacher += i64::from(!has_primary);
+        aggregate.published_roster_count +=
+            i64::from(group.roster_status == RosterStatus::Published);
+    }
 
     let mut overview_items = Vec::with_capacity(offerings.len());
     for offering in offerings {

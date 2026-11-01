@@ -124,6 +124,31 @@ pub mod change_sets {
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    pub async fn preview_change_set(
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, AppError> {
+        school_academic_delivery::services::change_sets::preview_change_set(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            pool,
+            id,
+        )
+        .await
+    }
+    pub async fn preview_change_set_at(
+        pool: &PgPool,
+        id: Uuid,
+        date: Option<chrono::NaiveDate>,
+    ) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, AppError> {
+        school_academic_delivery::services::change_sets::preview_change_set_at(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            pool,
+            id,
+            date,
+        )
+        .await
+    }
+
     pub async fn publish_change_set(
         pool: &PgPool,
         actor_user_id: Uuid,
@@ -131,6 +156,7 @@ pub mod change_sets {
         request: school_academic_delivery::models::PublishAcademicTermChangeSetRequest,
     ) -> Result<AcademicTermChangeSet, AppError> {
         school_academic_delivery::services::change_sets::publish_change_set(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
             &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             pool,
             actor_user_id,

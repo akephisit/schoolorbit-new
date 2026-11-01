@@ -14,6 +14,7 @@
 		class?: string;
 		disabled?: boolean;
 		required?: boolean;
+		minValue?: string;
 		clearable?: boolean;
 		ariaLabel?: string;
 		onValueChange?: (value: string | undefined) => void;
@@ -26,6 +27,7 @@
 		class: className = '',
 		disabled = false,
 		required = false,
+		minValue,
 		clearable,
 		ariaLabel = 'เลือกวันที่',
 		onValueChange
@@ -107,6 +109,7 @@
 		<Popover.Content class="w-auto p-0">
 			<Calendar
 				value={dateValue}
+				minValue={safeParseDate(minValue)}
 				onValueChange={handleValueChange}
 				type="single"
 				preventDeselect

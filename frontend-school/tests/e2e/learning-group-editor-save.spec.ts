@@ -132,6 +132,10 @@ async function mockEditor(
 		academicTermId: ids.term,
 		academicYearId: ids.year,
 		status: options.publishedVersion ? 'published' : 'draft',
+		publicationNo: options.publishedVersion ? 1 : null,
+		isSuperseded: false,
+		publishedAt: options.publishedVersion ? timestamp : null,
+		publishedBy: null,
 		sourceVersionId: null,
 		effectiveFrom: '2026-05-01',
 		effectiveUntil: null,
@@ -173,6 +177,10 @@ async function mockEditor(
 		}
 	};
 	const summary: DeliveryVersionSummary = {
+		publicationNo: version.publicationNo,
+		publishedAt: version.publishedAt ?? null,
+		publishedBy: version.publishedBy ?? null,
+		isSuperseded: version.isSuperseded,
 		id: version.id,
 		academicTermId: ids.term,
 		academicYearId: ids.year,

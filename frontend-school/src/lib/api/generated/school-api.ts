@@ -8609,6 +8609,7 @@ export interface components {
 			| 'change_set_no_items'
 			| 'term_not_writable'
 			| 'effective_date_invalid'
+			| 'consumed_history_conflict'
 			| 'base_delivery_version_stale'
 			| 'resource_stale'
 			| 'missing_delivery_target'
@@ -8885,6 +8886,7 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			baseDeliveryVersionId?: string | null;
+			baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 			/** Format: date-time */
 			cancelledAt?: string | null;
 			/** Format: uuid */
@@ -8900,6 +8902,9 @@ export interface components {
 			id: string;
 			items: components['schemas']['AcademicTermChangeItem'][];
 			offeringLabels: components['schemas']['DeliveryResourceLabel'][];
+			publicationDateRules: components['schemas']['PublicationDateRules'];
+			/** Format: int64 */
+			publicationNo: number | null;
 			/** Format: date-time */
 			publishedAt?: string | null;
 			/** Format: uuid */
@@ -8947,6 +8952,12 @@ export interface components {
 			effectiveFrom: string | null;
 			/** Format: uuid */
 			id: string;
+			/** Format: int64 */
+			publicationNo: number | null;
+			/** Format: date-time */
+			publishedAt: string | null;
+			/** Format: uuid */
+			publishedBy: string | null;
 			reason: string;
 			/** Format: date */
 			referenceDate: string;
@@ -9513,6 +9524,7 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				baseDeliveryVersionId?: string | null;
+				baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -9528,6 +9540,9 @@ export interface components {
 				id: string;
 				items: components['schemas']['AcademicTermChangeItem'][];
 				offeringLabels: components['schemas']['DeliveryResourceLabel'][];
+				publicationDateRules: components['schemas']['PublicationDateRules'];
+				/** Format: int64 */
+				publicationNo: number | null;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: uuid */
@@ -13906,12 +13921,15 @@ export interface components {
 			data: {
 				bellPeriods: components['schemas']['BellSchedulePeriod'][];
 				blocks: components['schemas']['TimetableBlock'][];
+				deliveryPublication: components['schemas']['DeliveryPublicationContext'];
 				homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+				latestDeliveryPublication: components['schemas']['DeliveryPublicationContext'];
 				/** Format: uuid */
 				latestDeliveryVersionId: string;
 				learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
 				offeringSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
 				ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+				publicationDateRules: components['schemas']['PublicationDateRules'];
 				rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
 				sourceIssues: components['schemas']['TimetableSourceIssue'][];
 				staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
@@ -13926,14 +13944,17 @@ export interface components {
 		};
 		ApiResponse_TimetablePublicationPreview: {
 			data: {
+				applicableDeliveryPublication: components['schemas']['DeliveryPublicationContext'] | null;
 				blockCount: number;
 				canPublish: boolean;
 				contentChanged: boolean;
+				deliveryPublication: components['schemas']['DeliveryPublicationContext'];
 				/** Format: uuid */
 				deliveryVersionId: string;
 				/** Format: date */
 				effectiveFrom: string;
 				findings: components['schemas']['TimetablePublicationFinding'][];
+				latestDeliveryPublication: components['schemas']['DeliveryPublicationContext'];
 				/** Format: uuid */
 				latestDeliveryVersionId: string;
 				previewHash: string;
@@ -13983,6 +14004,8 @@ export interface components {
 				effectiveUntil: string | null;
 				/** Format: uuid */
 				id: string;
+				/** Format: int64 */
+				publicationNo: number | null;
 				/** Format: date-time */
 				publishedAt: string | null;
 				/** Format: uuid */
@@ -14092,6 +14115,7 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				baseDeliveryVersionId?: string | null;
+				baseTeacherAssignments: components['schemas']['BaseTeacherAssignment'][];
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -14107,6 +14131,9 @@ export interface components {
 				id: string;
 				items: components['schemas']['AcademicTermChangeItem'][];
 				offeringLabels: components['schemas']['DeliveryResourceLabel'][];
+				publicationDateRules: components['schemas']['PublicationDateRules'];
+				/** Format: int64 */
+				publicationNo: number | null;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: uuid */
@@ -14135,6 +14162,12 @@ export interface components {
 				effectiveFrom: string | null;
 				/** Format: uuid */
 				id: string;
+				/** Format: int64 */
+				publicationNo: number | null;
+				/** Format: date-time */
+				publishedAt: string | null;
+				/** Format: uuid */
+				publishedBy: string | null;
 				reason: string;
 				/** Format: date */
 				referenceDate: string;
@@ -15234,8 +15267,15 @@ export interface components {
 				groupCount: number;
 				/** Format: uuid */
 				id: string;
+				isSuperseded: boolean;
 				/** Format: int64 */
 				offeringCount: number;
+				/** Format: int64 */
+				publicationNo: number | null;
+				/** Format: date-time */
+				publishedAt: string | null;
+				/** Format: uuid */
+				publishedBy: string | null;
 				/** Format: date */
 				referenceDate: string;
 				/** Format: int64 */
@@ -16363,6 +16403,8 @@ export interface components {
 				effectiveUntil: string | null;
 				/** Format: uuid */
 				id: string;
+				/** Format: int64 */
+				publicationNo: number | null;
 				/** Format: date-time */
 				publishedAt: string | null;
 				/** Format: uuid */
@@ -17001,6 +17043,17 @@ export interface components {
 			lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 			sessions: components['schemas']['AttendanceSession'][];
 			settings: components['schemas']['AttendanceSettings'];
+		};
+		/** @description Scoped immutable base membership for teacher commands, independent of raw episode dates. */
+		BaseTeacherAssignment: {
+			/** Format: uuid */
+			assignmentId: string;
+			displayName: string;
+			/** Format: uuid */
+			learningGroupId: string;
+			role: components['schemas']['LearningTeacherRole'];
+			/** Format: uuid */
+			teacherId: string;
 		};
 		BehaviorAttendanceRule: {
 			action: components['schemas']['BehaviorScoreAction'];
@@ -20727,6 +20780,20 @@ export interface components {
 			message: string;
 			recoveryPath: string;
 		};
+		/** @description Bounded immutable source evidence, independent of resource counts and access projections. */
+		DeliveryPublicationContext: {
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil: string | null;
+			/** Format: uuid */
+			id: string;
+			isSuperseded: boolean;
+			/** Format: int64 */
+			publicationNo: number;
+			/** Format: date-time */
+			publishedAt: string | null;
+		};
 		DeliveryPublicationPreviewQuery: {
 			/** Format: date */
 			effectiveFrom?: string | null;
@@ -20773,6 +20840,9 @@ export interface components {
 			effectiveUntil: string | null;
 			/** Format: uuid */
 			id: string;
+			isSuperseded: boolean;
+			/** Format: int64 */
+			publicationNo: number | null;
 			/** Format: date-time */
 			publishedAt?: string | null;
 			/** Format: uuid */
@@ -20863,8 +20933,15 @@ export interface components {
 			groupCount: number;
 			/** Format: uuid */
 			id: string;
+			isSuperseded: boolean;
 			/** Format: int64 */
 			offeringCount: number;
+			/** Format: int64 */
+			publicationNo: number | null;
+			/** Format: date-time */
+			publishedAt: string | null;
+			/** Format: uuid */
+			publishedBy: string | null;
 			/** Format: date */
 			referenceDate: string;
 			/** Format: int64 */
@@ -24173,6 +24250,13 @@ export interface components {
 			/** Format: int32 */
 			year: number;
 		};
+		/** @description Civil-date policy for deliberate publication; academic contexts have no inferred dates. */
+		PublicationDateRules: {
+			/** Format: date */
+			minimumEffectiveFrom: string | null;
+			/** Format: date */
+			today: string;
+		};
 		PublicCertificateRenderRequest: {
 			receipt: string;
 		};
@@ -27444,12 +27528,15 @@ export interface components {
 		TimetableBlockWorkspace: {
 			bellPeriods: components['schemas']['BellSchedulePeriod'][];
 			blocks: components['schemas']['TimetableBlock'][];
+			deliveryPublication: components['schemas']['DeliveryPublicationContext'];
 			homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+			latestDeliveryPublication: components['schemas']['DeliveryPublicationContext'];
 			/** Format: uuid */
 			latestDeliveryVersionId: string;
 			learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
 			offeringSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
 			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
+			publicationDateRules: components['schemas']['PublicationDateRules'];
 			rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
 			sourceIssues: components['schemas']['TimetableSourceIssue'][];
 			staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
@@ -27537,8 +27624,8 @@ export interface components {
 		/** @enum {string} */
 		TimetablePublicationFindingCode:
 			| 'invalid_date'
+			| 'consumed_history_conflict'
 			| 'delivery_date_mismatch'
-			| 'date_already_published'
 			| 'no_content_change'
 			| 'source_needs_review'
 			| 'period_count_mismatch'
@@ -27547,14 +27634,17 @@ export interface components {
 			| 'collision'
 			| 'inactive_resource';
 		TimetablePublicationPreview: {
+			applicableDeliveryPublication: components['schemas']['DeliveryPublicationContext'] | null;
 			blockCount: number;
 			canPublish: boolean;
 			contentChanged: boolean;
+			deliveryPublication: components['schemas']['DeliveryPublicationContext'];
 			/** Format: uuid */
 			deliveryVersionId: string;
 			/** Format: date */
 			effectiveFrom: string;
 			findings: components['schemas']['TimetablePublicationFinding'][];
+			latestDeliveryPublication: components['schemas']['DeliveryPublicationContext'];
 			/** Format: uuid */
 			latestDeliveryVersionId: string;
 			previewHash: string;
@@ -27678,6 +27768,8 @@ export interface components {
 			effectiveUntil: string | null;
 			/** Format: uuid */
 			id: string;
+			/** Format: int64 */
+			publicationNo: number | null;
 			/** Format: date-time */
 			publishedAt: string | null;
 			/** Format: uuid */
@@ -27692,7 +27784,7 @@ export interface components {
 			updatedAt: string;
 		};
 		/** @enum {string} */
-		TimetableVersionDisplayState: 'current' | 'upcoming' | 'historical';
+		TimetableVersionDisplayState: 'current' | 'upcoming' | 'historical' | 'superseded';
 		/** @enum {string} */
 		TimetableVersionStatus: 'draft' | 'published' | 'cancelled';
 		TimetableVersionTarget: {

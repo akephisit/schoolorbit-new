@@ -154,3 +154,19 @@ test('whole-school view derives from the same canonical workspace without a seco
 	assert.match(page, /มุมมองนี้ใช้ตรวจภาพรวม/);
 	assert.doesNotMatch(api, /getWholeSchoolTimetableOverview/);
 });
+
+test('publication source changes remain explicit and date rules come from the owning contract', async () => {
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const opening = await read('src/lib/components/learning-delivery/AcademicChangeReadiness.svelte');
+	const edit = page.slice(
+		page.indexOf('async function startEditing'),
+		page.indexOf('async function finishEditing')
+	);
+	assert.doesNotMatch(edit, /updateTimetableDeliverySource/);
+	assert.match(page, /publicationDate = controller.workspace.publicationDateRules.today/);
+	assert.match(opening, /selectedDate = changeSet.publicationDateRules.today/);
+	assert.doesNotMatch(opening, /referenceDate > today/);
+	assert.match(page, /updateDeliverySource\(applicablePublication.id, checkedPublication\)/);
+	assert.match(page, /version.id !== expectedPreview.timetableVersionId/);
+	assert.match(page, /publicationPreview !== expectedPreview/);
+});

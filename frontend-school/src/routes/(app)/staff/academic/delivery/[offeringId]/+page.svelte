@@ -36,10 +36,8 @@
 		type DeliveryVersion,
 		type DeliveryVersionSummary
 	} from '#lib/api/learning-delivery.js';
-	import {
-		selectDeliveryVersion,
-		deliveryVersionEffectiveLabel
-	} from '#lib/academic/learning-delivery-page.js';
+	import { selectDeliveryVersion } from '#lib/academic/learning-delivery-page.js';
+	import { deliveryPublicationLabel } from '#lib/academic/publication-presentation.js';
 	import DeliveryVersionOfferingView from '#lib/components/learning-delivery/DeliveryVersionOfferingView.svelte';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -214,15 +212,7 @@
 		);
 	}
 
-	function deliveryVersionLabel(version: DeliveryVersionSummary): string {
-		const status =
-			version.status === 'draft'
-				? 'แบบร่าง'
-				: version.status === 'published'
-					? 'เผยแพร่แล้ว'
-					: 'ยกเลิกแล้ว';
-		return `${status} · ${deliveryVersionEffectiveLabel(version.effectiveFrom)}`;
-	}
+	const deliveryVersionLabel = deliveryPublicationLabel;
 
 	function deliveryDetailUrl(url: URL): `staff/academic/delivery/${string}?${string}` {
 		return `staff/academic/delivery/${encodeURIComponent(offeringId)}?${url.searchParams.toString()}`;
@@ -1212,7 +1202,7 @@
 										</p>
 										<p class="mt-0.5 text-xs text-muted-foreground">
 											{selectedDeliveryVersionSummary
-												? `${selectedDeliveryVersionSummary.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'} · ${deliveryVersionEffectiveLabel(selectedDeliveryVersionSummary.effectiveFrom)}`
+												? deliveryVersionLabel(selectedDeliveryVersionSummary)
 												: 'ยังไม่มีรุ่นเปิดสอนที่ใช้อ้างอิง'}
 										</p>
 										{#if canMutateOffering && deliveryVersion && selectedTimetableTarget && selectedDeliveryVersionSummary?.changeSetId}

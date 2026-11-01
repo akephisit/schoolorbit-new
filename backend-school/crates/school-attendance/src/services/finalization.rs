@@ -7,7 +7,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgConnection, Postgres, Transaction};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
@@ -29,12 +29,96 @@ pub async fn finalize_date_in_transaction(
     processed_at: DateTime<Utc>,
 ) -> Result<FinalizationOutcome, AppError> {
     let guard = guard_finalization(tx, term).await?;
-    finalize_guarded(tx, &guard, date, generation, seeds, processed_at).await
+    let batch =
+        ValidatedFinalizationSeeds::validate_supplied(tx, &guard, date, generation, seeds).await?;
+    finalize_guarded(tx, &guard, date, generation, &batch, processed_at).await
 }
 
 pub(crate) struct GuardedFinalization {
     pub context: super::settings::AttendanceReadContext,
 }
+/// A canonical batch resolved once after the caller's finalization term lock.
+/// Private fields prevent a pre-lock seed list from masquerading as this proof.
+pub(crate) struct ValidatedFinalizationSeeds {
+    seeds: Vec<AttendanceSeed>,
+    accepted: HashSet<Uuid>,
+    witnesses: HashMap<Uuid, String>,
+    generation: Uuid,
+}
+impl ValidatedFinalizationSeeds {
+    pub(crate) async fn resolve(
+        tx: &mut Transaction<'_, Postgres>,
+        guard: &GuardedFinalization,
+        date: NaiveDate,
+        generation: Uuid,
+    ) -> Result<Self, AppError> {
+        let seeds = crate::application::finalization::expected_rounds_with_context(
+            &mut **tx,
+            &guard.context,
+            date,
+        )
+        .await?;
+        let accepted = DbSession::new(&mut **tx)
+            .scalar(
+                "attendance.services.finalization.accepted_batch",
+                "SELECT id FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2",
+            )
+            .bind(guard.context.settings.academic_term_id)
+            .bind(date)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect();
+        let witnesses = seeds
+            .iter()
+            .map(|seed| {
+                Ok((
+                    seed.session.id,
+                    super::sessions::seed_source_fingerprint(seed, generation)?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, AppError>>()?;
+        Ok(Self {
+            witnesses,
+            seeds,
+            accepted,
+            generation,
+        })
+    }
+    async fn validate_supplied(
+        tx: &mut Transaction<'_, Postgres>,
+        guard: &GuardedFinalization,
+        date: NaiveDate,
+        generation: Uuid,
+        seeds: &[AttendanceSeed],
+    ) -> Result<Self, AppError> {
+        let mut current = Self::resolve(tx, guard, date, generation).await?;
+        for seed in seeds
+            .iter()
+            .filter(|seed| seed.session.kind == AttendanceKind::Lesson)
+        {
+            if !current.accepts(seed)? {
+                return Err(AppError::Conflict(
+                    "แหล่งรายชื่อปิดยอดเปลี่ยนไป กรุณาประมวลผลใหม่".into(),
+                ));
+            }
+        }
+        current.seeds = seeds.to_vec();
+        Ok(current)
+    }
+    pub(super) fn accepts(&self, seed: &AttendanceSeed) -> Result<bool, AppError> {
+        if seed.session.kind != AttendanceKind::Lesson || self.accepted.contains(&seed.session.id) {
+            return Ok(true);
+        }
+        match self.witnesses.get(&seed.session.id) {
+            Some(expected) => {
+                Ok(expected == &super::sessions::seed_source_fingerprint(seed, self.generation)?)
+            }
+            None => Ok(false),
+        }
+    }
+}
+
 pub(crate) async fn guard_finalization(
     tx: &mut Transaction<'_, Postgres>,
     term: Uuid,
@@ -49,9 +133,10 @@ pub(crate) async fn finalize_guarded(
     guard: &GuardedFinalization,
     date: NaiveDate,
     generation: Uuid,
-    seeds: &[AttendanceSeed],
+    batch: &ValidatedFinalizationSeeds,
     processed_at: DateTime<Utc>,
 ) -> Result<FinalizationOutcome, AppError> {
+    let seeds = &batch.seeds;
     let term = guard.context.settings.academic_term_id;
     let (actual, start, coverage): (Uuid, NaiveDate, NaiveDate) = DbSession::new(&mut **tx).query_as("attendance.services.finalization.finalize_guarded",
         "SELECT generation,auto_finalize_from,coverage_start FROM attendance_module_state WHERE singleton",
@@ -140,7 +225,7 @@ pub(crate) async fn finalize_guarded(
         {
             continue;
         }
-        super::sessions::insert_seed(tx, seed).await?;
+        super::sessions::insert_finalization_seed(tx, seed, batch).await?;
         let inserted = DbSession::new(&mut **tx).query("attendance.services.finalization.finalize_guarded", r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,processed_at)
             SELECT $1,"studentId","studentAcademicYearId",$2,"classNumber",'absent','automatic',$3
             FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)

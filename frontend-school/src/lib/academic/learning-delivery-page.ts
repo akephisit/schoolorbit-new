@@ -2,6 +2,7 @@ import type {
 	AcademicTermChangeSet,
 	AcademicTermChangeSetSummary,
 	DeliveryVersionSummary,
+	LearningGroup,
 	UpsertAcademicTermChangeItemRequest
 } from '#lib/api/learning-delivery.js';
 
@@ -21,9 +22,13 @@ export function currentDeliveryDate(now = new Date()): string {
 	}).format(now);
 }
 
-export function defaultRosterTrackingDate(startsOn?: string | null, now = new Date()): string {
+export function defaultRosterTrackingDate(
+	resourceStatus: LearningGroup['status'],
+	startsOn?: string | null,
+	now = new Date()
+): string {
 	const today = currentDeliveryDate(now);
-	return startsOn && startsOn > today ? startsOn : today;
+	return resourceStatus === 'draft' && startsOn && startsOn > today ? startsOn : today;
 }
 
 export function deliveryVersionEffectiveLabel(effectiveFrom: string | null): string {
@@ -87,6 +92,9 @@ export function summarizeAcademicTermChangeSet(
 ): AcademicTermChangeSetSummary {
 	return {
 		id: detail.id,
+		publicationNo: detail.publicationNo,
+		publishedAt: detail.publishedAt ?? null,
+		publishedBy: detail.publishedBy ?? null,
 		academicTermId: detail.academicTermId,
 		academicYearId: detail.academicYearId,
 		effectiveFrom: detail.effectiveFrom,
@@ -105,7 +113,13 @@ export function selectDeliveryVersion(
 	if (requestedId) return versions.find((version) => version.id === requestedId) ?? null;
 	return (
 		versions.find((version) => version.status === 'draft') ??
-		versions.find((version) => version.status === 'published') ??
+		versions
+			.filter((version) => version.status === 'published' && !version.isSuperseded)
+			.toSorted((left, right) => {
+				if (left.publicationNo === null) return 1;
+				if (right.publicationNo === null) return -1;
+				return right.publicationNo - left.publicationNo;
+			})[0] ??
 		null
 	);
 }

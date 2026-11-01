@@ -9,8 +9,10 @@ export function selectPreferredBoardVersion(
 		versions.find(
 			(version) => version.status === 'published' && version.displayState === 'current'
 		) ??
-		versions.find((version) => version.status === 'published') ??
-		versions[0] ??
+		versions.find(
+			(version) => version.status === 'published' && version.displayState !== 'superseded'
+		) ??
+		versions.find((version) => version.displayState !== 'superseded') ??
 		null
 	);
 }

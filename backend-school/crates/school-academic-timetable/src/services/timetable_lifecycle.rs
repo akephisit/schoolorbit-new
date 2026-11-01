@@ -3,7 +3,9 @@ use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
+#[cfg(test)]
+use chrono::Utc;
 use school_academic_core::models::TimetableVersionStatus;
 use school_academic_delivery::models::versions::DeliverySnapshot;
 use school_academic_delivery::models::{ActivitySchedulingMode, LearningOfferingSnapshot};
@@ -11,7 +13,7 @@ use school_academic_delivery::services::versions as delivery;
 use school_errors::AppError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::{timetable_block_queries, timetable_source, timetable_version_service};
@@ -92,9 +94,12 @@ async fn update_source_in_permit(
             .bind(id).bind(source.id).execute().await?;
         audit(&mut tx,actor,id,&context,"academic_timetable_version.source_updated",serde_json::json!({"previousDeliveryVersionId":context.delivery_version_id,"deliveryVersionId":source.id})).await?;
     }
-    let result =
-        timetable_version_service::get_version_on_connection(&mut tx, id, Utc::now().date_naive())
-            .await?;
+    let result = timetable_version_service::get_version_on_connection(
+        &mut tx,
+        id,
+        timetable_version_service::bangkok_today(),
+    )
+    .await?;
     permit.commit(tx).await?;
     Ok(result)
 }
@@ -288,6 +293,7 @@ fn delete_error(error: sqlx::Error) -> AppError {
 }
 
 pub async fn preview(
+    history: &dyn school_academic_delivery::ports::PublicationHistoryPort,
     pool: &PgPool,
     id: Uuid,
     request: PreviewTimetablePublicationRequest,
@@ -298,25 +304,80 @@ pub async fn preview(
     )
     .await?;
     let context = lock_draft(&mut tx, id, request.row_version).await?;
-    let result = build_preview(&mut tx, id, &context, request.effective_from).await?;
+    let result = build_preview(history, &mut tx, id, &context, request.effective_from).await?;
     tx.commit().await?;
     Ok(result)
 }
 
 pub async fn publish(
+    history: &'static dyn school_academic_delivery::ports::PublicationHistoryPort,
     pool: &PgPool,
     context: &TimetableMutationContext,
     id: Uuid,
     request: PublishTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
+    let request_hash = publication_request_fingerprint(id, &request)?;
+    let key = request.idempotency_key;
     context
-        .execute_lifecycle(pool, id, move |pool, permit| async move {
-            publish_in_permit(&pool, permit, id, request).await
-        })
+        .execute_publication(
+            pool,
+            id,
+            move |pool| async move {
+                let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                    &pool,
+                    "academic_timetable.services.timetable_lifecycle.publication_receipt",
+                )
+                .await?;
+                read_publication_receipt(&mut connection, id, key, &request_hash).await
+            },
+            move |pool, permit| async move {
+                publish_in_permit(history, &pool, permit, id, request).await
+            },
+        )
         .await
 }
 
+fn publication_request_fingerprint(
+    id: Uuid,
+    request: &PublishTimetableVersionRequest,
+) -> Result<String, AppError> {
+    hash(&(
+        id,
+        &request.row_version,
+        &request.effective_from,
+        &request.preview_hash,
+    ))
+}
+
+async fn read_publication_receipt(
+    connection: &mut PgConnection,
+    id: Uuid,
+    key: Uuid,
+    fingerprint: &str,
+) -> Result<Option<TimetableVersion>, AppError> {
+    let receipt:Option<(Uuid,String)>=DbSession::new(&mut *connection).query_as("academic_timetable.services.timetable_lifecycle.publication_receipt.lookup",
+        "SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 AND status='published'")
+        .bind(key).fetch_optional().await?;
+    match receipt {
+        Some((accepted, hash)) => {
+            if accepted != id || hash != fingerprint {
+                return Err(AppError::Conflict("idempotencyKey ถูกใช้กับคำขออื่นแล้ว".into()));
+            }
+            Ok(Some(
+                timetable_version_service::get_version_on_connection(
+                    connection,
+                    id,
+                    timetable_version_service::bangkok_today(),
+                )
+                .await?,
+            ))
+        }
+        None => Ok(None),
+    }
+}
+
 async fn publish_in_permit(
+    history: &dyn school_academic_delivery::ports::PublicationHistoryPort,
     pool: &PgPool,
     permit: Arc<CommitPermit>,
     id: Uuid,
@@ -324,19 +385,14 @@ async fn publish_in_permit(
 ) -> Result<TimetableVersion, AppError> {
     let actor = permit.actor_id;
     permit.require_version(id)?;
-    let request_hash = hash(&(
-        id,
-        &request.row_version,
-        &request.effective_from,
-        &request.preview_hash,
-    ))?;
+    let request_hash = publication_request_fingerprint(id, &request)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_lifecycle.publish",
     )
     .await?;
     // Serializes lifecycle and idempotency with autosaves before consulting a receipt.
-    timetable_version_service::require_version_term_write(&mut tx, id).await?;
+    let write_state = timetable_version_service::lock_version_term_context(&mut tx, id).await?;
     let receipt: Option<(Uuid,String)>=DbSession::new(&mut *tx).query_as("academic_timetable.services.timetable_lifecycle.publish", "SELECT id,publication_request_hash FROM academic_timetable_versions WHERE publication_idempotency_key=$1 FOR SHARE")
         .bind(request.idempotency_key).fetch_optional().await?;
     if let Some((published_id, stored_hash)) = receipt {
@@ -346,14 +402,15 @@ async fn publish_in_permit(
         let result = timetable_version_service::get_version_on_connection(
             &mut tx,
             id,
-            Utc::now().date_naive(),
+            timetable_version_service::bangkok_today(),
         )
         .await?;
         permit.commit(tx).await?;
         return Ok(result);
     }
+    write_state.require_writable()?;
     let context = lock_draft(&mut tx, id, request.row_version).await?;
-    let preview = build_preview(&mut tx, id, &context, request.effective_from).await?;
+    let preview = build_preview(history, &mut tx, id, &context, request.effective_from).await?;
     if preview.preview_hash != request.preview_hash {
         return Err(AppError::Conflict(
             "ตารางหรือข้อมูลเปิดสอนเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".into(),
@@ -364,7 +421,7 @@ async fn publish_in_permit(
             "ตารางยังไม่พร้อมเผยแพร่ กรุณาแก้รายการที่แจ้งก่อน".into(),
         ));
     }
-    let written = DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.publish", "UPDATE academic_timetable_versions SET effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
+    let written = DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.publish", "UPDATE academic_timetable_versions SET publication_no=(SELECT COALESCE(max(publication_no),0)+1 FROM academic_timetable_versions WHERE academic_term_id=(SELECT academic_term_id FROM academic_timetable_versions WHERE id=$1) AND status='published'),effective_from=$2,status='published',published_by=$3,published_at=now(),row_version=row_version+1,updated_at=now(),publication_idempotency_key=$4,publication_request_hash=$5 WHERE id=$1 AND status='draft' AND row_version=$6")
         .bind(id).bind(request.effective_from).bind(actor).bind(request.idempotency_key).bind(&request_hash) .bind(request.row_version).execute().await?;
     if written.rows_affected() != 1 {
         return Err(AppError::Conflict(
@@ -372,9 +429,12 @@ async fn publish_in_permit(
         ));
     }
     audit(&mut tx,actor,id,&context,"academic_timetable_version.published",serde_json::json!({"deliveryVersionId":context.delivery_version_id,"effectiveFrom":request.effective_from,"previewHash":preview.preview_hash,"idempotencyKey":request.idempotency_key})).await?;
-    let result =
-        timetable_version_service::get_version_on_connection(&mut tx, id, Utc::now().date_naive())
-            .await?;
+    let result = timetable_version_service::get_version_on_connection(
+        &mut tx,
+        id,
+        timetable_version_service::bangkok_today(),
+    )
+    .await?;
     permit.commit(tx).await?;
     Ok(result)
 }
@@ -524,6 +584,7 @@ fn resources_ready(evidence: &PlacementResourceEvidence, blocks: &[TimetableBloc
 }
 
 async fn build_preview(
+    history: &dyn school_academic_delivery::ports::PublicationHistoryPort,
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
     context: &DraftContext,
@@ -535,22 +596,24 @@ async fn build_preview(
     let latest_id = delivery::latest_published_id(tx, context.academic_term_id).await?;
     let blocks = blocks(tx, id).await?;
     let content = timetable_source::content_hash(source.id, &blocks)?;
-    let changed = if let Some(original_id) = context.source_version_id {
-        let original_source: Uuid = DbSession::new(&mut **tx)
-            .scalar(
+    let (changed, earlier_activation) = if let Some(original_id) = context.source_version_id {
+        let (original_source, original_date): (Uuid, NaiveDate) = DbSession::new(&mut **tx)
+            .query_as(
                 "academic_timetable.services.timetable_lifecycle.build_preview",
-                "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+                "SELECT delivery_version_id,effective_from FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
             )
             .bind(original_id)
             .fetch_one()
             .await?;
         let original_blocks = self::blocks(tx, original_id).await?;
-        content != timetable_source::content_hash(original_source, &original_blocks)?
+        (
+            content != timetable_source::content_hash(original_source, &original_blocks)?,
+            date < original_date,
+        )
     } else {
-        true
+        (true, false)
     };
     let mut findings = readiness(&source.snapshot, &blocks);
-    let duplicate:bool=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.publication_date","SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' AND effective_from=$2)").bind(context.academic_term_id).bind(date).fetch_one().await?;
     if !delivery::contains_date(&source, date) {
         findings.push(finding(
             TimetablePublicationFindingCode::DeliveryDateMismatch,
@@ -560,16 +623,7 @@ async fn build_preview(
             None,
         ));
     }
-    if duplicate {
-        findings.push(finding(
-            TimetablePublicationFindingCode::DateAlreadyPublished,
-            "มีตารางที่เผยแพร่ในวันที่นี้แล้ว",
-            None,
-            None,
-            None,
-        ));
-    }
-    if !changed {
+    if !changed && !earlier_activation {
         findings.push(finding(
             TimetablePublicationFindingCode::NoContentChange,
             "คาบและรุ่นเปิดสอนยังตรงกับตารางต้นทาง",
@@ -616,6 +670,35 @@ async fn build_preview(
         ));
     }
     let source_issues = timetable_source::source_issues(&source.snapshot, &blocks);
+    let date_rules = school_academic_delivery::services::publication::date_rules_on_connection(
+        &mut **tx,
+        context.academic_term_id,
+    )
+    .await?;
+    if date_rules
+        .minimum_effective_from
+        .is_some_and(|minimum| date < minimum)
+    {
+        findings.push(finding(
+            TimetablePublicationFindingCode::InvalidDate,
+            "ภาคเรียนที่เปิดใช้งานแล้วไม่สามารถกำหนดวันที่เริ่มใช้ย้อนหลังได้",
+            None,
+            None,
+            None,
+        ));
+    }
+    if history
+        .has_consumed_history(&mut **tx, context.academic_term_id, date)
+        .await?
+    {
+        findings.push(finding(
+            TimetablePublicationFindingCode::ConsumedHistoryConflict,
+            "วันที่เลือกมีประวัติการเช็คชื่อหรือการปิดวันแล้ว กรุณาเลือกวันที่หลังประวัติเดิม",
+            None,
+            None,
+            None,
+        ));
+    }
     let preview_hash = hash(&(
         id,
         context.row_version,
@@ -628,9 +711,24 @@ async fn build_preview(
         (&teacher_states, &resource_evidence),
         &findings,
         &source_issues,
-        duplicate,
     ))?;
+    let latest_delivery_publication =
+        school_academic_delivery::services::publication::context_on_connection(
+            &mut **tx, latest_id,
+        )
+        .await?;
+    let delivery_publication = school_academic_delivery::services::publication::context(&source)?;
+    let applicable_delivery_publication =
+        school_academic_delivery::services::publication::applicable_on_connection(
+            &mut **tx,
+            context.academic_term_id,
+            date,
+        )
+        .await?;
     Ok(TimetablePublicationPreview {
+        delivery_publication,
+        latest_delivery_publication,
+        applicable_delivery_publication,
         timetable_version_id: id,
         row_version: context.row_version,
         delivery_version_id: source.id,

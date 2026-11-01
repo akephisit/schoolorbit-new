@@ -23,7 +23,7 @@ struct Fixture {
 async fn fixture(name: &str) -> Fixture {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 150).await.unwrap();
+    apply_migrations_through(&pool, 151).await.unwrap();
     let source: Uuid = sqlx::query_scalar("SELECT learning_offering_id FROM course_offering_details ORDER BY learning_offering_id LIMIT 1")
         .fetch_one(&pool).await.unwrap();
     let term = Uuid::now_v7();
@@ -85,7 +85,7 @@ async fn version(
     graph: &serde_json::Value,
 ) -> Uuid {
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,CASE WHEN $4 THEN current_date+$5 ELSE NULL END,CASE WHEN $4 THEN NULL ELSE current_date+$5 END,CASE WHEN $4 THEN 'published' ELSE 'draft' END,$6,CASE WHEN $4 THEN $7::uuid ELSE NULL END,CASE WHEN $4 THEN now() ELSE NULL END,CASE WHEN $4 THEN uuidv7() ELSE NULL END,CASE WHEN $4 THEN repeat('a',64) ELSE NULL END)")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES(CASE WHEN $4 THEN (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=$2) ELSE NULL END,$1,$2,$3,CASE WHEN $4 THEN current_date+$5 ELSE NULL END,CASE WHEN $4 THEN NULL ELSE current_date+$5 END,CASE WHEN $4 THEN 'published' ELSE 'draft' END,$6,CASE WHEN $4 THEN $7::uuid ELSE NULL END,CASE WHEN $4 THEN now() ELSE NULL END,CASE WHEN $4 THEN uuidv7() ELSE NULL END,CASE WHEN $4 THEN repeat('a',64) ELSE NULL END)")
         .bind(id).bind(f.term).bind(f.year).bind(published).bind(offset).bind(graph).bind(FIRST).execute(connection).await.unwrap();
     id
 }
@@ -257,4 +257,265 @@ async fn teacher_assignments_share_latest_source_availability_and_active_primary
         .unwrap();
     assert_eq!(omitted_actor.delivery_version_id, Some(empty));
     assert!(omitted_actor.learning_group_ids.is_empty());
+}
+
+#[tokio::test]
+async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_resource_scopes() {
+    use school_academic_delivery::services::change_sets::visible_base_teacher_assignments;
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("delivery_base_teacher_scope").await;
+    let other = Uuid::now_v7();
+    let group = Uuid::now_v7();
+    let mut connection = f.pool.begin().await.unwrap();
+    let owner:Uuid=sqlx::query_scalar("SELECT id FROM organization_units WHERE id<>(SELECT owning_organization_unit_id FROM learning_offerings WHERE id=$1) ORDER BY id LIMIT 1").bind(f.offering).fetch_one(&mut *connection).await.unwrap();
+    sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) VALUES($1,$2,$3,'course','SCOPE-OTHER','Other scoped offering','draft',current_date-40,$4)")
+        .bind(other).bind(f.term).bind(f.year).bind(owner).execute(&mut *connection).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score) SELECT $1,$3,$4,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE subject_version_id<>(SELECT subject_version_id FROM course_offering_details WHERE learning_offering_id=$2) ORDER BY learning_offering_id LIMIT 1")
+        .bind(other).bind(f.offering).bind(f.term).bind(f.year).execute(&mut *connection).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,'SCOPE-OTHER','Other group','draft','draft')")
+        .bind(group).bind(other).bind(f.term).bind(f.year).execute(&mut *connection).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) VALUES(uuidv7(),$1,$2,$3,$4,'primary',current_date-40)")
+        .bind(group).bind(f.term).bind(f.year).bind(SECOND).execute(&mut *connection).await.unwrap();
+    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=$1")
+        .bind(group)
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE learning_offerings SET status='published',published_at=now() WHERE id=$1")
+        .bind(other)
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    let graph:serde_json::Value=sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,current_date-35,jsonb_build_array(jsonb_build_object('id',$2::uuid,'weekly_period_target',1),jsonb_build_object('id',$3::uuid,'weekly_period_target',1)))")
+        .bind(f.term).bind(f.offering).bind(other).fetch_one(&mut *connection).await.unwrap();
+    let publication = version(&f, &mut connection, -35, true, &graph).await;
+    connection.commit().await.unwrap();
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(f.year)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let revision = school_academic_delivery::services::change_sets::create_change_set(
+        &f.pool,
+        FIRST,
+        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: f.term,
+            reason: "Scoped immutable baseline".into(),
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(revision.base_delivery_version_id, Some(publication));
+    let denied = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(denied.is_empty());
+    let assigned = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(FIRST),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(assigned.len(), 4);
+    assert!(assigned
+        .iter()
+        .all(|assignment| f.groups.contains(&assignment.learning_group_id)));
+    let scoped = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![owner],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].learning_group_id, group);
+    assert_eq!(scoped[0].teacher_id, SECOND);
+    let union = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(FIRST),
+            organization_unit_ids: vec![owner],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(union.len(), 5);
+    for assignment in union {
+        let original = graph["offerings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|offering| offering["groups"].as_array().unwrap())
+            .flat_map(|group| group["teachers"].as_array().unwrap())
+            .find(|original| {
+                original["assignmentId"].as_str()
+                    == Some(assignment.assignment_id.to_string().as_str())
+            })
+            .unwrap();
+        assert_eq!(
+            assignment.teacher_id.to_string(),
+            original["teacherId"].as_str().unwrap()
+        );
+        assert_eq!(
+            assignment.display_name,
+            original["displayName"].as_str().unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(assignment.role).unwrap(),
+            original["role"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn construction_teacher_metadata_keeps_the_same_resource_visibility_without_a_publication_base(
+) {
+    use school_academic_delivery::{
+        models::CreateAcademicTermChangeSetRequest,
+        services::change_sets::{create_change_set, visible_base_teacher_assignments},
+    };
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("construction_teacher_metadata_scope").await;
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(f.year)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let revision = create_change_set(
+        &f.pool,
+        FIRST,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: f.term,
+            reason: "Initial construction source".into(),
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(revision.base_delivery_version_id.is_none());
+    let denied = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(denied.is_empty());
+    let old = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(FIRST),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        old.is_empty(),
+        "ended raw assignments do not grant construction visibility"
+    );
+    let selected = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(f.live_only),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(selected.len(), 2);
+    assert!(selected
+        .iter()
+        .all(|assignment| assignment.teacher_id == f.live_only
+            && f.groups.contains(&assignment.learning_group_id)));
+    let expected: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT initial_teacher_assignment_ids FROM academic_term_change_sets WHERE id=$1",
+    )
+    .bind(revision.id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|assignment| assignment.assignment_id)
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected.into_iter().collect()
+    );
+}
+
+#[tokio::test]
+async fn overview_counts_latest_planning_membership_instead_of_raw_episode_history() {
+    use school_academic_delivery::services::workspaces::delivery_overview;
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("delivery_overview_episode_history").await;
+    let raw:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t WHERE learning_group_id=ANY($1)")
+        .bind(&f.groups).fetch_one(&f.pool).await.unwrap();
+    let mut connection = f.pool.acquire().await.unwrap();
+    let old = graph(&f, &mut connection, -35).await;
+    version(&f, &mut connection, -35, true, &old).await;
+    let future = graph(&f, &mut connection, 40).await;
+    version(&f, &mut connection, 40, true, &future).await;
+    drop(connection);
+    let filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let overview = delivery_overview(&f.pool, f.term, &filter).await.unwrap();
+    let item = overview
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == f.offering)
+        .unwrap();
+    assert_eq!(item.group_count, 2);
+    assert_eq!(
+        item.teacher_assignment_count, 4,
+        "only the selected future primary and secondary in each group count"
+    );
+    assert_eq!(item.groups_without_primary_teacher, 0);
+    assert!(raw.as_array().unwrap().len() > item.teacher_assignment_count as usize);
+    let mut connection = f.pool.acquire().await.unwrap();
+    version(
+        &f,
+        &mut connection,
+        50,
+        true,
+        &serde_json::json!({"offerings":[]}),
+    )
+    .await;
+    drop(connection);
+    let overview = delivery_overview(&f.pool, f.term, &filter).await.unwrap();
+    let item = overview
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == f.offering)
+        .unwrap();
+    assert_eq!(
+        item.group_count, 2,
+        "registry coverage remains the denominator"
+    );
+    assert_eq!(item.teacher_assignment_count, 0);
+    assert_eq!(
+        item.groups_without_primary_teacher, 2,
+        "omitted groups have no historical primary fallback"
+    );
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t WHERE learning_group_id=ANY($1)")
+        .bind(&f.groups).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(raw, after);
 }

@@ -4,6 +4,7 @@ pub mod assessment_publication;
 pub mod behavior;
 pub mod facility_changes;
 pub mod notification_delivery;
+pub mod publication_history;
 pub mod staff_directory;
 
 pub mod budget;

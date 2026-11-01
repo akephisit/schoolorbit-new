@@ -192,6 +192,83 @@ pub async fn insert_seed(
     if seed.students.len() > 2000 {
         return Err(invalid("รายชื่อเกินขนาดที่รองรับ"));
     }
+    if s.kind == AttendanceKind::Lesson {
+        let persisted: bool=DbSession::new(&mut **tx).scalar("attendance.services.sessions.insert_seed.accepted_source",
+            "SELECT EXISTS(SELECT 1 FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind=$3 AND source_key=$4)")
+            .bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).fetch_one().await?;
+        if !persisted {
+            let current = crate::application::resolve_seed_on_connection(
+                &mut **tx,
+                &OpenAttendanceSession {
+                    academic_term_id: s.academic_term_id,
+                    date: s.date,
+                    kind: s.kind,
+                    source_key: s.source_key.clone(),
+                },
+            )
+            .await
+            .map_err(|error| match error {
+                AppError::NotFound(_) => {
+                    AppError::Conflict("ตารางหรือแหล่งรายชื่อเปลี่ยนไป กรุณาโหลดรอบเช็คชื่อใหม่".into())
+                }
+                error => error,
+            })?;
+            let generation = module_generation_on_connection(&mut **tx).await?;
+            if !same_seed_source(seed, &current, generation)? {
+                return Err(AppError::Conflict(
+                    "ตารางหรือแหล่งรายชื่อเปลี่ยนไป กรุณาโหลดรอบเช็คชื่อใหม่".into(),
+                ));
+            }
+        }
+    }
+    insert_seed_row(tx, seed).await
+}
+
+pub(super) fn seed_source_fingerprint(
+    seed: &AttendanceSeed,
+    generation: Uuid,
+) -> Result<String, AppError> {
+    let mut source = seed.session.clone();
+    source.roster = seed.students.clone();
+    let source = token_with_generation(source, generation)?;
+    let bytes = serde_json::to_vec(&(
+        source.learning_group_id,
+        source.offering_id,
+        source.homeroom_id,
+        source.special_round_id,
+        source.count_override,
+        &source.title,
+        source.roster_token,
+    ))
+    .map_err(|_| invalid("สร้างข้อมูลยืนยันแหล่งรายชื่อไม่ได้"))?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+pub(super) fn same_seed_source(
+    left: &AttendanceSeed,
+    right: &AttendanceSeed,
+    generation: Uuid,
+) -> Result<bool, AppError> {
+    Ok(seed_source_fingerprint(left, generation)? == seed_source_fingerprint(right, generation)?)
+}
+
+pub(super) async fn insert_finalization_seed(
+    tx: &mut Transaction<'_, Postgres>,
+    seed: &AttendanceSeed,
+    batch: &super::finalization::ValidatedFinalizationSeeds,
+) -> Result<(), AppError> {
+    if !batch.accepts(seed)? {
+        return Err(AppError::Conflict(
+            "แหล่งรายชื่อปิดยอดเปลี่ยนไป กรุณาประมวลผลใหม่".into(),
+        ));
+    }
+    insert_seed_row(tx, seed).await
+}
+
+async fn insert_seed_row(
+    tx: &mut Transaction<'_, Postgres>,
+    seed: &AttendanceSeed,
+) -> Result<(), AppError> {
+    let s = &seed.session;
     DbSession::new(&mut **tx).query("attendance.services.sessions.insert_seed", "INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,roster) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(academic_term_id,date,kind,source_key) DO NOTHING")
         .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).bind(&s.title).bind(&s.teacher_ids)
         .bind(s.homeroom_id).bind(s.learning_group_id).bind(s.offering_id).bind(s.special_round_id).bind(s.start_time).bind(s.end_time)

@@ -358,6 +358,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
     .await
     .unwrap();
     let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         revision.id,
         Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
@@ -373,6 +374,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor,
@@ -1209,6 +1211,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .unwrap();
     }
     let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         revision.id,
         Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
@@ -1224,6 +1227,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor_id,
@@ -1490,7 +1494,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .iter()
         .any(|target| target.id == removed.id));
     let date = opening.effective_from.unwrap() + chrono::Duration::days(1);
-    sqlx::query("UPDATE academic_timetable_versions SET status='published',effective_from=$3,published_by=$2,published_at=now(),publication_idempotency_key=gen_random_uuid(),publication_request_hash=repeat('a',64) WHERE id=$1").bind(version_id).bind(actor_id).bind(date).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE academic_timetable_versions SET publication_no=(SELECT COALESCE(max(published.publication_no),0)+1 FROM academic_timetable_versions published WHERE published.academic_term_id=academic_timetable_versions.academic_term_id AND published.status='published'),status='published',effective_from=$3,published_by=$2,published_at=now(),publication_idempotency_key=gen_random_uuid(),publication_request_hash=repeat('a',64) WHERE id=$1").bind(version_id).bind(actor_id).bind(date).execute(&pool).await.unwrap();
     let mut timetable_date = date;
     while daily_teaching_service::day_code_from_date(timetable_date) != "WED" {
         timetable_date = timetable_date.checked_add_days(Days::new(1)).unwrap();

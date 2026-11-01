@@ -249,9 +249,11 @@ async fn clone_without_temp_preserves_graph_and_other_term() {
     sqlx::query(
         r#"INSERT INTO academic_delivery_versions (
                academic_term_id,academic_year_id,effective_from,snapshot,status,
-               created_by,published_by,published_at,publication_idempotency_key,publication_request_hash
+               created_by,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no
            ) VALUES ($1,$2,'2025-11-01','{"offerings":[]}','published',
-                     $3,$3,now(),gen_random_uuid(),repeat('a',64))"#,
+                     $3,$3,now(),gen_random_uuid(),repeat('a',64),
+                     (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions
+                      WHERE academic_term_id=$1 AND status='published'))"#,
     )
     .bind(other_term)
     .bind(source.academic_year_id)

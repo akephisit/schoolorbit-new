@@ -19,6 +19,7 @@ struct PublishedOfferingReference {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublishedOfferingEvidence {
+    delivery_version_id: Option<Uuid>,
     references: Vec<PublishedOfferingReference>,
     pub source_checksum: String,
 }
@@ -35,18 +36,28 @@ pub async fn published_for_term(
     academic_term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<PublishedOfferingEvidence, AppError> {
+    let delivery_version_id: Option<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.opening.applicable_publication",
+            "SELECT academic_delivery_applicable_publication($1,$2)",
+        )
+        .bind(academic_term_id)
+        .bind(on_date)
+        .fetch_one()
+        .await?;
     let references: Vec<PublishedOfferingReference> = DbSession::new(&mut **tx)
         .query_as(
             "academic_delivery.services.opening.published_for_term",
-            "SELECT id,kind,starts_on,ends_on,row_version
-         FROM learning_offerings
-         WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
-           AND starts_on<=$3 AND (ends_on IS NULL OR ends_on>=$3)
-         ORDER BY id LIMIT 5001",
+            "WITH selected AS MATERIALIZED(SELECT snapshot FROM academic_delivery_versions WHERE id=$3), included AS MATERIALIZED(
+            SELECT (offering->>'id')::uuid id FROM selected,jsonb_array_elements(snapshot->'offerings') offering)
+         SELECT registry.id,registry.kind,registry.starts_on,registry.ends_on,registry.row_version
+         FROM learning_offerings registry JOIN included ON included.id=registry.id
+         WHERE registry.academic_year_id=$1 AND registry.academic_term_id=$2 AND registry.status='published'
+         ORDER BY registry.id LIMIT 5001",
         )
         .bind(academic_year_id)
         .bind(academic_term_id)
-        .bind(on_date)
+        .bind(delivery_version_id)
         .fetch_all()
         .await?;
     if references.len() > 5_000 {
@@ -54,8 +65,9 @@ pub async fn published_for_term(
             "รายการเปิดสอนเกิน 5,000 รายการ กรุณาติดต่อผู้ดูแลระบบ".into(),
         ));
     }
-    let source_checksum = super::stable_hash(&references)?;
+    let source_checksum = super::stable_hash(&(delivery_version_id, &references))?;
     Ok(PublishedOfferingEvidence {
+        delivery_version_id,
         references,
         source_checksum,
     })

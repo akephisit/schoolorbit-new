@@ -107,10 +107,38 @@ pub enum DeliveryVersionStatus {
     Cancelled,
 }
 
+/// Civil-date policy for deliberate publication; academic contexts have no inferred dates.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct PublicationDateRules {
+    pub today: NaiveDate,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub minimum_effective_from: Option<NaiveDate>,
+}
+
+/// Bounded immutable source evidence, independent of resource counts and access projections.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryPublicationContext {
+    pub id: Uuid,
+    pub publication_no: i64,
+    pub effective_from: NaiveDate,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub effective_until: Option<NaiveDate>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub published_at: Option<DateTime<Utc>>,
+    pub is_superseded: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryVersion {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub publication_no: Option<i64>,
+    pub is_superseded: bool,
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
@@ -154,6 +182,9 @@ pub struct DeliveryVersionCourseMetadata {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryVersionSummary {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub publication_no: Option<i64>,
+    pub is_superseded: bool,
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
@@ -171,6 +202,10 @@ pub struct DeliveryVersionSummary {
     pub offering_count: i64,
     pub group_count: i64,
     pub teacher_assignment_count: i64,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub published_at: Option<DateTime<Utc>>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub published_by: Option<Uuid>,
     pub updated_at: DateTime<Utc>,
 }
 

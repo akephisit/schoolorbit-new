@@ -152,7 +152,7 @@ pub(crate) async fn get_canonical_workspace(
     let mut version = super::timetable_version_service::get_version_on_connection(
         connection,
         query.timetable_version_id,
-        Utc::now().date_naive(),
+        super::timetable_version_service::bangkok_today(),
     )
     .await?;
     if version.academic_year_id != query.academic_year_id
@@ -658,6 +658,19 @@ pub(crate) async fn get_canonical_workspace(
         .into_iter()
         .collect::<Vec<_>>();
     let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
+    let publication_date_rules =
+        school_academic_delivery::services::publication::date_rules_on_connection(
+            connection,
+            query.academic_term_id,
+        )
+        .await?;
+    let delivery_publication = school_academic_delivery::services::publication::context(&source)?;
+    let latest_delivery_publication =
+        school_academic_delivery::services::publication::context_on_connection(
+            connection,
+            latest_delivery_version_id,
+        )
+        .await?;
     let visibility = crate::policy::TimetableVisibility {
         source: source.snapshot,
         homeroom_advisors,
@@ -665,6 +678,9 @@ pub(crate) async fn get_canonical_workspace(
     };
     Ok((
         TimetableBlockWorkspace {
+            publication_date_rules,
+            delivery_publication,
+            latest_delivery_publication,
             total_draft_block_count,
             source_issues,
             latest_delivery_version_id,

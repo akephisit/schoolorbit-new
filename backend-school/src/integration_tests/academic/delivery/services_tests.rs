@@ -18,16 +18,16 @@ use uuid::Uuid;
 use super::{
     models::{
         AcademicChangeFindingCode, AcademicChangeFindingSeverity, AcademicChangeImpactCounts,
-        AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
-        ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
-        ApplyCurriculumOfferingsRequest, ApplyRosterRequest, ApplyTeacherHandoffRequest,
-        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
-        CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
-        CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
-        DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
-        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
-        OfferingTargetKind, PreparationAction, PreparationGroupingState,
-        PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
+        AcademicTermChangeSet, AcademicTermChangeSetStatus, ActivityAttendanceRequirement,
+        ActivityPassCriteria, ActivityRegistrationType, ActivitySchedulingMode,
+        AddDatedRosterMembershipRequest, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
+        ApplyTeacherHandoffRequest, CreateAcademicTermChangeSetRequest,
+        CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningGroupRequest,
+        CreateLearningOfferingRequest, CurriculumDeliveryAlignmentState, CurriculumOfferingPreview,
+        CurriculumPreparationChoice, DeleteAcademicTermChangeItemRequest, LearningOfferingKind,
+        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
+        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
+        PreparationGroupingState, PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
         PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
         ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
@@ -1383,12 +1383,12 @@ async fn table_preview(
         school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
             .await
             .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::preview(pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
+    school_academic_timetable::services::timetable_lifecycle::preview(&crate::adapters::publication_history::PUBLICATION_HISTORY,pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
         row_version:table.row_version,effective_from:opening.effective_from.unwrap().succ_opt().unwrap()
     }).await.unwrap()
 }
 
-async fn fill_change_set_target_deficits(
+pub(crate) async fn fill_change_set_target_deficits(
     pool: &PgPool,
     actor_user_id: Uuid,
     academic_term_id: Uuid,
@@ -3130,6 +3130,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
             idempotency_key: Uuid::new_v4(),
         };
     let published = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3147,6 +3148,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
     assert_eq!(published.delivery_version_id, draft.delivery_version_id);
     assert_eq!(published.effective_from, Some(request.effective_from));
     let repeated = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3159,6 +3161,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
     .unwrap();
     assert_eq!(repeated.row_version, published.row_version);
     let changed_retry = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3523,6 +3526,13 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     .fetch_one(&pool)
     .await
     .unwrap();
+    let raw_offering_sql = "SELECT to_jsonb(offering) FROM learning_offerings offering WHERE id=$1";
+    let original_raw: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
+        .bind(offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let original_offering = offerings::get(&pool, offering_id).await.unwrap();
     let changed = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
@@ -3557,43 +3567,116 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
         acknowledged_warning_codes: warning_codes,
         idempotency_key,
     };
+    let before_boundary = preview.effective_from.pred_opt().unwrap();
+    let availability_sql="SELECT academic_delivery_offering_available($1,$2),academic_delivery_offering_available($1,$3)";
+    let initial_availability: (bool, bool) = sqlx::query_as(availability_sql)
+        .bind(offering_id)
+        .bind(before_boundary)
+        .bind(preview.effective_from)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(initial_availability, (true, true));
+    let rejected = school_academic_delivery::services::change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &RejectAssessmentPublication,
+        &pool,
+        context.teacher_id,
+        changed.id,
+        request.clone(),
+    )
+    .await
+    .expect_err("Assessment failure must roll back an otherwise ready stop");
+    assert!(
+        matches!(rejected,AppError::InternalServerError(message) if message=="ASSESSMENT_TEST_REJECTED")
+    );
+    let after_rollback: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
+        .bind(offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after_rollback, original_raw);
+    let partial_effectivity:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM academic_delivery_offering_effectivity WHERE change_set_id=$1)+(SELECT count(*) FROM academic_delivery_teacher_cutoffs WHERE change_set_id=$1)")
+        .bind(changed.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(partial_effectivity, 0);
+    assert_eq!(
+        change_sets::get_change_set(&pool, changed.id)
+            .await
+            .unwrap()
+            .status,
+        AcademicTermChangeSetStatus::Draft
+    );
+    let target_before_retry: String =
+        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id=$1")
+            .bind(changed.target_delivery_version_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(target_before_retry, "draft");
+    let rollback_availability: (bool, bool) = sqlx::query_as(availability_sql)
+        .bind(offering_id)
+        .bind(before_boundary)
+        .bind(preview.effective_from)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rollback_availability, initial_availability);
     let published =
         change_sets::publish_change_set(&pool, context.teacher_id, changed.id, request.clone())
             .await
             .expect("a ready stop change must publish atomically");
     assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
 
-    let (ends_on, stop_reason, stopped_by, stop_change_set_id): (
-        Option<NaiveDate>,
-        Option<String>,
-        Option<Uuid>,
-        Option<Uuid>,
-    ) = sqlx::query_as(
-        r#"SELECT ends_on, stop_reason, stopped_by, stop_change_set_id
-           FROM learning_offerings WHERE id = $1"#,
-    )
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let after_publish: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
+        .bind(offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(
-        ends_on,
-        Some(
-            changed
-                .reference_date
-                .checked_sub_signed(chrono::Duration::days(1))
-                .unwrap()
+        after_publish, original_raw,
+        "stop publication preserves the complete raw registry provenance"
+    );
+    let cutoff:(String,NaiveDate,Uuid,Uuid,Uuid,Option<Uuid>,String,Uuid)=sqlx::query_as(
+        "SELECT effect.effect_kind,effect.effective_on,effect.change_set_id,effect.academic_term_id,effect.academic_year_id,accepted.published_by,accepted.reason,accepted.target_delivery_version_id FROM academic_delivery_offering_effectivity effect JOIN academic_term_change_sets accepted ON accepted.id=effect.change_set_id WHERE effect.learning_offering_id=$1 AND effect.change_set_id=$2")
+        .bind(offering_id).bind(changed.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        cutoff,
+        (
+            "cutoff".into(),
+            preview.effective_from,
+            changed.id,
+            context.term_id,
+            context.year_id,
+            Some(context.teacher_id),
+            changed.reason.clone(),
+            changed.target_delivery_version_id
         )
     );
-    assert_eq!(stop_reason.as_deref(), Some(changed.reason.as_str()));
-    assert_eq!(stopped_by, Some(context.teacher_id));
-    assert_eq!(stop_change_set_id, Some(changed.id));
+    let stopped_availability: (bool, bool) = sqlx::query_as(availability_sql)
+        .bind(offering_id)
+        .bind(before_boundary)
+        .bind(preview.effective_from)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stopped_availability,
+        (true, false),
+        "the accepted cutoff, rather than a raw ends_on rewrite, stops dated availability"
+    );
+    let ledger_sql="SELECT jsonb_agg(to_jsonb(effect) ORDER BY effect.learning_offering_id) FROM academic_delivery_offering_effectivity effect WHERE change_set_id=$1";
+    let accepted_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
+        .bind(changed.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let offering = offerings::get(&pool, offering_id)
         .await
-        .expect("published availability must be exposed through the offering DTO");
+        .expect("original registry provenance must remain exposed through the offering DTO");
     assert!(offering.starts_on.is_some());
-    assert_eq!(offering.ends_on, ends_on);
-    assert_eq!(offering.stop_reason, stop_reason);
+    assert_eq!(offering.starts_on, original_offering.starts_on);
+    assert_eq!(offering.ends_on, original_offering.ends_on);
+    assert_eq!(offering.stop_reason, original_offering.stop_reason);
     let target_status: String =
         sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
             .bind(changed.target_delivery_version_id)
@@ -3615,6 +3698,19 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
             .expect("the same publication request must be idempotent");
     assert_eq!(retried.id, published.id);
     assert_eq!(retried.row_version, published.row_version);
+    assert_eq!(retried.publication_no, published.publication_no);
+    let after_replay: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
+        .bind(offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let replay_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
+        .bind(changed.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after_replay, original_raw);
+    assert_eq!(replay_ledger, accepted_ledger);
     let mut changed_retry = request;
     changed_retry.acknowledged_warning_codes =
         vec![AcademicChangeFindingCode::MissingDeliveryGroup];
@@ -3623,6 +3719,18 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
             .await
             .expect_err("the publication key cannot be reused with a different request");
     assert!(matches!(conflicting_retry, AppError::Conflict(_)));
+    let after_conflict: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
+        .bind(offering_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let conflict_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
+        .bind(changed.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after_conflict, original_raw);
+    assert_eq!(conflict_ledger, accepted_ledger);
 }
 
 #[tokio::test]
@@ -3684,6 +3792,7 @@ async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_del
     assert!(!preview.can_publish);
     assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id)));
     let publication = school_academic_timetable::services::timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3908,6 +4017,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
     };
     let rejected = school_academic_delivery::services::change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &RejectAssessmentPublication,
         &pool,
         context.teacher_id,
@@ -3972,6 +4082,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         .await
         .unwrap();
     let replay = school_academic_delivery::services::change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &RejectAssessmentPublication,
         &pool,
         context.teacher_id,
@@ -6089,6 +6200,75 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .unwrap();
+    let before_opening = workspaces::delivery_overview(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let unavailable = before_opening
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == published_offering.id)
+        .unwrap();
+    assert_eq!(
+        unavailable.group_count, 2,
+        "registry groups remain the coverage denominator before an opening is published"
+    );
+    assert_eq!(
+        unavailable.teacher_assignment_count, 0,
+        "standalone registry publication supplies no canonical opening allocation"
+    );
+    assert_eq!(unavailable.groups_without_primary_teacher, 2);
+    assert_eq!(unavailable.published_roster_count, 1);
+    let revision = change_sets::create_change_set(
+        &pool,
+        context.teacher_id,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: context.term_id,
+            reason: "Publish the overview fixture opening".into(),
+            idempotency_key: stable_uuid("delivery-overview:opening"),
+        },
+    )
+    .await
+    .unwrap();
+    let opening_preview = publication_preview(&pool, revision.id).await.unwrap();
+    assert!(
+        !opening_preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        opening_preview.findings
+    );
+    let accepted = change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: opening_preview.change_set_row_version,
+            target_delivery_version_row_version: opening_preview
+                .target_delivery_version_row_version,
+            effective_from: opening_preview.effective_from,
+            preview_hash: opening_preview.preview_hash,
+            acknowledged_warning_codes: opening_preview
+                .findings
+                .iter()
+                .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+                .map(|finding| finding.code)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            idempotency_key: stable_uuid("delivery-overview:publication"),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(accepted.status, AcademicTermChangeSetStatus::Published);
     let overview = workspaces::delivery_overview(
         &pool,
         context.term_id,
@@ -6159,11 +6339,22 @@ async fn delivery_version_course_metadata_uses_visible_pinned_versions_without_c
     .await
     .unwrap();
     let business_version = versions::get_version(&pool, version_id).await.unwrap();
-    // Keep the original business serializer's exact field set and order: lifecycle
-    // source evidence hashes these bytes, independently of HTTP presentation.
+    let expected_publication_no = stored_before["publication_no"].as_i64();
+    assert!(expected_publication_no.is_some_and(|number| number > 0));
+    assert_eq!(business_version.publication_no, expected_publication_no);
+    let expected_superseded = business_version.effective_from.is_some_and(|start| {
+        business_version
+            .effective_until
+            .is_some_and(|end| end < start)
+    });
+    assert_eq!(business_version.is_superseded, expected_superseded);
+    // Keep a closed current business field set and order, including publication
+    // chronology. Read-time course metadata stays outside these hashed bytes.
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
-    struct OriginalBusinessVersion<'a> {
+    struct CurrentBusinessEvidence<'a> {
+        publication_no: Option<i64>,
+        is_superseded: bool,
         id: Uuid,
         academic_term_id: Uuid,
         academic_year_id: Uuid,
@@ -6180,7 +6371,9 @@ async fn delivery_version_course_metadata_uses_visible_pinned_versions_without_c
         updated_at: chrono::DateTime<Utc>,
         snapshot: &'a school_academic_delivery::models::versions::DeliverySnapshot,
     }
-    let original_bytes = serde_json::to_vec(&OriginalBusinessVersion {
+    let business_bytes = serde_json::to_vec(&CurrentBusinessEvidence {
+        publication_no: expected_publication_no,
+        is_superseded: expected_superseded,
         id: business_version.id,
         academic_term_id: business_version.academic_term_id,
         academic_year_id: business_version.academic_year_id,
@@ -6200,21 +6393,21 @@ async fn delivery_version_course_metadata_uses_visible_pinned_versions_without_c
     .unwrap();
     assert_eq!(
         serde_json::to_vec(&business_version).unwrap(),
-        original_bytes
+        business_bytes
     );
     assert!(serde_json::to_value(&business_version)
         .unwrap()
         .get("courseMetadata")
         .is_none());
     use sha2::{Digest, Sha256};
-    let original_hash = hex::encode(Sha256::digest(&original_bytes));
+    let business_hash = hex::encode(Sha256::digest(&business_bytes));
     let mut tx = pool.begin().await.unwrap();
     let evidence_before =
         versions::published_source_evidence(&mut tx, version_id, business_version.academic_term_id)
             .await
             .unwrap();
     tx.rollback().await.unwrap();
-    assert_eq!(evidence_before, original_hash);
+    assert_eq!(evidence_before, business_hash);
     let unrestricted = versions::visible_version_details(
         &pool,
         version_id,
@@ -7643,6 +7836,7 @@ async fn timetable_draft_deletion_serializes_with_publication() {
     );
     let (published, deleted) = tokio::join!(
         timetable_lifecycle::publish(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
             &pool,
             &mutation,
             draft.id,
@@ -7706,6 +7900,7 @@ async fn publication_preview(
     let revision =
         school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
     school_academic_delivery::services::change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         id,
         Some(revision.reference_date),
@@ -8262,3 +8457,10 @@ mod room_scope_tests;
 
 #[path = "room_scope_consumer_tests.rs"]
 mod room_scope_consumer_tests;
+
+#[path = "draft_teacher_construction_tests.rs"]
+mod draft_teacher_construction_tests;
+#[path = "initial_construction_tests.rs"]
+mod initial_construction_tests;
+#[path = "publication_revision_tests.rs"]
+mod publication_revision_tests;

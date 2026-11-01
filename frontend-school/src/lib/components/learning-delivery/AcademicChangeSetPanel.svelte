@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { publicationTime } from '#lib/academic/publication-presentation.js';
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		buildLearningDeliveryChangeRows,
@@ -220,9 +221,17 @@
 						? 'เผยแพร่แล้ว'
 						: 'ยกเลิกแล้ว'}</Badge
 			>
-			<p class="text-sm font-medium">{changeSet.reason}</p>
+			<p class="text-sm font-medium">
+				{#if changeSet.publicationNo !== null}รุ่นที่ {changeSet.publicationNo} ·
+				{/if}{changeSet.reason}
+			</p>
 		</div>
-		<p class="mt-1 text-xs text-muted-foreground">{formatDate(changeSet.effectiveFrom)}</p>
+		<p class="mt-1 text-xs text-muted-foreground">
+			{#if changeSet.effectiveFrom}เริ่มใช้ {formatDate(
+					changeSet.effectiveFrom
+				)}{:else}เลือกวันเริ่มใช้ตอนเผยแพร่{/if}{#if changeSet.publishedAt}
+				· เผยแพร่ {publicationTime(changeSet.publishedAt)}{/if}
+		</p>
 	</div>
 	<div class="flex flex-wrap items-center gap-2">
 		<Button size="sm" variant="outline" onclick={showChanges}>ดูรายละเอียดการเปลี่ยนแปลง</Button>

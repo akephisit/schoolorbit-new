@@ -91,3 +91,14 @@ test('teacher opening readiness and placement checks have separate owners', asyn
 	assert.match(page, /blockTargetTeacherIds/);
 	assert.match(page, /updateTimetableBlock/);
 });
+
+test('teacher action eligibility uses the exact source publication without raw date inference', async () => {
+	const form = await readProjectFile(
+		'src/lib/components/learning-delivery/AcademicTeacherChangeForm.svelte'
+	);
+	const selection = await readProjectFile('src/lib/academic/teacher-change-selection.ts');
+	assert.match(form, /teacherChangeSelection\(changeSet, learningGroupId\)/);
+	assert.doesNotMatch(form, /assignment\.startsOn|assignment\.endsOn|referenceDate/);
+	assert.match(selection, /changeSet\.baseTeacherAssignments/);
+	assert.match(selection, /member\.assignmentId/);
+});

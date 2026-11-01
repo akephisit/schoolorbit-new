@@ -1,4 +1,4 @@
-import { sessionState } from './session-state';
+import { sessionState } from './session-state.ts';
 import type { Page, Route } from '@playwright/test';
 import type {
 	DeliveryVersion,
@@ -96,8 +96,12 @@ export function navigationVersion(): DeliveryVersion {
 		academicTermId: navigationIds.term,
 		sourceVersionId: null,
 		status: 'draft',
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
 		effectiveFrom: null,
 		effectiveUntil: null,
+		isSuperseded: false,
 		referenceDate: '2027-05-01',
 		rowVersion: 1,
 		createdAt: '2027-04-01T00:00:00Z',
@@ -237,6 +241,8 @@ export function navigationWorkspace(): HomeroomDeliveryWorkspace {
 export function navigationSummary(): DeliveryVersionSummary {
 	return {
 		...navigationVersion(),
+		publishedAt: null,
+		publishedBy: null,
 		changeSetId: null,
 		offeringCount: definitions.length,
 		groupCount: 0,
@@ -275,11 +281,16 @@ export async function mockDeliveryNavigation(
 		route: `/staff/academic/delivery/${findingOffering}?deliveryVersionId=${navigationIds.version}`
 	};
 	const changeSet: AcademicTermChangeSet = {
+		baseTeacherAssignments: [],
 		id: navigationIds.changeSet,
 		academicYearId: navigationIds.year,
 		academicTermId: navigationIds.term,
 		targetDeliveryVersionId: navigationIds.version,
+		publicationDateRules: { today: '2027-05-01', minimumEffectiveFrom: null },
 		status: 'draft',
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
 		rowVersion: 1,
 		effectiveFrom: null,
 		referenceDate: '2027-05-01',
@@ -343,7 +354,15 @@ export async function mockDeliveryNavigation(
 				(item) => item.id !== navigationOfferingIds.club
 			);
 		return id === navigationIds.sourceVersion
-			? { ...version, id, status: 'published', effectiveFrom: '2027-05-01' }
+			? {
+					...version,
+					id,
+					status: 'published',
+					publicationNo: 1,
+					publishedAt: '2027-05-01T00:00:00Z',
+					publishedBy: navigationIds.actor,
+					effectiveFrom: '2027-05-01'
+				}
 			: { ...version, sourceVersionId: options.continuation ? navigationIds.sourceVersion : null };
 	}
 	function workspaceResource(id: string | null): HomeroomDeliveryWorkspace {
@@ -442,6 +461,9 @@ export async function mockDeliveryNavigation(
 									...navigationSummary(),
 									id: navigationIds.sourceVersion,
 									status: 'published',
+									publicationNo: 1,
+									publishedAt: '2027-05-01T00:00:00Z',
+									publishedBy: navigationIds.actor,
 									effectiveFrom: '2027-05-01'
 								}
 							]

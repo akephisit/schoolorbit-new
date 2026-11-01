@@ -427,7 +427,7 @@ if ! curl \
 fi
 migration_completion_filter="
     .latest_version as \$latest
-    | (\$latest | type == \"number\" and . >= 149 and floor == .)
+    | (\$latest | type == \"number\" and . >= 151 and floor == .)
     and .total_schools >= 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
@@ -463,6 +463,21 @@ migration_completion_filter="
       and .deliveryTimetableCutover.passed == true
       and (.deliveryTimetableCutover.checks | length) == 30
       and all(.deliveryTimetableCutover.checks[]; .passed == true)
+      and .publicationRevisionsCutover.migrationVersion == 151
+      and .publicationRevisionsCutover.status == \"cutoverCompleted\"
+      and .publicationRevisionsCutover.passed == true
+      and (.publicationRevisionsCutover.checks | type == \"array\" and length == 8)
+      and ([.publicationRevisionsCutover.checks[].code] | sort) == [
+        \"delivery_publications_preserved\",
+        \"downstream_sources_preserved\",
+        \"offering_registry_preserved\",
+        \"projection_integrity_reconciled\",
+        \"publication_numbers_reconciled\",
+        \"publication_receipts_preserved\",
+        \"teacher_episodes_preserved\",
+        \"timetable_publications_preserved\"
+      ]
+      and all(.publicationRevisionsCutover.checks[]; .passed == true and .count == 0)
       and .staffProfileCutover.migrationVersion == 114
       and .staffProfileCutover.status == \"cutoverCompleted\"
       and .staffProfileCutover.passed == true

@@ -46,6 +46,9 @@ export type MockBlock = TimetableBlock;
 
 export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
+	versions?: TimetableVersion[];
+	deliveryPublications?: TimetableBlockWorkspace['deliveryPublication'][];
+	publicationDateRules?: TimetableBlockWorkspace['publicationDateRules'];
 	permissions?: string[];
 	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
 	blocks?: MockBlock[];
@@ -96,6 +99,7 @@ export function makeTimetableVersion(status: 'draft' | 'published'): TimetableVe
 		bellScheduleId: timetableIds.schedule,
 		deliveryVersionId: timetableIds.deliveryVersion,
 		status,
+		publicationNo: status === 'published' ? 1 : null,
 		displayState: status === 'published' ? 'current' : null,
 		effectiveFrom: status === 'published' ? '2026-05-01' : null,
 		effectiveUntil: null,
@@ -107,6 +111,21 @@ export function makeTimetableVersion(status: 'draft' | 'published'): TimetableVe
 		createdAt: '2026-05-01T00:00:00Z',
 		updatedAt: '2026-08-31T00:00:00Z',
 		targets: []
+	};
+}
+
+export function makeDeliveryPublication(
+	id: string = timetableIds.deliveryVersion,
+	publicationNo = 1,
+	effectiveFrom = '2026-05-01'
+): TimetableBlockWorkspace['deliveryPublication'] {
+	return {
+		id,
+		publicationNo,
+		effectiveFrom,
+		effectiveUntil: null,
+		publishedAt: '2026-05-01T00:00:00Z',
+		isSuperseded: false
 	};
 }
 
@@ -319,11 +338,21 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let currentSession = sessionState();
 	const status = options.status ?? 'draft';
 	const selectedVersion = makeTimetableVersion(status);
-	let versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
+	let versions = options.versions ?? [
+		makeTimetableVersion('published'),
+		makeTimetableVersion('draft')
+	];
+	const deliveryPublications = options.deliveryPublications ?? [makeDeliveryPublication()];
+	const publicationDateRules = options.publicationDateRules ?? {
+		today: '2026-11-01',
+		minimumEffectiveFrom: '2026-11-01'
+	};
 	let blocks = [...(options.blocks ?? [])];
 	const eligibleInstructorIds = options.eligibleInstructorIds ?? [timetableIds.teacherA];
 	const requiredPeriods = options.requiredPeriods ?? 3;
-	let latestDeliveryVersionId: string = timetableIds.deliveryVersion;
+	let latestDeliveryVersionId = deliveryPublications.toSorted(
+		(left, right) => right.publicationNo - left.publicationNo
+	)[0].id;
 	let sourceUpdateRequests = 0;
 	let draftDeleteRequests = 0;
 	let publicationRequests = 0;
@@ -353,6 +382,13 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
 			latestDeliveryVersionId,
+			deliveryPublication: deliveryPublications.find(
+				(item) => item.id === version.deliveryVersionId
+			)!,
+			latestDeliveryPublication: deliveryPublications.find(
+				(item) => item.id === latestDeliveryVersionId
+			)!,
+			publicationDateRules,
 			bellPeriods: options.bellPeriods ?? periods(options.periodCount),
 			blocks,
 			learningGroups: options.learningGroups ?? [
@@ -583,17 +619,37 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname.endsWith('/publication-preview')) {
 				const body = route.request().postDataJSON();
+				const draft = versions.find((item) => item.id === timetableIds.draftVersion)!;
+				const applicable =
+					deliveryPublications
+						.filter((item) => item.effectiveFrom <= body.effectiveFrom)
+						.toSorted((left, right) => right.publicationNo - left.publicationNo)[0] ?? null;
+				const canPublish = applicable?.id === draft.deliveryVersionId;
 				await fulfill(route, {
 					timetableVersionId: timetableIds.draftVersion,
-					rowVersion: 1,
-					deliveryVersionId: timetableIds.deliveryVersion,
-					latestDeliveryVersionId: timetableIds.deliveryVersion,
+					rowVersion: draft.rowVersion,
+					deliveryVersionId: versions.find((item) => item.id === timetableIds.draftVersion)!
+						.deliveryVersionId,
+					latestDeliveryVersionId,
+					deliveryPublication: workspace().deliveryPublication,
+					latestDeliveryPublication: workspace().latestDeliveryPublication,
+					applicableDeliveryPublication:
+						deliveryPublications
+							.filter((item) => item.effectiveFrom <= body.effectiveFrom)
+							.toSorted((left, right) => right.publicationNo - left.publicationNo)[0] ?? null,
 					effectiveFrom: body.effectiveFrom,
 					blockCount: blocks.length,
 					contentChanged: true,
-					canPublish: true,
+					canPublish,
 					sourceIssues: [],
-					findings: [],
+					findings: canPublish
+						? []
+						: [
+								{
+									code: 'delivery_date_mismatch',
+									message: 'รุ่นเปิดสอนที่อ้างอิงไม่มีผลในวันที่เลือก'
+								}
+							],
 					previewHash: 'a'.repeat(64)
 				});
 				return;
@@ -605,7 +661,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				const body = route.request().postDataJSON();
 				Object.assign(draft, {
 					status: 'published',
-					displayState: 'scheduled',
+					displayState: body.effectiveFrom > publicationDateRules.today ? 'upcoming' : 'current',
+					publicationNo: 2,
+					publishedAt: '2026-11-01T05:00:00Z',
 					effectiveFrom: body.effectiveFrom,
 					rowVersion: draft.rowVersion + 1
 				});
@@ -929,6 +987,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		publicationRequestCount: () => publicationRequests,
 		publishNewOpening: () => {
 			latestDeliveryVersionId = timetableIds.newDeliveryVersion;
+			deliveryPublications.push(makeDeliveryPublication(timetableIds.newDeliveryVersion, 2));
 		},
 		setSourceIssues: (issues: TimetableBlockWorkspace['sourceIssues']) => {
 			sourceIssues = issues;

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "publication_source_tests.rs"]
+mod publication_source_tests;
 use crate::integration_tests::academic::{
     core::services_tests::prepare_core_fixture_through,
     cutover_test_support::apply_migrations_through,
@@ -70,6 +72,18 @@ fn seed(f: &Fixture, kind: AttendanceKind, date: NaiveDate) -> AttendanceSeed {
         ),
         students: f.students.clone(),
     }
+}
+// Report/history fixtures represent already accepted sources whose old timetable
+// need not exist today. New lesson materialization is exercised with real owner
+// seeds in publication_source_tests, rather than fabricated "fixture-room" keys.
+async fn accepted_historical_lesson(f: &Fixture, seed: AttendanceSeed) -> AttendanceSession {
+    assert_eq!(seed.session.kind, AttendanceKind::Lesson);
+    let s = &seed.session;
+    sqlx::query("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,roster) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)")
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).bind(&s.title).bind(&s.teacher_ids)
+        .bind(s.homeroom_id).bind(s.learning_group_id).bind(s.offering_id).bind(s.special_round_id).bind(s.start_time).bind(s.end_time)
+        .bind(s.count_override).bind(sqlx::types::Json(&seed.students)).execute(&f.pool).await.unwrap();
+    sessions::get(&f.pool, s.id).await.unwrap()
 }
 fn save_payload(
     detail: &AttendanceDetail,
@@ -633,9 +647,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     sessions::save(&f.pool, &f.actor, holiday.id, p)
         .await
         .unwrap();
-    let cancelled = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Lesson, date))
-        .await
-        .unwrap();
+    let cancelled = accepted_historical_lesson(&f, seed(&f, AttendanceKind::Lesson, date)).await;
     let d = sessions::detail(&f.pool, &f.actor, cancelled.id)
         .await
         .unwrap();
@@ -1014,9 +1026,7 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
             .unwrap(),
         3
     );
-    let flag = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Lesson, date))
-        .await
-        .unwrap();
+    let flag = accepted_historical_lesson(&f, seed(&f, AttendanceKind::Lesson, date)).await;
     let d = sessions::detail(&f.pool, &f.actor, flag.id).await.unwrap();
     let payload = save_payload(&d, STUDENT, AttendanceResult::Present);
     sessions::save(&f.pool, &f.actor, flag.id, payload)
@@ -2101,9 +2111,7 @@ async fn attendance_mixed_own_and_assigned_permissions_cannot_expand_student_his
     };
     let mut other_seed = seed(&f, AttendanceKind::Lesson, date);
     other_seed.session.teacher_ids = vec![another_teacher];
-    let other = sessions::ensure(&f.pool, &other_actor, other_seed)
-        .await
-        .unwrap();
+    let other = accepted_historical_lesson(&f, other_seed).await;
     let mut mixed = f.actor.clone();
     mixed.permissions.push(codes::ATTENDANCE_READ_OWN.into());
     let query = || AttendanceHistoryQuery {
@@ -3125,7 +3133,15 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
             .count(),
         1
     );
-    let mut cancelled_seed = seed(&f, AttendanceKind::Lesson, date);
+    let mut cancelled_seed = seeds(&f.pool, TERM, NaiveDate::from_ymd_opt(2025, 10, 9).unwrap())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|seed| {
+            seed.session.kind == AttendanceKind::Lesson
+                && seed.session.teacher_ids.contains(&TEACHER)
+        })
+        .expect("fixture provides a real published Thursday lesson");
     cancelled_seed.session.roster = cancelled_seed.students.clone();
     let preview = sessions::with_token(&f.pool, cancelled_seed.session.clone())
         .await
@@ -3687,9 +3703,9 @@ async fn attendance_midnight_finalizer_preserves_checked_results_and_skips_exclu
     let mut cancelled = seed(&f, AttendanceKind::Lesson, date);
     cancelled.session.id = Uuid::now_v7();
     cancelled.session.source_key = "cancelled".into();
-    let saved = sessions::ensure(&f.pool, &f.actor, cancelled.clone())
-        .await
-        .unwrap();
+    accepted_historical_lesson(&f, lesson.clone()).await;
+    accepted_historical_lesson(&f, excluded.clone()).await;
+    let saved = accepted_historical_lesson(&f, cancelled.clone()).await;
     let detail = sessions::detail(&f.pool, &f.actor, saved.id).await.unwrap();
     sessions::cancel(
         &f.pool,

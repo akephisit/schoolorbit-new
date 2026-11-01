@@ -15,6 +15,13 @@ use crate::models::timetable_version::{
 use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
+pub fn bangkok_date_at(now: chrono::DateTime<Utc>) -> NaiveDate {
+    (now + chrono::Duration::hours(7)).date_naive()
+}
+pub fn bangkok_today() -> NaiveDate {
+    bangkok_date_at(Utc::now())
+}
+
 pub mod opening;
 mod term_preparation;
 pub use term_preparation::apply as apply_term_preparation;
@@ -35,6 +42,7 @@ pub async fn pending_term_work(
 
 #[derive(Debug, Clone, FromRow)]
 struct TimetableVersionRow {
+    publication_no: Option<i64>,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -54,6 +62,7 @@ struct TimetableVersionRow {
 
 #[derive(Debug, Clone, FromRow)]
 struct CloneSourceRow {
+    delivery_version_id: Uuid,
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -63,7 +72,7 @@ struct CloneSourceRow {
 }
 
 const VERSION_SELECT: &str = r#"
-    SELECT version.id,
+    SELECT version.publication_no,version.id,
            version.academic_term_id,
            version.academic_year_id,
            version.effective_from,
@@ -74,7 +83,7 @@ const VERSION_SELECT: &str = r#"
                        FROM academic_timetable_versions next_version
                        WHERE next_version.academic_term_id = version.academic_term_id
                          AND next_version.status = 'published'
-                         AND next_version.effective_from > version.effective_from
+                         AND next_version.publication_no > version.publication_no
                        ORDER BY next_version.effective_from, next_version.id
                        LIMIT 1
                    )
@@ -100,7 +109,9 @@ pub(crate) fn derive_display_state(
     effective_until: Option<NaiveDate>,
     today: NaiveDate,
 ) -> TimetableVersionDisplayState {
-    if today < effective_from {
+    if effective_until.is_some_and(|end| end < effective_from) {
+        TimetableVersionDisplayState::Superseded
+    } else if today < effective_from {
         TimetableVersionDisplayState::Upcoming
     } else if effective_until.is_some_and(|end| today > end) {
         TimetableVersionDisplayState::Historical
@@ -127,7 +138,7 @@ pub async fn list_versions_on_connection(
 ) -> Result<Vec<TimetableVersion>, AppError> {
     let sql = format!(
         "{VERSION_SELECT} WHERE version.academic_term_id = $1 \
-         ORDER BY version.effective_from DESC, \
+         ORDER BY version.publication_no DESC NULLS FIRST, \
                   CASE version.status WHEN 'draft' THEN 0 WHEN 'published' THEN 1 ELSE 2 END, \
                   version.id"
     );
@@ -139,7 +150,7 @@ pub async fn list_versions_on_connection(
         .bind(term_id)
         .fetch_all()
         .await?;
-    hydrate_versions(connection, rows, Utc::now().date_naive()).await
+    hydrate_versions(connection, rows, bangkok_today()).await
 }
 
 /// Public read DTOs expose only opening targets within the timetable read scope.
@@ -254,18 +265,12 @@ pub async fn resolve_version_id_for_date_on_connection(
     term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<Uuid, AppError> {
-    DbSession::new(connection).scalar("academic_timetable.services.timetable_version_service.resolve_version_id_for_date_on_connection",
-        r#"SELECT id
-           FROM academic_timetable_versions
-           WHERE academic_term_id = $1
-             AND status = 'published'
-             AND effective_from <= $2
-           ORDER BY effective_from DESC, id
-           LIMIT 1"#,
+    DbSession::new(connection).scalar::<Option<Uuid>>("academic_timetable.services.timetable_version_service.resolve_version_id_for_date_on_connection",
+        "SELECT academic_timetable_applicable_publication($1,$2)",
     )
     .bind(term_id)
     .bind(on_date)
-    .fetch_optional()
+    .fetch_one()
     .await?
     .ok_or_else(|| AppError::NotFound(format!("ไม่พบตารางเรียนที่เผยแพร่และมีผลในวันที่ {on_date}")))
 }
@@ -337,7 +342,7 @@ async fn create_initial_draft_in_permit(
             .bind(id).bind(year).bind(request.academic_term_id).bind(actor).bind(serde_json::json!({"deliveryVersionId":delivery})).execute().await?;
         id
     };
-    let version = get_version_on_connection(&mut tx, id, Utc::now().date_naive()).await?;
+    let version = get_version_on_connection(&mut tx, id, bangkok_today()).await?;
     permit.commit(tx).await?;
     Ok(version)
 }
@@ -398,7 +403,7 @@ async fn clone_draft_in_permit(
     )
     .await?;
     let id = clone_draft_in_transaction(&mut transaction, &permit, source_id, request).await?;
-    let result = get_version_on_connection(&mut transaction, id, Utc::now().date_naive()).await?;
+    let result = get_version_on_connection(&mut transaction, id, bangkok_today()).await?;
     permit.commit(transaction).await?;
     Ok(result)
 }
@@ -406,10 +411,10 @@ async fn clone_draft_in_permit(
 /// Coordinate before version/block locks. Resolve immutable IDs without row
 /// locks and acquire the term write mode initially, including nested Delivery
 /// callers which already hold that same term lock.
-pub(crate) async fn require_version_term_write(
+pub(crate) async fn lock_version_term_context(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<lifecycle_guard::AcademicWriteState, AppError> {
     let (year_id, term_id): (Uuid, Uuid) = DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_version_service.require_version_term_write",
         "SELECT academic_year_id, academic_term_id FROM academic_timetable_versions WHERE id=$1",
     )
@@ -417,7 +422,16 @@ pub(crate) async fn require_version_term_write(
     .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".into()))?;
-    lifecycle_guard::require_term_write_exclusive(transaction, year_id, term_id).await
+    lifecycle_guard::lock_context_exclusive(transaction, year_id, term_id).await
+}
+
+pub(crate) async fn require_version_term_write(
+    transaction: &mut Transaction<'_, Postgres>,
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    lock_version_term_context(transaction, version_id)
+        .await?
+        .require_writable()
 }
 
 pub async fn clone_draft_in_transaction(
@@ -438,7 +452,7 @@ pub async fn clone_draft_in_transaction(
     let source: CloneSourceRow = DbSession::new(&mut **transaction)
         .query_as(
             "academic_timetable.services.timetable_version_service.clone_draft_in_transaction",
-            r#"SELECT source.id,
+            r#"SELECT source.delivery_version_id,source.id,
                   source.academic_term_id,
                   source.academic_year_id,
                   source.status,
@@ -466,11 +480,7 @@ pub async fn clone_draft_in_transaction(
             source_row_version, source.row_version
         )));
     }
-    let delivery_version_id = school_academic_delivery::services::versions::latest_published_id(
-        transaction,
-        source.academic_term_id,
-    )
-    .await?;
+    let delivery_version_id = source.delivery_version_id;
     let drafts: Vec<(Uuid, i64)> = DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "SELECT id,row_version FROM academic_timetable_versions WHERE source_version_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
         .bind(source.id).fetch_all().await?;
     let resume = match request.resume_draft_id {
@@ -495,13 +505,6 @@ pub async fn clone_draft_in_transaction(
             .is_some_and(|expected| expected != revision)
         {
             return Err(AppError::Conflict("แบบร่างถูกแก้ไข กรุณาโหลดข้อมูลใหม่".into()));
-        }
-        let updated=DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1 AND delivery_version_id<>$2")
-            .bind(id).bind(delivery_version_id).execute().await?;
-        if updated.rows_affected() == 1 {
-            DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_version_service.clone_draft_in_transaction", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.source_updated','academic_timetable_version',$1,$2,$3,$4,$5)")
-                .bind(id).bind(source.academic_year_id).bind(source.academic_term_id).bind(actor_id)
-                .bind(sqlx::types::Json(serde_json::json!({"deliveryVersionId":delivery_version_id,"sourceVersionId":source.id,"resumed":true}))).execute().await?;
         }
         return Ok(id);
     }
@@ -528,8 +531,7 @@ pub async fn clone_draft_in_transaction(
         .bind(source.bell_schedule_id)
         .bind(actor_id)
         .execute()
-        .await
-        .map_err(map_clone_write_error)?;
+        .await?;
 
     // UUIDv5 maps each source identity consistently across the bulk child copies.
     // Read the source graph directly: runtime roles intentionally cannot create TEMP tables.
@@ -853,6 +855,7 @@ async fn hydrate_versions(
                 .filter(|_| row.status == TimetableVersionStatus::Published)
                 .map(|date| derive_display_state(date, row.effective_until, display_date));
             TimetableVersion {
+                publication_no: row.publication_no,
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,
@@ -875,20 +878,32 @@ async fn hydrate_versions(
         .collect())
 }
 
-fn map_clone_write_error(error: sqlx::Error) -> AppError {
-    if let sqlx::Error::Database(database) = &error {
-        if database.constraint() == Some("academic_timetable_versions_live_effective_key") {
-            return AppError::Conflict("มีรุ่นตารางเรียนแบบร่างหรือเผยแพร่ในวันที่นี้แล้ว".to_string());
-        }
-    }
-    AppError::DbError(error)
-}
-
 #[cfg(test)]
 mod tests {
     use super::derive_display_state;
     use crate::models::timetable_version::TimetableVersionDisplayState;
     use chrono::NaiveDate;
+
+    #[test]
+    fn bangkok_display_date_and_superseded_future_plan_are_truthful() {
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-10-31T18:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let today = super::bangkok_date_at(instant);
+        assert_eq!(today, NaiveDate::from_ymd_opt(2026, 11, 1).unwrap());
+        assert_eq!(
+            derive_display_state(today, None, today),
+            TimetableVersionDisplayState::Current
+        );
+        assert_eq!(
+            derive_display_state(
+                today + chrono::Duration::days(4),
+                Some(today - chrono::Duration::days(1)),
+                today
+            ),
+            TimetableVersionDisplayState::Superseded
+        );
+    }
 
     #[test]
     fn display_state_uses_the_effective_interval() {

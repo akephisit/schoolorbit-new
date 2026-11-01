@@ -40,8 +40,6 @@ struct GroupContext {
     roster_status: RosterStatus,
     row_version: i64,
     offering_status: LearningOfferingStatus,
-    starts_on: NaiveDate,
-    ends_on: Option<NaiveDate>,
 }
 
 const MEMBERSHIP_SELECT: &str = r#"
@@ -157,7 +155,7 @@ pub async fn add_membership(
             "สถานะนักเรียนในปีการศึกษานี้ไม่พร้อมเข้ากลุ่มเรียน".to_string(),
         ));
     }
-    validate_membership_date(&group, request.joined_at)?;
+    validate_membership_date(&mut transaction, &group, request.joined_at).await?;
     let constraint = super::audiences::dated_constraint_on_connection(
         &mut transaction,
         group.learning_offering_id,
@@ -266,7 +264,7 @@ pub async fn remove_membership(
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
     super::roster_tracking::require_manual(&mut transaction, group_id).await?;
-    validate_membership_date(&group, request.left_at)?;
+    validate_membership_date(&mut transaction, &group, request.left_at).await?;
 
     let (status, joined_at, row_version): (MembershipStatus, NaiveDate, i64) =
         DbSession::new(&mut *transaction)
@@ -382,8 +380,7 @@ async fn lock_group_context(
             r#"SELECT learning_group.id, learning_group.learning_offering_id,
                   learning_group.academic_term_id, learning_group.academic_year_id,
                   learning_group.status, learning_group.roster_status,
-                  learning_group.row_version, offering.status AS offering_status,
-                  offering.starts_on, offering.ends_on
+                  learning_group.row_version, offering.status AS offering_status
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
            JOIN academic_years year ON year.id = learning_group.academic_year_id
@@ -414,10 +411,23 @@ fn require_published_roster(group: &GroupContext, row_version: i64) -> Result<()
     Ok(())
 }
 
-fn validate_membership_date(group: &GroupContext, date: NaiveDate) -> Result<(), AppError> {
-    if date < group.starts_on || group.ends_on.is_some_and(|end| date > end) {
+async fn validate_membership_date(
+    tx: &mut Transaction<'_, Postgres>,
+    group: &GroupContext,
+    date: NaiveDate,
+) -> Result<(), AppError> {
+    let available: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_delivery.services.roster_memberships.validate_membership_date",
+            "SELECT academic_delivery_offering_available($1,$2)",
+        )
+        .bind(group.learning_offering_id)
+        .bind(date)
+        .fetch_one()
+        .await?;
+    if !available {
         return Err(AppError::ValidationError(
-            "วันที่เปลี่ยนรายชื่อต้องอยู่ในช่วงที่รายการเปิดสอนใช้งาน".to_string(),
+            "วันที่เปลี่ยนรายชื่อต้องอยู่ในช่วงที่แผนเปิดสอนมีผล".into(),
         ));
     }
     Ok(())

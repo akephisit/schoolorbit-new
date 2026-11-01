@@ -1,5 +1,9 @@
 import type { DraftLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
-import { makeTimetableVersion, timetableIds } from '../e2e/timetable-test-harness.ts';
+import {
+	makeDeliveryPublication,
+	makeTimetableVersion,
+	timetableIds
+} from '../e2e/timetable-test-harness.ts';
 
 export function collaborationWorkspace(): TimetableBlockWorkspace {
 	return {
@@ -49,6 +53,9 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 		staff: [],
 		offeringSubjectGroups: [],
 		latestDeliveryVersionId: timetableIds.deliveryVersion,
+		deliveryPublication: makeDeliveryPublication(),
+		latestDeliveryPublication: makeDeliveryPublication(),
+		publicationDateRules: { today: '2026-11-01', minimumEffectiveFrom: '2026-11-01' },
 		sourceIssues: [],
 		totalDraftBlockCount: 0,
 		summary: {

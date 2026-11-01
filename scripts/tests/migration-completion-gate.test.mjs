@@ -42,7 +42,7 @@ const contextCodes = [
   "ACADEMIC_CONTEXT_RECEIPT_RECOVERY_EVIDENCE",
 ];
 
-function validReport(version = 149) {
+function validReport(version = 151) {
   const school = {
     migration_version: version,
     migration_status: "migrated",
@@ -71,6 +71,12 @@ function validReport(version = 149) {
       passed: true,
       checks: Array.from({ length: 30 }, () => ({ passed: true })),
     },
+    publicationRevisionsCutover: {
+      migrationVersion: 151,
+      status: "cutoverCompleted",
+      passed: true,
+      checks: ["delivery_publications_preserved","timetable_publications_preserved","teacher_episodes_preserved","offering_registry_preserved","publication_receipts_preserved","downstream_sources_preserved","publication_numbers_reconciled","projection_integrity_reconciled"].map(code=>({code,count:0,passed:true})),
+    },
     staffProfileCutover: {
       migrationVersion: 114,
       status: "cutoverCompleted",
@@ -92,7 +98,7 @@ function validReport(version = 149) {
 test("fully migrated tenants pass without a retired personnel report", async () => {
   assert.equal(await accepts(validReport()), true);
   assert.equal(
-    await accepts(validReport(150)),
+    await accepts(validReport(152)),
     true,
     "future SQL migrations use the same completion gate",
   );
@@ -148,6 +154,7 @@ test("retiring personnel hooks preserves the other domain audit gates", async ()
     "gradebookResultsCutover",
     "deliveryTimetableCutover",
     "staffProfileCutover",
+    "publicationRevisionsCutover",
   ]) {
     for (const change of [
       (a) => {
@@ -294,7 +301,7 @@ test("context readiness cannot accept schema148 even when an empty inventory has
 });
 
 test("latest migration is a numeric integer rather than a jq type-order comparison", async () => {
-  for (const version of ["149", 149.5]) {
+  for (const version of ["151", 151.5]) {
     const report = validReport(version);
     assert.equal(await accepts(report), false);
   }
@@ -310,5 +317,27 @@ test("six exact context codes permit arbitrary provider order but require every 
       (check) => check.code === code,
     ).passed = false;
     assert.equal(await accepts(invalid), false);
+  }
+});
+
+test("publication revisions require exact protected migration151 evidence", async () => {
+  for (const mutate of [
+    report => {delete report.schools[0].publicationRevisionsCutover;},
+    report => {report.schools[0].publicationRevisionsCutover.migrationVersion=150;},
+    report => {report.schools[0].publicationRevisionsCutover.checks.pop();},
+    report => {report.schools[0].publicationRevisionsCutover.checks[0].code="invented";},
+    report => {report.schools[0].publicationRevisionsCutover.checks[0].passed=false;},
+    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=-1;},
+    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=1;},
+    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=0.5;},
+    report => {report.schools[0].publicationRevisionsCutover.status="unavailable";},
+  ]) {
+    const report=validReport(); mutate(report); assert.equal(await accepts(report),false);
+  }
+  const reordered=validReport();reordered.schools[0].publicationRevisionsCutover.checks.reverse();
+  assert.equal(await accepts(reordered),true);
+  for (const version of [149,150]) {
+    const report=validReport(version);report.total_schools=0;report.migrated=0;report.schools=[];
+    assert.equal(await accepts(report),false);
   }
 });

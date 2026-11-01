@@ -68,9 +68,9 @@ report_aggregate() {
             def stage: IN("migration_url","owner_connection","owner_identity","migration_identity",
                 "migration_execution","permission_sync","runtime_grants","owner_schema",
                 "owner_academic_core_cutover","owner_gradebook_results_cutover",
-                "owner_delivery_timetable_cutover","owner_staff_profile_cutover","runtime_connection",
+                "owner_delivery_timetable_cutover","owner_publication_revisions_cutover","owner_staff_profile_cutover","runtime_connection",
                 "runtime_identity","runtime_schema","runtime_academic_core_cutover",
-                "runtime_gradebook_results_cutover","runtime_delivery_timetable_cutover",
+                "runtime_gradebook_results_cutover","runtime_delivery_timetable_cutover","runtime_publication_revisions_cutover",
                 "runtime_staff_profile_cutover","admin_status");
             def error_class: IN("database","row_not_found","pool_timeout","pool_closed","connection",
                 "decode","encode","protocol","configuration","other","source","version_missing",
@@ -97,6 +97,10 @@ report_aggregate() {
                 "ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY",
                 "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED",
                 "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID");
+            def refusal151: IN("PUBLICATION_151_SOURCE_LINEAGE_INVALID",
+                "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
+                "PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
+                "PUBLICATION_151_RECONCILIATION_FAILED");
             def tuple: [.stage,.version,.error_class,.sqlstate,.code];
             def bucket:
                 type == "object" and keys == ["code","count","error_class","sqlstate","stage","version"] and
@@ -108,7 +112,8 @@ report_aggregate() {
                     (.stage == "migration_execution" and .error_class == "database" and
                         ((.version == 147 and (.code | refusal147)) or
                          (.version == 148 and (.code | refusal148)) or
-                         (.version == 149 and (.code | refusal149)))));
+                         (.version == 149 and (.code | refusal149)) or
+                         (.version == 151 and (.code | refusal151)))));
             if length != 1 then error("invalid") else .[0] end |
             if type == "object" and
                 keys == ["failed","failures","latest_version","migrated","overflow_count","schema_version","tenants"] and

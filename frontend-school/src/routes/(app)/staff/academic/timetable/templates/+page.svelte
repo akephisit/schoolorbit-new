@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { timetablePublicationLabel } from '#lib/academic/publication-presentation.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -69,15 +70,7 @@
 		showCreateDialog && Boolean(createName.trim() || createDescription.trim())
 	);
 
-	function versionLabel(version: TimetableVersion): string {
-		const status =
-			version.status === 'draft'
-				? 'แบบร่าง'
-				: version.status === 'published'
-					? 'เผยแพร่แล้ว'
-					: 'ยกเลิกแล้ว';
-		return `${status} · เริ่ม ${version.effectiveFrom}`;
-	}
+	const versionLabel = timetablePublicationLabel;
 
 	function syncVersionUrl(versionId: string): void {
 		if (page.url.searchParams.get('timetableVersionId') === versionId) return;

@@ -61,6 +61,7 @@
           "change_set_no_items",
           "term_not_writable",
           "effective_date_invalid",
+          "consumed_history_conflict",
           "base_delivery_version_stale",
           "resource_stale",
           "missing_delivery_target",
@@ -887,6 +888,12 @@
               "null"
             ]
           },
+          "baseTeacherAssignments": {
+            "items": {
+              "$ref": "#/components/schemas/BaseTeacherAssignment"
+            },
+            "type": "array"
+          },
           "cancelledAt": {
             "format": "date-time",
             "type": [
@@ -938,6 +945,16 @@
             },
             "type": "array"
           },
+          "publicationDateRules": {
+            "$ref": "#/components/schemas/PublicationDateRules"
+          },
+          "publicationNo": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "publishedAt": {
             "format": "date-time",
             "type": [
@@ -976,6 +993,9 @@
           }
         },
         "required": [
+          "baseTeacherAssignments",
+          "publicationDateRules",
+          "publicationNo",
           "id",
           "academicTermId",
           "academicYearId",
@@ -1094,6 +1114,27 @@
             "format": "uuid",
             "type": "string"
           },
+          "publicationNo": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reason": {
             "type": "string"
           },
@@ -1114,6 +1155,9 @@
           }
         },
         "required": [
+          "publishedAt",
+          "publishedBy",
+          "publicationNo",
           "id",
           "academicTermId",
           "academicYearId",
@@ -3122,6 +3166,12 @@
                   "null"
                 ]
               },
+              "baseTeacherAssignments": {
+                "items": {
+                  "$ref": "#/components/schemas/BaseTeacherAssignment"
+                },
+                "type": "array"
+              },
               "cancelledAt": {
                 "format": "date-time",
                 "type": [
@@ -3173,6 +3223,16 @@
                 },
                 "type": "array"
               },
+              "publicationDateRules": {
+                "$ref": "#/components/schemas/PublicationDateRules"
+              },
+              "publicationNo": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "publishedAt": {
                 "format": "date-time",
                 "type": [
@@ -3211,6 +3271,9 @@
               }
             },
             "required": [
+              "baseTeacherAssignments",
+              "publicationDateRules",
+              "publicationNo",
               "id",
               "academicTermId",
               "academicYearId",
@@ -19531,11 +19594,17 @@
                 },
                 "type": "array"
               },
+              "deliveryPublication": {
+                "$ref": "#/components/schemas/DeliveryPublicationContext"
+              },
               "homerooms": {
                 "items": {
                   "$ref": "#/components/schemas/TimetableBlockWorkspaceHomeroom"
                 },
                 "type": "array"
+              },
+              "latestDeliveryPublication": {
+                "$ref": "#/components/schemas/DeliveryPublicationContext"
               },
               "latestDeliveryVersionId": {
                 "format": "uuid",
@@ -19558,6 +19627,9 @@
                   "$ref": "#/components/schemas/TimetableOrdinaryDemand"
                 },
                 "type": "array"
+              },
+              "publicationDateRules": {
+                "$ref": "#/components/schemas/PublicationDateRules"
               },
               "rooms": {
                 "items": {
@@ -19598,6 +19670,9 @@
               }
             },
             "required": [
+              "publicationDateRules",
+              "deliveryPublication",
+              "latestDeliveryPublication",
               "totalDraftBlockCount",
               "sourceIssues",
               "latestDeliveryVersionId",
@@ -19632,6 +19707,16 @@
         "properties": {
           "data": {
             "properties": {
+              "applicableDeliveryPublication": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/DeliveryPublicationContext"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "blockCount": {
                 "minimum": 0,
                 "type": "integer"
@@ -19641,6 +19726,9 @@
               },
               "contentChanged": {
                 "type": "boolean"
+              },
+              "deliveryPublication": {
+                "$ref": "#/components/schemas/DeliveryPublicationContext"
               },
               "deliveryVersionId": {
                 "format": "uuid",
@@ -19655,6 +19743,9 @@
                   "$ref": "#/components/schemas/TimetablePublicationFinding"
                 },
                 "type": "array"
+              },
+              "latestDeliveryPublication": {
+                "$ref": "#/components/schemas/DeliveryPublicationContext"
               },
               "latestDeliveryVersionId": {
                 "format": "uuid",
@@ -19679,6 +19770,9 @@
               }
             },
             "required": [
+              "deliveryPublication",
+              "latestDeliveryPublication",
+              "applicableDeliveryPublication",
               "timetableVersionId",
               "rowVersion",
               "deliveryVersionId",
@@ -19819,6 +19913,13 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "publicationNo": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "publishedAt": {
                 "format": "date-time",
                 "type": [
@@ -19859,6 +19960,7 @@
               }
             },
             "required": [
+              "publicationNo",
               "id",
               "academicTermId",
               "academicYearId",
@@ -20210,6 +20312,12 @@
                     "null"
                   ]
                 },
+                "baseTeacherAssignments": {
+                  "items": {
+                    "$ref": "#/components/schemas/BaseTeacherAssignment"
+                  },
+                  "type": "array"
+                },
                 "cancelledAt": {
                   "format": "date-time",
                   "type": [
@@ -20261,6 +20369,16 @@
                   },
                   "type": "array"
                 },
+                "publicationDateRules": {
+                  "$ref": "#/components/schemas/PublicationDateRules"
+                },
+                "publicationNo": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "publishedAt": {
                   "format": "date-time",
                   "type": [
@@ -20299,6 +20417,9 @@
                 }
               },
               "required": [
+                "baseTeacherAssignments",
+                "publicationDateRules",
+                "publicationNo",
                 "id",
                 "academicTermId",
                 "academicYearId",
@@ -20356,6 +20477,27 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "publicationNo": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "publishedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "reason": {
                   "type": "string"
                 },
@@ -20376,6 +20518,9 @@
                 }
               },
               "required": [
+                "publishedAt",
+                "publishedBy",
+                "publicationNo",
                 "id",
                 "academicTermId",
                 "academicYearId",
@@ -24406,9 +24551,33 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "isSuperseded": {
+                  "type": "boolean"
+                },
                 "offeringCount": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "publicationNo": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "publishedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "referenceDate": {
                   "format": "date",
@@ -24438,6 +24607,8 @@
                 }
               },
               "required": [
+                "publicationNo",
+                "isSuperseded",
                 "id",
                 "academicTermId",
                 "academicYearId",
@@ -24451,6 +24622,8 @@
                 "offeringCount",
                 "groupCount",
                 "teacherAssignmentCount",
+                "publishedAt",
+                "publishedBy",
                 "updatedAt"
               ],
               "type": "object"
@@ -28576,6 +28749,13 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "publicationNo": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "publishedAt": {
                   "format": "date-time",
                   "type": [
@@ -28616,6 +28796,7 @@
                 }
               },
               "required": [
+                "publicationNo",
                 "id",
                 "academicTermId",
                 "academicYearId",
@@ -30856,6 +31037,37 @@
           "sessions",
           "lessonChoices",
           "settings"
+        ],
+        "type": "object"
+      },
+      "BaseTeacherAssignment": {
+        "description": "Scoped immutable base membership for teacher commands, independent of raw episode dates.",
+        "properties": {
+          "assignmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LearningTeacherRole"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignmentId",
+          "learningGroupId",
+          "teacherId",
+          "displayName",
+          "role"
         ],
         "type": "object"
       },
@@ -44622,6 +44834,49 @@
         ],
         "type": "object"
       },
+      "DeliveryPublicationContext": {
+        "description": "Bounded immutable source evidence, independent of resource counts and access projections.",
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "effectiveUntil": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isSuperseded": {
+            "type": "boolean"
+          },
+          "publicationNo": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "publicationNo",
+          "effectiveFrom",
+          "effectiveUntil",
+          "publishedAt",
+          "isSuperseded"
+        ],
+        "type": "object"
+      },
       "DeliveryPublicationPreviewQuery": {
         "additionalProperties": false,
         "properties": {
@@ -44746,6 +45001,16 @@
             "format": "uuid",
             "type": "string"
           },
+          "isSuperseded": {
+            "type": "boolean"
+          },
+          "publicationNo": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "publishedAt": {
             "format": "date-time",
             "type": [
@@ -44787,6 +45052,8 @@
           }
         },
         "required": [
+          "publicationNo",
+          "isSuperseded",
           "id",
           "academicTermId",
           "academicYearId",
@@ -45084,9 +45351,33 @@
             "format": "uuid",
             "type": "string"
           },
+          "isSuperseded": {
+            "type": "boolean"
+          },
           "offeringCount": {
             "format": "int64",
             "type": "integer"
+          },
+          "publicationNo": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "referenceDate": {
             "format": "date",
@@ -45116,6 +45407,8 @@
           }
         },
         "required": [
+          "publicationNo",
+          "isSuperseded",
           "id",
           "academicTermId",
           "academicYearId",
@@ -45129,6 +45422,8 @@
           "offeringCount",
           "groupCount",
           "teacherAssignmentCount",
+          "publishedAt",
+          "publishedBy",
           "updatedAt"
         ],
         "type": "object"
@@ -56933,6 +57228,27 @@
         "required": [
           "year",
           "name"
+        ],
+        "type": "object"
+      },
+      "PublicationDateRules": {
+        "description": "Civil-date policy for deliberate publication; academic contexts have no inferred dates.",
+        "properties": {
+          "minimumEffectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "today": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "today",
+          "minimumEffectiveFrom"
         ],
         "type": "object"
       },
@@ -68775,11 +69091,17 @@
             },
             "type": "array"
           },
+          "deliveryPublication": {
+            "$ref": "#/components/schemas/DeliveryPublicationContext"
+          },
           "homerooms": {
             "items": {
               "$ref": "#/components/schemas/TimetableBlockWorkspaceHomeroom"
             },
             "type": "array"
+          },
+          "latestDeliveryPublication": {
+            "$ref": "#/components/schemas/DeliveryPublicationContext"
           },
           "latestDeliveryVersionId": {
             "format": "uuid",
@@ -68802,6 +69124,9 @@
               "$ref": "#/components/schemas/TimetableOrdinaryDemand"
             },
             "type": "array"
+          },
+          "publicationDateRules": {
+            "$ref": "#/components/schemas/PublicationDateRules"
           },
           "rooms": {
             "items": {
@@ -68842,6 +69167,9 @@
           }
         },
         "required": [
+          "publicationDateRules",
+          "deliveryPublication",
+          "latestDeliveryPublication",
           "totalDraftBlockCount",
           "sourceIssues",
           "latestDeliveryVersionId",
@@ -69146,8 +69474,8 @@
       "TimetablePublicationFindingCode": {
         "enum": [
           "invalid_date",
+          "consumed_history_conflict",
           "delivery_date_mismatch",
-          "date_already_published",
           "no_content_change",
           "source_needs_review",
           "period_count_mismatch",
@@ -69160,6 +69488,16 @@
       },
       "TimetablePublicationPreview": {
         "properties": {
+          "applicableDeliveryPublication": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryPublicationContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "blockCount": {
             "minimum": 0,
             "type": "integer"
@@ -69169,6 +69507,9 @@
           },
           "contentChanged": {
             "type": "boolean"
+          },
+          "deliveryPublication": {
+            "$ref": "#/components/schemas/DeliveryPublicationContext"
           },
           "deliveryVersionId": {
             "format": "uuid",
@@ -69183,6 +69524,9 @@
               "$ref": "#/components/schemas/TimetablePublicationFinding"
             },
             "type": "array"
+          },
+          "latestDeliveryPublication": {
+            "$ref": "#/components/schemas/DeliveryPublicationContext"
           },
           "latestDeliveryVersionId": {
             "format": "uuid",
@@ -69207,6 +69551,9 @@
           }
         },
         "required": [
+          "deliveryPublication",
+          "latestDeliveryPublication",
+          "applicableDeliveryPublication",
           "timetableVersionId",
           "rowVersion",
           "deliveryVersionId",
@@ -69579,6 +69926,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "publicationNo": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "publishedAt": {
             "format": "date-time",
             "type": [
@@ -69619,6 +69973,7 @@
           }
         },
         "required": [
+          "publicationNo",
           "id",
           "academicTermId",
           "academicYearId",
@@ -69643,7 +69998,8 @@
         "enum": [
           "current",
           "upcoming",
-          "historical"
+          "historical",
+          "superseded"
         ],
         "type": "string"
       },

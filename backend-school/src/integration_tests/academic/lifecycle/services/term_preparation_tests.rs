@@ -345,6 +345,42 @@ async fn delivery_preparation_preview_is_read_only_and_apply_creates_only_target
     .unwrap();
     assert!(target_state.0 > 0 && target_state.1 > 0);
     assert_eq!(target_state.2, 0);
+    let revision: Uuid =
+        sqlx::query_scalar("SELECT id FROM academic_term_change_sets WHERE id=ANY($1)")
+            .bind(&outcome.modules[0].target_ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let applied_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM learning_offerings WHERE id=ANY($1) ORDER BY id")
+            .bind(&outcome.modules[0].target_ids)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let frozen_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(frozen_ids,applied_ids,"exact applied future resources become initial intent even though the constructor defaults to today");
+    let earlier = school_academic_delivery::services::change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        revision,
+        Some(offering_date.pred_opt().unwrap()),
+    )
+    .await
+    .unwrap();
+    assert!(!earlier.findings.iter().any(|finding| finding.code
+        == school_academic_delivery::models::AcademicChangeFindingCode::ChangeSetNoItems));
+    let selected:Vec<Uuid>=sqlx::query_scalar("SELECT ARRAY(SELECT (o->>'id')::uuid FROM jsonb_array_elements(academic_delivery_revision_snapshot($1,$2)->'offerings') o ORDER BY (o->>'id')::uuid)")
+        .bind(revision).bind(offering_date.pred_opt().unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        selected, applied_ids,
+        "earlier planning keeps every explicit future output"
+    );
     let retained_workspace = preview(&pool, &actor, request.clone()).await.unwrap();
     assert!(
         retained_workspace.can_apply,
@@ -578,6 +614,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         opening_readiness.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
@@ -964,6 +1001,7 @@ async fn publication_preview(
     let revision =
         school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
     school_academic_delivery::services::change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         id,
         Some(revision.reference_date),

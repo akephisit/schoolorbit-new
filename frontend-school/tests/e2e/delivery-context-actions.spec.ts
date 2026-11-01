@@ -91,6 +91,11 @@ async function mockContextActions(
 		effectiveFrom: options.published ? '2027-05-01' : null
 	};
 	let changeSet: AcademicTermChangeSet = {
+		baseTeacherAssignments: [],
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
+		publicationDateRules: { today: '2027-05-01', minimumEffectiveFrom: null },
 		id: ids.changeSet,
 		academicYearId: ids.year,
 		academicTermId: ids.term,
@@ -985,4 +990,143 @@ test('a fresh group observed by an in-flight list read before its create acknowl
 		createAck.release();
 		listRead.release();
 	}
+});
+
+for (const startsOn of ['2027-05-01', '2027-05-05', '2027-04-01'])
+	for (const action of ['stop_group_teacher', 'adjust_group_teacher_role'] as const)
+		test(`teacher ${action} uses exact base membership despite raw episode ${startsOn}`, async ({
+			page
+		}) => {
+			const fixture = await mockContextActions(page, 'course');
+			const assignmentId = 'c0000000-0000-4000-8000-000000000001';
+			fixture.changeSet().baseTeacherAssignments = [
+				{
+					assignmentId,
+					learningGroupId: groupIds[0],
+					teacherId: episodeTeacherIds[0],
+					displayName: 'ครูในรุ่นต้นทาง',
+					role: 'primary'
+				}
+			];
+			fixture.management.learningGroups[0].teacherAssignments = [
+				{
+					id: assignmentId,
+					teacherId: episodeTeacherIds[0],
+					displayName: 'ครูทะเบียนเดิม',
+					role: 'primary',
+					startsOn,
+					endsOn: startsOn === '2027-04-01' ? '2027-04-30' : null,
+					rowVersion: 1
+				}
+			];
+			const submitted: unknown[] = [];
+			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}/items`, async (route) => {
+				submitted.push(route.request().postDataJSON());
+				return reply(route, { ...fixture.changeSet(), rowVersion: 8 });
+			});
+			await page.goto(fixture.detail);
+			await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+			const dialog = page.getByRole('dialog', { name: 'เปลี่ยนครูผู้สอนในกลุ่มนี้', exact: true });
+			await dialog.getByRole('combobox', { name: 'สิ่งที่ต้องการเปลี่ยน', exact: true }).click();
+			await page
+				.getByRole('option', {
+					name:
+						action === 'stop_group_teacher' ? 'หยุดความรับผิดชอบของครู' : 'ปรับบทบาทความรับผิดชอบ',
+					exact: true
+				})
+				.click();
+			await dialog.getByRole('combobox', { name: 'เลือกครูจากรุ่นต้นทาง', exact: true }).click();
+			await page.getByRole('option', { name: /ครูในรุ่นต้นทาง/ }).click();
+			if (action === 'adjust_group_teacher_role') {
+				await dialog.getByRole('combobox', { name: 'บทบาทหลังเริ่มใช้', exact: true }).click();
+				await page.getByRole('option', { name: 'ครูร่วม', exact: true }).click();
+			}
+			await dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+			await expect.poll(() => submitted.length).toBe(1);
+			expect(submitted[0]).toMatchObject({
+				action,
+				learningGroupId: groupIds[0],
+				learningGroupTeacherId: assignmentId,
+				teacherId: episodeTeacherIds[0]
+			});
+			expect(
+				fixture.reads.filter((path) => path.startsWith('/api/academic/delivery/management-options'))
+			).toHaveLength(1);
+		});
+
+test('pending Stop permits the same base teacher to be added again without a live-date guess', async ({
+	page
+}) => {
+	const fixture = await mockContextActions(page, 'course');
+	const assignmentId = 'c0000000-0000-4000-8000-000000000001';
+	fixture.changeSet().baseTeacherAssignments = [
+		{
+			assignmentId,
+			learningGroupId: groupIds[0],
+			teacherId: episodeTeacherIds[0],
+			displayName: 'ครูต้นทาง',
+			role: 'primary'
+		}
+	];
+	fixture.changeSet().items = [
+		{
+			id: 'stop-item',
+			actionKind: 'stop_group_teacher',
+			learningGroupId: groupIds[0],
+			learningGroupLabel: 'กลุ่ม',
+			learningGroupTeacherId: assignmentId,
+			teacherId: episodeTeacherIds[0],
+			teacherLabel: 'ครูต้นทาง',
+			teacherRole: 'primary',
+			rowVersion: 1,
+			createdAt: stamp,
+			updatedAt: stamp,
+			createdBy: ids.actor
+		}
+	];
+	fixture.management.teachers = [{ id: episodeTeacherIds[0], name: 'ครูต้นทาง' }];
+	const submitted: unknown[] = [];
+	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}/items`, async (route) => {
+		submitted.push(route.request().postDataJSON());
+		return reply(route, { ...fixture.changeSet(), rowVersion: 8 });
+	});
+	await page.goto(fixture.detail);
+	await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+	const dialog = await chooseEpisodeTeacher(page, 'ครูต้นทาง');
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true })
+	).toBeEnabled();
+	await dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
+	await expect.poll(() => submitted.length).toBe(1);
+	expect(submitted[0]).toMatchObject({
+		action: 'add_group_teacher',
+		learningGroupId: groupIds[0],
+		teacherId: episodeTeacherIds[0]
+	});
+});
+
+test('an empty base never offers raw live assignments for Stop or Adjust', async ({ page }) => {
+	const fixture = await mockContextActions(page, 'course');
+	fixture.management.learningGroups[0].teacherAssignments = [
+		{
+			id: 'unrelated-live',
+			teacherId: episodeTeacherIds[0],
+			displayName: 'ครูทะเบียนที่ไม่อยู่ในรุ่น',
+			role: 'primary',
+			startsOn: '2027-04-01',
+			endsOn: null,
+			rowVersion: 1
+		}
+	];
+	await page.goto(fixture.detail);
+	await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'เปลี่ยนครูผู้สอนในกลุ่มนี้', exact: true });
+	await dialog.getByRole('combobox', { name: 'สิ่งที่ต้องการเปลี่ยน', exact: true }).click();
+	await page.getByRole('option', { name: 'หยุดความรับผิดชอบของครู', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'เลือกครูจากรุ่นต้นทาง', exact: true }).click();
+	await expect(page.getByRole('option', { name: /ครูทะเบียนที่ไม่อยู่ในรุ่น/ })).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await expect(
+		dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true })
+	).toBeDisabled();
 });

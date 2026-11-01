@@ -179,7 +179,7 @@
 			trackingStartsOn && (!offering.startsOn || trackingStartsOn > offering.startsOn)
 				? trackingStartsOn
 				: offering.startsOn;
-		return defaultRosterTrackingDate(startsOn);
+		return defaultRosterTrackingDate(offering.status, startsOn);
 	}
 	function changeRosterMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';

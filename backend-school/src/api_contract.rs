@@ -3775,6 +3775,9 @@ mod tests {
                 "academicYearId",
                 "effectiveFrom",
                 "id",
+                "publicationNo",
+                "publishedAt",
+                "publishedBy",
                 "reason",
                 "referenceDate",
                 "status",
@@ -3783,6 +3786,24 @@ mod tests {
             ]
         );
         assert!(summary["properties"]["items"].is_null());
+        for (field, value_type, format) in [
+            ("publicationNo", "integer", "int64"),
+            ("publishedAt", "string", "date-time"),
+            ("publishedBy", "string", "uuid"),
+        ] {
+            let property = &summary["properties"][field];
+            let types = property["type"]
+                .as_array()
+                .expect("publication summary fields must expose their nullable value type")
+                .iter()
+                .map(|value| value.as_str().expect("schema types must be strings"))
+                .collect::<BTreeSet<_>>();
+            assert_eq!(types, BTreeSet::from([value_type, "null"]), "{field}");
+            assert_eq!(property["format"], format, "{field}");
+        }
+        for field in ["publication_no", "published_at", "published_by"] {
+            assert!(summary["properties"][field].is_null());
+        }
         assert_eq!(
             document["paths"]["/api/academic/term-change-sets/{id}/preview"]["get"]["responses"]
                 ["200"]["content"]["application/json"]["schema"]["$ref"],

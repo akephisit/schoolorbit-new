@@ -114,7 +114,7 @@ async fn teacher(
 }
 
 async fn publish_allocation(pool: &PgPool, offering: Uuid, date: chrono::NaiveDate) {
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,$2,'published',academic_capture_delivery_snapshot(academic_term_id,$2,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$3,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published',academic_capture_delivery_snapshot(academic_term_id,$2,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$3,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
         .bind(offering).bind(date).bind(PRIMARY).execute(pool).await.unwrap();
 }
 
@@ -124,7 +124,7 @@ async fn publish_snapshot(
     date: chrono::NaiveDate,
     graph: &serde_json::Value,
 ) {
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,$2,'published',$3,$4,now(),uuidv7(),repeat('c',64) FROM learning_offerings WHERE id=$1")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published',$3,$4,now(),uuidv7(),repeat('c',64) FROM learning_offerings WHERE id=$1")
         .bind(offering).bind(date).bind(graph).bind(PRIMARY).execute(pool).await.unwrap();
 }
 
@@ -770,7 +770,7 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
         .await
         .unwrap();
     assert_coordinator_membership(&pool, id, vec![OTHER], true).await;
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,$2,'published','{\"offerings\":[]}'::jsonb,$3,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published','{\"offerings\":[]}'::jsonb,$3,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
         .bind(id).bind(start + chrono::Duration::days(60)).bind(PRIMARY).execute(&pool).await.unwrap();
     assert_coordinator_membership(&pool, id, vec![], false).await;
     assert_eq!(
@@ -917,7 +917,7 @@ async fn assessment_allocation_projection_preserves_snapshot_identity_and_exact_
     )
     .await;
     publish_allocation(&pool, id, start).await;
-    let graph: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE academic_term_id=(SELECT academic_term_id FROM learning_offerings WHERE id=$1) AND status='published' ORDER BY effective_from DESC LIMIT 1")
+    let graph: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE academic_term_id=(SELECT academic_term_id FROM learning_offerings WHERE id=$1) AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(id).fetch_one(&pool).await.unwrap();
     let mut duplicated = graph.clone();
     let original_teacher = duplicated["offerings"][0]["groups"][0]["teachers"][0].clone();
