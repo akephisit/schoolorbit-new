@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { deliveryPublicationLabel } from '#lib/academic/publication-presentation.js';
+	import {
+		deliveryPublicationLabel,
+		deliveryPublicationSummaryLabel,
+		publicationDate,
+		publicationTime
+	} from '#lib/academic/publication-presentation.js';
 	import type { PageData } from './$types';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -815,16 +820,32 @@
 						value={workspace?.deliveryVersionId ?? ''}
 						onValueChange={selectDeliveryVersion}
 					>
-						<Select.Trigger class="w-full" aria-label="เลือกรุ่นเปิดสอน"
-							>{selectedDelivery
-								? deliveryVersionLabel(selectedDelivery)
-								: 'เลือกรุ่นเปิดสอน'}</Select.Trigger
-						>
-						<Select.Content
-							>{#each deliveryVersions as version (version.id)}<Select.Item value={version.id}
-									>{deliveryVersionLabel(version)}</Select.Item
-								>{/each}</Select.Content
-						>
+						<Select.Trigger class="w-full min-w-0" aria-label="เลือกรุ่นเปิดสอน">
+							<span class="min-w-0 truncate">
+								{selectedDelivery
+									? deliveryPublicationSummaryLabel(selectedDelivery)
+									: 'เลือกรุ่นเปิดสอน'}
+							</span>
+						</Select.Trigger>
+						<Select.Content class="w-(--bits-select-anchor-width) max-w-[calc(100vw-2rem)]">
+							{#each deliveryVersions as version (version.id)}
+								<Select.Item value={version.id} label={deliveryVersionLabel(version)}>
+									<div class="min-w-0 space-y-1 whitespace-normal wrap-break-word">
+										<div>{deliveryPublicationSummaryLabel(version)}</div>
+										<div class="text-xs text-muted-foreground">
+											{version.effectiveFrom
+												? `เริ่มใช้ ${publicationDate(version.effectiveFrom)}`
+												: 'เลือกวันเริ่มใช้ตอนเผยแพร่'} · {version.offeringCount} รายการ
+										</div>
+										{#if version.publishedAt}
+											<div class="text-xs text-muted-foreground">
+												เผยแพร่ {publicationTime(version.publishedAt)}
+											</div>
+										{/if}
+									</div>
+								</Select.Item>
+							{/each}
+						</Select.Content>
 					</Select.Root>
 				{/if}
 			</div>

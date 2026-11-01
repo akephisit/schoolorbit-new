@@ -23,11 +23,8 @@ export function publicationEffectiveLabel(
 	return `เริ่มใช้ ${publicationDate(version.effectiveFrom)}${version.effectiveUntil ? ` ถึง ${publicationDate(version.effectiveUntil)}` : ''}`;
 }
 
-export function deliveryPublicationLabel(
-	version: Pick<
-		DeliveryVersionSummary,
-		'status' | 'publicationNo' | 'effectiveFrom' | 'publishedAt' | 'isSuperseded'
-	>
+export function deliveryPublicationSummaryLabel(
+	version: Pick<DeliveryVersionSummary, 'status' | 'publicationNo' | 'isSuperseded'>
 ): string {
 	const status = version.isSuperseded
 		? 'ถูกแทนที่'
@@ -36,9 +33,19 @@ export function deliveryPublicationLabel(
 			: version.status === 'published'
 				? 'เผยแพร่แล้ว'
 				: 'ยกเลิก';
+	return [status, version.publicationNo === null ? null : `รุ่นที่ ${version.publicationNo}`]
+		.filter(Boolean)
+		.join(' · ');
+}
+
+export function deliveryPublicationLabel(
+	version: Pick<
+		DeliveryVersionSummary,
+		'status' | 'publicationNo' | 'effectiveFrom' | 'publishedAt' | 'isSuperseded'
+	>
+): string {
 	return [
-		status,
-		version.publicationNo === null ? null : `รุ่นที่ ${version.publicationNo}`,
+		deliveryPublicationSummaryLabel(version),
 		version.effectiveFrom
 			? `เริ่มใช้ ${publicationDate(version.effectiveFrom)}`
 			: 'เลือกวันเริ่มใช้ตอนเผยแพร่',
