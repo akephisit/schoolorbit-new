@@ -1,4 +1,3 @@
-import { createTimetablePdfCorners } from './timetable-pdf-corners.ts';
 import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type {
@@ -309,16 +308,104 @@ export interface TimetablePage {
 	homeroomNames?: Record<string, string>;
 }
 
+interface TimetablePdfLogo {
+	dataUrl: string;
+	aspectRatio: number;
+}
+
+// Native pdfmake line boxes use (ascent - descent) / unitsPerEm, excluding lineGap.
+// Both bundled TH Sarabun New header styles have ascent 844, descent -457, unitsPerEm 1000.
+const SARABUN_LINE_HEIGHT = 1.301;
+
+function buildTimetableHeader(
+	page: TimetablePage,
+	schoolName: string,
+	logo: TimetablePdfLogo | null,
+	width: number,
+	fontSize: number,
+	showQrCode: boolean,
+	id: string
+): Content {
+	const gap = fontSize === 16 ? 8 : 4;
+	const qrWidth = showQrCode ? 65 : 0;
+	const maxLogoWidth = width * 0.42;
+	let logoWidth = logo
+		? Math.min(3 * fontSize * SARABUN_LINE_HEIGHT * logo.aspectRatio, maxLogoWidth)
+		: 0;
+	let lines: string[];
+	let height: number;
+	while (true) {
+		const textWidth = width - logoWidth - qrWidth - (logo ? gap : 0) - (showQrCode ? gap : 0);
+		lines = [
+			schoolName,
+			`${page.viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${page.headerContext}`,
+			page.headerOwnerLabel
+		].map((text) => wrapThaiToLines(text, textWidth, fontSize));
+		height =
+			lines.reduce((count, text) => count + text.split('\n').length, 0) *
+			fontSize *
+			SARABUN_LINE_HEIGHT;
+		const nextLogoWidth = logo ? Math.min(height * logo.aspectRatio, maxLogoWidth) : 0;
+		if (nextLogoWidth <= logoWidth) break;
+		logoWidth = nextLogoWidth;
+	}
+	const columns: Content[] = [];
+	if (logo) {
+		columns.push({ image: logo.dataUrl, fit: [logoWidth, height], width: logoWidth });
+	}
+	columns.push({
+		width: '*',
+		stack: lines.flatMap((text, index) =>
+			text.split('\n').map((line) => ({
+				text: line || ' ',
+				fontSize,
+				noWrap: true,
+				bold: index !== 1,
+				color: index === 1 ? '#4b5563' : '#1e3a8a',
+				alignment: 'center'
+			}))
+		)
+	});
+	if (showQrCode) {
+		columns.push({
+			width: qrWidth,
+			stack: [
+				{ qr: window.location.origin + '/staff/timetable', fit: 55, alignment: 'center' },
+				{
+					text: 'สแกนดูตาราง',
+					fontSize: 9,
+					color: '#6b7280',
+					alignment: 'center',
+					margin: [0, 1, 0, 0]
+				}
+			]
+		});
+	}
+	return { id, columns, columnGap: gap, margin: [0, 0, 0, fontSize === 16 ? 6 : 3] };
+}
+
+// Use pdfmake's public pagination queries to keep a header with its grid start.
+// The timetable itself remains breakable so unusually tall content is never cropped.
+const keepTimetableHeaderWithGrid: NonNullable<TDocumentDefinitions['pageBreakBefore']> = (
+	node,
+	queries
+) => {
+	if (!node.id?.startsWith('timetable-header-')) return false;
+	const gridId = node.id.replace('timetable-header-', 'timetable-grid-');
+	return (
+		!queries.getFollowingNodesOnPage().some((next) => next.id === gridId) &&
+		queries.getNodesOnNextPage().some((next) => next.id === gridId)
+	);
+};
+
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logoDataUrl: string | null,
+	logo: TimetablePdfLogo | null,
 	schoolName: string,
-	corners: ReturnType<typeof createTimetablePdfCorners>
+	index = 0
 ): Content[] {
 	const {
-		headerContext,
-		headerOwnerLabel,
 		dayValues,
 		periods,
 		timetableBlocks,
@@ -338,95 +425,22 @@ function buildPageContent(
 	const pageContentWidth = 841.89 - 10 - 10;
 	const safety = 2;
 	const maxSumWidths = pageContentWidth - offsetsTotal - safety;
-	const DAY_COL = 55; // กว้างขึ้นจาก 40 → 55 เพื่อให้ logo (rowSpan=3) มีที่พอ
+	const DAY_COL = 55;
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// QR code link — แสดงเฉพาะ INSTRUCTOR (ครูสแกนเปิดดูตารางสอนได้)
-	// ใช้ window.location.origin เพื่อ work กับทุก school subdomain
-	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
-	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
+	const headerId = `timetable-header-full-${index}`;
+	const header = buildTimetableHeader(
+		page,
+		schoolName,
+		logo,
+		maxSumWidths + offsetsTotal,
+		16,
+		viewMode === 'INSTRUCTOR' && typeof window !== 'undefined',
+		headerId
+	);
 
-	// Align in the actual three-row cell; nested fixed-height cells cannot track the header span.
-	const logoCell: TableCell = logoDataUrl
-		? {
-				image: logoDataUrl,
-				fit: [DAY_COL - 4, 77],
-				alignment: 'center',
-				verticalAlignment: 'middle',
-				rowSpan: 3
-			}
-		: { text: '', rowSpan: 3 };
-
-	const titleCellInner = {
-		columns: [
-			{
-				stack: [
-					{
-						text: schoolName,
-						bold: true,
-						fontSize: 16,
-						color: '#1e3a8a',
-						alignment: 'center',
-						margin: [0, 6, 0, 0]
-					},
-					{
-						text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
-						fontSize: 16,
-						color: '#4b5563',
-						alignment: 'center',
-						margin: [0, 2, 0, 0]
-					},
-					{
-						text: headerOwnerLabel,
-						color: '#1e3a8a',
-						fontSize: 16,
-						bold: true,
-						alignment: 'center',
-						margin: [0, 2, 0, 6]
-					}
-				],
-				width: '*'
-			},
-			...(showQrCode
-				? [
-						{
-							width: 65,
-							stack: [
-								// margin-top บน QR = caption height (~8pt) → QR image อยู่กึ่งกลาง stack แนวตั้ง
-								// (stack เต็ม cell แนวตั้งอยู่แล้ว เพราะ QR เป็น content ที่สูงสุดใน row)
-								{
-									qr: qrUrl,
-									fit: 55,
-									alignment: 'center' as const,
-									margin: [0, 8, 0, 0] as [number, number, number, number]
-								},
-								{
-									text: 'สแกนดูตาราง',
-									fontSize: 9,
-									color: '#6b7280',
-									alignment: 'center' as const,
-									margin: [0, 1, 0, 0] as [number, number, number, number]
-								}
-							]
-						}
-					]
-				: [])
-		]
-	};
-	const titleRow: TableCell[] = [
-		logoCell,
-		{
-			...titleCellInner,
-			colSpan: periods.length,
-			margin: [0, 0, 0, 0]
-		} as unknown as TableCell,
-		// ghost cells สำหรับ colSpan (periods.length - 1 cells)
-		...Array(Math.max(0, periods.length - 1)).fill('')
-	];
-	tableBody.push(titleRow);
-
-	// === Row 1: Period name row (logo ต่อจากแถวบน) ===
+	// Period names are the first bordered row.
 	const periodNameRow: TableCell[] = [''];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
@@ -441,7 +455,7 @@ function buildPageContent(
 	});
 	tableBody.push(periodNameRow);
 
-	// === Row 2: Time row (logo ต่อจากแถวบน) ===
+	// Time row follows period names.
 	// fitTimeRange จัดให้พอดี cellContentWidth (1 บรรทัดก่อน, fallback 2 บรรทัด)
 	const timeRow: TableCell[] = [''];
 	periods.forEach((p) => {
@@ -588,23 +602,17 @@ function buildPageContent(
 				}
 			: null;
 
-	// Normal row layout keeps native rowspan alignment correct and preserves oversized content.
+	// Normal row layout preserves every detail when a timetable exceeds one page.
 	const tableContent: Content = {
 		table: {
-			// headerRows: 3 → title + period name + time จะ repeat ตอน page break
-			// ตารางทั่วไปพอดีหนึ่งหน้า; ตารางที่สูงกว่าจะยังคงรายละเอียดทุกแถว
-			headerRows: 3,
+			// Repeat only the period and time rows when content continues.
+			headerRows: 2,
 			// Fixed widths — `widths` ของ pdfmake = CONTENT width per cell
 			// tableWidth จริง = sum(widths) + offsetsTotal
 			// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
 			// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
 			widths: [DAY_COL, ...periods.map(() => periodWidth)],
-			heights: [
-				'auto',
-				'auto',
-				'auto',
-				...renderedDays.map(() => (renderedDays.length > 5 ? 40 : 50))
-			],
+			heights: ['auto', 'auto', ...renderedDays.map(() => (renderedDays.length > 5 ? 40 : 50))],
 			body: tableBody
 		},
 		layout: tableLayout
@@ -612,9 +620,10 @@ function buildPageContent(
 
 	return [
 		{
-			...corners.wrap(tableContent, maxSumWidths + offsetsTotal, 6, 1),
+			...header,
 			...(isFirst ? {} : { pageBreak: 'before' as const })
 		},
+		{ ...tableContent, id: headerId.replace('timetable-header-', 'timetable-grid-') },
 		...(signatureBlock ? [signatureBlock] : []),
 		{
 			columns: [
@@ -633,16 +642,14 @@ function buildPageContent(
 function buildMiniTable(
 	page: TimetablePage,
 	miniAreaWidth: number,
-	logoDataUrl: string | null,
+	logo: TimetablePdfLogo | null,
 	schoolName: string,
-	corners: ReturnType<typeof createTimetablePdfCorners>
+	index = 0
 ): Content {
 	const {
 		dayValues,
 		periods,
 		timetableBlocks,
-		headerContext,
-		headerOwnerLabel,
 		viewMode = 'CLASSROOM',
 		roomNames,
 		homeroomNames
@@ -658,54 +665,22 @@ function buildMiniTable(
 	const offsetsTotal = PAD_LR * N + BORDER * (N + 1);
 	const safety = 1;
 	const maxSumWidths = miniAreaWidth - offsetsTotal - safety;
-	const DAY_COL = 24; // กว้างขึ้นจาก 18 → 24 เพื่อให้ logo มีที่
+	const DAY_COL = 24;
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	const logoCell: TableCell = logoDataUrl
-		? {
-				image: logoDataUrl,
-				fit: [DAY_COL - 4, 28],
-				alignment: 'center',
-				verticalAlignment: 'middle',
-				rowSpan: 3
-			}
-		: { text: '', rowSpan: 3 };
-	const titleRow: TableCell[] = [
-		logoCell,
-		{
-			stack: [
-				{
-					text: schoolName,
-					bold: true,
-					fontSize: 9,
-					color: '#1e3a8a',
-					alignment: 'center'
-				},
-				{
-					text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
-					fontSize: 9,
-					color: '#4b5563',
-					alignment: 'center',
-					margin: [0, 1, 0, 0]
-				},
-				{
-					text: headerOwnerLabel,
-					color: '#1e3a8a',
-					fontSize: 9,
-					bold: true,
-					alignment: 'center',
-					margin: [0, 1, 0, 0]
-				}
-			],
-			colSpan: periods.length,
-			margin: [0, 1, 0, 1]
-		} as unknown as TableCell,
-		...Array(Math.max(0, periods.length - 1)).fill('')
-	];
-	tableBody.push(titleRow);
+	const headerId = `timetable-header-mini-${index}`;
+	const header = buildTimetableHeader(
+		page,
+		schoolName,
+		logo,
+		maxSumWidths + offsetsTotal,
+		9,
+		false,
+		headerId
+	);
 
-	// === Row 1: Period name row ===
+	// Period names are the first bordered row.
 	const periodNameRow: TableCell[] = [''];
 	periods.forEach((p) => {
 		const labelText = p.name && p.name.trim() ? p.name : ' ';
@@ -855,23 +830,19 @@ function buildMiniTable(
 	const widths = [DAY_COL, ...periods.map(() => periodWidth)];
 
 	// row height ลดลงเหลือ 24pt — content น้อยลง (ตัดชื่อวิชาออก เหลือ code + ครูชื่อแรก + ห้อง)
-	// title อยู่ใน row 0 ของตารางแล้ว → ไม่ต้องมีข้อความข้างนอก
 	const table: Content = {
 		table: {
-			headerRows: 3,
+			headerRows: 2,
 			widths,
-			heights: [
-				'auto',
-				'auto',
-				'auto',
-				...renderedDays.map(() => (renderedDays.length > 5 ? 18 : 24))
-			],
+			heights: ['auto', 'auto', ...renderedDays.map(() => (renderedDays.length > 5 ? 18 : 24))],
 			body: tableBody
 		},
 		layout: miniTableLayout,
 		width: '*'
 	} as unknown as Content;
-	return corners.wrap(table, maxSumWidths + offsetsTotal, 3, 0.5);
+	return {
+		stack: [header, { ...table, id: headerId.replace('timetable-header-', 'timetable-grid-') }]
+	};
 }
 
 /** Portrait 2-column page — รวม mini-tables ใน 2 คอลัมเรียงลงมา (newspaper order)
@@ -882,11 +853,11 @@ const MINIS_PER_PORTRAIT_PAGE = 6;
 function buildPortraitPageContent(
 	chunk: TimetablePage[],
 	isFirst: boolean,
-	logoDataUrl: string | null,
+	logo: TimetablePdfLogo | null,
 	schoolName: string,
 	pageHeaderTitle: string,
 	pageHeaderSubTitle: string,
-	corners: ReturnType<typeof createTimetablePdfCorners>
+	index = 0
 ): Content[] {
 	// QR code — แสดงเฉพาะ INSTRUCTOR view (เหมือนกับ full mode)
 	const isInstructor = chunk[0]?.viewMode === 'INSTRUCTOR';
@@ -908,7 +879,7 @@ function buildPortraitPageContent(
 			}
 		: { text: '', width: 40 }) as unknown as Content;
 
-	// Page header: logo อยู่ใน mini-table แต่ละอันแล้ว → header แค่ title + subtitle + QR
+	// Page heading complements each mini timetable’s external school/owner header.
 	// ใช้ 3 คอลัม [spacer ซ้าย, title (*), QR ขวา] → title อยู่กลางหน้ากระดาษจริง
 	// (spacer ซ้ายกว้างเท่า QR ขวา เพื่อ balance)
 	const sideColWidth = showQr ? 70 : 40;
@@ -942,8 +913,14 @@ function buildPortraitPageContent(
 	};
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
-	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, schoolName, corners);
+	const minis: Content[] = chunk.map((p, i) => {
+		const mini = buildMiniTable(
+			p,
+			PORTRAIT_MINI_AREA_WIDTH,
+			logo,
+			schoolName,
+			index * MINIS_PER_PORTRAIT_PAGE + i
+		);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
@@ -1014,7 +991,15 @@ export const generateTimetablePDF = async (
 		readLogo: blobToDataUrl
 	});
 
-	const corners = createTimetablePdfCorners();
+	let logo: TimetablePdfLogo | null = null;
+	if (logoDataUrl) {
+		const image = new Image();
+		image.src = logoDataUrl;
+		await image.decode();
+		if (!image.naturalWidth || !image.naturalHeight)
+			throw new Error('อ่านขนาดตราโรงเรียนไม่สำเร็จ');
+		logo = { dataUrl: logoDataUrl, aspectRatio: image.naturalWidth / image.naturalHeight };
+	}
 	let content: Content[];
 	if (layout === 'portrait-2col') {
 		// chunk pages ละ MINIS_PER_PORTRAIT_PAGE → 1 PDF page = หลาย mini-tables
@@ -1030,17 +1015,15 @@ export const generateTimetablePDF = async (
 			buildPortraitPageContent(
 				chunk,
 				i === 0,
-				logoDataUrl,
+				logo,
 				schoolName,
 				pageHeaderTitle,
 				pageHeaderSubTitle,
-				corners
+				i
 			)
 		);
 	} else {
-		content = pages.flatMap((page, i) =>
-			buildPageContent(page, i === 0, logoDataUrl, schoolName, corners)
-		);
+		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logo, schoolName, i));
 	}
 
 	const docDefinition: TDocumentDefinitions = {
@@ -1050,7 +1033,7 @@ export const generateTimetablePDF = async (
 		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
 		pageMargins: [10, 30, 10, 20],
 		content,
-		pageBreakBefore: corners.capture,
+		pageBreakBefore: keepTimetableHeaderWithGrid,
 		styles: {
 			header: { fontSize: 16, bold: true, color: '#1e3a8a' },
 			subheader: { fontSize: 16, color: '#4b5563' },
@@ -1059,8 +1042,6 @@ export const generateTimetablePDF = async (
 		defaultStyle: { font: 'THSarabunNew', color: '#000000' }
 	};
 
-	const pdf = pdfMake.createPdf(docDefinition, { bufferPages: true });
-	const stream = await pdf.getStream();
-	corners.draw(stream);
+	const pdf = pdfMake.createPdf(docDefinition);
 	await pdf.download(`${fileName ?? pages[0].title}.pdf`);
 };
