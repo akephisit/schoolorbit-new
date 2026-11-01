@@ -1,4 +1,4 @@
-use crate::collaboration::{CommitPermit, TimetableMutationContext};
+use crate::collaboration::{CommitPermit, LifecycleOutcome, TimetableMutationContext};
 use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -63,7 +63,7 @@ pub async fn update_source(
     request: UpdateTimetableDeliverySourceRequest,
 ) -> Result<TimetableVersion, AppError> {
     context
-        .execute_lifecycle(pool, id, move |pool, permit| async move {
+        .execute_lifecycle_outcome(pool, id, move |pool, permit| async move {
             update_source_in_permit(&pool, permit, id, request).await
         })
         .await
@@ -74,7 +74,7 @@ async fn update_source_in_permit(
     permit: Arc<CommitPermit>,
     id: Uuid,
     request: UpdateTimetableDeliverySourceRequest,
-) -> Result<TimetableVersion, AppError> {
+) -> Result<LifecycleOutcome<TimetableVersion>, AppError> {
     let actor = permit.actor_id;
     permit.require_version(id)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
@@ -83,17 +83,7 @@ async fn update_source_in_permit(
     )
     .await?;
     let context = lock_draft(&mut tx, id, request.row_version).await?;
-    let source = delivery::published_source(
-        &mut tx,
-        request.delivery_version_id,
-        context.academic_term_id,
-    )
-    .await?;
-    if source.id != context.delivery_version_id {
-        DbSession::new(&mut *tx).query("academic_timetable.services.timetable_lifecycle.update_source", "UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1")
-            .bind(id).bind(source.id).execute().await?;
-        audit(&mut tx,actor,id,&context,"academic_timetable_version.source_updated",serde_json::json!({"previousDeliveryVersionId":context.delivery_version_id,"deliveryVersionId":source.id})).await?;
-    }
+    let changed = align_latest_source_in_transaction(&mut tx, actor, id, &context).await?;
     let result = timetable_version_service::get_version_on_connection(
         &mut tx,
         id,
@@ -101,7 +91,39 @@ async fn update_source_in_permit(
     )
     .await?;
     permit.commit(tx).await?;
-    Ok(result)
+    Ok(if changed {
+        LifecycleOutcome::Changed(result)
+    } else {
+        LifecycleOutcome::Unchanged(result)
+    })
+}
+
+/// The caller holds the exclusive term lock, draft row lock and an existing-draft permit.
+async fn align_latest_source_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    context: &DraftContext,
+) -> Result<bool, AppError> {
+    let latest = delivery::latest_published_id(tx, context.academic_term_id).await?;
+    let changed = latest != context.delivery_version_id;
+    if changed {
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_lifecycle.update_source", "UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1")
+            .bind(id).bind(latest).execute().await?;
+        audit(tx,actor,id,context,"academic_timetable_version.source_updated",serde_json::json!({"previousDeliveryVersionId":context.delivery_version_id,"deliveryVersionId":latest})).await?;
+    }
+    Ok(changed)
+}
+
+pub(crate) async fn align_resumed_source(
+    tx: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::VersionMutationPermit,
+    id: Uuid,
+    revision: i64,
+) -> Result<bool, AppError> {
+    permit.require_existing(id)?;
+    let context = lock_draft(tx, id, revision).await?;
+    align_latest_source_in_transaction(tx, permit.actor_id(), id, &context).await
 }
 
 pub async fn delete_draft(
@@ -614,10 +636,19 @@ async fn build_preview(
         (true, false)
     };
     let mut findings = readiness(&source.snapshot, &blocks);
+    if source.id != latest_id {
+        findings.push(finding(
+            TimetablePublicationFindingCode::DeliverySourceOutdated,
+            "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนตรวจและเผยแพร่",
+            None,
+            None,
+            None,
+        ));
+    }
     if !delivery::contains_date(&source, date) {
         findings.push(finding(
             TimetablePublicationFindingCode::DeliveryDateMismatch,
-            "วันที่เริ่มใช้ไม่ตรงกับช่วงที่รุ่นเปิดสอนอ้างอิงมีผล กรุณาอัปเดตรุ่นเปิดสอนหรือเลือกวันที่ใหม่",
+            "วันที่เริ่มใช้ต้องอยู่ในช่วงที่รุ่นเปิดสอนล่าสุดมีผล กรุณาเลือกวันที่ใหม่",
             None,
             None,
             None,
@@ -718,17 +749,9 @@ async fn build_preview(
         )
         .await?;
     let delivery_publication = school_academic_delivery::services::publication::context(&source)?;
-    let applicable_delivery_publication =
-        school_academic_delivery::services::publication::applicable_on_connection(
-            &mut **tx,
-            context.academic_term_id,
-            date,
-        )
-        .await?;
     Ok(TimetablePublicationPreview {
         delivery_publication,
         latest_delivery_publication,
-        applicable_delivery_publication,
         timetable_version_id: id,
         row_version: context.row_version,
         delivery_version_id: source.id,

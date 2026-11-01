@@ -75,7 +75,7 @@ function lookupChanges(
 
 /** Protocol fixture, not a substitute for the real server's resource/authorization tests. */
 export function createDraftRelay() {
-	const epoch = randomUUID();
+	let epoch = randomUUID();
 	let seq = 0;
 	let canonical: TimetableBlockWorkspace | null = null;
 	const peers = new Map<string, FixturePeer>();
@@ -409,6 +409,14 @@ export function createDraftRelay() {
 	return {
 		join,
 		commit,
+		invalidate(workspace: TimetableBlockWorkspace) {
+			canonical = structuredClone(workspace);
+			epoch = randomUUID();
+			seq = 0;
+			journal.length = 0;
+			leases.clear();
+			broadcast({ type: 'DraftReconcileRequired', payload: { reason: 'draft_invalidated' } });
+		},
 		received,
 		peers,
 		setRoomOptionsPaused(value: boolean) {

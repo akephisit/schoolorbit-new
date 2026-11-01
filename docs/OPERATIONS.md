@@ -620,8 +620,8 @@ curriculum workload, credits, groups, teachers, rosters and assessments/results 
 recurring weekly timetable demand becomes zero. Zero does not waive activity evaluation or
 attendance requirements. It does not create weekly timetable-derived attendance sessions.
 Opening defaults stay unchanged; select zero explicitly when an activity has no weekly slot.
-Publish the opening revision and explicitly update a timetable draft's opening source before the
-new target applies there. Existing placed lessons and published history are preserved; remove
+Publish the opening revision; active timetable draft workflows align with the latest opening before
+the new target applies there. Existing placed lessons and published history are preserved; remove
 zero-target lessons from the draft before publishing it.
 
 Migration [143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) also fixes
@@ -1344,6 +1344,22 @@ draft and asks clients to reconcile; never retry a possibly committed create aut
 recovery waits on the version row before reading its canonical graph. Upstream source and central
 permission changes invalidate retained rooms even when they have no members.
 
+Active timetable drafts align with the term's latest opening publication through the existing
+source-alignment lifecycle operation. School-wide timetable managers or publishers can align;
+scoped managers and readers cannot change the whole draft's source. A read-only or dormant draft
+may truthfully show an older persisted source until an authorized workflow aligns it. Alignment
+preserves all placed lessons and teachers; resolve any remaining source issues explicitly. It never
+rewrites published timetable pins. Changed alignment requires a fresh authorized workspace and
+room epoch after outstanding edits settle; do not force-release another editor's reservation or
+retry an uncertain write. An unchanged alignment does not churn the room. A future latest opening
+can be used for planning, but publication must respect its start and the existing history guards.
+Only the typed `TIMETABLE_DELIVERY_SOURCE_OUTDATED` save conflict certifies a server pre-write
+source rejection. Local proof that no child HTTP request was dispatched also permits alignment
+after outstanding work drains in the current context. Both retain intent for review and a fresh
+explicit Save, without child replay. Unknown failures after dispatch may have committed: reconcile
+and review or explicitly discard the captured intent. A postcommit cache failure preserves accepted success and
+requests a fresh snapshot; it does not turn the business write into a source rejection.
+
 A process restart discards roster, leases and replay history and creates a new epoch. Clients join
 with a fresh authorized snapshot; committed timetable data is preserved in PostgreSQL. Do not scale
 this runtime to multiple backend processes without a separately designed shared authority. Keep
@@ -1908,8 +1924,12 @@ current-generation finalized day at/after the selected date refuse that correcti
 pinned timetable and grade/result facts remain accessible.
 
 After any new revision/effectivity semantics are accepted, recover with a compatible forward
-runtime. Older date-ranked writers cannot preserve these guarantees. Timetable source adoption
-remains explicit and never follows automatically from opening publication or cloning a table.
+runtime. Older date-ranked writers cannot preserve these guarantees. Active timetable create,
+clone, resume, Edit and Publish workflows align drafts with the latest opening through the
+authorized lifecycle owner. Opening publication remains independent and never directly rewrites
+timetable pointers or children. Alignment preserves placed lessons, teachers and origin links;
+remaining mismatches need review. Published timetable source pins remain immutable, while dormant
+or read-only GETs retain stored draft pointers until an authorized active workflow aligns them.
 
 ### Delivery and timetable version cutover
 
@@ -1968,9 +1988,10 @@ Deploy the backend, generated contracts and matched frontend together under the 
 maintenance/all-tenant migration procedure. Rehearse room removal, reviewed curriculum reopening,
 and inherited scope only on owned disposable fixtures or protected copies. Production acceptance
 uses the existing read-only schema/provider smoke gates; it does not delete or reopen live courses
-or groups. Timetable attendance uses its pinned Delivery source; adopting a newer source requires
-the existing explicit timetable reconciliation. No
-roster or timetable is automatically published. After any audience intent is written, old binaries
+or groups. Published timetable attendance retains its exact pinned Delivery source. Active drafts
+align automatically at authorized workflow boundaries; changing the operational source requires
+an explicit new timetable publication under the existing date and history guards. No roster or
+timetable is automatically published. After any audience intent is written, old binaries
 are unsafe because they do not enforce it: keep maintenance active on failure and recover by
 rolling forward with 144-compatible providers. Do not erase scope parents, rewrite a published
 snapshot, or restore raw registry coverage as recovery.

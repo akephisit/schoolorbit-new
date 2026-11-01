@@ -2823,6 +2823,37 @@
         ],
         "type": "object"
       },
+      "ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "description": "Present only when a latest-source guard rejected the operation before any write.",
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/TimetableDraftSourceConflictCode"
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object"
+      },
       "ApiResponse_AcademicContextOptions": {
         "properties": {
           "data": {
@@ -19707,16 +19738,6 @@
         "properties": {
           "data": {
             "properties": {
-              "applicableDeliveryPublication": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/DeliveryPublicationContext"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "blockCount": {
                 "minimum": 0,
                 "type": "integer"
@@ -19772,7 +19793,6 @@
             "required": [
               "deliveryPublication",
               "latestDeliveryPublication",
-              "applicableDeliveryPublication",
               "timetableVersionId",
               "rowVersion",
               "deliveryVersionId",
@@ -69361,6 +69381,25 @@
         ],
         "type": "object"
       },
+      "TimetableDraftSourceConflict": {
+        "additionalProperties": false,
+        "description": "Present only when a latest-source guard rejected the operation before any write.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/TimetableDraftSourceConflictCode"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "TimetableDraftSourceConflictCode": {
+        "enum": [
+          "TIMETABLE_DELIVERY_SOURCE_OUTDATED"
+        ],
+        "type": "string"
+      },
       "TimetableOfferingSubjectGroup": {
         "properties": {
           "learningOfferingId": {
@@ -69475,6 +69514,7 @@
         "enum": [
           "invalid_date",
           "consumed_history_conflict",
+          "delivery_source_outdated",
           "delivery_date_mismatch",
           "no_content_change",
           "source_needs_review",
@@ -69488,16 +69528,6 @@
       },
       "TimetablePublicationPreview": {
         "properties": {
-          "applicableDeliveryPublication": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/DeliveryPublicationContext"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "blockCount": {
             "minimum": 0,
             "type": "integer"
@@ -69553,7 +69583,6 @@
         "required": [
           "deliveryPublication",
           "latestDeliveryPublication",
-          "applicableDeliveryPublication",
           "timetableVersionId",
           "rowVersion",
           "deliveryVersionId",
@@ -72426,18 +72455,13 @@
       "UpdateTimetableDeliverySourceRequest": {
         "additionalProperties": false,
         "properties": {
-          "deliveryVersionId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "rowVersion",
-          "deliveryVersionId"
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -91819,7 +91843,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -91911,7 +91935,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93384,7 +93408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93512,7 +93536,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93602,7 +93626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93692,7 +93716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93822,7 +93846,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -93928,6 +93952,16 @@
               }
             },
             "description": "Timetable manage permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
+                }
+              }
+            },
+            "description": "Timetable conflict or obsolete opening source"
           }
         },
         "tags": [
@@ -94034,7 +94068,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94104,7 +94138,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94193,7 +94227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94304,7 +94338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94385,7 +94419,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -94496,7 +94530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -95006,7 +95040,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"
                 }
               }
             },
@@ -95571,7 +95605,7 @@
                 }
               }
             },
-            "description": "Timetable version delivery source updated"
+            "description": "Draft aligned with the latest opening publication; stored placements are preserved"
           },
           "400": {
             "content": {
@@ -95601,7 +95635,7 @@
                 }
               }
             },
-            "description": "Permission denied"
+            "description": "School-wide timetable management or publication permission required"
           },
           "404": {
             "content": {

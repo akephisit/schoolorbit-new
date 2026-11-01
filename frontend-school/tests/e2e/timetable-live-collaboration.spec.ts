@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { emptyLookupChanges } from '../runtime/timetable-collaboration-fixture.ts';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import { sessionState } from './fixtures/session-state.ts';
-import { revalidatePage } from './fixtures/page-revalidation.ts';
 import {
 	createDraftRelay,
 	startNativeDraftRelay,
@@ -16,6 +15,18 @@ import {
 	makeStructuralTimetableBlock,
 	makeTimetableBlock
 } from './timetable-test-harness.ts';
+
+async function enterEdit(
+	page: Page,
+	mock: Pick<Awaited<ReturnType<typeof installTimetableMock>>, 'workspaceRequestCount'>
+): Promise<number> {
+	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toBeEnabled();
+	const before = mock.workspaceRequestCount();
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toBeEnabled();
+	expect(mock.workspaceRequestCount()).toBe(before + 1);
+	return mock.workspaceRequestCount();
+}
 
 const artifacts = '/workspace/artifacts/timetable-live-collaboration';
 const secondUser = '51000000-0000-4000-8000-000000000211';
@@ -474,8 +485,10 @@ test('shared structural and synchronized anchors stay within the selected owner 
 		await a.goto(url('teacher', timetableIds.teacherA));
 		await b.goto(url('teacher', timetableIds.teacherA));
 		await waitPeers(relay, 2);
-		for (const page of [a, b])
-			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = new Map([
+			[mockA, await enterEdit(a, mockA)],
+			[mockB, await enterEdit(b, mockB)]
+		]);
 		const id = [...relay.peers.values()].find((peer) => peer.user.userId === timetableIds.user)!.id;
 		const remote = b.locator(`[data-timetable-remote-cursor="${id}"]`);
 		const blockSelector = (blockId: string) =>
@@ -550,7 +563,7 @@ test('shared structural and synchronized anchors stay within the selected owner 
 			0.4
 		);
 		for (const mock of [mockA, mockB]) {
-			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mock));
 			expect(mock.previewRequestCount()).toBe(0);
 		}
 	} finally {
@@ -618,8 +631,8 @@ test('committed native saves release consumed proofs without warnings while an u
 		await a.goto(url());
 		await b.goto(url());
 		await waitPeers(relay, 2);
-		for (const page of [a, b])
-			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(a, mock);
+		await b.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 		async function drop(source: Locator, period: string) {
 			const from = await source.boundingBox(),
 				to = await a.locator(cell(period)).boundingBox();
@@ -680,7 +693,7 @@ test('committed native saves release consumed proofs without warnings while an u
 		expect(mock.createRequestCount()).toBe(1);
 		expect(mock.updateRequestCount()).toBe(3);
 		expect(mock.previewRequestCount()).toBe(3);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 		expect(relay.workspace?.blocks).toHaveLength(2);
 	} finally {
 		releaseCreate();
@@ -690,7 +703,7 @@ test('committed native saves release consumed proofs without warnings while an u
 	}
 });
 
-test('two unready native drops time out without writes and only an explicit retry after baseline creates one block', async ({
+test('two unready native drops time out without writes and only explicit retained reviews after baseline create one block', async ({
 	browser
 }) => {
 	const relay = createDraftRelay();
@@ -703,7 +716,7 @@ test('two unready native drops time out without writes and only an explicit retr
 		await redirectSocket(context, server.url, timetableIds.user, 'ครูรอการเชื่อมต่อ');
 		await page.goto(url());
 		await waitPeers(relay, 1);
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		const source = page.locator('aside article').first();
 		const target = page.locator(cell(timetableIds.period1));
 		async function drop() {
@@ -718,19 +731,26 @@ test('two unready native drops time out without writes and only an explicit retr
 			await page.mouse.up();
 		}
 		for (let attempt = 0; attempt < 2; attempt++) {
-			await drop();
+			if (attempt === 0) await drop();
+			else {
+				await page.getByRole('button', { name: 'ทบทวนรายการ', exact: true }).click();
+				await target.click();
+			}
 			await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible();
 			await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 			await expect(
 				page.getByText('ยังเชื่อมต่อผู้ร่วมจัดตารางไม่ได้ กรุณาลองใหม่', { exact: true }).last()
 			).toBeVisible();
+			await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toHaveCount(0);
+			await expect(page.getByText(/ยังไม่ได้ส่งรายการนี้ไปบันทึก/)).toBeVisible();
 			expect(relay.received.filter((entry) => entry.message.type === 'ClientClaim')).toHaveLength(
 				0
 			);
 			expect(mock.previewRequestCount()).toBe(0);
 			expect(mock.createRequestCount()).toBe(0);
 			expect(mock.updateRequestCount()).toBe(0);
-			await expect(source).toHaveAttribute('draggable', 'true');
+			await expect(source).toHaveAttribute('draggable', 'false');
+			await expect(page.getByRole('button', { name: 'ทบทวนรายการ', exact: true })).toHaveCount(1);
 		}
 		relay.releaseStateSync();
 		await expect
@@ -738,7 +758,8 @@ test('two unready native drops time out without writes and only an explicit retr
 			.toBe(true);
 		expect(mock.createRequestCount()).toBe(0);
 		expect(mock.previewRequestCount()).toBe(0);
-		await drop();
+		await page.getByRole('button', { name: 'ทบทวนรายการ', exact: true }).click();
+		await target.click();
 		await expect.poll(mock.createRequestCount).toBe(1);
 		await expect(page.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toHaveCount(0);
 		await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(1);
@@ -747,7 +768,7 @@ test('two unready native drops time out without writes and only an explicit retr
 		expect(mock.previewRequestCount()).toBe(1);
 		expect(mock.createRequestCount()).toBe(1);
 		expect(mock.updateRequestCount()).toBe(0);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline + 2);
 	} finally {
 		await context.close();
 		await server.close();
@@ -797,7 +818,10 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 		await expect(a.getByRole('button', { name: /ไปยัง ครูสอง/ })).toBeVisible();
 		await expect(b.getByRole('button', { name: /ไปยัง ครูหนึ่ง/ })).toBeVisible();
 		const connectionIds = [...relay.peers.keys()].sort();
-		await a.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = new Map([
+			[mockA, await enterEdit(a, mockA)],
+			[mockB, mockB.workspaceRequestCount()]
+		]);
 		const card = (page: Page) =>
 			page.locator(`[data-timetable-anchor="block"][data-block-id="${block.id}"]`);
 		await card(a)
@@ -832,7 +856,7 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 		expect(draftSocketsA).toHaveLength(1);
 		expect(draftSocketsB).toHaveLength(1);
 		for (const mock of [mockA, mockB]) {
-			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mock));
 			expect(mock.previewRequestCount()).toBe(0);
 		}
 		expect(mockA.updateRequestCount()).toBe(1);
@@ -878,8 +902,10 @@ test('room feedback distinguishes pending claims from locked, denied, lost and s
 		await a.goto(url('wholeSchool'));
 		await b.goto(url());
 		await waitPeers(relay, 2);
-		for (const page of [a, b])
-			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = new Map([
+			[mockA, await enterEdit(a, mockA)],
+			[mockB, await enterEdit(b, mockB)]
+		]);
 		const openEditor = (page: Page) =>
 			page
 				.locator(`[data-timetable-anchor="block"][data-block-id="${block.id}"]`)
@@ -948,7 +974,7 @@ test('room feedback distinguishes pending claims from locked, denied, lost and s
 		await expect(status(a)).toContainText('ขณะนี้แก้ไขคาบนี้ไม่ได้');
 		expect(mockA.updateRequestCount()).toBe(1);
 		for (const mock of [mockA, mockB]) {
-			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mock));
 			expect(mock.previewRequestCount()).toBe(0);
 		}
 	} finally {
@@ -1115,8 +1141,10 @@ test('private room choices react to another native editor reservation without ex
 		await a.goto(url());
 		await b.goto(url());
 		await waitPeers(relay, 2);
-		for (const page of [a, b])
-			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = new Map([
+			[mockA, await enterEdit(a, mockA)],
+			[mockB, await enterEdit(b, mockB)]
+		]);
 		await a
 			.locator(`[data-timetable-anchor="block"][data-block-id="${timetableIds.blockA}"]`)
 			.getByRole('button', { name: /ดูรายละเอียด/ })
@@ -1141,7 +1169,7 @@ test('private room choices react to another native editor reservation without ex
 		await expect(a.getByRole('option', { name: 'ห้องปฏิบัติการ 2', exact: true })).toBeVisible();
 		await a.keyboard.press('Escape');
 		for (const mock of [mockA, mockB]) {
-			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mock));
 			expect(mock.previewRequestCount()).toBe(0);
 			expect(mock.updateRequestCount()).toBe(0);
 		}
@@ -1177,8 +1205,10 @@ test('native sockets preserve semantic cursor geometry, stationary sender resamp
 		await a.goto(url());
 		await b.goto(url());
 		await waitPeers(relay, 2);
-		await a.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-		await b.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = new Map([
+			[mockA, await enterEdit(a, mockA)],
+			[mockB, await enterEdit(b, mockB)]
+		]);
 		const aId = [...relay.peers.values()].find(
 			(peer) => peer.user.userId === timetableIds.user
 		)!.id;
@@ -1332,8 +1362,8 @@ test('native sockets preserve semantic cursor geometry, stationary sender resamp
 		await expect(b.locator(`[data-block-id="${timetableIds.createdBlock}"]`)).toBeVisible();
 		await expect(a.locator(`[data-block-id="${timetableIds.createdBlock}"]`)).toHaveCount(1);
 		expect(mockA.previewRequestCount()).toBe(1);
-		expect(mockA.workspaceRequestCount()).toBe(1);
-		expect(mockB.workspaceRequestCount()).toBe(1);
+		expect(mockA.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mockA));
+		expect(mockB.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mockB));
 		await expect(b.getByText('2/3', { exact: true })).toBeVisible();
 		await expect.poll(() => relay.workspace?.version.rowVersion).toBe(2);
 		await b.screenshot({ path: `${artifacts}/native-partial-commit.png` });
@@ -1502,7 +1532,7 @@ test('a quick synchronized drop keeps its captured lease and locks its remaining
 	});
 	try {
 		await page.goto(url());
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		const sync = page.locator('aside article[data-timetable-source-kind="synchronized_offering"]');
 		const transfer = await page.evaluateHandle(() => new DataTransfer());
 		await sync.dispatchEvent('dragstart', { dataTransfer: transfer });
@@ -1533,7 +1563,7 @@ test('a quick synchronized drop keeps its captured lease and locks its remaining
 		await expect(sync).toHaveAttribute('draggable', 'true');
 		await expect(sync.getByText('2/3', { exact: true })).toBeVisible();
 		expect(mock.previewRequestCount()).toBe(1);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 	} finally {
 		release();
 	}
@@ -1544,55 +1574,64 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 }) => {
 	const mock = await installTimetableMock(page);
 	await page.goto(url());
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await enterEdit(page, mock);
 	mock.publishNewOpening();
-	await revalidatePage(page);
-	await expect(
-		page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true })
-	).toBeVisible();
+	await expect.poll(mock.sourceUpdateRequestCount).toBe(1);
+	await expect(page.locator('aside article').first()).toHaveAttribute('draggable', 'true');
+	// Complete the source lifecycle's own invalidation before isolating the next held read.
+	await expect
+		.poll(() => {
+			const currentPeers = [...mock.relay.peers.keys()];
+			return (
+				currentPeers.length === 1 &&
+				mock.relay.received.some(
+					(event) =>
+						event.connectionId === currentPeers[0] && event.message.type === 'ClientPresenceUpdate'
+				)
+			);
+		})
+		.toBe(true);
 	let release!: () => void;
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	let readStarted = false;
+	let heldRequest: import('@playwright/test').Request | null = null;
+	const failedRequests = new Set<import('@playwright/test').Request>();
+	page.on('requestfailed', (request) => failedRequests.add(request));
+	let holdNextRead = true;
 	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
-		if (mock.sourceUpdateRequestCount() === 0) {
+		if (!holdNextRead) {
 			await route.fallback();
 			return;
 		}
+		holdNextRead = false;
+		heldRequest = route.request();
 		const captured = structuredClone(mock.workspace());
-		readStarted = true;
 		await gate;
 		await route.fulfill({ json: { success: true, data: captured } });
 	});
 	try {
-		await page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true }).click();
-		await expect.poll(() => readStarted).toBe(true);
+		await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
+		await expect.poll(() => heldRequest !== null).toBe(true);
+		expect(heldRequest && failedRequests.has(heldRequest)).toBe(false);
 		const workspace = structuredClone(mock.workspace());
 		workspace.blocks = [makeTimetableBlock(timetableIds.blockB, timetableIds.period2)];
 		workspace.version.rowVersion = 3;
 		workspace.summary.blockCount = 1;
 		workspace.totalDraftBlockCount = 1;
-		const invalidatedRead = page.waitForEvent('requestfailed', {
-			predicate: (request) =>
-				new URL(request.url()).pathname === '/api/academic/timetable-blocks/workspace'
-		});
 		mock.publishWorkspace(workspace);
-		await invalidatedRead;
+		await expect.poll(() => heldRequest !== null && failedRequests.has(heldRequest)).toBe(true);
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toBeVisible();
 		release();
-		await expect(
-			page.getByText('อัปเดตข้อมูลเปิดสอนแล้ว กรุณาตรวจคาบที่มีเครื่องหมาย', { exact: true })
-		).toBeVisible();
+		expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(1);
 		await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
-		// A later lifecycle save must use the patch's authoritative version, not the older list/read.
+		// The lifecycle read was superseded by rowVersion3; readiness must use that authoritative row.
 		let publishedRowVersion: number | undefined;
 		page.on('request', (request) => {
 			if (new URL(request.url()).pathname.endsWith('/publication-preview'))
 				publishedRowVersion = request.postDataJSON().rowVersion;
 		});
-		await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 		await page
 			.getByRole('dialog')
 			.getByRole('button', { name: 'ตรวจความพร้อม', exact: true })
@@ -1664,7 +1703,7 @@ test('an authoritative target denial disables the slot and a native drop cannot 
 		await redirectSocket(context, server.url, timetableIds.user, 'ครู denied');
 		await page.goto(url());
 		await waitPeers(relay, 1);
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		relay.denyTarget();
 		const source = page.locator('aside article').first();
 		const sourceBox = await source.boundingBox();
@@ -1687,7 +1726,7 @@ test('an authoritative target denial disables the slot and a native drop cannot 
 		expect(mock.previewRequestCount()).toBe(0);
 		expect(mock.createRequestCount()).toBe(0);
 		expect(mock.updateRequestCount()).toBe(0);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 		await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 		await expect(page.locator('main [role="alert"]')).toHaveCount(0);
 	} finally {
@@ -1870,7 +1909,7 @@ test('an inconsistent queued lookup order waits for the captured save then rejoi
 		await page.goto(url());
 		await waitPeers(relay, 1);
 		const id = [...relay.peers.keys()][0];
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		const tray = page.locator('aside article').first(),
 			transfer = await page.evaluateHandle(() => new DataTransfer());
 		await tray.dispatchEvent('dragstart', { dataTransfer: transfer });
@@ -1905,7 +1944,7 @@ test('an inconsistent queued lookup order waits for the captured save then rejoi
 		await expect(page.locator(`[data-block-id="${timetableIds.createdBlock}"]`)).toHaveCount(1);
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(1);
 		await expect(page.locator('[data-pending="true"]')).toHaveCount(0);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 		expect(mock.previewRequestCount()).toBe(1);
 	} finally {
 		release();
@@ -1938,7 +1977,7 @@ test('same-session metadata retains a native lease while same-user session repla
 		await page.goto(url());
 		await waitPeers(relay, 1);
 		const id = [...relay.peers.keys()][0];
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 		const dialog = page.getByRole('dialog'),
 			save = dialog.getByRole('button', { name: 'บันทึก', exact: true });
@@ -1983,7 +2022,7 @@ test('same-session metadata retains a native lease while same-user session repla
 		expect(headers['x-timetable-connection-id']).toBe([...relay.peers.keys()][0]);
 		expect(headers['x-timetable-connection-id']).not.toBe(id);
 		await expect.poll(mock.updateRequestCount).toBe(1);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 	} finally {
 		await context.close();
 		await server.close();
@@ -2099,7 +2138,7 @@ test('native policy1008 refreshes unchanged auth identity, rejoins changed scope
 		await waitPeers(relay, 1);
 		const id = [...relay.peers.keys()][0],
 			session = mock.getSessionState();
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const workspaceReadBaseline = await enterEdit(page, mock);
 		await page
 			.locator(`[data-block-id="${blockA.id}"]`)
 			.getByRole('button', { name: /ดูรายละเอียด/ })
@@ -2142,7 +2181,7 @@ test('native policy1008 refreshes unchanged auth identity, rejoins changed scope
 		await expect(
 			page.getByRole('dialog').getByRole('textbox', { name: 'หมายเหตุ', exact: true })
 		).toHaveValue('ข้อมูลใหม่ตามขอบเขตที่ยืนยันแล้ว');
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
 		expect(mock.updateRequestCount()).toBe(0);
 		expect(mock.previewRequestCount()).toBe(0);
 	} finally {

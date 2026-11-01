@@ -96,6 +96,38 @@ pub(crate) async fn preview_placement(
         ));
     }
 
+    let source: Uuid = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.services.timetable_block_conflicts.preview_placement.latest_source",
+            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+        )
+        .bind(request.timetable_version_id)
+        .fetch_one()
+        .await?;
+    let latest =
+        school_academic_delivery::services::versions::latest_published_for_term_on_connection(
+            connection,
+            request.academic_term_id,
+        )
+        .await?;
+    if Some(source) != latest {
+        return Ok(blocked_preview(
+            source_block_id,
+            request.expected_target_block_id,
+            target_day,
+            request.target_bell_schedule_period_id,
+            candidate,
+            TimetableBlockConflict {
+                conflict_type: TimetableBlockConflictType::Version,
+                code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED".into(),
+                message: "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนจัดคาบ".into(),
+                existing_block_id: None,
+                target_kind: None,
+                target_id: None,
+            },
+        ));
+    }
+
     let source_block = if let TimetableBlockPlacementSource::ExistingBlock {
         block_id,
         row_version,

@@ -31,6 +31,7 @@ async fn publication_state(pool: &PgPool) -> BTreeMap<&'static str, Value> {
         "academic_timetable_blocks",
         "academic_timetable_block_groups",
         "academic_timetable_block_group_instructors",
+        "academic_teacher_handoff_runs",
         "course_assessment_plans",
         "course_assessment_phases",
         "learning_group_score_items",
@@ -1460,7 +1461,43 @@ async fn matching_timetable_publications_queued_on_the_same_runtime_replay_one_a
     let audits:i64=sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_timetable_version.published'")
         .bind(first.id).fetch_one(&pool).await.unwrap();
     assert_eq!(audits, 1);
+    let previous_source = delivery_versions::get_version(&pool, first.delivery_version_id)
+        .await
+        .unwrap();
+    let next = target_change(
+        &pool,
+        &context,
+        request.effective_from + Duration::days(1),
+        previous_source.snapshot.offerings[0].weekly_period_target + 1,
+    )
+    .await;
+    let next = publish(&pool, context.teacher_id, next.id).await;
+    assert_ne!(next.target_delivery_version_id, first.delivery_version_id);
     let before = publication_state(&pool).await;
+    let retained = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        &mutation,
+        draft.id,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            retained.id,
+            retained.publication_no,
+            retained.row_version,
+            retained.delivery_version_id
+        ),
+        (
+            first.id,
+            first.publication_no,
+            first.row_version,
+            first.delivery_version_id
+        )
+    );
+    assert_eq!(publication_state(&pool).await,before,"an accepted publication replays despite a newer opening without rewiring its pin or recording another write");
     let mismatched = timetable_lifecycle::publish(
         &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
@@ -1475,6 +1512,112 @@ async fn matching_timetable_publications_queued_on_the_same_runtime_replay_one_a
     .unwrap_err();
     assert!(matches!(mismatched, AppError::Conflict(_)));
     assert_eq!(publication_state(&pool).await, before);
+}
+
+#[tokio::test]
+async fn handoff_accepted_receipt_replays_before_latest_source_checks() {
+    use school_academic_timetable::{
+        collaboration::TimetableMutationContext, services::teacher_handoff,
+    };
+    let pool =
+        prepare_concurrent_delivery_runtime_fixture("timetable_latest_handoff_receipt").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let (opening, group, _, old_teacher, replacement) = future_replacement(
+        &pool,
+        &context,
+        runtime_operation_date() + Duration::days(3),
+    )
+    .await;
+    let draft = independent_table_draft(&pool, &context).await;
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let draft = timetable_version_service::get_version(&pool, draft.id, runtime_operation_date())
+        .await
+        .unwrap();
+    let stop_item = opening
+        .items
+        .iter()
+        .find_map(|item| match item {
+            school_academic_delivery::models::AcademicTermChangeItem::StopGroupTeacher {
+                id,
+                ..
+            } => Some(*id),
+            _ => None,
+        })
+        .unwrap();
+    let entry:Uuid=sqlx::query_scalar("SELECT placed.id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=placed.id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND instructor.instructor_id=$3 ORDER BY placed.id LIMIT 1").bind(draft.id).bind(group).bind(old_teacher).fetch_one(&pool).await.unwrap();
+    let preview = teacher_handoff::preview(
+        &pool,
+        opening.id,
+        PreviewTeacherHandoffRequest {
+            timetable_version_id: draft.id,
+            change_set_row_version: opening.row_version,
+            target_timetable_version_row_version: draft.row_version,
+            teacher_change_item_id: stop_item,
+            entry_ids: vec![entry],
+            mode: TeacherHandoffMode::AssignOne,
+            instructor_ids: vec![replacement],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(preview.can_apply, "{preview:?}");
+    let request = ApplyTeacherHandoffRequest {
+        timetable_version_id: draft.id,
+        change_set_row_version: opening.row_version,
+        target_timetable_version_row_version: draft.row_version,
+        teacher_change_item_id: stop_item,
+        entries: preview
+            .proposed_entries
+            .iter()
+            .map(|entry| TeacherHandoffEntryVersion {
+                entry_id: entry.entry_id,
+                row_version: entry.row_version,
+            })
+            .collect(),
+        mode: TeacherHandoffMode::AssignOne,
+        instructor_ids: vec![replacement],
+        preview_hash: preview.preview_hash.unwrap(),
+        idempotency_key: Uuid::new_v4(),
+    };
+    let mutation = TimetableMutationContext::for_tests(&pool, context.teacher_id);
+    let accepted = teacher_handoff::apply(&pool, &mutation, opening.id, request.clone())
+        .await
+        .unwrap();
+    assert!(!accepted.response.replayed);
+    let base = delivery_versions::get_version(&pool, opening.target_delivery_version_id)
+        .await
+        .unwrap();
+    let next = target_change(
+        &pool,
+        &context,
+        runtime_operation_date() + Duration::days(5),
+        base.snapshot.offerings[0].weekly_period_target + 1,
+    )
+    .await;
+    let next = publish(&pool, context.teacher_id, next.id).await;
+    assert_ne!(
+        next.target_delivery_version_id,
+        opening.target_delivery_version_id
+    );
+    mutation
+        .runtime
+        .invalidate_term(mutation.tenant_id, Some(context.term_id));
+    let before = publication_state(&pool).await;
+    let replay = teacher_handoff::apply(&pool, &mutation, opening.id, request)
+        .await
+        .unwrap();
+    let mut expected = serde_json::to_value(accepted.response).unwrap();
+    expected["replayed"] = Value::Bool(true);
+    assert_eq!(serde_json::to_value(replay.response).unwrap(), expected);
+    assert_eq!(publication_state(&pool).await,before,"accepted handoff replay precedes new-source and stale-revision validation and preserves its complete receipt");
+    assert_eq!(
+        timetable_version_service::get_version(&pool, draft.id, runtime_operation_date())
+            .await
+            .unwrap()
+            .delivery_version_id,
+        opening.target_delivery_version_id,
+        "receipt replay never aligns or rewrites the dormant draft"
+    );
 }
 
 #[tokio::test]
@@ -1602,6 +1745,598 @@ async fn timetable_content(pool: &PgPool, version: Uuid) -> String {
         &blocks,
     )
     .unwrap()
+}
+
+async fn all_placement_rows(pool: &PgPool) -> BTreeMap<&'static str, Value> {
+    let mut result = BTreeMap::new();
+    for table in [
+        "academic_timetable_blocks",
+        "academic_timetable_block_groups",
+        "academic_timetable_block_group_instructors",
+        "academic_timetable_block_homerooms",
+        "academic_timetable_block_teachers",
+        "academic_timetable_block_group_sync",
+    ] {
+        result.insert(table, rows(pool, table).await);
+    }
+    result
+}
+
+#[tokio::test]
+async fn fresh_clone_and_existing_resume_use_latest_number_while_retaining_the_published_origin() {
+    use school_academic_timetable::collaboration::TimetableMutationContext;
+    let pool = prepare_concurrent_delivery_runtime_fixture("timetable_latest_clone_resume").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let source_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1").bind(context.term_id).fetch_one(&pool).await.unwrap();
+    let source = timetable_version_service::get_version(&pool, source_id, runtime_operation_date())
+        .await
+        .unwrap();
+    let original: Value =
+        sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1")
+            .bind(source_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (first, _, _, _, _) = future_replacement(
+        &pool,
+        &context,
+        runtime_operation_date() + Duration::days(7),
+    )
+    .await;
+    let mutation = TimetableMutationContext::for_tests(&pool, context.teacher_id);
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        &mutation,
+        source.id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(draft.delivery_version_id, first.target_delivery_version_id);
+    assert_ne!(draft.delivery_version_id, source.delivery_version_id);
+    assert_eq!(draft.source_version_id, Some(source.id));
+    let children = all_placement_rows(&pool).await;
+    let first_source = delivery_versions::get_version(&pool, first.target_delivery_version_id)
+        .await
+        .unwrap();
+    let second_draft = target_change(
+        &pool,
+        &context,
+        runtime_operation_date() + Duration::days(3),
+        first_source.snapshot.offerings[0].weekly_period_target + 1,
+    )
+    .await;
+    let second = publish(&pool, context.teacher_id, second_draft.id).await;
+    let second_source = delivery_versions::get_version(&pool, second.target_delivery_version_id)
+        .await
+        .unwrap();
+    assert!(second_source.publication_no > first_source.publication_no);
+    assert!(second_source.effective_from < first_source.effective_from);
+    let resumed = timetable_version_service::clone_draft(
+        &pool,
+        &mutation,
+        source.id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: Some(draft.id),
+            draft_row_version: Some(draft.row_version),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(resumed.id, draft.id);
+    assert_eq!(
+        resumed.delivery_version_id,
+        second.target_delivery_version_id
+    );
+    assert_eq!(resumed.source_version_id, Some(source.id));
+    assert_eq!(resumed.row_version, draft.row_version + 1);
+    assert_eq!(children, all_placement_rows(&pool).await);
+    assert_eq!(
+        original,
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1"
+        )
+        .bind(source_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    );
+    let stale = timetable_version_service::clone_draft(
+        &pool,
+        &mutation,
+        source.id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: Some(draft.id),
+            draft_row_version: Some(draft.row_version),
+        },
+    )
+    .await;
+    assert!(matches!(stale, Err(AppError::Conflict(_))));
+    assert_eq!(children, all_placement_rows(&pool).await);
+}
+
+#[tokio::test]
+async fn initial_draft_resume_aligns_an_existing_target_through_its_existing_permit() {
+    use school_academic_timetable::{
+        collaboration::TimetableMutationContext,
+        models::timetable_version::CreateTimetableVersionRequest,
+    };
+    let pool = prepare_delivery_runtime_fixture("timetable_latest_initial_resume").await;
+    let context = planning_runtime_context(&pool).await;
+    let opening = create_runtime_change_set_at(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        runtime_operation_date(),
+        "initial-latest-basis",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(opening.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "Initial latest source".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let accepted = publish(&pool, context.teacher_id, opening.id).await;
+    let mutation = TimetableMutationContext::for_tests(&pool, context.teacher_id);
+    let request = CreateTimetableVersionRequest {
+        academic_term_id: context.term_id,
+    };
+    let draft = timetable_version_service::create_initial_draft(&pool, &mutation, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        draft.delivery_version_id,
+        accepted.target_delivery_version_id
+    );
+    assert_eq!(draft.source_version_id, None);
+    let children = all_placement_rows(&pool).await;
+    let source = delivery_versions::get_version(&pool, accepted.target_delivery_version_id)
+        .await
+        .unwrap();
+    let next = target_change(
+        &pool,
+        &context,
+        runtime_operation_date() + Duration::days(2),
+        source.snapshot.offerings[0].weekly_period_target + 1,
+    )
+    .await;
+    let next = publish(&pool, context.teacher_id, next.id).await;
+    let resumed =
+        timetable_version_service::create_initial_draft(&pool, &mutation, request.clone())
+            .await
+            .unwrap();
+    assert_eq!(resumed.id, draft.id);
+    assert_eq!(resumed.row_version, draft.row_version + 1);
+    assert_eq!(resumed.delivery_version_id, next.target_delivery_version_id);
+    assert_eq!(resumed.source_version_id, None);
+    assert_eq!(children, all_placement_rows(&pool).await);
+    let same = timetable_version_service::create_initial_draft(&pool, &mutation, request)
+        .await
+        .unwrap();
+    assert_eq!(same.row_version, resumed.row_version);
+    assert_eq!(same.id, resumed.id);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1"
+        )
+        .bind(context.term_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn latest_source_alignment_preserves_every_placement_and_blocks_a_stale_source_after_admission(
+) {
+    use school_academic_timetable::{
+        collaboration::{DraftSignal, TimetableMutationContext},
+        models::{
+            timetable_block::*, timetable_publication::*,
+            timetable_version::UpdateTimetableDeliverySourceRequest,
+        },
+        services::timetable_lifecycle,
+    };
+    let pool = prepare_concurrent_delivery_runtime_fixture("timetable_latest_alignment").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let draft = independent_table_draft(&pool, &context).await;
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let draft = timetable_version_service::get_version(&pool, draft.id, runtime_operation_date())
+        .await
+        .unwrap();
+    let mutation = TimetableMutationContext::for_tests(&pool, context.teacher_id);
+    let room = mutation
+        .runtime
+        .load_room(
+            mutation.tenant_id,
+            &pool,
+            draft.id,
+            mutation.staff_directory,
+        )
+        .await
+        .unwrap();
+    let mut signals = room.subscribe();
+    let before = all_placement_rows(&pool).await;
+    let raw_draft: Value =
+        sqlx::query_scalar("SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1")
+            .bind(draft.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let no_op = timetable_lifecycle::update_source(
+        &pool,
+        &mutation,
+        draft.id,
+        UpdateTimetableDeliverySourceRequest {
+            row_version: draft.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(no_op.row_version, draft.row_version);
+    assert_eq!(
+        raw_draft,
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(v) FROM academic_timetable_versions v WHERE id=$1"
+        )
+        .bind(draft.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    );
+    assert!(std::sync::Arc::ptr_eq(
+        &room,
+        &mutation
+            .runtime
+            .load_room(
+                mutation.tenant_id,
+                &pool,
+                draft.id,
+                mutation.staff_directory
+            )
+            .await
+            .unwrap()
+    ));
+    while let Ok(signal) = signals.try_recv() {
+        assert!(!matches!(signal, DraftSignal::Invalidated));
+    }
+
+    let date = runtime_operation_date() + Duration::days(5);
+    let (opening, group, _, old_teacher, _) = future_replacement(&pool, &context, date).await;
+    assert_ne!(
+        opening.target_delivery_version_id,
+        draft.delivery_version_id
+    );
+    let old_published = sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM academic_timetable_versions v WHERE status='published'").fetch_one(&pool).await.unwrap();
+    let untouched = timetable_version_service::get_version(&pool, draft.id, date)
+        .await
+        .unwrap();
+    assert_eq!(
+        untouched.delivery_version_id, draft.delivery_version_id,
+        "read-only retrieval cannot mutate a dormant source"
+    );
+    let stale = timetable_lifecycle::preview(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        draft.id,
+        PreviewTimetablePublicationRequest {
+            row_version: draft.row_version,
+            effective_from: date,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!stale.can_publish);
+    assert!(stale
+        .findings
+        .iter()
+        .any(|finding| finding.code == TimetablePublicationFindingCode::DeliverySourceOutdated));
+    let block_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active ORDER BY id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap();
+    let block = timetable_block_service::get_block(&pool, block_id)
+        .await
+        .unwrap();
+    // Keep the warm room from before publication: no HTTP upstream signal has
+    // refreshed it. The transaction guard must catch the newly accepted source.
+    let denied = timetable_block_service::update_block(&pool,&mutation,block.id,serde_json::from_value(serde_json::json!({"timetableVersionId":draft.id,"rowVersion":block.row_version,"note":"must not save against an older source"})).unwrap()).await;
+    assert!(matches!(
+        denied,
+        Err(AppError::ConflictWithCode {
+            code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED",
+            ..
+        })
+    ));
+    fn latest_conflict<T>(result: Result<T, AppError>) {
+        assert!(
+            matches!(
+                result,
+                Err(AppError::ConflictWithCode {
+                    code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED",
+                    ..
+                })
+            ),
+            "every new content owner must reject the obsolete source before changing content"
+        );
+    }
+    use school_academic_timetable::{
+        models::timetable::{ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest},
+        services::timetable_template_service,
+    };
+    let template = timetable_template_service::create_template(
+        &pool,
+        context.teacher_id,
+        CreateTemplateRequest {
+            name: "Stale source template guard".into(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    latest_conflict(
+        timetable_template_service::apply_template(
+            &pool,
+            &mutation,
+            template.id,
+            ApplyTemplateRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: context.term_id,
+            },
+        )
+        .await,
+    );
+    latest_conflict(
+        timetable_template_service::clear_timetable(
+            &pool,
+            &mutation,
+            ClearTimetableRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: context.term_id,
+                entry_types: None,
+            },
+        )
+        .await,
+    );
+    latest_conflict(
+        timetable_block_service::retry_sync(
+            &pool,
+            &mutation,
+            block.id,
+            RetryTimetableBlockSyncRequest {
+                timetable_version_id: draft.id,
+                block_row_version: block.row_version,
+                learning_group_ids: vec![],
+            },
+        )
+        .await,
+    );
+    latest_conflict(
+        school_academic_timetable::services::teacher_handoff::apply(
+            &pool,
+            &mutation,
+            opening.id,
+            ApplyTeacherHandoffRequest {
+                timetable_version_id: draft.id,
+                change_set_row_version: opening.row_version,
+                target_timetable_version_row_version: draft.row_version,
+                teacher_change_item_id: opening.items.iter().find_map(|item|match item {
+                    school_academic_delivery::models::AcademicTermChangeItem::StopGroupTeacher {id,..} => Some(*id),
+                    _ => None,
+                }).unwrap(),
+                entries: vec![TeacherHandoffEntryVersion {
+                    entry_id: block.id,
+                    row_version: block.row_version,
+                }],
+                mode: TeacherHandoffMode::Manual,
+                instructor_ids: vec![context.teacher_id],
+                preview_hash: "a".repeat(64),
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await,
+    );
+    let placement = timetable_block_service::preview_placement(
+        &pool,
+        TimetableBlockPlacementPreviewRequest {
+            timetable_version_id: draft.id,
+            academic_term_id: context.term_id,
+            source: TimetableBlockPlacementSource::ExistingBlock {
+                block_id: block.id,
+                row_version: block.row_version,
+            },
+            candidate: TimetableBlockPlacementCandidate {
+                block_kind: block.block_kind,
+                learning_group_id: None,
+                learning_offering_id: block.learning_offering_id,
+                room_id: None,
+                homeroom_ids: vec![],
+                teacher_ids: vec![],
+                instructor_ids: vec![],
+            },
+            target_day_of_week: block.day_of_week.clone(),
+            target_bell_schedule_period_id: block.bell_schedule_period_id,
+            expected_target_block_id: None,
+            expected_target_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(placement.state, TimetableBlockPlacementState::Blocked);
+    assert!(placement
+        .conflicts
+        .iter()
+        .any(|finding| finding.code == "TIMETABLE_DELIVERY_SOURCE_OUTDATED"));
+    let publish_denied = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        &mutation,
+        draft.id,
+        PublishTimetableVersionRequest {
+            row_version: draft.row_version,
+            effective_from: date,
+            preview_hash: stale.preview_hash,
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await;
+    assert!(matches!(publish_denied, Err(AppError::ValidationError(_))));
+    assert_eq!(before, all_placement_rows(&pool).await);
+    let aligned = timetable_lifecycle::update_source(
+        &pool,
+        &mutation,
+        draft.id,
+        UpdateTimetableDeliverySourceRequest {
+            row_version: draft.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        aligned.delivery_version_id,
+        opening.target_delivery_version_id
+    );
+    assert_eq!(aligned.source_version_id, draft.source_version_id);
+    assert_eq!(aligned.row_version, draft.row_version + 1);
+    assert_eq!(
+        before,
+        all_placement_rows(&pool).await,
+        "all placement identities, teachers, provenance and child revisions survive alignment"
+    );
+    assert_eq!(old_published,sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM academic_timetable_versions v WHERE status='published'").fetch_one(&pool).await.unwrap());
+    let fresh = mutation
+        .runtime
+        .load_room(
+            mutation.tenant_id,
+            &pool,
+            draft.id,
+            mutation.staff_directory,
+        )
+        .await
+        .unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&room, &fresh));
+    let mut invalidated = false;
+    while let Ok(signal) = signals.try_recv() {
+        invalidated |= matches!(signal, DraftSignal::Invalidated);
+    }
+    assert!(invalidated);
+    let preview = timetable_lifecycle::preview(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        draft.id,
+        PreviewTimetablePublicationRequest {
+            row_version: aligned.row_version,
+            effective_from: date,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!preview
+        .findings
+        .iter()
+        .any(|finding| finding.code == TimetablePublicationFindingCode::DeliverySourceOutdated));
+    assert!(
+        preview
+            .source_issues
+            .iter()
+            .any(|issue| issue.learning_group_id == Some(group)
+                && issue.teacher_id == Some(old_teacher)),
+        "alignment exposes real teacher mismatches without replacing the saved instructor"
+    );
+    let early = timetable_lifecycle::preview(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        draft.id,
+        PreviewTimetablePublicationRequest {
+            row_version: aligned.row_version,
+            effective_from: date - Duration::days(1),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(early
+        .findings
+        .iter()
+        .any(|finding| finding.code == TimetablePublicationFindingCode::DeliveryDateMismatch));
+    assert!(!early.can_publish);
+    let no_op = timetable_lifecycle::update_source(
+        &pool,
+        &mutation,
+        draft.id,
+        UpdateTimetableDeliverySourceRequest {
+            row_version: aligned.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(no_op.row_version, aligned.row_version);
+    assert!(std::sync::Arc::ptr_eq(
+        &fresh,
+        &mutation
+            .runtime
+            .load_room(
+                mutation.tenant_id,
+                &pool,
+                draft.id,
+                mutation.staff_directory
+            )
+            .await
+            .unwrap()
+    ));
+    let evidence: (i64,Uuid,Uuid) = sqlx::query_as("SELECT count(*),min((payload->>'previousDeliveryVersionId')::text)::uuid,min((payload->>'deliveryVersionId')::text)::uuid FROM academic_audit_events WHERE event_code='academic_timetable_version.source_updated' AND entity_id=$1").bind(draft.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        evidence,
+        (
+            1,
+            draft.delivery_version_id,
+            opening.target_delivery_version_id
+        )
+    );
 }
 
 #[tokio::test]

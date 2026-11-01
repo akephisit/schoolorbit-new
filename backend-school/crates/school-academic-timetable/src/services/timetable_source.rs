@@ -12,6 +12,14 @@ use uuid::Uuid;
 use crate::models::timetable_block::{TimetableBlock, TimetableBlockKind, TimetableStructuralKind};
 use crate::models::timetable_source::{TimetableSourceIssue, TimetableSourceIssueCode};
 
+/// Never use this code for commit uncertainty, stale revisions or cache publication failures.
+pub(crate) fn outdated_draft_source() -> AppError {
+    AppError::ConflictWithCode {
+        code: crate::models::timetable_source::TimetableDraftSourceConflictCode::DeliverySourceOutdated.as_str(),
+        message: "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
+    }
+}
+
 /// Reconciliation never edits placements or guesses a replacement resource.
 pub fn source_issues(
     snapshot: &DeliverySnapshot,

@@ -397,7 +397,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
     )
     .await
     .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,}).await.unwrap();
 }
 
 #[tokio::test]
@@ -1250,7 +1250,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     )
     .await
     .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::update_source(&pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(&pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(&pool, actor_id),version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,}).await.unwrap();
     let table = school_academic_timetable::services::timetable_version_service::get_version(
         &pool,
         version_id,

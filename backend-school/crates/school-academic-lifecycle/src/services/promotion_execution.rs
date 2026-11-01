@@ -97,7 +97,8 @@ fn execution_failure_message(error: &AppError) -> &str {
         | AppError::NotFound(message)
         | AppError::ValidationError(message)
         | AppError::BadRequest(message)
-        | AppError::Conflict(message) => message,
+        | AppError::Conflict(message)
+        | AppError::ConflictWithCode { message, .. } => message,
         AppError::InternalServerError(_) => "Internal server error",
         AppError::ConfigError(_) => "System configuration error",
         AppError::ServiceUnavailable(_) => "Service temporarily unavailable",

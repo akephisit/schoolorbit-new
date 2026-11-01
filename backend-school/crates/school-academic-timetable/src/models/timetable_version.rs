@@ -97,7 +97,6 @@ pub struct CloneTimetableVersionRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateTimetableDeliverySourceRequest {
     pub row_version: i64,
-    pub delivery_version_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize)]

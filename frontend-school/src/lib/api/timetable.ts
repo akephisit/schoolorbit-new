@@ -8,6 +8,23 @@ import {
 import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
+export type TimetableDraftSourceConflict = Schemas['TimetableDraftSourceConflict'];
+
+export class TimetableDeliverySourceOutdatedError extends Error {
+	readonly code: TimetableDraftSourceConflict['code'] = 'TIMETABLE_DELIVERY_SOURCE_OUTDATED';
+}
+export function isTimetableDeliverySourceOutdated(error: unknown): boolean {
+	return (
+		error instanceof TimetableDeliverySourceOutdatedError ||
+		(error instanceof ApiClientError &&
+			error.status === 409 &&
+			error.data !== null &&
+			typeof error.data === 'object' &&
+			'code' in error.data &&
+			error.data.code ===
+				('TIMETABLE_DELIVERY_SOURCE_OUTDATED' satisfies TimetableDraftSourceConflict['code']))
+	);
+}
 
 export type DraftAnchor = Schemas['DraftAnchor'];
 export type DraftAvailability = Schemas['DraftAvailability'];
@@ -131,12 +148,17 @@ export function currentLocalDate(date = new Date()): string {
 	return `${year}-${month}-${day}`;
 }
 
-async function timetableData<T>(request: Promise<ApiResponse<T>>, fallback: string): Promise<T> {
+async function timetableData<T, E>(
+	request: Promise<ApiResponse<T, E>>,
+	fallback: string
+): Promise<T> {
 	const response = await request;
 	if (response.status === 409) {
 		throw new ApiClientError(
 			`${response.error || fallback} กรุณาโหลดตารางล่าสุดก่อนดำเนินการอีกครั้ง`,
-			409
+			409,
+			response.retryAfterSeconds,
+			response.errorData
 		);
 	}
 	return requireApiData(response, fallback);
@@ -290,7 +312,11 @@ export const createOrdinaryTimetableBlock = (
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/ordinary', body, options),
+		apiClient.post<TimetableBlock, TimetableDraftSourceConflict>(
+			'/api/academic/timetable-blocks/ordinary',
+			body,
+			options
+		),
 		'สร้างคาบในตารางไม่สำเร็จ'
 	);
 
@@ -299,13 +325,20 @@ export const createSynchronizedTimetableBlock = (
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.post<TimetableBlock>('/api/academic/timetable-blocks/synchronized', body, options),
+		apiClient.post<TimetableBlock, TimetableDraftSourceConflict>(
+			'/api/academic/timetable-blocks/synchronized',
+			body,
+			options
+		),
 		'สร้างช่วงกิจกรรมพร้อมกันไม่สำเร็จ'
 	);
 
 export const createStructuralTimetableBlocks = (body: CreateStructuralTimetableBlocksRequest) =>
 	timetableData(
-		apiClient.post<TimetableBlock[]>('/api/academic/timetable-blocks/structural', body),
+		apiClient.post<TimetableBlock[], TimetableDraftSourceConflict>(
+			'/api/academic/timetable-blocks/structural',
+			body
+		),
 		'เพิ่มคาบพิเศษไม่สำเร็จ'
 	);
 
@@ -315,7 +348,7 @@ export const updateTimetableBlock = (
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.put<TimetableBlock>(
+		apiClient.put<TimetableBlock, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(id)}`,
 			body,
 			options
@@ -338,7 +371,7 @@ export const deleteTimetableBlock = (
 		timetableVersionId: query.timetableVersionId
 	});
 	return timetableData(
-		apiClient.delete<TimetableBlock>(
+		apiClient.delete<TimetableBlock, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(id)}?${params.toString()}`,
 			options
 		),
@@ -352,7 +385,7 @@ export const deleteTimetableBlockSeries = (seriesId: string, timetableVersionId:
 	} satisfies DeleteTimetableBlockSeriesQuery;
 	const params = new URLSearchParams(query);
 	return timetableData(
-		apiClient.delete<TimetableBlock[]>(
+		apiClient.delete<TimetableBlock[], TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/series/${encodeURIComponent(seriesId)}?${params.toString()}`
 		),
 		'ลบชุดคาบพิเศษไม่สำเร็จ'
@@ -365,7 +398,7 @@ export const removeTimetableBlockTarget = (
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.deleteWithBody<TimetableBlock>(
+		apiClient.deleteWithBody<TimetableBlock, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/targets`,
 			body,
 			options
@@ -375,7 +408,7 @@ export const removeTimetableBlockTarget = (
 
 export const retryTimetableBlockSync = (blockId: string, body: RetryTimetableBlockSyncRequest) =>
 	timetableData(
-		apiClient.post<TimetableBlock>(
+		apiClient.post<TimetableBlock, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/sync`,
 			body
 		),
@@ -387,7 +420,7 @@ export const restoreTimetableBlockGroup = (
 	body: RestoreTimetableBlockGroupRequest
 ) =>
 	timetableData(
-		apiClient.post<TimetableBlock>(
+		apiClient.post<TimetableBlock, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-blocks/${encodeURIComponent(blockId)}/restore`,
 			body
 		),
@@ -399,7 +432,7 @@ export const swapTimetableBlocks = (
 	options: ApiRequestOptions = {}
 ) =>
 	timetableData(
-		apiClient.post<SwapTimetableBlocksResponse>(
+		apiClient.post<SwapTimetableBlocksResponse, TimetableDraftSourceConflict>(
 			'/api/academic/timetable-blocks/swap',
 			body,
 			options
@@ -476,7 +509,7 @@ export const createTimetableTemplateFromCurrent = (body: FromCurrentRequest) =>
 	);
 export const applyTimetableTemplate = (id: string, body: ApplyTemplateRequest) =>
 	timetableData(
-		apiClient.post<TemplateApplyResult>(
+		apiClient.post<TemplateApplyResult, TimetableDraftSourceConflict>(
 			`/api/academic/timetable-templates/${encodeURIComponent(id)}/apply`,
 			body
 		),
@@ -484,6 +517,9 @@ export const applyTimetableTemplate = (id: string, body: ApplyTemplateRequest) =
 	);
 export const clearTimetable = (body: ClearTimetableRequest) =>
 	timetableData(
-		apiClient.deleteWithBody<TimetableBlock[]>('/api/academic/timetable-blocks/clear', body),
+		apiClient.deleteWithBody<TimetableBlock[], TimetableDraftSourceConflict>(
+			'/api/academic/timetable-blocks/clear',
+			body
+		),
 		'ล้างตารางสอนไม่สำเร็จ'
 	);

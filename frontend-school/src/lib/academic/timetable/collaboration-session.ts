@@ -71,12 +71,22 @@ export function sameDraftTarget(
 				(left.blockId ?? null) === (right.blockId ?? null);
 }
 
-function leaseError(code?: string | null): Error {
-	return new Error(
-		code === 'reserved'
-			? 'มีผู้อื่นกำลังใช้คาบหรือช่องเวลานี้ กรุณาเลือกตำแหน่งอื่น'
-			: 'สิทธิ์จัดคาบหมดอายุหรือการเชื่อมต่อเปลี่ยนไป กรุณาลองใหม่'
-	);
+export class DraftLeaseError extends Error {
+	readonly code: DraftCommandResult['code'];
+	constructor(code?: DraftCommandResult['code']) {
+		super(
+			code === 'reserved'
+				? 'มีผู้อื่นกำลังใช้คาบหรือช่องเวลานี้ กรุณาเลือกตำแหน่งอื่น'
+				: code === 'delivery_source_outdated'
+					? 'แบบร่างยังไม่ได้ใช้ข้อมูลเปิดสอนล่าสุด'
+					: 'สิทธิ์จัดคาบหมดอายุหรือการเชื่อมต่อเปลี่ยนไป กรุณาลองใหม่'
+		);
+		this.name = 'DraftLeaseError';
+		this.code = code;
+	}
+}
+function leaseError(code?: DraftCommandResult['code']): DraftLeaseError {
+	return new DraftLeaseError(code);
 }
 
 export function createDraftCollaborationSession<Timer>(dependencies: {

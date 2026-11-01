@@ -214,6 +214,109 @@ fn claim_with_purpose(
 }
 
 #[test]
+fn postcommit_version_snapshot_failure_invalidates_instead_of_publishing_a_failed_patch() {
+    let (room, _, _) = fixture();
+    let mut signals = room.subscribe();
+    let before = room.lock().unwrap().workspace.clone();
+    let sequence = room.lock().unwrap().seq;
+    let mut changed = before.blocks[0].clone();
+    changed.note = Some("The database commit has already succeeded".into());
+    super::mutation::publish_committed_blocks(
+        &room,
+        vec![changed],
+        Err(AppError::Conflict(
+            "Draft snapshot mutex unavailable".into(),
+        )),
+        None,
+        Uuid::new_v4(),
+    );
+    let state = room.lock().unwrap();
+    assert!(!state.valid);
+    assert_eq!(
+        state.seq, sequence,
+        "an unavailable committed revision cannot produce a speculative delta"
+    );
+    assert!(Arc::ptr_eq(&state.workspace, &before));
+    assert!(matches!(signals.try_recv(), Ok(DraftSignal::Invalidated)));
+    assert!(signals.try_recv().is_err());
+}
+
+#[test]
+fn stale_source_blocks_cold_claim_and_content_admission_but_keeps_lifecycle_authority() {
+    let (room, _, actor) = fixture();
+    {
+        let mut state = room.lock().unwrap();
+        Arc::make_mut(&mut state.workspace).latest_delivery_version_id = Uuid::new_v4();
+    }
+    let viewer = member(actor, full_access());
+    room.join(viewer.clone()).unwrap();
+    let result = claim(&room, viewer.connection_id, source(&room));
+    assert!(!result.accepted);
+    assert_eq!(result.code.as_deref(), Some("delivery_source_outdated"));
+    assert!(room.lock().unwrap().leases.is_empty());
+    let block_id = room.lock().unwrap().workspace.blocks[0].id;
+    assert!(matches!(
+        room.begin_commit(
+            actor,
+            viewer.session_id,
+            None,
+            MutationScope::Blocks(vec![block_id])
+        ),
+        Err(AppError::ConflictWithCode {
+            code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED",
+            ..
+        })
+    ));
+    let permit = room
+        .begin_commit(actor, viewer.session_id, None, MutationScope::WholeDraft)
+        .unwrap();
+    drop(permit);
+    assert!(room.lock().unwrap().valid);
+}
+
+#[test]
+fn stale_source_refuses_renew_but_allows_the_owner_to_release_an_existing_lease() {
+    let (room, _, actor) = fixture();
+    let viewer = member(actor, full_access());
+    room.join(viewer.clone()).unwrap();
+    let granted = claim(&room, viewer.connection_id, source(&room));
+    let token = granted.lease_token.unwrap();
+    {
+        let mut state = room.lock().unwrap();
+        Arc::make_mut(&mut state.workspace).latest_delivery_version_id = Uuid::new_v4();
+    }
+    let renew = room
+        .command(
+            viewer.connection_id,
+            DraftClientMessage::ClientRenew(DraftLeaseCommand {
+                request_id: Uuid::new_v4(),
+                lease_token: token,
+            }),
+        )
+        .unwrap();
+    let DraftServerMessage::DraftCommandResult(result) = &renew[0].event else {
+        panic!("command result expected")
+    };
+    assert!(!result.accepted);
+    assert_eq!(result.code.as_deref(), Some("delivery_source_outdated"));
+    assert!(room.lock().unwrap().leases.contains_key(&token));
+    let released = room
+        .command(
+            viewer.connection_id,
+            DraftClientMessage::ClientRelease(DraftLeaseCommand {
+                request_id: Uuid::new_v4(),
+                lease_token: token,
+            }),
+        )
+        .unwrap();
+    let DraftServerMessage::DraftCommandResult(result) = &released[0].event else {
+        panic!("command result expected")
+    };
+    assert!(result.accepted);
+    assert!(room.lock().unwrap().leases.is_empty());
+}
+
+#[test]
 fn simultaneous_first_claim_has_exactly_one_winner_even_for_same_user_tabs() {
     let (room, _, actor) = fixture();
     let first = member(actor, full_access());

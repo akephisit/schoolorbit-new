@@ -1,3 +1,4 @@
+import type { AcademicContextOptionsResponse } from '../../src/lib/api/academic-context.js';
 import type { SessionState } from '../../src/lib/api/auth.js';
 import { sessionState } from './fixtures/session-state.ts';
 import type { Page, Route } from '@playwright/test';
@@ -48,6 +49,8 @@ export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
 	versions?: TimetableVersion[];
 	deliveryPublications?: TimetableBlockWorkspace['deliveryPublication'][];
+	deliveryPublicationsByTerm?: Record<string, TimetableBlockWorkspace['deliveryPublication'][]>;
+	terms?: AcademicContextOptionsResponse['terms'];
 	publicationDateRules?: TimetableBlockWorkspace['publicationDateRules'];
 	permissions?: string[];
 	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
@@ -354,6 +357,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		(left, right) => right.publicationNo - left.publicationNo
 	)[0].id;
 	let sourceUpdateRequests = 0;
+	const sourceUpdateBodies: { rowVersion: number }[] = [];
 	let draftDeleteRequests = 0;
 	let publicationRequests = 0;
 	let sourceIssues = options.sourceIssues ?? [];
@@ -377,17 +381,22 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		const synchronizedScheduledPeriods = blocks.filter(
 			(block) => block.learningOfferingId === timetableIds.offeringSync
 		).length;
+		const scopedPublications =
+			options.deliveryPublicationsByTerm?.[version.academicTermId] ?? deliveryPublications;
+		const latestId =
+			version.academicTermId === selectedVersion.academicTermId
+				? latestDeliveryVersionId
+				: scopedPublications.toSorted((left, right) => right.publicationNo - left.publicationNo)[0]
+						.id;
 		return {
 			version,
 			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
-			latestDeliveryVersionId,
-			deliveryPublication: deliveryPublications.find(
+			latestDeliveryVersionId: latestId,
+			deliveryPublication: scopedPublications.find(
 				(item) => item.id === version.deliveryVersionId
 			)!,
-			latestDeliveryPublication: deliveryPublications.find(
-				(item) => item.id === latestDeliveryVersionId
-			)!,
+			latestDeliveryPublication: scopedPublications.find((item) => item.id === latestId)!,
 			publicationDateRules,
 			bellPeriods: options.bellPeriods ?? periods(options.periodCount),
 			blocks,
@@ -572,7 +581,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							status: 'active'
 						}
 					],
-					terms: [
+					terms: options.terms ?? [
 						{
 							isVisible: true,
 							id: timetableIds.term,
@@ -590,7 +599,12 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-versions') {
-				await fulfill(route, versions);
+				await fulfill(
+					route,
+					versions.filter(
+						(version) => version.academicTermId === url.searchParams.get('academicTermId')
+					)
+				);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
@@ -605,8 +619,14 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				const body = route.request().postDataJSON();
 				const draft = versions.find((version) => version.id === timetableIds.draftVersion);
 				if (!draft) throw new Error('draft missing');
-				draft.deliveryVersionId = body.deliveryVersionId;
-				draft.rowVersion += 1;
+				if (Object.keys(body).length !== 1 || !Number.isInteger(body.rowVersion))
+					throw new Error('source alignment accepts rowVersion only');
+				sourceUpdateBodies.push(body);
+				if (draft.deliveryVersionId !== latestDeliveryVersionId) {
+					draft.deliveryVersionId = latestDeliveryVersionId;
+					draft.rowVersion += 1;
+					relay.invalidate(workspace(draft));
+				}
 				await fulfill(route, draft);
 				return;
 			}
@@ -620,11 +640,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname.endsWith('/publication-preview')) {
 				const body = route.request().postDataJSON();
 				const draft = versions.find((item) => item.id === timetableIds.draftVersion)!;
-				const applicable =
-					deliveryPublications
-						.filter((item) => item.effectiveFrom <= body.effectiveFrom)
-						.toSorted((left, right) => right.publicationNo - left.publicationNo)[0] ?? null;
-				const canPublish = applicable?.id === draft.deliveryVersionId;
+				const canPublish =
+					draft.deliveryVersionId === latestDeliveryVersionId &&
+					body.effectiveFrom >= workspace().latestDeliveryPublication.effectiveFrom;
 				await fulfill(route, {
 					timetableVersionId: timetableIds.draftVersion,
 					rowVersion: draft.rowVersion,
@@ -633,10 +651,6 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					latestDeliveryVersionId,
 					deliveryPublication: workspace().deliveryPublication,
 					latestDeliveryPublication: workspace().latestDeliveryPublication,
-					applicableDeliveryPublication:
-						deliveryPublications
-							.filter((item) => item.effectiveFrom <= body.effectiveFrom)
-							.toSorted((left, right) => right.publicationNo - left.publicationNo)[0] ?? null,
 					effectiveFrom: body.effectiveFrom,
 					blockCount: blocks.length,
 					contentChanged: true,
@@ -983,11 +997,13 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		lastUpdateBody: () => lastUpdateBody,
 		blocks: () => blocks,
 		sourceUpdateRequestCount: () => sourceUpdateRequests,
+		sourceUpdateBodies: () => structuredClone(sourceUpdateBodies),
 		draftDeleteRequestCount: () => draftDeleteRequests,
 		publicationRequestCount: () => publicationRequests,
 		publishNewOpening: () => {
 			latestDeliveryVersionId = timetableIds.newDeliveryVersion;
 			deliveryPublications.push(makeDeliveryPublication(timetableIds.newDeliveryVersion, 2));
+			relay.invalidate(workspace());
 		},
 		setSourceIssues: (issues: TimetableBlockWorkspace['sourceIssues']) => {
 			sourceIssues = issues;
