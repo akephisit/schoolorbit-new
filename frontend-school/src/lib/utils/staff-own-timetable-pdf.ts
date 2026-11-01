@@ -1,3 +1,4 @@
+import { timetablePdfHeaderContext } from './timetable-pdf-header.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type { TimetableBlock, TimetablePeriodSummary } from '#lib/api/timetable.js';
 import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
@@ -94,6 +95,8 @@ export function buildStaffOwnTimetablePdfDownload(
 			{
 				title,
 				subTitle,
+				headerContext: timetablePdfHeaderContext(termName || termCode || '', academicYearLabel),
+				headerOwnerLabel: input.teacherName.trim(),
 				dayValues: input.dayValues,
 				periods: input.periods.map((period, orderIndex) => ({
 					id: period.id,

@@ -94,11 +94,6 @@ const blockRoom = (block: TimetableBlock) => {
 	};
 };
 
-// Helper: Strip "ตารางเรียน " / "ตารางสอน " prefix → คง "ชั้นมัธยมศึกษาปีที่..." / "ครู..." ไว้
-const stripTitlePrefix = (title: string): string => {
-	return title.replace(/^ตารางเรียน /, '').replace(/^ตารางสอน /, '');
-};
-
 type SegmenterCtor = new (
 	locale: string,
 	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
@@ -291,18 +286,20 @@ const miniTableLayout: CustomTableLayout = {
 };
 
 const DAYS = [
-	{ value: 'MON', label: 'จันทร์', color: '#FEF9C3' },
-	{ value: 'TUE', label: 'อังคาร', color: '#FCE7F3' },
-	{ value: 'WED', label: 'พุธ', color: '#DCFCE7' },
-	{ value: 'THU', label: 'พฤหัสฯ', color: '#FFEDD5' },
-	{ value: 'FRI', label: 'ศุกร์', color: '#DBEAFE' },
-	{ value: 'SAT', label: 'เสาร์', color: '#F3F4F6' },
-	{ value: 'SUN', label: 'อาทิตย์', color: '#F3F4F6' }
+	{ value: 'MON', label: 'จันทร์' },
+	{ value: 'TUE', label: 'อังคาร' },
+	{ value: 'WED', label: 'พุธ' },
+	{ value: 'THU', label: 'พฤหัสฯ' },
+	{ value: 'FRI', label: 'ศุกร์' },
+	{ value: 'SAT', label: 'เสาร์' },
+	{ value: 'SUN', label: 'อาทิตย์' }
 ];
 
 export interface TimetablePage {
 	title: string;
 	subTitle: string;
+	headerContext: string;
+	headerOwnerLabel: string;
 	/** Ordered school-day codes to render. Defaults to Monday-Friday for existing callers. */
 	dayValues?: string[];
 	periods: PdfPeriod[];
@@ -319,11 +316,12 @@ function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
 	logoDataUrl: string | null,
+	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content[] {
 	const {
-		title,
-		subTitle,
+		headerContext,
+		headerOwnerLabel,
 		dayValues,
 		periods,
 		timetableBlocks,
@@ -395,17 +393,24 @@ function buildPageContent(
 			{
 				stack: [
 					{
-						text: title,
+						text: schoolName,
 						bold: true,
 						fontSize: 16,
-						color: '#1e3a8a',
+						color: '#000000',
 						alignment: 'center',
 						margin: [0, 6, 0, 0]
 					},
 					{
-						text: subTitle,
+						text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
 						fontSize: 11,
-						color: '#4b5563',
+						color: '#000000',
+						alignment: 'center',
+						margin: [0, 2, 0, 0]
+					},
+					{
+						text: headerOwnerLabel,
+						fontSize: 11,
+						bold: true,
 						alignment: 'center',
 						margin: [0, 2, 0, 6]
 					}
@@ -428,7 +433,7 @@ function buildPageContent(
 								{
 									text: 'สแกนดูตาราง',
 									fontSize: 6,
-									color: '#6b7280',
+									color: '#000000',
 									alignment: 'center' as const,
 									margin: [0, 1, 0, 0] as [number, number, number, number]
 								}
@@ -438,7 +443,6 @@ function buildPageContent(
 				: [])
 		]
 	};
-
 	const titleRow: TableCell[] = [
 		logoCell,
 		{
@@ -474,7 +478,7 @@ function buildPageContent(
 		timeRow.push({
 			text: fitted.text,
 			fontSize: fitted.fontSize,
-			color: '#4b5563',
+			color: '#000000',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 1]
@@ -490,7 +494,7 @@ function buildPageContent(
 			text: day.label,
 			bold: true,
 			alignment: 'center',
-			fillColor: day.color,
+			fillColor: '#ffffff',
 			fontSize: 10,
 			margin: [0, 2]
 		});
@@ -502,7 +506,7 @@ function buildPageContent(
 				for (const block of blocks) {
 					if (block.blockKind === 'course') {
 						stack.push(
-							{ text: block.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
+							{ text: block.offeringCode || '', bold: true, fontSize: 8 },
 							{
 								text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 7),
 								fontSize: 7,
@@ -514,7 +518,7 @@ function buildPageContent(
 							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 8),
 							bold: true,
 							fontSize: 8,
-							color: '#047857',
+							color: '#000000',
 							margin: [0, 2]
 						});
 					}
@@ -537,7 +541,7 @@ function buildPageContent(
 							stack.push({
 								text: wrapThaiToLines(teacherName, cellContentWidth, 7),
 								fontSize: 7,
-								color: '#4b5563',
+								color: '#000000',
 								margin: [0, 1]
 							});
 						}
@@ -548,7 +552,7 @@ function buildPageContent(
 							stack.push({
 								text: wrapThaiToLines(classLabel, cellContentWidth, 7),
 								fontSize: 7,
-								color: '#d97706',
+								color: '#000000',
 								bold: true,
 								margin: [0, 1]
 							});
@@ -564,8 +568,7 @@ function buildPageContent(
 						stack.push({
 							text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
 							fontSize: 7,
-							background: '#f3f4f6',
-							color: '#1f2937',
+							color: '#000000',
 							margin: [0, 2]
 						});
 					}
@@ -659,13 +662,15 @@ function buildMiniTable(
 	page: TimetablePage,
 	miniAreaWidth: number,
 	logoDataUrl: string | null,
+	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content {
 	const {
 		dayValues,
 		periods,
 		timetableBlocks,
-		title,
+		headerContext,
+		headerOwnerLabel,
 		viewMode = 'CLASSROOM',
 		roomNames,
 		homeroomNames
@@ -685,7 +690,7 @@ function buildMiniTable(
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// === Row 0: Title row (2 บรรทัด: title + subtitle) ===
+	// === Row 0: School, academic context and owner header ===
 	// Logo cell — nested table + VA middle (เหมือน full mode)
 	//
 	// Math: image center = outer padding (1) + inner padding (2) + NESTED_H/2
@@ -716,25 +721,28 @@ function buildMiniTable(
 				alignment: 'center'
 			} as unknown as TableCell)
 		: ({ text: '', rowSpan: 3 } as TableCell);
-
-	// title + subtitle (ใช้ subTitle ของ page เช่น "ภาคเรียนที่ 1 ปีการศึกษา 2569")
-	const miniTitle = stripTitlePrefix(title);
-	const miniSubTitle = page.subTitle;
 	const titleRow: TableCell[] = [
 		logoCell,
 		{
 			stack: [
 				{
-					text: miniTitle,
+					text: schoolName,
 					bold: true,
 					fontSize: 7,
-					color: '#1e3a8a',
+					color: '#000000',
 					alignment: 'center'
 				},
 				{
-					text: miniSubTitle,
+					text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
 					fontSize: 5,
-					color: '#4b5563',
+					color: '#000000',
+					alignment: 'center',
+					margin: [0, 1, 0, 0]
+				},
+				{
+					text: headerOwnerLabel,
+					fontSize: 6,
+					bold: true,
 					alignment: 'center',
 					margin: [0, 1, 0, 0]
 				}
@@ -781,7 +789,7 @@ function buildMiniTable(
 		timeRow.push({
 			text: fitted.text,
 			fontSize: fitted.fontSize,
-			color: '#4b5563',
+			color: '#000000',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 0]
@@ -805,7 +813,7 @@ function buildMiniTable(
 				text: dayShort[day.value] || day.label.slice(0, 1),
 				bold: true,
 				alignment: 'center',
-				fillColor: day.color,
+				fillColor: '#ffffff',
 				fontSize: 6,
 				margin: [0, 0]
 			}
@@ -822,14 +830,14 @@ function buildMiniTable(
 							text: block.offeringCode || '',
 							bold: true,
 							fontSize: 5,
-							color: '#1e3a8a'
+							color: '#000000'
 						});
 					} else {
 						stack.push({
 							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 4),
 							bold: true,
 							fontSize: 4,
-							color: '#047857',
+							color: '#000000',
 							lineHeight: 0.9
 						});
 					}
@@ -850,7 +858,7 @@ function buildMiniTable(
 							stack.push({
 								text: wrapThaiToLines(teacherName, cellContentWidth, 3.5),
 								fontSize: 3.5,
-								color: '#4b5563',
+								color: '#000000',
 								lineHeight: 0.9
 							});
 						}
@@ -860,7 +868,7 @@ function buildMiniTable(
 							stack.push({
 								text: wrapThaiToLines(classLabel, cellContentWidth, 3.5),
 								fontSize: 3.5,
-								color: '#d97706',
+								color: '#000000',
 								bold: true,
 								lineHeight: 0.9
 							});
@@ -875,10 +883,9 @@ function buildMiniTable(
 						stack.push({
 							text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),
 							fontSize: 3.5,
-							background: '#f3f4f6',
-							color: '#1f2937',
+							color: '#000000',
 							lineHeight: 0.9,
-							// margin top 1pt → กัน background ทับ สระอู ของ "ครู" บรรทัดบน
+							// Separate the room label from the preceding class/teacher line.
 							margin: [0, 1, 0, 0]
 						});
 					}
@@ -925,6 +932,7 @@ function buildPortraitPageContent(
 	chunk: TimetablePage[],
 	isFirst: boolean,
 	logoDataUrl: string | null,
+	schoolName: string,
 	pageHeaderTitle: string,
 	pageHeaderSubTitle: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
@@ -941,7 +949,7 @@ function buildPortraitPageContent(
 					{
 						text: 'สแกนดูตาราง',
 						fontSize: 6,
-						color: '#6b7280',
+						color: '#000000',
 						alignment: 'center',
 						margin: [0, 1, 0, 0]
 					}
@@ -962,13 +970,13 @@ function buildPortraitPageContent(
 						text: pageHeaderTitle,
 						fontSize: 12,
 						bold: true,
-						color: '#1e3a8a',
+						color: '#000000',
 						alignment: 'center'
 					},
 					{
 						text: pageHeaderSubTitle,
 						fontSize: 9,
-						color: '#4b5563',
+						color: '#000000',
 						alignment: 'center',
 						margin: [0, 1, 0, 0]
 					}
@@ -984,7 +992,7 @@ function buildPortraitPageContent(
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
 	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, corners);
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, schoolName, corners);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
@@ -1043,8 +1051,14 @@ export const generateTimetablePDF = async (
 	};
 
 	// Read public branding through the File Platform delivery flow so pdfmake receives real bytes.
+	const schoolInfo = await getRequiredPublicSchoolInfo();
+	const publicSchoolName = schoolInfo.schoolName?.trim() ?? '';
+	const schoolName =
+		publicSchoolName && !publicSchoolName.startsWith('โรงเรียน')
+			? `โรงเรียน${publicSchoolName}`
+			: publicSchoolName;
 	const logoDataUrl = await loadTimetablePdfLogoDataUrl({
-		getLogoFileId: async () => (await getRequiredPublicSchoolInfo()).logoFileId,
+		getLogoFileId: async () => schoolInfo.logoFileId,
 		downloadLogo: downloadPublicFile,
 		readLogo: blobToDataUrl
 	});
@@ -1059,20 +1073,23 @@ export const generateTimetablePDF = async (
 		}
 		// page header (1 ครั้ง/หน้า) — title generic ตาม viewMode, subTitle ใช้ของหน้าแรก
 		const isClassroom = (pages[0].viewMode ?? 'CLASSROOM') === 'CLASSROOM';
-		const pageHeaderTitle = isClassroom ? 'ตารางเรียน' : 'ตารางสอน';
-		const pageHeaderSubTitle = pages[0].subTitle;
+		const pageHeaderTitle = schoolName;
+		const pageHeaderSubTitle = `${isClassroom ? 'ตารางเรียน' : 'ตารางสอน'}${pages[0].headerContext}`;
 		content = chunks.flatMap((chunk, i) =>
 			buildPortraitPageContent(
 				chunk,
 				i === 0,
 				logoDataUrl,
+				schoolName,
 				pageHeaderTitle,
 				pageHeaderSubTitle,
 				corners
 			)
 		);
 	} else {
-		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl, corners));
+		content = pages.flatMap((page, i) =>
+			buildPageContent(page, i === 0, logoDataUrl, schoolName, corners)
+		);
 	}
 
 	const docDefinition: TDocumentDefinitions = {
@@ -1084,11 +1101,11 @@ export const generateTimetablePDF = async (
 		content,
 		pageBreakBefore: corners.capture,
 		styles: {
-			header: { fontSize: 18, bold: true, color: '#1e3a8a' },
-			subheader: { fontSize: 14, color: '#4b5563' },
-			footer: { fontSize: 8, color: '#9ca3af' }
+			header: { fontSize: 18, bold: true },
+			subheader: { fontSize: 14 },
+			footer: { fontSize: 8 }
 		},
-		defaultStyle: { font: 'Sarabun' }
+		defaultStyle: { font: 'Sarabun', color: '#000000' }
 	};
 
 	const pdf = pdfMake.createPdf(docDefinition, { bufferPages: true });

@@ -1,3 +1,4 @@
+import { timetablePdfHeaderContext, timetablePdfHomeroomHeader } from './timetable-pdf-header.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type { TimetableBlock, TimetableBlockWorkspace } from '#lib/api/timetable.js';
 import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
@@ -67,9 +68,15 @@ export function buildAcademicTimetablePdfDownload(
 	const subTitle = context;
 	const roomNames = Object.fromEntries(workspace.rooms.map((room) => [room.id, room.name]));
 	const homeroomNames = Object.fromEntries(workspace.homerooms.map((room) => [room.id, room.name]));
+	const homeroomHeaders = Object.fromEntries(
+		workspace.homerooms.map((room) => [room.id, timetablePdfHomeroomHeader(room)])
+	);
 	const pages: TimetablePage[] = rows.map((row) => ({
 		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${ownerView === 'teacher' ? timetableTeacherFullLabel(row.label) : row.label}`,
 		subTitle,
+		headerContext: timetablePdfHeaderContext(termName, yearName),
+		headerOwnerLabel:
+			ownerView === 'homeroom' ? (homeroomHeaders[row.id] ?? row.label.trim()) : row.label.trim(),
 		dayValues,
 		periods: periods.map((period) => ({
 			id: period.id,

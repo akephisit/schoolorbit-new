@@ -2,7 +2,10 @@ import { sessionState } from './fixtures/session-state';
 import { expect, test, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { expectRoundedTimetablePdf } from './timetable-pdf-assertions';
+import {
+	expectRoundedTimetablePdf,
+	expectMonochromeTimetablePdf
+} from './timetable-pdf-assertions';
 
 import {
 	makeTimetableBlock,
@@ -23,6 +26,7 @@ function fulfillJson(route: Route, data: unknown) {
 test('downloads the loaded staff timetable from the PageShell action', async ({ page }) => {
 	const logoFileId = '80000000-0000-4000-8000-000000000001';
 	const logoPng = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
+	let brandingRequestCount = 0;
 	let logoDeliveryRequestCount = 0;
 	let logoBlobRequestCount = 0;
 	let releaseTimetable: ((route: Route) => void) | undefined;
@@ -45,6 +49,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 		async (route) => {
 			const url = new URL(route.request().url());
 			if (url.pathname === '/api/school/public') {
+				brandingRequestCount++;
 				await fulfillJson(route, {
 					logoFileId,
 					schoolName: 'ซับน้อยเหนือวิทยาคม'
@@ -63,7 +68,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 					id: '10000000-0000-4000-8000-000000000001',
 					username: 'teacher1',
 					firstName: 'สายใจ',
-					displayName: 'สายใจ วิทยา',
+					displayName: 'นายสายใจ วิทยา',
 					lastName: 'วิทยา',
 					userType: 'staff',
 					status: 'ACTIVE',
@@ -207,6 +212,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const download = await downloadPromise;
 	await download.saveAs('/tmp/staff-own-round.pdf');
 	await expectRoundedTimetablePdf(download, [1]);
+	await expectMonochromeTimetablePdf(download);
 
 	expect(download.suggestedFilename()).toBe(
 		'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf'
@@ -214,7 +220,9 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const text = execFileSync('pdftotext', ['-raw', (await download.path())!, '-'], {
 		encoding: 'utf8'
 	}).replace(/\s/g, '');
-	expect(text).toContain('ตารางสอนครูสายใจวิทยา');
+	expect(text).toContain(
+		'โรงเรียนซับน้อยเหนือวิทยาคมตารางสอนภาคเรียนที่1ปีการศึกษา2569นายสายใจวิทยา'
+	);
 	expect(text).toContain('ม.1/1');
 	expect(text).toContain('จันทร์');
 	expect(text).toContain('เสาร์');
@@ -226,6 +234,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	expect(text).not.toContain('ม.1/1คณิตศาสตร์');
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();
+	expect(brandingRequestCount).toBe(1);
 	expect(logoDeliveryRequestCount).toBe(1);
 	expect(logoBlobRequestCount).toBe(1);
 });

@@ -1,6 +1,9 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
-import { expectRoundedTimetablePdf } from './timetable-pdf-assertions';
+import {
+	expectRoundedTimetablePdf,
+	expectMonochromeTimetablePdf
+} from './timetable-pdf-assertions';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
@@ -19,6 +22,7 @@ async function pdfText(download: Download) {
 	const path = await download.path();
 	expect(path).toBeTruthy();
 	expect(readFileSync(path!).subarray(0, 5).toString()).toBe('%PDF-');
+	await expectMonochromeTimetablePdf(download);
 	return execFileSync('pdftotext', ['-raw', path!, '-'], { encoding: 'utf8' }).replace(/\s/g, '');
 }
 
@@ -131,6 +135,7 @@ for (const width of [1543, 390]) {
 					.locator('header[aria-label="บริบทตารางสอน"]')
 					.getByRole('button', { name: view, exact: true })
 					.click();
+				const brandingBefore = brandingRequests;
 				const pending = page.waitForEvent('download');
 				await openDownload(page);
 				await confirmDownload(page);
@@ -139,6 +144,13 @@ for (const width of [1543, 390]) {
 				expect(download.suggestedFilename()).toMatch(/แบบร่าง\.pdf$/);
 				await download.saveAs(`/tmp/academic-timetable-${width}-${theme}-${view}.pdf`);
 				const text = await pdfText(download);
+				expect(brandingRequests).toBe(brandingBefore + 1);
+				expect(text).toContain(
+					`โรงเรียนทดสอบ${view === 'ครู' ? 'ตารางสอน' : 'ตารางเรียน'}ภาคเรียนที่1ปีการศึกษา2569`
+				);
+				if (view === 'ชั้น' || view === 'โรงเรียน')
+					expect(text).toContain('ปีการศึกษา2569ระดับชั้นมัธยมศึกษาปีที่1/1');
+				if (view === 'กลุ่มเรียน') expect(text).toContain('ปีการศึกษา2569ม.1/1คณิตศาสตร์');
 				expect(text).toContain('ค21101');
 				expect(text).toContain('ห้องคณิตศาสตร์');
 				expect(text).not.toMatch(/MATH-1|LAB-2/);
@@ -151,7 +163,9 @@ for (const width of [1543, 390]) {
 				}
 				if (view === 'ครู') {
 					expect(download.suggestedFilename()).toContain('ครูพิสิษฐ สกุลทดสอบ');
-					expect(text).toContain('ตารางสอนครูพิสิษฐสกุลทดสอบ');
+					expect(text).toContain(
+						'โรงเรียนทดสอบตารางสอนภาคเรียนที่1ปีการศึกษา2569นายพิสิษฐสกุลทดสอบ'
+					);
 					expect(text).toContain('ประชุมครู');
 					expect(text.match(/ม\.1\/1/g)).toHaveLength(1);
 					expect(text).not.toContain('ม.1/1คณิตศาสตร์');
@@ -172,6 +186,7 @@ for (const width of [1543, 390]) {
 					expect(compactDownload.suggestedFilename()).toContain('6ต่อหน้า');
 					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
 					const compactText = await pdfText(compactDownload);
+					expect(brandingRequests).toBe(brandingBefore + 2);
 					if (view === 'ชั้น') {
 						expect(compactText).toContain('ครูพิสิษฐสกุลทดสอบ,ครูสายใจสกุลทดสอบ');
 					} else {
@@ -180,7 +195,10 @@ for (const width of [1543, 390]) {
 					}
 					expect(compactText).not.toContain('แบบร่าง');
 					expect(compactText).toContain('สกุลทดสอบ');
-					expect(compactText.match(/ครูพิสิษฐ/g)).toHaveLength(1);
+					expect(compactText.match(/ครูพิสิษฐ/g) ?? []).toHaveLength(view === 'ครู' ? 0 : 1);
+					expect(compactText).toContain(
+						`โรงเรียนทดสอบ${view === 'ครู' ? 'ตารางสอน' : 'ตารางเรียน'}ภาคเรียนที่1ปีการศึกษา2569${view === 'ครู' ? 'นายพิสิษฐสกุลทดสอบ' : 'ระดับชั้นมัธยมศึกษาปีที่1/1'}`
+					);
 					expect(compactText).toContain('ประชุมครู');
 				}
 			}
@@ -266,7 +284,7 @@ test('PDF captures the requested owner and version before its lazy renderer load
 	const download = await pending;
 	expect(download.suggestedFilename()).toMatch(/^ตารางเรียน ม\.1-1 .*แบบร่าง\.pdf$/);
 	const text = await pdfText(download);
-	expect(text).toContain('ม.1/1');
+	expect(text).toContain('ระดับชั้นมัธยมศึกษาปีที่1/1');
 	expect(text).not.toContain('แบบร่าง');
 	await expect(button).toBeEnabled();
 });
@@ -355,8 +373,8 @@ for (const width of [1543, 390]) {
 			expect(pdf.getPageCount()).toBe(2);
 			await expectRoundedTimetablePdf(download, [1, 1]);
 			const rooms = await pdfText(download);
-			expect(rooms).toContain('ม.1/1');
-			expect(rooms).toContain('ม.1/2');
+			expect(rooms).toContain('ระดับชั้นมัธยมศึกษาปีที่1/1');
+			expect(rooms).toContain('ระดับชั้นมัธยมศึกษาปีที่1/2');
 			dialog = await openDownload(page);
 			await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
 			await expect(dialog.getByRole('checkbox')).toHaveCount(7);
@@ -387,9 +405,14 @@ for (const width of [1543, 390]) {
 			expect(pdf.getPageCount()).toBe(1);
 			await expectRoundedTimetablePdf(download, [6]);
 			let text = await pdfText(download);
-			expect(text).toContain('ครูพิสิษฐ');
+			expect(text).toContain('นายพิสิษฐ');
+			for (const teacher of staff.slice(0, 6)) {
+				expect(text).toContain(
+					`โรงเรียนทดสอบตารางสอนภาคเรียนที่1ปีการศึกษา2569${teacher.displayName.replace(/\s/g, '')}`
+				);
+			}
 			expect(text).toContain('สกุลทดสอบ');
-			expect(text).not.toContain('ครูผู้สอน6');
+			expect(text).not.toContain('นางสาวผู้สอน6');
 			dialog = await openDownload(page);
 			await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
 			await dialog.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
@@ -401,7 +424,12 @@ for (const width of [1543, 390]) {
 			expect(pdf.getPageCount()).toBe(2);
 			await expectRoundedTimetablePdf(download, [6, 1]);
 			text = await pdfText(download);
-			expect(text).toContain('ครูผู้สอน6');
+			expect(text).toContain('นางสาวผู้สอน6');
+			for (const teacher of staff) {
+				expect(text).toContain(
+					`โรงเรียนทดสอบตารางสอนภาคเรียนที่1ปีการศึกษา2569${teacher.displayName.replace(/\s/g, '')}`
+				);
+			}
 			await openDownload(page);
 			await page.keyboard.press('Escape');
 			await expect(page.getByRole('dialog')).toHaveCount(0);

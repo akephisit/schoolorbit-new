@@ -29,6 +29,8 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 		{
 			title: 'ตารางสอน ครูสายใจ / วิทยา',
 			subTitle: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+			headerContext: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+			headerOwnerLabel: 'สายใจ / วิทยา',
 			dayValues: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
 			periods: [
 				{
@@ -152,4 +154,20 @@ test('reports a successful PDF download before clearing exporting state', async 
 	assert.deepEqual(exportingStates, [true, false]);
 	assert.equal(successCount, 1);
 	assert.equal(errorCount, 0);
+});
+
+test('keeps the original teacher honorific in the header while preserving the filename', async () => {
+	const { buildStaffOwnTimetablePdfDownload } =
+		await import('../../src/lib/utils/staff-own-timetable-pdf.ts');
+	const result = buildStaffOwnTimetablePdfDownload({
+		teacherName: '  นายสายใจ วิทยา  ',
+		termName: 'ภาคเรียนที่ 2',
+		academicYearName: '2569',
+		blocks: [],
+		dayValues: [],
+		periods: []
+	});
+	assert.equal(result.pages[0].headerOwnerLabel, 'นายสายใจ วิทยา');
+	assert.equal(result.pages[0].headerContext, 'ภาคเรียนที่ 2 ปีการศึกษา 2569');
+	assert.equal(result.fileName, 'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 2 2569');
 });

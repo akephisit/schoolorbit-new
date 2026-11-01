@@ -10,6 +10,10 @@ const source = readFileSync(
 const moduleCode = stripTypeScriptTypes(
 	source
 		.replace(
+			'./timetable-pdf-header.ts',
+			new URL('../../src/lib/utils/timetable-pdf-header.ts', import.meta.url).href
+		)
+		.replace(
 			'../academic/timetable/teacher-label.ts',
 			new URL('../../src/lib/academic/timetable/teacher-label.ts', import.meta.url).href
 		)
@@ -116,6 +120,8 @@ test('homeroom PDF keeps course, synchronized and special periods with only that
 	);
 	assert.equal(pages.length, 1);
 	assert.equal(pages[0].title, 'ตารางเรียน ม.1/1');
+	assert.equal(pages[0].headerOwnerLabel, 'ระดับชั้นมัธยมศึกษาปีที่ 1/1');
+	assert.equal(pages[0].headerContext, 'ภาคเรียนที่ 1 ปีการศึกษา 2569');
 	assert.deepEqual(
 		pages[0].timetableBlocks.map((b) => b.id),
 		['course', 'sync', 'special']
@@ -140,6 +146,7 @@ test('group and teacher exports include only their selected responsibilities', (
 	const input = workspace();
 	const group = buildAcademicTimetablePdfDownload(input, 'learning_group', 'group-b', '', '')
 		.pages[0];
+	assert.equal(group.headerOwnerLabel, 'กลุ่ม ข');
 	assert.deepEqual(
 		group.timetableBlocks.map((b) => b.id),
 		['sync']
@@ -200,6 +207,10 @@ test('multi-owner exports validate IDs and keep workspace order without repeatin
 	assert.deepEqual(
 		result.pages.map((page) => page.title),
 		['ตารางสอน ครูพิสิษฐ ทดสอบ', 'ตารางสอน ครูสายใจ ทดสอบ']
+	);
+	assert.deepEqual(
+		result.pages.map((page) => page.headerOwnerLabel),
+		['นายพิสิษฐ ทดสอบ', 'นางสาวสายใจ ทดสอบ']
 	);
 	assert.match(result.fileName, /^ตารางสอนครูที่เลือก/);
 	assert.equal(
