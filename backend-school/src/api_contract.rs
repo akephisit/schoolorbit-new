@@ -127,6 +127,7 @@ use school_staff::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
 };
 use school_staff::career::*;
+use school_staff::file_transfer::models::*;
 use school_staff::http::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData,
 };
@@ -169,6 +170,14 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_staff::file_transfer::http::register,
+        school_staff::file_transfer::http::snapshot,
+        school_staff::file_transfer::http::remove,
+        school_staff::file_transfer::http::events,
+        school_staff::file_transfer::http::create_pair,
+        school_staff::file_transfer::http::accept,
+        school_staff::file_transfer::http::close,
+        school_staff::file_transfer::http::signal,
         school_staff::leave::http::list_types,
         school_staff::leave::http::create_type,
         school_staff::leave::http::update_type,
@@ -873,6 +882,24 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    FileTransferFile,
+    FileTransferDevice,
+    FileTransferPairStatus,
+    FileTransferPair,
+    FileTransferSnapshot,
+    RegisterFileTransferDevice,
+    FileTransferTarget,
+    CreateFileTransferPair,
+    FileTransferDeviceRequest,
+    FileTransferSignalType,
+    SendFileTransferSignal,
+    FileTransferSignal,
+    FileTransferCloseReason,
+    FileTransferPairClosed,
+    FileTransferEmpty,
+    FileTransferEvent,
+    ApiResponse<FileTransferSnapshot>,
+    ApiResponse<FileTransferPair>,
     LeaveKind,
     LeaveUnit,
     LeaveCountingMode,

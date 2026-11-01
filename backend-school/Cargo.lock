@@ -4669,11 +4669,13 @@ dependencies = [
 name = "school-staff"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "axum",
  "bcrypt",
  "chrono",
  "chrono-tz",
+ "futures",
  "school-auth",
  "school-auth-http",
  "school-authorization",

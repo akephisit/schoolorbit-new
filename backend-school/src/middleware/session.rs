@@ -45,7 +45,7 @@ async fn authenticate_request(
 ) -> Result<Response, AppError> {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
-    let realtime_hint = if method == Method::GET && path == "/api/notifications/stream" {
+    let realtime_hint = if method == Method::GET && realtime_hint_path(&path) {
         parse_realtime_tenant_hint(request.uri().query()).map_err(audit_origin_rejection)?
     } else {
         None
@@ -109,4 +109,32 @@ fn audit_origin_rejection(error: school_errors::AppError) -> AppError {
 
 fn authentication_required() -> AppError {
     AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())
+}
+
+fn realtime_hint_path(path: &str) -> bool {
+    if path == "/api/notifications/stream" {
+        return true;
+    }
+    path.strip_prefix("/api/staff/file-transfer/devices/")
+        .and_then(|suffix| suffix.strip_suffix("/events"))
+        .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
+}
+
+#[cfg(test)]
+mod file_transfer_hint_tests {
+    use super::realtime_hint_path;
+    #[test]
+    fn realtime_hint_is_limited_to_exact_stream_paths() {
+        assert!(realtime_hint_path("/api/notifications/stream"));
+        assert!(realtime_hint_path(
+            "/api/staff/file-transfer/devices/11111111-1111-1111-1111-111111111111/events"
+        ));
+        for path in [
+            "/api/staff/file-transfer/devices/not-a-uuid/events",
+            "/api/staff/file-transfer/devices/11111111-1111-1111-1111-111111111111",
+            "/api/staff/file-transfer/devices/11111111-1111-1111-1111-111111111111/events/other",
+        ] {
+            assert!(!realtime_hint_path(path));
+        }
+    }
 }

@@ -115,6 +115,12 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .nest(
             "/api",
+            school_staff::file_transfer::http::routes().with_state(
+                school_staff::file_transfer::http::FileTransferHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
             school_budget::http::routes()
                 .with_state(school_budget::http::BudgetHttpState::from_ref(state)),
         )

@@ -11077,6 +11077,103 @@
         ],
         "type": "object"
       },
+      "ApiResponse_FileTransferPair": {
+        "properties": {
+          "data": {
+            "properties": {
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "file": {
+                "$ref": "#/components/schemas/FileTransferFile"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "initiator": {
+                "$ref": "#/components/schemas/FileTransferDevice"
+              },
+              "recipient": {
+                "$ref": "#/components/schemas/FileTransferDevice"
+              },
+              "status": {
+                "$ref": "#/components/schemas/FileTransferPairStatus"
+              }
+            },
+            "required": [
+              "id",
+              "initiator",
+              "recipient",
+              "file",
+              "status",
+              "expiresAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_FileTransferSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "device": {
+                "$ref": "#/components/schemas/FileTransferDevice"
+              },
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "pairingCode": {
+                "type": "string"
+              },
+              "pairs": {
+                "items": {
+                  "$ref": "#/components/schemas/FileTransferPair"
+                },
+                "type": "array"
+              },
+              "peers": {
+                "items": {
+                  "$ref": "#/components/schemas/FileTransferDevice"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "device",
+              "pairingCode",
+              "expiresAt",
+              "peers",
+              "pairs"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_GlobalRankingResult": {
         "properties": {
           "data": {
@@ -41158,6 +41255,27 @@
         ],
         "type": "object"
       },
+      "CreateFileTransferPair": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/FileTransferFile"
+          },
+          "target": {
+            "$ref": "#/components/schemas/FileTransferTarget"
+          }
+        },
+        "required": [
+          "deviceId",
+          "target",
+          "file"
+        ],
+        "type": "object"
+      },
       "CreateHomeroomPlacementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -49239,6 +49357,366 @@
           "supply_proposal_source"
         ],
         "type": "string"
+      },
+      "FileTransferCloseReason": {
+        "enum": [
+          "declined",
+          "cancelled",
+          "expired",
+          "disconnected"
+        ],
+        "type": "string"
+      },
+      "FileTransferDevice": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "displayName",
+          "label"
+        ],
+        "type": "object"
+      },
+      "FileTransferDeviceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "FileTransferEmpty": {
+        "type": "object"
+      },
+      "FileTransferEvent": {
+        "oneOf": [
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferSnapshot"
+              },
+              "type": {
+                "enum": [
+                  "ready"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferEmpty"
+              },
+              "type": {
+                "enum": [
+                  "presence_changed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferPair"
+              },
+              "type": {
+                "enum": [
+                  "pair_changed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferPairClosed"
+              },
+              "type": {
+                "enum": [
+                  "pair_closed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferSignal"
+              },
+              "type": {
+                "enum": [
+                  "signal"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferEmpty"
+              },
+              "type": {
+                "enum": [
+                  "session_invalid"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/FileTransferEmpty"
+              },
+              "type": {
+                "enum": [
+                  "session_unavailable"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "FileTransferFile": {
+        "additionalProperties": false,
+        "properties": {
+          "mimeType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mimeType"
+        ],
+        "type": "object"
+      },
+      "FileTransferPair": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/FileTransferFile"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "initiator": {
+            "$ref": "#/components/schemas/FileTransferDevice"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/FileTransferDevice"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileTransferPairStatus"
+          }
+        },
+        "required": [
+          "id",
+          "initiator",
+          "recipient",
+          "file",
+          "status",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "FileTransferPairClosed": {
+        "properties": {
+          "pairId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FileTransferCloseReason"
+          }
+        },
+        "required": [
+          "pairId",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "FileTransferPairStatus": {
+        "enum": [
+          "pending",
+          "accepted"
+        ],
+        "type": "string"
+      },
+      "FileTransferSignal": {
+        "properties": {
+          "pairId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sdp": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FileTransferSignalType"
+          }
+        },
+        "required": [
+          "pairId",
+          "type",
+          "sdp"
+        ],
+        "type": "object"
+      },
+      "FileTransferSignalType": {
+        "enum": [
+          "offer",
+          "answer"
+        ],
+        "type": "string"
+      },
+      "FileTransferSnapshot": {
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/FileTransferDevice"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pairingCode": {
+            "type": "string"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/FileTransferPair"
+            },
+            "type": "array"
+          },
+          "peers": {
+            "items": {
+              "$ref": "#/components/schemas/FileTransferDevice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "device",
+          "pairingCode",
+          "expiresAt",
+          "peers",
+          "pairs"
+        ],
+        "type": "object"
+      },
+      "FileTransferTarget": {
+        "oneOf": [
+          {
+            "properties": {
+              "deviceId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "device"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "deviceId",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "code"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "FileUploadMultipart": {
         "properties": {
@@ -58807,6 +59285,18 @@
         ],
         "type": "object"
       },
+      "RegisterFileTransferDevice": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
       "RegisterPushDeviceRequest": {
         "properties": {
           "auth": {
@@ -62109,6 +62599,27 @@
           "requestId",
           "expectedRevision",
           "templateId"
+        ],
+        "type": "object"
+      },
+      "SendFileTransferSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sdp": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FileTransferSignalType"
+          }
+        },
+        "required": [
+          "deviceId",
+          "type",
+          "sdp"
         ],
         "type": "object"
       },
@@ -118877,6 +119388,706 @@
         "summary": "GET /api/staff/exam-schedules",
         "tags": [
           "academic"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/devices": {
+      "post": {
+        "operationId": "registerFileTransferDevice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterFileTransferDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileTransferSnapshot"
+                }
+              }
+            },
+            "description": "Ephemeral device registration and current school-online snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid label"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request exceeds the 64 KiB wire budget"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device limit reached"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/devices/{deviceId}": {
+      "delete": {
+        "operationId": "removeFileTransferDevice",
+        "parameters": [
+          {
+            "description": "Own session-bound device",
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Device and active pairs removed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid resource identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device unavailable"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      },
+      "get": {
+        "operationId": "getFileTransferSnapshot",
+        "parameters": [
+          {
+            "description": "Own session-bound device",
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileTransferSnapshot"
+                }
+              }
+            },
+            "description": "Authoritative own device, school-online peers and own pairs"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid resource identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device unavailable"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/devices/{deviceId}/events": {
+      "get": {
+        "operationId": "streamFileTransferEvents",
+        "parameters": [
+          {
+            "description": "Own session-bound device",
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTransferEvent"
+                }
+              }
+            },
+            "description": "SSE event name file_transfer; each data field is FileTransferEvent. No replay; disconnect cancels pairs."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid resource identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device already streaming"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/pairs": {
+      "post": {
+        "operationId": "createFileTransferPair",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFileTransferPair"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileTransferPair"
+                }
+              }
+            },
+            "description": "Pending pair with exact file metadata awaiting recipient consent"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid file metadata"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Target unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Device busy or offline"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request exceeds the 64 KiB wire budget"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Pairing code attempt limit reached"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/pairs/{pairId}/accept": {
+      "post": {
+        "operationId": "acceptFileTransferPair",
+        "parameters": [
+          {
+            "description": "Pending pair",
+            "in": "path",
+            "name": "pairId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileTransferDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileTransferPair"
+                }
+              }
+            },
+            "description": "Recipient accepted exact sender and file"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request body or resource identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff recipient required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Pair unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Pair changed or disconnected"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request exceeds the 64 KiB wire budget"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/pairs/{pairId}/close": {
+      "post": {
+        "operationId": "closeFileTransferPair",
+        "parameters": [
+          {
+            "description": "Pair to decline, cancel or finish",
+            "in": "path",
+            "name": "pairId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileTransferDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Pair closed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request body or resource identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Pair unavailable"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request exceeds the 64 KiB wire budget"
+          }
+        },
+        "tags": [
+          "file-transfer"
+        ]
+      }
+    },
+    "/api/staff/file-transfer/pairs/{pairId}/signals": {
+      "post": {
+        "operationId": "sendFileTransferSignal",
+        "parameters": [
+          {
+            "description": "Accepted pair",
+            "in": "path",
+            "name": "pairId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendFileTransferSignal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Bounded host-only offer or answer queued to consented peer"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or non-host SDP"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Pair unavailable"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Consent, direction, signaling deadline or sequence refused"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request exceeds the 64 KiB wire budget"
+          }
+        },
+        "tags": [
+          "file-transfer"
         ]
       }
     },
