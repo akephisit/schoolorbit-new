@@ -516,6 +516,9 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             storage.clone(),
             Arc::new(UnexpectedScanner),
         )),
+        file_transfer: Arc::new(
+            school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+        ),
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
         ),

@@ -316,10 +316,7 @@ install_orchestration_fakes() {
     ! grep -Fq 'pass "login auth_token cookie"' "$smoke"
 }
 
-@test "smoke resolve pins only API calls and accepts a bounded authenticated SSE stream" {
-    local origin_ca="$TEST_ROOT/origin-ca.pem"
-    printf '%s\n' fixture-origin-ca >"$origin_ca"
-
+install_file_transfer_smoke_curl_fixture() {
     make_fake_command curl '
 set -eu
 printf "curl" >>"$FAKE_COMMAND_LOG"
@@ -390,6 +387,8 @@ case "$url" in
         if [ "$method" = OPTIONS ]; then
             status=204
             printf "%s\n" "Access-Control-Allow-Headers: content-type,x-school-subdomain,x-csrf-token" >>"$headers"
+        elif [ -z "${SMOKE_USERNAME-}" ]; then
+            status=400
         else
             body="{\"data\":{\"user\":{\"username\":\"smoke.operator\"}}}"
             printf "%s\n" "X-CSRF-Token: fixture-csrf-token" >>"$headers"
@@ -411,6 +410,24 @@ case "$url" in
             status=403
         fi
         ;;
+    https://school-api.example.test/api/staff/file-transfer/devices)
+        body="{\"success\":true,\"data\":{\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}"
+        ;;
+    https://school-api.example.test/api/staff/file-transfer/devices/00000000-0000-0000-0000-000000000010/events)
+        printf "%s\n" "Content-Type: text/event-stream" "Cache-Control: no-store" "Access-Control-Allow-Credentials: true" >>"$headers"
+        body="event: file_transfer\ndata: {\"type\":\"ready\",\"data\":{\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}\n\n"
+        if [ "${FILE_TRANSFER_FIXTURE_MODE-}" = invalid-ready ]; then body="event: file_transfer\ndata: {invalid}\n\n"; fi
+        printf "%b" "$body" >"$output"
+        printf 200
+        exit 28
+        ;;
+    https://school-api.example.test/api/staff/file-transfer/devices/00000000-0000-0000-0000-000000000010)
+        [ "$method" = DELETE ] && [ "$has_csrf_header" = true ] && [ "$has_session_cookie" = true ] || exit 1
+        case "${FILE_TRANSFER_FIXTURE_MODE-}" in
+            cleanup-404) status=404 ;;
+            cleanup-fail) status=503 ;;
+        esac
+        ;;
     https://school-api.example.test/api/notifications/stream)
         printf "%s\n" "Content-Type: text/event-stream" >>"$headers"
         printf "%s\n" "Access-Control-Allow-Credentials: true" >>"$headers"
@@ -423,6 +440,13 @@ esac
 printf "%s" "$status"
 '
 
+}
+
+@test "smoke resolve pins only API calls and accepts a bounded authenticated SSE stream" {
+    local origin_ca="$TEST_ROOT/origin-ca.pem"
+    printf '%s\n' fixture-origin-ca >"$origin_ca"
+
+    install_file_transfer_smoke_curl_fixture
     run env \
         SMOKE_ENV_FILE="$TEST_ROOT/missing-smoke-env" \
         SMOKE_SUBDOMAIN=smoke-school \
@@ -439,6 +463,10 @@ printf "%s" "$status"
 
     [ "$status" -eq 0 ]
     [[ $output == *'notification SSE status 200'* ]]
+    [[ $output == *'file-transfer typed ready event flushed within five seconds'* ]]
+    [[ $output == *'file-transfer temporary device cleaned'* ]]
+    [[ $output != *ABCD012345* ]]
+    [[ $output != *fixture-csrf-token* ]]
     [[ $output == *'legacy cookie /me status 401'* ]]
     [[ $output == *'session list exactly one current session'* ]]
     [[ $output == *'current session logout status 200'* ]]
@@ -447,12 +475,57 @@ printf "%s" "$status"
     grep -E -- "--resolve admin-api\\.example\\.test:443:192\\.0\\.2\\.20 .*--cacert $origin_ca" "$FAKE_COMMAND_LOG"
     grep -E -- "--resolve school-api\\.example\\.test:443:192\\.0\\.2\\.20 .*--cacert $origin_ca" "$FAKE_COMMAND_LOG"
     grep -Fq -- '/api/auth/sessions' "$FAKE_COMMAND_LOG"
+    grep -Fq -- '/api/staff/file-transfer/devices/00000000-0000-0000-0000-000000000010/events' "$FAKE_COMMAND_LOG"
+    grep -Fq -- '-X DELETE' "$FAKE_COMMAND_LOG"
     grep -Fq -- '/api/auth/logout' "$FAKE_COMMAND_LOG"
     grep -Fq -- 'X-CSRF-Token: fixture-csrf-token' "$FAKE_COMMAND_LOG"
     tenant_request=$(grep -F 'https://smoke-school.example.test/' "$FAKE_COMMAND_LOG")
     [[ $tenant_request != *'--resolve'* ]]
     [[ $tenant_request != *'--cacert'* ]]
     [[ $output != *'Smoke-Pass-7vK9nM3q'* ]]
+}
+
+run_file_transfer_smoke_fixture() {
+    run env SMOKE_ENV_FILE="$TEST_ROOT/missing-smoke-env" \
+        SMOKE_SUBDOMAIN=smoke-school SMOKE_API_URL=https://school-api.example.test \
+        SMOKE_ADMIN_API_URL=https://admin-api.example.test SMOKE_TENANT_URL=https://smoke-school.example.test \
+        SMOKE_ORIGIN=https://smoke-school.example.test SMOKE_USERNAME=smoke.operator \
+        SMOKE_PASSWORD=Smoke-Pass-7vK9nM3q SMOKE_REQUIRE_AUTH=true "$@" scripts/smoke_test.sh
+}
+
+@test "file-transfer smoke retains failures and cleans its temporary device before logout" {
+    install_file_transfer_smoke_curl_fixture
+    run_file_transfer_smoke_fixture FILE_TRANSFER_FIXTURE_MODE=invalid-ready
+    [ "$status" -eq 1 ]
+    [[ $output == *'file-transfer typed ready event missing or invalid'* ]]
+    [[ $output == *'file-transfer temporary device cleaned'* ]]
+    [[ $output == *'current session logout status 200'* ]]
+    [[ $output != *ABCD012345* ]]
+    local delete_line logout_line
+    delete_line=$(grep -n -- '-X DELETE' "$FAKE_COMMAND_LOG" | head -n 1 | cut -d : -f 1)
+    logout_line=$(grep -n '/api/auth/logout' "$FAKE_COMMAND_LOG" | head -n 1 | cut -d : -f 1)
+    [ "$delete_line" -lt "$logout_line" ]
+}
+
+@test "file-transfer smoke accepts cleanup 404 and retries refused cleanup on EXIT" {
+    install_file_transfer_smoke_curl_fixture
+    run_file_transfer_smoke_fixture FILE_TRANSFER_FIXTURE_MODE=cleanup-404
+    [ "$status" -eq 0 ]
+    [[ $output == *'file-transfer temporary device cleaned'* ]]
+    : >"$FAKE_COMMAND_LOG"
+    run_file_transfer_smoke_fixture FILE_TRANSFER_FIXTURE_MODE=cleanup-fail
+    [ "$status" -eq 1 ]
+    [[ $output == *'file-transfer temporary device cleanup refused'* ]]
+    [ "$(grep -c -- '-X DELETE' "$FAKE_COMMAND_LOG")" -eq 2 ]
+}
+
+@test "file-transfer smoke keeps credential-free checks read-only and explicitly skipped" {
+    install_file_transfer_smoke_curl_fixture
+    run_file_transfer_smoke_fixture SMOKE_USERNAME= SMOKE_PASSWORD= SMOKE_REQUIRE_AUTH=false
+    [ "$status" -eq 0 ]
+    [[ $output == *'SKIP authenticated checks'* ]]
+    run grep -F '/api/staff/file-transfer/' "$FAKE_COMMAND_LOG"
+    [ "$status" -eq 1 ]
 }
 
 @test "migration runs verified phases in the approved order" {

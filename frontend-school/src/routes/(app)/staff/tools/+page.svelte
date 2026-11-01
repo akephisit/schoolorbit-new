@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { QrCode, ArrowRight, Wrench } from '@lucide/svelte';
+	import { QrCode, ArrowRight, Wrench, Send } from '@lucide/svelte';
 	import PageShell from '#lib/components/app-layout/PageShell.svelte';
 </script>
 
@@ -22,6 +22,19 @@
 			<span class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary">
 				เปิดเครื่องมือ <ArrowRight class="size-4" />
 			</span>
+		</a>
+		<a
+			href={resolve('staff/tools/file-transfer')}
+			class="group rounded-xl border border-border bg-card p-6 text-card-foreground transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
+			<Send class="mb-4 size-8 text-primary" />
+			<h2 class="text-lg font-semibold">ส่งไฟล์ในเครือข่ายเดียวกัน</h2>
+			<p class="mt-2 text-sm text-muted-foreground">
+				ค้นหาอุปกรณ์ของบุคลากร จับคู่ด้วย QR หรือรหัส แล้วส่งไฟล์โดยตรงเมื่อผู้รับตอบรับ
+			</p>
+			<span class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary"
+				>เปิดเครื่องมือ <ArrowRight class="size-4" /></span
+			>
 		</a>
 	</div>
 </PageShell>

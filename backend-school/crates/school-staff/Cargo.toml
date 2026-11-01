@@ -17,6 +17,8 @@ school-database = { workspace = true }
 school-workflow = { workspace = true }
 school-notifications = { workspace = true }
 async-trait = { workspace = true }
+async-stream = { workspace = true }
+futures = { workspace = true }
 school-permissions = { workspace = true }
 school-authorization = { workspace = true }
 school-file-platform = { workspace = true }
@@ -38,6 +40,7 @@ utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+school-auth = { workspace = true, features = ["test-support"] }
 school-authorization = { workspace = true }
 school-test-db = { workspace = true }
 

@@ -44,6 +44,7 @@ pub struct AppState {
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
 
     pub file_platform: Arc<FilePlatform>,
+    pub file_transfer: Arc<school_staff::file_transfer::runtime::FileTransferRuntime>,
     pub certificate_verification_limiter:
         Arc<school_certificates::verification_limiter::CertificateVerificationLimiter>,
     pub auth_runtime: school_auth::runtime::AuthRuntime,
@@ -240,6 +241,9 @@ async fn run() -> Result<(), StartupError> {
         work_event_channel: work_event_tx,
 
         file_platform,
+        file_transfer: Arc::new(
+            school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+        ),
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
         ),

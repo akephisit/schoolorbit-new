@@ -13,4 +13,5 @@ pub mod staff_access_policy;
 
 pub mod profile_cutover;
 
+pub mod file_transfer;
 pub mod leave;

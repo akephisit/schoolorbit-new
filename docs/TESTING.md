@@ -2586,3 +2586,11 @@ These cover the migration/runtime suggestion parity, accepted plan/phase preserv
 partial control patches, all four score/exam editing combinations, publication rollback,
 retained offerings, and publication replay. Regenerate/check/test the API contracts and
 compile the affected Academic owners in default and `api-docs` modes.
+
+### Staff direct file transfer
+
+`school-staff::file_transfer` owns ephemeral same-school discovery, consent and host-only WebRTC signaling. Its pure/runtime and SSE lifecycle tests run with `cargo test -p school-staff file_transfer --lib` from `backend-school`. Run the protected cookie/CSRF, staff-only, tenant/session isolation, development SSE hint, body-limit and revocation fixture with `./scripts/test_backend_school.sh file_transfer_http -- --test-threads=1`; the exact stream-path hint guard is covered by `file_transfer_hint_tests`. Regenerate/check API contracts when changing its Rust DTOs or endpoints.
+
+The loopback browser fixture uses native EventSource/WebRTC against a synthetic metadata-only HTTP/SSE service. From `frontend-school`, start `PUBLIC_BACKEND_URL=http://127.0.0.1:8080 PUBLIC_SCHOOL_SUBDOMAIN=sandbox npm run dev -- --host 127.0.0.1 --port 4173` in a separate shell, then run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-tools-file-transfer.spec.ts --project=chromium --workers=1`. Helper checks use `node --experimental-strip-types --test tests/static/file-transfer.test.mjs`. Complete type checks before starting Vite, warm the route once, and keep product builds and Docker network creation/removal separate from this browser fixture; Chromium can otherwise report `ERR_NETWORK_CHANGED`.
+
+For browser acceptance, use two disposable staff sessions in one school: enable presence, select one file (including a zero-byte file), confirm the exact sender/name/size on the recipient, and verify direct receipt. Also decline, cancel, disconnect one browser, revoke its session, and try a network with client isolation. Confirm the peer connection uses `iceServers: []` and only host candidates; unavailable direct connectivity must show failure without relay fallback. The backend never receives file bytes.

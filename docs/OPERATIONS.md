@@ -2687,3 +2687,9 @@ maintenance active, investigate bounded evidence on an owned copy, and recover t
 compatible forward release. After the split is used, retain a runtime that respects both
 controls; an older writer could couple the two decisions again. Never edit applied migrations
 or republish existing offerings to trigger the deployment backfill.
+
+### Staff direct file transfer
+
+The staff file-transfer tool uses the existing authenticated School API for temporary school-online device discovery, explicit file pairing and SSE/POST WebRTC signaling. School-online presence does not prove that devices share a LAN. File bytes travel over a browser-to-browser data channel; no STUN/TURN service, server file relay, database rows or file storage is involved. Direct connectivity can fail because of browser policy, firewalls, VPNs or Wi-Fi client isolation; retry on an allowed shared network without relay fallback.
+
+Bindings, pairing codes, file metadata and bounded signaling queues exist only in one backend process. A restart, SSE disconnect, session invalidation or queue overflow removes the binding and cancels pairs; users explicitly enable presence and pair again. The existing single-backend-process topology is required. The SSE response disables proxy buffering and caching through `X-Accel-Buffering: no` and `Cache-Control: no-store`. Keep pairing codes, filenames, raw SDP and file contents out of logs. Transfers are limited to one file of at most 64 MiB per active pair.

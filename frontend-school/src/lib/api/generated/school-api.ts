@@ -7504,6 +7504,118 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff/file-transfer/devices': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['registerFileTransferDevice'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/devices/{deviceId}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getFileTransferSnapshot'];
+		put?: never;
+		post?: never;
+		delete: operations['removeFileTransferDevice'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/devices/{deviceId}/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['streamFileTransferEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/pairs': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createFileTransferPair'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/pairs/{pairId}/accept': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['acceptFileTransferPair'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/pairs/{pairId}/close': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['closeFileTransferPair'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/file-transfer/pairs/{pairId}/signals': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['sendFileTransferSignal'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff/job-positions': {
 		parameters: {
 			query?: never;
@@ -11630,6 +11742,32 @@ export interface components {
 				lifecycleStatus: components['schemas']['FileLifecycleStatus'];
 				publicContentUrl: string | null;
 				purpose: components['schemas']['FilePurpose'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_FileTransferPair: {
+			data: {
+				/** Format: date-time */
+				expiresAt: string;
+				file: components['schemas']['FileTransferFile'];
+				/** Format: uuid */
+				id: string;
+				initiator: components['schemas']['FileTransferDevice'];
+				recipient: components['schemas']['FileTransferDevice'];
+				status: components['schemas']['FileTransferPairStatus'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_FileTransferSnapshot: {
+			data: {
+				device: components['schemas']['FileTransferDevice'];
+				/** Format: date-time */
+				expiresAt: string;
+				pairingCode: string;
+				pairs: components['schemas']['FileTransferPair'][];
+				peers: components['schemas']['FileTransferDevice'][];
 			};
 			message?: string;
 			success: boolean;
@@ -19818,6 +19956,12 @@ export interface components {
 			examKind?: string | null;
 			name: string;
 		};
+		CreateFileTransferPair: {
+			/** Format: uuid */
+			deviceId: string;
+			file: components['schemas']['FileTransferFile'];
+			target: components['schemas']['FileTransferTarget'];
+		};
 		CreateHomeroomPlacementRequest: {
 			/** Format: int32 */
 			classNumber?: number | null;
@@ -22031,6 +22175,108 @@ export interface components {
 			| 'school_font'
 			| 'supply_catalog_image'
 			| 'supply_proposal_source';
+		/** @enum {string} */
+		FileTransferCloseReason: 'declined' | 'cancelled' | 'expired' | 'disconnected';
+		FileTransferDevice: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+			label: string;
+			/** Format: uuid */
+			userId: string;
+		};
+		FileTransferDeviceRequest: {
+			/** Format: uuid */
+			deviceId: string;
+		};
+		FileTransferEmpty: Record<string, never>;
+		FileTransferEvent:
+			| {
+					data: components['schemas']['FileTransferSnapshot'];
+					/** @enum {string} */
+					type: 'ready';
+			  }
+			| {
+					data: components['schemas']['FileTransferEmpty'];
+					/** @enum {string} */
+					type: 'presence_changed';
+			  }
+			| {
+					data: components['schemas']['FileTransferPair'];
+					/** @enum {string} */
+					type: 'pair_changed';
+			  }
+			| {
+					data: components['schemas']['FileTransferPairClosed'];
+					/** @enum {string} */
+					type: 'pair_closed';
+			  }
+			| {
+					data: components['schemas']['FileTransferSignal'];
+					/** @enum {string} */
+					type: 'signal';
+			  }
+			| {
+					data: components['schemas']['FileTransferEmpty'];
+					/** @enum {string} */
+					type: 'session_invalid';
+			  }
+			| {
+					data: components['schemas']['FileTransferEmpty'];
+					/** @enum {string} */
+					type: 'session_unavailable';
+			  };
+		FileTransferFile: {
+			mimeType: string;
+			name: string;
+			/** Format: int64 */
+			size: number;
+		};
+		FileTransferPair: {
+			/** Format: date-time */
+			expiresAt: string;
+			file: components['schemas']['FileTransferFile'];
+			/** Format: uuid */
+			id: string;
+			initiator: components['schemas']['FileTransferDevice'];
+			recipient: components['schemas']['FileTransferDevice'];
+			status: components['schemas']['FileTransferPairStatus'];
+		};
+		FileTransferPairClosed: {
+			/** Format: uuid */
+			pairId: string;
+			reason: components['schemas']['FileTransferCloseReason'];
+		};
+		/** @enum {string} */
+		FileTransferPairStatus: 'pending' | 'accepted';
+		FileTransferSignal: {
+			/** Format: uuid */
+			pairId: string;
+			sdp: string;
+			type: components['schemas']['FileTransferSignalType'];
+		};
+		/** @enum {string} */
+		FileTransferSignalType: 'offer' | 'answer';
+		FileTransferSnapshot: {
+			device: components['schemas']['FileTransferDevice'];
+			/** Format: date-time */
+			expiresAt: string;
+			pairingCode: string;
+			pairs: components['schemas']['FileTransferPair'][];
+			peers: components['schemas']['FileTransferDevice'][];
+		};
+		FileTransferTarget:
+			| {
+					/** Format: uuid */
+					deviceId: string;
+					/** @enum {string} */
+					type: 'device';
+			  }
+			| {
+					code: string;
+					/** @enum {string} */
+					type: 'code';
+			  };
 		FileUploadMultipart: {
 			/** Format: binary */
 			file: string;
@@ -24699,6 +24945,9 @@ export interface components {
 			/** Format: uuid */
 			requestId: string;
 		};
+		RegisterFileTransferDevice: {
+			label: string;
+		};
 		RegisterPushDeviceRequest: {
 			auth: string;
 			endpoint: string;
@@ -25610,6 +25859,12 @@ export interface components {
 			stepRecipients?: components['schemas']['ProcessStepRecipients'][];
 			/** Format: uuid */
 			templateId: string;
+		};
+		SendFileTransferSignal: {
+			/** Format: uuid */
+			deviceId: string;
+			sdp: string;
+			type: components['schemas']['FileTransferSignalType'];
 		};
 		SessionActivityRequest: {
 			/** Format: uuid */
@@ -62807,6 +63062,582 @@ export interface operations {
 			};
 			/** @description Active staff account required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	registerFileTransferDevice: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RegisterFileTransferDevice'];
+			};
+		};
+		responses: {
+			/** @description Ephemeral device registration and current school-online snapshot */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileTransferSnapshot'];
+				};
+			};
+			/** @description Invalid label */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request exceeds the 64 KiB wire budget */
+			413: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device limit reached */
+			429: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getFileTransferSnapshot: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Own session-bound device */
+				deviceId: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authoritative own device, school-online peers and own pairs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileTransferSnapshot'];
+				};
+			};
+			/** @description Invalid resource identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeFileTransferDevice: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Own session-bound device */
+				deviceId: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Device and active pairs removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid resource identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	streamFileTransferEvents: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Own session-bound device */
+				deviceId: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description SSE event name file_transfer; each data field is FileTransferEvent. No replay; disconnect cancels pairs. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'text/event-stream': components['schemas']['FileTransferEvent'];
+				};
+			};
+			/** @description Invalid resource identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device already streaming */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createFileTransferPair: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateFileTransferPair'];
+			};
+		};
+		responses: {
+			/** @description Pending pair with exact file metadata awaiting recipient consent */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileTransferPair'];
+				};
+			};
+			/** @description Invalid file metadata */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Target unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Device busy or offline */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request exceeds the 64 KiB wire budget */
+			413: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Pairing code attempt limit reached */
+			429: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	acceptFileTransferPair: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Pending pair */
+				pairId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['FileTransferDeviceRequest'];
+			};
+		};
+		responses: {
+			/** @description Recipient accepted exact sender and file */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileTransferPair'];
+				};
+			};
+			/** @description Invalid request body or resource identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff recipient required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Pair unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Pair changed or disconnected */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request exceeds the 64 KiB wire budget */
+			413: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	closeFileTransferPair: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Pair to decline, cancel or finish */
+				pairId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['FileTransferDeviceRequest'];
+			};
+		};
+		responses: {
+			/** @description Pair closed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid request body or resource identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Pair unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request exceeds the 64 KiB wire budget */
+			413: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	sendFileTransferSignal: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Accepted pair */
+				pairId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SendFileTransferSignal'];
+			};
+		};
+		responses: {
+			/** @description Bounded host-only offer or answer queued to consented peer */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid or non-host SDP */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Pair unavailable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Consent, direction, signaling deadline or sequence refused */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request exceeds the 64 KiB wire budget */
+			413: {
 				headers: {
 					[name: string]: unknown;
 				};

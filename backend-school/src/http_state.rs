@@ -248,3 +248,12 @@ impl FromRef<AppState> for school_budget::http::BudgetHttpState {
         }
     }
 }
+
+impl FromRef<AppState> for school_staff::file_transfer::http::FileTransferHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            runtime: state.file_transfer.clone(),
+        }
+    }
+}
