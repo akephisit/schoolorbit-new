@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { stripTypeScriptTypes } from 'node:module';
+import pdfmake from 'pdfmake';
+import { PDFDocument } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { createTimetablePdfCorners } from '../../src/lib/utils/timetable-pdf-corners.ts';
+import { expectCenteredTimetablePdfLogos } from '../e2e/timetable-pdf-assertions.ts';
 import { createHash } from 'node:crypto';
 import * as fontkit from 'fontkit';
-import { createTimetablePdfLogoLayout } from '../../src/lib/utils/timetable-pdf-logo-layout.ts';
 
 test('ships genuine unmodified TH Sarabun New styles with the original embedding exception', () => {
 	const notice = readFileSync(
@@ -25,67 +33,151 @@ test('ships genuine unmodified TH Sarabun New styles with the original embedding
 	assert.match(notice, /GNU GENERAL PUBLIC LICENSE/);
 });
 
-function markerPosition(marker, top, pageNumber = 1) {
+// Exercise the actual production table builders with pdfmake, rather than fabricated layout markers.
+const sourceUrl = new URL('../../src/lib/utils/pdf.ts', import.meta.url);
+let source = readFileSync(sourceUrl, 'utf8');
+for (const specifier of [
+	'./timetable-pdf-corners.ts',
+	'./timetable-pdf-class-label.ts',
+	'../academic/timetable/teacher-label.ts',
+	'#lib/utils/timetable-pdf-days.js',
+	'#lib/utils/timetable-pdf-logo.js'
+]) {
+	const path = specifier.startsWith('#lib/')
+		? specifier.replace('#lib/', '../').replace(/\.js$/, '.ts')
+		: specifier;
+	source = source.replace(specifier, new URL(path, sourceUrl).href);
+}
+// Branding delivery is a browser/API boundary covered by the download browser cases.
+for (const [specifier, name] of [
+	['#lib/api/school.js', 'getRequiredPublicSchoolInfo'],
+	['#lib/api/files.js', 'downloadPublicFile']
+]) {
+	source = source.replace(
+		specifier,
+		`data:text/javascript;base64,${Buffer.from(`export function ${name}(){throw new Error('Browser API boundary')}`).toString('base64')}`
+	);
+}
+const builders = await import(
+	`data:text/javascript;base64,${Buffer.from(
+		stripTypeScriptTypes(source + '\nexport { buildPageContent, buildPortraitPageContent };', {
+			mode: 'transform'
+		})
+	).toString('base64')}`
+);
+const fonts = Object.fromEntries(
+	Object.entries({ normal: '', bold: '-Bold', italics: '-Italic', bolditalics: '-BoldItalic' }).map(
+		([style, suffix]) => [
+			style,
+			fileURLToPath(new URL(`../../static/fonts/THSarabunNew${suffix}.ttf`, import.meta.url))
+		]
+	)
+);
+pdfmake.addFonts({ THSarabunNew: fonts });
+
+function pageFixture() {
 	return {
-		id: marker.id,
-		startPosition: { left: 10, top: 30, pageNumber },
-		canvas: [{ type: 'line', x1: 13, y1: top, x2: 13, y2: top }]
+		headerContext: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+		headerOwnerLabel: 'นายพิสิษฐ สกุลทดสอบ',
+		viewMode: 'INSTRUCTOR',
+		periods: Array.from({ length: 10 }, (_, i) => ({
+			id: `period-${i}`,
+			order_index: i,
+			name: `คาบที่ ${i + 1}`,
+			start_time: '08:00',
+			end_time: '09:00'
+		})),
+		timetableBlocks: []
 	};
 }
 
-test('fits the crest to actual header span boundaries with both axes centered', () => {
-	for (const bottom of [90, 150]) {
-		const layout = createTimetablePdfLogoLayout('data:image/png;base64,crest');
-		const frame = layout.register(55, 2, 1);
-		layout.capture(markerPosition(frame.top, 33));
-		layout.capture(markerPosition(frame.bottom, bottom));
-		const calls = [];
-		layout.draw({ switchToPage: (page) => calls.push(page), image: (...args) => calls.push(args) });
-		assert.deepEqual(calls, [
-			0,
-			[
-				'data:image/png;base64,crest',
-				15,
-				32.5,
-				{ fit: [51, bottom - 37], align: 'center', valign: 'center' }
-			]
-		]);
-	}
-});
+async function renderTimetable(pages, layout, logo) {
+	const corners = createTimetablePdfCorners();
+	const content =
+		layout === 'full'
+			? pages.flatMap((page, i) =>
+					builders.buildPageContent(page, i === 0, logo, 'โรงเรียนทดสอบ', corners)
+				)
+			: builders.buildPortraitPageContent(
+					pages,
+					true,
+					logo,
+					'โรงเรียนทดสอบ',
+					'โรงเรียนทดสอบ',
+					'ตารางสอนภาคเรียนที่ 1 ปีการศึกษา 2569',
+					corners
+				);
+	return pdfmake
+		.createPdf({
+			pageSize: 'A4',
+			pageOrientation: layout === 'full' ? 'landscape' : 'portrait',
+			pageMargins: [10, 30, 10, 20],
+			content,
+			pageBreakBefore: corners.capture,
+			defaultStyle: { font: 'THSarabunNew' }
+		})
+		.getBuffer();
+}
 
-test('logo layout preserves absent-logo behavior and refuses missing or split header geometry', () => {
-	createTimetablePdfLogoLayout(null).draw({ image: () => assert.fail('no configured crest') });
-	const layout = createTimetablePdfLogoLayout('crest');
-	const frame = layout.register(24, 1, 0.5);
-	assert.throws(() => layout.draw({}), /ไม่พบตำแหน่ง/);
-	layout.capture(markerPosition(frame.top, 20));
-	layout.capture(markerPosition(frame.bottom, 90, 2));
-	assert.throws(() => layout.draw({}), /ไม่พบตำแหน่ง/);
-});
+const tallCrest =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAACgAQMAAABwqn2HAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURcIdPf///2PIUy0AAAABYktHRAH/Ai3eAAAAB3RJTUUH6gsBAhcx476U8gAAABJJREFUOMtjYBgFo2AUjALaAAAEYAAB7ZLQTgAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0xMS0wMVQwMjoyMzo0OSswMDowMKBV6l0AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMTEtMDFUMDI6MjM6NDkrMDA6MDDRCFLhAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTExLTAxVDAyOjIzOjQ5KzAwOjAwhh1zPgAAAABJRU5ErkJggg==';
 
-test('measured full and mini header frames agree with enclosing border centers', () => {
-	for (const fixture of [
-		{ width: 55, padding: 2, line: 1, left: 13, top: 33, bottom: 157.167, center: [40.5, 92.5835] },
-		{ width: 24, padding: 1, line: 0.5, left: 11.5, top: 11.5, bottom: 71.5, center: [23.5, 40.25] }
+const wideCrest =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwAQMAAACsZ+MtAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURcIdPf///2PIUy0AAAABYktHRAH/Ai3eAAAAB3RJTUUH6gsBAhcx476U8gAAABFJREFUKM9jYBgFo2AUjBQAAAPwAAHjcHIzAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTExLTAxVDAyOjIzOjQ5KzAwOjAwoFXqXQAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0xMS0wMVQwMjoyMzo0OSswMDowMNEIUuEAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMTEtMDFUMDI6MjM6NDkrMDA6MDCGHXM+AAAAAElFTkSuQmCC';
+
+for (const [shape, logo, aspect] of [
+	['tall', tallCrest, 48 / 160],
+	['wide', wideCrest, 160 / 48]
+]) {
+	for (const [layout, count] of [
+		['full', 1],
+		['portrait-2col', 6]
 	]) {
-		const layout = createTimetablePdfLogoLayout('crest');
-		const frame = layout.register(fixture.width, fixture.padding, fixture.line);
-		for (const [marker, y] of [
-			[frame.top, fixture.top],
-			[frame.bottom, fixture.bottom]
-		]) {
-			layout.capture({
-				id: marker.id,
-				startPosition: { left: 10, top: 10, pageNumber: 1 },
-				canvas: [{ type: 'line', x1: fixture.left, y1: y, x2: fixture.left, y2: y }]
-			});
-		}
-		layout.draw({
-			switchToPage: () => {},
-			image: (_logo, x, y, options) => {
-				assert.ok(Math.abs(x + options.fit[0] / 2 - fixture.center[0]) < 0.000001);
-				assert.ok(Math.abs(y + options.fit[1] / 2 - fixture.center[1]) < 0.000001);
+		test(`actual ${layout} PDF centers a ${shape} crest in its enclosing three-row header`, async () => {
+			const bytes = await renderTimetable(Array.from({ length: count }, pageFixture), layout, logo);
+			const pdf = await PDFDocument.load(bytes);
+			assert.equal(pdf.getPageCount(), 1);
+			const directory = mkdtempSync(join(tmpdir(), 'timetable-pdf-layout-'));
+			try {
+				const path = join(directory, 'output.pdf');
+				writeFileSync(path, bytes);
+				await expectCenteredTimetablePdfLogos({ path: async () => path }, aspect, [count]);
+			} finally {
+				rmSync(directory, { recursive: true, force: true });
 			}
 		});
 	}
+}
+
+test('an oversized timetable retains the final day and its content across page breaks', async () => {
+	const page = pageFixture();
+	const block = {
+		blockKind: 'course',
+		isActive: true,
+		bellSchedulePeriodId: 'period-0',
+		groups: [],
+		homerooms: [],
+		teachers: []
+	};
+	page.timetableBlocks = [
+		{
+			...block,
+			dayOfWeek: 'MON',
+			offeringName: 'รายละเอียดบทเรียนหลายบรรทัด '.repeat(120),
+			offeringCode: 'FIRST_DAY'
+		},
+		{ ...block, dayOfWeek: 'FRI', offeringCode: 'FINAL_ROW_SURVIVES', offeringName: 'วิชาสุดท้าย' }
+	];
+	const bytes = await renderTimetable([page], 'full', tallCrest);
+	const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+	const pdf = await loading.promise;
+	assert.ok(pdf.numPages > 1);
+	let text = '';
+	for (let i = 1; i <= pdf.numPages; i++) {
+		const content = await (await pdf.getPage(i)).getTextContent();
+		text += content.items.map((item) => ('str' in item ? item.str : '')).join('');
+	}
+	assert.ok(text.replace(/\s/g, '').includes('FINAL_ROW_SURVIVES'));
+	assert.ok(text.includes('ศุกร์'));
+	await loading.destroy();
 });

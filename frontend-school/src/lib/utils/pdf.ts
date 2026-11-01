@@ -1,4 +1,3 @@
-import { createTimetablePdfLogoLayout } from './timetable-pdf-logo-layout.ts';
 import { createTimetablePdfCorners } from './timetable-pdf-corners.ts';
 import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
@@ -313,7 +312,7 @@ export interface TimetablePage {
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
+	logoDataUrl: string | null,
 	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content[] {
@@ -348,8 +347,16 @@ function buildPageContent(
 	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
 	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
 
-	const logoFrame = logos.register(DAY_COL, 2, BORDER);
-	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
+	// Align in the actual three-row cell; nested fixed-height cells cannot track the header span.
+	const logoCell: TableCell = logoDataUrl
+		? {
+				image: logoDataUrl,
+				fit: [DAY_COL - 4, 77],
+				alignment: 'center',
+				verticalAlignment: 'middle',
+				rowSpan: 3
+			}
+		: { text: '', rowSpan: 3 };
 
 	const titleCellInner = {
 		columns: [
@@ -455,10 +462,8 @@ function buildPageContent(
 		const row: TableCell[] = [];
 
 		row.push({
-			stack: [
-				...(day === renderedDays[0] ? [logoFrame.bottom] : []),
-				{ text: day.label, margin: [0, 2] }
-			],
+			text: day.label,
+			margin: [0, 2],
 			bold: true,
 			alignment: 'center',
 			fillColor: '#ffffff',
@@ -583,10 +588,11 @@ function buildPageContent(
 				}
 			: null;
 
+	// Normal row layout keeps native rowspan alignment correct and preserves oversized content.
 	const tableContent: Content = {
 		table: {
 			// headerRows: 3 → title + period name + time จะ repeat ตอน page break
-			// (ไม่เกิดในปกติเพราะ dontBreakRows + พอดี 1 หน้า แต่กันไว้)
+			// ตารางทั่วไปพอดีหนึ่งหน้า; ตารางที่สูงกว่าจะยังคงรายละเอียดทุกแถว
 			headerRows: 3,
 			// Fixed widths — `widths` ของ pdfmake = CONTENT width per cell
 			// tableWidth จริง = sum(widths) + offsetsTotal
@@ -599,8 +605,7 @@ function buildPageContent(
 				'auto',
 				...renderedDays.map(() => (renderedDays.length > 5 ? 40 : 50))
 			],
-			body: tableBody,
-			dontBreakRows: true
+			body: tableBody
 		},
 		layout: tableLayout
 	} as Content;
@@ -628,7 +633,7 @@ function buildPageContent(
 function buildMiniTable(
 	page: TimetablePage,
 	miniAreaWidth: number,
-	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
+	logoDataUrl: string | null,
 	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content {
@@ -657,8 +662,15 @@ function buildMiniTable(
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	const logoFrame = logos.register(DAY_COL, 1, BORDER);
-	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
+	const logoCell: TableCell = logoDataUrl
+		? {
+				image: logoDataUrl,
+				fit: [DAY_COL - 4, 28],
+				alignment: 'center',
+				verticalAlignment: 'middle',
+				rowSpan: 3
+			}
+		: { text: '', rowSpan: 3 };
 	const titleRow: TableCell[] = [
 		logoCell,
 		{
@@ -749,10 +761,7 @@ function buildMiniTable(
 	renderedDays.forEach((day) => {
 		const row: TableCell[] = [
 			{
-				stack: [
-					...(day === renderedDays[0] ? [logoFrame.bottom] : []),
-					{ text: dayShort[day.value] || day.label.slice(0, 1) }
-				],
+				text: dayShort[day.value] || day.label.slice(0, 1),
 				bold: true,
 				alignment: 'center',
 				fillColor: '#ffffff',
@@ -857,8 +866,7 @@ function buildMiniTable(
 				'auto',
 				...renderedDays.map(() => (renderedDays.length > 5 ? 18 : 24))
 			],
-			body: tableBody,
-			dontBreakRows: true
+			body: tableBody
 		},
 		layout: miniTableLayout,
 		width: '*'
@@ -874,7 +882,7 @@ const MINIS_PER_PORTRAIT_PAGE = 6;
 function buildPortraitPageContent(
 	chunk: TimetablePage[],
 	isFirst: boolean,
-	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
+	logoDataUrl: string | null,
 	schoolName: string,
 	pageHeaderTitle: string,
 	pageHeaderSubTitle: string,
@@ -935,7 +943,7 @@ function buildPortraitPageContent(
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
 	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logos, schoolName, corners);
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, schoolName, corners);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
@@ -1007,7 +1015,6 @@ export const generateTimetablePDF = async (
 	});
 
 	const corners = createTimetablePdfCorners();
-	const logos = createTimetablePdfLogoLayout(logoDataUrl);
 	let content: Content[];
 	if (layout === 'portrait-2col') {
 		// chunk pages ละ MINIS_PER_PORTRAIT_PAGE → 1 PDF page = หลาย mini-tables
@@ -1023,7 +1030,7 @@ export const generateTimetablePDF = async (
 			buildPortraitPageContent(
 				chunk,
 				i === 0,
-				logos,
+				logoDataUrl,
 				schoolName,
 				pageHeaderTitle,
 				pageHeaderSubTitle,
@@ -1032,7 +1039,7 @@ export const generateTimetablePDF = async (
 		);
 	} else {
 		content = pages.flatMap((page, i) =>
-			buildPageContent(page, i === 0, logos, schoolName, corners)
+			buildPageContent(page, i === 0, logoDataUrl, schoolName, corners)
 		);
 	}
 
@@ -1043,10 +1050,7 @@ export const generateTimetablePDF = async (
 		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
 		pageMargins: [10, 30, 10, 20],
 		content,
-		pageBreakBefore: (node) => {
-			logos.capture(node);
-			return corners.capture(node);
-		},
+		pageBreakBefore: corners.capture,
 		styles: {
 			header: { fontSize: 16, bold: true, color: '#1e3a8a' },
 			subheader: { fontSize: 16, color: '#4b5563' },
@@ -1057,7 +1061,6 @@ export const generateTimetablePDF = async (
 
 	const pdf = pdfMake.createPdf(docDefinition, { bufferPages: true });
 	const stream = await pdf.getStream();
-	logos.draw(stream);
 	corners.draw(stream);
 	await pdf.download(`${fileName ?? pages[0].title}.pdf`);
 };
