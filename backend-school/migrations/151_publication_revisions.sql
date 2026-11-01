@@ -10,7 +10,7 @@ FROM academic_delivery_versions v
 UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_timetable_versions v
 UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_teachers v
 UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_offerings v
-UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
+UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5((to_jsonb(v)-ARRAY['initial_offering_ids','initial_teacher_group_ids','initial_teacher_assignment_ids'])::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
 UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(fingerprint,'' ORDER BY owner) FROM (
     SELECT 'blocks' owner,md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) fingerprint FROM academic_timetable_blocks v
     UNION ALL SELECT 'attendance_sessions',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM attendance_sessions v
@@ -19,6 +19,196 @@ UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(
     UNION ALL SELECT 'course_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_course_results v
     UNION ALL SELECT 'activity_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_activity_results v
 ) preserved),''));
+
+CREATE TEMP TABLE academic151_original_commands ON COMMIT DROP AS
+SELECT md5(COALESCE(string_agg(md5(to_jsonb(item)::text),'' ORDER BY id),'')) fingerprint FROM academic_term_change_items item;
+CREATE TEMP TABLE academic151_original_preparation ON COMMIT DROP AS
+SELECT md5(COALESCE(string_agg(md5(to_jsonb(receipt)::text),'' ORDER BY id),'')) fingerprint FROM academic_term_preparation_runs receipt;
+CREATE TEMP TABLE academic151_original_audits ON COMMIT DROP AS
+SELECT md5(COALESCE(string_agg(md5(to_jsonb(event)::text),'' ORDER BY id),'')) fingerprint FROM academic_audit_events event;
+
+ALTER TABLE academic_term_change_sets ADD COLUMN initial_offering_ids UUID[];
+ALTER TABLE academic_term_change_sets ADD COLUMN initial_teacher_group_ids UUID[];
+ALTER TABLE academic_term_change_sets ADD COLUMN initial_teacher_assignment_ids UUID[];
+
+-- Recover only positively recorded initial intent. Neither current dates nor raw
+-- teacher intervals can reconstruct a selection hidden by an old command.
+DO $$
+DECLARE revision record; target JSONB; base JSONB; offering JSONB; source_group JSONB; teacher JSONB;
+    initial_ids UUID[]; group_ids UUID[]; assignment_ids UUID[]; group_id UUID; assignment_id UUID;
+    receipt record; module JSONB; output_ids UUID[]; receipt_ids UUID[]; candidates BIGINT;
+    created_count BIGINT; created_actual BIGINT; expected_actor UUID;
+BEGIN
+    FOR revision IN SELECT * FROM academic_term_change_sets WHERE status='draft' ORDER BY id LOOP
+        SELECT snapshot INTO target FROM academic_delivery_versions WHERE id=revision.target_delivery_version_id;
+        SELECT snapshot INTO base FROM academic_delivery_versions WHERE id=revision.base_delivery_version_id;
+        initial_ids:=NULL; group_ids:='{}'; assignment_ids:='{}'; receipt_ids:='{}';
+        IF target IS NULL THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+        IF revision.base_delivery_version_id IS NULL THEN
+            SELECT count(*) INTO candidates FROM academic_term_preparation_runs ledger
+            WHERE ledger.target_academic_term_id=revision.academic_term_id AND (
+                (ledger.created_at=revision.created_at AND ledger.actor_user_id=revision.created_by)
+                OR EXISTS(SELECT 1 FROM jsonb_array_elements(ledger.outcome) modules(module),
+                    LATERAL jsonb_array_elements_text(modules.module->'targetIds') outputs(id_text)
+                    WHERE modules.module->>'module'='delivery' AND CASE WHEN pg_input_is_valid(outputs.id_text,'uuid') THEN outputs.id_text::uuid=revision.id ELSE false END));
+            IF candidates>1 THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+            IF candidates=1 THEN
+                SELECT * INTO receipt FROM academic_term_preparation_runs ledger WHERE ledger.target_academic_term_id=revision.academic_term_id AND (
+                    (ledger.created_at=revision.created_at AND ledger.actor_user_id=revision.created_by)
+                    OR EXISTS(SELECT 1 FROM jsonb_array_elements(ledger.outcome) modules(module),
+                        LATERAL jsonb_array_elements_text(modules.module->'targetIds') outputs(id_text)
+                        WHERE modules.module->>'module'='delivery' AND CASE WHEN pg_input_is_valid(outputs.id_text,'uuid') THEN outputs.id_text::uuid=revision.id ELSE false END));
+                IF (SELECT count(*) FROM jsonb_array_elements(receipt.outcome) m WHERE m->>'module'='delivery')<>1
+                    OR NOT('delivery'=ANY(receipt.selected_modules)) OR receipt.target_academic_year_id<>revision.academic_year_id
+                    OR receipt.actor_user_id<>revision.created_by OR receipt.created_at<>revision.created_at
+                THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+                SELECT m INTO module FROM jsonb_array_elements(receipt.outcome) m WHERE m->>'module'='delivery';
+                SELECT ARRAY(SELECT value::uuid FROM jsonb_array_elements_text(module->'targetIds')) INTO output_ids;
+                created_count:=(module->>'createdCount')::bigint;
+                IF cardinality(output_ids)<>(SELECT count(DISTINCT id) FROM unnest(output_ids) id)
+                    OR (SELECT count(*) FROM academic_term_change_sets c WHERE c.id=ANY(output_ids))<>1 OR NOT(revision.id=ANY(output_ids))
+                    OR EXISTS(SELECT 1 FROM unnest(output_ids) candidate(id) WHERE (SELECT count(*) FROM (
+                        SELECT id FROM learning_offerings WHERE id=candidate.id AND academic_term_id=revision.academic_term_id AND academic_year_id=revision.academic_year_id
+                        UNION ALL SELECT id FROM learning_groups WHERE id=candidate.id AND academic_term_id=revision.academic_term_id AND academic_year_id=revision.academic_year_id
+                        UNION ALL SELECT id FROM academic_term_change_sets WHERE id=candidate.id AND id=revision.id) matching)<>1)
+                    OR NOT EXISTS(SELECT 1 FROM academic_delivery_versions v WHERE v.id=revision.target_delivery_version_id
+                        AND v.academic_term_id=revision.academic_term_id AND v.academic_year_id=revision.academic_year_id
+                        AND v.created_at=receipt.created_at AND v.created_by=receipt.actor_user_id)
+                    OR (SELECT count(*) FROM academic_audit_events audit WHERE audit.event_code='academic_delivery_version.created'
+                        AND audit.entity_type='academic_delivery_version' AND audit.entity_id=revision.target_delivery_version_id
+                        AND audit.actor_user_id=receipt.actor_user_id AND audit.academic_term_id=revision.academic_term_id
+                        AND audit.academic_year_id=revision.academic_year_id AND audit.payload->>'changeSetId'=revision.id::text
+                        AND audit.payload->>'referenceDate' IS NOT NULL)<>1
+                    OR EXISTS(SELECT 1 FROM learning_groups g WHERE g.id=ANY(output_ids) AND NOT(g.learning_offering_id=ANY(output_ids)))
+                    OR EXISTS(SELECT 1 FROM learning_offerings o WHERE o.academic_term_id=revision.academic_term_id
+                        AND o.created_at=receipt.created_at AND NOT(o.id=ANY(output_ids)))
+                THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+                SELECT 1+(SELECT count(*) FROM learning_offerings WHERE id=ANY(output_ids) AND created_at=receipt.created_at)
+                    +(SELECT count(*) FROM learning_groups WHERE id=ANY(output_ids) AND created_at=receipt.created_at) INTO created_actual;
+                IF created_actual<>created_count THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+                SELECT ARRAY(SELECT id FROM learning_offerings WHERE id=ANY(output_ids) ORDER BY id) INTO receipt_ids;
+            END IF;
+            SELECT ARRAY(SELECT DISTINCT id FROM (
+                SELECT (o->>'id')::uuid id FROM jsonb_array_elements(target->'offerings') o
+                UNION ALL SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=revision.id
+                    AND action_kind IN('stop_offering','adjust_weekly_period_target')
+                UNION ALL SELECT unnest(receipt_ids)
+            ) initial WHERE NOT EXISTS(SELECT 1 FROM academic_term_change_items item WHERE item.change_set_id=revision.id
+                AND item.action_kind='add_offering' AND item.learning_offering_id=initial.id) ORDER BY id) INTO initial_ids;
+            IF EXISTS(SELECT 1 FROM unnest(initial_ids) candidate(id) LEFT JOIN learning_offerings o ON o.id=candidate.id
+                WHERE o.id IS NULL OR o.academic_term_id<>revision.academic_term_id OR o.academic_year_id<>revision.academic_year_id)
+            THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+        END IF;
+        IF EXISTS(SELECT 1 FROM academic_term_change_items item JOIN learning_groups g ON g.learning_offering_id=item.learning_offering_id
+            WHERE item.change_set_id=revision.id AND item.action_kind='stop_offering'
+                AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(base->'offerings') o,jsonb_array_elements(o->'groups') bg WHERE (bg->>'id')::uuid=g.id)
+                AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(target->'offerings') o,jsonb_array_elements(o->'groups') cached WHERE (cached->>'id')::uuid=g.id))
+        THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+        FOR offering IN SELECT value FROM jsonb_array_elements(target->'offerings') LOOP
+            FOR source_group IN SELECT value FROM jsonb_array_elements(offering->'groups') LOOP
+                group_id:=(source_group->>'id')::uuid;
+                IF NOT EXISTS(SELECT 1 FROM learning_groups g WHERE g.id=group_id AND g.learning_offering_id=(offering->>'id')::uuid
+                    AND g.academic_term_id=revision.academic_term_id AND g.academic_year_id=revision.academic_year_id)
+                THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation'; END IF;
+                IF EXISTS(SELECT 1 FROM learning_groups g WHERE g.id=group_id AND g.status IN('published','closed'))
+                    AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(base->'offerings') o,jsonb_array_elements(o->'groups') bg WHERE (bg->>'id')::uuid=group_id)
+                THEN
+                    group_ids:=array_append(group_ids,group_id);
+                    FOR teacher IN SELECT value FROM jsonb_array_elements(source_group->'teachers') LOOP
+                        assignment_id:=(teacher->>'assignmentId')::uuid;
+                        IF EXISTS(SELECT 1 FROM academic_term_change_items item WHERE item.change_set_id=revision.id
+                            AND item.action_kind IN('add_group_teacher','adjust_group_teacher_role') AND item.learning_group_id=group_id
+                            AND uuid_generate_v5(item.id,'delivery-teacher-episode')=assignment_id
+                            AND item.teacher_id=(teacher->>'teacherId')::uuid AND item.teacher_role=teacher->>'role') THEN CONTINUE; END IF;
+                        IF NOT EXISTS(SELECT 1 FROM learning_group_teachers e WHERE e.id=assignment_id AND e.learning_group_id=group_id
+                            AND e.teacher_id=(teacher->>'teacherId')::uuid AND e.role=teacher->>'role'
+                            AND e.academic_term_id=revision.academic_term_id AND e.academic_year_id=revision.academic_year_id)
+                        THEN RAISE EXCEPTION 'PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID' USING ERRCODE='check_violation'; END IF;
+                        assignment_ids:=array_append(assignment_ids,assignment_id);
+                    END LOOP;
+                END IF;
+            END LOOP;
+        END LOOP;
+        IF EXISTS(SELECT 1 FROM academic_term_change_items item LEFT JOIN learning_group_teachers e ON e.id=item.learning_group_teacher_id
+            WHERE item.change_set_id=revision.id AND item.action_kind IN('stop_group_teacher','adjust_group_teacher_role') AND
+                (e.id IS NULL OR e.learning_group_id<>item.learning_group_id OR e.teacher_id<>item.teacher_id
+                    OR e.academic_term_id<>revision.academic_term_id OR e.academic_year_id<>revision.academic_year_id))
+        THEN RAISE EXCEPTION 'PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID' USING ERRCODE='check_violation'; END IF;
+        SELECT ARRAY(SELECT DISTINCT id FROM unnest(assignment_ids||ARRAY(SELECT item.learning_group_teacher_id FROM academic_term_change_items item
+            WHERE item.change_set_id=revision.id AND item.action_kind IN('stop_group_teacher','adjust_group_teacher_role')
+                AND item.learning_group_id=ANY(group_ids))) id ORDER BY id) INTO assignment_ids;
+        SELECT ARRAY(SELECT DISTINCT id FROM unnest(group_ids) id ORDER BY id) INTO group_ids;
+        UPDATE academic_term_change_sets SET initial_offering_ids=initial_ids,initial_teacher_group_ids=group_ids,
+            initial_teacher_assignment_ids=assignment_ids WHERE id=revision.id;
+    END LOOP;
+EXCEPTION WHEN data_exception THEN RAISE EXCEPTION 'PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE' USING ERRCODE='check_violation';
+END $$;
+
+CREATE FUNCTION academic_validate_delivery_construction() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE old_groups UUID[]:='{}';
+BEGIN
+    IF TG_OP='UPDATE' THEN old_groups:=COALESCE(OLD.initial_teacher_group_ids,'{}'); END IF;
+    IF NEW.status='draft' AND (NEW.initial_teacher_group_ids IS NULL OR NEW.initial_teacher_assignment_ids IS NULL
+        OR (NEW.base_delivery_version_id IS NULL AND NEW.initial_offering_ids IS NULL)
+        OR (NEW.base_delivery_version_id IS NOT NULL AND NEW.initial_offering_ids IS NOT NULL))
+    THEN RAISE EXCEPTION 'ACADEMIC_DELIVERY_CONSTRUCTION_INVALID' USING ERRCODE='check_violation'; END IF;
+    IF TG_OP='UPDATE' AND (NEW.initial_offering_ids IS DISTINCT FROM OLD.initial_offering_ids
+        OR NOT(COALESCE(OLD.initial_teacher_group_ids,'{}')<@COALESCE(NEW.initial_teacher_group_ids,'{}'))
+        OR NOT(COALESCE(OLD.initial_teacher_assignment_ids,'{}')<@COALESCE(NEW.initial_teacher_assignment_ids,'{}'))
+        OR EXISTS(SELECT 1 FROM learning_group_teachers e WHERE e.id=ANY(NEW.initial_teacher_assignment_ids)
+            AND e.learning_group_id=ANY(OLD.initial_teacher_group_ids) AND NOT(e.id=ANY(OLD.initial_teacher_assignment_ids))))
+    THEN RAISE EXCEPTION 'ACADEMIC_DELIVERY_CONSTRUCTION_IMMUTABLE' USING ERRCODE='check_violation'; END IF;
+    IF (TG_OP='INSERT' AND EXISTS(SELECT 1 FROM unnest(NEW.initial_offering_ids) candidate(id)
+            LEFT JOIN learning_offerings o ON o.id=candidate.id WHERE o.id IS NULL
+                OR o.academic_term_id<>NEW.academic_term_id OR o.academic_year_id<>NEW.academic_year_id))
+        OR (NEW.initial_offering_ids IS NOT NULL AND (array_position(NEW.initial_offering_ids,NULL) IS NOT NULL
+            OR NEW.initial_offering_ids IS DISTINCT FROM ARRAY(SELECT DISTINCT id FROM unnest(NEW.initial_offering_ids) id ORDER BY id)))
+        OR array_position(NEW.initial_teacher_group_ids,NULL) IS NOT NULL OR array_position(NEW.initial_teacher_assignment_ids,NULL) IS NOT NULL
+        OR (NEW.initial_teacher_group_ids IS NOT NULL AND NEW.initial_teacher_group_ids IS DISTINCT FROM ARRAY(SELECT DISTINCT id FROM unnest(NEW.initial_teacher_group_ids) id ORDER BY id))
+        OR (NEW.initial_teacher_assignment_ids IS NOT NULL AND NEW.initial_teacher_assignment_ids IS DISTINCT FROM ARRAY(SELECT DISTINCT id FROM unnest(NEW.initial_teacher_assignment_ids) id ORDER BY id))
+        OR EXISTS(SELECT 1 FROM unnest(NEW.initial_teacher_group_ids) candidate(id) LEFT JOIN learning_groups g ON g.id=candidate.id
+            WHERE g.id IS NULL OR g.academic_term_id<>NEW.academic_term_id OR g.academic_year_id<>NEW.academic_year_id
+                OR (NOT(g.id=ANY(old_groups)) AND NOT(g.learning_offering_id=ANY(COALESCE(NEW.initial_offering_ids,'{}'))
+                    OR EXISTS(SELECT 1 FROM academic_term_change_items item WHERE item.change_set_id=NEW.id
+                        AND item.action_kind='add_offering' AND item.learning_offering_id=g.learning_offering_id)))
+                OR EXISTS(SELECT 1 FROM academic_delivery_versions b,jsonb_array_elements(b.snapshot->'offerings') o,
+                    jsonb_array_elements(o->'groups') bg WHERE b.id=NEW.base_delivery_version_id AND (bg->>'id')::uuid=g.id))
+        OR EXISTS(SELECT 1 FROM unnest(NEW.initial_teacher_assignment_ids) candidate(id) LEFT JOIN learning_group_teachers e ON e.id=candidate.id
+            WHERE e.id IS NULL OR NOT(e.learning_group_id=ANY(NEW.initial_teacher_group_ids))
+                OR e.academic_term_id<>NEW.academic_term_id OR e.academic_year_id<>NEW.academic_year_id)
+    THEN RAISE EXCEPTION 'ACADEMIC_DELIVERY_CONSTRUCTION_INVALID' USING ERRCODE='check_violation'; END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER academic_delivery_construction_guard BEFORE INSERT OR UPDATE ON academic_term_change_sets
+FOR EACH ROW EXECUTE FUNCTION academic_validate_delivery_construction();
+CREATE FUNCTION academic_require_published_construction() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE old_groups UUID[]:='{}';
+BEGIN
+    IF TG_OP='UPDATE' THEN old_groups:=COALESCE(OLD.initial_teacher_group_ids,'{}'); END IF;
+    IF EXISTS(SELECT 1 FROM learning_groups g WHERE g.id=ANY(NEW.initial_teacher_group_ids)
+        AND NOT(g.id=ANY(old_groups))
+        AND g.status NOT IN('published','closed'))
+    THEN RAISE EXCEPTION 'ACADEMIC_DELIVERY_CONSTRUCTION_NOT_PUBLISHED' USING ERRCODE='check_violation'; END IF;
+    RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER academic_delivery_construction_accepted AFTER INSERT OR UPDATE ON academic_term_change_sets
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION academic_require_published_construction();
+
+CREATE FUNCTION academic_delivery_teacher_basis(revision UUID) RETURNS JSONB LANGUAGE SQL STABLE AS $$
+    WITH context AS (SELECT c.*,b.snapshot base_snapshot FROM academic_term_change_sets c
+        LEFT JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id WHERE c.id=revision),
+    published AS MATERIALIZED(SELECT (g->>'id')::uuid group_id,g->'teachers' teachers FROM context,
+        jsonb_array_elements(base_snapshot->'offerings') o,jsonb_array_elements(o->'groups') g),
+    construction AS(SELECT selected.group_id,COALESCE(jsonb_agg(jsonb_build_object(
+        'assignmentId',e.id,'teacherId',e.teacher_id,'displayName',concat_ws(' ',account.title,account.first_name,account.last_name),'role',e.role)
+        ORDER BY e.teacher_id,e.id) FILTER(WHERE e.id IS NOT NULL),'[]'::jsonb) teachers
+        FROM context CROSS JOIN LATERAL unnest(context.initial_teacher_group_ids) selected(group_id)
+        LEFT JOIN learning_group_teachers e ON e.learning_group_id=selected.group_id AND e.id=ANY(context.initial_teacher_assignment_ids)
+        LEFT JOIN users account ON account.id=e.teacher_id
+        WHERE NOT EXISTS(SELECT 1 FROM published WHERE published.group_id=selected.group_id) GROUP BY selected.group_id)
+    SELECT COALESCE(jsonb_object_agg(group_id::text,teachers),'{}'::jsonb) FROM(
+        SELECT * FROM published UNION ALL SELECT * FROM construction) selected;
+$$;
 
 ALTER TABLE academic_delivery_versions ADD COLUMN publication_no BIGINT;
 ALTER TABLE academic_timetable_versions ADD COLUMN publication_no BIGINT;
@@ -194,11 +384,9 @@ BEGIN
 END $$;
 
 CREATE FUNCTION academic_delivery_inherit_teachers(graph JSONB,revision UUID,on_date DATE) RETURNS JSONB LANGUAGE SQL STABLE AS $$
+    WITH basis AS MATERIALIZED(SELECT academic_delivery_teacher_basis(revision) teachers)
     SELECT jsonb_build_object('offerings',COALESCE(jsonb_agg(jsonb_set(o,'{groups}',COALESCE((
-        SELECT jsonb_agg(jsonb_set(g,'{teachers}',COALESCE((SELECT bg->'teachers'
-            FROM academic_term_change_sets c JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id,
-                jsonb_array_elements(b.snapshot->'offerings') bo,jsonb_array_elements(bo->'groups') bg
-            WHERE c.id=revision AND (bg->>'id')::uuid=(g->>'id')::uuid),
+        SELECT jsonb_agg(jsonb_set(g,'{teachers}',COALESCE(basis.teachers->(((g->>'id')::uuid)::text),
             CASE WHEN EXISTS(SELECT 1 FROM learning_groups staged WHERE staged.id=(g->>'id')::uuid AND staged.status='draft')
             THEN (SELECT COALESCE(jsonb_agg(jsonb_build_object(
                     'assignmentId',assignment.id,'teacherId',assignment.teacher_id,
@@ -213,7 +401,7 @@ CREATE FUNCTION academic_delivery_inherit_teachers(graph JSONB,revision UUID,on_
                 WHERE episode.starts_on<=on_date AND (episode.effective_ends_on IS NULL OR episode.effective_ends_on>=on_date)) END
             )) ORDER BY g->>'id')
         FROM jsonb_array_elements(o->'groups') g),'[]'::jsonb)) ORDER BY o->>'id'),'[]'::jsonb))
-    FROM jsonb_array_elements(graph->'offerings') o;
+    FROM basis,jsonb_array_elements(graph->'offerings') o;
 $$;
 CREATE FUNCTION academic_delivery_project_teacher_ids(graph JSONB,revision UUID,on_date DATE) RETURNS JSONB LANGUAGE SQL STABLE AS $$
     SELECT jsonb_build_object('offerings',COALESCE(jsonb_agg(jsonb_set(o,'{groups}',COALESCE((
@@ -278,17 +466,13 @@ RETURNS JSONB LANGUAGE SQL STABLE AS $$
         FROM context,jsonb_array_elements(base_snapshot->'offerings') offering
         UNION ALL
         SELECT offering.id,COALESCE(subject_version.periods_per_week,activity_version.periods_per_week)
-        FROM context JOIN learning_offerings offering ON offering.academic_term_id=context.academic_term_id
+        FROM context JOIN learning_offerings offering ON offering.id=ANY(context.initial_offering_ids)
         LEFT JOIN course_offering_details course ON course.learning_offering_id=offering.id
         LEFT JOIN subject_versions subject_version ON subject_version.id=course.subject_version_id
         LEFT JOIN activity_offering_details activity ON activity.learning_offering_id=offering.id
         LEFT JOIN activity_versions activity_version ON activity_version.id=activity.activity_version_id
-        WHERE context.base_delivery_version_id IS NULL AND offering.status IN ('draft','published')
-            AND offering.starts_on<=context.evaluation_date
-            AND (offering.ends_on IS NULL OR offering.ends_on>=context.evaluation_date)
-            AND NOT EXISTS(SELECT 1 FROM academic_term_change_items item
-                WHERE item.learning_offering_id=offering.id AND item.action_kind='add_offering'
-                )
+        WHERE context.base_delivery_version_id IS NULL AND offering.academic_term_id=context.academic_term_id
+            AND offering.academic_year_id=context.academic_year_id AND offering.status IN ('draft','published')
     ), selected_targets AS (
         SELECT base.id,COALESCE(adjustment.weekly_period_target,base.weekly_period_target) AS weekly_period_target
         FROM base_targets base LEFT JOIN academic_term_change_items adjustment
@@ -383,7 +567,7 @@ SELECT 'delivery_publications_preserved'::text code,md5(COALESCE(string_agg(md5(
 UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg(md5((to_jsonb(v)-'publication_no')::text),'' ORDER BY id),'')) FROM academic_timetable_versions v
 UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_teachers v
 UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_offerings v
-UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
+UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5((to_jsonb(v)-ARRAY['initial_offering_ids','initial_teacher_group_ids','initial_teacher_assignment_ids'])::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
 UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(fingerprint,'' ORDER BY owner) FROM (
     SELECT 'blocks' owner,md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) fingerprint FROM academic_timetable_blocks v
     UNION ALL SELECT 'attendance_sessions',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM attendance_sessions v
@@ -394,6 +578,12 @@ UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(
 ) preserved),''));
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_151_preservation b FULL JOIN academic_151_after a USING(code) WHERE b.fingerprint IS DISTINCT FROM a.fingerprint)
+        OR (SELECT fingerprint FROM academic151_original_commands) IS DISTINCT FROM
+            (SELECT md5(COALESCE(string_agg(md5(to_jsonb(item)::text),'' ORDER BY id),'')) FROM academic_term_change_items item)
+        OR (SELECT fingerprint FROM academic151_original_preparation) IS DISTINCT FROM
+            (SELECT md5(COALESCE(string_agg(md5(to_jsonb(receipt)::text),'' ORDER BY id),'')) FROM academic_term_preparation_runs receipt)
+        OR (SELECT fingerprint FROM academic151_original_audits) IS DISTINCT FROM
+            (SELECT md5(COALESCE(string_agg(md5(to_jsonb(event)::text),'' ORDER BY id),'')) FROM academic_audit_events event)
     THEN RAISE EXCEPTION 'PUBLICATION_151_PRESERVATION_FAILED' USING ERRCODE='check_violation'; END IF;
     IF EXISTS(SELECT 1 FROM academic_delivery_versions v,jsonb_array_elements(v.snapshot->'offerings') o,
         jsonb_array_elements(o->'groups') g,jsonb_array_elements(g->'teachers') t

@@ -587,12 +587,14 @@ pub(super) async fn include_offering(
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
         SELECT gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6
         WHERE NOT EXISTS(SELECT 1 FROM academic_term_change_sets revision
-            JOIN academic_delivery_versions base ON base.id=revision.base_delivery_version_id,
-            jsonb_array_elements(base.snapshot->'offerings') entry
-            WHERE revision.id=$1 AND (entry->>'id')::uuid=$4)
+            LEFT JOIN academic_delivery_versions base ON base.id=revision.base_delivery_version_id
+            WHERE revision.id=$1 AND ($4=ANY(revision.initial_offering_ids)
+                OR EXISTS(SELECT 1 FROM jsonb_array_elements(base.snapshot->'offerings') entry WHERE (entry->>'id')::uuid=$4)))
         AND NOT EXISTS(SELECT 1 FROM academic_term_change_items WHERE change_set_id=$1
             AND learning_offering_id=$4 AND action_kind='add_offering')")
         .bind(revision_id).bind(term_id).bind(year_id).bind(offering_id).bind(target).bind(actor_id).execute().await?;
+    super::construction::capture_teachers(tx, offering_id, Some(revision_id), false, Some(date))
+        .await?;
     DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1")
         .bind(revision_id).execute().await?;
     refresh_revision_snapshot(tx, revision_id).await

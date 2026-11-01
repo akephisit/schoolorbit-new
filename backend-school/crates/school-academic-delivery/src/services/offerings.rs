@@ -532,7 +532,16 @@ pub async fn publish(
         "academic_delivery.services.offerings.publish",
     )
     .await?;
-    let term = require_writable_offering_term(&mut transaction, id).await?;
+    let term_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_delivery.services.offerings.publish.context",
+            "SELECT academic_term_id FROM learning_offerings WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".into()))?;
+    let term = require_writable_term(&mut transaction, term_id, true).await?;
     let row: (
         Uuid,
         Uuid,
@@ -558,6 +567,7 @@ pub async fn publish(
         ));
     }
     validate_publishable(&mut transaction, id, row.2, &term).await?;
+    super::construction::capture_teachers(&mut transaction, id, None, true, None).await?;
     DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.offerings.publish",
@@ -709,7 +719,7 @@ pub async fn apply_term_preparation(
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
     let applied = apply_preview_in_transaction(transaction, &term, preview, &choices, None).await?;
-    let revision_id = super::change_sets::create_change_set_in_transaction(
+    let revision_id = super::change_sets::create_change_set_with_initial_offerings(
         transaction,
         actor,
         crate::models::CreateAcademicTermChangeSetRequest {
@@ -717,6 +727,7 @@ pub async fn apply_term_preparation(
             reason: "เตรียมเปิดสอนตามโครงสร้างหลักสูตร".into(),
             idempotency_key: Uuid::new_v4(),
         },
+        Some((&applied.offering_ids, preview.starts_on)),
     )
     .await?;
     Ok(TermPreparationDeliveryOutcome {

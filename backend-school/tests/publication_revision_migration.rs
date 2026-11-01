@@ -29,6 +29,7 @@ const FACT_TABLES: &[&str] = &[
     "academic_timetable_block_teachers",
     "academic_timetable_block_group_sync",
     "academic_teacher_handoff_runs",
+    "academic_term_preparation_runs",
     "attendance_sessions",
     "attendance_records",
     "learning_group_score_items",
@@ -49,9 +50,29 @@ async fn predecessor(name: &str) -> PgPool {
 }
 
 async fn canonical(pool: &PgPool) {
-    school_migrations::run_tenant_migrations(pool)
-        .await
-        .expect("canonical tenant runner must accept the reconciled predecessor");
+    if let Err(failure) = school_migrations::run_tenant_migrations_detailed(pool).await {
+        panic!(
+            "canonical tenant runner must accept the reconciled predecessor: {}",
+            failure_details(pool, &failure).await
+        );
+    }
+}
+
+async fn failure_details(pool: &PgPool, failure: &school_migrations::MigrationFailure) -> String {
+    // The production runner deliberately erases native SQL details. Only after
+    // its failure, replay the actual migration input in a rollback-only owner
+    // transaction to expose a useful database cause for this sanitized fixture.
+    // Success and refusal assertions always use the canonical tenant runner.
+    let mut diagnostic = pool.begin().await.unwrap();
+    let native = sqlx::raw_sql(include_str!("../migrations/151_publication_revisions.sql"))
+        .execute(&mut *diagnostic)
+        .await;
+    let detail = match native {
+        Err(error) => format!("native migration151 replay: {error:#?}"),
+        Ok(_) => "rollback-only native migration151 replay succeeded".to_string(),
+    };
+    diagnostic.rollback().await.unwrap();
+    format!("canonical: {failure:#?}; {detail}")
 }
 
 async fn facts(pool: &PgPool) -> BTreeMap<String, Value> {
@@ -62,6 +83,8 @@ async fn facts(pool: &PgPool) -> BTreeMap<String, Value> {
             "academic_delivery_versions" | "academic_timetable_versions"
         ) {
             "to_jsonb(row)-'publication_no'"
+        } else if *table == "academic_term_change_sets" {
+            "to_jsonb(row)-'initial_offering_ids'-'initial_teacher_group_ids'-'initial_teacher_assignment_ids'"
         } else {
             "to_jsonb(row)"
         };
@@ -469,7 +492,7 @@ async fn populated_publication_migration_preserves_exact_history_pins_and_date_w
     assert_eq!(
         facts(&pool).await,
         before,
-        "only publication_no may be added to accepted rows"
+        "only publication numbers and the three construction provenance columns may be added"
     );
     assert_eq!(date_winners(&pool, true).await, winners);
     assert_reconciled(&pool).await;
@@ -570,6 +593,379 @@ async fn dated_timetable_owner_returns_only_the_winner_and_keeps_schedule_contex
         guard,
         "the real schedule context foreign key must remain enforced"
     );
+}
+
+async fn legacy_initial_source(pool: &PgPool) -> (Uuid, Uuid, Value) {
+    sqlx::query_as(
+        "SELECT id,published_by,snapshot FROM academic_delivery_versions WHERE status='published' \
+         AND EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot->'offerings') o,jsonb_array_elements(o->'groups') g,jsonb_array_elements(g->'teachers') t) ORDER BY id LIMIT 1",
+    ).fetch_one(pool).await.unwrap()
+}
+
+async fn legacy_initial_revision(
+    pool: &PgPool,
+    source: Uuid,
+    actor: Uuid,
+    graph: Value,
+) -> (Uuid, Uuid) {
+    let (term,date):(Uuid,String)=sqlx::query_as("SELECT academic_term_id,(effective_from+7)::text FROM academic_delivery_versions WHERE id=$1")
+        .bind(source).fetch_one(pool).await.unwrap();
+    let target = delivery(pool, term, actor, None, &date, "draft", "2008-01-01", graph).await;
+    let change = revision(pool, target, source, actor, "draft").await;
+    // A sanitized accepted legacy draft with its initial source cached, but no
+    // immutable base link. Migration 151 must prove its initial intent from that
+    // evidence rather than infer it again from a candidate civil date.
+    sqlx::query("UPDATE academic_term_change_sets SET base_delivery_version_id=NULL WHERE id=$1")
+        .bind(change)
+        .execute(pool)
+        .await
+        .unwrap();
+    (change, target)
+}
+
+#[tokio::test]
+async fn initial_construction_backfill_preserves_cached_bytes_and_commands_and_restores_raw_teacher_basis(
+) {
+    let pool = predecessor("publication151_initial_basis").await;
+    let (source, actor, mut graph) = legacy_initial_source(&pool).await;
+    let (oi, gi) = graph["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .find_map(|(oi, o)| {
+            o["groups"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .find(|(_, g)| !g["teachers"].as_array().unwrap().is_empty())
+                .map(|(gi, _)| (oi, gi))
+        })
+        .unwrap();
+    let group: Uuid =
+        serde_json::from_value(graph["offerings"][oi]["groups"][gi]["id"].clone()).unwrap();
+    let assignment: Uuid = serde_json::from_value(
+        graph["offerings"][oi]["groups"][gi]["teachers"][0]["assignmentId"].clone(),
+    )
+    .unwrap();
+    let teacher: Uuid = serde_json::from_value(
+        graph["offerings"][oi]["groups"][gi]["teachers"][0]["teacherId"].clone(),
+    )
+    .unwrap();
+    let original_role = graph["offerings"][oi]["groups"][gi]["teachers"][0]["role"].clone();
+    let mut expected_assignments = graph["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|offering| offering["groups"].as_array().unwrap())
+        .flat_map(|group| group["teachers"].as_array().unwrap())
+        .map(|teacher| serde_json::from_value::<Uuid>(teacher["assignmentId"].clone()).unwrap())
+        .collect::<Vec<_>>();
+    expected_assignments.sort_unstable();
+    expected_assignments.dedup();
+    let empty = Uuid::now_v7();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status,capacity) SELECT $1,learning_offering_id,academic_term_id,academic_year_id,'IMPORTED-EMPTY','Imported known empty group','draft','draft',capacity FROM learning_groups WHERE id=$2")
+        .bind(empty).bind(group).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) SELECT uuidv7(),$1,academic_term_id,academic_year_id,homeroom_id,'manual' FROM learning_group_homerooms WHERE learning_group_id=$2")
+        .bind(empty).bind(group).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=$1")
+        .bind(empty)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut empty_graph = graph["offerings"][oi]["groups"][gi].clone();
+    empty_graph["id"] = json!(empty);
+    empty_graph["code"] = json!("IMPORTED-EMPTY");
+    empty_graph["name"] = json!("Imported known empty group");
+    empty_graph["teachers"] = json!([]);
+    graph["offerings"][oi]["groups"]
+        .as_array_mut()
+        .unwrap()
+        .push(empty_graph);
+    let command = Uuid::now_v7();
+    let prospective = Uuid::new_v5(&command, b"delivery-teacher-episode");
+    graph["offerings"][oi]["groups"][gi]["teachers"][0]["assignmentId"] = json!(prospective);
+    graph["offerings"][oi]["groups"][gi]["teachers"][0]["role"] = json!("assistant");
+    let (change, target) = legacy_initial_revision(&pool, source, actor, graph.clone()).await;
+    sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_group_id,learning_group_teacher_id,teacher_id,teacher_role,created_by) SELECT $1,id,academic_term_id,academic_year_id,'adjust_group_teacher_role',$3,$4,$5,'assistant',$6 FROM academic_term_change_sets WHERE id=$2")
+        .bind(command).bind(change).bind(group).bind(assignment).bind(teacher).bind(actor).execute(&pool).await.unwrap();
+    let original = facts(&pool).await;
+    canonical(&pool).await;
+    assert_eq!(
+        facts(&pool).await,
+        original,
+        "only the three new provenance columns may extend a legacy revision"
+    );
+    let (offerings,groups,mut assignments):(Option<Vec<Uuid>>,Vec<Uuid>,Vec<Uuid>)=sqlx::query_as("SELECT initial_offering_ids,initial_teacher_group_ids,initial_teacher_assignment_ids FROM academic_term_change_sets WHERE id=$1")
+        .bind(change).fetch_one(&pool).await.unwrap();
+    let mut expected_offerings = graph["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|offering| serde_json::from_value::<Uuid>(offering["id"].clone()).unwrap())
+        .collect::<Vec<_>>();
+    expected_offerings.sort_unstable();
+    let mut actual_offerings = offerings.unwrap();
+    actual_offerings.sort_unstable();
+    assert_eq!(actual_offerings, expected_offerings);
+    assert!(groups.contains(&empty));
+    assert!(groups.contains(&group));
+    assignments.sort_unstable();
+    assert_eq!(assignments, expected_assignments);
+    assert!(!assignments.contains(&prospective));
+    let basis: Value = sqlx::query_scalar("SELECT academic_delivery_teacher_basis($1)")
+        .bind(change)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        basis[empty.to_string()],
+        json!([]),
+        "an explicit empty marker must remain distinct from an unmarked group"
+    );
+    assert!(basis[group.to_string()]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["assignmentId"] == json!(assignment) && t["role"] == original_role));
+    let cached: Value =
+        sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(cached, graph);
+    assert_reconciled(&pool).await;
+}
+
+#[tokio::test]
+async fn unprovable_initial_stop_refuses_atomically_and_retry_uses_the_corrected_explicit_source() {
+    let pool = predecessor("publication151_initial_stop_refusal").await;
+    let (source, actor, graph) = legacy_initial_source(&pool).await;
+    let oi = graph["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|offering| !offering["groups"].as_array().unwrap().is_empty())
+        .unwrap();
+    let offering: Uuid = serde_json::from_value(graph["offerings"][oi]["id"].clone()).unwrap();
+    let mut stopped_graph = graph.clone();
+    stopped_graph["offerings"]
+        .as_array_mut()
+        .unwrap()
+        .remove(oi);
+    let (change, target) = legacy_initial_revision(&pool, source, actor, stopped_graph).await;
+    sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,created_by) SELECT $1,id,academic_term_id,academic_year_id,'stop_offering',$3,$4 FROM academic_term_change_sets WHERE id=$2")
+        .bind(Uuid::now_v7()).bind(change).bind(offering).bind(actor).execute(&pool).await.unwrap();
+    let before = facts(&pool).await;
+    let original_schema = schema(&pool).await;
+    let original_history = history(&pool).await;
+    let failure = school_migrations::run_tenant_migrations_detailed(&pool)
+        .await
+        .unwrap_err();
+    let details = if failure.diagnostic.code != "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE" {
+        failure_details(&pool, &failure).await
+    } else {
+        format!("{failure:#?}")
+    };
+    assert_eq!(failure.diagnostic.version, Some(151));
+    assert_eq!(
+        failure.diagnostic.code, "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
+        "{details}"
+    );
+    assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("23514"));
+    assert_eq!(facts(&pool).await, before);
+    assert_eq!(schema(&pool).await, original_schema);
+    assert_eq!(history(&pool).await, original_history);
+    // The deliberately absent link is repaired from the exact accepted source
+    // UUID used by this sanitized legacy scenario, keeping the stop and cache.
+    let mut repair = pool.begin().await.unwrap();
+    sqlx::query("UPDATE academic_term_change_sets SET base_delivery_version_id=$2 WHERE id=$1")
+        .bind(change)
+        .bind(source)
+        .execute(&mut *repair)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_delivery_versions SET source_version_id=$2 WHERE id=$1")
+        .bind(target)
+        .bind(source)
+        .execute(&mut *repair)
+        .await
+        .unwrap();
+    repair.commit().await.unwrap();
+    let corrected = facts(&pool).await;
+    canonical(&pool).await;
+    assert_eq!(facts(&pool).await, corrected);
+    assert_reconciled(&pool).await;
+}
+
+async fn legacy_preparation_initial_revision(
+    pool: &PgPool,
+    ambiguous_output: bool,
+) -> (Uuid, Uuid, Uuid, Uuid, Value) {
+    let (source, actor, _) = legacy_initial_source(pool).await;
+    let (change, target) =
+        legacy_initial_revision(pool, source, actor, json!({"offerings":[]})).await;
+    let future = Uuid::now_v7();
+    let receipt = Uuid::now_v7();
+    let output = json!([{"module":"delivery","createdCount":2,"targetIds":[change,future]}]);
+    let mut stored_output = output.clone();
+    if ambiguous_output {
+        stored_output[0]["targetIds"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(future));
+    }
+    // This is a sanitized persisted preparation receipt at the predecessor
+    // boundary. The one creation instant, actor, audit, exact output identities
+    // and module counts constitute its proof; 151 must preserve the whole row.
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE academic_term_change_sets SET created_at='2011-06-07T08:09:10Z' WHERE id=$1",
+    )
+    .bind(change)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE academic_delivery_versions SET created_at='2011-06-07T08:09:10Z' WHERE id=$1",
+    )
+    .bind(target)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let inserted = sqlx::query(
+        "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on,created_at,updated_at) \
+         SELECT $1,c.academic_term_id,c.academic_year_id,'activity','PREP-FUTURE-'||$1::text,'Explicit future preparation output','draft',o.owning_organization_unit_id,c.reference_date+20,c.created_at,c.created_at \
+         FROM academic_term_change_sets c JOIN learning_offerings o ON o.academic_term_id=c.academic_term_id AND o.kind='activity' WHERE c.id=$2 ORDER BY o.id LIMIT 1",
+    ).bind(future).bind(change).execute(&mut *tx).await.unwrap();
+    assert_eq!(inserted.rows_affected(), 1);
+    let inserted = sqlx::query(
+        "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria) \
+         SELECT $1,o.academic_term_id,o.academic_year_id,d.activity_version_id,d.activity_id,d.registration_type,d.scheduling_mode,d.hours,d.capacity,d.attendance_requirement,d.pass_criteria \
+         FROM learning_offerings o JOIN activity_offering_details d ON d.academic_term_id=o.academic_term_id WHERE o.id=$1 ORDER BY d.learning_offering_id LIMIT 1",
+    ).bind(future).execute(&mut *tx).await.unwrap();
+    assert_eq!(inserted.rows_affected(), 1);
+    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload,created_at) SELECT 'academic_delivery_version.created','academic_delivery_version',target_delivery_version_id,academic_year_id,academic_term_id,created_by,jsonb_build_object('changeSetId',id,'sourceVersionId',NULL,'referenceDate',reference_date,'requestHash',creation_request_hash),created_at FROM academic_term_change_sets WHERE id=$1")
+        .bind(change).execute(&mut *tx).await.unwrap();
+    sqlx::query(
+        "INSERT INTO academic_term_preparation_runs(id,request_id,source_academic_term_id,source_academic_year_id,target_academic_term_id,target_academic_year_id,selected_modules,mappings,source_checksum,request_checksum,outcome,actor_user_id,created_at,offering_starts_on) \
+         SELECT $1,$1,source.id,source.academic_year_id,c.academic_term_id,c.academic_year_id,ARRAY['delivery'],'{\"entities\":[],\"dates\":[]}',repeat('a',64),repeat('b',64),$3,c.created_by,c.created_at,c.reference_date+20 \
+         FROM academic_term_change_sets c JOIN academic_terms source ON source.id<>c.academic_term_id WHERE c.id=$2 ORDER BY source.id LIMIT 1",
+    ).bind(receipt).bind(change).bind(stored_output).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    (change, target, future, receipt, output)
+}
+
+#[tokio::test]
+async fn preparation_receipt_recovers_explicit_future_initial_output_without_rewriting_cached_graph(
+) {
+    let pool = predecessor("publication151_preparation_initial_output").await;
+    let (change, target, future, receipt, _) =
+        legacy_preparation_initial_revision(&pool, false).await;
+    let beyond_reference: bool = sqlx::query_scalar("SELECT o.starts_on>c.reference_date FROM learning_offerings o,academic_term_change_sets c WHERE o.id=$1 AND c.id=$2")
+        .bind(future).bind(change).fetch_one(&pool).await.unwrap();
+    assert!(
+        beyond_reference,
+        "this output is absent from a dated legacy cache"
+    );
+    let before = facts(&pool).await;
+    let original_receipt: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM academic_term_preparation_runs r WHERE id=$1")
+            .bind(receipt)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    canonical(&pool).await;
+    assert_eq!(facts(&pool).await, before);
+    let initial: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
+    )
+    .bind(change)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(initial, vec![future]);
+    let cached: Value =
+        sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(cached, json!({"offerings":[]}));
+    let after_receipt: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM academic_term_preparation_runs r WHERE id=$1")
+            .bind(receipt)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after_receipt, original_receipt);
+    assert_reconciled(&pool).await;
+}
+
+#[tokio::test]
+async fn ambiguous_preparation_outputs_refuse_atomically_and_exact_evidence_correction_retries() {
+    let pool = predecessor("publication151_preparation_ambiguous_output").await;
+    let (change, _, future, receipt, correct_output) =
+        legacy_preparation_initial_revision(&pool, true).await;
+    let before = facts(&pool).await;
+    let original_schema = schema(&pool).await;
+    let original_history = history(&pool).await;
+    let failure = school_migrations::run_tenant_migrations_detailed(&pool)
+        .await
+        .unwrap_err();
+    let details = if failure.diagnostic.code != "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE" {
+        failure_details(&pool, &failure).await
+    } else {
+        format!("{failure:#?}")
+    };
+    assert_eq!(failure.diagnostic.version, Some(151));
+    assert_eq!(
+        failure.diagnostic.code, "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
+        "{details}"
+    );
+    assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("23514"));
+    assert_eq!(facts(&pool).await, before);
+    assert_eq!(schema(&pool).await, original_schema);
+    assert_eq!(history(&pool).await, original_history);
+    let guarded =
+        sqlx::query("UPDATE academic_term_preparation_runs SET outcome=outcome WHERE id=$1")
+            .bind(receipt)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+    assert_eq!(
+        guarded.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    // The fixture owner corrects only its deliberately duplicated output UUID.
+    // The real immutable receipt guard is present at both transaction boundaries.
+    let mut correction = pool.begin().await.unwrap();
+    sqlx::query("ALTER TABLE academic_term_preparation_runs DISABLE TRIGGER academic_term_preparation_runs_immutable")
+        .execute(&mut *correction).await.unwrap();
+    sqlx::query("UPDATE academic_term_preparation_runs SET outcome=$2 WHERE id=$1")
+        .bind(receipt)
+        .bind(correct_output)
+        .execute(&mut *correction)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE academic_term_preparation_runs ENABLE TRIGGER academic_term_preparation_runs_immutable")
+        .execute(&mut *correction).await.unwrap();
+    correction.commit().await.unwrap();
+    assert_eq!(schema(&pool).await, original_schema);
+    let corrected = facts(&pool).await;
+    canonical(&pool).await;
+    assert_eq!(facts(&pool).await, corrected);
+    let initial: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
+    )
+    .bind(change)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(initial, vec![future]);
+    assert_reconciled(&pool).await;
 }
 
 #[tokio::test]

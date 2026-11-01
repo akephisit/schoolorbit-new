@@ -176,6 +176,12 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(151), "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE") => {
+            "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE"
+        }
+        (Some(151), "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE") => {
+            "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE"
+        }
         (Some(151), "PUBLICATION_151_SOURCE_LINEAGE_INVALID") => {
             "PUBLICATION_151_SOURCE_LINEAGE_INVALID"
         }

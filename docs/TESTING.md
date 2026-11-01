@@ -494,6 +494,7 @@ The focused publication owner and preservation cases run through the same dispos
 ./scripts/test_backend_school.sh --integration publication_revision_migration -- --test-threads=1
 ./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests::publication_revision_tests -- --test-threads=1
 ./scripts/test_backend_school.sh draft_teacher_construction_tests -- --test-threads=1
+./scripts/test_backend_school.sh initial_construction_tests -- --test-threads=1
 ./scripts/test_backend_school.sh roster_tracking_tests -- --test-threads=1
 ./scripts/test_backend_school.sh publication_source_tests -- --test-threads=1
 ./scripts/test_backend_school.sh --package school-academic-delivery --test teacher_assignments -- --test-threads=1
@@ -505,6 +506,11 @@ Already accepted historical lesson fixtures retain their frozen facts even when 
 cannot be recreated; those report/history fixtures insert explicit accepted rows rather than
 passing fabricated lesson keys through new-source validation. Their prior downstream assertions
 remain in place. Face-scan cases require the existing test `ENCRYPTION_KEY` configuration.
+Initial-construction cases cover unchanged first-plan membership across earlier candidate dates,
+command undo, the last staged teacher selection at standalone publication with and without a
+publication base, exact future term-preparation outputs, and scoped before-command metadata.
+Migration preservation normalizes only the three added provenance columns on old change-set rows;
+all original command, receipt, snapshot and audit bytes remain exact.
 
 Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
 migration and concurrent writers against disposable PostgreSQL using:

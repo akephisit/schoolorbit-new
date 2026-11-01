@@ -26,6 +26,11 @@ the shared build/generator slots. No further user approval is needed for the app
 - Update snapshot projection to inherit immutable base teachers, apply explicit draft construction
   and commands, and derive stable carried-clone IDs. Reconcile all incompatible previous episodes,
   including future/previously ended rows. Materialize only selected missing effective assignments.
+- Freeze first-plan offering IDs and before-command teacher construction identities on the existing
+  change set. Share this basis across projection, command validation and scoped HTTP metadata;
+  capture the last mutable draft selection at standalone publication under the exclusive term lock.
+  Backfill only exact cached/command identities or bounded preparation receipt proof, preserving
+  every old field and command; refuse unprovable hidden teacher selections atomically.
 - Preserve history readers. Switch actual dated membership/readiness consumers and source guards
   to their owner projections. Include carried future offering activation and stop-before-start.
 - Capture and reconcile exact preservation fingerprints and a durable audit in the migration;

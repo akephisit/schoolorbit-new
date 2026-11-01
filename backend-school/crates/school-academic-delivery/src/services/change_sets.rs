@@ -192,30 +192,39 @@ pub async fn get_change_set_on_connection(
 /// This projection is never input to authoritative teacher membership or publication.
 pub async fn visible_base_teacher_assignments(
     pool: &PgPool,
-    base: Option<Uuid>,
+    revision: Uuid,
     access: &school_authorization::AcademicResourceListFilter,
 ) -> Result<Vec<crate::models::BaseTeacherAssignment>, AppError> {
-    let Some(base) = base else {
-        return Ok(Vec::new());
-    };
-    let version = versions::visible_version(pool, base, access).await?;
-    Ok(version
-        .snapshot
-        .offerings
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.change_sets.teacher_basis_scope",
+    )
+    .await?;
+    let rows:Vec<(Uuid,Uuid,Uuid,String,LearningTeacherRole)>=DbSession::new(&mut connection).query_as("academic_delivery.change_sets.teacher_basis_scope",r#"
+        WITH basis AS MATERIALIZED(SELECT academic_delivery_teacher_basis($1) graph),
+        assignments AS MATERIALIZED(SELECT o.id offering_id,o.owning_organization_unit_id,
+            (t->>'assignmentId')::uuid assignment_id,g.id learning_group_id,(t->>'teacherId')::uuid teacher_id,
+            t->>'displayName' display_name,t->>'role' role
+            FROM basis CROSS JOIN LATERAL jsonb_each(basis.graph) selected
+            JOIN learning_groups g ON g.id=selected.key::uuid JOIN learning_offerings o ON o.id=g.learning_offering_id
+            CROSS JOIN LATERAL jsonb_array_elements(selected.value) t),
+        visible AS(SELECT DISTINCT offering_id FROM assignments WHERE $2 OR owning_organization_unit_id=ANY($3) OR teacher_id=$4::uuid)
+        SELECT assignment_id,learning_group_id,teacher_id,display_name,role FROM assignments
+        JOIN visible USING(offering_id) ORDER BY learning_group_id,assignment_id
+    "#).bind(revision).bind(access.includes_school_owned).bind(access.allowed_organization_unit_ids()).bind(access.assigned_actor_id).fetch_all().await?;
+    Ok(rows
         .into_iter()
-        .flat_map(|offering| offering.groups.into_iter())
-        .flat_map(|group| {
-            group
-                .teachers
-                .into_iter()
-                .map(move |teacher| crate::models::BaseTeacherAssignment {
-                    assignment_id: teacher.assignment_id,
-                    learning_group_id: group.id,
-                    teacher_id: teacher.teacher_id,
-                    display_name: teacher.display_name,
-                    role: teacher.role,
-                })
-        })
+        .map(
+            |(assignment_id, learning_group_id, teacher_id, display_name, role)| {
+                crate::models::BaseTeacherAssignment {
+                    assignment_id,
+                    learning_group_id,
+                    teacher_id,
+                    display_name,
+                    role,
+                }
+            },
+        )
         .collect())
 }
 
@@ -933,11 +942,9 @@ async fn build_preview_in_transaction(
          WHERE item.change_set_id=$1 AND item.action_kind IN('adjust_group_teacher_role','stop_group_teacher')
            AND (episode.id IS NULL OR episode.learning_group_id<>item.learning_group_id OR episode.teacher_id<>item.teacher_id
                 OR episode.academic_term_id<>$3 OR $2::date IS NULL
-                OR EXISTS(SELECT 1 FROM academic_term_change_sets c WHERE c.id=$1 AND c.base_delivery_version_id IS NOT NULL
-                    AND NOT EXISTS(SELECT 1 FROM academic_delivery_versions b,jsonb_array_elements(b.snapshot->'offerings') o,
-                        jsonb_array_elements(o->'groups') g,jsonb_array_elements(g->'teachers') t
-                        WHERE b.id=c.base_delivery_version_id AND (t->>'assignmentId')::uuid=item.learning_group_teacher_id
-                          AND (g->>'id')::uuid=item.learning_group_id AND (t->>'teacherId')::uuid=item.teacher_id))) ORDER BY item.id")
+                OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(academic_delivery_teacher_basis($1)->item.learning_group_id::text) t
+                    WHERE (t->>'assignmentId')::uuid=item.learning_group_teacher_id
+                        AND (t->>'teacherId')::uuid=item.teacher_id)) ORDER BY item.id")
         .bind(id).bind(effective_from).bind(term_id).fetch_all().await?;
     for (offering, group, episode) in invalid_episodes {
         findings.push(change_finding(
@@ -1278,6 +1285,15 @@ pub async fn create_change_set_in_transaction(
     actor_user_id: Uuid,
     request: CreateAcademicTermChangeSetRequest,
 ) -> Result<Uuid, AppError> {
+    create_change_set_with_initial_offerings(transaction, actor_user_id, request, None).await
+}
+
+pub(super) async fn create_change_set_with_initial_offerings(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    request: CreateAcademicTermChangeSetRequest,
+    explicit: Option<(&[Uuid], NaiveDate)>,
+) -> Result<Uuid, AppError> {
     let reason = normalized_reason(&request.reason)?;
     let request_hash = stable_hash(&NormalizedCreateRequest {
         academic_term_id: request.academic_term_id,
@@ -1296,14 +1312,24 @@ pub async fn create_change_set_in_transaction(
     let reference_date = bangkok_today();
     let revision_id = Uuid::now_v7();
     let target_id = Uuid::now_v7();
+    let initial = super::construction::initial_source(
+        transaction,
+        term.id,
+        term.academic_year_id,
+        base_id,
+        explicit.map_or(reference_date, |(_, date)| date),
+        explicit.map(|(ids, _)| ids),
+    )
+    .await?;
     DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
         VALUES($1,$2,$3,$4,$5,'{"offerings":[]}'::jsonb,$6)"#)
         .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(reference_date).bind(actor_user_id)
         .execute().await?;
-    DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", "INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+    DbSession::new(&mut **transaction).query("academic_delivery.services.change_sets.create_change_set_in_transaction", "INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id,initial_offering_ids,initial_teacher_group_ids,initial_teacher_assignment_ids)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
         .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(reference_date).bind(&reason)
         .bind(request.idempotency_key.to_string()).bind(&request_hash).bind(actor_user_id).bind(base_id).bind(target_id)
+        .bind(initial.offering_ids).bind(initial.group_ids).bind(initial.assignment_ids)
         .execute().await?;
     super::audiences::inherit(transaction, revision_id, base_id).await?;
     versions::refresh_revision_snapshot(transaction, revision_id).await?;
@@ -1785,11 +1811,9 @@ pub async fn upsert_change_item(
             let overlapping_episode_id: Option<Uuid> = DbSession::new(&mut *transaction)
                 .scalar(
                     "academic_delivery.services.change_sets.upsert_change_item",
-                    r#"SELECT (t->>'assignmentId')::uuid FROM academic_term_change_sets c
-                    JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id,
-                    jsonb_array_elements(b.snapshot->'offerings') o,jsonb_array_elements(o->'groups') g,
-                    jsonb_array_elements(g->'teachers') t
-                    WHERE (g->>'id')::uuid=$1 AND (t->>'teacherId')::uuid=$2 AND c.id=$3
+                    r#"SELECT (t->>'assignmentId')::uuid
+                    FROM jsonb_array_elements(academic_delivery_teacher_basis($3)->($1::uuid)::text) t
+                    WHERE (t->>'teacherId')::uuid=$2
                     LIMIT 1"#,
                 )
                 .bind(learning_group_id)
@@ -2463,15 +2487,11 @@ async fn require_effective_teacher_episode(
     teacher: Uuid,
 ) -> Result<Uuid, AppError> {
     DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.require_effective_teacher_episode",r#"
-        SELECT episode.id FROM academic_term_change_sets c
-        LEFT JOIN academic_delivery_versions base ON base.id=c.base_delivery_version_id
-        JOIN academic_delivery_versions target ON target.id=c.target_delivery_version_id,
-        jsonb_array_elements(COALESCE(base.snapshot,target.snapshot)->'offerings') offering,
-        jsonb_array_elements(offering->'groups') source_group,
-        jsonb_array_elements(source_group->'teachers') assignment
+        SELECT episode.id FROM academic_term_change_sets c,
+        jsonb_array_elements(academic_delivery_teacher_basis(c.id)->($4::uuid)::text) assignment
         JOIN learning_group_teachers episode ON episode.id=(assignment->>'assignmentId')::uuid
         WHERE c.id=$1 AND c.academic_term_id=$2 AND c.academic_year_id=$3
-          AND (source_group->>'id')::uuid=$4 AND (assignment->>'teacherId')::uuid=$5
+          AND (assignment->>'teacherId')::uuid=$5
           AND episode.learning_group_id=$4 AND episode.teacher_id=$5 AND episode.academic_term_id=$2 AND episode.academic_year_id=$3
           AND (episode.id=$6 OR uuid_generate_v5(c.id,'carried-teacher-episode:'||episode.id::text)=$6)
         FOR UPDATE OF episode

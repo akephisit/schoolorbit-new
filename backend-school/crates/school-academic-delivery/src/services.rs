@@ -12,6 +12,7 @@ pub mod activities;
 pub mod audiences;
 pub mod bulk_group_setup;
 pub mod change_sets;
+mod construction;
 pub mod effective_teachers;
 pub mod groups;
 pub mod offerings;

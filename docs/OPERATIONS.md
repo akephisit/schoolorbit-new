@@ -1895,6 +1895,10 @@ Migration refusal codes identify bounded source, assignment, preservation or rec
 failures. Keep maintenance active, preserve the recovery point and original migration checksums,
 inspect an owned protected copy and repair with reviewed forward evidence. Do not fabricate the
 audit, grant TEMP/DDL to runtime, edit applied SQL or infer intended dates from a screenshot.
+Initial-source refusal codes require inspecting exact draft cache/command identities and any
+uniquely matched preparation receipt. An unproven hidden teacher selection needs an evidenced
+source correction before retrying; dates, group names or partial teacher commands cannot supply
+that proof. Existing published/cancelled sources and original command/receipt bytes remain intact.
 Existing November 1–5 dates remain unchanged. Before consumption, an authorized new revision can
 explicitly choose November 1 while inheriting the latest graph; its higher number supersedes the
 old future plans without deleting or retargeting their records. An unchanged graph or timetable

@@ -78,8 +78,8 @@ the same owning connection/transaction, with no frontend catalog/admin fetch or 
 The date picker does not narrow dates to a future latest source: a user can choose an earlier date
 and then explicitly adopt its applicable source. Cloning and resuming preserve the selected exact
 Delivery pin; only the explicit source-update operation changes it.
-Change-set HTTP detail also includes required `baseTeacherAssignments`, containing exact immutable
-base `assignmentId`, `learningGroupId`, `teacherId`, `displayName` and `role`. Hydrate this array
+Change-set HTTP detail also includes required `baseTeacherAssignments`, containing the exact
+before-command publication/construction source `assignmentId`, `learningGroupId`, `teacherId`, `displayName` and `role`. Hydrate this array
 once through the route's existing read/manage resource visibility projection on every detail
 response. Internal unscoped DTOs do not supply authoritative membership evidence.
 Extend `TimetableVersionDisplayState` with `superseded` for a published logical interval whose
@@ -107,6 +107,20 @@ effectivity at the candidate date before applying explicit commands, so a stoppe
 return through its unchanged raw end. Genuinely draft groups instead retain their explicit staged
 teacher selection; an earlier candidate materializes a carried identity when a tentative start is
 later, rather than discarding that selection.
+
+The first plan has no publication base. Persist its initial offering UUIDs once on the existing
+change-set owner as `initial_offering_ids`; ordinary construction captures its initial selection,
+while term preparation passes its exact applied output IDs, including future-start resources.
+Candidate/reference dates never rediscover this membership. Existing Add/Stop/adjust/exclusion
+commands remain separate; do not fabricate Add commands for initial members.
+For any draft, selected groups absent from the publication base can also have identity-only
+`initial_teacher_group_ids` and `initial_teacher_assignment_ids`. Group presence records an
+explicit empty selection. Capture published selections on construction/inclusion; draft choices
+stay live until the existing standalone offering publisher freezes the last staged selection under
+an exclusive term lock before publishing groups. Delivery publication already fixes its final
+graph before that transition. Existing marked selections remain immutable when commands are
+removed; projection and command validation share this source. These arrays are provenance, not
+another mutable graph or HTTP request field.
 Newly added resources retain their explicit draft construction and inclusion rules.
 
 Preserve original teacher episode dates, roles, UUIDs, provenance and all accepted snapshots.
@@ -201,6 +215,16 @@ valid source links even when legacy date order differs from that lineage, and re
 or unmappable evidence with bounded aggregate codes. Preserve every original effective date,
 timestamp, UUID, snapshot, journal, receipt, source link, attendance result and grade/result fact.
 No migration-created supersession evidence guesses which legacy dates were accidental.
+Legacy draft construction metadata comes only from cached exact identities and original command
+sources, excluding prospective Add/Adjust episode IDs. Preserve empty group markers. Recover
+omitted term-preparation outputs only from a unique exact receipt, revision/target context,
+actor, creation timestamp and creation-audit mapping already supported by the 148 proof. A hidden
+stopped group's complete teacher selection cannot be inferred from a group ID or partial teacher
+commands; missing proof refuses atomically with `PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE`.
+Contradictory initial-resource/receipt mapping refuses with `PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE`.
+No initial baseline is inferred for old published or cancelled records. Before/after comparison
+preserves all original change-set columns, command rows, preparation receipts and audit bytes,
+excluding only the three new provenance columns and publication numbers.
 
 Reconciliation compares preserved columns, relationships and exact source pins before and after,
 excluding only intentionally added sequence/projection metadata. Persist an atomic preservation

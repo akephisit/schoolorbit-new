@@ -8273,5 +8273,7 @@ mod room_scope_consumer_tests;
 
 #[path = "draft_teacher_construction_tests.rs"]
 mod draft_teacher_construction_tests;
+#[path = "initial_construction_tests.rs"]
+mod initial_construction_tests;
 #[path = "publication_revision_tests.rs"]
 mod publication_revision_tests;

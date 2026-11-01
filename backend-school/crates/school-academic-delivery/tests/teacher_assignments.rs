@@ -290,9 +290,26 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
         .bind(f.term).bind(f.offering).bind(other).fetch_one(&mut *connection).await.unwrap();
     let publication = version(&f, &mut connection, -35, true, &graph).await;
     connection.commit().await.unwrap();
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(f.year)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let revision = school_academic_delivery::services::change_sets::create_change_set(
+        &f.pool,
+        FIRST,
+        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: f.term,
+            reason: "Scoped immutable baseline".into(),
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(revision.base_delivery_version_id, Some(publication));
     let denied = visible_base_teacher_assignments(
         &f.pool,
-        Some(publication),
+        revision.id,
         &AcademicResourceListFilter::default(),
     )
     .await
@@ -300,7 +317,7 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
     assert!(denied.is_empty());
     let assigned = visible_base_teacher_assignments(
         &f.pool,
-        Some(publication),
+        revision.id,
         &AcademicResourceListFilter {
             assigned_actor_id: Some(FIRST),
             ..Default::default()
@@ -314,7 +331,7 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
         .all(|assignment| f.groups.contains(&assignment.learning_group_id)));
     let scoped = visible_base_teacher_assignments(
         &f.pool,
-        Some(publication),
+        revision.id,
         &AcademicResourceListFilter {
             organization_unit_ids: vec![owner],
             ..Default::default()
@@ -327,7 +344,7 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
     assert_eq!(scoped[0].teacher_id, SECOND);
     let union = visible_base_teacher_assignments(
         &f.pool,
-        Some(publication),
+        revision.id,
         &AcademicResourceListFilter {
             assigned_actor_id: Some(FIRST),
             organization_unit_ids: vec![owner],
@@ -362,6 +379,85 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
             original["role"]
         );
     }
+}
+
+#[tokio::test]
+async fn construction_teacher_metadata_keeps_the_same_resource_visibility_without_a_publication_base(
+) {
+    use school_academic_delivery::{
+        models::CreateAcademicTermChangeSetRequest,
+        services::change_sets::{create_change_set, visible_base_teacher_assignments},
+    };
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("construction_teacher_metadata_scope").await;
+    sqlx::query("UPDATE academic_years SET status='planning' WHERE id=$1")
+        .bind(f.year)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let revision = create_change_set(
+        &f.pool,
+        FIRST,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: f.term,
+            reason: "Initial construction source".into(),
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(revision.base_delivery_version_id.is_none());
+    let denied = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .unwrap();
+    assert!(denied.is_empty());
+    let old = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(FIRST),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        old.is_empty(),
+        "ended raw assignments do not grant construction visibility"
+    );
+    let selected = visible_base_teacher_assignments(
+        &f.pool,
+        revision.id,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(f.live_only),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(selected.len(), 2);
+    assert!(selected
+        .iter()
+        .all(|assignment| assignment.teacher_id == f.live_only
+            && f.groups.contains(&assignment.learning_group_id)));
+    let expected: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT initial_teacher_assignment_ids FROM academic_term_change_sets WHERE id=$1",
+    )
+    .bind(revision.id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|assignment| assignment.assignment_id)
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected.into_iter().collect()
+    );
 }
 
 #[tokio::test]

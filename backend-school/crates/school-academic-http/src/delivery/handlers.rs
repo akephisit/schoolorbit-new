@@ -144,12 +144,9 @@ async fn visible_change_set_metadata(
         action,
     )
     .await?;
-    change_set.base_teacher_assignments = change_sets::visible_base_teacher_assignments(
-        &context.tenant.pool,
-        change_set.base_delivery_version_id,
-        &access,
-    )
-    .await?;
+    change_set.base_teacher_assignments =
+        change_sets::visible_base_teacher_assignments(&context.tenant.pool, change_set.id, &access)
+            .await?;
     Ok(change_set)
 }
 
