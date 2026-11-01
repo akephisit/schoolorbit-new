@@ -247,6 +247,10 @@ async function mockRoomScope(
 		return result;
 	}
 	let changeSet: AcademicTermChangeSet = {
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
+		publicationDateRules: { today: '2027-05-01', minimumEffectiveFrom: null },
 		id: ids.changeSet,
 		academicYearId: ids.year,
 		academicTermId: ids.term,

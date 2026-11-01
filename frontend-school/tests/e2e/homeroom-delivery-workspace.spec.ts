@@ -139,6 +139,9 @@ function changeSetSummary() {
 		referenceDate: '2027-08-01',
 		reason: 'ปรับการเปิดสอนทดสอบ',
 		status: 'draft',
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
 		targetDeliveryVersionId: ids.version,
 		updatedAt: '2027-07-01T00:00:00Z'
 	};
@@ -147,6 +150,7 @@ function changeSetSummary() {
 function changeSetDetail() {
 	return {
 		...changeSetSummary(),
+		publicationDateRules: { today: '2027-08-01', minimumEffectiveFrom: '2027-08-01' },
 		baseDeliveryVersionId: ids.version,
 		rowVersion: 1,
 		createdBy: '90000000-0000-4000-8000-000000000001',
@@ -305,6 +309,11 @@ async function mockDelivery(
 						referenceDate: '2027-08-01',
 						effectiveUntil: null,
 						status: options.deliveryVersionStatus ?? 'draft',
+						publicationNo: options.deliveryVersionStatus === 'published' ? 1 : null,
+						isSuperseded: false,
+						publishedAt:
+							options.deliveryVersionStatus === 'published' ? '2027-07-01T00:00:00Z' : null,
+						publishedBy: null,
 						rowVersion: 1,
 						offeringCount: 1,
 						groupCount: 1,
@@ -682,7 +691,13 @@ test('retries only the failed homeroom region', async ({ page }) => {
 const secondOffering = '80000000-0000-4000-8000-000000000002';
 async function mockDraftLifecycle(
 	page: Page,
-	options: { failPreview?: boolean; failDelete?: boolean; readOnly?: boolean } = {}
+	options: {
+		failPreview?: boolean;
+		failDelete?: boolean;
+		readOnly?: boolean;
+		today?: string;
+		referenceDate?: string;
+	} = {}
 ) {
 	await mockDelivery(page, undefined, undefined, { deliveryVersionStatus: 'draft' });
 	let previewCalls = 0,
@@ -690,6 +705,11 @@ async function mockDraftLifecycle(
 	let publication: Record<string, unknown> | null = null;
 	const detail = {
 		...changeSetDetail(),
+		publicationDateRules: {
+			today: options.today ?? '2027-08-01',
+			minimumEffectiveFrom: options.today ?? '2027-08-01'
+		},
+		referenceDate: options.referenceDate ?? '2027-08-01',
 		baseDeliveryVersionId: null,
 		offeringLabels: [
 			{ id: ids.offering, code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน' },
@@ -760,6 +780,9 @@ async function mockDraftLifecycle(
 			return void (await fulfill(route, {
 				...detail,
 				status: 'published',
+				publicationNo: 2,
+				publishedAt: '2027-08-01T00:00:00Z',
+				publishedBy: '90000000-0000-4000-8000-000000000001',
 				effectiveFrom: publication?.effectiveFrom,
 				rowVersion: 2
 			}));
@@ -768,6 +791,9 @@ async function mockDraftLifecycle(
 		return void (await fulfill(route, {
 			...detail,
 			status: publication ? 'published' : 'draft',
+			publicationNo: publication ? 2 : null,
+			publishedAt: publication ? '2027-08-01T00:00:00Z' : null,
+			publishedBy: publication ? '90000000-0000-4000-8000-000000000001' : null,
 			effectiveFrom:
 				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
 			rowVersion: publication ? 2 : 1
@@ -801,6 +827,10 @@ async function mockDraftLifecycle(
 			sourceVersionId: null,
 			rowVersion: 2,
 			status: publication ? 'published' : 'draft',
+			publicationNo: publication ? 2 : null,
+			isSuperseded: false,
+			publishedAt: publication ? '2027-08-01T00:00:00Z' : null,
+			publishedBy: publication ? '90000000-0000-4000-8000-000000000001' : null,
 			effectiveFrom:
 				typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
 			effectiveUntil: null,
@@ -878,6 +908,10 @@ async function mockDraftLifecycle(
 							id: ids.version,
 							changeSetId: ids.changeSet,
 							status: publication ? 'published' : 'draft',
+							publicationNo: publication ? 2 : null,
+							isSuperseded: false,
+							publishedAt: publication ? '2027-08-01T00:00:00Z' : null,
+							publishedBy: publication ? '90000000-0000-4000-8000-000000000001' : null,
 							effectiveFrom:
 								typeof publication?.effectiveFrom === 'string' ? publication.effectiveFrom : null,
 							rowVersion: 2,
@@ -1024,6 +1058,10 @@ async function mockActivityActivation(
 	const summary = (id: string, status: string) => ({
 		id,
 		status,
+		publicationNo: status === 'published' ? 1 : null,
+		isSuperseded: false,
+		publishedAt: status === 'published' ? '2027-07-01T00:00:00Z' : null,
+		publishedBy: null,
 		academicTermId: ids.term,
 		academicYearId: ids.year,
 		sourceVersionId: status === 'draft' ? activitySource : null,
@@ -2260,4 +2298,25 @@ test('large delivery changes stay collapsed and bound offering, resource and dif
 	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(8);
 	await page.getByRole('button', { name: 'รายการถัดไป', exact: true }).click();
 	await expect(page.getByTestId('delivery-change-offering')).toHaveCount(4);
+});
+
+test('publication starts on server today when the source reference is a later plan', async ({
+	page
+}) => {
+	const result = await mockDraftLifecycle(page, {
+		today: '2026-11-01',
+		referenceDate: '2026-11-05'
+	});
+	await page.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(
+		dialog.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true })
+	).toContainText('1 พ.ย. 2569');
+	await expect(dialog).toContainText('เผยแพร่หลายรุ่นในวันเดียวกันได้');
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก' }).click();
+	await dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' }).click();
+	expect(result.published()?.effectiveFrom).toBe('2026-11-01');
+	await expect(page.getByRole('combobox', { name: 'เลือกรุ่นเปิดสอน', exact: true })).toContainText(
+		'รุ่นที่ 2'
+	);
 });

@@ -86,6 +86,10 @@ function version(published = false) {
 		academicTermId: ids.term,
 		academicYearId: ids.year,
 		status: published ? 'published' : 'draft',
+		publicationNo: published ? 1 : null,
+		isSuperseded: false,
+		publishedAt: published ? '2026-05-01T00:00:00Z' : null,
+		publishedBy: null,
 		sourceVersionId: null,
 		changeSetId: null,
 		effectiveFrom: '2026-05-01',
@@ -1538,6 +1542,10 @@ async function mockWeeklyPeriods(
 		createdBy: ids.year
 	};
 	let changeSet: AcademicTermChangeSet = {
+		publicationNo: null,
+		publishedAt: null,
+		publishedBy: null,
+		publicationDateRules: { today: '2026-05-01', minimumEffectiveFrom: null },
 		id: periodChangeSetId,
 		academicYearId: ids.year,
 		academicTermId: ids.term,

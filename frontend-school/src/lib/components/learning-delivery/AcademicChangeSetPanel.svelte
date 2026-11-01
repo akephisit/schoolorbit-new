@@ -227,7 +227,9 @@
 			</p>
 		</div>
 		<p class="mt-1 text-xs text-muted-foreground">
-			เริ่มใช้ {formatDate(changeSet.effectiveFrom)}{#if changeSet.publishedAt}
+			{#if changeSet.effectiveFrom}เริ่มใช้ {formatDate(
+					changeSet.effectiveFrom
+				)}{:else}เลือกวันเริ่มใช้ตอนเผยแพร่{/if}{#if changeSet.publishedAt}
 				· เผยแพร่ {publicationTime(changeSet.publishedAt)}{/if}
 		</p>
 	</div>

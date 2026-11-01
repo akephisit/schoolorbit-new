@@ -18,7 +18,7 @@ export function publicationTime(value: string): string {
 export function publicationEffectiveLabel(
 	version: Pick<DeliveryVersionSummary, 'effectiveFrom' | 'effectiveUntil' | 'isSuperseded'>
 ): string {
-	if (version.isSuperseded) return 'ถูกแทนที่ก่อนเริ่มใช้';
+	if (version.isSuperseded) return 'แผนนี้ถูกแทนที่แล้ว';
 	if (!version.effectiveFrom) return 'เลือกวันเริ่มใช้ตอนเผยแพร่';
 	return `เริ่มใช้ ${publicationDate(version.effectiveFrom)}${version.effectiveUntil ? ` ถึง ${publicationDate(version.effectiveUntil)}` : ''}`;
 }
@@ -58,7 +58,7 @@ export function timetablePublicationLabel(version: TimetableVersion): string {
 export function publicationSourceLabel(
 	source: TimetableBlockWorkspace['deliveryPublication']
 ): string {
-	return `รุ่นที่ ${source.publicationNo} · เริ่มใช้ ${publicationDate(source.effectiveFrom)} · เผยแพร่ ${publicationTime(source.publishedAt)}`;
+	return `รุ่นที่ ${source.publicationNo} · เริ่มใช้ ${publicationDate(source.effectiveFrom)} · ${source.publishedAt ? `เผยแพร่ ${publicationTime(source.publishedAt)}` : 'ไม่พบเวลาเผยแพร่ที่บันทึกไว้'}`;
 }
 
 export function publicationDateRulesLabel(

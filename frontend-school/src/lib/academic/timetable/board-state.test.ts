@@ -77,7 +77,18 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 		block('block-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], ['homeroom-2'], 'room-2'),
 		block('block-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'], ['homeroom-2'])
 	];
+	const deliveryPublication: TimetableBlockWorkspace['deliveryPublication'] = {
+		id: 'delivery-1',
+		publicationNo: 1,
+		effectiveFrom: '2026-05-01',
+		effectiveUntil: null,
+		publishedAt: '2026-05-01T00:00:00Z',
+		isSuperseded: false
+	};
 	return {
+		deliveryPublication,
+		latestDeliveryPublication: deliveryPublication,
+		publicationDateRules: { today: '2026-11-01', minimumEffectiveFrom: '2026-11-01' },
 		latestDeliveryVersionId: 'delivery-1',
 		sourceIssues: [],
 		totalDraftBlockCount: null,

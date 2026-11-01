@@ -88,8 +88,8 @@ export function summarizeAcademicTermChangeSet(
 	return {
 		id: detail.id,
 		publicationNo: detail.publicationNo,
-		publishedAt: detail.publishedAt,
-		publishedBy: detail.publishedBy,
+		publishedAt: detail.publishedAt ?? null,
+		publishedBy: detail.publishedBy ?? null,
 		academicTermId: detail.academicTermId,
 		academicYearId: detail.academicYearId,
 		effectiveFrom: detail.effectiveFrom,
