@@ -47,7 +47,7 @@ fn block(id: Uuid, version: &TimetableVersion, period: Uuid, teacher: Uuid) -> T
 
 fn fixture() -> (Arc<DraftRoom>, TimetableCollaborationRuntime, Uuid) {
     let version = TimetableVersion {
-        publication_no:None,
+        publication_no: None,
         id: Uuid::new_v4(),
         academic_term_id: Uuid::new_v4(),
         academic_year_id: Uuid::new_v4(),
@@ -83,12 +83,21 @@ fn fixture() -> (Arc<DraftRoom>, TimetableCollaborationRuntime, Uuid) {
         block(Uuid::new_v4(), &version, period_id, teacher),
         block(Uuid::new_v4(), &version, period_id, second_teacher),
     ];
-    let publication=school_academic_delivery::models::versions::DeliveryPublicationContext {
-        id:version.delivery_version_id,publication_no:1,effective_from:Utc::now().date_naive(),effective_until:None,published_at:Some(Utc::now()),is_superseded:false,
+    let publication = school_academic_delivery::models::versions::DeliveryPublicationContext {
+        id: version.delivery_version_id,
+        publication_no: 1,
+        effective_from: Utc::now().date_naive(),
+        effective_until: None,
+        published_at: Some(Utc::now()),
+        is_superseded: false,
     };
     let workspace = TimetableBlockWorkspace {
-        publication_date_rules:school_academic_delivery::models::versions::PublicationDateRules {today:Utc::now().date_naive(),minimum_effective_from:None},
-        delivery_publication:publication.clone(),latest_delivery_publication:publication,
+        publication_date_rules: school_academic_delivery::models::versions::PublicationDateRules {
+            today: Utc::now().date_naive(),
+            minimum_effective_from: None,
+        },
+        delivery_publication: publication.clone(),
+        latest_delivery_publication: publication,
         total_draft_block_count: Some(2),
         source_issues: Vec::new(),
         latest_delivery_version_id: version.delivery_version_id,
