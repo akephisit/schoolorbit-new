@@ -39,6 +39,7 @@
 		onSavingChange: (saving: boolean) => void;
 	} = $props();
 
+	const controlId = $props.id();
 	const sessionCallbacks = untrack(() => ({ onSaved, onConflict, onSavingChange, onCancel }));
 
 	let action = $state<TeacherAction>('add_group_teacher');
@@ -230,13 +231,15 @@
 
 		<div class="grid gap-4 lg:grid-cols-2">
 			<div class="space-y-2">
-				<Label>สิ่งที่ต้องการเปลี่ยน</Label>
+				<Label for={`${controlId}-action`}>สิ่งที่ต้องการเปลี่ยน</Label>
 				<Select.Root
 					type="single"
 					value={action}
 					onValueChange={(value) => resetSelection(value as TeacherAction)}
 				>
-					<Select.Trigger class="w-full">{actionLabel(action)}</Select.Trigger>
+					<Select.Trigger id={`${controlId}-action`} class="w-full"
+						>{actionLabel(action)}</Select.Trigger
+					>
 					<Select.Content>
 						<Select.Item value="add_group_teacher">เพิ่มครูในกลุ่มเรียน</Select.Item>
 						<Select.Item value="adjust_group_teacher_role">ปรับบทบาทความรับผิดชอบ</Select.Item>
@@ -280,13 +283,15 @@
 				{/if}
 				{#if action !== 'stop_group_teacher'}
 					<div class="space-y-2">
-						<Label>บทบาทหลังเริ่มใช้</Label>
+						<Label for={`${controlId}-role`}>บทบาทหลังเริ่มใช้</Label>
 						<Select.Root
 							type="single"
 							value={teacherRole}
 							onValueChange={(value) => (teacherRole = value as LearningTeacherRole)}
 						>
-							<Select.Trigger class="w-full">{roleLabel(teacherRole)}</Select.Trigger>
+							<Select.Trigger id={`${controlId}-role`} class="w-full"
+								>{roleLabel(teacherRole)}</Select.Trigger
+							>
 							<Select.Content>
 								<Select.Item value="primary">ครูหลัก</Select.Item>
 								<Select.Item value="secondary">ครูร่วม</Select.Item>

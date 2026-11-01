@@ -18,16 +18,16 @@ use uuid::Uuid;
 use super::{
     models::{
         AcademicChangeFindingCode, AcademicChangeFindingSeverity, AcademicChangeImpactCounts,
-        AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
-        ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
-        ApplyCurriculumOfferingsRequest, ApplyRosterRequest, ApplyTeacherHandoffRequest,
-        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
-        CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
-        CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
-        DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
-        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
-        OfferingTargetKind, PreparationAction, PreparationGroupingState,
-        PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
+        AcademicTermChangeSet, AcademicTermChangeSetStatus, ActivityAttendanceRequirement,
+        ActivityPassCriteria, ActivityRegistrationType, ActivitySchedulingMode,
+        AddDatedRosterMembershipRequest, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
+        ApplyTeacherHandoffRequest, CreateAcademicTermChangeSetRequest,
+        CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningGroupRequest,
+        CreateLearningOfferingRequest, CurriculumDeliveryAlignmentState, CurriculumOfferingPreview,
+        CurriculumPreparationChoice, DeleteAcademicTermChangeItemRequest, LearningOfferingKind,
+        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
+        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
+        PreparationGroupingState, PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
         PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
         ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
@@ -8271,5 +8271,7 @@ mod room_scope_tests;
 #[path = "room_scope_consumer_tests.rs"]
 mod room_scope_consumer_tests;
 
+#[path = "draft_teacher_construction_tests.rs"]
+mod draft_teacher_construction_tests;
 #[path = "publication_revision_tests.rs"]
 mod publication_revision_tests;

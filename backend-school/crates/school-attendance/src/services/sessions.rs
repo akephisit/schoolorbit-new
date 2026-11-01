@@ -224,15 +224,31 @@ pub async fn insert_seed(
     insert_seed_row(tx, seed).await
 }
 
-pub(super) fn seed_source_fingerprint(seed:&AttendanceSeed,generation:Uuid)->Result<String,AppError> {
-    let mut source=seed.session.clone();source.roster=seed.students.clone();
-    let source=token_with_generation(source,generation)?;
-    let bytes=serde_json::to_vec(&(source.learning_group_id,source.offering_id,source.homeroom_id,
-        source.special_round_id,source.count_override,&source.title,source.roster_token)).map_err(|_|invalid("สร้างข้อมูลยืนยันแหล่งรายชื่อไม่ได้"))?;
+pub(super) fn seed_source_fingerprint(
+    seed: &AttendanceSeed,
+    generation: Uuid,
+) -> Result<String, AppError> {
+    let mut source = seed.session.clone();
+    source.roster = seed.students.clone();
+    let source = token_with_generation(source, generation)?;
+    let bytes = serde_json::to_vec(&(
+        source.learning_group_id,
+        source.offering_id,
+        source.homeroom_id,
+        source.special_round_id,
+        source.count_override,
+        &source.title,
+        source.roster_token,
+    ))
+    .map_err(|_| invalid("สร้างข้อมูลยืนยันแหล่งรายชื่อไม่ได้"))?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
-pub(super) fn same_seed_source(left:&AttendanceSeed,right:&AttendanceSeed,generation:Uuid)->Result<bool,AppError> {
-    Ok(seed_source_fingerprint(left,generation)?==seed_source_fingerprint(right,generation)?)
+pub(super) fn same_seed_source(
+    left: &AttendanceSeed,
+    right: &AttendanceSeed,
+    generation: Uuid,
+) -> Result<bool, AppError> {
+    Ok(seed_source_fingerprint(left, generation)? == seed_source_fingerprint(right, generation)?)
 }
 
 pub(super) async fn insert_finalization_seed(

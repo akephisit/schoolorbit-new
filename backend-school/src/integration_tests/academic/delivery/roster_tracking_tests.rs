@@ -15,6 +15,10 @@ struct Fixture {
 }
 
 async fn fixture(name: &str) -> Fixture {
+    fixture_with_curriculum_catalog(name, false).await
+}
+
+async fn fixture_with_curriculum_catalog(name: &str, curriculum_catalog: bool) -> Fixture {
     let pool = prepare_delivery_runtime_fixture(name).await;
     let context = planning_runtime_context(&pool).await;
     let today: NaiveDate = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
@@ -41,15 +45,43 @@ async fn fixture(name: &str) -> Fixture {
     let CreateLearningOfferingRequest::Course(mut request) = course_request(&context) else {
         unreachable!()
     };
+    if curriculum_catalog {
+        let preview = offerings::preview_from_curriculum(
+            &pool,
+            PreviewCurriculumOfferingsRequest {
+                starts_on: day,
+                delivery_version_id: None,
+                academic_term_id: context.term_id,
+                study_program_ids: vec![context.study_program_id],
+            },
+        )
+        .await
+        .unwrap();
+        request.subject_version_id = preview
+            .proposals
+            .iter()
+            .find(|proposal| proposal.resource_kind == LearningOfferingKind::Course)
+            .expect("recurring-gap reactivation must use an actual curriculum catalog pin")
+            .catalog_version_id;
+    }
     request.targets.push(OfferingTargetInput {
         target_kind: OfferingTargetKind::Homeroom,
         homeroom_id: Some(other),
         grade_level_id: context.grade_level_id,
         study_program_id: context.study_program_id,
     });
-    let offering = offerings::create(
+    let revision = create_runtime_change_set_at(
         &pool,
         context.teacher_id,
+        context.term_id,
+        day,
+        "tracking-initial-plan",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
         CreateLearningOfferingRequest::Course(request),
     )
     .await
@@ -143,6 +175,7 @@ async fn fixture(name: &str) -> Fixture {
         .await
         .unwrap();
     }
+    publish_plan(&pool, context.teacher_id, revision.id).await;
     Fixture {
         pool,
         actor: context.teacher_id,
@@ -151,6 +184,37 @@ async fn fixture(name: &str) -> Fixture {
         day,
         groups: ids,
     }
+}
+async fn publish_plan(pool: &PgPool, actor: Uuid, id: Uuid) -> AcademicTermChangeSet {
+    let preview = publication_preview(pool, id).await.unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        pool,
+        actor,
+        id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            effective_from: preview.effective_from,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: preview
+                .findings
+                .iter()
+                .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
+                .map(|finding| finding.code)
+                .collect(),
+            idempotency_key: Uuid::now_v7(),
+        },
+    )
+    .await
+    .unwrap()
 }
 async fn enable(f: &Fixture, id: Uuid) {
     let group = groups::get(&f.pool, id).await.unwrap();
@@ -216,45 +280,12 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
     let f = fixture("roster_tracking_history").await;
     let old = members(&f, f.groups[0]).await[0].clone();
     let shared = members(&f, f.groups[2]).await[0].clone();
-    // Existing grade history remains valid without a current published allocation.
-    // Seed its canonical assessment facts explicitly rather than relying on direct
-    // offering publication to initialize a plan without allocation coverage.
-    let historical_plan = Uuid::new_v4();
-    let mut transaction = f.pool.begin().await.unwrap();
-    sqlx::query(
-        r#"INSERT INTO course_assessment_plans (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               subject_version_id, assessment_coordinator_id
-           )
-           SELECT $1, detail.learning_offering_id, detail.academic_term_id,
-                  detail.academic_year_id, detail.subject_version_id, $3
-           FROM learning_groups learning_group
-           JOIN course_offering_details detail
-             ON detail.learning_offering_id = learning_group.learning_offering_id
-            AND detail.academic_term_id = learning_group.academic_term_id
-            AND detail.academic_year_id = learning_group.academic_year_id
-           WHERE learning_group.id = $2"#,
-    )
-    .bind(historical_plan)
-    .bind(f.groups[0])
-    .bind(f.actor)
-    .execute(&mut *transaction)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO course_assessment_phases (
-               id, plan_id, phase_code, max_score, exam_arrangement,
-               exam_duration_minutes, row_version, created_by, updated_by
-           )
-           SELECT uuidv7(), $1, phase_code, 0, 'none', NULL, 1, $2, $2
-           FROM unnest(ARRAY['before_midterm','midterm','after_midterm','final']) phase_code"#,
-    )
-    .bind(historical_plan)
-    .bind(f.actor)
-    .execute(&mut *transaction)
-    .await
-    .unwrap();
-    transaction.commit().await.unwrap();
+    // A's real Delivery publication initializes this canonical plan. Reuse its
+    // identity when constructing retained score history rather than inserting a
+    // second plan for an already initialized offering.
+    let historical_plan: Uuid = sqlx::query_scalar(
+        "SELECT plan.id FROM course_assessment_plans plan JOIN learning_groups g ON g.learning_offering_id=plan.learning_offering_id WHERE g.id=$1",
+    ).bind(f.groups[0]).fetch_one(&f.pool).await.unwrap();
     let (plan, phase) =
         super::room_scope_tests::canonical_score_phase(&f.pool, f.groups[0], f.actor).await;
     assert_eq!(plan, historical_plan);
@@ -584,22 +615,46 @@ async fn room_tracking_membership_end_is_bounded_by_both_offering_and_placement(
         let f = fixture(name).await;
         enable(&f, f.groups[0]).await;
         let group = groups::get(&f.pool, f.groups[0]).await.unwrap();
-        let change = change_sets::create_change_set(
+        let offering_end = f.day + Duration::days(offering_days);
+        let change = create_runtime_change_set_at(
             &f.pool,
             f.actor,
-            CreateAcademicTermChangeSetRequest {
-                academic_term_id: group.academic_term_id,
-                reason: "actual offering boundary fixture".into(),
-                idempotency_key: Uuid::new_v4(),
+            group.academic_term_id,
+            offering_end.succ_opt().unwrap(),
+            "tracking-stop-plan",
+        )
+        .await;
+        let change = change_sets::upsert_change_item(
+            &f.pool,
+            f.actor,
+            change.id,
+            UpsertAcademicTermChangeItemRequest::StopOffering {
+                change_set_row_version: change.row_version,
+                item_row_version: None,
+                learning_offering_id: group.learning_offering_id,
             },
         )
         .await
         .unwrap();
-        let offering_end = f.day + Duration::days(offering_days);
+        let raw_offering: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(o) FROM learning_offerings o WHERE id=$1")
+                .bind(group.learning_offering_id)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        publish_plan(&f.pool, f.actor, change.id).await;
+        let after_publication: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(o) FROM learning_offerings o WHERE id=$1")
+                .bind(group.learning_offering_id)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            raw_offering, after_publication,
+            "publication preserves the offering registry provenance"
+        );
         let removal_effective_date = f.day + Duration::days(placement_days);
         let expected_placement_end = removal_effective_date - Duration::days(1);
-        sqlx::query("UPDATE learning_offerings o SET ends_on=$2,stop_reason='actual offering boundary fixture',stopped_at=now(),stopped_by=$3,stop_change_set_id=$4 FROM learning_groups g WHERE g.learning_offering_id=o.id AND g.id=$1")
-            .bind(f.groups[0]).bind(offering_end).bind(f.actor).bind(change.id).execute(&f.pool).await.unwrap();
         let before = members(&f, f.groups[0]).await;
         let original = &before[0];
         let placement_before: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(p) FROM homeroom_placements p WHERE student_academic_year_id=$1 AND homeroom_id=$2 AND status='current'")
@@ -684,4 +739,333 @@ async fn room_tracking_membership_end_is_bounded_by_both_offering_and_placement(
             .unwrap()
         );
     }
+}
+
+#[tokio::test]
+async fn room_tracking_departures_choose_the_last_actual_slice_across_a_recurring_offering_gap() {
+    use school_academic_delivery::services::{attendance_roster, publication, versions};
+
+    let f = fixture_with_curriculum_catalog("roster_tracking_recurring_gap", true).await;
+    let group = groups::get(&f.pool, f.groups[0]).await.unwrap();
+    let offering = group.learning_offering_id;
+    let stop_on = f.day + Duration::days(10);
+    let resume_on = f.day + Duration::days(20);
+    let final_stop_on = f.day + Duration::days(40);
+    let second_user = Uuid::now_v7();
+    let second_year = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'fixture-not-login','Recurring gap','Second learner','student','active')")
+        .bind(second_user).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT $1,$2,academic_year_id,grade_level_id,study_program_id,'active' FROM homerooms WHERE id=$3")
+        .bind(second_year).bind(second_user).bind(f.room).execute(&f.pool).await.unwrap();
+    let room = homeroom_roster::get_roster(&f.pool, f.room).await.unwrap();
+    homeroom_roster::mutate_roster(
+        &f.pool,
+        &RoomRosterTracking,
+        f.actor,
+        f.room,
+        MutateHomeroomRosterRequest {
+            revision: room.revision,
+            action: HomeroomRosterAction::Add,
+            selections: vec![HomeroomRosterSelection {
+                student_academic_year_id: second_year,
+                student_year_row_version: 1,
+                placement_id: None,
+                placement_row_version: None,
+            }],
+            effective_date: f.day,
+            target_homeroom_id: None,
+            reason: "Synthetic recurring-gap learner".into(),
+        },
+    )
+    .await
+    .unwrap();
+    enable(&f, group.id).await;
+    let original = members(&f, group.id).await;
+    assert_eq!(
+        original.len(),
+        2,
+        "exercise two distinct placement boundaries"
+    );
+    let first = original
+        .iter()
+        .find(|member| member.student_academic_year_id != second_year)
+        .unwrap()
+        .clone();
+    let second = original
+        .iter()
+        .find(|member| member.student_academic_year_id == second_year)
+        .unwrap()
+        .clone();
+    let student_years = vec![
+        first.student_academic_year_id,
+        second.student_academic_year_id,
+    ];
+    let placements: Vec<(Uuid, Uuid, serde_json::Value)> = sqlx::query_as(
+        "SELECT p.id,p.student_academic_year_id,to_jsonb(p) FROM homeroom_placements p WHERE p.student_academic_year_id=ANY($1) AND p.homeroom_id=$2 AND p.status='current' ORDER BY p.id",
+    ).bind(&student_years).bind(f.room).fetch_all(&f.pool).await.unwrap();
+    assert_eq!(placements.len(), 2);
+    let placement_ids = placements.iter().map(|row| row.0).collect::<Vec<_>>();
+    let earlier_history: serde_json::Value = sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY id),'[]'::jsonb) FROM homeroom_placements p WHERE NOT(id=ANY($1))",
+    ).bind(&placement_ids).fetch_one(&f.pool).await.unwrap();
+    assert!(!earlier_history.as_array().unwrap().is_empty());
+    let manual_history = serde_json::to_value(members(&f, f.groups[3]).await).unwrap();
+    let raw_offering: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(o) FROM learning_offerings o WHERE id=$1")
+            .bind(offering)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    let a = versions::latest_published_for_term(&f.pool, group.academic_term_id)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let b = create_runtime_change_set_at(
+        &f.pool,
+        f.actor,
+        group.academic_term_id,
+        stop_on,
+        "tracking-gap-stop-B",
+    )
+    .await;
+    let b = change_sets::upsert_change_item(
+        &f.pool,
+        f.actor,
+        b.id,
+        UpsertAcademicTermChangeItemRequest::StopOffering {
+            change_set_row_version: b.row_version,
+            item_row_version: None,
+            learning_offering_id: offering,
+        },
+    )
+    .await
+    .unwrap();
+    let b = publish_plan(&f.pool, f.actor, b.id).await;
+    let c = create_runtime_change_set_at(
+        &f.pool,
+        f.actor,
+        group.academic_term_id,
+        resume_on,
+        "tracking-gap-resume-C",
+    )
+    .await;
+    assert_eq!(
+        c.base_delivery_version_id,
+        Some(b.target_delivery_version_id)
+    );
+    assert_eq!(c.reference_date, resume_on);
+    let program: Uuid = sqlx::query_scalar("SELECT study_program_id FROM homerooms WHERE id=$1")
+        .bind(f.room)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let preview = offerings::preview_from_curriculum(
+        &f.pool,
+        PreviewCurriculumOfferingsRequest {
+            starts_on: resume_on,
+            delivery_version_id: Some(c.target_delivery_version_id),
+            academic_term_id: group.academic_term_id,
+            study_program_ids: vec![program],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        preview
+            .proposals
+            .iter()
+            .any(|proposal| proposal.existing_offering_id == Some(offering)),
+        "explicit reactivation must select the preserved registry identity"
+    );
+    let choices = preview
+        .proposals
+        .iter()
+        .map(|proposal| CurriculumPreparationChoice {
+            proposal_id: proposal.proposal_id.clone(),
+            action: if proposal.existing_offering_id == Some(offering) {
+                PreparationAction::DeferGroups
+            } else {
+                PreparationAction::Skip
+            },
+            groups: vec![],
+        })
+        .collect();
+    let applied = offerings::apply_from_curriculum(&f.pool, f.actor, ApplyCurriculumOfferingsRequest {
+        starts_on: resume_on,
+        academic_term_id: group.academic_term_id,
+        study_program_ids: vec![program],
+        delivery_version_id: Some(c.target_delivery_version_id),
+        source_hash: preview.source_hash,
+        idempotency_key: Uuid::now_v7(),
+        choices,
+    }).await.expect("an explicit reviewed reactivation must not require the offering already be available in its gap");
+    assert_eq!(applied.offering_ids, vec![offering]);
+    let mut c = change_sets::get_change_set(&f.pool, c.id).await.unwrap();
+    // B cut off every old assignment. Construct C's exact teachers through public
+    // commands for all four groups; no live episode is silently recaptured.
+    for id in &f.groups {
+        c = change_sets::upsert_change_item(
+            &f.pool,
+            f.actor,
+            c.id,
+            UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
+                change_set_row_version: c.row_version,
+                item_row_version: None,
+                learning_group_id: *id,
+                teacher_id: f.actor,
+                teacher_role: LearningTeacherRole::Primary,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let c = publish_plan(&f.pool, f.actor, c.id).await;
+    let new_teachers: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_teachers WHERE learning_group_id=ANY($1) AND started_by_change_set_id=$2 AND teacher_id=$3 AND role='primary'")
+        .bind(&f.groups).bind(c.id).bind(f.actor).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(new_teachers, 4);
+    let d = create_runtime_change_set_at(
+        &f.pool,
+        f.actor,
+        group.academic_term_id,
+        final_stop_on,
+        "tracking-gap-stop-D",
+    )
+    .await;
+    let d = change_sets::upsert_change_item(
+        &f.pool,
+        f.actor,
+        d.id,
+        UpsertAcademicTermChangeItemRequest::StopOffering {
+            change_set_row_version: d.row_version,
+            item_row_version: None,
+            learning_offering_id: offering,
+        },
+    )
+    .await
+    .unwrap();
+    let d = publish_plan(&f.pool, f.actor, d.id).await;
+    assert!(b.publication_no < c.publication_no && c.publication_no < d.publication_no);
+    let spans: Vec<(Uuid, NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
+        "SELECT delivery_version_id,starts_on,ends_on FROM academic_delivery_effective_offering_spans WHERE learning_offering_id=$1 ORDER BY starts_on,delivery_version_id",
+    ).bind(offering).fetch_all(&f.pool).await.unwrap();
+    assert_eq!(
+        spans,
+        vec![
+            (a, f.day, Some(stop_on - Duration::days(1))),
+            (
+                c.target_delivery_version_id,
+                resume_on,
+                Some(final_stop_on - Duration::days(1))
+            )
+        ]
+    );
+    let mut connection = f.pool.acquire().await.unwrap();
+    for day in [stop_on, resume_on - Duration::days(1)] {
+        let selected =
+            publication::applicable_on_connection(&mut connection, group.academic_term_id, day)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(selected.id, b.target_delivery_version_id);
+        let available: bool =
+            sqlx::query_scalar("SELECT academic_delivery_offering_available($1,$2)")
+                .bind(offering)
+                .bind(day)
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+        assert!(!available);
+        let membership_count: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_students m JOIN academic_delivery_effective_offering_spans span ON span.learning_offering_id=$1 WHERE m.learning_group_id=$2 AND m.student_academic_year_id=ANY($3) AND m.membership_status<>'removed' AND m.joined_at<=$4 AND (m.left_at IS NULL OR m.left_at>=$4) AND span.starts_on<=$4 AND (span.ends_on IS NULL OR span.ends_on>=$4)")
+            .bind(offering).bind(group.id).bind(&student_years).bind(day).fetch_one(&mut *connection).await.unwrap();
+        assert_eq!(
+            membership_count, 0,
+            "canonical spans must preserve the recurring gap"
+        );
+    }
+    let selected =
+        publication::applicable_on_connection(&mut connection, group.academic_term_id, resume_on)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(selected.id, c.target_delivery_version_id);
+    let resumed = attendance_roster::pinned_membership_spans(
+        &mut connection,
+        selected.id,
+        &[group.id],
+        resume_on,
+        resume_on,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resumed.len(),
+        2,
+        "the actual C source admits both retained learners after reactivation"
+    );
+    drop(connection);
+
+    for (original, removal, expected_left) in [
+        (
+            &first,
+            stop_on + Duration::days(5),
+            stop_on - Duration::days(1),
+        ),
+        (
+            &second,
+            final_stop_on + Duration::days(5),
+            final_stop_on - Duration::days(1),
+        ),
+    ] {
+        move_student(&f, f.room, None, original.student_academic_year_id, removal)
+            .await
+            .unwrap();
+        let actual = members(&f, group.id)
+            .await
+            .into_iter()
+            .find(|member| member.id == original.id)
+            .unwrap();
+        let mut expected = serde_json::to_value(original).unwrap();
+        expected["membershipStatus"] = serde_json::json!("ended");
+        expected["leftAt"] = serde_json::json!(expected_left);
+        expected["rowVersion"] = serde_json::json!(original.row_version + 1);
+        assert_eq!(
+            serde_json::to_value(&actual).unwrap(),
+            expected,
+            "departure must keep the accepted ID, joined date and every unrelated roster fact"
+        );
+        let (placement_id, _, placement_before) = placements
+            .iter()
+            .find(|row| row.1 == original.student_academic_year_id)
+            .unwrap();
+        let placement_after: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(p) FROM homeroom_placements p WHERE id=$1")
+                .bind(placement_id)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        let mut expected_placement = placement_before.clone();
+        expected_placement["status"] = serde_json::json!("ended");
+        expected_placement["end_date"] = serde_json::json!(removal - Duration::days(1));
+        expected_placement["row_version"] =
+            serde_json::json!(placement_before["row_version"].as_i64().unwrap() + 1);
+        expected_placement["updated_at"] = placement_after["updated_at"].clone();
+        assert_eq!(placement_after, expected_placement);
+    }
+    assert_eq!(members(&f, group.id).await.len(), 2);
+    let preserved: serde_json::Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY id),'[]'::jsonb) FROM homeroom_placements p WHERE NOT(id=ANY($1))")
+        .bind(&placement_ids).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(preserved, earlier_history);
+    assert_eq!(
+        serde_json::to_value(members(&f, f.groups[3]).await).unwrap(),
+        manual_history
+    );
+    let offering_after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(o) FROM learning_offerings o WHERE id=$1")
+            .bind(offering)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(offering_after, raw_offering);
 }

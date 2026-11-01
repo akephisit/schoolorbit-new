@@ -42,7 +42,7 @@ pub(crate) struct GuardedFinalization {
 pub(crate) struct ValidatedFinalizationSeeds {
     seeds: Vec<AttendanceSeed>,
     accepted: HashSet<Uuid>,
-    witnesses: HashMap<Uuid,String>,
+    witnesses: HashMap<Uuid, String>,
     generation: Uuid,
 }
 impl ValidatedFinalizationSeeds {
@@ -69,7 +69,15 @@ impl ValidatedFinalizationSeeds {
             .await?
             .into_iter()
             .collect();
-        let witnesses=seeds.iter().map(|seed| Ok((seed.session.id,super::sessions::seed_source_fingerprint(seed,generation)?))).collect::<Result<HashMap<_,_>,AppError>>()?;
+        let witnesses = seeds
+            .iter()
+            .map(|seed| {
+                Ok((
+                    seed.session.id,
+                    super::sessions::seed_source_fingerprint(seed, generation)?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, AppError>>()?;
         Ok(Self {
             witnesses,
             seeds,
@@ -99,10 +107,14 @@ impl ValidatedFinalizationSeeds {
         Ok(current)
     }
     pub(super) fn accepts(&self, seed: &AttendanceSeed) -> Result<bool, AppError> {
-        if seed.session.kind!=AttendanceKind::Lesson || self.accepted.contains(&seed.session.id) { return Ok(true); }
+        if seed.session.kind != AttendanceKind::Lesson || self.accepted.contains(&seed.session.id) {
+            return Ok(true);
+        }
         match self.witnesses.get(&seed.session.id) {
-            Some(expected)=>Ok(expected==&super::sessions::seed_source_fingerprint(seed,self.generation)?),
-            None=>Ok(false),
+            Some(expected) => {
+                Ok(expected == &super::sessions::seed_source_fingerprint(seed, self.generation)?)
+            }
+            None => Ok(false),
         }
     }
 }

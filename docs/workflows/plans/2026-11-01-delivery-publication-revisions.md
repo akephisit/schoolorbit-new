@@ -36,6 +36,8 @@ the shared build/generator slots. No further user approval is needed for the app
 - Delivery `services/change_sets.rs`: default references to Bangkok today; latest-number base;
   separate stale-base/date/consumption findings; locked receipt replay; sequence allocation and
   effectivity reconciliation inside the existing atomic publication/Assessment/audit transaction.
+  An unchanged graph can deliberately activate before its immutable base start; same/later-date
+  unchanged graphs remain no-ops. Apply the equivalent rule to unchanged timetable placements.
 - Delivery `services/versions.rs`: typed latest and dated publication APIs on caller connection/
   transaction, higher-number interval end, list/detail chronology and shared allocation projection.
   Update `services/audiences.rs`, workspace/default selections and dated operational consumers.
@@ -61,6 +63,10 @@ preview. The dated winner owns offering availability through unioned nonempty pu
 the immutable transition ledger never folds global minimum cutoffs into current truth. Test the
 A-present/B-future-stop/C-earlier-retain counterexample and recurring gaps. Preserve selected pins
 when cloning/resuming; source upgrade remains explicit.
+Include required `baseTeacherAssignments` on change-set HTTP detail, with exact immutable
+assignment/group/teacher IDs, name and role scoped through existing route resource visibility.
+Published-group overview readiness/counts use the existing bulk latest allocation provider;
+draft construction and archival registry facts remain explicit, preserving group coverage.
 
 Add the truthful `superseded` timetable display state for an empty logical interval, classify it
 before upcoming/current and prevent it from becoming the default. Keep explicit history reads.

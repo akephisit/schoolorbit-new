@@ -193,12 +193,25 @@ BEGIN
     RETURN NEW;
 END $$;
 
-CREATE FUNCTION academic_delivery_inherit_teachers(graph JSONB,revision UUID) RETURNS JSONB LANGUAGE SQL STABLE AS $$
+CREATE FUNCTION academic_delivery_inherit_teachers(graph JSONB,revision UUID,on_date DATE) RETURNS JSONB LANGUAGE SQL STABLE AS $$
     SELECT jsonb_build_object('offerings',COALESCE(jsonb_agg(jsonb_set(o,'{groups}',COALESCE((
         SELECT jsonb_agg(jsonb_set(g,'{teachers}',COALESCE((SELECT bg->'teachers'
             FROM academic_term_change_sets c JOIN academic_delivery_versions b ON b.id=c.base_delivery_version_id,
                 jsonb_array_elements(b.snapshot->'offerings') bo,jsonb_array_elements(bo->'groups') bg
-            WHERE c.id=revision AND (bg->>'id')::uuid=(g->>'id')::uuid),g->'teachers')) ORDER BY g->>'id')
+            WHERE c.id=revision AND (bg->>'id')::uuid=(g->>'id')::uuid),
+            CASE WHEN EXISTS(SELECT 1 FROM learning_groups staged WHERE staged.id=(g->>'id')::uuid AND staged.status='draft')
+            THEN (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                    'assignmentId',assignment.id,'teacherId',assignment.teacher_id,
+                    'displayName',concat_ws(' ',teacher.title,teacher.first_name,teacher.last_name),'role',assignment.role)
+                    ORDER BY assignment.teacher_id,assignment.id),'[]'::jsonb)
+                FROM learning_group_teachers assignment JOIN users teacher ON teacher.id=assignment.teacher_id
+                WHERE assignment.learning_group_id=(g->>'id')::uuid)
+            ELSE (SELECT COALESCE(jsonb_agg(t ORDER BY t->>'assignmentId'),'[]'::jsonb)
+                FROM jsonb_array_elements(g->'teachers') t
+                JOIN academic_delivery_effective_teacher_episodes episode ON episode.id=(t->>'assignmentId')::uuid
+                    AND episode.learning_group_id=(g->>'id')::uuid
+                WHERE episode.starts_on<=on_date AND (episode.effective_ends_on IS NULL OR episode.effective_ends_on>=on_date)) END
+            )) ORDER BY g->>'id')
         FROM jsonb_array_elements(o->'groups') g),'[]'::jsonb)) ORDER BY o->>'id'),'[]'::jsonb))
     FROM jsonb_array_elements(graph->'offerings') o;
 $$;
@@ -296,7 +309,7 @@ RETURNS JSONB LANGUAGE SQL STABLE AS $$
     SELECT academic_delivery_project_teacher_ids(academic_project_delivery_teacher_changes(academic_delivery_inherit_teachers(academic_capture_delivery_snapshot(
         context.academic_term_id,context.evaluation_date,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',weekly_period_target) ORDER BY id)
-            FROM selected_targets),'[]'::JSONB)),revision),revision),revision,context.evaluation_date) AS graph FROM context
+            FROM selected_targets),'[]'::JSONB)),revision,context.evaluation_date),revision),revision,context.evaluation_date) AS graph FROM context
     )
     , excluded AS (SELECT CASE WHEN cardinality(context.excluded_offering_ids)=0
             AND cardinality(context.excluded_group_ids)=0 THEN projected.graph

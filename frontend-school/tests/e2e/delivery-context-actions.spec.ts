@@ -1027,7 +1027,7 @@ for (const startsOn of ['2027-05-01', '2027-05-05', '2027-04-01'])
 			await page.goto(fixture.detail);
 			await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
 			const dialog = page.getByRole('dialog', { name: 'เปลี่ยนครูผู้สอนในกลุ่มนี้', exact: true });
-			await dialog.getByRole('combobox', { name: 'เพิ่มครูในกลุ่มเรียน', exact: true }).click();
+			await dialog.getByRole('combobox', { name: 'สิ่งที่ต้องการเปลี่ยน', exact: true }).click();
 			await page
 				.getByRole('option', {
 					name:
@@ -1038,7 +1038,7 @@ for (const startsOn of ['2027-05-01', '2027-05-05', '2027-04-01'])
 			await dialog.getByRole('combobox', { name: 'เลือกครูจากรุ่นต้นทาง', exact: true }).click();
 			await page.getByRole('option', { name: /ครูในรุ่นต้นทาง/ }).click();
 			if (action === 'adjust_group_teacher_role') {
-				await dialog.getByRole('combobox', { name: 'ครูหลัก', exact: true }).click();
+				await dialog.getByRole('combobox', { name: 'บทบาทหลังเริ่มใช้', exact: true }).click();
 				await page.getByRole('option', { name: 'ครูร่วม', exact: true }).click();
 			}
 			await dialog.getByRole('button', { name: 'บันทึกการเปลี่ยนครู', exact: true }).click();
@@ -1121,7 +1121,7 @@ test('an empty base never offers raw live assignments for Stop or Adjust', async
 	await page.goto(fixture.detail);
 	await page.getByRole('button', { name: 'เปลี่ยนครูผู้สอน', exact: true }).click();
 	const dialog = page.getByRole('dialog', { name: 'เปลี่ยนครูผู้สอนในกลุ่มนี้', exact: true });
-	await dialog.getByRole('combobox', { name: 'เพิ่มครูในกลุ่มเรียน', exact: true }).click();
+	await dialog.getByRole('combobox', { name: 'สิ่งที่ต้องการเปลี่ยน', exact: true }).click();
 	await page.getByRole('option', { name: 'หยุดความรับผิดชอบของครู', exact: true }).click();
 	await dialog.getByRole('combobox', { name: 'เลือกครูจากรุ่นต้นทาง', exact: true }).click();
 	await expect(page.getByRole('option', { name: /ครูทะเบียนที่ไม่อยู่ในรุ่น/ })).toHaveCount(0);

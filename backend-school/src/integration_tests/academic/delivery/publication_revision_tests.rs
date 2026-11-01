@@ -63,6 +63,9 @@ async fn accepted_facts(pool: &PgPool) -> BTreeMap<&'static str, Value> {
     state.insert("academic_delivery_versions", sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(to_jsonb(v) ORDER BY id),'[]'::jsonb) FROM academic_delivery_versions v WHERE status='published'",
     ).fetch_one(pool).await.unwrap());
+    state.insert("academic_term_change_sets", sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(receipt) ORDER BY id),'[]'::jsonb) FROM academic_term_change_sets receipt WHERE status='published'",
+    ).fetch_one(pool).await.unwrap());
     state
 }
 

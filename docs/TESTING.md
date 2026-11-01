@@ -488,6 +488,24 @@ The release filter requires version 151 and the exact protected eight zero-misma
 existing 87/88 and 149 gates still run. These checks exercise local disposable reports and do not
 prove production migration or application acceptance.
 
+The focused publication owner and preservation cases run through the same disposable runner:
+
+```bash
+./scripts/test_backend_school.sh --integration publication_revision_migration -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests::publication_revision_tests -- --test-threads=1
+./scripts/test_backend_school.sh draft_teacher_construction_tests -- --test-threads=1
+./scripts/test_backend_school.sh roster_tracking_tests -- --test-threads=1
+./scripts/test_backend_school.sh publication_source_tests -- --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-delivery --test teacher_assignments -- --test-threads=1
+```
+
+Attendance queue cases use real timetable publications and canonical lesson seeds, observe the
+actual term-lock wait, and exercise first ensure/save/cancel/scan plus after-lock finalization.
+Already accepted historical lesson fixtures retain their frozen facts even when their old source
+cannot be recreated; those report/history fixtures insert explicit accepted rows rather than
+passing fabricated lesson keys through new-source validation. Their prior downstream assertions
+remain in place. Face-scan cases require the existing test `ENCRYPTION_KEY` configuration.
+
 Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
 migration and concurrent writers against disposable PostgreSQL using:
 

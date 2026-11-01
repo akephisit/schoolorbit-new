@@ -266,12 +266,12 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
     let f = fixture("delivery_base_teacher_scope").await;
     let other = Uuid::now_v7();
     let group = Uuid::now_v7();
-    let mut connection = f.pool.acquire().await.unwrap();
+    let mut connection = f.pool.begin().await.unwrap();
     let owner:Uuid=sqlx::query_scalar("SELECT id FROM organization_units WHERE id<>(SELECT owning_organization_unit_id FROM learning_offerings WHERE id=$1) ORDER BY id LIMIT 1").bind(f.offering).fetch_one(&mut *connection).await.unwrap();
     sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) VALUES($1,$2,$3,'course','SCOPE-OTHER','Other scoped offering','draft',current_date-40,$4)")
         .bind(other).bind(f.term).bind(f.year).bind(owner).execute(&mut *connection).await.unwrap();
-    sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score) SELECT $1,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE learning_offering_id=$2")
-        .bind(other).bind(f.offering).execute(&mut *connection).await.unwrap();
+    sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score) SELECT $1,$3,$4,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE subject_version_id<>(SELECT subject_version_id FROM course_offering_details WHERE learning_offering_id=$2) ORDER BY learning_offering_id LIMIT 1")
+        .bind(other).bind(f.offering).bind(f.term).bind(f.year).execute(&mut *connection).await.unwrap();
     sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,'SCOPE-OTHER','Other group','draft','draft')")
         .bind(group).bind(other).bind(f.term).bind(f.year).execute(&mut *connection).await.unwrap();
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on) VALUES(uuidv7(),$1,$2,$3,$4,'primary',current_date-40)")
@@ -289,7 +289,7 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
     let graph:serde_json::Value=sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,current_date-35,jsonb_build_array(jsonb_build_object('id',$2::uuid,'weekly_period_target',1),jsonb_build_object('id',$3::uuid,'weekly_period_target',1)))")
         .bind(f.term).bind(f.offering).bind(other).fetch_one(&mut *connection).await.unwrap();
     let publication = version(&f, &mut connection, -35, true, &graph).await;
-    drop(connection);
+    connection.commit().await.unwrap();
     let denied = visible_base_teacher_assignments(
         &f.pool,
         Some(publication),
@@ -362,4 +362,64 @@ async fn base_teacher_metadata_uses_exact_snapshot_ids_and_the_union_of_visible_
             original["role"]
         );
     }
+}
+
+#[tokio::test]
+async fn overview_counts_latest_planning_membership_instead_of_raw_episode_history() {
+    use school_academic_delivery::services::workspaces::delivery_overview;
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("delivery_overview_episode_history").await;
+    let raw:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t WHERE learning_group_id=ANY($1)")
+        .bind(&f.groups).fetch_one(&f.pool).await.unwrap();
+    let mut connection = f.pool.acquire().await.unwrap();
+    let old = graph(&f, &mut connection, -35).await;
+    version(&f, &mut connection, -35, true, &old).await;
+    let future = graph(&f, &mut connection, 40).await;
+    version(&f, &mut connection, 40, true, &future).await;
+    drop(connection);
+    let filter = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let overview = delivery_overview(&f.pool, f.term, &filter).await.unwrap();
+    let item = overview
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == f.offering)
+        .unwrap();
+    assert_eq!(item.group_count, 2);
+    assert_eq!(
+        item.teacher_assignment_count, 4,
+        "only the selected future primary and secondary in each group count"
+    );
+    assert_eq!(item.groups_without_primary_teacher, 0);
+    assert!(raw.as_array().unwrap().len() > item.teacher_assignment_count as usize);
+    let mut connection = f.pool.acquire().await.unwrap();
+    version(
+        &f,
+        &mut connection,
+        50,
+        true,
+        &serde_json::json!({"offerings":[]}),
+    )
+    .await;
+    drop(connection);
+    let overview = delivery_overview(&f.pool, f.term, &filter).await.unwrap();
+    let item = overview
+        .offerings
+        .iter()
+        .find(|item| item.offering.id == f.offering)
+        .unwrap();
+    assert_eq!(
+        item.group_count, 2,
+        "registry coverage remains the denominator"
+    );
+    assert_eq!(item.teacher_assignment_count, 0);
+    assert_eq!(
+        item.groups_without_primary_teacher, 2,
+        "omitted groups have no historical primary fallback"
+    );
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t WHERE learning_group_id=ANY($1)")
+        .bind(&f.groups).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(raw, after);
 }

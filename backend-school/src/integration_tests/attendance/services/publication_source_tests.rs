@@ -32,7 +32,8 @@ async fn moved_draft(
     source: Uuid,
     group: Uuid,
     date: NaiveDate,
-) -> TimetableVersion {
+    previous_period: Option<Uuid>,
+) -> (TimetableVersion, Uuid) {
     let original = tables::get_version(pool, source, date).await.unwrap();
     let draft = tables::clone_draft(
         pool,
@@ -50,11 +51,11 @@ async fn moved_draft(
         pool, TEACHER, TERM, draft.id,
     )
     .await;
-    let id:Uuid=sqlx::query_scalar("SELECT b.id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=$1 AND b.is_active AND g.learning_group_id=$2 ORDER BY b.id LIMIT 1")
-        .bind(draft.id).bind(group).fetch_one(pool).await.unwrap();
-    let block = blocks::get_block(pool, id).await.unwrap();
     let day = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
         [date.weekday().num_days_from_monday() as usize];
+    let id:Uuid=sqlx::query_scalar("SELECT b.id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=$1 AND b.is_active AND g.learning_group_id=$2 AND ($3::uuid IS NULL OR (b.bell_schedule_period_id=$3 AND b.day_of_week=$4)) ORDER BY b.id LIMIT 1")
+        .bind(draft.id).bind(group).bind(previous_period).bind(day).fetch_one(pool).await.unwrap();
+    let block = blocks::get_block(pool, id).await.unwrap();
     let period:Uuid=sqlx::query_scalar("SELECT p.id FROM bell_schedule_periods p WHERE p.bell_schedule_id=$1 AND p.is_active AND p.id<>$2 AND (p.applicable_days IS NULL OR $3=ANY(string_to_array(p.applicable_days,','))) AND NOT EXISTS(SELECT 1 FROM academic_timetable_blocks b WHERE b.timetable_version_id=$4 AND b.is_active AND b.id<>$5 AND b.day_of_week=$3 AND b.bell_schedule_period_id=p.id) ORDER BY p.order_index,p.id LIMIT 1")
         .bind(draft.bell_schedule_id).bind(block.bell_schedule_period_id).bind(day).bind(draft.id).bind(id).fetch_one(pool).await.unwrap();
     blocks::update_block(
@@ -78,7 +79,10 @@ async fn moved_draft(
     )
     .await
     .unwrap();
-    tables::get_version(pool, draft.id, date).await.unwrap()
+    (
+        tables::get_version(pool, draft.id, date).await.unwrap(),
+        period,
+    )
 }
 
 async fn publication_request(
@@ -124,7 +128,7 @@ async fn prepare(name: &str) -> Prepared {
     let (source,group):(Uuid,Uuid)=sqlx::query_as("SELECT v.id,g.learning_group_id FROM academic_timetable_versions v JOIN academic_timetable_blocks b ON b.timetable_version_id=v.id AND b.is_active JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active JOIN learning_offerings o ON o.id=b.learning_offering_id AND o.kind='course' WHERE v.id=academic_timetable_applicable_publication($1,$2) AND EXISTS(SELECT 1 FROM learning_group_students s WHERE s.learning_group_id=g.learning_group_id AND s.student_id=$3 AND s.membership_status='active') ORDER BY b.id,g.id LIMIT 1")
         .bind(TERM).bind(date).bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     let mutation = TimetableMutationContext::for_tests(&f.pool, TEACHER);
-    let first = moved_draft(&f.pool, &mutation, source, group, date).await;
+    let (first, first_period) = moved_draft(&f.pool, &mutation, source, group, date, None).await;
     let request = publication_request(&f.pool, &first, date).await;
     let baseline = lifecycle::publish(
         &crate::adapters::publication_history::PUBLICATION_HISTORY,
@@ -141,7 +145,7 @@ async fn prepare(name: &str) -> Prepared {
         .into_iter()
         .find(|seed| {
             seed.session.kind == AttendanceKind::Lesson
-                && seed.session.learning_group_id == Some(group)
+                && seed.session.source_key == format!("{group}:{first_period}")
                 && seed
                     .students
                     .iter()
@@ -151,10 +155,16 @@ async fn prepare(name: &str) -> Prepared {
     let mut session = source.session.clone();
     session.roster = source.students.clone();
     let session = sessions::with_token(&f.pool, session).await.unwrap();
-    let draft = moved_draft(&f.pool, &mutation, baseline.id, group, date).await;
+    let (draft, period) = moved_draft(
+        &f.pool,
+        &mutation,
+        baseline.id,
+        group,
+        date,
+        Some(first_period),
+    )
+    .await;
     let request = publication_request(&f.pool, &draft, date).await;
-    let period:Uuid=sqlx::query_scalar("SELECT b.bell_schedule_period_id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=$1 AND b.is_active AND g.learning_group_id=$2 AND b.day_of_week=$3 ORDER BY b.id LIMIT 1")
-        .bind(draft.id).bind(group).bind(["MON","TUE","WED","THU","FRI","SAT","SUN"][date.weekday().num_days_from_monday() as usize]).fetch_one(&f.pool).await.unwrap();
     Prepared {
         pool: f.pool,
         actor: ActorContext {
@@ -181,12 +191,16 @@ async fn wait_for_blocked(
 ) -> i32 {
     tokio::time::timeout(std::time::Duration::from_secs(15),async {
         loop {
+            // PostgreSQL caches activity snapshots within this guard transaction.
+            // Refresh before observing workers admitted after an earlier poll.
+            sqlx::query("SELECT pg_stat_clear_snapshot()")
+                .execute(&mut *connection).await.unwrap();
             let pid:Option<i32>=sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE $2 ORDER BY pid LIMIT 1")
                 .bind(blocker).bind(format!("%{fragment}%")).fetch_optional(&mut *connection).await.unwrap();
             if let Some(pid)=pid {return pid;}
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-    }).await.expect("expected a real queued database operation")
+    }).await.unwrap_or_else(|_|panic!("expected {fragment} to queue behind backend {blocker}"))
 }
 
 async fn block_publication(
@@ -213,7 +227,7 @@ async fn block_publication(
     let mutation = prepared.mutation.clone();
     let id = prepared.draft.id;
     let request = prepared.request.clone();
-    let publication = tokio::spawn(async move {
+    let mut publication = tokio::spawn(async move {
         lifecycle::publish(
             &crate::adapters::publication_history::PUBLICATION_HISTORY,
             &pool,
@@ -223,7 +237,10 @@ async fn block_publication(
         )
         .await
     });
-    let publisher = wait_for_blocked(&mut guard, pid, "academic_audit_events").await;
+    let publisher = tokio::select! {
+        outcome=&mut publication => panic!("publication finished before the fixture audit gate: {outcome:?}"),
+        publisher=wait_for_blocked(&mut guard,pid,"academic_audit_events") => publisher,
+    };
     (guard, publisher, publication)
 }
 
@@ -278,7 +295,7 @@ async fn attendance_queued_first_lesson_materialization_refuses_the_plan_replace
         let actor = prepared.actor.clone();
         let source = prepared.source.clone();
         let session = prepared.session.clone();
-        let pending = tokio::spawn(async move {
+        let mut pending = tokio::spawn(async move {
             match mode {
                 "ensure" => sessions::ensure(&pool, &actor, source).await.map(|_| ()),
                 "save" => save(
@@ -324,7 +341,10 @@ async fn attendance_queued_first_lesson_materialization_refuses_the_plan_replace
                 _ => unreachable!(),
             }
         });
-        wait_for_blocked(&mut guard, publisher, "academic_terms").await;
+        tokio::select! {
+            outcome=&mut pending => panic!("{mode} finished before the publication term lock: {outcome:?}"),
+            _=wait_for_blocked(&mut guard,publisher,"academic_terms") => {},
+        }
         guard.commit().await.unwrap();
         publication.await.unwrap().unwrap();
         assert!(
@@ -345,6 +365,19 @@ async fn attendance_queued_first_lesson_materialization_refuses_the_plan_replace
 async fn attendance_finalization_resolves_one_fresh_batch_after_a_waiting_plan_publication() {
     let prepared = prepare("attendance_publication_finalization_queue").await;
     let date = prepared.session.date;
+    let configuration = settings::get(&prepared.pool, TERM).await.unwrap();
+    settings::save(
+        &prepared.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            auto_finalize_from: Some(date),
+            row_version: configuration.row_version,
+            configuration: configuration.configuration,
+        },
+    )
+    .await
+    .unwrap();
     sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1,coverage_start=$1")
         .bind(date)
         .execute(&prepared.pool)
@@ -358,10 +391,13 @@ async fn attendance_finalization_resolves_one_fresh_batch_after_a_waiting_plan_p
         .and_hms_opt(5, 0, 0)
         .unwrap()
         .and_utc();
-    let finalization = tokio::spawn(async move {
+    let mut finalization = tokio::spawn(async move {
         school_attendance::application::finalization::catch_up(&pool, now, 1).await
     });
-    wait_for_blocked(&mut guard, publisher, "academic_terms").await;
+    tokio::select! {
+        outcome=&mut finalization => panic!("finalization finished before the publication term lock: {outcome:?}"),
+        _=wait_for_blocked(&mut guard,publisher,"academic_terms") => {},
+    }
     guard.commit().await.unwrap();
     publication.await.unwrap().unwrap();
     assert_eq!(finalization.await.unwrap().unwrap(), 1);

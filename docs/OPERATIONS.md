@@ -1897,7 +1897,9 @@ inspect an owned protected copy and repair with reviewed forward evidence. Do no
 audit, grant TEMP/DDL to runtime, edit applied SQL or infer intended dates from a screenshot.
 Existing November 1–5 dates remain unchanged. Before consumption, an authorized new revision can
 explicitly choose November 1 while inheriting the latest graph; its higher number supersedes the
-old future plans without deleting or retargeting their records. Persisted lesson sessions or a
+old future plans without deleting or retargeting their records. An unchanged graph or timetable
+can use this strictly earlier activation without artificial content edits; the same or later date
+with unchanged content remains a no-op. Persisted lesson sessions or a
 current-generation finalized day at/after the selected date refuse that correction. Historical
 pinned timetable and grade/result facts remain accessible.
 

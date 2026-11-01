@@ -568,13 +568,15 @@ pub(super) async fn include_offering(
         refresh_revision_snapshot(tx, revision_id).await?;
         return Ok(());
     }
+    // An explicit plan inclusion may reactivate a registry offering after a gap.
+    // Its previous plan's absence is not an eligibility condition for this write.
     let target: i32 = DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.include_offering", "SELECT COALESCE(subject.periods_per_week,activity.periods_per_week)
         FROM learning_offerings offering LEFT JOIN course_offering_details course ON course.learning_offering_id=offering.id
         LEFT JOIN subject_versions subject ON subject.id=course.subject_version_id
         LEFT JOIN activity_offering_details detail ON detail.learning_offering_id=offering.id
         LEFT JOIN activity_versions activity ON activity.id=detail.activity_version_id
         WHERE offering.id=$1 AND offering.academic_term_id=$2 AND offering.academic_year_id=$3 AND offering.status IN('draft','published')
-        AND (offering.status='draft' OR academic_delivery_offering_available(offering.id,$4))")
+        AND (offering.status='draft' OR COALESCE(subject.effective_from,activity.effective_from)<=$4)")
         .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional().await?
         .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่ตรงกับรุ่นหรือวันที่ที่เลือก".into()))?;
     if !valid_weekly_period_target(target) {

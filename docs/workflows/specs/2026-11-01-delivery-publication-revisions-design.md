@@ -101,6 +101,12 @@ requirements and realtime invalidation. No new permissions, runtime grants or ru
 A new revision starts from the latest immutable base graph. Inherited teachers come from that
 graph, with explicit draft resource edits and teacher commands applied afterward. Candidate-date
 preview must not recapture an earlier live teacher merely because the selected date moved backward.
+Groups present in the immutable base retain that exact selected teacher graph. For a newly selected
+published group absent from the base, construction filters registry episodes through canonical
+effectivity at the candidate date before applying explicit commands, so a stopped episode cannot
+return through its unchanged raw end. Genuinely draft groups instead retain their explicit staged
+teacher selection; an earlier candidate materializes a carried identity when a tentative start is
+later, rather than discarding that selection.
 Newly added resources retain their explicit draft construction and inclusion rules.
 
 Preserve original teacher episode dates, roles, UUIDs, provenance and all accepted snapshots.
@@ -113,7 +119,7 @@ does not represent this meaning.
 For a publication at date D, reconcile the complete selected graph against prior episode
 effectivity. Cut off incompatible assignments at D, including future episodes and episodes already
 ended by another publication when their remaining slice would otherwise conflict. Carry an
-existing exact assignment only when its projected interval covers D. Otherwise materialize a
+existing exact assignment only when its projected interval covers D and has no finite end. Otherwise materialize a
 revision-owned assignment with the retained teacher and role, and reference that exact ID from
 the candidate/published snapshot. This includes carried future-start and already-ended assignments.
 Same-day stop/role replacement therefore retains the old identity and gives it an empty later
@@ -146,7 +152,14 @@ The append-only activation/cutoff ledger records accepted transitions; global mi
 and cutoff dates are not availability truth. For example, X in A, a future stop in B on November 5,
 and newer C retaining X on November 1 must keep X available after November 5. Recurring gaps remain
 distinct spans. Roster validators/tracking use dated membership rather than singular raw bounds;
-preserve accepted joined dates and exact historical pins.
+preserve accepted joined dates and exact historical pins. A roster departure selects the last
+actual available slice before its placement boundary, including when that boundary falls within
+a gap. No valid slice marks a removed membership without inventing an inverted stored interval.
+Only genuinely draft resource preparation uses raw draft bounds.
+An explicit inclusion into a new draft can reactivate a published registry offering after a gap.
+It validates exact context, allowed registry status and pinned catalog eligibility; prior dated
+availability is not a prerequisite for this deliberate plan mutation. Closed/cancelled resources
+remain ineligible, and absence remains authoritative for operational reads and roster validators.
 Earlier activation still validates the pinned catalog version's start against the newly chosen
 date; preserving a source UUID does not authorize using that catalog before its own eligibility.
 

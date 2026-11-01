@@ -1,7 +1,5 @@
 #[path = "../src/bin/cleanup_cancelled_academic_versions/cleanup.rs"]
 mod cleanup_service;
-#[path = "../src/adapters/publication_history.rs"]
-mod publication_history;
 use cutover_test_support::{apply_migrations_through, seed_release_two_predecessor};
 use school_academic_delivery::{
     models::{versions::DeleteDeliveryVersionRequest, CreateAcademicTermChangeSetRequest},

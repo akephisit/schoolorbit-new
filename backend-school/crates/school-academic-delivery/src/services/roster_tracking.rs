@@ -179,7 +179,8 @@ pub(super) async fn configuration_conflicts(
                         JOIN users u ON u.id=sy.student_id AND u.status='active'
                         WHERE p.student_academic_year_id=m.student_academic_year_id
                             AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
-                            AND p.end_date IS NULL AND EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR span.ends_on>=p.start_date)))) AS extra_members
+                            AND p.end_date IS NULL AND ((o.status='draft' AND (o.ends_on IS NULL OR o.ends_on>=p.start_date))
+                                OR EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR span.ends_on>=p.start_date))))) AS extra_members
             FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
             JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
             WHERE g.id=ANY($1) AND o.id=$2
@@ -336,18 +337,35 @@ pub async fn sync_group(
         JOIN learning_group_homerooms c ON c.learning_group_id=g.id JOIN homeroom_placements p ON p.homeroom_id=c.homeroom_id
         JOIN student_academic_years sy ON sy.id=p.student_academic_year_id AND sy.academic_year_id=g.academic_year_id
         JOIN users u ON u.id=sy.student_id AND u.status='active'
-        JOIN LATERAL(SELECT span.starts_on FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id
-            AND (span.ends_on IS NULL OR span.ends_on>=GREATEST(p.start_date,config.effective_from)) ORDER BY span.starts_on LIMIT 1) availability ON true
+        JOIN LATERAL(SELECT candidate.starts_on FROM (
+            SELECT span.starts_on FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND o.status<>'draft'
+                AND (span.ends_on IS NULL OR span.ends_on>=GREATEST(p.start_date,config.effective_from))
+            UNION ALL SELECT o.starts_on WHERE o.status='draft'
+                AND (o.ends_on IS NULL OR o.ends_on>=GREATEST(p.start_date,config.effective_from))
+        ) candidate ORDER BY candidate.starts_on LIMIT 1) availability ON true
         WHERE g.id=$1 AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND sy.status IN ('active','planned')
             AND ($2::uuid[] IS NULL OR sy.id=ANY($2))
         GROUP BY sy.id,sy.student_id,p.homeroom_id"#).bind(id).bind(ids).fetch_all().await?;
     let desired: Vec<_> = rows.iter().map(|row| row.0).collect();
     let old: Vec<(Uuid,Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT m.id,m.student_academic_year_id,m.joined_at,
-        LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date))
+        COALESCE(availability.left_on,m.joined_at-1)
         FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id
         JOIN student_academic_years sy ON sy.id=m.student_academic_year_id
         JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
-        JOIN academic_years y ON y.id=g.academic_year_id WHERE m.learning_group_id=$1 AND m.membership_status='active'
+        JOIN academic_years y ON y.id=g.academic_year_id
+        CROSS JOIN LATERAL(SELECT COALESCE((SELECT p.end_date FROM homeroom_placements p
+            JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id
+            WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended'
+                AND p.end_date>=m.joined_at AND sy.status IN ('active','planned') ORDER BY p.end_date DESC,p.id LIMIT 1),
+            (now() AT TIME ZONE 'Asia/Bangkok')::date) AS ends_on) placement
+        LEFT JOIN LATERAL(SELECT LEAST(COALESCE(span.ends_on,placement.ends_on),placement.ends_on) AS left_on
+            FROM (
+                SELECT starts_on,ends_on FROM academic_delivery_effective_offering_spans
+                    WHERE learning_offering_id=o.id AND o.status<>'draft'
+                UNION ALL SELECT o.starts_on,o.ends_on WHERE o.status='draft'
+            ) span WHERE span.starts_on<=placement.ends_on AND (span.ends_on IS NULL OR span.ends_on>=m.joined_at)
+            ORDER BY left_on DESC,span.starts_on DESC LIMIT 1) availability ON true
+        WHERE m.learning_group_id=$1 AND m.membership_status='active'
             AND ($2::uuid[] IS NULL OR m.student_academic_year_id=ANY($2)) AND NOT(m.student_academic_year_id=ANY($3)) FOR UPDATE OF m"#).bind(id).bind(ids).bind(&desired).fetch_all().await?;
     let old_ids: Vec<_> = old.iter().map(|row| row.0).collect();
     let left_dates: Vec<_> = old.iter().map(|row| row.3).collect();
