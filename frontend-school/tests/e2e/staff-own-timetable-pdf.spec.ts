@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import {
 	expectRoundedTimetablePdf,
-	expectMonochromeTimetablePdf
+	expectTimetablePdfPresentation,
+	expectTimetablePdfTextColors
 } from './timetable-pdf-assertions';
 
 import {
@@ -212,7 +213,15 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const download = await downloadPromise;
 	await download.saveAs('/tmp/staff-own-round.pdf');
 	await expectRoundedTimetablePdf(download, [1]);
-	await expectMonochromeTimetablePdf(download);
+	await expectTimetablePdfPresentation(download);
+	await expectTimetablePdfTextColors(download, {
+		ค21101: '#1e3a8a',
+		คณิตศาสตร์พื้นฐาน: '#000000',
+		'ม.1/1': '#d97706',
+		ห้องคณิตศาสตร์: '#1f2937',
+		สแกนดูตาราง: '#6b7280',
+		'SchoolOrbit TimeTable': '#9ca3af'
+	});
 
 	expect(download.suggestedFilename()).toBe(
 		'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf'

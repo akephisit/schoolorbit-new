@@ -2,7 +2,9 @@ import { expect, test, type Download, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
 import {
 	expectRoundedTimetablePdf,
-	expectMonochromeTimetablePdf
+	expectTimetablePdfPresentation,
+	expectTimetablePdfTextColors,
+	expectCenteredTimetablePdfLogos
 } from './timetable-pdf-assertions';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -22,7 +24,7 @@ async function pdfText(download: Download) {
 	const path = await download.path();
 	expect(path).toBeTruthy();
 	expect(readFileSync(path!).subarray(0, 5).toString()).toBe('%PDF-');
-	await expectMonochromeTimetablePdf(download);
+	await expectTimetablePdfPresentation(download);
 	return execFileSync('pdftotext', ['-raw', path!, '-'], { encoding: 'utf8' }).replace(/\s/g, '');
 }
 
@@ -152,6 +154,12 @@ for (const width of [1543, 390]) {
 					expect(text).toContain('ปีการศึกษา2569ระดับชั้นมัธยมศึกษาปีที่1/1');
 				if (view === 'กลุ่มเรียน') expect(text).toContain('ปีการศึกษา2569ม.1/1คณิตศาสตร์');
 				expect(text).toContain('ค21101');
+				await expectTimetablePdfTextColors(download, {
+					ค21101: '#1e3a8a',
+					...(view === 'กลุ่มเรียน' ? { ชุมนุม: '#047857' } : { ประชุมครู: '#047857' }),
+					ห้องคณิตศาสตร์: '#1f2937',
+					...(view === 'ครู' ? { 'ม.1/1': '#d97706' } : { ครูพิสิษฐ: '#4b5563' })
+				});
 				expect(text).toContain('ห้องคณิตศาสตร์');
 				expect(text).not.toMatch(/MATH-1|LAB-2/);
 				if (view === 'ชั้น' || view === 'โรงเรียน') {
@@ -186,6 +194,12 @@ for (const width of [1543, 390]) {
 					expect(compactDownload.suggestedFilename()).toContain('6ต่อหน้า');
 					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
 					const compactText = await pdfText(compactDownload);
+					await expectTimetablePdfTextColors(compactDownload, {
+						ค21101: '#1e3a8a',
+						ประชุมครู: '#047857',
+						ห้องคณิตศาสตร์: '#1f2937',
+						...(view === 'ครู' ? { 'ม.1/1': '#d97706' } : { ครูพิสิษฐ: '#4b5563' })
+					});
 					expect(brandingRequests).toBe(brandingBefore + 2);
 					if (view === 'ชั้น') {
 						expect(compactText).toContain('ครูพิสิษฐสกุลทดสอบ,ครูสายใจสกุลทดสอบ');
@@ -436,4 +450,106 @@ for (const width of [1543, 390]) {
 			await expect(page.getByRole('button', { name: 'ดาวน์โหลด PDF', exact: true })).toBeFocused();
 		});
 	}
+}
+
+for (const [shape, width, height] of [
+	['tall', 48, 160],
+	['wide', 160, 48]
+] as const) {
+	test(`centers a ${shape} crest in dense ten-period full and six-up PDF headers`, async ({
+		page
+	}) => {
+		const fixture = await PDFDocument.create();
+		// Generate an opaque, distinctive crest in the browser without another image dependency.
+		await installTimetableMock(page, {
+			requestedWorkspaceVersion: true,
+			permissions: ['academic_timetable.read.school'],
+			periodCount: 10,
+			staff: Array.from({ length: 6 }, (_, i) => ({
+				id:
+					i === 0
+						? timetableIds.teacherA
+						: `c1000000-0000-4000-8000-${String(401 + i).padStart(12, '0')}`,
+				displayName: i === 0 ? 'นายพิสิษฐ สกุลทดสอบ' : `นางสาวผู้สอน${i} สกุล${i}`,
+				subjectGroups: [],
+				status: 'active'
+			})),
+			blocks: Array.from({ length: 50 }, (_, i) => ({
+				...makeTimetableBlock(
+					`c1000000-0000-4000-8000-${String(501 + i).padStart(12, '0')}`,
+					`41000000-0000-4000-8000-${String(201 + (i % 10)).padStart(12, '0')}`
+				),
+				dayOfWeek: ['MON', 'TUE', 'WED', 'THU', 'FRI'][Math.floor(i / 10)]
+			}))
+		});
+		const logoId = '80000000-0000-4000-8000-000000000001';
+		let brandingReads = 0;
+		await page.route('**/api/school/public', (route) => {
+			brandingReads++;
+			return route.fulfill({
+				json: { success: true, data: { schoolName: 'โรงเรียนทดสอบ', logoFileId: logoId } }
+			});
+		});
+		await page.route(`**/api/public/files/${logoId}/delivery`, (route) =>
+			route.fulfill({
+				json: { success: true, data: { url: 'https://public-files.example.test/crest.png' } }
+			})
+		);
+		await page.route('https://public-files.example.test/crest.png', (route) =>
+			route.fulfill({
+				contentType: 'image/png',
+				headers: { 'access-control-allow-origin': '*' },
+				body: logoBytes
+			})
+		);
+		await page.goto(url('teacher'));
+		const data = await page.evaluate(
+			({ width, height }) => {
+				const canvas = document.createElement('canvas');
+				canvas.width = width;
+				canvas.height = height;
+				const context = canvas.getContext('2d')!;
+				context.fillStyle = '#c21d3d';
+				context.fillRect(0, 0, width, height);
+				context.fillStyle = '#1455c0';
+				context.fillRect(width / 4, height / 4, width / 2, height / 2);
+				return canvas.toDataURL('image/png').split(',')[1];
+			},
+			{ width, height }
+		);
+		const logoBytes = Buffer.from(data, 'base64');
+		// Confirm the synthetic asset really carries the intended aspect ratio.
+		const image = await fixture.embedPng(logoBytes);
+		expect(image.width / image.height).toBe(width / height);
+		await openDownload(page);
+		let pending = page.waitForEvent('download');
+		await confirmDownload(page);
+		let download = await pending;
+		await download.saveAs(`/tmp/timetable-dense-${shape}-full.pdf`);
+		await expectRoundedTimetablePdf(download, [1]);
+		await expectTimetablePdfPresentation(download);
+		await expectCenteredTimetablePdfLogos(download, width / height, [1]);
+		await expectTimetablePdfTextColors(download, {
+			ค21101: '#1e3a8a',
+			'ม.1/1': '#d97706',
+			ห้องคณิตศาสตร์: '#1f2937'
+		});
+		const dialog = await openDownload(page);
+		await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
+		await dialog.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+		await dialog.getByRole('button', { name: '6 ตารางต่อหน้า', exact: true }).click();
+		pending = page.waitForEvent('download');
+		await confirmDownload(page);
+		download = await pending;
+		await download.saveAs(`/tmp/timetable-dense-${shape}-six.pdf`);
+		await expectRoundedTimetablePdf(download, [6]);
+		await expectTimetablePdfPresentation(download);
+		await expectCenteredTimetablePdfLogos(download, width / height, [6]);
+		await expectTimetablePdfTextColors(download, {
+			ค21101: '#1e3a8a',
+			'ม.1/1': '#d97706',
+			ห้องคณิตศาสตร์: '#1f2937'
+		});
+		expect(brandingReads).toBe(2);
+	});
 }
