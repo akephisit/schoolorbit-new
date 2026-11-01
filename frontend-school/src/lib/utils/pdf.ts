@@ -1,3 +1,4 @@
+import { createTimetablePdfLogoLayout } from './timetable-pdf-logo-layout.ts';
 import { createTimetablePdfCorners } from './timetable-pdf-corners.ts';
 import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
@@ -21,9 +22,6 @@ interface PdfPeriod {
 	end_time: string;
 }
 
-// Define fonts
-// Define fonts moved inside function to avoid SSR window error
-
 // Helper: Format time
 const formatTime = (timeStr: string) => {
 	if (!timeStr) return '';
@@ -46,10 +44,10 @@ function fitTimeRange(
 	const e = formatTime(end);
 
 	const variants: { text: string; fontSize: number }[] = [
-		{ text: `${s}-${e} น.`, fontSize: 7 },
-		{ text: `${s}-${e}`, fontSize: 7 },
-		{ text: `${s}-${e}`, fontSize: 6 },
-		{ text: `${s}-${e}`, fontSize: 5 }
+		{ text: `${s}-${e} น.`, fontSize: 10 },
+		{ text: `${s}-${e}`, fontSize: 10 },
+		{ text: `${s}-${e}`, fontSize: 9 },
+		{ text: `${s}-${e}`, fontSize: 8 }
 	];
 
 	for (const v of variants) {
@@ -57,7 +55,7 @@ function fitTimeRange(
 			return v;
 		}
 	}
-	return { text: `${s}\n${e}`, fontSize: 7 };
+	return { text: `${s}\n${e}`, fontSize: 10 };
 }
 
 // Helper: Get block
@@ -99,21 +97,21 @@ type SegmenterCtor = new (
 	opts: { granularity: 'grapheme' | 'word' | 'sentence' }
 ) => { segment(text: string): Iterable<{ segment: string }> };
 
-/** Canvas-based text measurement — ใช้ Sarabun font (โหลดผ่าน FontFace API)
+/** Canvas-based text measurement — ใช้ TH Sarabun New font (โหลดผ่าน FontFace API)
  *  เพื่อวัด width จริงที่ pdfmake จะ render → แม่นกว่า approximation
  *  fallback ไป approxTextWidthPt ถ้า font ยังโหลดไม่เสร็จหรือไม่มี DOM */
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
-let sarabunMeasureReady = false;
+let thSarabunMeasureReady = false;
 
-async function ensureSarabunMeasurement(): Promise<void> {
-	if (sarabunMeasureReady || typeof document === 'undefined') return;
+async function ensureTHSarabunNewMeasurement(): Promise<void> {
+	if (thSarabunMeasureReady || typeof document === 'undefined') return;
 	try {
-		const url = window.location.origin + '/fonts/Sarabun-Regular.ttf';
-		const font = new FontFace('SarabunMeasure', `url(${url}) format('truetype')`);
+		const url = window.location.origin + '/fonts/THSarabunNew.ttf';
+		const font = new FontFace('THSarabunNewMeasure', `url(${url}) format('truetype')`);
 		await font.load();
 		document.fonts.add(font);
-		sarabunMeasureReady = true;
+		thSarabunMeasureReady = true;
 	} catch {
 		// ignore — จะใช้ approx แทน
 	}
@@ -123,7 +121,7 @@ const PT_PER_PX = 72 / 96; // 1pt = 1.333px (CSS standard)
 
 function measureTextWidthPt(text: string, fontSizePt: number): number {
 	if (!text) return 0;
-	if (!sarabunMeasureReady || typeof document === 'undefined') {
+	if (!thSarabunMeasureReady || typeof document === 'undefined') {
 		return approxTextWidthPt(text, fontSizePt);
 	}
 	if (!measureCtx) {
@@ -132,7 +130,7 @@ function measureTextWidthPt(text: string, fontSizePt: number): number {
 		if (!measureCtx) return approxTextWidthPt(text, fontSizePt);
 	}
 	const fontSizePx = fontSizePt / PT_PER_PX;
-	measureCtx.font = `${fontSizePx}px SarabunMeasure, sans-serif`;
+	measureCtx.font = `${fontSizePx}px THSarabunNewMeasure, sans-serif`;
 	const widthPx = measureCtx.measureText(text).width;
 	return widthPx * PT_PER_PX;
 }
@@ -156,7 +154,7 @@ function syllableSplit(text: string): string[] {
 	return result;
 }
 
-/** ประมาณ width (pt) ของ text ใน Sarabun font — fallback เมื่อ canvas measurement ไม่พร้อม
+/** ประมาณ width (pt) ของ text ใน TH Sarabun New font — fallback เมื่อ canvas measurement ไม่พร้อม
  *  ใช้ grapheme-cluster counting (Intl.Segmenter) เพื่อ handle Thai composed chars
  *  ค่าประมาณ: Thai grapheme ~0.55em, Latin ~0.5em, digit ~0.55em, space ~0.25em
  *  + safety factor 1.1 */
@@ -315,7 +313,7 @@ export interface TimetablePage {
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logoDataUrl: string | null,
+	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
 	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content[] {
@@ -350,43 +348,8 @@ function buildPageContent(
 	const showQrCode = viewMode === 'INSTRUCTOR' && typeof window !== 'undefined';
 	const qrUrl = showQrCode ? window.location.origin + '/staff/timetable' : '';
 
-	// === Row 0: Title row ===
-	// logo (rowSpan=3) — NESTED TABLE + verticalAlignment 'middle' ใน inner cell
-	// (cell-level VA ทำงานได้แม่นกว่า rowSpan VA ที่ buggy)
-	// title cell (colSpan=N) ใช้ inner columns เพื่อใส่ QR ที่มุมขวา
-	//
-	// Math (อันเดียวกับ mini-table):
-	//   image absolute center = outer pad (2pt tableLayout) + inner pad (2pt noBorders)
-	//                         + NESTED_H/2
-	//   Visual rowSpan ≈ row 0 (~55) + row 1 (~19) + row 2 (~15) = ~89pt
-	//   Target image center = visual/2 = 44.5pt
-	//   → NESTED_H = visual - 2*(outer+inner pad) = 89 - 8 = 81pt
-	// QR ไม่ดันแถว (อยู่ใน inner columns ของ title cell) → ใช้ค่าเดียวทั้ง 2 modes
-	const FIT_W = DAY_COL - 4; // 51
-	const NESTED_H = 81;
-	const FIT_H = NESTED_H - 4;
-
-	const logoCell: TableCell = logoDataUrl
-		? ({
-				table: {
-					widths: ['*'],
-					heights: [NESTED_H],
-					body: [
-						[
-							{
-								stack: [{ image: logoDataUrl, fit: [FIT_W, FIT_H], alignment: 'center' }],
-								verticalAlignment: 'middle',
-								alignment: 'center',
-								border: [false, false, false, false]
-							} as unknown as TableCell
-						]
-					]
-				},
-				layout: 'noBorders',
-				rowSpan: 3,
-				alignment: 'center'
-			} as unknown as TableCell)
-		: ({ text: '', rowSpan: 3 } as TableCell);
+	const logoFrame = logos.register(DAY_COL, 2);
+	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
 
 	const titleCellInner = {
 		columns: [
@@ -396,20 +359,21 @@ function buildPageContent(
 						text: schoolName,
 						bold: true,
 						fontSize: 16,
-						color: '#000000',
+						color: '#1e3a8a',
 						alignment: 'center',
 						margin: [0, 6, 0, 0]
 					},
 					{
 						text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
-						fontSize: 11,
-						color: '#000000',
+						fontSize: 16,
+						color: '#4b5563',
 						alignment: 'center',
 						margin: [0, 2, 0, 0]
 					},
 					{
 						text: headerOwnerLabel,
-						fontSize: 11,
+						color: '#1e3a8a',
+						fontSize: 16,
 						bold: true,
 						alignment: 'center',
 						margin: [0, 2, 0, 6]
@@ -432,8 +396,8 @@ function buildPageContent(
 								},
 								{
 									text: 'สแกนดูตาราง',
-									fontSize: 6,
-									color: '#000000',
+									fontSize: 9,
+									color: '#6b7280',
 									alignment: 'center' as const,
 									margin: [0, 1, 0, 0] as [number, number, number, number]
 								}
@@ -478,7 +442,7 @@ function buildPageContent(
 		timeRow.push({
 			text: fitted.text,
 			fontSize: fitted.fontSize,
-			color: '#000000',
+			color: '#4b5563',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 1]
@@ -491,12 +455,14 @@ function buildPageContent(
 		const row: TableCell[] = [];
 
 		row.push({
-			text: day.label,
+			stack: [
+				...(day === renderedDays[0] ? [logoFrame.bottom] : []),
+				{ text: day.label, margin: [0, 2] }
+			],
 			bold: true,
 			alignment: 'center',
 			fillColor: '#ffffff',
-			fontSize: 10,
-			margin: [0, 2]
+			fontSize: 14
 		});
 
 		periods.forEach((p) => {
@@ -506,19 +472,19 @@ function buildPageContent(
 				for (const block of blocks) {
 					if (block.blockKind === 'course') {
 						stack.push(
-							{ text: block.offeringCode || '', bold: true, fontSize: 8 },
+							{ text: block.offeringCode || '', bold: true, fontSize: 11, color: '#1e3a8a' },
 							{
-								text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 7),
-								fontSize: 7,
+								text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 10),
+								fontSize: 10,
 								margin: [0, 0]
 							}
 						);
 					} else {
 						stack.push({
-							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 8),
+							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 11),
 							bold: true,
-							fontSize: 8,
-							color: '#000000',
+							fontSize: 11,
+							color: '#047857',
 							margin: [0, 2]
 						});
 					}
@@ -539,9 +505,9 @@ function buildPageContent(
 						) {
 							const teacherName = instructorName;
 							stack.push({
-								text: wrapThaiToLines(teacherName, cellContentWidth, 7),
-								fontSize: 7,
-								color: '#000000',
+								text: wrapThaiToLines(teacherName, cellContentWidth, 10),
+								fontSize: 10,
+								color: '#4b5563',
 								margin: [0, 1]
 							});
 						}
@@ -550,9 +516,9 @@ function buildPageContent(
 						const classLabel = timetablePdfClassLabel(block, homeroomNames);
 						if (classLabel) {
 							stack.push({
-								text: wrapThaiToLines(classLabel, cellContentWidth, 7),
-								fontSize: 7,
-								color: '#000000',
+								text: wrapThaiToLines(classLabel, cellContentWidth, 10),
+								fontSize: 10,
+								color: '#d97706',
 								bold: true,
 								margin: [0, 1]
 							});
@@ -566,9 +532,10 @@ function buildPageContent(
 					const roomDisplay = roomFullName || (room.id ? 'ไม่พบชื่อห้อง' : null);
 					if (roomDisplay) {
 						stack.push({
-							text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
-							fontSize: 7,
-							color: '#000000',
+							text: wrapThaiToLines(roomDisplay, cellContentWidth, 10),
+							fontSize: 10,
+							background: '#f3f4f6',
+							color: '#1f2937',
 							margin: [0, 2]
 						});
 					}
@@ -593,7 +560,7 @@ function buildPageContent(
 								{
 									text: 'หัวหน้ากลุ่มบริหารงานวิชาการ',
 									alignment: 'center',
-									fontSize: 11,
+									fontSize: 16,
 									margin: [0, 4, 0, 0]
 								}
 							],
@@ -605,7 +572,7 @@ function buildPageContent(
 								{
 									text: 'ผู้อำนวยการ',
 									alignment: 'center',
-									fontSize: 11,
+									fontSize: 16,
 									margin: [0, 4, 0, 0]
 								}
 							],
@@ -661,7 +628,7 @@ function buildPageContent(
 function buildMiniTable(
 	page: TimetablePage,
 	miniAreaWidth: number,
-	logoDataUrl: string | null,
+	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
 	schoolName: string,
 	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content {
@@ -690,37 +657,8 @@ function buildMiniTable(
 	const periodWidth = (maxSumWidths - DAY_COL) / Math.max(1, periods.length);
 	const cellContentWidth = periodWidth - PAD_LR; // padding eats periodWidth
 
-	// === Row 0: School, academic context and owner header ===
-	// Logo cell — nested table + VA middle (เหมือน full mode)
-	//
-	// Math: image center = outer padding (1) + inner padding (2) + NESTED_H/2
-	// Visual rowSpan = row 0 (~21, 2 บรรทัด) + row 1 (~9) + row 2 (~8) ≈ 38pt
-	// Target image center = 19pt → NESTED_H = (19 - 3) * 2 = 32
-	const NESTED_H_MINI = 32;
-	const FIT_W_MINI = DAY_COL - 4;
-	const FIT_H_MINI = NESTED_H_MINI - 4;
-
-	const logoCell: TableCell = logoDataUrl
-		? ({
-				table: {
-					widths: ['*'],
-					heights: [NESTED_H_MINI],
-					body: [
-						[
-							{
-								stack: [{ image: logoDataUrl, fit: [FIT_W_MINI, FIT_H_MINI], alignment: 'center' }],
-								verticalAlignment: 'middle',
-								alignment: 'center',
-								border: [false, false, false, false]
-							} as unknown as TableCell
-						]
-					]
-				},
-				layout: 'noBorders',
-				rowSpan: 3,
-				alignment: 'center'
-			} as unknown as TableCell)
-		: ({ text: '', rowSpan: 3 } as TableCell);
+	const logoFrame = logos.register(DAY_COL, 1);
+	const logoCell: TableCell = { ...logoFrame.top, rowSpan: 3 };
 	const titleRow: TableCell[] = [
 		logoCell,
 		{
@@ -728,20 +666,21 @@ function buildMiniTable(
 				{
 					text: schoolName,
 					bold: true,
-					fontSize: 7,
-					color: '#000000',
+					fontSize: 9,
+					color: '#1e3a8a',
 					alignment: 'center'
 				},
 				{
 					text: `${viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${headerContext}`,
-					fontSize: 5,
-					color: '#000000',
+					fontSize: 9,
+					color: '#4b5563',
 					alignment: 'center',
 					margin: [0, 1, 0, 0]
 				},
 				{
 					text: headerOwnerLabel,
-					fontSize: 6,
+					color: '#1e3a8a',
+					fontSize: 9,
 					bold: true,
 					alignment: 'center',
 					margin: [0, 1, 0, 0]
@@ -761,7 +700,7 @@ function buildMiniTable(
 		periodNameRow.push({
 			text: labelText,
 			bold: true,
-			fontSize: 5,
+			fontSize: 7,
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 0]
@@ -776,8 +715,8 @@ function buildMiniTable(
 		const s = formatTime(p.start_time);
 		const e = formatTime(p.end_time);
 		const variants: { text: string; fontSize: number }[] = [
-			{ text: `${s}-${e}`, fontSize: 4 },
-			{ text: `${s}-${e}`, fontSize: 3.5 }
+			{ text: `${s}-${e}`, fontSize: 6 },
+			{ text: `${s}-${e}`, fontSize: 5 }
 		];
 		let fitted = variants[variants.length - 1];
 		for (const v of variants) {
@@ -789,7 +728,7 @@ function buildMiniTable(
 		timeRow.push({
 			text: fitted.text,
 			fontSize: fitted.fontSize,
-			color: '#000000',
+			color: '#4b5563',
 			alignment: 'center',
 			fillColor: '#f3f4f6',
 			margin: [0, 0]
@@ -810,11 +749,14 @@ function buildMiniTable(
 	renderedDays.forEach((day) => {
 		const row: TableCell[] = [
 			{
-				text: dayShort[day.value] || day.label.slice(0, 1),
+				stack: [
+					...(day === renderedDays[0] ? [logoFrame.bottom] : []),
+					{ text: dayShort[day.value] || day.label.slice(0, 1) }
+				],
 				bold: true,
 				alignment: 'center',
 				fillColor: '#ffffff',
-				fontSize: 6,
+				fontSize: 8,
 				margin: [0, 0]
 			}
 		];
@@ -829,15 +771,15 @@ function buildMiniTable(
 						stack.push({
 							text: block.offeringCode || '',
 							bold: true,
-							fontSize: 5,
-							color: '#000000'
+							fontSize: 7,
+							color: '#1e3a8a'
 						});
 					} else {
 						stack.push({
-							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 4),
+							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 6),
 							bold: true,
-							fontSize: 4,
-							color: '#000000',
+							fontSize: 6,
+							color: '#047857',
 							lineHeight: 0.9
 						});
 					}
@@ -856,9 +798,9 @@ function buildMiniTable(
 						) {
 							const teacherName = instructorName;
 							stack.push({
-								text: wrapThaiToLines(teacherName, cellContentWidth, 3.5),
-								fontSize: 3.5,
-								color: '#000000',
+								text: wrapThaiToLines(teacherName, cellContentWidth, 5),
+								fontSize: 5,
+								color: '#4b5563',
 								lineHeight: 0.9
 							});
 						}
@@ -866,9 +808,9 @@ function buildMiniTable(
 						const classLabel = timetablePdfClassLabel(block, homeroomNames);
 						if (classLabel) {
 							stack.push({
-								text: wrapThaiToLines(classLabel, cellContentWidth, 3.5),
-								fontSize: 3.5,
-								color: '#000000',
+								text: wrapThaiToLines(classLabel, cellContentWidth, 5),
+								fontSize: 5,
+								color: '#d97706',
 								bold: true,
 								lineHeight: 0.9
 							});
@@ -881,9 +823,10 @@ function buildMiniTable(
 					const roomDisplay = roomFullName || (room.id ? 'ไม่พบชื่อห้อง' : null);
 					if (roomDisplay) {
 						stack.push({
-							text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),
-							fontSize: 3.5,
-							color: '#000000',
+							text: wrapThaiToLines(roomDisplay, cellContentWidth, 5),
+							fontSize: 5,
+							background: '#f3f4f6',
+							color: '#1f2937',
 							lineHeight: 0.9,
 							// Separate the room label from the preceding class/teacher line.
 							margin: [0, 1, 0, 0]
@@ -931,7 +874,7 @@ const MINIS_PER_PORTRAIT_PAGE = 6;
 function buildPortraitPageContent(
 	chunk: TimetablePage[],
 	isFirst: boolean,
-	logoDataUrl: string | null,
+	logos: ReturnType<typeof createTimetablePdfLogoLayout>,
 	schoolName: string,
 	pageHeaderTitle: string,
 	pageHeaderSubTitle: string,
@@ -948,8 +891,8 @@ function buildPortraitPageContent(
 					{ qr: qrUrl, fit: 65, alignment: 'center' },
 					{
 						text: 'สแกนดูตาราง',
-						fontSize: 6,
-						color: '#000000',
+						fontSize: 9,
+						color: '#6b7280',
 						alignment: 'center',
 						margin: [0, 1, 0, 0]
 					}
@@ -968,15 +911,15 @@ function buildPortraitPageContent(
 				stack: [
 					{
 						text: pageHeaderTitle,
-						fontSize: 12,
+						fontSize: 16,
 						bold: true,
-						color: '#000000',
+						color: '#1e3a8a',
 						alignment: 'center'
 					},
 					{
 						text: pageHeaderSubTitle,
-						fontSize: 9,
-						color: '#000000',
+						fontSize: 16,
+						color: '#4b5563',
 						alignment: 'center',
 						margin: [0, 1, 0, 0]
 					}
@@ -992,7 +935,7 @@ function buildPortraitPageContent(
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
 	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, schoolName, corners);
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logos, schoolName, corners);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
@@ -1033,20 +976,20 @@ export const generateTimetablePDF = async (
 	if (pages.length === 0) return;
 	const layout = options?.layout ?? 'full';
 
-	// โหลด Sarabun สำหรับ canvas-based text measurement (wrap แม่นยำ)
+	// โหลด TH Sarabun New สำหรับ canvas-based text measurement (wrap แม่นยำ)
 	// + load pdfmake พร้อมกัน
 	const [pdfMakeModule] = await Promise.all([
 		import('pdfmake/build/pdfmake'),
-		ensureSarabunMeasurement()
+		ensureTHSarabunNewMeasurement()
 	]);
 	const pdfMake = pdfMakeModule.default;
 
 	pdfMake.fonts = {
-		Sarabun: {
-			normal: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bold: window.location.origin + '/fonts/Sarabun-Bold.ttf',
-			italics: window.location.origin + '/fonts/Sarabun-Regular.ttf',
-			bolditalics: window.location.origin + '/fonts/Sarabun-Bold.ttf'
+		THSarabunNew: {
+			normal: window.location.origin + '/fonts/THSarabunNew.ttf',
+			bold: window.location.origin + '/fonts/THSarabunNew-Bold.ttf',
+			italics: window.location.origin + '/fonts/THSarabunNew-Italic.ttf',
+			bolditalics: window.location.origin + '/fonts/THSarabunNew-BoldItalic.ttf'
 		}
 	};
 
@@ -1064,6 +1007,7 @@ export const generateTimetablePDF = async (
 	});
 
 	const corners = createTimetablePdfCorners();
+	const logos = createTimetablePdfLogoLayout(logoDataUrl);
 	let content: Content[];
 	if (layout === 'portrait-2col') {
 		// chunk pages ละ MINIS_PER_PORTRAIT_PAGE → 1 PDF page = หลาย mini-tables
@@ -1079,7 +1023,7 @@ export const generateTimetablePDF = async (
 			buildPortraitPageContent(
 				chunk,
 				i === 0,
-				logoDataUrl,
+				logos,
 				schoolName,
 				pageHeaderTitle,
 				pageHeaderSubTitle,
@@ -1088,7 +1032,7 @@ export const generateTimetablePDF = async (
 		);
 	} else {
 		content = pages.flatMap((page, i) =>
-			buildPageContent(page, i === 0, logoDataUrl, schoolName, corners)
+			buildPageContent(page, i === 0, logos, schoolName, corners)
 		);
 	}
 
@@ -1099,16 +1043,21 @@ export const generateTimetablePDF = async (
 		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
 		pageMargins: [10, 30, 10, 20],
 		content,
-		pageBreakBefore: corners.capture,
-		styles: {
-			header: { fontSize: 18, bold: true },
-			subheader: { fontSize: 14 },
-			footer: { fontSize: 8 }
+		pageBreakBefore: (node) => {
+			logos.capture(node);
+			return corners.capture(node);
 		},
-		defaultStyle: { font: 'Sarabun', color: '#000000' }
+		styles: {
+			header: { fontSize: 16, bold: true, color: '#1e3a8a' },
+			subheader: { fontSize: 16, color: '#4b5563' },
+			footer: { fontSize: 11, color: '#9ca3af' }
+		},
+		defaultStyle: { font: 'THSarabunNew', color: '#000000' }
 	};
 
 	const pdf = pdfMake.createPdf(docDefinition, { bufferPages: true });
-	corners.draw(await pdf.getStream());
+	const stream = await pdf.getStream();
+	logos.draw(stream);
+	corners.draw(stream);
 	await pdf.download(`${fileName ?? pages[0].title}.pdf`);
 };
