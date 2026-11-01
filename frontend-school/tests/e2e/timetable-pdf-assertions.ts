@@ -11,7 +11,7 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 	for (const [index, page] of pdf.getPages().entries()) {
 		const operators = pageOperators(pdf, index);
 		expect(operators).not.toMatch(/(?:-?\d+(?:\.\d+)?\s+){6}c(?:\s|$)/);
-		const { segments } = geometry(operators, page.getHeight());
+		const { segments, rectangles } = geometry(operators, page.getHeight());
 		const horizontal = segments.filter((line) => line.y1 === line.y2 && line.x1 !== line.x2);
 		expect(horizontal.length).toBeGreaterThan(0);
 		for (const line of horizontal) {
@@ -29,6 +29,37 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 			}
 		}
 		const text = await (await rendered.getPage(index + 1)).getTextContent();
+		const firstGridTop = Math.min(...horizontal.map((line) => line.y1));
+		const qrSquares = rectangles.filter(
+			(rect) => rect.y < firstGridTop && rect.color.every((channel) => channel === 0)
+		);
+		const captions = text.items.filter((item) => 'str' in item && item.str.startsWith('สแกนดู'));
+		if (qrSquares.length || captions.length) {
+			expect(qrSquares.length, 'QR fill rectangles are present').toBeGreaterThan(0);
+			expect(captions.length, 'QR has a complete caption').toBeGreaterThan(0);
+			for (const rect of qrSquares) {
+				expect(rect.x, 'QR left margin').toBeGreaterThanOrEqual(10 - 0.01);
+				expect(rect.x + rect.width, 'QR right margin').toBeLessThanOrEqual(
+					page.getWidth() - 10 + 0.01
+				);
+				expect(rect.y, 'QR top margin').toBeGreaterThanOrEqual(30 - 0.01);
+				expect(rect.y + rect.height, 'QR bottom margin').toBeLessThanOrEqual(
+					page.getHeight() - 20 + 0.01
+				);
+			}
+			for (const item of captions) {
+				if (!('str' in item)) continue;
+				expect(item.str, 'caption must not be clipped at the page edge').toBe('สแกนดูตาราง');
+				expect(item.transform[4], 'caption left margin').toBeGreaterThanOrEqual(10 - 0.01);
+				expect(item.transform[4] + item.width, 'caption right margin').toBeLessThanOrEqual(
+					page.getWidth() - 10 + 0.01
+				);
+				const top = page.getHeight() - item.transform[5] - item.height * 0.844;
+				const bottom = page.getHeight() - item.transform[5] + item.height * 0.457;
+				expect(top, 'caption top margin').toBeGreaterThanOrEqual(30 - 0.01);
+				expect(bottom, 'caption bottom margin').toBeLessThanOrEqual(page.getHeight() - 20 + 0.01);
+			}
+		}
 		const firstPeriods = text.items.filter(
 			(item) => 'str' in item && /^คาบ(?:ที่)?\s*1$/.test(item.str.trim())
 		);

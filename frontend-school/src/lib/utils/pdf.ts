@@ -941,7 +941,7 @@ function buildPortraitPageContent(
 	const isInstructor = chunk[0]?.viewMode === 'INSTRUCTOR';
 	const showQr = isInstructor && typeof window !== 'undefined';
 	const qrUrl = showQr ? window.location.origin + '/staff/timetable' : '';
-	const qrCornerBlock = (showQr
+	const qrCornerBlock: Column = showQr
 		? {
 				width: 70,
 				stack: [
@@ -955,33 +955,44 @@ function buildPortraitPageContent(
 					}
 				]
 			}
-		: { text: '', width: 40 }) as unknown as Content;
+		: { text: '', width: 40 };
 
 	// Page heading complements each mini timetable’s external school/owner header.
-	// ใช้ 3 คอลัม [spacer ซ้าย, title (*), QR ขวา] → title อยู่กลางหน้ากระดาษจริง
+	// Fixed side columns and gaps leave an explicit middle width, even for unbroken school names.
 	// (spacer ซ้ายกว้างเท่า QR ขวา เพื่อ balance)
 	const sideColWidth = showQr ? 70 : 40;
-	const titleBlock: Content = {
+	const titleWidth = 595.28 - 20 - 2 * 10 - 2 * sideColWidth;
+	const titleBlock: ContentColumns = {
 		columns: [
 			{ text: '', width: sideColWidth },
 			{
 				stack: [
 					{
-						text: pageHeaderTitle,
-						fontSize: 16,
-						bold: true,
-						color: '#1e3a8a',
-						alignment: 'center'
+						stack: wrapThaiToLines(pageHeaderTitle, titleWidth, 16, 'bold')
+							.split('\n')
+							.map((text) => ({
+								text: text || ' ',
+								fontSize: 16,
+								bold: true,
+								noWrap: true,
+								color: '#1e3a8a',
+								alignment: 'center'
+							}))
 					},
 					{
-						text: pageHeaderSubTitle,
-						fontSize: 16,
-						color: '#4b5563',
-						alignment: 'center',
+						stack: wrapThaiToLines(pageHeaderSubTitle, titleWidth, 16, 'normal')
+							.split('\n')
+							.map((text) => ({
+								text: text || ' ',
+								fontSize: 16,
+								noWrap: true,
+								color: '#4b5563',
+								alignment: 'center'
+							})),
 						margin: [0, 1, 0, 0]
 					}
 				],
-				width: '*'
+				width: titleWidth
 			},
 			qrCornerBlock
 		],
