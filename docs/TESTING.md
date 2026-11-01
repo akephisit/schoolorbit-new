@@ -470,6 +470,24 @@ their application-owned prefixes instead of assuming registrations live in `app.
 
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh integration_tests::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
 
+Publication chronology regressions use migration 151 and independent opening/timetable numbers.
+Use the shared local Cargo profile (`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`,
+`CARGO_PROFILE_TEST_DEBUG=0`) and serialize Cargo against the existing target. The focused
+`teacher_assignments` package fixture now reaches 151 and verifies number-selected allocation
+membership without deriving chronology from dates or timestamp ties. Publication-revision
+fixtures additionally cover preservation/refusal/retry, same-day and earlier replacement, future
+source exclusion, retained assignment materialization, immutable audit/effectivity provenance,
+actual DML-only runtime execution, concurrent replay and unchanged historical sources. Run the
+owning release-filter checks when changing the 151 readiness boundary:
+
+```bash
+node --test scripts/tests/migration-completion-gate.test.mjs scripts/tests/pipeline-storage-namespace.test.mjs
+```
+
+The release filter requires version 151 and the exact protected eight zero-mismatch checks;
+existing 87/88 and 149 gates still run. These checks exercise local disposable reports and do not
+prove production migration or application acceptance.
+
 Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
 migration and concurrent writers against disposable PostgreSQL using:
 

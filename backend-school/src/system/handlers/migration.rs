@@ -57,6 +57,8 @@ struct SchoolMigrationStatus {
     gradebook_results_cutover: GradebookResultsCutoverStatus,
     #[serde(rename = "deliveryTimetableCutover")]
     delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
+    #[serde(rename = "publicationRevisionsCutover")]
+    publication_revisions_cutover: DeliveryTimetableCutoverStatus,
     #[serde(rename = "staffProfileCutover")]
     staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus,
 }
@@ -177,6 +179,45 @@ fn delivery_timetable_cutover_unavailable() -> DeliveryTimetableCutoverStatus {
         checks: Vec::new(),
     }
 }
+fn publication_revisions_cutover_unavailable(version: i32) -> DeliveryTimetableCutoverStatus {
+    DeliveryTimetableCutoverStatus {
+        status: if version < 151 {
+            "pendingMigration"
+        } else {
+            "unavailable"
+        }
+        .into(),
+        migration_version: 151,
+        passed: if version < 151 { None } else { Some(false) },
+        checks: vec![],
+    }
+}
+async fn publication_revisions_cutover_status(
+    pool: Option<&PgPool>,
+    version: i32,
+) -> DeliveryTimetableCutoverStatus {
+    if version < 151 {
+        return publication_revisions_cutover_unavailable(version);
+    }
+    let Some(pool) = pool else {
+        return publication_revisions_cutover_unavailable(version);
+    };
+    match school_academic_delivery::services::publication::read_revisions_audit(pool).await {
+        Ok(audit) => DeliveryTimetableCutoverStatus {
+            status: if audit.completed {
+                "cutoverCompleted"
+            } else {
+                "failed"
+            }
+            .into(),
+            migration_version: 151,
+            passed: Some(audit.completed),
+            checks: audit.checks,
+        },
+        Err(_) => publication_revisions_cutover_unavailable(version),
+    }
+}
+
 async fn delivery_timetable_cutover_status(
     pool: Option<&PgPool>,
     version: i32,
@@ -467,6 +508,7 @@ pub async fn migration_status(
             academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
+            publication_revisions_cutover,
             staff_profile_cutover,
         ) = if let Some(database_url) = school
             .db_connection_string
@@ -489,6 +531,7 @@ pub async fn migration_status(
                         academic_context_cutover_status(Some(&pool), version).await,
                         gradebook_results_cutover,
                         delivery_timetable_cutover_status(Some(&pool), version).await,
+                        publication_revisions_cutover_status(Some(&pool), version).await,
                         staff_profile_cutover_status(Some(&pool), version).await,
                     )
                 }
@@ -498,6 +541,7 @@ pub async fn migration_status(
                     academic_context_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_unavailable(reported_version),
                     delivery_timetable_cutover_unavailable(),
+                    publication_revisions_cutover_unavailable(reported_version),
                     staff_profile_cutover_status(None, reported_version).await,
                 ),
             }
@@ -508,6 +552,7 @@ pub async fn migration_status(
                 academic_context_cutover_status(None, reported_version).await,
                 gradebook_results_cutover_status(None, reported_version).await,
                 delivery_timetable_cutover_status(None, reported_version).await,
+                publication_revisions_cutover_status(None, reported_version).await,
                 staff_profile_cutover_status(None, reported_version).await,
             )
         };
@@ -538,6 +583,7 @@ pub async fn migration_status(
             academic_context_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
+            publication_revisions_cutover,
             staff_profile_cutover,
         });
     }
@@ -1028,6 +1074,7 @@ mod tests {
                 checks: Vec::new(),
             },
             delivery_timetable_cutover: delivery_timetable_cutover_unavailable(),
+            publication_revisions_cutover: publication_revisions_cutover_unavailable(151),
             staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus::unavailable(
                 114,
             ),

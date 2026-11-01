@@ -359,7 +359,7 @@ pub async fn resolve_seed(
     .await?;
     resolve_seed_on_connection(&mut connection, p).await
 }
-async fn resolve_seed_on_connection(
+pub(crate) async fn resolve_seed_on_connection(
     connection: &mut sqlx::PgConnection,
     p: &OpenAttendanceSession,
 ) -> Result<AttendanceSeed, AppError> {

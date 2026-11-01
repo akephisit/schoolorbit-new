@@ -3,9 +3,12 @@ import { expect, type Page } from '@playwright/test';
 export const offeringStartsOn = '2026-10-15';
 
 /** Choose the actual offering date explicitly in each preparation workflow. */
-export async function selectOfferingStartDate(page: Page) {
+export async function selectOfferingStartDate(
+	page: Page,
+	triggerLabel = 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร'
+) {
 	const trigger = page.getByRole('button', {
-		name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร',
+		name: triggerLabel,
 		exact: true
 	});
 	await expect(trigger).toBeVisible();

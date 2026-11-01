@@ -1,3 +1,5 @@
+#[path = "../src/adapters/publication_history.rs"]
+mod publication_history;
 pub use school_test_db::cutover_test_preflight;
 pub use school_test_db::cutover_test_support;
 
@@ -502,6 +504,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         preview.findings
     );
     let receipt = change_sets::publish_change_set(
+        &publication_history::PUBLICATION_HISTORY,
         &assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor,
@@ -940,6 +943,7 @@ async fn publication_preview(
     let revision =
         school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
     school_academic_delivery::services::change_sets::preview_change_set_at(
+        &publication_history::PUBLICATION_HISTORY,
         pool,
         id,
         Some(revision.reference_date),
@@ -1161,6 +1165,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         preview.findings
     );
     let receipt = change_sets::publish_change_set(
+        &publication_history::PUBLICATION_HISTORY,
         &assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor,
@@ -1380,6 +1385,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
     };
     assert!(create_error.to_string().contains("0 คาบ"));
     let preview = timetable_lifecycle::preview(
+        &publication_history::PUBLICATION_HISTORY,
         &pool,
         draft.id,
         PreviewTimetablePublicationRequest {
@@ -1395,6 +1401,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         .any(|finding| finding.learning_offering_id == Some(offering.id)
             && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch));
     let rejected_publish = timetable_lifecycle::publish(
+        &publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool, actor,
@@ -1469,6 +1476,7 @@ async fn zero_periods_preserve_delivery_and_require_removing_existing_lessons(mo
         .await
         .unwrap();
     let preview = timetable_lifecycle::preview(
+        &publication_history::PUBLICATION_HISTORY,
         &pool,
         draft.id,
         PreviewTimetablePublicationRequest {

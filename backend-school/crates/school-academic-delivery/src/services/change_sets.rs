@@ -130,7 +130,7 @@ pub async fn list_change_set_summaries_on_connection(
                   target_delivery_version_id, updated_at
            FROM academic_term_change_sets
            WHERE academic_term_id = $1 AND target_delivery_version_id IS NOT NULL
-           ORDER BY effective_from DESC, created_at DESC, id"#,
+           ORDER BY publication_no DESC NULLS FIRST, created_at DESC, id"#,
     )
     .bind(academic_term_id)
     .fetch_all()
@@ -189,6 +189,7 @@ pub async fn get_change_set_on_connection(
 }
 
 pub async fn preview_change_set(
+    history: &dyn crate::ports::PublicationHistoryPort,
     pool: &PgPool,
     id: Uuid,
 ) -> Result<AcademicTermChangeSetPreview, AppError> {
@@ -197,12 +198,13 @@ pub async fn preview_change_set(
         "academic_delivery.services.change_sets.preview_change_set",
     )
     .await?;
-    let preview = build_preview_in_transaction(&mut transaction, id, false, None).await?;
+    let preview = build_preview_in_transaction(history, &mut transaction, id, false, None).await?;
     transaction.rollback().await?;
     Ok(preview)
 }
 
 pub async fn preview_change_set_at(
+    history: &dyn crate::ports::PublicationHistoryPort,
     pool: &PgPool,
     id: Uuid,
     date: Option<NaiveDate>,
@@ -212,12 +214,13 @@ pub async fn preview_change_set_at(
         "academic_delivery.services.change_sets.preview_change_set_at",
     )
     .await?;
-    let result = build_preview_in_transaction(&mut tx, id, false, date).await?;
+    let result = build_preview_in_transaction(history, &mut tx, id, false, date).await?;
     tx.commit().await?;
     Ok(result)
 }
 
 pub async fn publish_change_set(
+    history: &dyn crate::ports::PublicationHistoryPort,
     assessments: &dyn crate::ports::AssessmentPublicationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -278,29 +281,28 @@ pub async fn publish_change_set(
         ));
     }
 
-    let (academic_term_id, current_status): (Uuid, AcademicTermChangeSetStatus) =
+    let (academic_term_id, academic_year_id): (Uuid, Uuid) =
         DbSession::new(&mut preflight)
             .query_as(
                 "academic_delivery.services.change_sets.publish_change_set.preflight",
-                "SELECT academic_term_id, status FROM academic_term_change_sets WHERE id = $1",
+                "SELECT academic_term_id, academic_year_id FROM academic_term_change_sets WHERE id = $1",
             )
             .bind(id)
             .fetch_optional()
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
-    if current_status != AcademicTermChangeSetStatus::Draft {
-        return Err(AppError::Conflict(
-            "ชุดการเปลี่ยนแปลงนี้เผยแพร่หรือยกเลิกแล้ว".to_string(),
-        ));
-    }
-
     drop(preflight);
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_delivery.services.change_sets.publish_change_set",
     )
     .await?;
-    require_writable_term(&mut transaction, academic_term_id, true).await?;
+    let write_state = school_academic_core::services::lifecycle_guard::lock_context_exclusive(
+        &mut transaction,
+        academic_year_id,
+        academic_term_id,
+    )
+    .await?;
     let receipt: Option<(Uuid,String)> = DbSession::new(&mut *transaction)
         .query_as("academic_delivery.services.change_sets.publish_change_set.receipt", "SELECT id,publication_request_hash FROM academic_term_change_sets WHERE publication_idempotency_key=$1")
         .bind(request.idempotency_key).fetch_optional().await?;
@@ -314,9 +316,15 @@ pub async fn publish_change_set(
         transaction.commit().await?;
         return Ok(result);
     }
-    let preview =
-        build_preview_in_transaction(&mut transaction, id, true, Some(request.effective_from))
-            .await?;
+    write_state.require_writable()?;
+    let preview = build_preview_in_transaction(
+        history,
+        &mut transaction,
+        id,
+        true,
+        Some(request.effective_from),
+    )
+    .await?;
     if preview.change_set_row_version != request.row_version {
         return Err(AppError::Conflict(
             "ชุดการเปลี่ยนแปลงถูกแก้ไขหลังการตรวจ กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -647,6 +655,7 @@ async fn opening_resource_evidence(
 }
 
 async fn build_preview_in_transaction(
+    history: &dyn crate::ports::PublicationHistoryPort,
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
     lock_for_publication: bool,
@@ -768,6 +777,21 @@ async fn build_preview_in_transaction(
             Some(id),
         ));
     }
+    if history
+        .has_consumed_history(&mut **transaction, term_id, evaluation_date)
+        .await?
+    {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::ConsumedHistoryConflict,
+            AcademicChangeFindingSeverity::Blocking,
+            "วันที่เลือกมีประวัติการเช็คชื่อที่รับไว้แล้ว",
+            "เลือกวันที่หลังประวัติที่บันทึกหรือปิดวันแล้ว เพื่อรักษาข้อมูลเดิม",
+            1,
+            None,
+            None,
+            Some(term_id),
+        ));
+    }
     let latest: Option<Uuid> = DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.build_preview_in_transaction", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY publication_no DESC LIMIT 1")
         .bind(term_id).fetch_optional().await?;
     if latest != revision.base_delivery_version_id {
@@ -875,7 +899,12 @@ async fn build_preview_in_transaction(
          FROM academic_term_change_items item LEFT JOIN learning_group_teachers episode ON episode.id=item.learning_group_teacher_id
          WHERE item.change_set_id=$1 AND item.action_kind IN('adjust_group_teacher_role','stop_group_teacher')
            AND (episode.id IS NULL OR episode.learning_group_id<>item.learning_group_id OR episode.teacher_id<>item.teacher_id
-                OR episode.academic_term_id<>$3 OR $2::date IS NULL) ORDER BY item.id")
+                OR episode.academic_term_id<>$3 OR $2::date IS NULL
+                OR EXISTS(SELECT 1 FROM academic_term_change_sets c WHERE c.id=$1 AND c.base_delivery_version_id IS NOT NULL
+                    AND NOT EXISTS(SELECT 1 FROM academic_delivery_versions b,jsonb_array_elements(b.snapshot->'offerings') o,
+                        jsonb_array_elements(o->'groups') g,jsonb_array_elements(g->'teachers') t
+                        WHERE b.id=c.base_delivery_version_id AND (t->>'assignmentId')::uuid=item.learning_group_teacher_id
+                          AND (g->>'id')::uuid=item.learning_group_id AND (t->>'teacherId')::uuid=item.teacher_id))) ORDER BY item.id")
         .bind(id).bind(effective_from).bind(term_id).fetch_all().await?;
     for (offering, group, episode) in invalid_episodes {
         findings.push(change_finding(
@@ -912,6 +941,21 @@ async fn build_preview_in_transaction(
             "ครูบางคนไม่พร้อมใช้งาน",
             "เลือกครูที่ยังปฏิบัติงานในโรงเรียน",
             teacher_ids.len() as i64 - valid_teachers,
+            None,
+            None,
+            Some(target_id),
+        ));
+    }
+    let invalid_catalogs: i64=DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.catalog_date",
+        "SELECT count(*) FROM learning_offerings o LEFT JOIN course_offering_details c ON c.learning_offering_id=o.id LEFT JOIN subject_versions s ON s.id=c.subject_version_id LEFT JOIN activity_offering_details a ON a.learning_offering_id=o.id LEFT JOIN activity_versions v ON v.id=a.activity_version_id WHERE o.id=ANY($1) AND COALESCE(s.effective_from,v.effective_from)>$2")
+        .bind(snapshot.offerings.iter().map(|o|o.id).collect::<Vec<_>>()).bind(evaluation_date).fetch_one().await?;
+    if invalid_catalogs > 0 {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::EffectiveDateInvalid,
+            AcademicChangeFindingSeverity::Blocking,
+            "วันที่เลือกอยู่ก่อนวันเริ่มใช้รายวิชาหรือกิจกรรมที่อ้างอิง",
+            "เลือกวันที่ที่ฉบับทะเบียนพร้อมใช้งาน หรือแก้รายการเปิดสอนอย่างชัดเจน",
+            invalid_catalogs,
             None,
             None,
             Some(target_id),
@@ -1808,13 +1852,13 @@ pub async fn upsert_change_item(
             )
             .await?;
             require_active_staff(&mut transaction, teacher_id).await?;
-            require_effective_teacher_episode(
+            let learning_group_teacher_id = require_effective_teacher_episode(
                 &mut transaction,
                 &term,
+                change_set_id,
                 learning_group_id,
                 learning_group_teacher_id,
                 teacher_id,
-                row.effective_from,
             )
             .await?;
             ensure_no_teacher_episode_action(
@@ -1890,13 +1934,13 @@ pub async fn upsert_change_item(
                 learning_group_id,
             )
             .await?;
-            require_effective_teacher_episode(
+            let learning_group_teacher_id = require_effective_teacher_episode(
                 &mut transaction,
                 &term,
+                change_set_id,
                 learning_group_id,
                 learning_group_teacher_id,
                 teacher_id,
-                row.effective_from,
             )
             .await?;
             ensure_no_teacher_episode_action(
@@ -2380,36 +2424,26 @@ async fn require_active_staff(
 async fn require_effective_teacher_episode(
     transaction: &mut Transaction<'_, Postgres>,
     term: &TermContext,
-    learning_group_id: Uuid,
-    learning_group_teacher_id: Uuid,
-    teacher_id: Uuid,
-    _effective_from: NaiveDate,
-) -> Result<(), AppError> {
-    let episode: Option<(NaiveDate, Option<NaiveDate>)> = DbSession::new(&mut **transaction)
-        .query_as(
-            "academic_delivery.services.change_sets.require_effective_teacher_episode",
-            r#"SELECT starts_on, ends_on
-           FROM learning_group_teachers
-           WHERE id = $1
-             AND learning_group_id = $2
-             AND teacher_id = $3
-             AND academic_term_id = $4
-             AND academic_year_id = $5
-           FOR UPDATE"#,
-        )
-        .bind(learning_group_teacher_id)
-        .bind(learning_group_id)
-        .bind(teacher_id)
-        .bind(term.id)
-        .bind(term.academic_year_id)
-        .fetch_optional()
-        .await?;
-    let Some((_starts_on, _ends_on)) = episode else {
-        return Err(AppError::NotFound(
-            "ไม่พบช่วงการสอนของครูในกลุ่มเรียนนี้".to_string(),
-        ));
-    };
-    Ok(())
+    revision: Uuid,
+    group: Uuid,
+    requested: Uuid,
+    teacher: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(&mut **transaction).scalar("academic_delivery.services.change_sets.require_effective_teacher_episode",r#"
+        SELECT episode.id FROM academic_term_change_sets c
+        LEFT JOIN academic_delivery_versions base ON base.id=c.base_delivery_version_id
+        JOIN academic_delivery_versions target ON target.id=c.target_delivery_version_id,
+        jsonb_array_elements(COALESCE(base.snapshot,target.snapshot)->'offerings') offering,
+        jsonb_array_elements(offering->'groups') source_group,
+        jsonb_array_elements(source_group->'teachers') assignment
+        JOIN learning_group_teachers episode ON episode.id=(assignment->>'assignmentId')::uuid
+        WHERE c.id=$1 AND c.academic_term_id=$2 AND c.academic_year_id=$3
+          AND (source_group->>'id')::uuid=$4 AND (assignment->>'teacherId')::uuid=$5
+          AND episode.learning_group_id=$4 AND episode.teacher_id=$5 AND episode.academic_term_id=$2 AND episode.academic_year_id=$3
+          AND (episode.id=$6 OR uuid_generate_v5(c.id,'carried-teacher-episode:'||episode.id::text)=$6)
+        FOR UPDATE OF episode
+    "#).bind(revision).bind(term.id).bind(term.academic_year_id).bind(group).bind(teacher).bind(requested)
+        .fetch_optional().await?.ok_or_else(||AppError::Conflict("ช่วงการสอนนี้ไม่อยู่ในรุ่นเปิดสอนต้นทาง กรุณาโหลดข้อมูลใหม่".into()))
 }
 
 async fn find_teacher_add_item(

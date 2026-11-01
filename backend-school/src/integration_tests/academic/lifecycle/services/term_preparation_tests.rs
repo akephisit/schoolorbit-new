@@ -578,6 +578,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         opening_readiness.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
@@ -964,6 +965,7 @@ async fn publication_preview(
     let revision =
         school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
     school_academic_delivery::services::change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         id,
         Some(revision.reference_date),

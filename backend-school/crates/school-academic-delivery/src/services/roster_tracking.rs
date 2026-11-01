@@ -138,16 +138,31 @@ pub(super) async fn configuration_conflicts(
         )
         .fetch_one()
         .await?;
+    let available: bool = match effective_from {
+        Some(date) => {
+            DbSession::new(connection)
+                .scalar(
+                    "academic_delivery.services.roster_tracking.date_availability",
+                    "SELECT academic_delivery_offering_available($1,$2)",
+                )
+                .bind(offering)
+                .bind(date)
+                .fetch_one()
+                .await?
+        }
+        None => true,
+    };
     let mut conflicts = HashMap::new();
-    for (id, context) in contexts {
-        if let Err(AppError::ValidationError(reason)) = validate(
-            mode,
-            effective_from,
-            context.starts_on,
-            context.ends_on,
-            today,
-        ) {
+    for id in contexts.keys() {
+        if let Err(AppError::ValidationError(reason)) =
+            validate(mode, effective_from, today, None, today)
+        {
             conflicts.insert(*id, AppError::ValidationError(reason));
+        } else if mode == RosterTrackingMode::Homeroom && !available {
+            conflicts.insert(
+                *id,
+                AppError::ValidationError("วันที่เริ่มติดตามอยู่นอกแผนเปิดสอนที่มีผล".into()),
+            );
         }
     }
     if mode == RosterTrackingMode::Homeroom {
@@ -164,7 +179,7 @@ pub(super) async fn configuration_conflicts(
                         JOIN users u ON u.id=sy.student_id AND u.status='active'
                         WHERE p.student_academic_year_id=m.student_academic_year_id
                             AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
-                            AND p.end_date IS NULL AND (o.ends_on IS NULL OR p.start_date<=o.ends_on))) AS extra_members
+                            AND p.end_date IS NULL AND EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR span.ends_on>=p.start_date)))) AS extra_members
             FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
             JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
             WHERE g.id=ANY($1) AND o.id=$2
@@ -314,20 +329,21 @@ pub async fn sync_group(
     if !enabled {
         return Ok(());
     }
-    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,o.starts_on)) AS joined,p.homeroom_id
+    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,availability.starts_on)) AS joined,p.homeroom_id
         FROM learning_groups g JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id
         JOIN academic_terms t ON t.id=g.academic_term_id JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_years y ON y.id=g.academic_year_id
         JOIN learning_group_homerooms c ON c.learning_group_id=g.id JOIN homeroom_placements p ON p.homeroom_id=c.homeroom_id
         JOIN student_academic_years sy ON sy.id=p.student_academic_year_id AND sy.academic_year_id=g.academic_year_id
         JOIN users u ON u.id=sy.student_id AND u.status='active'
+        JOIN LATERAL(SELECT span.starts_on FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id
+            AND (span.ends_on IS NULL OR span.ends_on>=GREATEST(p.start_date,config.effective_from)) ORDER BY span.starts_on LIMIT 1) availability ON true
         WHERE g.id=$1 AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND sy.status IN ('active','planned')
             AND ($2::uuid[] IS NULL OR sy.id=ANY($2))
-            AND (o.ends_on IS NULL OR GREATEST(p.start_date,config.effective_from,o.starts_on)<=o.ends_on)
         GROUP BY sy.id,sy.student_id,p.homeroom_id"#).bind(id).bind(ids).fetch_all().await?;
     let desired: Vec<_> = rows.iter().map(|row| row.0).collect();
     let old: Vec<(Uuid,Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT m.id,m.student_academic_year_id,m.joined_at,
-        LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date),o.ends_on)
+        LEAST(COALESCE((SELECT MAX(p.end_date) FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=m.learning_group_id WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended' AND p.end_date>=m.joined_at AND sy.status IN ('active','planned')), (now() AT TIME ZONE 'Asia/Bangkok')::date))
         FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id
         JOIN student_academic_years sy ON sy.id=m.student_academic_year_id
         JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id

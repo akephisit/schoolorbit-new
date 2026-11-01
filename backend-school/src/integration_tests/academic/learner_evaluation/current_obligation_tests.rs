@@ -189,10 +189,14 @@ async fn omit(
         .await
         .unwrap();
     }
-    let preview =
-        change_sets::preview_change_set_at(pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        pool,
+        revision.id,
+        Some(revision.reference_date),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -202,6 +206,7 @@ async fn omit(
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor.user_id,
@@ -604,10 +609,14 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
     )
     .await
     .unwrap();
-    let preview =
-        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        revision.id,
+        Some(revision.reference_date),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -617,6 +626,7 @@ async fn learner_current_obligation_real_all_omitted_subject_refuses_without_laz
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,

@@ -535,6 +535,7 @@ fn academic_router(
         collaboration: websocket_manager.collaboration(),
         result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
         assessment_publication: &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+        publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
         lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
     };
     axum::Router::new()

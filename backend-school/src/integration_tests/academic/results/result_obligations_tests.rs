@@ -95,10 +95,14 @@ async fn results_current_obligation_omitted_unused_group_does_not_block_ready_co
     )
     .await
     .unwrap();
-    let preview =
-        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        revision.id,
+        Some(revision.reference_date),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -108,6 +112,7 @@ async fn results_current_obligation_omitted_unused_group_does_not_block_ready_co
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
@@ -303,10 +308,14 @@ async fn scoped_results(
         .await
         .unwrap();
     }
-    let preview =
-        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &pool,
+        revision.id,
+        Some(revision.reference_date),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -316,6 +325,7 @@ async fn scoped_results(
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor.user_id,
@@ -439,10 +449,14 @@ async fn results_current_obligation_classifier_context_dates_empty_and_legacy() 
     )
     .await
     .unwrap();
-    let preview =
-        change_sets::preview_change_set_at(&f.pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        &f.pool,
+        revision.id,
+        Some(revision.reference_date),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -452,6 +466,7 @@ async fn results_current_obligation_classifier_context_dates_empty_and_legacy() 
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &f.pool,
         f.actor.user_id,

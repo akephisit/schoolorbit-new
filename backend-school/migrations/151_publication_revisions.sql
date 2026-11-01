@@ -5,13 +5,20 @@ LOCK TABLE academic_delivery_versions, academic_timetable_versions,
 
 CREATE TEMP TABLE academic_151_preservation ON COMMIT DROP AS
 SELECT 'delivery_publications_preserved'::text code,
-    md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) fingerprint
+    md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) fingerprint
 FROM academic_delivery_versions v
-UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM academic_timetable_versions v
-UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM learning_group_teachers v
-UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM learning_offerings v
-UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM academic_term_change_sets v
-UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM academic_timetable_blocks v;
+UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_timetable_versions v
+UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_teachers v
+UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_offerings v
+UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
+UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(fingerprint,'' ORDER BY owner) FROM (
+    SELECT 'blocks' owner,md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) fingerprint FROM academic_timetable_blocks v
+    UNION ALL SELECT 'attendance_sessions',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM attendance_sessions v
+    UNION ALL SELECT 'attendance_records',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY session_id,student_id),'')) FROM attendance_records v
+    UNION ALL SELECT 'student_scores',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_student_scores v
+    UNION ALL SELECT 'course_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_course_results v
+    UNION ALL SELECT 'activity_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_activity_results v
+) preserved),''));
 
 ALTER TABLE academic_delivery_versions ADD COLUMN publication_no BIGINT;
 ALTER TABLE academic_timetable_versions ADD COLUMN publication_no BIGINT;
@@ -28,7 +35,7 @@ ALTER TABLE academic_timetable_versions ENABLE TRIGGER academic_timetable_versio
 
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_delivery_versions v JOIN academic_delivery_versions source ON source.id=v.source_version_id
-        WHERE v.status='published' AND (source.status<>'published' OR source.academic_term_id<>v.academic_term_id OR source.publication_no>=v.publication_no))
+        WHERE v.status='published' AND (source.status<>'published' OR source.academic_term_id<>v.academic_term_id))
     THEN RAISE EXCEPTION 'PUBLICATION_151_SOURCE_LINEAGE_INVALID' USING ERRCODE='check_violation'; END IF;
 END $$;
 
@@ -90,6 +97,32 @@ CREATE TRIGGER academic_delivery_teacher_cutoffs_guard BEFORE INSERT OR UPDATE O
 CREATE TRIGGER academic_delivery_offering_effectivity_guard BEFORE INSERT OR UPDATE OR DELETE ON academic_delivery_offering_effectivity
     FOR EACH ROW EXECUTE FUNCTION academic_protect_delivery_effectivity();
 
+-- Pending evidence is visible to overlap checks in this transaction, but may
+-- never become committed effectivity without the same accepted publication.
+CREATE FUNCTION academic_require_accepted_delivery_effectivity() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE revision_id UUID; chosen DATE;
+BEGIN
+    IF TG_TABLE_NAME='learning_group_teachers' THEN
+        revision_id:=NEW.started_by_change_set_id; chosen:=NEW.starts_on;
+        IF revision_id IS NULL THEN RETURN NEW; END IF;
+    ELSE
+        revision_id:=NEW.change_set_id; chosen:=NEW.effective_on;
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM academic_term_change_sets c JOIN academic_delivery_versions v ON v.id=c.target_delivery_version_id
+        WHERE c.id=revision_id AND c.status='published' AND v.status='published'
+          AND c.effective_from=chosen AND v.effective_from=chosen
+          AND c.academic_term_id=NEW.academic_term_id AND c.academic_year_id=NEW.academic_year_id
+          AND v.academic_term_id=NEW.academic_term_id AND v.academic_year_id=NEW.academic_year_id)
+    THEN RAISE EXCEPTION 'ACADEMIC_DELIVERY_EFFECTIVITY_NOT_PUBLISHED' USING ERRCODE='check_violation'; END IF;
+    RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER academic_delivery_teacher_cutoffs_accepted AFTER INSERT ON academic_delivery_teacher_cutoffs
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION academic_require_accepted_delivery_effectivity();
+CREATE CONSTRAINT TRIGGER academic_delivery_offering_effectivity_accepted AFTER INSERT ON academic_delivery_offering_effectivity
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION academic_require_accepted_delivery_effectivity();
+CREATE CONSTRAINT TRIGGER academic_delivery_teacher_episodes_accepted AFTER INSERT ON learning_group_teachers
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION academic_require_accepted_delivery_effectivity();
+
 CREATE VIEW academic_delivery_effective_teacher_episodes AS
 SELECT t.*, LEAST(t.ends_on,(SELECT min(c.effective_on)-1 FROM academic_delivery_teacher_cutoffs c WHERE c.assignment_id=t.id)) AS effective_ends_on
 FROM learning_group_teachers t;
@@ -122,8 +155,7 @@ BEGIN
     IF boundary IS NOT NULL AND boundary<NEW.starts_on THEN RETURN NEW; END IF;
     IF EXISTS(SELECT 1 FROM academic_delivery_effective_teacher_episodes t
         WHERE t.learning_group_id=NEW.learning_group_id AND t.teacher_id=NEW.teacher_id AND t.id<>NEW.id
-          AND (t.effective_ends_on IS NULL OR t.effective_ends_on>=t.starts_on)
-          AND daterange(t.starts_on,t.effective_ends_on,'[]') && daterange(NEW.starts_on,boundary,'[]'))
+          AND CASE WHEN t.effective_ends_on<t.starts_on THEN 'empty'::daterange ELSE daterange(t.starts_on,t.effective_ends_on,'[]') END && daterange(NEW.starts_on,boundary,'[]'))
     THEN RAISE EXCEPTION 'ACADEMIC_GROUP_TEACHER_INTERVAL_OVERLAP' USING ERRCODE='check_violation'; END IF;
     RETURN NEW;
 END $$;
@@ -312,13 +344,29 @@ CREATE TABLE academic_publication_revisions_audit (
     checks JSONB NOT NULL,
     reconciled_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE FUNCTION academic_protect_publication_revisions_audit() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP<>'INSERT' OR NOT EXISTS(SELECT 1 FROM pg_class WHERE oid=TG_RELID AND relowner=current_user::regrole)
+    THEN RAISE EXCEPTION 'PUBLICATION_151_AUDIT_IMMUTABLE' USING ERRCODE='check_violation'; END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER academic_publication_revisions_audit_guard BEFORE INSERT OR UPDATE OR DELETE ON academic_publication_revisions_audit
+    FOR EACH ROW EXECUTE FUNCTION academic_protect_publication_revisions_audit();
+
 CREATE TEMP TABLE academic_151_after ON COMMIT DROP AS
-SELECT 'delivery_publications_preserved'::text code,md5(COALESCE(string_agg((to_jsonb(v)-'publication_no')::text,'' ORDER BY id),'')) fingerprint FROM academic_delivery_versions v
-UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg((to_jsonb(v)-'publication_no')::text,'' ORDER BY id),'')) FROM academic_timetable_versions v
-UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM learning_group_teachers v
-UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM learning_offerings v
-UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM academic_term_change_sets v
-UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE(string_agg(to_jsonb(v)::text,'' ORDER BY id),'')) FROM academic_timetable_blocks v;
+SELECT 'delivery_publications_preserved'::text code,md5(COALESCE(string_agg(md5((to_jsonb(v)-'publication_no')::text),'' ORDER BY id),'')) fingerprint FROM academic_delivery_versions v
+UNION ALL SELECT 'timetable_publications_preserved',md5(COALESCE(string_agg(md5((to_jsonb(v)-'publication_no')::text),'' ORDER BY id),'')) FROM academic_timetable_versions v
+UNION ALL SELECT 'teacher_episodes_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_teachers v
+UNION ALL SELECT 'offering_registry_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_offerings v
+UNION ALL SELECT 'publication_receipts_preserved',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_term_change_sets v
+UNION ALL SELECT 'downstream_sources_preserved',md5(COALESCE((SELECT string_agg(fingerprint,'' ORDER BY owner) FROM (
+    SELECT 'blocks' owner,md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) fingerprint FROM academic_timetable_blocks v
+    UNION ALL SELECT 'attendance_sessions',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM attendance_sessions v
+    UNION ALL SELECT 'attendance_records',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY session_id,student_id),'')) FROM attendance_records v
+    UNION ALL SELECT 'student_scores',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM learning_group_student_scores v
+    UNION ALL SELECT 'course_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_course_results v
+    UNION ALL SELECT 'activity_results',md5(COALESCE(string_agg(md5(to_jsonb(v)::text),'' ORDER BY id),'')) FROM academic_activity_results v
+) preserved),''));
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic_151_preservation b FULL JOIN academic_151_after a USING(code) WHERE b.fingerprint IS DISTINCT FROM a.fingerprint)
     THEN RAISE EXCEPTION 'PUBLICATION_151_PRESERVATION_FAILED' USING ERRCODE='check_violation'; END IF;
@@ -326,8 +374,15 @@ DO $$ BEGIN
         jsonb_array_elements(o->'groups') g,jsonb_array_elements(g->'teachers') t
         WHERE v.status='published' AND NOT EXISTS(SELECT 1 FROM learning_group_teachers e WHERE e.id=(t->>'assignmentId')::uuid
             AND e.learning_group_id=(g->>'id')::uuid AND e.teacher_id=(t->>'teacherId')::uuid
-            AND e.academic_term_id=v.academic_term_id AND e.academic_year_id=v.academic_year_id))
+            AND e.academic_term_id=v.academic_term_id AND e.academic_year_id=v.academic_year_id AND e.role=t->>'role'
+            AND EXISTS(SELECT 1 FROM learning_groups owned WHERE owned.id=e.learning_group_id AND owned.learning_offering_id=(o->>'id')::uuid)))
     THEN RAISE EXCEPTION 'PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID' USING ERRCODE='check_violation'; END IF;
+    IF EXISTS(SELECT 1 FROM academic_delivery_versions WHERE (status='published') IS DISTINCT FROM (publication_no IS NOT NULL))
+        OR EXISTS(SELECT 1 FROM academic_timetable_versions WHERE (status='published') IS DISTINCT FROM (publication_no IS NOT NULL))
+        OR EXISTS(SELECT 1 FROM academic_delivery_versions a JOIN academic_delivery_versions b ON a.academic_term_id=b.academic_term_id
+            WHERE a.status='published' AND b.status='published' AND a.effective_from<b.effective_from AND a.publication_no>=b.publication_no)
+        OR EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans WHERE ends_on<starts_on)
+    THEN RAISE EXCEPTION 'PUBLICATION_151_RECONCILIATION_FAILED' USING ERRCODE='check_violation'; END IF;
 END $$;
 INSERT INTO academic_publication_revisions_audit(migration_version,passed,checks)
 SELECT 151,true,jsonb_agg(jsonb_build_object('code',code,'count',0,'passed',true) ORDER BY code)

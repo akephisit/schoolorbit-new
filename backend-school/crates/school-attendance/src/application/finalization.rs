@@ -13,7 +13,7 @@ pub async fn expected_rounds_on_connection(
     let context = settings::AttendanceReadContext::load(connection, term).await?;
     expected_rounds_with_context(connection, &context, date).await
 }
-async fn expected_rounds_with_context(
+pub(crate) async fn expected_rounds_with_context(
     connection: &mut PgConnection,
     context: &settings::AttendanceReadContext,
     date: NaiveDate,
@@ -187,7 +187,10 @@ pub async fn catch_up(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Result<u
             school_tenancy::TenantPool::begin_observed(pool, "attendance.finalization.transaction")
                 .await?;
         let guard = crate::services::finalization::guard_finalization(&mut tx, term).await?;
-        let seeds = expected_rounds_with_context(&mut tx, &guard.context, date).await?;
+        let seeds = crate::services::finalization::ValidatedFinalizationSeeds::resolve(
+            &mut tx, &guard, date, generation,
+        )
+        .await?;
         crate::services::finalization::finalize_guarded(
             &mut tx, &guard, date, generation, &seeds, now,
         )

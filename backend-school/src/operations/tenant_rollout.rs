@@ -30,6 +30,7 @@ enum FailureStage {
     OwnerAcademicCoreCutover,
     OwnerGradebookResultsCutover,
     OwnerDeliveryTimetableCutover,
+    OwnerPublicationRevisionsCutover,
     OwnerStaffProfileCutover,
     RuntimeConnection,
     RuntimeIdentity,
@@ -37,6 +38,7 @@ enum FailureStage {
     RuntimeAcademicCoreCutover,
     RuntimeGradebookResultsCutover,
     RuntimeDeliveryTimetableCutover,
+    RuntimePublicationRevisionsCutover,
     RuntimeStaffProfileCutover,
     AdminStatus,
 }
@@ -54,6 +56,7 @@ impl FailureStage {
             Self::OwnerAcademicCoreCutover => "owner_academic_core_cutover",
             Self::OwnerGradebookResultsCutover => "owner_gradebook_results_cutover",
             Self::OwnerDeliveryTimetableCutover => "owner_delivery_timetable_cutover",
+            Self::OwnerPublicationRevisionsCutover => "owner_publication_revisions_cutover",
             Self::OwnerStaffProfileCutover => "owner_staff_profile_cutover",
             Self::RuntimeConnection => "runtime_connection",
             Self::RuntimeIdentity => "runtime_identity",
@@ -61,6 +64,7 @@ impl FailureStage {
             Self::RuntimeAcademicCoreCutover => "runtime_academic_core_cutover",
             Self::RuntimeGradebookResultsCutover => "runtime_gradebook_results_cutover",
             Self::RuntimeDeliveryTimetableCutover => "runtime_delivery_timetable_cutover",
+            Self::RuntimePublicationRevisionsCutover => "runtime_publication_revisions_cutover",
             Self::RuntimeStaffProfileCutover => "runtime_staff_profile_cutover",
             Self::AdminStatus => "admin_status",
         }
@@ -311,6 +315,20 @@ async fn cutovers_detailed(
         FailureStage::RuntimeDeliveryTimetableCutover
     };
     if !school_academic_delivery::services::versions::read_cutover_audit_on_connection(
+        &mut *connection,
+    )
+    .await
+    .map_err(|error| RolloutFailure::audit(stage, &error))?
+    .completed
+    {
+        return Err(RolloutFailure::plain(stage, BindingError::Database));
+    }
+    let stage = if owner {
+        FailureStage::OwnerPublicationRevisionsCutover
+    } else {
+        FailureStage::RuntimePublicationRevisionsCutover
+    };
+    if !school_academic_delivery::services::publication::read_revisions_audit_on_connection(
         &mut *connection,
     )
     .await

@@ -1058,7 +1058,7 @@ async function mockActivityActivation(
 	const summary = (id: string, status: string) => ({
 		id,
 		status,
-		publicationNo: status === 'published' ? 1 : null,
+		publicationNo: status === 'published' ? 2 : null,
 		isSuperseded: false,
 		publishedAt: status === 'published' ? '2027-07-01T00:00:00Z' : null,
 		publishedBy: null,
@@ -1084,7 +1084,9 @@ async function mockActivityActivation(
 				? [
 						{
 							...summary('82000000-0000-4000-8000-000000000089', 'published'),
-							effectiveFrom: '2027-04-01'
+							publicationNo: 1,
+							effectiveFrom: '2027-04-01',
+							effectiveUntil: '2027-04-30'
 						}
 					]
 				: []),
@@ -1301,11 +1303,13 @@ for (const grouped of [false, true]) {
 			await page.getByLabel('รูปแบบการเปิด').click();
 			await page.getByRole('option', { name: 'เปิดพร้อมจัดกลุ่ม', exact: true }).click();
 		}
+		await selectOfferingStartDate(page, 'วันที่เริ่มเปิดสอนจริง');
 		await page.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
 		await expect
 			.poll(() => body)
 			.toMatchObject({
 				kind: 'activity',
+				startsOn: offeringStartsOn,
 				schedulingMode: 'synchronized',
 				createHomeroomGroups: grouped,
 				targets: [

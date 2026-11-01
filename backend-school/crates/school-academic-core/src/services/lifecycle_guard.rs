@@ -182,9 +182,19 @@ pub async fn require_term_write_exclusive(
     year: Uuid,
     term: Uuid,
 ) -> Result<(), AppError> {
-    lock_context_with_term_mode(tx, year, term, true)
+    lock_context_exclusive(tx, year, term)
         .await?
         .require_writable()
+}
+
+/// Serialize an acceptance receipt read before deciding whether a new write is
+/// allowed. An already accepted idempotent result remains readable after closure.
+pub async fn lock_context_exclusive(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
+) -> Result<AcademicWriteState, AppError> {
+    lock_context_with_term_mode(tx, year, term, true).await
 }
 
 #[cfg(test)]

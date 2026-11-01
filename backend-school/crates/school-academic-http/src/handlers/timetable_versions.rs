@@ -221,7 +221,7 @@ pub async fn delete_draft(
     let version = timetable_version_service::get_version(
         &context.tenant.pool,
         id,
-        chrono::Utc::now().date_naive(),
+        timetable_version_service::bangkok_today(),
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
@@ -258,7 +258,8 @@ pub async fn preview_publication(
     )
     .await?;
     Ok(Json(ApiResponse::ok(
-        timetable_lifecycle::preview(&context.tenant.pool, id, request).await?,
+        timetable_lifecycle::preview(state.publication_history, &context.tenant.pool, id, request)
+            .await?,
     )))
 }
 
@@ -284,8 +285,14 @@ pub async fn publish_version(
     )
     .await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
-    let version =
-        timetable_lifecycle::publish(&context.tenant.pool, &mutation, id, request).await?;
+    let version = timetable_lifecycle::publish(
+        state.publication_history,
+        &context.tenant.pool,
+        &mutation,
+        id,
+        request,
+    )
+    .await?;
     signal_version(
         &state,
         &context,

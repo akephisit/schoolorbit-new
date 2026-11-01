@@ -1,3 +1,5 @@
+#[path = "../src/adapters/publication_history.rs"]
+mod publication_history;
 use std::collections::HashSet;
 
 use school_academic_timetable::{

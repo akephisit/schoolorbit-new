@@ -113,6 +113,7 @@ impl Fixture {
             result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
             assessment_publication:
                 &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
         };
         let ws = AcademicWebSocketState {
@@ -1319,6 +1320,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
         .unwrap();
     }
     let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         revision.id,
         Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
@@ -1334,6 +1336,7 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor_id,
@@ -1736,6 +1739,7 @@ async fn all_draft_bulk_lifecycle_and_resume_owners_observe_the_same_active_rese
     );
     reserved(
         timetable_lifecycle::publish(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
             pool,
             &context,
             fixture.version,

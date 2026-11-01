@@ -14,6 +14,7 @@ pub struct AcademicHttpState {
     pub result_locks: &'static dyn ResultLockPort,
     pub assessment_publication:
         &'static dyn school_academic_delivery::ports::AssessmentPublicationPort,
+    pub publication_history: &'static dyn school_academic_delivery::ports::PublicationHistoryPort,
     pub lifecycle_providers: &'static dyn ExternalLifecyclePort,
 }
 

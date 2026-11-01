@@ -1879,6 +1879,32 @@ Rank milestone reads use the canonical current history and existing profile scop
 
 After a tenant applies 085, binaries writing position/rank directly into `staff_info` are prohibited. Deploy migration, backend, generated API contracts and frontend as one coordinated full release under maintenance. Rehearse the central runner on every affected active-tenant copy, preserve a current recovery point using the seven-day procedure above, and require actual SQLx-version equality before opening the proxy. Keep maintenance active on failure and repair forward with reviewed artifacts. Never bypass the guards, modify an applied migration or SQLx history, or assume an old binary is a safe rollback. Recovery must account for writes after the retained point. This release records career facts; it does not calculate eligibility or a next submission date.
 
+### Publication revision chronology and recovery
+
+Deploy [migration 151](../backend-school/migrations/151_publication_revisions.sql) with matching
+School backend, generated API contracts and frontend under the existing maintenance and all-tenant
+readiness gates. It preserves original UUIDs, effective dates, timestamps, snapshots, receipts,
+episodes and downstream evidence while adding independent per-term publication numbers.
+The old `deliveryTimetableCutover` 87/88 evidence remains unchanged. The separate
+`publicationRevisionsCutover` status must report version 151, `cutoverCompleted`, `passed: true`
+and the exact eight successful zero-mismatch checks owned by the
+[Delivery audit reader](../backend-school/crates/school-academic-delivery/src/services/publication.rs).
+Owner and runtime startup/rollout verification both require this protected receipt.
+
+Migration refusal codes identify bounded source, assignment, preservation or reconciliation
+failures. Keep maintenance active, preserve the recovery point and original migration checksums,
+inspect an owned protected copy and repair with reviewed forward evidence. Do not fabricate the
+audit, grant TEMP/DDL to runtime, edit applied SQL or infer intended dates from a screenshot.
+Existing November 1–5 dates remain unchanged. Before consumption, an authorized new revision can
+explicitly choose November 1 while inheriting the latest graph; its higher number supersedes the
+old future plans without deleting or retargeting their records. Persisted lesson sessions or a
+current-generation finalized day at/after the selected date refuse that correction. Historical
+pinned timetable and grade/result facts remain accessible.
+
+After any new revision/effectivity semantics are accepted, recover with a compatible forward
+runtime. Older date-ranked writers cannot preserve these guarantees. Timetable source adoption
+remains explicit and never follows automatically from opening publication or cloning a table.
+
 ### Delivery and timetable version cutover
 
 The coordinated school release applies migrations

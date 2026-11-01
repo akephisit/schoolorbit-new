@@ -15,6 +15,13 @@ use crate::models::timetable_version::{
 use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
+pub fn bangkok_date_at(now: chrono::DateTime<Utc>) -> NaiveDate {
+    (now + chrono::Duration::hours(7)).date_naive()
+}
+pub fn bangkok_today() -> NaiveDate {
+    bangkok_date_at(Utc::now())
+}
+
 pub mod opening;
 mod term_preparation;
 pub use term_preparation::apply as apply_term_preparation;
@@ -143,7 +150,7 @@ pub async fn list_versions_on_connection(
         .bind(term_id)
         .fetch_all()
         .await?;
-    hydrate_versions(connection, rows, Utc::now().date_naive()).await
+    hydrate_versions(connection, rows, bangkok_today()).await
 }
 
 /// Public read DTOs expose only opening targets within the timetable read scope.
@@ -341,7 +348,7 @@ async fn create_initial_draft_in_permit(
             .bind(id).bind(year).bind(request.academic_term_id).bind(actor).bind(serde_json::json!({"deliveryVersionId":delivery})).execute().await?;
         id
     };
-    let version = get_version_on_connection(&mut tx, id, Utc::now().date_naive()).await?;
+    let version = get_version_on_connection(&mut tx, id, bangkok_today()).await?;
     permit.commit(tx).await?;
     Ok(version)
 }
@@ -402,7 +409,7 @@ async fn clone_draft_in_permit(
     )
     .await?;
     let id = clone_draft_in_transaction(&mut transaction, &permit, source_id, request).await?;
-    let result = get_version_on_connection(&mut transaction, id, Utc::now().date_naive()).await?;
+    let result = get_version_on_connection(&mut transaction, id, bangkok_today()).await?;
     permit.commit(transaction).await?;
     Ok(result)
 }
@@ -410,10 +417,10 @@ async fn clone_draft_in_permit(
 /// Coordinate before version/block locks. Resolve immutable IDs without row
 /// locks and acquire the term write mode initially, including nested Delivery
 /// callers which already hold that same term lock.
-pub(crate) async fn require_version_term_write(
+pub(crate) async fn lock_version_term_context(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<lifecycle_guard::AcademicWriteState, AppError> {
     let (year_id, term_id): (Uuid, Uuid) = DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_version_service.require_version_term_write",
         "SELECT academic_year_id, academic_term_id FROM academic_timetable_versions WHERE id=$1",
     )
@@ -421,7 +428,16 @@ pub(crate) async fn require_version_term_write(
     .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".into()))?;
-    lifecycle_guard::require_term_write_exclusive(transaction, year_id, term_id).await
+    lifecycle_guard::lock_context_exclusive(transaction, year_id, term_id).await
+}
+
+pub(crate) async fn require_version_term_write(
+    transaction: &mut Transaction<'_, Postgres>,
+    version_id: Uuid,
+) -> Result<(), AppError> {
+    lock_version_term_context(transaction, version_id)
+        .await?
+        .require_writable()
 }
 
 pub async fn clone_draft_in_transaction(

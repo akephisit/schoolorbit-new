@@ -358,6 +358,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
     .await
     .unwrap();
     let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         revision.id,
         Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
@@ -373,6 +374,7 @@ pub(super) async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, versi
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         pool,
         actor,
@@ -1209,6 +1211,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .unwrap();
     }
     let preview = change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         revision.id,
         Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
@@ -1224,6 +1227,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         preview.findings
     );
     change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         &pool,
         actor_id,

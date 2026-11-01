@@ -179,7 +179,8 @@ and constraints, then switch runtime consumers as one coordinated release.
 Backfill each domain's existing publications by `row_number()` partitioned by term and ordered
 by original effective date then UUID. Existing per-day uniqueness makes this deterministic and
 preserves the old winner for every date. Imported timestamp ties are legitimate. Validate
-published shape, context/source lineage and exact graph assignment ownership; refuse conflicting
+published shape, same-context source identity/status and exact graph assignment ownership; preserve
+valid source links even when legacy date order differs from that lineage, and refuse conflicting
 or unmappable evidence with bounded aggregate codes. Preserve every original effective date,
 timestamp, UUID, snapshot, journal, receipt, source link, attendance result and grade/result fact.
 No migration-created supersession evidence guesses which legacy dates were accidental.

@@ -41,7 +41,7 @@ pub async fn published_for_term(
             "SELECT id,kind,starts_on,ends_on,row_version
          FROM learning_offerings
          WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
-           AND starts_on<=$3 AND (ends_on IS NULL OR ends_on>=$3)
+           AND academic_delivery_offering_available(id,$3)
          ORDER BY id LIMIT 5001",
         )
         .bind(academic_year_id)

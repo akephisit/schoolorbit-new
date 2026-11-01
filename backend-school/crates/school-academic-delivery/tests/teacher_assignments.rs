@@ -23,7 +23,7 @@ struct Fixture {
 async fn fixture(name: &str) -> Fixture {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 150).await.unwrap();
+    apply_migrations_through(&pool, 151).await.unwrap();
     let source: Uuid = sqlx::query_scalar("SELECT learning_offering_id FROM course_offering_details ORDER BY learning_offering_id LIMIT 1")
         .fetch_one(&pool).await.unwrap();
     let term = Uuid::now_v7();
@@ -85,7 +85,7 @@ async fn version(
     graph: &serde_json::Value,
 ) -> Uuid {
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,CASE WHEN $4 THEN current_date+$5 ELSE NULL END,CASE WHEN $4 THEN NULL ELSE current_date+$5 END,CASE WHEN $4 THEN 'published' ELSE 'draft' END,$6,CASE WHEN $4 THEN $7::uuid ELSE NULL END,CASE WHEN $4 THEN now() ELSE NULL END,CASE WHEN $4 THEN uuidv7() ELSE NULL END,CASE WHEN $4 THEN repeat('a',64) ELSE NULL END)")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES(CASE WHEN $4 THEN (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=$2) ELSE NULL END,$1,$2,$3,CASE WHEN $4 THEN current_date+$5 ELSE NULL END,CASE WHEN $4 THEN NULL ELSE current_date+$5 END,CASE WHEN $4 THEN 'published' ELSE 'draft' END,$6,CASE WHEN $4 THEN $7::uuid ELSE NULL END,CASE WHEN $4 THEN now() ELSE NULL END,CASE WHEN $4 THEN uuidv7() ELSE NULL END,CASE WHEN $4 THEN repeat('a',64) ELSE NULL END)")
         .bind(id).bind(f.term).bind(f.year).bind(published).bind(offset).bind(graph).bind(FIRST).execute(connection).await.unwrap();
     id
 }

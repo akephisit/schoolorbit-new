@@ -1492,6 +1492,7 @@ pub async fn preview_term_change_set(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     require_term_change_set_access(&context, id, OfferingAction::Read).await?;
     Ok(ok(change_sets::preview_change_set_at(
+        state.publication_history,
         &context.tenant.pool,
         id,
         query.effective_from,
@@ -1526,6 +1527,7 @@ pub async fn publish_term_change_set(
     let prior_descriptors =
         offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
     let change_set = change_sets::publish_change_set(
+        state.publication_history,
         state.assessment_publication,
         &context.tenant.pool,
         context.actor.user_id,

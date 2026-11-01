@@ -152,7 +152,7 @@ pub(crate) async fn get_canonical_workspace(
     let mut version = super::timetable_version_service::get_version_on_connection(
         connection,
         query.timetable_version_id,
-        Utc::now().date_naive(),
+        timetable_version_service::bangkok_today(),
     )
     .await?;
     if version.academic_year_id != query.academic_year_id

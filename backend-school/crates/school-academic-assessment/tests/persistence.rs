@@ -124,7 +124,7 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
     assert_eq!(unknown.assessment_coordinator_id, Some(primary));
     assert!(unknown.coordinator_candidates.is_empty());
     assert_assessment_assignment_scope(&pool, term, offering, primary, false).await;
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date-90,'published',academic_capture_delivery_snapshot(academic_term_id,current_date-90,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$2,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id),uuidv7(),academic_term_id,academic_year_id,current_date-90,'published',academic_capture_delivery_snapshot(academic_term_id,current_date-90,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$2,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
         .bind(offering).bind(primary).execute(&pool).await.unwrap();
     let detail = services::get_plan_detail(&pool, offering).await.unwrap();
     assert_eq!(detail.assessment_coordinator_id, Some(primary));
@@ -159,7 +159,7 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
         .unwrap();
     assert_assessment_assignment_scope(&pool, term, offering, primary, true).await;
 
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,current_date,'published',academic_capture_delivery_snapshot(academic_term_id,current_date,'[]'::jsonb),$2,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
+    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id),uuidv7(),academic_term_id,academic_year_id,current_date,'published',academic_capture_delivery_snapshot(academic_term_id,current_date,'[]'::jsonb),$2,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
         .bind(offering).bind(primary).execute(&pool).await.unwrap();
     assert_assessment_assignment_scope(&pool, term, offering, primary, false).await;
     assert_assessment_assignment_scope(&pool, term, offering, live_only, false).await;

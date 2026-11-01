@@ -25,6 +25,7 @@ impl FromRef<AppState> for AcademicHttpState {
             result_locks: &RESULT_LOCKS,
             assessment_publication:
                 &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
             placement_rosters: &PLACEMENT_ROSTERS,
             lifecycle_providers: &LIFECYCLE_PROVIDERS,
         }

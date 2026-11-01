@@ -574,7 +574,7 @@ pub(super) async fn include_offering(
         LEFT JOIN activity_offering_details detail ON detail.learning_offering_id=offering.id
         LEFT JOIN activity_versions activity ON activity.id=detail.activity_version_id
         WHERE offering.id=$1 AND offering.academic_term_id=$2 AND offering.academic_year_id=$3 AND offering.status IN('draft','published')
-        AND (offering.starts_on IS NULL OR offering.starts_on<=$4) AND (offering.ends_on IS NULL OR offering.ends_on>=$4)")
+        AND (offering.status='draft' OR academic_delivery_offering_available(offering.id,$4))")
         .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional().await?
         .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่ตรงกับรุ่นหรือวันที่ที่เลือก".into()))?;
     if !valid_weekly_period_target(target) {

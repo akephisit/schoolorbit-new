@@ -176,6 +176,16 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(151), "PUBLICATION_151_SOURCE_LINEAGE_INVALID") => {
+            "PUBLICATION_151_SOURCE_LINEAGE_INVALID"
+        }
+        (Some(151), "PUBLICATION_151_PRESERVATION_FAILED") => "PUBLICATION_151_PRESERVATION_FAILED",
+        (Some(151), "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID") => {
+            "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID"
+        }
+        (Some(151), "PUBLICATION_151_RECONCILIATION_FAILED") => {
+            "PUBLICATION_151_RECONCILIATION_FAILED"
+        }
         (Some(147), "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH") => {
             "ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH"
         }

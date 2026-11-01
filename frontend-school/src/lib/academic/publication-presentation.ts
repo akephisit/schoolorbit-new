@@ -41,7 +41,7 @@ export function deliveryPublicationLabel(
 		version.publicationNo === null ? null : `รุ่นที่ ${version.publicationNo}`,
 		version.effectiveFrom
 			? `เริ่มใช้ ${publicationDate(version.effectiveFrom)}`
-			: 'เลือกวันตอนเผยแพร่',
+			: 'เลือกวันเริ่มใช้ตอนเผยแพร่',
 		version.publishedAt ? `เผยแพร่ ${publicationTime(version.publishedAt)}` : null
 	]
 		.filter(Boolean)

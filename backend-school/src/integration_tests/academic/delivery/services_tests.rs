@@ -1383,7 +1383,7 @@ async fn table_preview(
         school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
             .await
             .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::preview(pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
+    school_academic_timetable::services::timetable_lifecycle::preview(&crate::adapters::publication_history::PUBLICATION_HISTORY,pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
         row_version:table.row_version,effective_from:opening.effective_from.unwrap().succ_opt().unwrap()
     }).await.unwrap()
 }
@@ -3130,6 +3130,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
             idempotency_key: Uuid::new_v4(),
         };
     let published = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3147,6 +3148,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
     assert_eq!(published.delivery_version_id, draft.delivery_version_id);
     assert_eq!(published.effective_from, Some(request.effective_from));
     let repeated = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3159,6 +3161,7 @@ async fn independent_timetable_can_publish_position_changes_without_a_delivery_r
     .unwrap();
     assert_eq!(repeated.row_version, published.row_version);
     let changed_retry = timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3684,6 +3687,7 @@ async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_del
     assert!(!preview.can_publish);
     assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id)));
     let publication = school_academic_timetable::services::timetable_lifecycle::publish(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
             &pool,
@@ -3908,6 +3912,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
     };
     let rejected = school_academic_delivery::services::change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &RejectAssessmentPublication,
         &pool,
         context.teacher_id,
@@ -3972,6 +3977,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         .await
         .unwrap();
     let replay = school_academic_delivery::services::change_sets::publish_change_set(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         &RejectAssessmentPublication,
         &pool,
         context.teacher_id,
@@ -7643,6 +7649,7 @@ async fn timetable_draft_deletion_serializes_with_publication() {
     );
     let (published, deleted) = tokio::join!(
         timetable_lifecycle::publish(
+            &crate::adapters::publication_history::PUBLICATION_HISTORY,
             &pool,
             &mutation,
             draft.id,
@@ -7706,6 +7713,7 @@ async fn publication_preview(
     let revision =
         school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
     school_academic_delivery::services::change_sets::preview_change_set_at(
+        &crate::adapters::publication_history::PUBLICATION_HISTORY,
         pool,
         id,
         Some(revision.reference_date),
