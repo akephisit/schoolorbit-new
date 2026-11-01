@@ -1,5 +1,6 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {
 	expectSquareTimetablePdf,
 	expectTimetablePdfPresentation,
@@ -619,4 +620,92 @@ test('exports 31 selected teachers as 31 complete pages with an external crest a
 	const text = await pdfText(download);
 	for (const teacher of staff) expect(text).toContain(teacher.displayName.replace(/\s/g, ''));
 	expect(brandingReads).toBe(1);
+});
+
+test('wraps school and owner using their loaded bold measurement face within the mini header', async ({
+	page
+}) => {
+	const schoolName = `โรงเรียน${'พัฒนา'.repeat(13)}วิทยาคม`;
+	const ownerName = `นาย${'พัฒนา'.repeat(13)}วิทยาคม`;
+	await installTimetableMock(page, {
+		requestedWorkspaceVersion: true,
+		permissions: ['academic_timetable.read.school'],
+		periodCount: 10,
+		staff: [
+			{ id: timetableIds.teacherA, displayName: ownerName, subjectGroups: [], status: 'active' }
+		],
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	const logoId = '80000000-0000-4000-8000-000000000001';
+	const logoBytes = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
+	const crest = await (await PDFDocument.create()).embedPng(logoBytes);
+	expect(crest.width / crest.height).toBe(1);
+	await page.route('**/api/school/public', (route) =>
+		route.fulfill({
+			json: { success: true, data: { schoolName, logoFileId: logoId } }
+		})
+	);
+	await page.route(`**/api/public/files/${logoId}/delivery`, (route) =>
+		route.fulfill({
+			json: { success: true, data: { url: 'https://public-files.example.test/bold-crest.png' } }
+		})
+	);
+	await page.route('https://public-files.example.test/bold-crest.png', (route) =>
+		route.fulfill({
+			contentType: 'image/png',
+			headers: { 'access-control-allow-origin': '*' },
+			body: logoBytes
+		})
+	);
+	await page.goto(url('teacher'));
+	const dialog = await openDownload(page);
+	await dialog.getByRole('button', { name: 'ครู', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+	await expect(dialog.getByRole('status')).toHaveText('เลือกแล้ว 1 / 1 รายการ');
+	await dialog.getByRole('button', { name: '6 ตารางต่อหน้า', exact: true }).click();
+	const pending = page.waitForEvent('download');
+	await confirmDownload(page);
+	const download = await pending;
+	await download.saveAs('/tmp/timetable-external-bold-browser-boundary.pdf');
+	const faces = await page.evaluate(() =>
+		Array.from(document.fonts)
+			.filter((face) => face.family === 'THSarabunNewMeasure')
+			.map((face) => ({ weight: face.weight, status: face.status }))
+	);
+	expect(faces).toHaveLength(2);
+	expect(faces.every((face) => face.status === 'loaded')).toBe(true);
+	expect(faces.some((face) => face.weight === 'bold' || face.weight === '700')).toBe(true);
+	expect(faces.some((face) => face.weight === 'normal' || face.weight === '400')).toBe(true);
+	await expectSquareTimetablePdf(download, [1]);
+	await expectExternalTimetablePdfHeaders(download, 1, [1]);
+	const loading = getDocument({
+		data: new Uint8Array(readFileSync((await download.path())!)),
+		useSystemFonts: false
+	});
+	try {
+		const pdf = await loading.promise;
+		expect(pdf.numPages).toBe(1);
+		const content = await (await pdf.getPage(1)).getTextContent();
+		const header = content.items.filter(
+			(item) =>
+				'str' in item &&
+				item.str.trim() &&
+				Math.abs(item.height - 9) < 0.01 &&
+				item.transform[4] < 300
+		);
+		expect(header.length).toBeGreaterThanOrEqual(5);
+		for (const item of header) {
+			if (!('str' in item)) continue;
+			expect(item.transform[4], item.str).toBeGreaterThanOrEqual(10 - 0.01);
+			expect(item.transform[4] + item.width, item.str).toBeLessThanOrEqual(291 + 0.01);
+		}
+		const text = header
+			.map((item) => ('str' in item ? item.str : ''))
+			.join('')
+			.replace(/\s/g, '');
+		expect(text).toContain(schoolName);
+		expect(text).toContain(ownerName);
+	} finally {
+		await loading.destroy();
+	}
 });

@@ -64,7 +64,7 @@ const builders = await import(
 	`data:text/javascript;base64,${Buffer.from(
 		stripTypeScriptTypes(
 			source +
-				'\nexport { buildPageContent, buildMiniTable, buildPortraitPageContent, keepTimetableHeaderWithGrid };',
+				'\nexport { buildPageContent, buildMiniTable, buildPortraitPageContent, keepTimetableHeaderWithGrid };\nexport function installMetricMeasurement(context) { measureCtx = context; thSarabunMeasureReady = context !== null; }',
 			{
 				mode: 'transform'
 			}
@@ -335,3 +335,93 @@ test('a compact external header moves with its grid when the previous content le
 		expectExternalTimetablePdfHeaders(download, 48 / 160, [0, 1])
 	);
 });
+
+// The conservative no-DOM fallback cannot expose regular-versus-bold boundary errors.
+// Adapt Canvas measurement to the real fontkit advances from the same embedded TTFs.
+const metricFaces = {
+	normal: fontkit.openSync(fonts.normal),
+	bold: fontkit.openSync(fonts.bold)
+};
+for (const field of ['school', 'owner']) {
+	test(`actual bold ${field} metrics keep mini-header text within its allocated width`, async () => {
+		const boundary = `${field === 'school' ? 'โรงเรียน' : 'นาย'}${'พัฒนา'.repeat(13)}วิทยาคม`;
+		const page = pageFixture();
+		const school = field === 'school' ? boundary : 'โรงเรียนทดสอบ';
+		if (field === 'owner') page.headerOwnerLabel = boundary;
+		const weights = new Set();
+		const context = {
+			font: '',
+			measureText(text) {
+				const weight = this.font.startsWith('bold ') ? 'bold' : 'normal';
+				weights.add(weight);
+				const size = Number(this.font.match(/([\d.]+)px/)[1]);
+				const face = metricFaces[weight];
+				const advance = face
+					.layout(text)
+					.positions.reduce((total, glyph) => total + glyph.xAdvance, 0);
+				return { width: (advance / face.unitsPerEm) * size };
+			}
+		};
+		const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		// No DOM calls are needed: the adapter supplies the existing Canvas measurement boundary.
+		Object.defineProperty(globalThis, 'document', { value: {}, configurable: true });
+		builders.installMetricMeasurement(context);
+		let mini;
+		const crestBytes = readFileSync(
+			new URL('../../static/notification-badge.png', import.meta.url)
+		);
+		try {
+			mini = builders.buildMiniTable(
+				page,
+				282,
+				{ dataUrl: `data:image/png;base64,${crestBytes.toString('base64')}`, aspectRatio: 1 },
+				school,
+				0
+			);
+		} finally {
+			builders.installMetricMeasurement(null);
+			if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+			else delete globalThis.document;
+		}
+		const bytes = await pdfmake
+			.createPdf({
+				pageSize: 'A4',
+				pageMargins: [10, 30, 10, 20],
+				defaultStyle: { font: 'THSarabunNew' },
+				pageBreakBefore: builders.keepTimetableHeaderWithGrid,
+				content: [{ columns: [{ width: 281, stack: [mini] }] }]
+			})
+			.getBuffer();
+		writeFileSync(join(tmpdir(), `timetable-external-bold-${field}-boundary.pdf`), bytes);
+		const loading = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false });
+		try {
+			const pdf = await loading.promise;
+			assert.equal(pdf.numPages, 1);
+			const content = await (await pdf.getPage(1)).getTextContent();
+			const header = content.items.filter(
+				(item) => 'str' in item && item.str.trim() && Math.abs(item.height - 9) < 0.01
+			);
+			for (const item of header) {
+				assert.ok(item.transform[4] >= 10 - 0.01, `left edge: ${item.str}`);
+				assert.ok(
+					item.transform[4] + item.width <= 291 + 0.01,
+					`right edge ${item.transform[4] + item.width}: ${item.str}`
+				);
+			}
+			assert.ok(header.length >= 4, 'boundary field must wrap at its rendered bold width');
+			assert.ok(
+				header
+					.map((item) => item.str)
+					.join('')
+					.replace(/\s/g, '')
+					.includes(boundary)
+			);
+			assert.deepEqual([...weights].sort(), ['bold', 'normal']);
+			await withPdfArtifact(bytes, `bold-${field}-boundary`, (download) =>
+				expectExternalTimetablePdfHeaders(download, 1, [1])
+			);
+		} finally {
+			await loading.destroy();
+		}
+	});
+}

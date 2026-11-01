@@ -105,14 +105,22 @@ type SegmenterCtor = new (
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureCtx: CanvasRenderingContext2D | null = null;
 let thSarabunMeasureReady = false;
+type PdfFontWeight = 'normal' | 'bold';
 
 async function ensureTHSarabunNewMeasurement(): Promise<void> {
 	if (thSarabunMeasureReady || typeof document === 'undefined') return;
 	try {
-		const url = window.location.origin + '/fonts/THSarabunNew.ttf';
-		const font = new FontFace('THSarabunNewMeasure', `url(${url}) format('truetype')`);
-		await font.load();
-		document.fonts.add(font);
+		const faces = await Promise.all(
+			(['normal', 'bold'] as const).map(async (weight) => {
+				const suffix = weight === 'bold' ? '-Bold' : '';
+				const url = window.location.origin + `/fonts/THSarabunNew${suffix}.ttf`;
+				const font = new FontFace('THSarabunNewMeasure', `url(${url}) format('truetype')`, {
+					weight
+				});
+				return font.load();
+			})
+		);
+		for (const face of faces) document.fonts.add(face);
 		thSarabunMeasureReady = true;
 	} catch {
 		// ignore — จะใช้ approx แทน
@@ -121,7 +129,11 @@ async function ensureTHSarabunNewMeasurement(): Promise<void> {
 
 const PT_PER_PX = 72 / 96; // 1pt = 1.333px (CSS standard)
 
-function measureTextWidthPt(text: string, fontSizePt: number): number {
+function measureTextWidthPt(
+	text: string,
+	fontSizePt: number,
+	weight: PdfFontWeight = 'normal'
+): number {
 	if (!text) return 0;
 	if (!thSarabunMeasureReady || typeof document === 'undefined') {
 		return approxTextWidthPt(text, fontSizePt);
@@ -132,7 +144,7 @@ function measureTextWidthPt(text: string, fontSizePt: number): number {
 		if (!measureCtx) return approxTextWidthPt(text, fontSizePt);
 	}
 	const fontSizePx = fontSizePt / PT_PER_PX;
-	measureCtx.font = `${fontSizePx}px THSarabunNewMeasure, sans-serif`;
+	measureCtx.font = `${weight} ${fontSizePx}px THSarabunNewMeasure, sans-serif`;
 	const widthPx = measureCtx.measureText(text).width;
 	return widthPx * PT_PER_PX;
 }
@@ -200,15 +212,21 @@ function approxTextWidthPt(text: string, fontSizePt: number): number {
 function wrapThaiToLines(
 	text: string | undefined | null,
 	maxWidthPt: number,
-	fontSizePt: number
+	fontSizePt: number,
+	weight: PdfFontWeight = 'normal'
 ): string {
 	if (!text) return '';
 	// preserve user's explicit \n (batch activity titles) — ตัดก่อน แล้ว wrap แต่ละ section
 	const sections = text.split(/\r?\n/);
-	return sections.map((s) => wrapSection(s, maxWidthPt, fontSizePt)).join('\n');
+	return sections.map((s) => wrapSection(s, maxWidthPt, fontSizePt, weight)).join('\n');
 }
 
-function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): string {
+function wrapSection(
+	text: string,
+	maxWidthPt: number,
+	fontSizePt: number,
+	weight: PdfFontWeight
+): string {
 	if (!text) return '';
 	try {
 		const Ctor = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
@@ -221,7 +239,7 @@ function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): stri
 		const graphSeg = new Ctor('en', { granularity: 'grapheme' });
 		const units: string[] = [];
 		for (const w of words) {
-			if (measureTextWidthPt(w, fontSizePt) > maxWidthPt) {
+			if (measureTextWidthPt(w, fontSizePt, weight) > maxWidthPt) {
 				const subs = syllableSplit(w);
 				if (subs.length > 1) {
 					for (const s of subs) units.push(s);
@@ -239,7 +257,7 @@ function wrapSection(text: string, maxWidthPt: number, fontSizePt: number): stri
 		let line = '';
 		let lineWidth = 0;
 		for (const unit of units) {
-			const uw = measureTextWidthPt(unit, fontSizePt);
+			const uw = measureTextWidthPt(unit, fontSizePt, weight);
 			if (line === '' || lineWidth + uw <= maxWidthPt) {
 				line += unit;
 				lineWidth += uw;
@@ -344,7 +362,9 @@ function buildTimetableHeader(
 			schoolName,
 			`${page.viewMode === 'INSTRUCTOR' ? 'ตารางสอน' : 'ตารางเรียน'}${page.headerContext}`,
 			page.headerOwnerLabel
-		].map((text) => wrapThaiToLines(text, textWidth, fontSize));
+		].map((text, index) =>
+			wrapThaiToLines(text, textWidth, fontSize, index === 1 ? 'normal' : 'bold')
+		);
 		height =
 			lines.reduce((count, text) => count + text.split('\n').length, 0) *
 			fontSize *
