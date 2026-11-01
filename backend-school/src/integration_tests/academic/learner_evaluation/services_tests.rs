@@ -208,10 +208,15 @@ async fn publish_learner_fixture_allocations(
     actor: &ActorContext,
     ctx: &EvaluationContext,
 ) {
-    let graph: serde_json::Value = sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,current_date,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2")
-        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_one(pool).await.unwrap();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),$1,$2,GREATEST(current_date,COALESCE(max(effective_from)+1,current_date)),'published',$3,$4,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$1 AND academic_year_id=$2 AND status='published'")
-        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(graph).bind(actor.user_id).execute(pool).await.unwrap();
+    let effective_on = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    let graph: serde_json::Value = sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,$3,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(effective_on).fetch_one(pool).await.unwrap();
+    // Role replacements are same-day publications, independent of earlier
+    // publication dates and the raw teacher episode intervals they preserve.
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,publication_no,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),$1,$2,$5,COALESCE(max(publication_no),0)+1,'published',$3,$4,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$1 AND academic_year_id=$2 AND status='published'")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(graph).bind(actor.user_id).bind(effective_on).execute(pool).await.unwrap();
 }
 
 async fn add_learner_fixture_primary(

@@ -241,10 +241,25 @@ async fn publish_results_graph(
     context: &ResultContext,
     snapshot: serde_json::Value,
 ) -> Uuid {
+    let effective_on = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    publish_results_graph_at(pool, actor, context, snapshot, effective_on).await
+}
+
+async fn publish_results_graph_at(
+    pool: &sqlx::PgPool,
+    actor: &ActorContext,
+    context: &ResultContext,
+    snapshot: serde_json::Value,
+    effective_on: NaiveDate,
+) -> Uuid {
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,$2,$3,GREATEST(current_date,COALESCE(max(effective_from)+1,current_date)),'published',$4,$5,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$2 AND academic_year_id=$3 AND status='published'")
+    // Synthetic current source replacements share the chosen civil date; only
+    // the exact term's publication number determines their acceptance order.
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,publication_no,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,$2,$3,$6,COALESCE(max(publication_no),0)+1,'published',$4,$5,now(),uuidv7(),repeat('a',64) FROM academic_delivery_versions WHERE academic_term_id=$2 AND academic_year_id=$3 AND status='published'")
         .bind(id).bind(context.academic_term_id).bind(context.academic_year_id)
-        .bind(snapshot).bind(actor.user_id).execute(pool).await.unwrap();
+        .bind(snapshot).bind(actor.user_id).bind(effective_on).execute(pool).await.unwrap();
     id
 }
 
@@ -253,11 +268,15 @@ async fn publish_results_allocations(
     actor: &ActorContext,
     context: &ResultContext,
 ) -> Uuid {
+    let effective_on = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
     let graph: serde_json::Value = sqlx::query_scalar(
-        "SELECT academic_capture_delivery_snapshot($1,current_date,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2",
+        "SELECT academic_capture_delivery_snapshot($1,$3,COALESCE(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1) ORDER BY id),'[]'::jsonb)) FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2",
     ).bind(context.academic_term_id).bind(context.academic_year_id)
+        .bind(effective_on)
         .fetch_one(pool).await.unwrap();
-    publish_results_graph(pool, actor, context, graph).await
+    publish_results_graph_at(pool, actor, context, graph, effective_on).await
 }
 
 async fn fixture_with_unused_group(
@@ -621,8 +640,8 @@ async fn results_assignment_ids_primary_sets_and_replaced_confirmers_agree() {
     );
     let before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('course',(SELECT to_jsonb(c) FROM learning_group_result_confirmations c WHERE learning_group_id=$1),'activity',(SELECT to_jsonb(c) FROM academic_activity_result_confirmations c WHERE learning_group_id=$2),'phases',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM learning_group_phase_confirmations c WHERE learning_group_id=$1))")
         .bind(course).bind(activity).fetch_one(&pool).await.unwrap();
-    let mut replacement: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
-        .bind(ctx.academic_term_id).fetch_one(&pool).await.unwrap();
+    let mut replacement: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE academic_term_id=$1 AND academic_year_id=$2 AND status='published' ORDER BY publication_no DESC LIMIT 1")
+        .bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_one(&pool).await.unwrap();
     for offering in replacement["offerings"].as_array_mut().unwrap() {
         for group in offering["groups"].as_array_mut().unwrap() {
             group["teachers"]
