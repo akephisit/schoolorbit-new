@@ -37,16 +37,16 @@ export async function expectSquareTimetablePdf(download: Download, tablesPerPage
 		if (qrSquares.length || captions.length) {
 			expect(qrSquares.length, 'QR fill rectangles are present').toBeGreaterThan(0);
 			expect(captions.length, 'QR has a complete caption').toBeGreaterThan(0);
-			for (const rect of qrSquares) {
-				expect(rect.x, 'QR left margin').toBeGreaterThanOrEqual(10 - 0.01);
-				expect(rect.x + rect.width, 'QR right margin').toBeLessThanOrEqual(
-					page.getWidth() - 10 + 0.01
-				);
-				expect(rect.y, 'QR top margin').toBeGreaterThanOrEqual(30 - 0.01);
-				expect(rect.y + rect.height, 'QR bottom margin').toBeLessThanOrEqual(
-					page.getHeight() - 20 + 0.01
-				);
-			}
+			const qrBounds = {
+				left: Math.min(...qrSquares.map((rect) => rect.x)),
+				right: Math.max(...qrSquares.map((rect) => rect.x + rect.width)),
+				top: Math.min(...qrSquares.map((rect) => rect.y)),
+				bottom: Math.max(...qrSquares.map((rect) => rect.y + rect.height))
+			};
+			expect(qrBounds.left, 'QR left margin').toBeGreaterThanOrEqual(10 - 0.01);
+			expect(qrBounds.right, 'QR right margin').toBeLessThanOrEqual(page.getWidth() - 10 + 0.01);
+			expect(qrBounds.top, 'QR top margin').toBeGreaterThanOrEqual(30 - 0.01);
+			expect(qrBounds.bottom, 'QR bottom margin').toBeLessThanOrEqual(page.getHeight() - 20 + 0.01);
 			for (const item of captions) {
 				if (!('str' in item)) continue;
 				expect(item.str, 'caption must not be clipped at the page edge').toBe('สแกนดูตาราง');
