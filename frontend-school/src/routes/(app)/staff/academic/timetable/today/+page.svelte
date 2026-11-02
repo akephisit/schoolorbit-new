@@ -30,13 +30,12 @@
 	import {
 		DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 		DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
-		dailyTeachingCompactGroupMeta,
-		dailyTeachingCompactTitle,
+		dailyTeachingCardPresentation,
+		dailyTeachingEntryTitle,
 		dailyTeachingEmptyCellLabel,
 		dailyTeachingRows,
 		filterDailyTeachingRows,
 		dailyTeachingGroupInstructors,
-		dailyTeachingHomeroomGroupMeta,
 		type DailyTeachingDisplayRow,
 		type DailyTeachingDisplayCell,
 		type DailyTeachingView,
@@ -48,6 +47,8 @@
 		ChevronLeft,
 		ChevronRight,
 		ExternalLink,
+		DoorOpen,
+		Users,
 		MapPin,
 		Printer,
 		Search,
@@ -208,14 +209,7 @@
 	}
 
 	function entryTitle(entry: DailyTeachingEntry): string {
-		return (
-			entry.title ??
-			entry.offeringName ??
-			entry.subjectVersionDisplayLabel ??
-			entry.activityVersionDisplayLabel ??
-			entry.offeringCode ??
-			entry.entryType
-		);
+		return dailyTeachingEntryTitle(entry);
 	}
 
 	function entryDetailLabels(entry: DailyTeachingEntry): string[] {
@@ -249,9 +243,14 @@
 		}
 		const titles = Array.from(
 			new Set(
-				groupDailyTeachingEntries(entries).map((group) =>
-					dailyTeachingCompactTitle(group.entries[0])
-				)
+				groupDailyTeachingEntries(entries, row.kind).map((group) => {
+					const presentation = dailyTeachingCardPresentation(
+						group,
+						cellForPeriod(row, period.id),
+						row.kind
+					);
+					return [presentation.code, presentation.title].filter(Boolean).join(' ');
+				})
 			)
 		);
 		return `${row.displayName} ${label} ${time}: ${titles.join(', ')}`;
@@ -516,39 +515,67 @@
 										{#each overview.periods as period (period.id)}
 											{@const cell = cellForPeriod(row, period.id)}
 											<Table.Cell
-												class="daily-teaching-period-column overflow-hidden p-0.5 align-top"
+												class="daily-teaching-period-column h-px overflow-hidden p-0.5 align-top"
 											>
 												<button
 													type="button"
-													class="hover:bg-muted/30 min-h-12 w-full min-w-0 overflow-hidden rounded-md p-0.5 text-left"
+													class="hover:bg-muted/30 grid h-full min-h-[88px] w-full min-w-0 auto-rows-fr gap-0.5 overflow-hidden rounded-md p-0.5 text-left"
 													aria-label={cellAriaLabel(row, period, cell.entries)}
 													onclick={() => openCell(row, period, cell)}
 												>
-													<div class="space-y-0.5">
-														{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
-															{@const entry = group.entries[0]}
-															{@const compactMeta =
-																view === 'teacher'
-																	? dailyTeachingCompactGroupMeta(group)
-																	: dailyTeachingHomeroomGroupMeta(group, cell)}
-															<div
-																class="min-w-0 overflow-hidden rounded-md border bg-background px-1.5 py-1"
-																data-testid="daily-lesson-card"
-															>
-																<p
+													{#each groupDailyTeachingEntries(cell.entries, view) as group (group.key)}
+														{@const presentation = dailyTeachingCardPresentation(group, cell, view)}
+														<article
+															class="flex min-h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs"
+															data-testid="daily-lesson-card"
+														>
+															{#if presentation.code}<p
+																	data-daily-card-code
 																	class="truncate text-[10px] leading-[14px] font-semibold"
-																	title={dailyTeachingCompactTitle(entry)}
+																	title={presentation.code}
 																>
-																	{dailyTeachingCompactTitle(entry)}
-																</p>
-																{#if compactMeta}<p
-																		class="text-muted-foreground truncate text-[9px] leading-[14px]"
+																	{presentation.code}
+																</p>{/if}
+															<h3
+																data-daily-card-title
+																class={presentation.titleLineLimit === 3
+																	? 'line-clamp-3 whitespace-pre-line text-[11px] leading-[16px] font-semibold'
+																	: 'truncate text-[11px] leading-[16px] font-semibold'}
+																title={presentation.title}
+															>
+																{presentation.title}
+															</h3>
+															<div
+																class="mt-1 min-w-0 space-y-0.5 text-[9px] leading-[14px] text-muted-foreground"
+															>
+																{#if presentation.targetLabel}<p
+																		data-daily-card-target
+																		class="truncate"
+																		title={presentation.targetLabel}
 																	>
-																		{compactMeta}
+																		{presentation.targetLabel}
+																	</p>{/if}
+																{#if presentation.teacherLabel}<p
+																		data-daily-card-teachers
+																		class="flex min-w-0 items-center gap-1"
+																		title={presentation.teacherTitle ?? undefined}
+																	>
+																		<Users class="size-3 shrink-0" aria-hidden="true" /><span
+																			class="min-w-0 truncate">{presentation.teacherLabel}</span
+																		>
+																	</p>{/if}
+																{#if presentation.roomLabel}<p
+																		data-daily-card-room
+																		class="flex min-w-0 items-center gap-1"
+																		title={presentation.roomLabel}
+																	>
+																		<DoorOpen class="size-3 shrink-0" aria-hidden="true" /><span
+																			class="min-w-0 truncate">{presentation.roomLabel}</span
+																		>
 																	</p>{/if}
 															</div>
-														{/each}
-													</div>
+														</article>
+													{/each}
 												</button>
 											</Table.Cell>
 										{/each}
