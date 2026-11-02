@@ -108,7 +108,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
                 path,
                 token,
                 csrf.as_deref(),
-                json!({"label":"Laptop","protocolVersion":2}),
+                json!({"label":"Laptop","protocolVersion":3}),
             ))
             .await
             .unwrap();
@@ -131,7 +131,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
         assert_eq!(error["error"], "invalid_request_body");
         assert!(!error.to_string().contains("secret-sentinel"));
     }
-    for protocol in [None, Some(1), Some(3)] {
+    for protocol in [None, Some(1), Some(2)] {
         let payload = match protocol {
             Some(version) => json!({"label":"Laptop","protocolVersion":version}),
             None => json!({"label":"Laptop"}),
@@ -174,31 +174,35 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
             path,
             Some(&staff_token),
             Some(&fixture.csrf(staff_session)),
-            json!({"label":"Laptop","protocolVersion":2}),
+            json!({"label":"Laptop","protocolVersion":3}),
         ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let snapshot = json_response(response).await;
     let device = snapshot["data"]["device"]["id"].as_str().unwrap();
-    assert_eq!(snapshot["data"]["protocolVersion"], 2);
+    assert_eq!(snapshot["data"]["protocolVersion"], 3);
     assert_eq!(
         snapshot["data"]["limits"],
-        json!({"maxOutgoingTransfers":3,"maxFilesPerBatch":20,"maxFileBytes":67108864,"maxBatchBytes":134217728})
+        json!({"maxOutgoingTransfers":6})
     );
-    let metadata = json!({"name":"empty.txt","size":0,"mimeType":"text/plain"});
-    let large = json!({"name":"large.bin","size":67108864,"mimeType":""});
-    for files in [
-        json!([]),
-        json!(vec![metadata.clone(); 21]),
-        json!([large.clone(), large.clone(), large]),
-        json!([{"name":"too-large.bin","size":67108865,"mimeType":""}]),
+    for batch in [
+        json!({"fileCount":0,"totalBytes":0}),
+        json!({"fileCount":9007199254740992_u64,"totalBytes":0}),
+        json!({"fileCount":1,"totalBytes":9007199254740992_u64}),
+        json!({"fileCount":1,"totalBytes":0,"name":"secret-sentinel"}),
+        json!({"fileCount":-1,"totalBytes":0}),
+        json!({"fileCount":1.5,"totalBytes":0}),
     ] {
-        let response=app.clone().oneshot(request(Method::POST,"/api/staff/file-transfer/pairs",Some(&staff_token),Some(&fixture.csrf(staff_session)),json!({"deviceId":device,"target":{"type":"device","deviceId":device},"files":files,"clientRequestId":uuid::Uuid::new_v4()}))).await.unwrap();
+        let response=app.clone().oneshot(request(Method::POST,"/api/staff/file-transfer/pairs",Some(&staff_token),Some(&fixture.csrf(staff_session)),json!({"deviceId":device,"target":{"type":"device","deviceId":device},"batch":batch,"clientRequestId":uuid::Uuid::new_v4()}))).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let error = json_response(response).await;
         assert_eq!(error["success"], false);
+        assert!(!error.to_string().contains("secret-sentinel"));
     }
+    let legacy = app.clone().oneshot(request(Method::POST,"/api/staff/file-transfer/pairs",Some(&staff_token),Some(&fixture.csrf(staff_session)),json!({"deviceId":device,"target":{"type":"device","deviceId":device},"files":[{"name":"secret-sentinel","size":0,"mimeType":""}],"clientRequestId":uuid::Uuid::new_v4()}))).await.unwrap();
+    assert_eq!(legacy.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json_response(legacy).await["error"], "invalid_request_body");
 
     let own_path = format!("{path}/{device}");
     let response = app
@@ -243,6 +247,75 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
     let mut stream = response.into_body().into_data_stream();
     let ready = stream.next().await.unwrap().unwrap();
     assert!(String::from_utf8_lossy(&ready).contains("\"type\":\"ready\""));
+    // Both completed peers can close the same pair; a receipt is never authorization.
+    let peer_identity = school_staff::file_transfer::runtime::FileTransferIdentity {
+        tenant_id: fixture.tenant_a_id,
+        user_id: other,
+        session_id: other_session,
+    };
+    let peer = runtime
+        .register(
+            peer_identity,
+            "Other".into(),
+            school_staff::file_transfer::models::RegisterFileTransferDevice {
+                label: "Peer".into(),
+                protocol_version: Some(3),
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    let _peer_stream = runtime
+        .subscribe(peer_identity, peer.device.id, chrono::Utc::now())
+        .unwrap();
+    let pair_response = app.clone().oneshot(request(Method::POST,"/api/staff/file-transfer/pairs",Some(&staff_token),Some(&fixture.csrf(staff_session)),json!({"deviceId":device,"target":{"type":"device","deviceId":peer.device.id},"batch":{"fileCount":50000,"totalBytes":1000000000000_u64},"clientRequestId":uuid::Uuid::new_v4()}))).await.unwrap();
+    assert_eq!(pair_response.status(), StatusCode::OK);
+    let pair = json_response(pair_response).await;
+    assert!(pair["data"].get("files").is_none());
+    assert_eq!(
+        pair["data"]["batch"],
+        json!({"fileCount":50000,"totalBytes":1000000000000_u64})
+    );
+    let pair_id = pair["data"]["id"].as_str().unwrap();
+    let close_path = format!("/api/staff/file-transfer/pairs/{pair_id}/close");
+    for (token, session_id, member) in [
+        (&staff_token, staff_session, device.to_owned()),
+        (&other_token, other_session, peer.device.id.to_string()),
+        (&staff_token, staff_session, device.to_owned()),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                &close_path,
+                Some(token),
+                Some(&fixture.csrf(session_id)),
+                json!({"deviceId":member}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_response(response).await["success"], true);
+    }
+    for (close_id, member) in [
+        (pair_id.to_owned(), device.to_owned()),
+        (uuid::Uuid::new_v4().to_string(), peer.device.id.to_string()),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                &format!("/api/staff/file-transfer/pairs/{close_id}/close"),
+                Some(&other_token),
+                Some(&fixture.csrf(other_session)),
+                json!({"deviceId":member}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let error = json_response(response).await;
+        assert_eq!(error["success"], false);
+        assert!(error["error"].as_str().unwrap().contains("กรุณา"));
+    }
     fixture
         .runtime
         .session_events
@@ -276,7 +349,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
             path,
             Some(&other_token),
             Some(&fixture.csrf(other_session)),
-            json!({"label":"x".repeat(70000),"protocolVersion":2}),
+            json!({"label":"x".repeat(70000),"protocolVersion":3}),
         ))
         .await
         .unwrap();

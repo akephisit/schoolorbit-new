@@ -11748,11 +11748,11 @@ export interface components {
 		};
 		ApiResponse_FileTransferPair: {
 			data: {
+				batch: components['schemas']['FileTransferBatchSummary'];
 				/** Format: uuid */
 				clientRequestId: string;
 				/** Format: date-time */
 				expiresAt: string;
-				files: components['schemas']['FileTransferFile'][];
 				/** Format: uuid */
 				id: string;
 				initiator: components['schemas']['FileTransferDevice'];
@@ -19962,11 +19962,11 @@ export interface components {
 			name: string;
 		};
 		CreateFileTransferPair: {
+			batch: components['schemas']['FileTransferBatchSummary'];
 			/** Format: uuid */
 			clientRequestId: string;
 			/** Format: uuid */
 			deviceId: string;
-			files: components['schemas']['FileTransferFile'][];
 			target: components['schemas']['FileTransferTarget'];
 		};
 		CreateHomeroomPlacementRequest: {
@@ -22182,6 +22182,12 @@ export interface components {
 			| 'school_font'
 			| 'supply_catalog_image'
 			| 'supply_proposal_source';
+		FileTransferBatchSummary: {
+			/** Format: int64 */
+			fileCount: number;
+			/** Format: int64 */
+			totalBytes: number;
+		};
 		/** @enum {string} */
 		FileTransferCloseReason: 'declined' | 'cancelled' | 'expired' | 'disconnected';
 		FileTransferDevice: {
@@ -22233,28 +22239,16 @@ export interface components {
 					/** @enum {string} */
 					type: 'session_unavailable';
 			  };
-		FileTransferFile: {
-			mimeType: string;
-			name: string;
-			/** Format: int64 */
-			size: number;
-		};
 		FileTransferLimits: {
-			/** Format: int64 */
-			maxBatchBytes: number;
-			/** Format: int64 */
-			maxFileBytes: number;
-			/** Format: int32 */
-			maxFilesPerBatch: number;
 			/** Format: int32 */
 			maxOutgoingTransfers: number;
 		};
 		FileTransferPair: {
+			batch: components['schemas']['FileTransferBatchSummary'];
 			/** Format: uuid */
 			clientRequestId: string;
 			/** Format: date-time */
 			expiresAt: string;
-			files: components['schemas']['FileTransferFile'][];
 			/** Format: uuid */
 			id: string;
 			initiator: components['schemas']['FileTransferDevice'];
@@ -63108,7 +63102,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Protocol 2 device registration and school-online snapshot with batch limits */
+			/** @description Protocol 3 device registration and school-online snapshot with recipient admission limit */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -63363,7 +63357,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Pending batch pair with ordered file metadata and request correlation awaiting recipient consent */
+			/** @description Pending pair with safe numeric batch summary and request correlation awaiting recipient metadata consent */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -63372,7 +63366,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_FileTransferPair'];
 				};
 			};
-			/** @description Invalid batch or file metadata */
+			/** @description Invalid batch summary */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -63453,7 +63447,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Recipient accepted exact sender and ordered file batch */
+			/** @description Recipient allowed exact sender to exchange peer-only manifest before file-byte consent */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -63534,7 +63528,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Pair closed */
+			/** @description Pair closed, including authorized retries during the bounded recent-close receipt window */
 			200: {
 				headers: {
 					[name: string]: unknown;

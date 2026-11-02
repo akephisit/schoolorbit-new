@@ -13,11 +13,10 @@ fn registration(label: &str) -> RegisterFileTransferDevice {
         protocol_version: Some(PROTOCOL_VERSION),
     }
 }
-fn file() -> FileTransferFile {
-    FileTransferFile {
-        name: "เอกสาร.pdf".into(),
-        size: 0,
-        mime_type: "application/pdf".into(),
+fn batch() -> FileTransferBatchSummary {
+    FileTransferBatchSummary {
+        file_count: 1,
+        total_bytes: 0,
     }
 }
 const SDP: &str = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=ice-ufrag:abcd\r\na=ice-pwd:abcdefghijklmnopqrstuv\r\na=fingerprint:sha-256 AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA\r\na=setup:actpass\r\na=sctp-port:5000\r\na=candidate:1 1 udp 2122260223 device.local 55555 typ host generation 0\r\n";
@@ -38,7 +37,7 @@ fn request(device: Uuid, target: Uuid) -> CreateFileTransferPair {
     CreateFileTransferPair {
         device_id: device,
         target: FileTransferTarget::Device { device_id: target },
-        files: vec![file()],
+        batch: batch(),
         client_request_id: Uuid::new_v4(),
     }
 }
@@ -51,25 +50,43 @@ fn signal(device_id: Uuid, signal_type: FileTransferSignalType) -> SendFileTrans
 }
 
 #[test]
-fn file_transfer_metadata_bounds_preserve_zero_and_unicode() {
-    assert!(validate_file(&file()).is_ok());
-    for name in ["", " ", "../data", "folder\\data", "a\nb", ".", ".."] {
-        let mut f = file();
-        f.name = name.into();
-        assert!(validate_file(&f).is_err());
+fn file_transfer_summary_bounds_preserve_zero_and_large_batches() {
+    assert!(validate_batch(&batch()).is_ok());
+    for summary in [
+        FileTransferBatchSummary {
+            file_count: 1_000_000,
+            total_bytes: 1_000_000_000_000,
+        },
+        FileTransferBatchSummary {
+            file_count: MAX_SAFE_INTEGER,
+            total_bytes: MAX_SAFE_INTEGER,
+        },
+    ] {
+        assert!(validate_batch(&summary).is_ok());
     }
-    let mut f = file();
-    f.name = "ก".repeat(255);
-    f.size = MAX_FILE_SIZE;
-    assert!(validate_file(&f).is_ok());
-    f.name.push('ก');
-    assert!(validate_file(&f).is_err());
-    f = file();
-    f.size = MAX_FILE_SIZE + 1;
-    assert!(validate_file(&f).is_err());
-    f = file();
-    f.mime_type = "x".repeat(129);
-    assert!(validate_file(&f).is_err());
+    for summary in [
+        FileTransferBatchSummary {
+            file_count: 0,
+            total_bytes: 0,
+        },
+        FileTransferBatchSummary {
+            file_count: MAX_SAFE_INTEGER + 1,
+            total_bytes: 0,
+        },
+        FileTransferBatchSummary {
+            file_count: 1,
+            total_bytes: MAX_SAFE_INTEGER + 1,
+        },
+    ] {
+        assert!(validate_batch(&summary).is_err());
+    }
+    for wire in [
+        serde_json::json!({"fileCount": 1, "totalBytes": 0, "files": []}),
+        serde_json::json!({"fileCount": -1, "totalBytes": 0}),
+        serde_json::json!({"fileCount": 1.5, "totalBytes": 0}),
+    ] {
+        assert!(serde_json::from_value::<FileTransferBatchSummary>(wire).is_err());
+    }
 }
 #[test]
 fn file_transfer_sdp_allows_only_bounded_complete_datachannel_host_candidates() {
@@ -121,7 +138,7 @@ async fn file_transfer_identity_scope_is_exact_and_discovery_never_crosses_tenan
                 target: FileTransferTarget::Code {
                     code: cd.pairing_code
                 },
-                files: vec![file()],
+                batch: batch(),
                 client_request_id: Uuid::new_v4()
             },
             now
@@ -139,7 +156,7 @@ async fn file_transfer_consent_direction_sequence_and_exact_metadata() {
     let pair = runtime
         .create_pair(a, request(ad.device.id, bd.device.id), now)
         .unwrap();
-    assert!(pair.files == vec![file()]);
+    assert!(pair.batch == batch());
     assert!(runtime
         .signal(
             a,
@@ -150,7 +167,7 @@ async fn file_transfer_consent_direction_sequence_and_exact_metadata() {
         .is_err());
     assert!(runtime.accept(a, ad.device.id, pair.id, now).is_err());
     let accepted = runtime.accept(b, bd.device.id, pair.id, now).unwrap();
-    assert!(accepted.files == pair.files);
+    assert!(accepted.batch == pair.batch);
     assert!(accepted.status == FileTransferPairStatus::Accepted);
     assert!(runtime.accept(b, bd.device.id, pair.id, now).is_ok());
     assert!(runtime
@@ -305,7 +322,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                     target: FileTransferTarget::Code {
                         code: "0000000000".into()
                     },
-                    files: vec![file()],
+                    batch: batch(),
                     client_request_id: Uuid::new_v4()
                 },
                 now
@@ -320,7 +337,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                 target: FileTransferTarget::Code {
                     code: bd.pairing_code.clone()
                 },
-                files: vec![file()],
+                batch: batch(),
                 client_request_id: Uuid::new_v4()
             },
             now
@@ -335,7 +352,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                 target: FileTransferTarget::Code {
                     code: bd.pairing_code
                 },
-                files: vec![file()],
+                batch: batch(),
                 client_request_id: Uuid::new_v4()
             },
             now + Duration::seconds(61)
@@ -376,20 +393,23 @@ async fn file_transfer_presence_bursts_coalesce_but_signal_overflow_fails_closed
     for _ in 0..100 {
         let mut registry = runtime.lock(now).unwrap();
         let messages = registry.presence_messages(a.tenant_id);
-        registry.dispatch(messages);
+        registry.dispatch(messages, now);
     }
     assert!(asub.presence.has_changed().unwrap());
     assert!(runtime.snapshot(a, ad.device.id, now).is_ok());
     {
         let mut registry = runtime.lock(now).unwrap();
         for _ in 0..QUEUE_CAPACITY + 1 {
-            registry.dispatch(vec![(
-                ad.device.id,
-                FileTransferEvent::PairClosed(FileTransferPairClosed {
-                    pair_id: Uuid::new_v4(),
-                    reason: FileTransferCloseReason::Cancelled,
-                }),
-            )]);
+            registry.dispatch(
+                vec![(
+                    ad.device.id,
+                    FileTransferEvent::PairClosed(FileTransferPairClosed {
+                        pair_id: Uuid::new_v4(),
+                        reason: FileTransferCloseReason::Cancelled,
+                    }),
+                )],
+                now,
+            );
         }
     }
     asub.cancelled.changed().await.unwrap();
@@ -472,7 +492,7 @@ fn file_transfer_protocol_and_batch_limits_are_authoritative() {
     let runtime = FileTransferRuntime::default();
     let now = Utc::now();
     let actor = owner(Uuid::new_v4());
-    for version in [None, Some(0), Some(1), Some(3), Some(255)] {
+    for version in [None, Some(0), Some(1), Some(2), Some(255)] {
         assert!(runtime
             .register(
                 actor,
@@ -489,46 +509,36 @@ fn file_transfer_protocol_and_batch_limits_are_authoritative() {
         .register(actor, "Staff".into(), registration("Laptop"), now)
         .unwrap();
     let wire = serde_json::to_value(snapshot).unwrap();
-    assert_eq!(wire["protocolVersion"], 2);
+    assert_eq!(wire["protocolVersion"], 3);
     assert_eq!(
         wire["limits"],
-        serde_json::json!({"maxOutgoingTransfers":3,"maxFilesPerBatch":20,"maxFileBytes":67108864,"maxBatchBytes":134217728})
+        serde_json::json!({"maxOutgoingTransfers":6})
     );
-    assert!(validate_batch(&[]).is_err());
-    assert!(validate_batch(&vec![file(); 20]).is_ok());
-    assert!(validate_batch(&vec![file(); 21]).is_err());
-    let mut maximum = file();
-    maximum.size = MAX_FILE_SIZE;
-    assert!(validate_batch(&[maximum.clone(), maximum.clone()]).is_ok());
-    assert!(validate_batch(&[maximum.clone(), maximum.clone(), maximum]).is_err());
-    let mut overflow = file();
-    overflow.size = u64::MAX;
-    assert!(validate_batch(&[overflow]).is_err());
-    let mut unsafe_name = file();
-    unsafe_name.name = "../private".into();
-    assert!(validate_batch(&[file(), unsafe_name]).is_err());
+    let wire = serde_json::to_value(batch()).unwrap();
+    assert_eq!(wire, serde_json::json!({"fileCount":1,"totalBytes":0}));
 }
 
 #[tokio::test]
-async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and_correlation() {
+async fn file_transfer_six_recipient_burst_preserves_summary_consent_and_correlation() {
     let runtime = Arc::new(FileTransferRuntime::default());
     let now = Utc::now();
     let sender = owner(Uuid::new_v4());
     let (source, mut source_stream) = online(&runtime, sender, now);
     let mut receivers = Vec::new();
     let mut pairs = Vec::new();
-    for index in 0..3 {
+    for index in 0..6 {
         let actor = owner(sender.tenant_id);
         let (device, stream) = online(&runtime, actor, now);
         let mut intent = request(source.device.id, device.device.id);
-        let mut second = file();
-        second.name = format!("second-{index}.txt");
-        intent.files.push(second);
+        intent.batch = FileTransferBatchSummary {
+            file_count: 50_000 + index,
+            total_bytes: 1_000_000_000_000 + index,
+        };
         let correlation = intent.client_request_id;
         let pair = runtime.create_pair(sender, intent, now).unwrap();
         assert_eq!(pair.client_request_id, correlation);
-        assert_eq!(pair.files.len(), 2);
-        assert_eq!(pair.files[1].name, format!("second-{index}.txt"));
+        assert_eq!(pair.batch.file_count, 50_000 + index);
+        assert_eq!(pair.batch.total_bytes, 1_000_000_000_000 + index);
         receivers.push((actor, device, stream));
         pairs.push(pair);
     }
@@ -544,7 +554,7 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
     let accepted = runtime
         .accept(receivers[0].0, receivers[0].1.device.id, pairs[0].id, now)
         .unwrap();
-    assert!(accepted.files == pairs[0].files);
+    assert!(accepted.batch == pairs[0].batch);
     assert!(runtime
         .signal(
             sender,
@@ -553,7 +563,7 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
             now
         )
         .is_err());
-    for index in 1..3 {
+    for index in 1..6 {
         runtime
             .accept(
                 receivers[index].0,
@@ -563,7 +573,7 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
             )
             .unwrap();
     }
-    for index in 0..3 {
+    for index in 0..6 {
         runtime
             .signal(
                 sender,
@@ -581,7 +591,7 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
             )
             .unwrap();
     }
-    // Ready + 3 pending + 3 accepted + 3 answers must survive one undrained burst.
+    // Ready + 6 pending + 6 accepted + 6 answers must survive one undrained burst.
     let mut answers = Vec::new();
     let mut events = 0;
     while let Ok(event) = source_stream.receiver.try_recv() {
@@ -590,15 +600,15 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
             answers.push(value.pair_id);
         }
     }
-    assert_eq!(events, 10);
-    assert_eq!(answers.len(), 3);
+    assert_eq!(events, 19);
+    assert_eq!(answers.len(), 6);
     assert_eq!(
         runtime
             .snapshot(sender, source.device.id, now)
             .unwrap()
             .pairs
             .len(),
-        3
+        6
     );
     for (index, (_, _, stream)) in receivers.iter_mut().enumerate() {
         let mut offers = Vec::new();
@@ -618,7 +628,7 @@ async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and
             .unwrap()
             .pairs
             .len(),
-        2
+        5
     );
     let replacement = runtime
         .create_pair(
@@ -717,13 +727,16 @@ async fn file_transfer_sender_drop_or_overflow_closes_every_pair_and_receiver_fa
                 };
                 let mut registry = runtime.lock(now).unwrap();
                 for _ in 0..=QUEUE_CAPACITY {
-                    registry.dispatch(vec![(
-                        target,
-                        FileTransferEvent::PairClosed(FileTransferPairClosed {
-                            pair_id: Uuid::new_v4(),
-                            reason: FileTransferCloseReason::Cancelled,
-                        }),
-                    )]);
+                    registry.dispatch(
+                        vec![(
+                            target,
+                            FileTransferEvent::PairClosed(FileTransferPairClosed {
+                                pair_id: Uuid::new_v4(),
+                                reason: FileTransferCloseReason::Cancelled,
+                            }),
+                        )],
+                        now,
+                    );
                 }
             }
         }
@@ -756,16 +769,16 @@ async fn file_transfer_sender_drop_or_overflow_closes_every_pair_and_receiver_fa
 }
 
 #[test]
-fn file_transfer_concurrent_recipient_admission_never_exceeds_three() {
+fn file_transfer_concurrent_recipient_admission_never_exceeds_six() {
     let runtime = Arc::new(FileTransferRuntime::default());
     let now = Utc::now();
     let sender = owner(Uuid::new_v4());
     let (source, _source_stream) = online(&runtime, sender, now);
     let mut receivers = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..7 {
         receivers.push(online(&runtime, owner(sender.tenant_id), now));
     }
-    let barrier = Arc::new(std::sync::Barrier::new(4));
+    let barrier = Arc::new(std::sync::Barrier::new(7));
     let handles: Vec<_> = receivers
         .iter()
         .map(|(device, _)| {
@@ -783,7 +796,7 @@ fn file_transfer_concurrent_recipient_admission_never_exceeds_three() {
             .into_iter()
             .map(|handle| usize::from(handle.join().unwrap()))
             .sum::<usize>(),
-        3
+        6
     );
     assert_eq!(
         runtime
@@ -791,6 +804,249 @@ fn file_transfer_concurrent_recipient_admission_never_exceeds_three() {
             .unwrap()
             .pairs
             .len(),
-        3
+        6
     );
+}
+
+#[tokio::test]
+async fn file_transfer_completed_peer_close_is_idempotent_without_authorizing_foreign_callers() {
+    for recipient_first in [false, true] {
+        let now = Utc::now();
+        let runtime = Arc::new(FileTransferRuntime::default());
+        let a = owner(Uuid::new_v4());
+        let b = owner(a.tenant_id);
+        let c = owner(a.tenant_id);
+        let foreign = owner(Uuid::new_v4());
+        let (ad, mut asub) = online(&runtime, a, now);
+        let (bd, mut bsub) = online(&runtime, b, now);
+        let (cd, _cs) = online(&runtime, c, now);
+        let (fd, _fs) = online(&runtime, foreign, now);
+        let pair = runtime
+            .create_pair(a, request(ad.device.id, bd.device.id), now)
+            .unwrap();
+        runtime.accept(b, bd.device.id, pair.id, now).unwrap();
+        let peers = if recipient_first {
+            [(b, bd.device.id), (a, ad.device.id)]
+        } else {
+            [(a, ad.device.id), (b, bd.device.id)]
+        };
+        for (identity, device) in peers.into_iter().chain(peers) {
+            runtime.close(identity, device, pair.id, now).unwrap();
+        }
+        for (identity, device, pair_id) in [
+            (c, cd.device.id, pair.id),
+            (foreign, fd.device.id, pair.id),
+            (
+                FileTransferIdentity {
+                    session_id: Uuid::new_v4(),
+                    ..a
+                },
+                ad.device.id,
+                pair.id,
+            ),
+            (
+                FileTransferIdentity {
+                    tenant_id: Uuid::new_v4(),
+                    ..a
+                },
+                ad.device.id,
+                pair.id,
+            ),
+            (a, Uuid::new_v4(), pair.id),
+            (a, ad.device.id, Uuid::new_v4()),
+        ] {
+            assert!(matches!(
+                runtime.close(identity, device, pair_id, now),
+                Err(AppError::NotFound(_))
+            ));
+        }
+        assert!(runtime.accept(b, bd.device.id, pair.id, now).is_err());
+        assert!(runtime
+            .signal(
+                a,
+                pair.id,
+                signal(ad.device.id, FileTransferSignalType::Offer),
+                now
+            )
+            .is_err());
+        for stream in [&mut asub, &mut bsub] {
+            let mut closed = 0;
+            while let Ok(event) = stream.receiver.try_recv() {
+                if matches!(event, FileTransferEvent::PairClosed(_)) {
+                    closed += 1;
+                }
+            }
+            assert_eq!(
+                closed, 1,
+                "repeated close must not publish another close event"
+            );
+        }
+    }
+}
+
+#[test]
+fn file_transfer_simultaneous_peer_closes_both_succeed() {
+    let now = Utc::now();
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let a = owner(Uuid::new_v4());
+    let b = owner(a.tenant_id);
+    let (ad, _as) = online(&runtime, a, now);
+    let (bd, _bs) = online(&runtime, b, now);
+    let pair = runtime
+        .create_pair(a, request(ad.device.id, bd.device.id), now)
+        .unwrap();
+    runtime.accept(b, bd.device.id, pair.id, now).unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let handles: Vec<_> = [(a, ad.device.id), (b, bd.device.id)]
+        .into_iter()
+        .map(|(identity, device)| {
+            let runtime = runtime.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                runtime.close(identity, device, pair.id, now)
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn file_transfer_closed_receipts_expire_and_never_authorize_a_replaced_device() {
+    let now = Utc::now();
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let a = owner(Uuid::new_v4());
+    let b = owner(a.tenant_id);
+    let (ad, _as) = online(&runtime, a, now);
+    let (bd, _bs) = online(&runtime, b, now);
+    let pair = runtime
+        .create_pair(a, request(ad.device.id, bd.device.id), now)
+        .unwrap();
+    runtime.close(a, ad.device.id, pair.id, now).unwrap();
+    for delta in [60, 119] {
+        runtime
+            .refresh(a, ad.device.id, now + Duration::seconds(delta))
+            .unwrap();
+        runtime
+            .refresh(b, bd.device.id, now + Duration::seconds(delta))
+            .unwrap();
+        runtime
+            .close(b, bd.device.id, pair.id, now + Duration::seconds(delta))
+            .unwrap();
+    }
+    assert!(matches!(
+        runtime.close(b, bd.device.id, pair.id, now + Duration::seconds(120)),
+        Err(AppError::NotFound(_))
+    ));
+    let pair = runtime
+        .create_pair(
+            a,
+            request(ad.device.id, bd.device.id),
+            now + Duration::seconds(120),
+        )
+        .unwrap();
+    runtime
+        .remove(a, ad.device.id, now + Duration::seconds(120))
+        .unwrap();
+    runtime
+        .close(b, bd.device.id, pair.id, now + Duration::seconds(120))
+        .unwrap();
+    let (replacement, _replacement_stream) = online(&runtime, a, now + Duration::seconds(120));
+    assert!(matches!(
+        runtime.close(
+            a,
+            replacement.device.id,
+            pair.id,
+            now + Duration::seconds(120)
+        ),
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        runtime.close(a, ad.device.id, pair.id, now + Duration::seconds(120)),
+        Err(AppError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn file_transfer_every_teardown_records_a_bounded_member_close_receipt() {
+    for cause in ["expired", "remove", "drop", "overflow"] {
+        let now = Utc::now();
+        let runtime = Arc::new(FileTransferRuntime::default());
+        let a = owner(Uuid::new_v4());
+        let b = owner(a.tenant_id);
+        let (ad, asub) = online(&runtime, a, now);
+        let (bd, _bs) = online(&runtime, b, now);
+        let pair = runtime
+            .create_pair(a, request(ad.device.id, bd.device.id), now)
+            .unwrap();
+        let mut after = now;
+        match cause {
+            "expired" => {
+                for delta in [60, 119] {
+                    runtime
+                        .refresh(a, ad.device.id, now + Duration::seconds(delta))
+                        .unwrap();
+                    runtime
+                        .refresh(b, bd.device.id, now + Duration::seconds(delta))
+                        .unwrap();
+                }
+                after = now + Duration::seconds(120);
+                runtime.snapshot(b, bd.device.id, after).unwrap();
+            }
+            "remove" => runtime.remove(a, ad.device.id, now).unwrap(),
+            "drop" => drop(asub),
+            "overflow" => {
+                let mut registry = runtime.lock(now).unwrap();
+                for _ in 0..=QUEUE_CAPACITY {
+                    registry.dispatch(
+                        vec![(
+                            ad.device.id,
+                            FileTransferEvent::SessionInvalid(FileTransferEmpty {}),
+                        )],
+                        now,
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+        runtime.close(b, bd.device.id, pair.id, after).unwrap();
+        assert_eq!(runtime.lock(after).unwrap().closed_pairs.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn file_transfer_receipt_capacity_evicts_oldest_without_creating_replay_authority() {
+    let now = Utc::now();
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let a = owner(Uuid::new_v4());
+    let b = owner(a.tenant_id);
+    let (ad, mut asub) = online(&runtime, a, now);
+    let (bd, mut bsub) = online(&runtime, b, now);
+    let mut first = Uuid::nil();
+    let mut last = Uuid::nil();
+    let correlation = Uuid::new_v4();
+    for index in 0..=MAX_CLOSED_RECEIPTS {
+        let mut intent = request(ad.device.id, bd.device.id);
+        intent.client_request_id = correlation;
+        let pair = runtime.create_pair(a, intent, now).unwrap();
+        if index == 0 {
+            first = pair.id;
+        }
+        last = pair.id;
+        runtime.close(a, ad.device.id, pair.id, now).unwrap();
+        while asub.receiver.try_recv().is_ok() {}
+        while bsub.receiver.try_recv().is_ok() {}
+    }
+    assert_ne!(first, last);
+    assert_eq!(
+        runtime.lock(now).unwrap().closed_pairs.len(),
+        MAX_CLOSED_RECEIPTS
+    );
+    assert!(matches!(
+        runtime.close(b, bd.device.id, first, now),
+        Err(AppError::NotFound(_))
+    ));
+    runtime.close(b, bd.device.id, last, now).unwrap();
 }

@@ -88,12 +88,14 @@ fn identity(session: &AuthenticatedSession) -> FileTransferIdentity {
 }
 async fn staff(session: &AuthenticatedSession) -> Result<String, HttpError> {
     if session.user_type != "staff" {
-        return Err(HttpError::Forbidden("Active staff account required".into()));
+        return Err(HttpError::Forbidden(
+            "กรุณาเข้าสู่ระบบด้วยบัญชีบุคลากรที่ใช้งานอยู่".into(),
+        ));
     }
     Ok(staff_display_name(&session.tenant.pool, session.user_id).await?)
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/devices", operation_id="registerFileTransferDevice", tag="file-transfer", request_body=RegisterFileTransferDevice, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Protocol 2 device registration and school-online snapshot with batch limits",body=ApiResponse<FileTransferSnapshot>),(status=400,description="Invalid label or unsupported protocol; refresh both devices",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=429,description="Device limit reached",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/devices", operation_id="registerFileTransferDevice", tag="file-transfer", request_body=RegisterFileTransferDevice, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Protocol 3 device registration and school-online snapshot with recipient admission limit",body=ApiResponse<FileTransferSnapshot>),(status=400,description="Invalid label or unsupported protocol; refresh both devices",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=429,description="Device limit reached",body=ApiErrorResponse))))]
 pub async fn register(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -133,7 +135,7 @@ pub async fn remove(
     state.runtime.remove(identity(&session), id, Utc::now())?;
     Ok(Json(ApiResponse::empty()))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs", operation_id="createFileTransferPair", tag="file-transfer", request_body=CreateFileTransferPair, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Pending batch pair with ordered file metadata and request correlation awaiting recipient consent",body=ApiResponse<FileTransferPair>),(status=400,description="Invalid batch or file metadata",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Target unavailable",body=ApiErrorResponse),(status=409,description="Device busy, offline or active request correlation duplicated",body=ApiErrorResponse),(status=429,description="Pairing code attempt limit reached",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs", operation_id="createFileTransferPair", tag="file-transfer", request_body=CreateFileTransferPair, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Pending pair with safe numeric batch summary and request correlation awaiting recipient metadata consent",body=ApiResponse<FileTransferPair>),(status=400,description="Invalid batch summary",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Target unavailable",body=ApiErrorResponse),(status=409,description="Device busy, offline or active request correlation duplicated",body=ApiErrorResponse),(status=429,description="Pairing code attempt limit reached",body=ApiErrorResponse))))]
 pub async fn create_pair(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -147,7 +149,7 @@ pub async fn create_pair(
         Utc::now(),
     )?)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/accept", operation_id="acceptFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pending pair")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Recipient accepted exact sender and ordered file batch",body=ApiResponse<FileTransferPair>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff recipient required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse),(status=409,description="Pair changed or disconnected",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/accept", operation_id="acceptFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pending pair")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Recipient allowed exact sender to exchange peer-only manifest before file-byte consent",body=ApiResponse<FileTransferPair>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff recipient required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse),(status=409,description="Pair changed or disconnected",body=ApiErrorResponse))))]
 pub async fn accept(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -164,7 +166,7 @@ pub async fn accept(
         Utc::now(),
     )?)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/close", operation_id="closeFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pair to decline, cancel or finish")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Pair closed",body=ApiResponse<EmptyData>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/close", operation_id="closeFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pair to decline, cancel or finish")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Pair closed, including authorized retries during the bounded recent-close receipt window",body=ApiResponse<EmptyData>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse))))]
 pub async fn close(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -433,11 +435,10 @@ mod tests {
                         target: FileTransferTarget::Device {
                             device_id: device.device.id,
                         },
-                        files: vec![FileTransferFile {
-                            name: "empty.txt".into(),
-                            size: 0,
-                            mime_type: "".into(),
-                        }],
+                        batch: FileTransferBatchSummary {
+                            file_count: 1,
+                            total_bytes: 0,
+                        },
                         client_request_id: Uuid::new_v4(),
                     },
                     Utc::now(),
