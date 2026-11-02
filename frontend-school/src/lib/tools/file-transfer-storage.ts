@@ -343,12 +343,12 @@ export class ReceivedBatchStore {
 		this.partialCleanup = (async () => {
 			await Promise.allSettled([...this.active]);
 			const partial = this.partial;
-			this.partial = null;
 			if (!partial || !this.payloadDirectory) return;
 			const failures: unknown[] = [];
 			if (partial.stream && !partial.closed) {
 				try {
 					await partial.stream.abort();
+					partial.stream = null;
 				} catch (error) {
 					failures.push(error);
 				}
@@ -356,12 +356,18 @@ export class ReceivedBatchStore {
 			if (partial.created) {
 				try {
 					await this.payloadDirectory.removeEntry(partial.name);
+					partial.created = false;
 				} catch (error) {
-					if (!(error instanceof DOMException && error.name === 'NotFoundError'))
-						failures.push(error);
+					if (error instanceof DOMException && error.name === 'NotFoundError')
+						partial.created = false;
+					else failures.push(error);
 				}
 			}
-			if (failures.length) throw new TransferStorageError(storageMessage(failures[0]));
+			if (!partial.created && (!partial.stream || partial.closed)) this.partial = null;
+			if (failures.length)
+				throw new TransferStorageError(
+					'ยังยืนยันการล้างไฟล์ที่รับไม่ครบไม่ได้ กรุณาตรวจสอบไฟล์บางส่วนในโฟลเดอร์ที่เลือกและลบเองหากไม่ต้องการ ไฟล์ที่บันทึกครบแล้วคงอยู่'
+				);
 		})().finally(() => {
 			this.partialCleanup = null;
 		});
@@ -406,6 +412,8 @@ export class ReceivedBatchStore {
 		this.disposal = (async () => {
 			await Promise.allSettled([...this.active]);
 			const failures: unknown[] = [];
+			// A prior failed attempt retains its owned path; disposal makes one bounded retry.
+			if (this.partialCleanup) await Promise.allSettled([this.partialCleanup]);
 			try {
 				await this.abortPartial();
 			} catch (error) {

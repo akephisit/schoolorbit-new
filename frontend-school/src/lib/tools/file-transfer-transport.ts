@@ -33,6 +33,7 @@ type Ports = {
 	complete(): void;
 	failure(message: string): void;
 	closed(): void;
+	cleanupFailure(message: string): void;
 };
 /** One pair owns network state and a bounded inbox; its parent retains completed disk files. */
 export class FileTransferTransport {
@@ -182,7 +183,13 @@ export class FileTransferTransport {
 		if (this.store)
 			void this.store
 				.abortPartial()
-				.catch(() => console.warn('File transfer partial file cleanup failed'));
+				.catch((error) =>
+					this.ports.cleanupFailure(
+						error instanceof TransferStorageError
+							? error.message
+							: 'ยังยืนยันการล้างไฟล์บางส่วนไม่ได้ กรุณาตรวจสอบโฟลเดอร์ปลายทาง ไฟล์ที่บันทึกครบแล้วคงอยู่'
+					)
+				);
 	}
 	private fail(message: string) {
 		if (this.stopped) return;

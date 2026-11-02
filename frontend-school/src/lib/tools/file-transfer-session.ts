@@ -934,7 +934,15 @@ export class FileTransferSession {
 		const store = entry.store;
 		if (!store || store === this.downloadStore) return;
 		entry.store = null;
-		void store.dispose().catch(() => console.warn('File transfer manifest cleanup failed'));
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId;
+		void store.dispose().catch(() => {
+			if (this.current(generation, entry, requestId))
+				this.set(entry, {
+					storageWarning:
+						'ยังยืนยันการล้างไฟล์บางส่วนไม่ได้ กรุณาตรวจสอบโฟลเดอร์ปลายทางและลบไฟล์ที่ไม่ต้องการเอง ไฟล์ที่บันทึกครบแล้วคงอยู่'
+				});
+		});
 	}
 	async showManifestPage(id: string, page: number) {
 		const entry = this.entries.get(id),
@@ -1343,6 +1351,10 @@ export class FileTransferSession {
 					},
 					failure: (message) => {
 						if (valid()) this.fail(entry, message);
+					},
+					cleanupFailure: (message) => {
+						if (this.current(generation, entry, requestId) && entry.view.pair?.id === pair.id)
+							this.set(entry, { storageWarning: message });
 					},
 					closed: () => {
 						if (valid() && entry.view.phase === 'complete') void this.close(entry);

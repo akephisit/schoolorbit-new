@@ -1531,7 +1531,7 @@ test('late metadata accept failure cannot clear the newer file-consent pending o
 test('folder receive uses the click gesture and keeps completed device files while cancelling its new partial', async ({
 	context,
 	page
-}) => {
+}, testInfo) => {
 	const api = await fileTransferFixture(),
 		receiver = await context.newPage();
 	try {
@@ -1613,6 +1613,13 @@ test('folder receive uses the click gesture and keeps completed device files whi
 			bytes: [...Buffer.from('permanent')]
 		});
 		expect(await download(receiver, 0, 'keep.txt')).toEqual(Buffer.from('permanent'));
+		await receiver
+			.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว', exact: true })
+			.screenshot({ path: testInfo.outputPath('folder-saved-files-desktop.png') });
+		await receiver.setViewportSize({ width: 390, height: 1000 });
+		await receiver
+			.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว', exact: true })
+			.screenshot({ path: testInfo.outputPath('folder-saved-files-mobile.png') });
 		await receiver.getByRole('button', { name: 'ล้างไฟล์ที่รับแล้วทั้งหมด', exact: true }).click();
 		expect((await saved())[0].bytes).toEqual([...Buffer.from('permanent')]);
 		const device = api.devices.find((d) => d.label === 'ผู้รับ');

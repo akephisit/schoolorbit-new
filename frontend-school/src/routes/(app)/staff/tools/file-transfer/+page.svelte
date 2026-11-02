@@ -574,7 +574,10 @@
 							หากถูกบล็อกให้อนุญาตดาวน์โหลดหลายไฟล์ หรือใช้ปุ่มดาวน์โหลดด้านล่าง รูปอาจอยู่ใน Downloads
 							แทนแกลเลอรี ขึ้นกับอุปกรณ์{/if}
 					</p>
-					{#if view.saveDestination?.mode !== 'folder'}<p class="text-sm text-muted-foreground">
+					{#if view.saveDestination?.mode === 'folder'}<p class="text-sm text-muted-foreground">
+							ปิดหน้าหรือออกจากระบบจะล้างเฉพาะรายการและ ZIP ชั่วคราว ไฟล์ในโฟลเดอร์ที่เลือกยังอยู่
+							ไม่ต้องดาวน์โหลดซ้ำ
+						</p>{:else}<p class="text-sm text-muted-foreground">
 							ไฟล์ที่รับครบยังอยู่ในพื้นที่ชั่วคราวของหน้านี้แม้การส่งส่วนที่เหลือล้มเหลว
 							ปิดหน้าหรือออกจากระบบจะล้างพื้นที่ชั่วคราว
 						</p>{/if}

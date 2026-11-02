@@ -22,6 +22,7 @@ class MemoryFile {
 	bytes = new Uint8Array();
 	closeGate = null;
 	writeError = null;
+	aborts = 0;
 	constructor(name) {
 		this.name = name;
 	}
@@ -58,6 +59,11 @@ class MemoryFile {
 			} finally {
 				writer.releaseLock();
 			}
+		};
+		const abort = stream.abort.bind(stream);
+		stream.abort = async (reason) => {
+			this.aborts++;
+			return abort(reason);
 		};
 		return stream;
 	}
@@ -307,6 +313,49 @@ test('an existing destination filename is never overwritten or removed as a part
 		await assert.rejects(store.beginFile(0), /เขียนทับ/);
 		await store.abortPartial();
 		await store.dispose();
+		assert.deepEqual(
+			new Uint8Array(await (await sentinel.getFile()).arrayBuffer()),
+			new Uint8Array([9])
+		);
+	} finally {
+		await store?.dispose();
+		h.restore();
+	}
+});
+
+test('a denied partial removal retains its owned path for disposal retry without double abort', async () => {
+	const h = storageHarness(),
+		destination = new MemoryDirectory();
+	let store;
+	try {
+		const sentinel = await destination.getFileHandle('existing.txt', { create: true });
+		sentinel.bytes = new Uint8Array([9]);
+		store = await ReceivedBatchStore.open({ fileCount: 1, totalBytes: 3 });
+		await manifest(store);
+		await store.configureDestination(
+			{ mode: 'folder', directory: destination },
+			new AbortController().signal
+		);
+		const folder = [...destination.entriesMap.values()].find(
+			(entry) => entry instanceof MemoryDirectory
+		);
+		await store.beginFile(0);
+		await store.writeFile(new Uint8Array([1]));
+		const partial = await folder.getFileHandle('1 - ซ้ำ.txt');
+		let removals = 0;
+		const remove = folder.removeEntry.bind(folder);
+		folder.removeEntry = async (name) => {
+			removals++;
+			if (removals === 1) throw new DOMException('permission revoked', 'NotAllowedError');
+			return remove(name);
+		};
+		await assert.rejects(store.abortPartial(), /ยังยืนยันการล้าง/);
+		assert.equal(folder.entriesMap.size, 1);
+		assert.equal(partial.aborts, 1);
+		await store.dispose();
+		assert.equal(removals, 2);
+		assert.equal(partial.aborts, 1);
+		assert.equal(folder.entriesMap.size, 0);
 		assert.deepEqual(
 			new Uint8Array(await (await sentinel.getFile()).arrayBuffer()),
 			new Uint8Array([9])
