@@ -384,14 +384,17 @@
 					disabled={!overview}
 				/>
 			</div>
-			<div class="w-full min-w-0 flex-1 space-y-1.5 sm:min-w-44">
+			<div
+				class="w-full min-w-0 flex-none space-y-1.5 sm:min-w-44 sm:flex-1"
+				data-testid="daily-search-field"
+			>
 				<Label for="entry-search" class="text-xs">ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน</Label>
 				<div class="relative">
 					<Search class="text-muted-foreground absolute top-2.5 left-3 size-4" />
 					<Input id="entry-search" bind:value={entrySearch} class="pl-9 text-xs" />
 				</div>
 			</div>
-			<div class="flex flex-wrap items-center gap-2">
+			<div class="flex flex-wrap items-center gap-2" data-testid="daily-toolbar-actions">
 				{#if view === 'teacher'}
 					<div class="flex h-9 items-center gap-2 rounded-md border px-2">
 						<Switch

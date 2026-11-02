@@ -431,6 +431,44 @@ for (const width of [390, 1280]) {
 				await page.getByRole('radio', { name: view, exact: true }).click();
 				const table = page.getByRole('table');
 				await expect(table).toBeVisible();
+				if (width < 640) {
+					const searchGeometry = await page.getByTestId('daily-search-field').evaluate((field) => {
+						const input = field.querySelector('input');
+						const label = field.querySelector('label');
+						const toolbar = field.parentElement;
+						const actions = toolbar?.querySelector('[data-testid="daily-toolbar-actions"]');
+						if (!input || !label || !toolbar || !actions) {
+							throw new Error('Daily timetable search or action controls are missing');
+						}
+						const toolbarStyle = getComputedStyle(toolbar);
+						const fieldRect = field.getBoundingClientRect();
+						const inputRect = input.getBoundingClientRect();
+						return {
+							availableWidth:
+								toolbar.clientWidth -
+								parseFloat(toolbarStyle.paddingLeft) -
+								parseFloat(toolbarStyle.paddingRight),
+							fieldWidth: fieldRect.width,
+							inputWidth: inputRect.width,
+							labelHeight: label.getBoundingClientRect().height,
+							labelLineHeight: parseFloat(getComputedStyle(label).lineHeight),
+							fieldBottom: fieldRect.bottom,
+							inputBottom: inputRect.bottom,
+							actionsTop: actions.getBoundingClientRect().top
+						};
+					});
+					expect(
+						Math.abs(searchGeometry.fieldWidth - searchGeometry.availableWidth)
+					).toBeLessThanOrEqual(1);
+					expect(searchGeometry.inputWidth).toBeGreaterThanOrEqual(
+						searchGeometry.availableWidth - 1
+					);
+					expect(searchGeometry.labelHeight).toBeLessThanOrEqual(
+						searchGeometry.labelLineHeight * 2 + 1
+					);
+					expect(searchGeometry.fieldBottom).toBeLessThanOrEqual(searchGeometry.actionsTop);
+					expect(searchGeometry.inputBottom).toBeLessThanOrEqual(searchGeometry.actionsTop);
+				}
 				const geometry = await table.evaluate((element) => {
 					const scroller = element.closest('.daily-teaching-scroll');
 					if (!scroller) throw new Error('Missing daily timetable scroller');
