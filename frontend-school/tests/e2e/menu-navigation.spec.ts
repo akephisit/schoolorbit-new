@@ -74,7 +74,7 @@ async function mockNavigation(page: Page, permissions = ['*']) {
 	await page.route('**/api/me/work-items', async (route) => {
 		state.workReads++;
 		await state.workGate;
-		await fulfill(route, []);
+		await fulfill(route, { items: [] });
 	});
 	await page.route('**/api/correspondence/options**', (route) =>
 		fulfill(route, { templates: [], organizations: [], users: [], roles: [] })
@@ -85,7 +85,7 @@ async function mockNavigation(page: Page, permissions = ['*']) {
 // Resolve the actual production route module from Kit's generated node and Vite manifest.
 // Holding this module reproduces the interval before the destination component can render.
 async function holdPageModule(page: Page, pathname: string) {
-	const directory = '.svelte-kit/generated/client-optimized/nodes';
+	const directory = '.svelte-kit/generated/build/client-optimized/nodes';
 	const nodes = await Promise.all(
 		(await readdir(directory)).map(async (file) => ({
 			file,
@@ -96,10 +96,15 @@ async function holdPageModule(page: Page, pathname: string) {
 		entry.source.includes(`/routes/(app)${pathname}/+page.svelte`)
 	);
 	expect(node, `production node for ${pathname}`).toBeDefined();
-	const manifest: Record<string, { file: string }> = JSON.parse(
+	const manifest: Record<string, { file: string; name?: string; isEntry?: boolean }> = JSON.parse(
 		await readFile('.svelte-kit/output/client/.vite/manifest.json', 'utf8')
 	);
-	const modulePath = `/${manifest[`${directory}/${node!.file}`].file}`;
+	const nodeName = `nodes/${node!.file.replace(/\.js$/, '')}`;
+	const entries = Object.values(manifest).filter(
+		(entry) => entry.isEntry && entry.name === nodeName
+	);
+	expect(entries, `one production entry for ${nodeName}`).toHaveLength(1);
+	const modulePath = `/${entries[0].file}`;
 	const gate = deferred();
 	let requested = false;
 	await page.route(
@@ -145,6 +150,15 @@ async function expectReadableSelection(link: Locator) {
 			const alpha = layer[3] / 255;
 			background = background.map((channel, index) => layer[index] * alpha + channel * (1 - alpha));
 		}
+		const labelStyle = getComputedStyle(element.querySelector('span')!);
+		const labelDurations = labelStyle.transitionDuration.split(',').map(Number.parseFloat);
+		const labelColorTransition = labelStyle.transitionProperty
+			.split(',')
+			.some(
+				(property, index) =>
+					['all', 'color'].includes(property.trim()) &&
+					labelDurations[index % labelDurations.length] > 0
+			);
 		const foregroundLuminance = luminance(rgb(style.color));
 		const backgroundLuminance = luminance(background);
 		return {
@@ -152,12 +166,12 @@ async function expectReadableSelection(link: Locator) {
 				(Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
 				(Math.min(foregroundLuminance, backgroundLuminance) + 0.05),
 			transition: style.transitionProperty,
-			labelTransition: getComputedStyle(element.querySelector('span')!).transitionProperty
+			labelColorTransition
 		};
 	});
 	expect(result.contrast).toBeGreaterThanOrEqual(4.5);
 	expect(result.transition).toBe('none');
-	expect(result.labelTransition).not.toMatch(/all|color/);
+	expect(result.labelColorTransition).toBe(false);
 }
 
 for (const width of [390, 1440])
@@ -276,7 +290,7 @@ test('same-path academic context and hash navigation keep the page-owned region'
 			link.href = '#menu-navigation-anchor';
 			link.id = 'menu-navigation-hash';
 			link.textContent = 'ไปจุดเดิม';
-			document.body.append(link);
+			document.querySelector('main')!.prepend(link);
 		});
 		await page.locator('#menu-navigation-hash').click();
 		await expect(page).toHaveURL(/#menu-navigation-anchor$/);
