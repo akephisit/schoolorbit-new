@@ -1,4 +1,4 @@
-import type { DailyTeachingEntry } from '#lib/api/timetable.js';
+import type { DailyTeachingEntry, DailyTeachingTeacher } from '#lib/api/timetable.js';
 
 export const DAILY_TEACHING_TEACHER_COLUMN_WIDTH = 104;
 export const DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH = 84;
@@ -32,10 +32,152 @@ export interface DailyTeachingDisplayGroup {
 	classroomLabels: string[];
 }
 
+export type DailyTeachingView = 'teacher' | 'homeroom';
+export type DailyTeachingInstructor = Pick<DailyTeachingTeacher, 'id' | 'displayName'>;
+
+export interface DailyTeachingDisplayCell {
+	bellSchedulePeriodId: string;
+	entries: DailyTeachingEntry[];
+	instructorsByEntry: Map<string, DailyTeachingInstructor[]>;
+}
+
+export interface DailyTeachingDisplayRow {
+	id: string;
+	displayName: string;
+	kind: DailyTeachingView;
+	periods: DailyTeachingDisplayCell[];
+}
+
 const thaiNaturalCollator = new Intl.Collator('th', {
 	numeric: true,
 	sensitivity: 'base'
 });
+
+/** Project the already-authorized daily response without additional resource reads. */
+export function dailyTeachingRows(
+	teachers: DailyTeachingTeacher[],
+	view: DailyTeachingView
+): DailyTeachingDisplayRow[] {
+	const instructorsByPeriod = new Map<string, Map<string, DailyTeachingInstructor[]>>();
+	for (const teacher of teachers) {
+		for (const cell of teacher.periods) {
+			let instructors = instructorsByPeriod.get(cell.bellSchedulePeriodId);
+			if (!instructors) {
+				instructors = new Map();
+				instructorsByPeriod.set(cell.bellSchedulePeriodId, instructors);
+			}
+			for (const entry of cell.entries) {
+				const assigned = instructors.get(entry.entryId) ?? [];
+				if (!assigned.some((item) => item.id === teacher.id)) {
+					assigned.push({ id: teacher.id, displayName: teacher.displayName });
+				}
+				instructors.set(entry.entryId, assigned);
+			}
+		}
+	}
+	const displayCell = (
+		periodId: string,
+		entries: DailyTeachingEntry[]
+	): DailyTeachingDisplayCell => ({
+		bellSchedulePeriodId: periodId,
+		entries,
+		instructorsByEntry: instructorsByPeriod.get(periodId) ?? new Map()
+	});
+	if (view === 'teacher') {
+		return teachers.map((teacher) => ({
+			id: teacher.id,
+			displayName: teacher.displayName,
+			kind: view,
+			periods: teacher.periods.map((cell) => displayCell(cell.bellSchedulePeriodId, cell.entries))
+		}));
+	}
+	const homerooms = new Map<string, Map<string, Map<string, DailyTeachingEntry>>>();
+	for (const teacher of teachers) {
+		for (const cell of teacher.periods) {
+			for (const entry of cell.entries) {
+				for (const name of new Set(
+					entry.homeroomNames.map(textOrNull).filter((name) => name !== null)
+				)) {
+					let periods = homerooms.get(name);
+					if (!periods) {
+						periods = new Map();
+						homerooms.set(name, periods);
+					}
+					let entries = periods.get(cell.bellSchedulePeriodId);
+					if (!entries) {
+						entries = new Map();
+						periods.set(cell.bellSchedulePeriodId, entries);
+					}
+					entries.set(entry.entryId, entry);
+				}
+			}
+		}
+	}
+	return [...homerooms]
+		.sort(([left], [right]) => thaiNaturalCollator.compare(left, right))
+		.map(([name, periods]) => ({
+			id: name,
+			displayName: name,
+			kind: view,
+			periods: [...periods].map(([periodId, entries]) =>
+				displayCell(periodId, [...entries.values()])
+			)
+		}));
+}
+
+export function dailyTeachingGroupInstructors(
+	entries: DailyTeachingEntry[],
+	cell: DailyTeachingDisplayCell
+): DailyTeachingInstructor[] {
+	const instructors = new Map<string, DailyTeachingInstructor>();
+	for (const entry of entries) {
+		for (const instructor of cell.instructorsByEntry.get(entry.entryId) ?? []) {
+			instructors.set(instructor.id, instructor);
+		}
+	}
+	return [...instructors.values()].sort(
+		(left, right) =>
+			thaiNaturalCollator.compare(left.displayName, right.displayName) ||
+			left.id.localeCompare(right.id)
+	);
+}
+
+export function filterDailyTeachingRows(
+	rows: DailyTeachingDisplayRow[],
+	ownerId: string,
+	search: string
+): DailyTeachingDisplayRow[] {
+	const query = search.trim().toLocaleLowerCase('th');
+	return rows.filter((row) => {
+		if (ownerId !== 'all' && row.id !== ownerId) return false;
+		if (!query || row.displayName.toLocaleLowerCase('th').includes(query)) return true;
+		return row.periods.some((cell) =>
+			cell.entries.some((entry) =>
+				[
+					entry.title,
+					entry.offeringCode,
+					entry.offeringName,
+					entry.learningGroupName,
+					entry.subjectVersionDisplayLabel,
+					entry.activityVersionDisplayLabel,
+					entry.roomName,
+					...entry.homeroomNames,
+					...(cell.instructorsByEntry.get(entry.entryId) ?? []).map((item) => item.displayName)
+				].some((value) => value?.toLocaleLowerCase('th').includes(query))
+			)
+		);
+	});
+}
+
+export function dailyTeachingHomeroomGroupMeta(
+	group: DailyTeachingDisplayGroup,
+	cell: DailyTeachingDisplayCell
+): string {
+	const instructors = dailyTeachingGroupInstructors(group.entries, cell);
+	const teacherLabel = instructors.map((item) => item.displayName).join(', ');
+	const rooms = [...new Set(group.locations.map((location) => location.roomName).filter(Boolean))];
+	return [teacherLabel, rooms.join(', ')].filter(Boolean).join(' · ');
+}
 
 function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	if (
