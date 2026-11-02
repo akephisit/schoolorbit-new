@@ -7,6 +7,10 @@ const {
 	DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 	DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
 	dailyTeachingEmptyCellLabel,
+	dailyTeachingRows,
+	filterDailyTeachingRows,
+	dailyTeachingGroupInstructors,
+	dailyTeachingHomeroomGroupMeta,
 	dailyTeachingCompactGroupMeta,
 	dailyTeachingCompactTitle,
 	dailyTeachingEntryCardPresentation,
@@ -304,4 +308,126 @@ test('physical room names display independently from codes and distinct room IDs
 	);
 	assert.ok(groups[0].classroomLabels.includes('ป.1/1 / ไม่พบชื่อห้อง'));
 	assert.doesNotMatch(groups[0].classroomLabels.join(' '), /SCI-A|SCI-B|SECRET-ROOM-C|room-c/);
+});
+
+function teacher(id, displayName, entries, periodId = 'period-a') {
+	return { id, displayName, periods: [{ bellSchedulePeriodId: periodId, entries }] };
+}
+
+test('homeroom projection naturally sorts explicit assignments and deduplicates team teaching', () => {
+	const shared = entry({
+		entryId: 'shared',
+		homeroomNames: ['ม.1/10', ' ม.1/2 ', 'ม.1/2'],
+		roomName: 'ห้องวิทย์'
+	});
+	const independent = entry({
+		entryId: 'independent',
+		activitySchedulingMode: 'independent',
+		homeroomNames: ['ม.1/2']
+	});
+	const source = [
+		teacher('teacher-b', 'ครู ข', [
+			shared,
+			independent,
+			entry({ entryId: 'unassigned', homeroomNames: [] })
+		]),
+		teacher('teacher-a', 'ครู ก', [shared])
+	];
+	const before = structuredClone(source);
+	const rows = dailyTeachingRows(source, 'homeroom');
+	assert.deepEqual(
+		rows.map((row) => row.displayName),
+		['ม.1/2', 'ม.1/10']
+	);
+	assert.deepEqual(
+		rows[0].periods[0].entries.map((item) => item.entryId),
+		['shared', 'independent']
+	);
+	assert.deepEqual(
+		dailyTeachingGroupInstructors([shared], rows[0].periods[0]).map((item) => item.id),
+		['teacher-a', 'teacher-b']
+	);
+	assert.equal(
+		dailyTeachingHomeroomGroupMeta(groupDailyTeachingEntries([shared])[0], rows[0].periods[0]),
+		'ครู ก, ครู ข · ห้องวิทย์'
+	);
+	assert.deepEqual(source, before);
+});
+
+test('homeroom synchronized groups retain independent entries and exact-period instructor sets', () => {
+	const syncA = entry({ entryId: 'sync-a', homeroomNames: ['ม.1/1'] });
+	const syncB = entry({ entryId: 'sync-b', homeroomNames: ['ม.1/1', 'ม.1/2'] });
+	const independentA = entry({
+		entryId: 'ind-a',
+		activitySchedulingMode: 'independent',
+		homeroomNames: ['ม.1/1']
+	});
+	const independentB = entry({
+		entryId: 'ind-b',
+		activitySchedulingMode: 'independent',
+		homeroomNames: ['ม.1/1']
+	});
+	const rows = dailyTeachingRows(
+		[
+			teacher('a', 'ครู ก', [syncA, independentA, independentB]),
+			teacher('b', 'ครู ข', [syncB]),
+			teacher('c', 'ครู ค', [entry({ ...syncA, homeroomNames: ['ม.2/1'] })], 'period-b')
+		],
+		'homeroom'
+	);
+	const cell = rows[0].periods[0];
+	assert.deepEqual(
+		groupDailyTeachingEntries(cell.entries).map((group) =>
+			group.entries.map((item) => item.entryId)
+		),
+		[['sync-a', 'sync-b'], ['ind-a'], ['ind-b']]
+	);
+	assert.deepEqual(
+		dailyTeachingGroupInstructors([syncA], cell).map((item) => item.id),
+		['a']
+	);
+	const secondHomeroom = rows.find((row) => row.id === 'ม.1/2');
+	assert.deepEqual(
+		dailyTeachingGroupInstructors(secondHomeroom.periods[0].entries, secondHomeroom.periods[0]).map(
+			(item) => item.id
+		),
+		['b']
+	);
+});
+
+test('teacher projection keeps empty teachers and unassigned lessons without inventing homerooms', () => {
+	const unassigned = entry({ homeroomNames: [], learningGroupName: 'กลุ่มเสรี' });
+	const source = [teacher('a', 'ครู ก', [unassigned]), teacher('b', 'ครู ข', [])];
+	assert.deepEqual(
+		dailyTeachingRows(source, 'teacher').map((row) => row.id),
+		['a', 'b']
+	);
+	assert.equal(dailyTeachingRows(source, 'teacher')[0].periods[0].entries[0], unassigned);
+	assert.deepEqual(dailyTeachingRows(source, 'homeroom'), []);
+});
+
+test('owner and text filters compose over the whole projection and stale owners stay empty', () => {
+	const rows = dailyTeachingRows(
+		[
+			teacher('a', 'ครู ก', [
+				entry({ homeroomNames: ['ม.1/1'], offeringName: 'คณิตศาสตร์', roomName: 'ห้องวิทยาศาสตร์' })
+			]),
+			teacher('b', 'ครู ข', [
+				entry({ entryId: 'b', homeroomNames: ['ม.1/2'], offeringName: 'ภาษาไทย' })
+			])
+		],
+		'homeroom'
+	);
+	assert.equal(filterDailyTeachingRows(rows, 'all', '').length, 2);
+	assert.deepEqual(
+		filterDailyTeachingRows(rows, 'all', 'ครู ก').map((row) => row.id),
+		['ม.1/1']
+	);
+	assert.deepEqual(
+		filterDailyTeachingRows(rows, 'all', 'ห้องวิทยาศาสตร์').map((row) => row.id),
+		['ม.1/1']
+	);
+	assert.equal(filterDailyTeachingRows(rows, 'ม.1/2', 'คณิตศาสตร์').length, 0);
+	assert.equal(filterDailyTeachingRows(rows, 'removed-owner', '').length, 0);
+	assert.equal(filterDailyTeachingRows(rows, 'all', 'INTERNAL-ROOM-CODE').length, 0);
 });
