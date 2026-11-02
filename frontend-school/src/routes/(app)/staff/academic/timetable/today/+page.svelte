@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import {
 		getDailyTeachingOverview,
 		type DailyTeachingEntry,
 		type DailyTeachingOverview,
-		type DailyTeachingPeriod,
-		type DailyTeachingTeacher
+		type DailyTeachingPeriod
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -20,6 +24,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import {
@@ -28,7 +33,13 @@
 		dailyTeachingCompactGroupMeta,
 		dailyTeachingCompactTitle,
 		dailyTeachingEmptyCellLabel,
-		dailyTeachingEntryCardPresentation,
+		dailyTeachingRows,
+		filterDailyTeachingRows,
+		dailyTeachingGroupInstructors,
+		dailyTeachingHomeroomGroupMeta,
+		type DailyTeachingDisplayRow,
+		type DailyTeachingDisplayCell,
+		type DailyTeachingView,
 		dailyTeachingTableMinWidth,
 		groupDailyTeachingEntries
 	} from '#lib/utils/daily-teaching-display.js';
@@ -39,12 +50,15 @@
 		ExternalLink,
 		MapPin,
 		Printer,
-		Search
+		Search,
+		School,
+		UsersRound
 	} from '@lucide/svelte';
 	import type { PageProps } from './$types';
 
 	type SelectedCell = {
-		teacher: DailyTeachingTeacher;
+		row: DailyTeachingDisplayRow;
+		cell: DailyTeachingDisplayCell;
 		period: DailyTeachingPeriod;
 		entries: DailyTeachingEntry[];
 	};
@@ -54,7 +68,13 @@
 	let overview = $state<DailyTeachingOverview | null>(null);
 	let selectedDate = $state('');
 	let includeEmptyTeachers = $state(false);
-	let teacherSearch = $state('');
+	let entrySearch = $state('');
+	const presentationUrl = $derived(page.shallow?.url ?? page.url);
+	const view = $derived<DailyTeachingView>(
+		presentationUrl.searchParams.get('view') === 'homeroom' ? 'homeroom' : 'teacher'
+	);
+	const ownerId = $derived(presentationUrl.searchParams.get('owner')?.trim() || 'all');
+	const ownerLabel = $derived(view === 'teacher' ? 'ครู' : 'ห้องเรียน');
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let selectedCell = $state<SelectedCell | null>(null);
@@ -86,27 +106,45 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
-	const filteredTeachers = $derived.by(() => {
-		const query = teacherSearch.trim().toLocaleLowerCase('th');
-		if (!query) return overview?.teachers ?? [];
-		return (overview?.teachers ?? []).filter((teacher) => {
-			if (teacher.displayName.toLocaleLowerCase('th').includes(query)) return true;
-			return teacher.periods.some((cell) =>
-				cell.entries.some((entry) =>
-					[
-						entry.offeringCode,
-						entry.offeringName,
-						entry.learningGroupName,
-						entry.subjectVersionDisplayLabel,
-						entry.activityVersionDisplayLabel,
-						...entry.homeroomNames
-					]
-						.filter(Boolean)
-						.some((value) => value?.toLocaleLowerCase('th').includes(query))
-				)
-			);
-		});
+	const rows = $derived(dailyTeachingRows(overview?.teachers ?? [], view));
+	const ownerOptions = $derived.by(() => {
+		const options = rows.map((row) => ({
+			id: row.id,
+			label: row.displayName,
+			code: '',
+			kind: row.kind
+		}));
+		if (ownerId !== 'all' && !rows.some((row) => row.id === ownerId)) {
+			options.unshift({
+				id: ownerId,
+				label: `ไม่พบ${ownerLabel}ที่เลือกในวันนี้`,
+				code: '',
+				kind: view
+			});
+		}
+		return [{ id: 'all', label: `${ownerLabel}ทั้งหมด`, code: '', kind: view }, ...options];
 	});
+	const filteredRows = $derived(filterDailyTeachingRows(rows, ownerId, entrySearch));
+
+	function choosePresentation(
+		nextView: DailyTeachingView,
+		nextOwner = nextView === view ? ownerId : 'all'
+	): void {
+		const query = new SvelteURLSearchParams(presentationUrl.search);
+		if (nextView === 'teacher') query.delete('view');
+		else query.set('view', nextView);
+		if (nextOwner === 'all') query.delete('owner');
+		else query.set('owner', nextOwner);
+		void goto(`${resolve('/(app)/staff/academic/timetable/today')}?${query}`, {
+			shallow: true,
+			state: page.state
+		});
+	}
+	function chooseView(nextView: string): void {
+		if (nextView !== 'teacher' && nextView !== 'homeroom') return;
+		choosePresentation(nextView);
+	}
+
 	const tableMinWidth = $derived(dailyTeachingTableMinWidth(overview?.periods.length ?? 4));
 
 	async function loadOverview(termId = academicTermId): Promise<void> {
@@ -159,11 +197,12 @@
 		void loadOverview();
 	}
 
-	function cellForPeriod(teacher: DailyTeachingTeacher, periodId: string) {
+	function cellForPeriod(row: DailyTeachingDisplayRow, periodId: string): DailyTeachingDisplayCell {
 		return (
-			teacher.periods.find((cell) => cell.bellSchedulePeriodId === periodId) ?? {
+			row.periods.find((cell) => cell.bellSchedulePeriodId === periodId) ?? {
 				bellSchedulePeriodId: periodId,
-				entries: []
+				entries: [],
+				instructorsByEntry: new Map()
 			}
 		);
 	}
@@ -199,14 +238,14 @@
 	}
 
 	function cellAriaLabel(
-		teacher: DailyTeachingTeacher,
+		row: DailyTeachingDisplayRow,
 		period: DailyTeachingPeriod,
 		entries: DailyTeachingEntry[]
 	): string {
 		const label = periodLabel(period);
 		const time = periodTime(period);
 		if (entries.length === 0) {
-			return dailyTeachingEmptyCellLabel(teacher.displayName, label, time);
+			return dailyTeachingEmptyCellLabel(row.displayName, label, time);
 		}
 		const titles = Array.from(
 			new Set(
@@ -215,15 +254,15 @@
 				)
 			)
 		);
-		return `${teacher.displayName} ${label} ${time}: ${titles.join(', ')}`;
+		return `${row.displayName} ${label} ${time}: ${titles.join(', ')}`;
 	}
 
 	function openCell(
-		teacher: DailyTeachingTeacher,
+		row: DailyTeachingDisplayRow,
 		period: DailyTeachingPeriod,
-		entries: DailyTeachingEntry[]
+		cell: DailyTeachingDisplayCell
 	): void {
-		selectedCell = { teacher, period, entries };
+		selectedCell = { row, period, cell, entries: cell.entries };
 		cellDialogOpen = true;
 	}
 
@@ -289,17 +328,16 @@
 	});
 </script>
 
-<PageShell
-	title="ตารางสอนวันนี้"
-	description="ภาพรวมคาบของครูทั้งโรงเรียนในภาคเรียนที่เลือก โดยใช้กลุ่มเรียนและห้องประจำชั้นจากระบบใหม่"
->
-	<div
-		class="print:hidden flex flex-col gap-3 rounded-xl border bg-card p-4 xl:flex-row xl:items-end xl:justify-between"
+<PageShell title="ตารางสอนวันนี้" description="ตารางรายวัน แยกตามครูหรือห้องเรียน">
+	<header
+		class="print:hidden overflow-hidden rounded-xl border bg-background shadow-sm"
+		aria-label="เครื่องมือตารางสอนรายวัน"
 	>
-		<div class="flex flex-wrap items-end gap-3">
-			<div class="space-y-2">
-				<Label for="teaching-date">วันที่</Label>
-				<div class="flex gap-2">
+		<div class="h-1 bg-primary"></div>
+		<div class="flex flex-wrap items-end gap-3 p-3">
+			<div class="space-y-1.5">
+				<Label for="teaching-date" class="text-xs">วันที่</Label>
+				<div class="flex gap-1.5">
 					<Button
 						variant="outline"
 						size="icon"
@@ -317,36 +355,72 @@
 					>
 				</div>
 			</div>
-			<div class="min-w-64 space-y-2">
-				<Label for="teacher-search">ค้นหาครู วิชา กลุ่มเรียน หรือห้อง</Label>
+			<ToggleGroup.Root
+				type="single"
+				class="rounded-lg border bg-muted/45 p-1"
+				aria-label="มุมมองตารางสอนรายวัน"
+				bind:value={() => view, chooseView}
+			>
+				<ToggleGroup.Item
+					value="teacher"
+					class="h-8 rounded-md border-transparent px-3"
+					aria-label="ครู"><UsersRound class="size-3.5" aria-hidden="true" />ครู</ToggleGroup.Item
+				>
+				<ToggleGroup.Item
+					value="homeroom"
+					class="h-8 rounded-md border-transparent px-3"
+					aria-label="ห้องเรียน"
+					><School class="size-3.5" aria-hidden="true" />ห้องเรียน</ToggleGroup.Item
+				>
+			</ToggleGroup.Root>
+			<div class="w-full min-w-0 space-y-1.5 sm:w-56">
+				<p class="text-xs font-medium">เลือก{ownerLabel}</p>
+				<TimetableOwnerSelector
+					value={ownerId}
+					options={ownerOptions}
+					onValueChange={(value) => choosePresentation(view, value)}
+					ariaLabel={`เลือก${ownerLabel}`}
+					searchPlaceholder={`ค้นหา${ownerLabel}...`}
+					disabled={!overview}
+				/>
+			</div>
+			<div
+				class="w-full min-w-0 flex-none space-y-1.5 sm:min-w-44 sm:flex-1"
+				data-testid="daily-search-field"
+			>
+				<Label for="entry-search" class="text-xs">ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน</Label>
 				<div class="relative">
-					<Search class="text-muted-foreground absolute top-2.5 left-3 size-4" /><Input
-						id="teacher-search"
-						bind:value={teacherSearch}
-						class="pl-9"
-					/>
+					<Search class="text-muted-foreground absolute top-2.5 left-3 size-4" />
+					<Input id="entry-search" bind:value={entrySearch} class="pl-9 text-xs" />
 				</div>
 			</div>
-			<div class="flex h-9 items-center gap-3 rounded-md border px-3">
-				<Switch id="include-empty" checked={includeEmptyTeachers} onclick={toggleEmptyTeachers} />
-				<Label for="include-empty">รวมครูที่ไม่มีคาบ</Label>
+			<div class="flex flex-wrap items-center gap-2" data-testid="daily-toolbar-actions">
+				{#if view === 'teacher'}
+					<div class="flex h-9 items-center gap-2 rounded-md border px-2">
+						<Switch
+							id="include-empty"
+							checked={includeEmptyTeachers}
+							onclick={toggleEmptyTeachers}
+						/>
+						<Label for="include-empty" class="text-xs">รวมครูที่ไม่มีคาบ</Label>
+					</div>
+				{/if}
+				{#if canOpenPlanner}<Button
+						variant="outline"
+						size="sm"
+						href={academicContextualMenuPath(
+							'/staff/academic/timetable',
+							{ academicYearId: data.academicYearId, academicTermId },
+							null
+						)}
+						data-sveltekit-preload-data="tap"><ExternalLink />จัดตาราง</Button
+					>{/if}
+				<Button variant="outline" size="sm" disabled={!overview} onclick={() => window.print()}
+					><Printer />พิมพ์</Button
+				>
 			</div>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			{#if canOpenPlanner}<Button
-					variant="outline"
-					href={academicContextualMenuPath(
-						'/staff/academic/timetable',
-						{ academicYearId: data.academicYearId, academicTermId },
-						null
-					)}
-					data-sveltekit-preload-data="tap"><ExternalLink /> จัดตาราง</Button
-				>{/if}
-			<Button variant="outline" disabled={!overview} onclick={() => window.print()}
-				><Printer /> พิมพ์</Button
-			>
-		</div>
-	</div>
+	</header>
 
 	{#if !canReadDailyTeaching}
 		<PageState
@@ -386,31 +460,24 @@
 					<Button variant="outline" size="sm" onclick={() => loadOverview()}>ลองใหม่</Button>
 				</div>
 			{/if}
-			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-				{#each [['ครูทั้งหมด', overview.summary.totalTeacherCount], ['ครูที่แสดง', filteredTeachers.length], ['ครูที่มีคาบ', overview.summary.teachersTeachingCount], ['จำนวนคาบสอน', overview.summary.lessonCount], ['ไม่มีคาบวันนี้', overview.summary.emptyTeacherCount]] as item (item[0])}
-					<div class="rounded-md border bg-background p-3">
-						<p class="text-muted-foreground text-xs">{item[0]}</p>
-						<p class="text-2xl font-semibold">{item[1]}</p>
-					</div>
-				{/each}
-			</div>
 
 			<section class="overflow-hidden rounded-md border bg-background">
-				<div class="flex items-center justify-between gap-3 border-b p-4">
-					<div>
-						<h2 class="flex items-center gap-2 text-lg font-semibold">
-							<CalendarClock class="size-5" />
-							{formatDate(overview.date)}
-						</h2>
-						<p class="text-muted-foreground text-sm">
-							{overview.periods.length} คาบ · {overview.summary.displayedTeacherCount} ครู
-						</p>
-					</div>
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-3 py-2">
+					<h2 class="flex items-center gap-2 text-sm font-semibold">
+						<CalendarClock class="size-4" />{formatDate(overview.date)}
+					</h2>
+					<p class="text-muted-foreground text-xs">
+						แสดง {filteredRows.length}/{rows.length}
+						{ownerLabel} · {overview.periods.length} คาบ · ครูที่มีคาบ {overview.summary
+							.teachersTeachingCount} คน · {overview.summary.lessonCount} คาบสอน
+					</p>
 				</div>
-				{#if filteredTeachers.length === 0}
+				{#if filteredRows.length === 0}
 					<PageState
-						title="ไม่พบครูตามคำค้น"
-						description="ลองเปลี่ยนคำค้นหาหรือเปิดรวมครูที่ไม่มีคาบ"
+						title={`ไม่พบ${ownerLabel}ตามตัวเลือก`}
+						description={view === 'teacher'
+							? 'ลองเลือกครูทั้งหมด เปลี่ยนคำค้น หรือรวมครูที่ไม่มีคาบ'
+							: 'ลองเลือกห้องเรียนทั้งหมดหรือเปลี่ยนคำค้น เฉพาะคาบที่ระบุห้องประจำชั้นจะแสดงในมุมมองนี้'}
 						class="m-4"
 					/>
 				{:else}
@@ -427,7 +494,7 @@
 								><Table.Row class="bg-muted/80 hover:bg-muted/80"
 									><Table.Head
 										class="daily-teaching-teacher-column sticky left-0 z-50 h-9 overflow-hidden bg-muted px-1.5 text-[10px]"
-										>ครู</Table.Head
+										>{ownerLabel}</Table.Head
 									>{#each overview.periods as period (period.id)}<Table.Head
 											class="daily-teaching-period-column h-9 overflow-hidden bg-muted px-1 text-center text-[10px]"
 											><p class="truncate">{period.name ?? `คาบ ${period.orderIndex}`}</p>
@@ -438,37 +505,35 @@
 								></Table.Header
 							>
 							<Table.Body>
-								{#each filteredTeachers as teacher (teacher.id)}
+								{#each filteredRows as row (row.id)}
 									<Table.Row>
 										<Table.Cell
 											class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background px-1.5 py-1 text-[10px] font-medium"
-											><p class="truncate" title={teacher.displayName}>
-												{teacher.displayName}
+											><p class="truncate" title={row.displayName}>
+												{row.displayName}
 											</p></Table.Cell
 										>
 										{#each overview.periods as period (period.id)}
-											{@const cell = cellForPeriod(teacher, period.id)}
+											{@const cell = cellForPeriod(row, period.id)}
 											<Table.Cell
 												class="daily-teaching-period-column overflow-hidden p-0.5 align-top"
 											>
 												<button
 													type="button"
 													class="hover:bg-muted/30 min-h-12 w-full min-w-0 overflow-hidden rounded-md p-0.5 text-left"
-													aria-label={cellAriaLabel(teacher, period, cell.entries)}
-													onclick={() => openCell(teacher, period, cell.entries)}
+													aria-label={cellAriaLabel(row, period, cell.entries)}
+													onclick={() => openCell(row, period, cell)}
 												>
 													<div class="space-y-0.5">
 														{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
 															{@const entry = group.entries[0]}
-															{@const presentation = dailyTeachingEntryCardPresentation(entry)}
-															{@const compactMeta = dailyTeachingCompactGroupMeta(group)}
+															{@const compactMeta =
+																view === 'teacher'
+																	? dailyTeachingCompactGroupMeta(group)
+																	: dailyTeachingHomeroomGroupMeta(group, cell)}
 															<div
-																class="min-w-0 overflow-hidden rounded-md border px-1.5 py-1 {presentation.tone ===
-																'course'
-																	? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
-																	: presentation.tone === 'activity'
-																		? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
-																		: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'}"
+																class="min-w-0 overflow-hidden rounded-md border bg-background px-1.5 py-1"
+																data-testid="daily-lesson-card"
 															>
 																<p
 																	class="truncate text-[10px] leading-[14px] font-semibold"
@@ -501,7 +566,7 @@
 <Dialog.Root bind:open={cellDialogOpen}>
 	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
 		<Dialog.Header
-			><Dialog.Title>{selectedCell?.teacher.displayName ?? 'รายละเอียดคาบ'}</Dialog.Title
+			><Dialog.Title>{selectedCell?.row.displayName ?? 'รายละเอียดคาบ'}</Dialog.Title
 			><Dialog.Description
 				>{selectedCell
 					? `${periodLabel(selectedCell.period)} · ${periodTime(selectedCell.period)}`
@@ -529,6 +594,13 @@
 							<Badge variant="outline">{entry.entryType}</Badge>
 						</div>
 					</div>
+					<p class="mt-2 text-sm">
+						ครูผู้สอน: {selectedCell
+							? dailyTeachingGroupInstructors([entry], selectedCell.cell)
+									.map((instructor) => instructor.displayName)
+									.join(', ')
+							: ''}
+					</p>
 					<p class="text-muted-foreground mt-2 text-sm">
 						{entrySubtitle(entry) || 'ไม่มีข้อมูลกลุ่มเรียน'}
 					</p>

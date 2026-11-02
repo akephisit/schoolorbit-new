@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { installTimetableMock, timetableIds } from './timetable-test-harness';
+import type { DailyTeachingEntry, DailyTeachingOverview } from '../../src/lib/api/timetable.js';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1280, height: 1080 } });
 
@@ -39,7 +40,7 @@ function periods() {
 	});
 }
 
-function activityEntry(index: number, homeroomNames: string[]) {
+function activityEntry(index: number, homeroomNames: string[]): DailyTeachingEntry {
 	return {
 		activityId: '72000000-0000-4000-8000-000000000201',
 		activitySchedulingMode: 'synchronized',
@@ -71,7 +72,7 @@ function activityEntries() {
 	return [activityEntry(1, homeroomNames.slice(0, 9)), activityEntry(2, homeroomNames.slice(9))];
 }
 
-function courseEntry() {
+function courseEntry(): DailyTeachingEntry {
 	return {
 		activityId: null,
 		activitySchedulingMode: null,
@@ -95,7 +96,7 @@ function courseEntry() {
 	};
 }
 
-function overview() {
+function overview(): DailyTeachingOverview {
 	const dailyPeriods = periods();
 	return {
 		academicTermId: timetableIds.term,
@@ -135,11 +136,9 @@ function fulfill(route: Route, data: unknown) {
 	});
 }
 
-async function installDailyOverview(page: Page): Promise<void> {
+async function installDailyOverview(page: Page, data = overview()): Promise<void> {
 	await installTimetableMock(page, { periodCount: 10 });
-	await page.route('**/api/academic/timetable/daily-teaching**', (route) =>
-		fulfill(route, overview())
-	);
+	await page.route('**/api/academic/timetable/daily-teaching**', (route) => fulfill(route, data));
 }
 
 test('fits ten equal daily periods inside the desktop table', async ({ page }) => {
@@ -229,3 +228,281 @@ test('gives empty and scheduled period controls meaningful accessible names', as
 		})
 	).toBeVisible();
 });
+
+function multiOwnerOverview(): DailyTeachingOverview {
+	const data = overview();
+	const first = data.teachers[0];
+	first.periods = data.periods.map((period) => ({
+		bellSchedulePeriodId: period.id,
+		entries:
+			period.orderIndex === 1
+				? [activityEntry(1, ['ม.1/10', 'ม.1/2'])]
+				: period.orderIndex === 2
+					? [{ ...courseEntry(), isTeamTeaching: true }]
+					: period.orderIndex === 3
+						? [1, 2].map((index) => ({
+								...activityEntry(10 + index, ['ม.1/2']),
+								activitySchedulingMode: 'independent',
+								title: `กิจกรรมแยก ${index}`
+							}))
+						: period.orderIndex === 4
+							? [{ ...activityEntry(20, []), title: 'กิจกรรมไม่ระบุห้อง' }]
+							: []
+	}));
+	data.teachers.push(
+		{
+			id: timetableIds.teacherB,
+			displayName: 'ครูร่วมสอน',
+			periods: data.periods.map((period) => ({
+				bellSchedulePeriodId: period.id,
+				entries:
+					period.orderIndex === 1
+						? [activityEntry(2, ['ม.1/2'])]
+						: period.orderIndex === 2
+							? [{ ...courseEntry(), isTeamTeaching: true }]
+							: []
+			}))
+		},
+		{
+			id: '91000000-0000-4000-8000-000000000003',
+			displayName: 'ครูอีกห้อง',
+			periods: data.periods.map((period) => ({
+				bellSchedulePeriodId: period.id,
+				entries: period.orderIndex === 1 ? [activityEntry(3, ['ม.2/1'])] : []
+			}))
+		}
+	);
+	data.summary = {
+		displayedTeacherCount: 3,
+		emptyTeacherCount: 0,
+		lessonCount: 7,
+		teachersTeachingCount: 3,
+		totalTeacherCount: 3
+	};
+	return data;
+}
+
+test('searches and selects owners in either view without another daily read', async ({ page }) => {
+	await installDailyOverview(page, multiOwnerOverview());
+	let reads = 0;
+	page.on('request', (request) => {
+		if (request.url().includes('/api/academic/timetable/daily-teaching')) reads += 1;
+	});
+	await page.goto(todayUrl());
+	const table = page.getByRole('table');
+	await expect(table.locator('tbody tr')).toHaveCount(3);
+	const initialDate = await page.locator('#teaching-date').innerText();
+	const teacherPicker = page.getByRole('combobox', { name: 'เลือกครู', exact: true });
+	await teacherPicker.click();
+	await page.getByPlaceholder('ค้นหาครู...').fill('ร่วม');
+	await expect(page.getByRole('option')).toHaveCount(1);
+	await page.getByRole('option', { name: 'ครูร่วมสอน', exact: true }).click();
+	await expect(table.locator('tbody tr')).toHaveCount(1);
+	await expect(teacherPicker).toContainText('ครูร่วมสอน');
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
+	await expect(teacherPicker).toContainText('ครูร่วมสอน');
+	await expect(page.getByRole('radio', { name: 'ครู', exact: true })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await expect(table.locator('tbody tr')).toHaveCount(1);
+	await expect(page).toHaveURL(/owner=/);
+	await teacherPicker.click();
+	await page.getByRole('option', { name: 'ครูทั้งหมด', exact: true }).click();
+	await expect(table.locator('tbody tr')).toHaveCount(3);
+
+	await page.getByRole('radio', { name: 'ห้องเรียน', exact: true }).click();
+	await expect(table.locator('tbody tr')).toHaveCount(4);
+	await expect(table.locator('tbody tr td:first-child')).toHaveText([
+		'ม.1/1',
+		'ม.1/2',
+		'ม.1/10',
+		'ม.2/1'
+	]);
+	await expect(page.getByRole('switch', { name: 'รวมครูที่ไม่มีคาบ' })).toHaveCount(0);
+	const homeroomPicker = page.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+	await homeroomPicker.click();
+	await page.getByPlaceholder('ค้นหาห้องเรียน...').fill('ม.1/2');
+	await page.getByRole('option', { name: 'ม.1/2', exact: true }).click();
+	await expect(table.locator('tbody tr')).toHaveCount(1);
+	await page.getByRole('radio', { name: 'ห้องเรียน', exact: true }).click();
+	await expect(homeroomPicker).toContainText('ม.1/2');
+	await expect(page.getByRole('radio', { name: 'ห้องเรียน', exact: true })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await page.getByLabel('ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน').fill('ไม่ตรงกับวิชา');
+	await expect(page.getByText('ไม่พบห้องเรียนตามตัวเลือก', { exact: true })).toBeVisible();
+	await page.getByLabel('ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน').fill('');
+	await expect(table.locator('tbody tr')).toHaveCount(1);
+	await expect(page.locator('#teaching-date')).toHaveText(initialDate);
+	expect(reads).toBe(1);
+	await page.reload();
+	await expect(homeroomPicker).toContainText('ม.1/2');
+	await expect(table.locator('tbody tr')).toHaveCount(1);
+	expect(reads).toBe(2);
+});
+
+test('homeroom details deduplicate team teaching and scope activity instructors to their entries', async ({
+	page
+}) => {
+	await installDailyOverview(page, multiOwnerOverview());
+	await page.goto(`${todayUrl()}&view=homeroom`);
+	const table = page.getByRole('table');
+	const teamRow = table
+		.locator('tbody tr')
+		.filter({ has: page.locator('td:first-child').getByText('ม.1/1', { exact: true }) });
+	await expect(teamRow.getByTestId('daily-lesson-card')).toHaveCount(1);
+	await expect(teamRow).toContainText('ครูร่วมสอน');
+	await expect(teamRow).toContainText('ห้องคณิตศาสตร์');
+	await teamRow.getByRole('button', { name: /คาบที่ 2/ }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('heading', { name: 'ม.1/1', exact: true })).toBeVisible();
+	await expect(dialog.getByText('คณิตศาสตร์พื้นฐาน', { exact: true })).toHaveCount(1);
+	await expect(dialog).toContainText('นายทดสอบ ตารางสอน');
+	await expect(dialog).toContainText('ครูร่วมสอน');
+	await expect(dialog).not.toContainText('ครูอีกห้อง');
+	await expect(dialog).not.toContainText('116');
+	await page.keyboard.press('Escape');
+
+	const activityRow = table
+		.locator('tbody tr')
+		.filter({ has: page.locator('td:first-child').getByText('ม.1/2', { exact: true }) });
+	const syncCell = activityRow.locator('td').nth(1);
+	await expect(syncCell.getByTestId('daily-lesson-card')).toHaveCount(1);
+	await syncCell.getByRole('button').click();
+	await expect(dialog).toContainText('นายทดสอบ ตารางสอน');
+	await expect(dialog).toContainText('ครูร่วมสอน');
+	await expect(dialog).not.toContainText('ครูอีกห้อง');
+	await page.keyboard.press('Escape');
+	const independentCell = activityRow.locator('td').nth(3);
+	await expect(independentCell.getByTestId('daily-lesson-card')).toHaveCount(2);
+	await expect(independentCell).toContainText('กิจกรรมแยก 1');
+	await expect(independentCell).toContainText('กิจกรรมแยก 2');
+	await expect(table).not.toContainText('กิจกรรมไม่ระบุห้อง');
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
+	await expect(table).toContainText('กิจกรรมไม่ระบุห้อง');
+});
+
+test('an owner that disappears on a date change stays explicitly unavailable', async ({ page }) => {
+	await installTimetableMock(page, { periodCount: 10 });
+	let reads = 0;
+	await page.route('**/api/academic/timetable/daily-teaching**', (route) => {
+		reads += 1;
+		const data = reads === 1 ? multiOwnerOverview() : overview();
+		data.date = new URL(route.request().url()).searchParams.get('date') ?? overviewDate;
+		return fulfill(route, data);
+	});
+	await page.goto(`${todayUrl()}&view=homeroom&owner=${encodeURIComponent('ม.1/10')}`);
+	const picker = page.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
+	await expect(picker).toContainText('ม.1/10');
+	// The next fixture has 18 synchronized rooms, so select a teacher that actually disappears.
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
+	await page.getByRole('combobox', { name: 'เลือกครู', exact: true }).click();
+	await page.getByRole('option', { name: 'ครูร่วมสอน', exact: true }).click();
+	await page.getByRole('button', { name: 'วันถัดไป' }).click();
+	await expect(page.getByRole('combobox', { name: 'เลือกครู', exact: true })).toContainText(
+		'ไม่พบครูที่เลือกในวันนี้'
+	);
+	await expect(page.getByText('ไม่พบครูตามตัวเลือก', { exact: true })).toBeVisible();
+	await expect(page.getByRole('table')).toHaveCount(0);
+	await page.getByRole('combobox', { name: 'เลือกครู', exact: true }).click();
+	await page.getByRole('option', { name: 'ครูทั้งหมด', exact: true }).click();
+	await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1);
+	expect(reads).toBe(2);
+});
+
+for (const width of [390, 1280]) {
+	for (const theme of ['light', 'dark'] as const) {
+		test(`keeps neutral compact teacher and homeroom grids contained at ${width}px in ${theme}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width, height: 1080 });
+			await page.addInitScript(
+				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
+				theme
+			);
+			await installDailyOverview(page);
+			await page.goto(todayUrl());
+			await expect
+				.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
+				.toBe(theme === 'dark');
+			for (const view of ['ครู', 'ห้องเรียน']) {
+				await page.getByRole('radio', { name: view, exact: true }).click();
+				const table = page.getByRole('table');
+				await expect(table).toBeVisible();
+				if (width < 640) {
+					const searchGeometry = await page.getByTestId('daily-search-field').evaluate((field) => {
+						const input = field.querySelector('input');
+						const label = field.querySelector('label');
+						const toolbar = field.parentElement;
+						const actions = toolbar?.querySelector('[data-testid="daily-toolbar-actions"]');
+						if (!input || !label || !toolbar || !actions) {
+							throw new Error('Daily timetable search or action controls are missing');
+						}
+						const toolbarStyle = getComputedStyle(toolbar);
+						const fieldRect = field.getBoundingClientRect();
+						const inputRect = input.getBoundingClientRect();
+						return {
+							availableWidth:
+								toolbar.clientWidth -
+								parseFloat(toolbarStyle.paddingLeft) -
+								parseFloat(toolbarStyle.paddingRight),
+							fieldWidth: fieldRect.width,
+							inputWidth: inputRect.width,
+							labelHeight: label.getBoundingClientRect().height,
+							labelLineHeight: parseFloat(getComputedStyle(label).lineHeight),
+							fieldBottom: fieldRect.bottom,
+							inputBottom: inputRect.bottom,
+							actionsTop: actions.getBoundingClientRect().top
+						};
+					});
+					expect(
+						Math.abs(searchGeometry.fieldWidth - searchGeometry.availableWidth)
+					).toBeLessThanOrEqual(1);
+					expect(searchGeometry.inputWidth).toBeGreaterThanOrEqual(
+						searchGeometry.availableWidth - 1
+					);
+					expect(searchGeometry.labelHeight).toBeLessThanOrEqual(
+						searchGeometry.labelLineHeight * 2 + 1
+					);
+					expect(searchGeometry.fieldBottom).toBeLessThanOrEqual(searchGeometry.actionsTop);
+					expect(searchGeometry.inputBottom).toBeLessThanOrEqual(searchGeometry.actionsTop);
+				}
+				const geometry = await table.evaluate((element) => {
+					const scroller = element.closest('.daily-teaching-scroll');
+					if (!scroller) throw new Error('Missing daily timetable scroller');
+					const headers = Array.from(element.querySelectorAll('thead th')).slice(1);
+					const cardStyles = Array.from(
+						element.querySelectorAll('[data-testid="daily-lesson-card"]')
+					).map((card) => getComputedStyle(card).backgroundColor);
+					const firstOwner = element.querySelector('tbody td');
+					return {
+						documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+						scrollerRight: scroller.getBoundingClientRect().right,
+						periodWidths: headers.map((header) => header.getBoundingClientRect().width),
+						cardStyles,
+						background: firstOwner ? getComputedStyle(firstOwner).backgroundColor : '',
+						maxRowHeight: Math.max(
+							...Array.from(element.querySelectorAll('tbody tr')).map(
+								(row) => row.getBoundingClientRect().height
+							)
+						)
+					};
+				});
+				expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+				expect(geometry.scrollerRight).toBeLessThanOrEqual(width + 1);
+				expect(
+					Math.max(...geometry.periodWidths) - Math.min(...geometry.periodWidths)
+				).toBeLessThanOrEqual(1);
+				expect(geometry.maxRowHeight).toBeLessThanOrEqual(64);
+				expect(geometry.cardStyles.length).toBeGreaterThan(0);
+				for (const background of geometry.cardStyles) expect(background).toBe(geometry.background);
+				await page.screenshot({
+					path: testInfo.outputPath(`${view}-${width}-${theme}.png`),
+					fullPage: true
+				});
+			}
+		});
+	}
+}
