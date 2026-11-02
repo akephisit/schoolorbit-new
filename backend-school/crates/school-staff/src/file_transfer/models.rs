@@ -36,15 +36,28 @@ pub struct FileTransferPair {
     pub id: Uuid,
     pub initiator: FileTransferDevice,
     pub recipient: FileTransferDevice,
-    pub file: FileTransferFile,
+    pub files: Vec<FileTransferFile>,
+    pub client_request_id: Uuid,
     pub status: FileTransferPairStatus,
     pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+pub struct FileTransferLimits {
+    pub max_outgoing_transfers: u8,
+    pub max_files_per_batch: u8,
+    pub max_file_bytes: u64,
+    pub max_batch_bytes: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 pub struct FileTransferSnapshot {
+    pub protocol_version: u8,
+    pub limits: FileTransferLimits,
     pub device: FileTransferDevice,
     pub pairing_code: String,
     pub expires_at: DateTime<Utc>,
@@ -57,6 +70,7 @@ pub struct FileTransferSnapshot {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 pub struct RegisterFileTransferDevice {
     pub label: String,
+    pub protocol_version: Option<u8>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -78,7 +92,8 @@ pub enum FileTransferTarget {
 pub struct CreateFileTransferPair {
     pub device_id: Uuid,
     pub target: FileTransferTarget,
-    pub file: FileTransferFile,
+    pub files: Vec<FileTransferFile>,
+    pub client_request_id: Uuid,
 }
 
 #[derive(Deserialize)]

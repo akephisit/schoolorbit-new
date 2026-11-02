@@ -887,6 +887,7 @@ struct SchoolApiDoc;
     FileTransferPairStatus,
     FileTransferPair,
     FileTransferSnapshot,
+    FileTransferLimits,
     RegisterFileTransferDevice,
     FileTransferTarget,
     CreateFileTransferPair,

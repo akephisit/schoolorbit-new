@@ -7,6 +7,12 @@ fn owner(tenant: Uuid) -> FileTransferIdentity {
         session_id: Uuid::new_v4(),
     }
 }
+fn registration(label: &str) -> RegisterFileTransferDevice {
+    RegisterFileTransferDevice {
+        label: label.into(),
+        protocol_version: Some(PROTOCOL_VERSION),
+    }
+}
 fn file() -> FileTransferFile {
     FileTransferFile {
         name: "เอกสาร.pdf".into(),
@@ -21,7 +27,7 @@ fn online(
     now: DateTime<Utc>,
 ) -> (FileTransferSnapshot, FileTransferSubscription) {
     let snapshot = runtime
-        .register(identity, "Staff member".into(), "Laptop".into(), now)
+        .register(identity, "Staff member".into(), registration("Laptop"), now)
         .unwrap();
     let subscription = runtime
         .subscribe(identity, snapshot.device.id, now)
@@ -32,7 +38,8 @@ fn request(device: Uuid, target: Uuid) -> CreateFileTransferPair {
     CreateFileTransferPair {
         device_id: device,
         target: FileTransferTarget::Device { device_id: target },
-        file: file(),
+        files: vec![file()],
+        client_request_id: Uuid::new_v4(),
     }
 }
 fn signal(device_id: Uuid, signal_type: FileTransferSignalType) -> SendFileTransferSignal {
@@ -114,7 +121,8 @@ async fn file_transfer_identity_scope_is_exact_and_discovery_never_crosses_tenan
                 target: FileTransferTarget::Code {
                     code: cd.pairing_code
                 },
-                file: file()
+                files: vec![file()],
+                client_request_id: Uuid::new_v4()
             },
             now
         )
@@ -131,7 +139,7 @@ async fn file_transfer_consent_direction_sequence_and_exact_metadata() {
     let pair = runtime
         .create_pair(a, request(ad.device.id, bd.device.id), now)
         .unwrap();
-    assert!(pair.file == file());
+    assert!(pair.files == vec![file()]);
     assert!(runtime
         .signal(
             a,
@@ -142,7 +150,7 @@ async fn file_transfer_consent_direction_sequence_and_exact_metadata() {
         .is_err());
     assert!(runtime.accept(a, ad.device.id, pair.id, now).is_err());
     let accepted = runtime.accept(b, bd.device.id, pair.id, now).unwrap();
-    assert!(accepted.file == pair.file);
+    assert!(accepted.files == pair.files);
     assert!(accepted.status == FileTransferPairStatus::Accepted);
     assert!(runtime.accept(b, bd.device.id, pair.id, now).is_ok());
     assert!(runtime
@@ -297,7 +305,8 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                     target: FileTransferTarget::Code {
                         code: "0000000000".into()
                     },
-                    file: file()
+                    files: vec![file()],
+                    client_request_id: Uuid::new_v4()
                 },
                 now
             )
@@ -311,7 +320,8 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                 target: FileTransferTarget::Code {
                     code: bd.pairing_code.clone()
                 },
-                file: file()
+                files: vec![file()],
+                client_request_id: Uuid::new_v4()
             },
             now
         ),
@@ -325,7 +335,8 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
                 target: FileTransferTarget::Code {
                     code: bd.pairing_code
                 },
-                file: file()
+                files: vec![file()],
+                client_request_id: Uuid::new_v4()
             },
             now + Duration::seconds(61)
         )
@@ -334,7 +345,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
         .register(
             a,
             "Staff".into(),
-            "Second".into(),
+            registration("Second"),
             now + Duration::seconds(61),
         )
         .unwrap();
@@ -342,7 +353,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
         .register(
             a,
             "Staff".into(),
-            "Third".into(),
+            registration("Third"),
             now + Duration::seconds(61),
         )
         .unwrap();
@@ -350,7 +361,7 @@ async fn file_transfer_pairing_codes_and_limits_are_bounded_per_session() {
         runtime.register(
             a,
             "Staff".into(),
-            "Fourth".into(),
+            registration("Fourth"),
             now + Duration::seconds(61)
         ),
         Err(AppError::RateLimited { .. })
@@ -429,11 +440,11 @@ fn file_transfer_registration_is_globally_and_tenant_bounded() {
         let tenant = Uuid::new_v4();
         for _ in 0..64 {
             runtime
-                .register(owner(tenant), "Staff".into(), "Laptop".into(), now)
+                .register(owner(tenant), "Staff".into(), registration("Laptop"), now)
                 .unwrap();
         }
         assert!(matches!(
-            runtime.register(owner(tenant), "Staff".into(), "Overflow".into(), now),
+            runtime.register(owner(tenant), "Staff".into(), registration("Overflow"), now),
             Err(AppError::RateLimited { .. })
         ));
     }
@@ -441,7 +452,7 @@ fn file_transfer_registration_is_globally_and_tenant_bounded() {
         runtime.register(
             owner(Uuid::new_v4()),
             "Staff".into(),
-            "Global overflow".into(),
+            registration("Global overflow"),
             now
         ),
         Err(AppError::RateLimited { .. })
@@ -450,7 +461,7 @@ fn file_transfer_registration_is_globally_and_tenant_bounded() {
         .register(
             owner(Uuid::new_v4()),
             "Staff".into(),
-            "After expiry".into(),
+            registration("After expiry"),
             now + Duration::seconds(91)
         )
         .is_ok());
