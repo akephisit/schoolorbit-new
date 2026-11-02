@@ -134,6 +134,7 @@ type Entry = {
 };
 type Batch = { id: string; files: File[]; metadata: FileMetadata[] };
 const MAX_TRANSFER_JOBS = 64;
+const STARTUP_TIMEOUT_MS = 30000;
 const terminal = new Set<TransferPhase>(['complete', 'declined', 'cancelled', 'failed']);
 export function isTransferTerminal(phase: TransferPhase) {
 	return terminal.has(phase);
@@ -197,7 +198,7 @@ export class FileTransferSession {
 	private retryAttempt = 0;
 	private retryTimer: ReturnType<typeof setTimeout> | null = null;
 	private connecting: Promise<void> | null = null;
-	private episodeRegistered = false;
+	private freshAttempted = false;
 	private authBlocked = false;
 	private identityOwned = get(authStore).isAuthenticated;
 	private listeners = false;
@@ -241,7 +242,7 @@ export class FileTransferSession {
 			if (auth.isAuthenticated && !auth.isLoading) this.identityOwned = true;
 			this.authBlocked =
 				auth.isUnavailable || !auth.isAuthenticated || auth.user?.user_type !== 'staff';
-			if (auth.isUnavailable && this.source)
+			if (auth.isUnavailable && (this.source || (this.freshAttempted && this.connecting)))
 				this.connectionLost('ยังยืนยันสิทธิ์ไม่ได้ กำลังเชื่อมต่อใหม่');
 			if (this.authBlocked) {
 				this.stopAutomaticDownloads();
@@ -422,6 +423,7 @@ export class FileTransferSession {
 			};
 		}
 		if (clearFiles) this.batch = null;
+		else if (this.batch) this.batch = { ...this.batch, id: crypto.randomUUID() };
 		for (const entry of this.entries.values()) this.releaseEntryStore(entry);
 		if (clearFiles) {
 			this.state = { ...this.state, draftEpoch: this.state.draftEpoch + 1 };
@@ -453,16 +455,20 @@ export class FileTransferSession {
 		this.entries.clear();
 		this.batch = null;
 	}
-	async start(label = 'อุปกรณ์ของฉัน') {
-		if (this.disposed) return;
+	private useLabel(label: string) {
 		if (!label.trim() || [...label.trim()].length > 60 || /[\p{Cc}]/u.test(label)) {
 			this.publish({ error: 'กรุณาตั้งชื่ออุปกรณ์ไม่เกิน 60 ตัวอักษร' });
-			return;
+			return false;
 		}
 		this.label = label.trim();
+		return true;
+	}
+	async start(label = 'อุปกรณ์ของฉัน') {
+		if (this.disposed || !this.useLabel(label)) return;
 		this.enabled = true;
 		this.manualRequired = false;
 		this.retryAttempt = 0;
+		this.freshAttempted = false;
 		if (!this.listeners) {
 			this.listeners = true;
 			for (const event of ['online', 'focus']) window.addEventListener(event, this.wake);
@@ -472,16 +478,27 @@ export class FileTransferSession {
 		await this.connect(this.state.status !== 'idle');
 	}
 	async rename(label: string) {
-		if ([...this.entries.values()].some((entry) => !isTransferTerminal(entry.view.phase))) return;
-		if (label.trim() === this.label) return;
+		if (
+			this.disposed ||
+			[...this.entries.values()].some((entry) => !isTransferTerminal(entry.view.phase))
+		)
+			return;
+		const previous = this.label;
+		if (
+			!this.useLabel(label) ||
+			previous === this.label ||
+			!this.enabled ||
+			this.state.status !== 'online'
+		)
+			return;
 		this.disconnect('');
-		await this.start(label);
+		await this.start(this.label);
 	}
 	private connectionLost(message: string, paused = false) {
 		if (this.disposed || !this.enabled) return;
-		const failedFresh = this.episodeRegistered;
+		const failedFresh = this.freshAttempted;
 		this.disconnect(message);
-		if (paused) {
+		if (paused && !failedFresh) {
 			this.publish({ status: 'paused' });
 			return;
 		}
@@ -520,6 +537,64 @@ export class FileTransferSession {
 			this.retryTimer = null;
 			void this.connect(true);
 		}, delay);
+	}
+	private discardDevice(id: string, epoch: number) {
+		if (this.authEpoch !== epoch || authStore.sessionEpoch !== epoch) return;
+		if (this.authBlocked) {
+			this.pendingDeviceId = id;
+			return;
+		}
+		void transferAPI
+			.remove(id)
+			.catch(() => console.warn('Late file transfer device cleanup failed'));
+	}
+	private registerDevice(epoch: number): Promise<TransferSnapshot> {
+		const lifetime = this.controller.signal,
+			controller = new AbortController();
+		return new Promise((resolve, reject) => {
+			if (lifetime.aborted) {
+				reject(new Error('cancelled'));
+				return;
+			}
+			let settled = false;
+			const cleanup = () => {
+				settled = true;
+				clearTimeout(deadline);
+				lifetime.removeEventListener('abort', abort);
+			};
+			const abort = () => {
+				if (settled) return;
+				cleanup();
+				controller.abort();
+				reject(new Error('cancelled'));
+			};
+			const deadline = setTimeout(() => {
+				if (settled) return;
+				cleanup();
+				controller.abort();
+				reject(
+					new Error(
+						'ยังยืนยันผลการเปิดอุปกรณ์ไม่ได้ภายในเวลาที่กำหนด ระบบจะไม่ส่งคำขอซ้ำอัตโนมัติ ไฟล์ที่เลือกยังอยู่ กดลองเชื่อมต่ออีกครั้ง'
+					)
+				);
+			}, STARTUP_TIMEOUT_MS);
+			lifetime.addEventListener('abort', abort, { once: true });
+			void transferAPI.register(this.label, controller.signal).then(
+				(snapshot) => {
+					if (settled) {
+						this.discardDevice(snapshot.device.id, epoch);
+						return;
+					}
+					cleanup();
+					resolve(snapshot);
+				},
+				(error: unknown) => {
+					if (settled) return;
+					cleanup();
+					reject(error);
+				}
+			);
+		});
 	}
 	private async connect(reconcile: boolean): Promise<void> {
 		if (this.connecting) return this.connecting;
@@ -576,8 +651,10 @@ export class FileTransferSession {
 				return;
 			}
 			let snapshot: TransferSnapshot;
+			const registrationStarted = performance.now();
+			this.freshAttempted = true;
 			try {
-				snapshot = await transferAPI.register(this.label, this.controller.signal);
+				snapshot = await this.registerDevice(epoch);
 			} catch (error) {
 				if (valid()) {
 					this.manualRequired = true;
@@ -591,22 +668,21 @@ export class FileTransferSession {
 				}
 				return;
 			}
-			if (!valid()) {
-				if (this.authEpoch === epoch)
-					void transferAPI
-						.remove(snapshot.device.id)
-						.catch(() => console.warn('Late file transfer device cleanup failed'));
+			if (!valid() || this.authBlocked) {
+				this.discardDevice(snapshot.device.id, epoch);
 				return;
 			}
-			this.episodeRegistered = true;
 			this.publish({ snapshot });
 			const source = new EventSource(transferAPI.eventsUrl(snapshot.device.id), {
 				withCredentials: true
 			});
 			this.source = source;
-			this.startup = setTimeout(() => {
-				if (valid()) this.connectionLost('เชื่อมต่ออุปกรณ์นานเกินไป');
-			}, 30000);
+			this.startup = setTimeout(
+				() => {
+					if (valid()) this.connectionLost('เชื่อมต่ออุปกรณ์นานเกินไป');
+				},
+				Math.max(0, STARTUP_TIMEOUT_MS - (performance.now() - registrationStarted))
+			);
 			source.addEventListener('file_transfer', (event: MessageEvent<string>) => {
 				if (!valid() || this.source !== source) return;
 				try {
@@ -634,7 +710,7 @@ export class FileTransferSession {
 	private event(event: ReturnType<typeof parseTransferEvent>, generation: number) {
 		switch (event.type) {
 			case 'ready':
-				this.episodeRegistered = false;
+				this.freshAttempted = false;
 				this.retryAttempt = 0;
 				void this.refresh(generation);
 				if (this.startup !== null) clearTimeout(this.startup);
@@ -669,6 +745,8 @@ export class FileTransferSession {
 			}
 			case 'session_invalid':
 				this.manualRequired = true;
+				this.authBlocked = true;
+				this.publish({ authBlocked: true });
 				this.disconnect('ไม่สามารถยืนยันสิทธิ์ได้ กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์', true);
 				void authAPI.refreshCurrentUser({ silent: true, invalidate: true });
 				break;

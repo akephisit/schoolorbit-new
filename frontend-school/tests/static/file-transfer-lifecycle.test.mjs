@@ -59,7 +59,8 @@ async function harness({ loading = false } = {}) {
 		authResult = 'authenticated',
 		authGate = null,
 		acceptGate = null,
-		configureGate = null;
+		configureGate = null,
+		registerGate = null;
 	class Source extends EventTarget {
 		constructor() {
 			super();
@@ -125,9 +126,10 @@ async function harness({ loading = false } = {}) {
 	}
 	const transferAPI = {
 		async register(label) {
-			registrations++;
+			const attempt = ++registrations;
+			await registerGate;
 			if (failRegister) throw new Error('unknown register outcome');
-			const id = `device-${registrations}`,
+			const id = `device-${attempt}`,
 				snapshot = {
 					protocolVersion: 3,
 					device: { id, label },
@@ -287,6 +289,19 @@ async function harness({ loading = false } = {}) {
 				user: id ? { id, user_type: 'staff' } : null
 			});
 		},
+		async deadline() {
+			const found = [...timers].find(([, timer]) => timer.delay === 30000);
+			assert.ok(found, 'registration deadline is armed');
+			timers.delete(found[0]);
+			found[1].callback();
+			await flush();
+		},
+		setUnavailable() {
+			state.update((value) => ({ ...value, isUnavailable: true }));
+		},
+		set registerGate(value) {
+			registerGate = value;
+		},
 		set failRegister(value) {
 			failRegister = value;
 		},
@@ -342,6 +357,9 @@ test('mounted visibility owner resumes a fresh device after sixty seconds and ne
 		assert.equal(h.view.status, 'online');
 		assert.equal(h.requests, 1);
 		assert.equal(h.view.jobs[0].phase, 'cancelled');
+		h.session.send([file], [{ type: 'device', deviceId: 'receiver' }]);
+		assert.equal(h.requests, 2);
+		assert.notEqual(h.view.jobs[0].clientRequestId, h.view.jobs[1].clientRequestId);
 	} finally {
 		await h.restore();
 	}
@@ -497,6 +515,125 @@ test('same-identity auth unavailability retains the source draft and bounds safe
 		assert.equal(h.registrations, 2);
 		assert.equal(h.requests, 1);
 	} finally {
+		await h.restore();
+	}
+});
+
+test('renaming a stopped device validates its preferred label without rearming automatic readiness', async () => {
+	const h = await harness();
+	try {
+		await h.ready();
+		h.session.stop();
+		await h.session.rename('ชื่อใหม่');
+		await h.wake();
+		assert.equal(h.registrations, 1);
+		await h.session.start('ชื่อใหม่');
+		assert.equal(h.registrations, 2);
+		assert.equal([...h.devices.values()].at(-1).device.label, 'ชื่อใหม่');
+		h.streams.at(-1).ready();
+		await h.session.rename('');
+		assert.equal(h.registrations, 2);
+		assert.equal(h.view.status, 'online');
+	} finally {
+		await h.restore();
+	}
+});
+
+test('a held registration reaches its deadline, releases single-flight and cleans a late known result without automatic POST replay', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		assert.equal(h.registrations, 1);
+		await h.deadline();
+		await starting;
+		assert.equal(h.view.status, 'offline');
+		await h.wake();
+		assert.equal(h.registrations, 1);
+		h.registerGate = null;
+		await h.session.start();
+		assert.equal(h.registrations, 2);
+		h.streams.at(-1).ready();
+		release();
+		await flush();
+		assert.equal(h.devices.has('device-1'), false);
+		assert.equal(h.view.snapshot.device.id, 'device-2');
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('auth unavailability aborts a held registration and defers known-device cleanup until central reconciliation', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.setUnavailable();
+		await starting;
+		release();
+		await flush();
+		assert.equal(h.streams.length, 0);
+		assert.equal(h.view.authBlocked, true);
+		assert.equal(h.devices.has('device-1'), true);
+		await h.wake();
+		assert.equal(h.registrations, 1);
+		h.registerGate = null;
+		await h.session.start();
+		assert.equal(h.devices.has('device-1'), false);
+		assert.equal(h.registrations, 2);
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('dispose settles a hung registration immediately and a late success creates no stream', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.session.dispose();
+		await starting;
+		assert.equal(h.registrations, 1);
+		release();
+		await flush();
+		assert.equal(h.streams.length, 0);
+		assert.equal(h.devices.size, 0);
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+
+test('late registration cleanup after disposal cannot borrow a replacement account authority', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.session.dispose();
+		await starting;
+		h.setUser('B');
+		release();
+		await flush();
+		assert.equal(h.streams.length, 0);
+		assert.equal(h.devices.has('device-1'), true);
+	} finally {
+		release?.();
 		await h.restore();
 	}
 });

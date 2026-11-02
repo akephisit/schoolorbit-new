@@ -29,6 +29,8 @@ export async function fileTransferFixture() {
 	const pairs = new Map<string, TransferPair>();
 	const closedPairs = new Map<string, TransferPair>();
 	let maxOutgoing = 0;
+	let nextCode = 0;
+	let loseNextRegisterResponse = false;
 	let suppressNextCreatedEvent = false;
 	let loseNextCreateResponse = false;
 	let loseCreateForLabel: string | null = null;
@@ -132,9 +134,14 @@ export async function fileTransferFixture() {
 					label: input.label
 				},
 				sessionId,
-				code: (devices.size + 1).toString(16).toUpperCase().padStart(10, '0')
+				code: (++nextCode).toString(16).toUpperCase().padStart(10, '0')
 			};
 			devices.set(id, entry);
+			if (loseNextRegisterResponse) {
+				loseNextRegisterResponse = false;
+				response.destroy();
+				return;
+			}
 			send(snapshot(entry));
 			return;
 		}
@@ -347,6 +354,12 @@ export async function fileTransferFixture() {
 			});
 		},
 		emit,
+		dropStream(deviceId: string) {
+			devices.get(deviceId)?.stream?.end();
+		},
+		loseNextRegisterResponse() {
+			loseNextRegisterResponse = true;
+		},
 		holdNextCreatedEvent() {
 			suppressNextCreatedEvent = true;
 		},

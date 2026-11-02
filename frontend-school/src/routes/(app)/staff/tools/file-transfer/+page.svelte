@@ -199,7 +199,7 @@
 			ไฟล์ส่งโดยตรงและไม่ถูกเก็บบนเซิร์ฟเวอร์ เปิดหน้านี้ไว้ทั้งสองเครื่อง
 			แต่ละผู้รับรับไฟล์ตามลำดับของชุด การรอหรือยกเลิกผู้รับหนึ่งไม่หยุดผู้รับอื่น
 		</p>
-		{#if view.error}<PageState
+		{#if view.error && !['reconnecting', 'paused'].includes(view.status)}<PageState
 				variant="error"
 				title="สถานะการเชื่อมต่อ"
 				description={view.error}
@@ -222,7 +222,9 @@
 							{view.status === 'paused'
 								? 'พักการเชื่อมต่อขณะซ่อนหน้า จะพร้อมรับอีกครั้งเมื่อกลับมา'
 								: ['connecting', 'reconnecting'].includes(view.status)
-									? 'กำลังเตรียมอุปกรณ์ให้พร้อมรับส่งไฟล์'
+									? view.status === 'reconnecting'
+										? 'กำลังเชื่อมต่อใหม่ ไฟล์ที่เลือกยังอยู่'
+										: 'กำลังเตรียมอุปกรณ์ให้พร้อมรับส่งไฟล์'
 									: 'อุปกรณ์ยังไม่พร้อมรับคำขอ ไฟล์ที่เลือกยังอยู่'}
 						</p>
 						{#if view.status === 'offline' || view.status === 'idle'}<Button
@@ -289,7 +291,8 @@
 						<p id="file-help" class="text-sm text-muted-foreground">
 							{#if view.snapshot}ไม่กำหนดเพดานจำนวนหรือขนาดไฟล์
 								ขึ้นกับพื้นที่จัดเก็บและความสามารถของเบราว์เซอร์ ส่งพร้อมกันได้ {view.snapshot
-									.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์{/if}
+									.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เลือกไฟล์ไว้ก่อนได้
+								ระบบกำลังเตรียมการเชื่อมต่อ{/if}
 						</p>
 						{#if fileError}<p id="file-error" role="alert" class="text-sm text-destructive">
 								{fileError}
@@ -336,7 +339,7 @@
 							</div>{:else}<p class="text-sm text-muted-foreground">
 								{online
 									? 'ยังไม่มีอุปกรณ์อื่น เปิดเครื่องมือนี้บนอุปกรณ์ผู้รับ'
-									: 'เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์'}
+									: 'กำลังรอการเชื่อมต่อเพื่อค้นหาอุปกรณ์'}
 							</p>{/if}
 						<Button
 							disabled={!files.length ||

@@ -199,3 +199,24 @@ test('automatic exports keep one reader, coalesce completed prefixes and fence c
 	await stopped;
 	assert.deepEqual(late, []);
 });
+
+test('resumed automatic export starts after the already requested prefix', async () => {
+	const { AutomaticDownloadPump } =
+		await import('../../src/lib/tools/file-transfer-download-pump.ts');
+	const requested = [];
+	const pump = new AutomaticDownloadPump(
+		{
+			read: async (index) => ({ file: new File(['x'], String(index)), name: String(index) }),
+			request: (index) => requested.push(index),
+			progress: () => {},
+			failure: (error) => {
+				throw error;
+			}
+		},
+		2
+	);
+	pump.advance(4);
+	while (requested.length < 2) await new Promise((resolve) => setImmediate(resolve));
+	await pump.stop();
+	assert.deepEqual(requested, [2, 3]);
+});
