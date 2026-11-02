@@ -8,12 +8,31 @@ import {
 import {
 	parseTransferEvent,
 	transferAPI,
-	type TransferFile,
 	type TransferPair,
 	type TransferSnapshot,
 	type TransferTarget
 } from '#lib/api/file-transfer.js';
-import { batchBytes, fileMetadata, sameFiles, validateTransferBatch } from './file-transfer.js';
+import {
+	batchSummary,
+	fileMetadata,
+	sameFiles,
+	sameBatch,
+	validateBatchSummary,
+	validateTransferBatch,
+	TRANSFER_PAGE_SIZE,
+	type FileMetadata,
+	type BatchSummary
+} from './file-transfer.js';
+import {
+	ReceivedBatchStore,
+	receivingSupported,
+	RECEIVING_UNSUPPORTED,
+	storageMessage,
+	collectAbandonedTransferStorage,
+	checkStorageSpace,
+	type StoredMetadata
+} from './file-transfer-storage.js';
+import { createTransferArchive } from './file-transfer-archive.js';
 import {
 	FileTransferTransport,
 	type TransportPhase,
@@ -36,7 +55,12 @@ export interface TransferJob {
 	label: string;
 	recipientId: string | null;
 	pair: TransferPair | null;
-	files: TransferFile[];
+	files: FileMetadata[];
+	batch: BatchSummary;
+	manifestPage: number;
+	manifestPending: boolean;
+	storageWarning: string;
+	megabytesPerSecond: number;
 	phase: TransferPhase;
 	bytes: number;
 	fileIndex: number;
@@ -52,14 +76,20 @@ export interface ReceivedFile {
 	index: number;
 	name: string;
 	size: number;
-	url: string;
 }
 export interface FileTransferState {
 	status: 'idle' | 'connecting' | 'online' | 'offline';
 	snapshot: TransferSnapshot | null;
 	jobs: TransferJob[];
 	downloads: ReceivedFile[];
-	sourceFiles: TransferFile[];
+	downloadCount: number;
+	downloadBytes: number;
+	downloadPage: number;
+	downloadPending: boolean;
+	downloadError: string;
+	receivingSupported: boolean;
+	archive: { pending: boolean; bytes: number; error: string };
+	sourceFiles: FileMetadata[];
 	error: string;
 }
 type Entry = {
@@ -70,20 +100,43 @@ type Entry = {
 	transport: FileTransferTransport | null;
 	consented: boolean;
 	closingPairId: string | null;
+	store: ReceivedBatchStore | null;
+	manifestAttempt: number;
 };
-type Batch = { id: string; files: File[]; metadata: TransferFile[] };
+type Batch = { id: string; files: File[]; metadata: FileMetadata[] };
 const MAX_TRANSFER_JOBS = 64;
 const terminal = new Set<TransferPhase>(['complete', 'declined', 'cancelled', 'failed']);
 export function isTransferTerminal(phase: TransferPhase) {
 	return terminal.has(phase);
 }
 export function initialTransferState(): FileTransferState {
-	return { status: 'idle', snapshot: null, jobs: [], downloads: [], sourceFiles: [], error: '' };
+	return {
+		status: 'idle',
+		snapshot: null,
+		jobs: [],
+		downloads: [],
+		downloadCount: 0,
+		downloadBytes: 0,
+		downloadPage: 0,
+		downloadPending: false,
+		downloadError: '',
+		receivingSupported: receivingSupported(),
+		archive: { pending: false, bytes: 0, error: '' },
+		sourceFiles: [],
+		error: ''
+	};
 }
 
 /** Owns one discovery identity, the recipient queue, consent and completed download URLs. */
 export class FileTransferSession {
 	private state = initialTransferState();
+	private downloadStore: ReceivedBatchStore | null = null;
+	private downloadOwner: string | null = null;
+	private downloadAttempt = 0;
+	private archiveController: AbortController | null = null;
+	private archiveTask: Promise<void> | null = null;
+	private archiveFile: { store: ReceivedBatchStore; count: number; file: File } | null = null;
+	private urls = new Map<string, string>();
 	private entries = new Map<string, Entry>();
 	private batch: Batch | null = null;
 	private generation = 0;
@@ -153,12 +206,34 @@ export class FileTransferSession {
 		return error instanceof Error && /^[ก-๛]/u.test(error.message) ? error.message : fallback;
 	}
 	private releaseDownloads() {
-		for (const file of this.state.downloads) URL.revokeObjectURL(file.url);
-		this.state = { ...this.state, downloads: [] };
+		this.downloadAttempt++;
+		this.archiveController?.abort();
+		for (const url of this.urls.values()) URL.revokeObjectURL(url);
+		this.urls.clear();
+		const store = this.downloadStore,
+			archive = this.archiveTask;
+		this.downloadStore = null;
+		this.downloadOwner = null;
+		this.archiveFile = null;
+		this.state = {
+			...this.state,
+			downloads: [],
+			downloadCount: 0,
+			downloadBytes: 0,
+			downloadPage: 0,
+			downloadPending: false,
+			downloadError: '',
+			archive: { pending: false, bytes: 0, error: '' }
+		};
+		if (store)
+			void (async () => {
+				await archive;
+				await store.dispose();
+			})().catch(() => console.warn('File transfer received storage cleanup failed'));
 	}
 	private pruneHistory(requiredSlots = 0, clearIncoming = false) {
 		if (requiredSlots > MAX_TRANSFER_JOBS) return false;
-		const downloadOwners = new Set(this.state.downloads.map((file) => file.jobId));
+		const downloadOwners = new Set(this.downloadOwner ? [this.downloadOwner] : []);
 		const candidates = [...this.entries.values()].filter(
 			(entry) =>
 				isTransferTerminal(entry.view.phase) &&
@@ -185,6 +260,16 @@ export class FileTransferSession {
 		return this.entries.size + requiredSlots <= MAX_TRANSFER_JOBS;
 	}
 	clearDownloads() {
+		const owner = this.downloadOwner ? this.entries.get(this.downloadOwner) : undefined;
+		if (owner && !isTransferTerminal(owner.view.phase)) {
+			this.publish({ downloadError: 'กรุณาสิ้นสุดการรับชุดนี้ก่อนล้างไฟล์ที่รับแล้ว' });
+			return;
+		}
+		for (const entry of this.entries.values())
+			if (entry.store === this.downloadStore) {
+				entry.store = null;
+				entry.manifestAttempt++;
+			}
 		this.releaseDownloads();
 		this.pruneHistory(0, true);
 		this.publish();
@@ -226,6 +311,7 @@ export class FileTransferSession {
 			};
 		}
 		this.batch = null;
+		for (const entry of this.entries.values()) this.releaseEntryStore(entry);
 		if (clearFiles) {
 			this.releaseDownloads();
 			this.entries.clear();
@@ -267,6 +353,13 @@ export class FileTransferSession {
 		this.controller = new AbortController();
 		const generation = this.generation;
 		this.publish({ status: 'connecting', error: '' });
+		void collectAbandonedTransferStorage().catch(() => {
+			if (this.current(generation))
+				this.publish({
+					downloadError:
+						'ล้างพื้นที่ชั่วคราวที่ค้างอยู่ไม่สำเร็จ กรุณาตรวจสอบพื้นที่จัดเก็บของเบราว์เซอร์'
+				});
+		});
 		this.startup = setTimeout(() => {
 			if (this.current(generation)) this.disconnect('เปิดการเชื่อมต่อนานเกินไป กรุณาลองใหม่');
 		}, 30_000);
@@ -338,7 +431,7 @@ export class FileTransferSession {
 		}
 	}
 	private snapshot(snapshot: TransferSnapshot) {
-		if (snapshot.protocolVersion !== 2 || snapshot.device.id !== this.state.snapshot?.device.id)
+		if (snapshot.protocolVersion !== 3 || snapshot.device.id !== this.state.snapshot?.device.id)
 			throw new Error('incompatible_snapshot');
 		this.publish({ snapshot });
 		for (const pair of snapshot.pairs) this.applyPair(pair);
@@ -397,7 +490,7 @@ export class FileTransferSession {
 				known?.view.slotReserved &&
 				!known.view.pair &&
 				pair.initiator.id === device.id &&
-				sameFiles(known.view.files, pair.files)
+				sameBatch(known.view.batch, pair.batch)
 			) {
 				known.view = { ...known.view, pair };
 				this.pairClosed(pair.id, 'cancelled');
@@ -405,8 +498,7 @@ export class FileTransferSession {
 			return;
 		}
 		if (this.retiredPairs.has(pair.id)) return;
-		if (validateTransferBatch(pair.files, this.state.snapshot!.limits))
-			throw new Error('invalid_batch');
+		if (validateBatchSummary(pair.batch)) throw new Error('invalid_batch');
 		const outgoing = pair.initiator.id === device.id;
 		let entry = [...this.entries.values()].find((item) =>
 			outgoing
@@ -421,13 +513,18 @@ export class FileTransferSession {
 		) {
 			if (
 				entry &&
-				sameFiles(entry.view.files, pair.files) &&
+				sameBatch(entry.view.batch, pair.batch) &&
 				(!entry.view.pair || entry.view.pair.id === pair.id)
 			) {
 				// A cancelled/uncertain create may commit after its response is lost. Bind its
 				// correlation to the terminal job for confirmed cleanup, never to restart it.
 				this.revision++;
-				this.set(entry, { pair, recipientId: pair.recipient.id, slotReserved: true });
+				this.set(entry, {
+					pair,
+					batch: pair.batch,
+					recipientId: pair.recipient.id,
+					slotReserved: true
+				});
 				void this.close(entry);
 			} else this.closeOrphan(pair);
 			return;
@@ -450,7 +547,7 @@ export class FileTransferSession {
 			}
 			entry = this.entry(
 				'incoming',
-				pair.files,
+				[],
 				pair.clientRequestId,
 				'',
 				null,
@@ -458,12 +555,13 @@ export class FileTransferSession {
 			);
 			this.entries.set(entry.view.id, entry);
 			entry.view.pair = pair;
+			entry.view.batch = pair.batch;
 			entry.view.recipientId = device.id;
 			entry.view.slotReserved = true;
 		}
 		const previous = entry.view.pair;
 		if (
-			!sameFiles(entry.view.files, pair.files) ||
+			!sameBatch(entry.view.batch, pair.batch) ||
 			(previous &&
 				(previous.id !== pair.id ||
 					previous.initiator.id !== pair.initiator.id ||
@@ -498,6 +596,7 @@ export class FileTransferSession {
 					: entry.view.phase;
 		this.set(entry, {
 			pair,
+			batch: pair.batch,
 			phase,
 			recipientId: pair.recipient.id,
 			label: outgoing
@@ -513,7 +612,7 @@ export class FileTransferSession {
 	}
 	private entry(
 		direction: TransferJob['direction'],
-		files: TransferFile[],
+		files: FileMetadata[],
 		clientRequestId: string,
 		batchId: string,
 		target: TransferTarget | null,
@@ -528,6 +627,11 @@ export class FileTransferSession {
 				recipientId: target?.type === 'device' ? target.deviceId : null,
 				pair: null,
 				files,
+				batch: batchSummary(files),
+				manifestPage: 0,
+				manifestPending: false,
+				storageWarning: '',
+				megabytesPerSecond: 0,
 				phase: direction === 'incoming' ? 'consent' : 'queued',
 				bytes: 0,
 				fileIndex: 0,
@@ -542,7 +646,9 @@ export class FileTransferSession {
 			controller: new AbortController(),
 			transport: null,
 			consented: false,
-			closingPairId: null
+			closingPairId: null,
+			store: null,
+			manifestAttempt: 0
 		};
 	}
 	send(files: readonly File[], targets: readonly TransferTarget[]) {
@@ -661,7 +767,7 @@ export class FileTransferSession {
 			const pair = await transferAPI.request(
 				device.id,
 				target,
-				entry.view.files,
+				entry.view.batch,
 				requestId,
 				entry.controller.signal
 			);
@@ -723,7 +829,7 @@ export class FileTransferSession {
 			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
 		}
 	}
-	async accept(id: string) {
+	async acceptManifest(id: string) {
 		const entry = this.entries.get(id),
 			device = this.state.snapshot?.device;
 		if (
@@ -735,17 +841,31 @@ export class FileTransferSession {
 			entry.view.pending
 		)
 			return;
-		if (this.state.downloads.length) {
+		if (this.state.downloadCount) {
 			this.set(entry, { error: 'กรุณาดาวน์โหลดและล้างไฟล์ชุดก่อนก่อนรับชุดใหม่นี้' });
+			return;
+		}
+		if (!receivingSupported()) {
+			this.set(entry, { error: RECEIVING_UNSUPPORTED });
 			return;
 		}
 		entry.consented = true;
 		const generation = this.generation,
 			requestId = entry.view.clientRequestId;
 		this.set(entry, { phase: 'connecting', pending: true, error: '' });
-		this.createTransport(entry);
-		if (!entry.transport || isTransferTerminal(entry.view.phase)) return;
 		try {
+			const store = await ReceivedBatchStore.open(entry.view.pair.batch);
+			if (
+				!this.current(generation, entry, requestId) ||
+				!entry.consented ||
+				isTransferTerminal(entry.view.phase)
+			) {
+				await store.dispose();
+				return;
+			}
+			entry.store = store;
+			this.createTransport(entry);
+			if (!entry.transport || isTransferTerminal(entry.view.phase)) return;
 			const pair = await transferAPI.accept(entry.view.pair.id, device.id, entry.controller.signal);
 			if (this.current(generation, entry, requestId) && !isTransferTerminal(entry.view.phase))
 				this.applyPair(pair);
@@ -755,6 +875,10 @@ export class FileTransferSession {
 				entry.consented &&
 				!isTransferTerminal(entry.view.phase)
 			) {
+				if (!entry.store) {
+					this.fail(entry, storageMessage(error));
+					return;
+				}
 				this.set(entry, {
 					error: this.message(error, 'ยังยืนยันการตอบรับไม่ได้ กำลังรอข้อมูลจากระบบ')
 				});
@@ -763,6 +887,202 @@ export class FileTransferSession {
 		} finally {
 			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
 		}
+	}
+	private releaseEntryStore(entry: Entry) {
+		entry.manifestAttempt++;
+		const store = entry.store;
+		if (!store || store === this.downloadStore) return;
+		entry.store = null;
+		void store.dispose().catch(() => console.warn('File transfer manifest cleanup failed'));
+	}
+	async showManifestPage(id: string, page: number) {
+		const entry = this.entries.get(id),
+			generation = this.generation;
+		if (
+			!entry?.store ||
+			!Number.isInteger(page) ||
+			page < 0 ||
+			page * TRANSFER_PAGE_SIZE >= entry.view.batch.fileCount
+		)
+			return;
+		const store = entry.store,
+			requestId = entry.view.clientRequestId,
+			attempt = ++entry.manifestAttempt;
+		this.set(entry, { manifestPending: true, error: '' });
+		try {
+			const files = await store.page(page * TRANSFER_PAGE_SIZE);
+			if (
+				this.current(generation, entry, requestId) &&
+				entry.store === store &&
+				entry.manifestAttempt === attempt
+			)
+				this.set(entry, { files, manifestPage: page });
+		} catch (error) {
+			if (this.current(generation, entry, requestId) && entry.manifestAttempt === attempt)
+				this.set(entry, { error: storageMessage(error) });
+		} finally {
+			if (this.current(generation, entry, requestId) && entry.manifestAttempt === attempt)
+				this.set(entry, { manifestPending: false });
+		}
+	}
+	async acceptFiles(id: string) {
+		const entry = this.entries.get(id),
+			generation = this.generation;
+		if (
+			!entry ||
+			entry.view.direction !== 'incoming' ||
+			entry.view.phase !== 'review' ||
+			entry.view.pending ||
+			!entry.store ||
+			!entry.transport ||
+			!entry.consented
+		)
+			return;
+		const store = entry.store,
+			requestId = entry.view.clientRequestId;
+		this.set(entry, { pending: true, error: '' });
+		try {
+			const warning = await checkStorageSpace(entry.view.batch.totalBytes);
+			if (this.current(generation, entry, requestId))
+				this.set(entry, { storageWarning: warning ?? '' });
+			if (
+				this.current(generation, entry, requestId) &&
+				entry.store === store &&
+				entry.consented &&
+				entry.view.phase === 'review'
+			)
+				entry.transport?.acceptFiles();
+		} catch (error) {
+			if (this.current(generation, entry, requestId))
+				this.set(entry, { error: storageMessage(error) });
+		} finally {
+			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
+		}
+	}
+	async showDownloadsPage(page: number) {
+		const store = this.downloadStore,
+			owner = this.downloadOwner;
+		if (
+			!store ||
+			!owner ||
+			!Number.isInteger(page) ||
+			page < 0 ||
+			page * TRANSFER_PAGE_SIZE >= store.completedCount
+		)
+			return;
+		const attempt = ++this.downloadAttempt;
+		this.publish({ downloadPending: true, downloadError: '' });
+		try {
+			const files = await store.page(page * TRANSFER_PAGE_SIZE, TRANSFER_PAGE_SIZE, true);
+			if (
+				!this.disposed &&
+				this.downloadStore === store &&
+				this.downloadOwner === owner &&
+				attempt === this.downloadAttempt
+			)
+				this.publish({
+					downloads: files.map((file: StoredMetadata) => ({
+						id: `${owner}:${file.index}`,
+						jobId: owner,
+						...file
+					})),
+					downloadPage: page
+				});
+		} catch (error) {
+			if (!this.disposed && this.downloadStore === store && attempt === this.downloadAttempt)
+				this.publish({ downloadError: storageMessage(error) });
+		} finally {
+			if (!this.disposed && this.downloadStore === store && attempt === this.downloadAttempt)
+				this.publish({ downloadPending: false });
+		}
+	}
+	private saveDownload(key: string, file: File, name: string) {
+		const previous = this.urls.get(key);
+		if (previous) URL.revokeObjectURL(previous);
+		// Keep at most one URL per visible page plus the archive.
+		if (this.urls.size >= TRANSFER_PAGE_SIZE + 1) {
+			const oldest = this.urls.keys().next().value;
+			if (oldest !== undefined) {
+				URL.revokeObjectURL(this.urls.get(oldest)!);
+				this.urls.delete(oldest);
+			}
+		}
+		const url = URL.createObjectURL(file);
+		this.urls.set(key, url);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = name;
+		anchor.click();
+	}
+	async downloadFile(index: number) {
+		const store = this.downloadStore,
+			owner = this.downloadOwner;
+		if (!store || !owner) return;
+		try {
+			const metadata = await store.metadata(index),
+				file = await store.getCompletedFile(index);
+			if (!this.disposed && this.downloadStore === store && this.downloadOwner === owner)
+				this.saveDownload(String(index), file, metadata.name);
+		} catch (error) {
+			if (!this.disposed && this.downloadStore === store)
+				this.publish({ downloadError: storageMessage(error) });
+		}
+	}
+	downloadAll() {
+		const store = this.downloadStore,
+			owner = this.downloadOwner;
+		if (!store || !owner || !store.completedCount || this.state.archive.pending) return;
+		const job = this.entries.get(owner);
+		if (job && !isTransferTerminal(job.view.phase)) {
+			this.publish({ downloadError: 'กรุณาสิ้นสุดการรับชุดนี้ก่อนดาวน์โหลดรวมเป็น ZIP' });
+			return;
+		}
+		if (this.archiveFile?.store === store && this.archiveFile.count === store.completedCount) {
+			this.saveDownload('archive', this.archiveFile.file, 'SchoolOrbit-files.zip');
+			return;
+		}
+		const completedCount = store.completedCount,
+			completedBytes = store.completedBytes;
+		const controller = new AbortController();
+		this.archiveController = controller;
+		const valid = () =>
+			!this.disposed &&
+			this.downloadStore === store &&
+			this.downloadOwner === owner &&
+			this.archiveController === controller &&
+			!controller.signal.aborted;
+		this.publish({ archive: { pending: true, bytes: 0, error: '' } });
+		this.archiveTask = (async () => {
+			try {
+				const file = await createTransferArchive(store, controller.signal, (bytes) => {
+					if (valid()) this.publish({ archive: { pending: true, bytes, error: '' } });
+				});
+				if (valid()) {
+					this.archiveFile = { store, count: completedCount, file };
+					this.saveDownload('archive', file, 'SchoolOrbit-files.zip');
+					this.publish({ archive: { pending: false, bytes: completedBytes, error: '' } });
+				}
+			} catch (error) {
+				if (!this.disposed && this.downloadStore === store && this.archiveController === controller)
+					this.publish({
+						archive: {
+							pending: false,
+							bytes: 0,
+							error: controller.signal.aborted
+								? 'ยกเลิกการสร้าง ZIP แล้ว ไฟล์ที่รับครบยังดาวน์โหลดได้'
+								: storageMessage(error)
+						}
+					});
+			} finally {
+				if (this.archiveController === controller) {
+					this.archiveController = null;
+					this.archiveTask = null;
+				}
+			}
+		})();
+	}
+	cancelArchive() {
+		this.archiveController?.abort();
 	}
 	cancel(id: string) {
 		const entry = this.entries.get(id);
@@ -775,6 +1095,7 @@ export class FileTransferSession {
 		if (!unknownCreate) entry.controller.abort();
 		entry.transport?.dispose();
 		entry.transport = null;
+		this.releaseEntryStore(entry);
 		this.set(entry, { phase: 'cancelled', pending: false, error: '' });
 		if (entry.view.slotReserved) void this.close(entry);
 		else this.pump();
@@ -838,6 +1159,7 @@ export class FileTransferSession {
 			pair: null,
 			phase: 'queued',
 			bytes: 0,
+			megabytesPerSecond: 0,
 			fileIndex: 0,
 			completedFiles: 0,
 			pending: false,
@@ -857,7 +1179,7 @@ export class FileTransferSession {
 			outgoing &&
 			(!this.batch ||
 				this.batch.id !== entry.batchId ||
-				!sameFiles(this.batch.metadata, pair.files))
+				!sameBatch(batchSummary(this.batch.metadata), pair.batch))
 		) {
 			this.fail(entry, 'ไม่พบชุดไฟล์ต้นฉบับ กรุณาเลือกไฟล์ใหม่');
 			return null;
@@ -866,64 +1188,57 @@ export class FileTransferSession {
 			requestId = entry.view.clientRequestId;
 		const valid = () => this.current(generation, entry, requestId) && entry.view.slotReserved;
 		try {
-			entry.transport = new FileTransferTransport(pair, outgoing ? this.batch!.files : null, {
-				signal: async (type, sdp, signal) => {
-					if (!valid()) throw new Error('cancelled');
-					await transferAPI.signal(pair.id, device.id, type, sdp, signal);
-				},
-				progress: (progress: TransportProgress) => {
-					if (valid() && !isTransferTerminal(entry.view.phase))
-						this.set(entry, { ...progress, error: '' });
-				},
-				file: (index, blob) => {
-					if (
-						!valid() ||
-						!entry.consented ||
-						this.state.downloads.some((file) => file.jobId !== entry.view.id)
-					)
-						throw new Error('unconsented_batch');
-					const file = pair.files[index];
-					if (
-						!file ||
-						blob.size !== file.size ||
-						this.state.downloads.some(
-							(item) => item.jobId === entry.view.id && item.index === index
+			entry.transport = new FileTransferTransport(
+				pair,
+				outgoing ? this.batch!.files : null,
+				entry.store,
+				{
+					signal: async (type, sdp, signal) => {
+						if (!valid()) throw new Error('cancelled');
+						await transferAPI.signal(pair.id, device.id, type, sdp, signal);
+					},
+					progress: (progress: TransportProgress) => {
+						if (valid() && !isTransferTerminal(entry.view.phase))
+							this.set(entry, { ...progress, error: '' });
+					},
+					manifest: () => {
+						if (!valid() || !entry.consented || !entry.store) return;
+						void this.showManifestPage(entry.view.id, 0);
+					},
+					file: () => {
+						if (
+							!valid() ||
+							!entry.consented ||
+							!entry.store ||
+							(this.downloadOwner && this.downloadOwner !== entry.view.id)
 						)
-					)
-						throw new Error('invalid_file');
-					this.state = {
-						...this.state,
-						downloads: [
-							...this.state.downloads,
-							{
-								id: `${pair.id}:${index}`,
-								jobId: entry.view.id,
-								index,
-								name: file.name,
-								size: blob.size,
-								url: URL.createObjectURL(blob)
-							}
-						]
-					};
-					this.publish();
-				},
-				complete: () => {
-					if (!valid()) return null;
-					this.set(entry, {
-						phase: 'complete',
-						bytes: batchBytes(pair.files),
-						completedFiles: pair.files.length,
-						pending: false
-					});
-					if (outgoing) void this.close(entry);
-				},
-				failure: (message) => {
-					if (valid()) this.fail(entry, message);
-				},
-				closed: () => {
-					if (valid() && entry.view.phase === 'complete') void this.close(entry);
+							throw new Error('unconsented_batch');
+						this.downloadStore = entry.store;
+						this.downloadOwner = entry.view.id;
+						this.publish({
+							downloadCount: entry.store.completedCount,
+							downloadBytes: entry.store.completedBytes
+						});
+						void this.showDownloadsPage(this.state.downloadPage);
+					},
+					complete: () => {
+						if (!valid()) return null;
+						this.set(entry, {
+							phase: 'complete',
+							bytes: pair.batch.totalBytes,
+							completedFiles: pair.batch.fileCount,
+							pending: false
+						});
+						if (outgoing) void this.close(entry);
+					},
+					failure: (message) => {
+						if (valid()) this.fail(entry, message);
+					},
+					closed: () => {
+						if (valid() && entry.view.phase === 'complete') void this.close(entry);
+					}
 				}
-			});
+			);
 			return entry.transport;
 		} catch {
 			this.fail(entry, 'เปิดช่องทางรับส่งไม่สำเร็จ กรุณาตรวจสอบเบราว์เซอร์และเครือข่าย');
@@ -938,6 +1253,7 @@ export class FileTransferSession {
 		entry.transport?.dispose();
 		entry.transport = null;
 		entry.consented = false;
+		this.releaseEntryStore(entry);
 		this.set(entry, {
 			phase: 'failed',
 			error: message,
@@ -1014,6 +1330,7 @@ export class FileTransferSession {
 		entry.transport?.dispose();
 		entry.transport = null;
 		entry.consented = false;
+		this.releaseEntryStore(entry);
 		const phase = isTransferTerminal(entry.view.phase)
 			? entry.view.phase
 			: reason === 'declined'

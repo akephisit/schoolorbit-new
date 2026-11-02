@@ -11,12 +11,7 @@ import type { CurrentUserDto } from '../../../src/lib/api/auth.js';
 import { sessionState } from './session-state';
 import { mockStaffHome, actor } from './staff-home-route-data';
 
-export const fileTransferLimits = {
-	maxOutgoingTransfers: 3,
-	maxFilesPerBatch: 20,
-	maxFileBytes: 64 * 1024 * 1024,
-	maxBatchBytes: 128 * 1024 * 1024
-};
+export const fileTransferLimits = { maxOutgoingTransfers: 6 };
 const prefix = '/api/staff/file-transfer';
 const uuidv7 = () => {
 	const time = Date.now().toString(16).padStart(12, '0'),
@@ -32,6 +27,7 @@ type DeviceEntry = {
 export async function fileTransferFixture() {
 	const devices = new Map<string, DeviceEntry>();
 	const pairs = new Map<string, TransferPair>();
+	const closedPairs = new Map<string, TransferPair>();
 	let maxOutgoing = 0;
 	let suppressNextCreatedEvent = false;
 	let loseNextCreateResponse = false;
@@ -62,7 +58,7 @@ export async function fileTransferFixture() {
 		for (const id of devices.keys()) emit(id, { type: 'presence_changed', data: {} });
 	};
 	const snapshot = (entry: DeviceEntry): TransferSnapshot => ({
-		protocolVersion: 2,
+		protocolVersion: 3,
 		limits: fileTransferLimits,
 		device: entry.device,
 		pairingCode: entry.code,
@@ -80,6 +76,7 @@ export async function fileTransferFixture() {
 	};
 	const closePair = (pair: TransferPair, reason: 'cancelled' | 'disconnected' | 'declined') => {
 		pairs.delete(pair.id);
+		closedPairs.set(pair.id, structuredClone(pair));
 		for (const device of [pair.initiator, pair.recipient])
 			emit(device.id, { type: 'pair_closed', data: { pairId: pair.id, reason } });
 	};
@@ -117,12 +114,12 @@ export async function fileTransferFixture() {
 		};
 		if (path === `${prefix}/devices` && request.method === 'POST') {
 			const input: { label: string; protocolVersion?: number } = JSON.parse(body);
-			if (input.protocolVersion !== 2) {
+			if (input.protocolVersion !== 3) {
 				send('กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ เพื่อใช้การรับส่งไฟล์รุ่นล่าสุด', 400);
 				return;
 			}
 			const sessionId = String(request.headers['x-fixture-session']);
-			if ([...devices.values()].filter((entry) => entry.sessionId === sessionId).length >= 3) {
+			if ([...devices.values()].filter((entry) => entry.sessionId === sessionId).length >= 6) {
 				send('เปิดได้ไม่เกินสามอุปกรณ์ต่อเซสชัน', 409);
 				return;
 			}
@@ -178,7 +175,7 @@ export async function fileTransferFixture() {
 			const input: {
 				deviceId: string;
 				target: { type: 'device'; deviceId: string } | { type: 'code'; code: string };
-				files: TransferPair['files'];
+				batch: TransferPair['batch'];
 				clientRequestId: string;
 			} = JSON.parse(body);
 			if (holdCreateMutation) await new Promise<void>((resolve) => createWaiters.push(resolve));
@@ -199,7 +196,7 @@ export async function fileTransferFixture() {
 						pair.initiator.id === recipient.device.id ||
 						pair.recipient.id === recipient.device.id
 				) ||
-				[...pairs.values()].filter((pair) => pair.initiator.id === initiator.device.id).length >= 3
+				[...pairs.values()].filter((pair) => pair.initiator.id === initiator.device.id).length >= 6
 			) {
 				send('อุปกรณ์ผู้รับไม่ว่างหรือมีคำขอครบจำนวนแล้ว', 409);
 				return;
@@ -208,7 +205,7 @@ export async function fileTransferFixture() {
 				id: uuidv7(),
 				initiator: initiator.device,
 				recipient: recipient.device,
-				files: input.files,
+				batch: input.batch,
 				clientRequestId: input.clientRequestId,
 				status: 'pending',
 				expiresAt: new Date(Date.now() + 120_000).toISOString()
@@ -240,11 +237,19 @@ export async function fileTransferFixture() {
 		const match = path.match(/\/pairs\/([^/]+)\/(accept|close|signals)$/);
 		if (match) {
 			const pair = pairs.get(match[1]);
+			const input: { deviceId: string; type: 'offer' | 'answer'; sdp: string } = JSON.parse(body);
 			if (!pair) {
-				send('ไม่พบคำขอ', 404);
+				const closed = closedPairs.get(match[1]);
+				if (
+					match[2] === 'close' &&
+					closed &&
+					devices.has(input.deviceId) &&
+					[closed.initiator.id, closed.recipient.id].includes(input.deviceId)
+				)
+					send({});
+				else send('ไม่พบคำขอ', 404);
 				return;
 			}
-			const input: { deviceId: string; type: 'offer' | 'answer'; sdp: string } = JSON.parse(body);
 			if (match[2] === 'accept') {
 				pair.status = 'accepted';
 				if (holdAcceptedEvents) heldAcceptedEvents.push(structuredClone(pair));

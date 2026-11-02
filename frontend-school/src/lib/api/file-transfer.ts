@@ -3,7 +3,7 @@ import { apiClient, BACKEND_URL, getSchoolSubdomainHint, requireApiData } from '
 import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
-export type TransferFile = Schemas['FileTransferFile'];
+export type TransferBatch = Schemas['FileTransferBatchSummary'];
 export type TransferDevice = Schemas['FileTransferDevice'];
 export type TransferPair = Schemas['FileTransferPair'];
 export type TransferSnapshot = Schemas['FileTransferSnapshot'];
@@ -22,45 +22,27 @@ const deviceSchema = z.object({
 	displayName: z.string(),
 	label: z.string().refine((value) => [...value].length <= 60)
 });
-const fileSchema = z.object({
-	name: z.string().refine((value) => [...value].length <= 255),
-	size: z
-		.number()
-		.int()
-		.min(0)
-		.max(64 * 1024 * 1024),
-	mimeType: z.string().refine((value) => [...value].length <= 128)
+const batchSchema = z.object({
+	fileCount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+	totalBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
 });
 const pairSchema = z.object({
 	id: z.string().uuid(),
 	initiator: deviceSchema,
 	recipient: deviceSchema,
-	files: z.array(fileSchema).min(1).max(20),
+	batch: batchSchema,
 	clientRequestId: z.string().uuid(),
 	status: z.enum(['pending', 'accepted']),
 	expiresAt: z.string()
 });
 const snapshotSchema = z.object({
-	protocolVersion: z.literal(2),
-	limits: z.object({
-		maxOutgoingTransfers: z.number().int().min(1).max(3),
-		maxFilesPerBatch: z.number().int().min(1).max(20),
-		maxFileBytes: z
-			.number()
-			.int()
-			.min(1)
-			.max(64 * 1024 * 1024),
-		maxBatchBytes: z
-			.number()
-			.int()
-			.min(1)
-			.max(128 * 1024 * 1024)
-	}),
+	protocolVersion: z.literal(3),
+	limits: z.object({ maxOutgoingTransfers: z.number().int().min(1).max(6) }),
 	device: deviceSchema,
 	pairingCode: z.string().regex(/^[A-F0-9]{10}$/),
 	expiresAt: z.string(),
 	peers: z.array(deviceSchema).max(1000),
-	pairs: z.array(pairSchema).max(3)
+	pairs: z.array(pairSchema).max(6)
 });
 const eventSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('ready'), data: snapshotSchema }),
@@ -102,7 +84,7 @@ export const transferAPI = {
 			requireApiData(
 				await apiClient.post<TransferSnapshot>(
 					`${prefix}/devices`,
-					{ label, protocolVersion: 2 } satisfies Schemas['RegisterFileTransferDevice'],
+					{ label, protocolVersion: 3 } satisfies Schemas['RegisterFileTransferDevice'],
 					options(signal)
 				),
 				'เปิดรับส่งไฟล์ไม่สำเร็จ'
@@ -126,14 +108,14 @@ export const transferAPI = {
 	async request(
 		deviceId: string,
 		target: TransferTarget,
-		files: TransferFile[],
+		batch: TransferBatch,
 		clientRequestId: string,
 		signal?: AbortSignal
 	): Promise<TransferPair> {
 		return requireApiData(
 			await apiClient.post<TransferPair>(
 				`${prefix}/pairs`,
-				{ deviceId, target, files, clientRequestId } satisfies Schemas['CreateFileTransferPair'],
+				{ deviceId, target, batch, clientRequestId } satisfies Schemas['CreateFileTransferPair'],
 				options(signal)
 			),
 			'ส่งคำขอไม่สำเร็จ'

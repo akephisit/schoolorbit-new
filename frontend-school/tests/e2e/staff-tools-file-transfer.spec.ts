@@ -30,7 +30,11 @@ async function request(page: Page, labels: string[]) {
 	}
 	await page.getByRole('button', { name: 'ส่งชุดไฟล์ให้ผู้รับที่เลือก', exact: true }).click();
 }
+async function viewManifest(page: Page) {
+	await page.getByRole('button', { name: 'ดูรายการไฟล์', exact: true }).click();
+}
 async function accept(page: Page) {
+	await viewManifest(page);
 	await page.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
 }
 async function download(page: Page, index: number, name: string): Promise<Buffer> {
@@ -85,7 +89,7 @@ async function holdFileAcknowledgments(page: Page) {
 	});
 }
 
-test('one consent transfers zero-byte files, duplicate names and a real32MiB file with bounded read calls', async ({
+test('manifest review and explicit consent transfer zero-byte files, duplicate names and a real32MiB file with bounded read calls', async ({
 	context,
 	page
 }, testInfo) => {
@@ -141,7 +145,8 @@ test('one consent transfers zero-byte files, duplicate names and a real32MiB fil
 		];
 		await choose(page, files);
 		await request(page, ['ผู้รับ']);
-		await expect(incoming(receiver).getByText('1. empty.txt · 0 ไบต์')).toBeVisible();
+		await expect(incoming(receiver).getByText('4 ไฟล์ · 32.0 MiB')).toBeVisible();
+		await expect(incoming(receiver).getByText('1. empty.txt · 0 ไบต์')).toHaveCount(0);
 		await incoming(receiver).screenshot({ path: testInfo.outputPath('batch-consent-mobile.png') });
 		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(0);
 		await accept(receiver);
@@ -166,10 +171,11 @@ test('one consent transfers zero-byte files, duplicate names and a real32MiB fil
 		expect(api.devices[0].id).not.toBe(api.devices[1].id);
 		for (const entry of api.requests) {
 			if (entry.path.endsWith('/devices') && entry.method === 'POST')
-				expect(JSON.parse(entry.body).protocolVersion).toBe(2);
+				expect(JSON.parse(entry.body).protocolVersion).toBe(3);
 			if (entry.path.endsWith('/pairs')) {
 				const body = JSON.parse(entry.body);
-				expect(body.files).toHaveLength(4);
+				expect(body.batch).toEqual({ fileCount: 4, totalBytes: large.length + 11 });
+				expect('files' in body).toBe(false);
 				expect(typeof body.clientRequestId).toBe('string');
 				expect('file' in body).toBe(false);
 			}
@@ -188,14 +194,14 @@ test('one consent transfers zero-byte files, duplicate names and a real32MiB fil
 	}
 });
 
-test('three recipients run independently, a fourth waits outside the backend, and cancellation retains complete files', async ({
+test('six recipients run independently, a seventh waits outside the backend, and cancellation retains complete files', async ({
 	browser,
 	page
 }, testInfo) => {
 	test.setTimeout(90_000);
 	const api = await fileTransferFixture(),
 		contexts = await Promise.all(
-			Array.from({ length: 4 }, () => browser.newContext({ serviceWorkers: 'block' }))
+			Array.from({ length: 7 }, () => browser.newContext({ serviceWorkers: 'block' }))
 		);
 	const recipients = await Promise.all(contexts.map((context) => context.newPage()));
 	try {
@@ -212,28 +218,34 @@ test('three recipients run independently, a fourth waits outside the backend, an
 			await open(recipient, `ผู้รับ ${index + 1}`);
 		}
 		await choose(page, [input('first.txt', 'completed first'), input('second.txt', 'later file')]);
-		await request(page, ['ผู้รับ 1', 'ผู้รับ 2', 'ผู้รับ 3', 'ผู้รับ 4']);
-		await expect(outgoing(page, 'ผู้รับ 4')).toHaveAttribute('data-phase', 'queued');
+		await request(
+			page,
+			Array.from({ length: 7 }, (_, index) => `ผู้รับ ${index + 1}`)
+		);
+		await expect(outgoing(page, 'ผู้รับ 7')).toHaveAttribute('data-phase', 'queued');
 		await page
 			.locator('section[aria-labelledby="transfers-heading"]')
 			.screenshot({ path: testInfo.outputPath('fanout-queue-dark.png') });
-		expect(api.requests.filter((entry) => entry.path.endsWith('/pairs'))).toHaveLength(3);
-		expect(api.maxOutgoing).toBe(3);
+		expect(api.requests.filter((entry) => entry.path.endsWith('/pairs'))).toHaveLength(6);
+		expect(api.maxOutgoing).toBe(6);
 		await accept(recipients[0]);
 		await expect(
 			recipients[0].getByRole('button', { name: 'ดาวน์โหลด 1 first.txt', exact: true })
 		).toBeVisible();
 		await recipients[1].getByRole('button', { name: 'ปฏิเสธ', exact: true }).click();
 		await expect(
-			recipients[3].getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			recipients[6].getByRole('button', { name: 'ดูรายการไฟล์', exact: true })
 		).toBeVisible();
 		await accept(recipients[2]);
 		await accept(recipients[3]);
+		await accept(recipients[4]);
+		await accept(recipients[5]);
+		await accept(recipients[6]);
 		await expect(outgoing(page, 'ผู้รับ 3')).toHaveAttribute('data-phase', 'complete');
 		await expect(outgoing(page, 'ผู้รับ 4')).toHaveAttribute('data-phase', 'complete');
 		await expect(outgoing(page, 'ผู้รับ 1')).toHaveAttribute('data-phase', 'acknowledging');
 		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeDisabled();
-		expect(api.maxOutgoing).toBeLessThanOrEqual(3);
+		expect(api.maxOutgoing).toBeLessThanOrEqual(6);
 		expect(await download(recipients[2], 1, 'second.txt')).toEqual(Buffer.from('later file'));
 		expect(await download(recipients[3], 0, 'first.txt')).toEqual(Buffer.from('completed first'));
 		await incoming(recipients[0])
@@ -294,7 +306,7 @@ test('malformed second-file frames preserve the first file and new incoming batc
 		await choose(page, [input('new.txt', 'new batch')]);
 		await request(page, ['ผู้รับ']);
 		await expect(
-			receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })
 		).toBeDisabled();
 		await receiver.getByRole('button', { name: 'ล้างไฟล์เดิมก่อนรับชุดใหม่', exact: true }).click();
 		await accept(receiver);
@@ -336,27 +348,25 @@ test('incoming cancellation history stays bounded while completed downloads reta
 				...original,
 				id: randomUUID(),
 				clientRequestId: randomUUID(),
-				files: Array.from({ length: 20 }, (_, index) => ({
-					name: `request-${cycle}-${index}.txt`,
-					size: 1,
-					mimeType: 'text/plain'
-				})),
+				batch: { fileCount: 20, totalBytes: 20 },
 				status: 'pending',
 				expiresAt: new Date(Date.now() + 120_000).toISOString()
 			};
 			if (cycle === 0) first = pair;
 			api.emit(original.recipient.id, { type: 'pair_changed', data: pair });
 			await expect(
-				incoming(receiver).getByText(`1. request-${cycle}-0.txt · 1 ไบต์`)
+				receiver
+					.locator('[data-testid="transfer-job"][data-phase="consent"]')
+					.getByText('20 ไฟล์ · 20 ไบต์', { exact: true })
 			).toBeVisible();
 			expect(await incoming(receiver).count()).toBeLessThanOrEqual(64);
 			api.emit(original.recipient.id, {
 				type: 'pair_closed',
 				data: { pairId: pair.id, reason: 'cancelled' }
 			});
-			await expect(
-				receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
-			).toHaveCount(0);
+			await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toHaveCount(
+				0
+			);
 		}
 		await expect(incoming(receiver)).toHaveCount(64);
 		await expect(
@@ -373,9 +383,9 @@ test('incoming cancellation history stays bounded while completed downloads reta
 			api.emit(original.recipient.id, { type: 'pair_changed', data: first });
 			await expect.poll(() => observed.events.length).toBe(1);
 			await expect(incoming(receiver)).toHaveCount(64);
-			await expect(
-				receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
-			).toHaveCount(0);
+			await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toHaveCount(
+				0
+			);
 		} finally {
 			await observed.close();
 		}
@@ -504,16 +514,16 @@ for (const ordering of ['accepted-event-first', 'failed-response-first'] as cons
 						new URL(response.url()).pathname.endsWith(`/devices/${pair.recipient.id}`) &&
 						response.request().method() === 'GET'
 				);
-			await accept(receiver);
+			await viewManifest(receiver);
 			if (ordering === 'accepted-event-first') {
 				await expect.poll(acceptedSeen).toBe(true);
 				api.releaseAccept();
 			}
 			await failed;
 			await reconciled;
-			await expect(
-				receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
-			).toHaveCount(0);
+			await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toHaveCount(
+				0
+			);
 			if (ordering === 'failed-response-first') {
 				expect(acceptedSeen()).toBe(false);
 				api.releaseAcceptedEvents();
@@ -521,6 +531,7 @@ for (const ordering of ['accepted-event-first', 'failed-response-first'] as cons
 			}
 			await expect.poll(() => api.heldSignals).toBe(1);
 			api.releaseSignalDispatch();
+			await receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true }).click();
 			await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
 			expect(await download(receiver, 1, 'two.txt')).toEqual(Buffer.from('two'));
 			expect(
@@ -553,7 +564,7 @@ test('cancellation fences late accepted events and native offers, and retry crea
 		await choose(page, [input('cancel.txt', 'cancel')]);
 		await request(page, ['ผู้รับ']);
 		const pair = structuredClone(api.pairs[0]);
-		await accept(receiver);
+		await viewManifest(receiver);
 		await expect.poll(() => api.heldSignals).toBe(1);
 		const accepted = structuredClone(api.pairs[0]);
 		await incoming(receiver)
@@ -571,13 +582,11 @@ test('cancellation fences late accepted events and native offers, and retry crea
 			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 		);
 		await expect(incoming(receiver)).toHaveAttribute('data-phase', 'cancelled');
-		await expect(receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })).toHaveCount(
+		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toHaveCount(
 			0
 		);
 		await outgoing(page, 'ผู้รับ').getByRole('button', { name: 'ส่งคำขอใหม่' }).click();
-		await expect(
-			receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
-		).toBeVisible();
+		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toBeVisible();
 		expect(api.pairs[0].clientRequestId).not.toBe(pair.clientRequestId);
 		await accept(receiver);
 		expect(await download(receiver, 0, 'cancel.txt')).toEqual(Buffer.from('cancel'));
@@ -636,12 +645,12 @@ test('count validation, protocol refresh errors and unavailable LAN have truthfu
 			page,
 			Array.from({ length: 21 }, (_, index) => input(`${index}.txt`, ''))
 		);
-		await expect(page.getByText('เลือกได้ครั้งละ 1–20 ไฟล์', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('source-summary')).toHaveText('เลือก 21 ไฟล์ · 0 ไบต์');
 		await choose(page, [input('blocked.txt', 'blocked')]);
 		api.blockSignals();
 		await request(page, ['ผู้รับ']);
 		await receiver.clock.install();
-		await accept(receiver);
+		await viewManifest(receiver);
 		await receiver.clock.fastForward(20_001);
 		await expect(
 			incoming(receiver).getByText(
@@ -751,7 +760,7 @@ test('a lost create response plus failed snapshot keeps its slot until authorita
 	test.setTimeout(90_000);
 	const api = await fileTransferFixture(),
 		contexts = await Promise.all(
-			Array.from({ length: 4 }, () => browser.newContext({ serviceWorkers: 'block' }))
+			Array.from({ length: 7 }, () => browser.newContext({ serviceWorkers: 'block' }))
 		);
 	const recipients = await Promise.all(contexts.map((context) => context.newPage()));
 	try {
@@ -764,11 +773,14 @@ test('a lost create response plus failed snapshot keeps its slot until authorita
 		api.loseCreateResponseFor('ปลายทาง 1');
 		api.failSnapshots();
 		await choose(page, [input('unknown.txt', 'unknown response')]);
-		await request(page, ['ปลายทาง 1', 'ปลายทาง 2', 'ปลายทาง 3', 'ปลายทาง 4']);
+		await request(
+			page,
+			Array.from({ length: 7 }, (_, index) => `ปลายทาง ${index + 1}`)
+		);
 		const unknown = outgoing(page, 'ปลายทาง 1');
 		await expect(unknown).toHaveAttribute('data-phase', 'failed');
 		await expect(unknown.getByText(/ช่องส่งนี้ยังถูกจองไว้/)).toBeVisible();
-		await expect(outgoing(page, 'ปลายทาง 4')).toHaveAttribute('data-phase', 'queued');
+		await expect(outgoing(page, 'ปลายทาง 7')).toHaveAttribute('data-phase', 'queued');
 		await unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true }).click();
 		await unknown.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
 		await expect(unknown.getByText(/ช่องส่งยังถูกจองไว้/)).toBeVisible();
@@ -778,18 +790,18 @@ test('a lost create response plus failed snapshot keeps its slot until authorita
 					.filter((entry) => entry.path.endsWith('/pairs'))
 					.map((entry) => JSON.parse(entry.body).clientRequestId)
 			).size
-		).toBe(3);
-		expect(api.maxOutgoing).toBe(3);
+		).toBe(6);
+		expect(api.maxOutgoing).toBe(6);
 		api.restoreSnapshots();
 		await unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true }).click();
 		await expect(
-			recipients[3].getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			recipients[6].getByRole('button', { name: 'ดูรายการไฟล์', exact: true })
 		).toBeVisible();
 		await expect(unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true })).toHaveCount(0);
-		expect(api.maxOutgoing).toBeLessThanOrEqual(3);
+		expect(api.maxOutgoing).toBeLessThanOrEqual(6);
 		api.releaseCreatedEvents();
 		await expect(
-			recipients[0].getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			recipients[0].getByRole('button', { name: 'ดูรายการไฟล์', exact: true })
 		).toHaveCount(0);
 		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(0);
 	} finally {
@@ -842,7 +854,7 @@ test('cancelled create binds a late successful HTTP pair for cleanup when its SS
 		await expect.poll(() => api.pairs.length).toBe(0);
 		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
 		api.releaseCreatedEvents();
-		await expect(receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })).toHaveCount(
+		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toHaveCount(
 			0
 		);
 		await expect(job).toHaveAttribute('data-phase', 'cancelled');
@@ -939,9 +951,7 @@ test('a held old close response cannot prevent the retried pair from closing ind
 		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
 		await expect.poll(() => api.pairs.length).toBe(0);
 		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
-		await expect(
-			receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
-		).toBeVisible();
+		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toBeVisible();
 		const second = structuredClone(api.pairs[0]);
 		expect(second.clientRequestId).not.toBe(first.clientRequestId);
 		await accept(receiver);
