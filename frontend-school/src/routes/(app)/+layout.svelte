@@ -58,7 +58,7 @@
 		const item = appMenu.groups
 			.flatMap((group) => group.items)
 			.find((item) => {
-				const url = new URL(item.path, page.url);
+				const url = new URL(item.path, page.url.href);
 				return url.origin === target.url.origin && url.pathname === target.url.pathname;
 			});
 		const title = item?.name ?? (target.url.pathname === '/staff/work' ? 'งานของฉัน' : null);

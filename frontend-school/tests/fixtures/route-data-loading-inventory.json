@@ -1636,6 +1636,24 @@
 			"notes": "Static tool catalog; no page-owned read."
 		},
 		{
+			"route": "staff/tools/file-transfer",
+			"wave": "self-service",
+			"dataOwner": "interaction-only",
+			"preload": "hover",
+			"context": "authenticated staff browser session",
+			"status": "complete",
+			"backendOwner": "school-staff file_transfer",
+			"notes": "Browser session owns ephemeral device presence and SSE/WebRTC resources; mount registration must not run in a route preload. File selection, pairing and transfer consent remain browser interactions, with identity fencing and disposal.",
+			"browserMount": {
+				"reason": "FileTransferSession.start creates browser-bound device presence, authentication/visibility listeners and SSE signaling; pagehide/unmount dispose the session, transport and local resources. These are browser session resources, not preloadable primary GET data.",
+				"tests": [
+					"tests/e2e/staff-tools-file-transfer.spec.ts",
+					"tests/static/file-transfer-lifecycle.test.mjs"
+				],
+				"eventReads": []
+			}
+		},
+		{
 			"route": "staff/tools/qr-code",
 			"wave": "self-service",
 			"dataOwner": "interaction-only",
