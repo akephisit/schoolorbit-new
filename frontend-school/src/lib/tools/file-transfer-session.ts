@@ -102,6 +102,7 @@ type Entry = {
 	closingPairId: string | null;
 	store: ReceivedBatchStore | null;
 	manifestAttempt: number;
+	consentOperation: number;
 };
 type Batch = { id: string; files: File[]; metadata: FileMetadata[] };
 const MAX_TRANSFER_JOBS = 64;
@@ -603,7 +604,11 @@ export class FileTransferSession {
 				? `${pair.recipient.displayName} · ${pair.recipient.label}`
 				: entry.view.label,
 			slotReserved: true,
-			error: pair.status === 'accepted' ? '' : entry.view.error
+			error:
+				pair.status === 'accepted' &&
+				['requesting', 'waiting', 'consent', 'connecting'].includes(entry.view.phase)
+					? ''
+					: entry.view.error
 		});
 		if (pair.status === 'accepted' && outgoing && !entry.transport) {
 			const transport = this.createTransport(entry);
@@ -648,7 +653,8 @@ export class FileTransferSession {
 			consented: false,
 			closingPairId: null,
 			store: null,
-			manifestAttempt: 0
+			manifestAttempt: 0,
+			consentOperation: 0
 		};
 	}
 	send(files: readonly File[], targets: readonly TransferTarget[]) {
@@ -850,6 +856,7 @@ export class FileTransferSession {
 			return;
 		}
 		entry.consented = true;
+		const operation = ++entry.consentOperation;
 		const generation = this.generation,
 			requestId = entry.view.clientRequestId;
 		this.set(entry, { phase: 'connecting', pending: true, error: '' });
@@ -867,12 +874,17 @@ export class FileTransferSession {
 			this.createTransport(entry);
 			if (!entry.transport || isTransferTerminal(entry.view.phase)) return;
 			const pair = await transferAPI.accept(entry.view.pair.id, device.id, entry.controller.signal);
-			if (this.current(generation, entry, requestId) && !isTransferTerminal(entry.view.phase))
+			if (
+				this.current(generation, entry, requestId) &&
+				entry.consentOperation === operation &&
+				!isTransferTerminal(entry.view.phase)
+			)
 				this.applyPair(pair);
 		} catch (error) {
 			if (
 				this.current(generation, entry, requestId) &&
 				entry.consented &&
+				entry.consentOperation === operation &&
 				!isTransferTerminal(entry.view.phase)
 			) {
 				if (!entry.store) {
@@ -885,11 +897,13 @@ export class FileTransferSession {
 				await this.refresh(generation);
 			}
 		} finally {
-			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
+			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
+				this.set(entry, { pending: false });
 		}
 	}
 	private releaseEntryStore(entry: Entry) {
 		entry.manifestAttempt++;
+		entry.consentOperation++;
 		const store = entry.store;
 		if (!store || store === this.downloadStore) return;
 		entry.store = null;
@@ -938,25 +952,28 @@ export class FileTransferSession {
 			!entry.consented
 		)
 			return;
+		const operation = ++entry.consentOperation;
 		const store = entry.store,
 			requestId = entry.view.clientRequestId;
 		this.set(entry, { pending: true, error: '' });
 		try {
 			const warning = await checkStorageSpace(entry.view.batch.totalBytes);
-			if (this.current(generation, entry, requestId))
+			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
 				this.set(entry, { storageWarning: warning ?? '' });
 			if (
 				this.current(generation, entry, requestId) &&
+				entry.consentOperation === operation &&
 				entry.store === store &&
 				entry.consented &&
 				entry.view.phase === 'review'
 			)
 				entry.transport?.acceptFiles();
 		} catch (error) {
-			if (this.current(generation, entry, requestId))
+			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
 				this.set(entry, { error: storageMessage(error) });
 		} finally {
-			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
+			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
+				this.set(entry, { pending: false });
 		}
 	}
 	async showDownloadsPage(page: number) {
@@ -1198,11 +1215,12 @@ export class FileTransferSession {
 						await transferAPI.signal(pair.id, device.id, type, sdp, signal);
 					},
 					progress: (progress: TransportProgress) => {
-						if (valid() && !isTransferTerminal(entry.view.phase))
-							this.set(entry, { ...progress, error: '' });
+						if (valid() && !isTransferTerminal(entry.view.phase)) this.set(entry, { ...progress });
 					},
 					manifest: () => {
 						if (!valid() || !entry.consented || !entry.store) return;
+						entry.consentOperation++;
+						this.set(entry, { pending: false, error: '' });
 						void this.showManifestPage(entry.view.id, 0);
 					},
 					file: () => {

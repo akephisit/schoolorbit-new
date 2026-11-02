@@ -116,14 +116,12 @@ export function parseTransferControl(text: string): TransferControl {
 	if (typeof value !== 'object' || value === null || !('type' in value))
 		throw new Error('ข้อมูลควบคุมไม่ถูกต้อง');
 	if (
-		[
-			'manifest_start',
-			'manifest_end',
-			'manifest_ready',
-			'receive_ready',
-			'batch_end',
-			'batch_received'
-		].includes(String(value.type)) &&
+		(value.type === 'manifest_start' ||
+			value.type === 'manifest_end' ||
+			value.type === 'manifest_ready' ||
+			value.type === 'receive_ready' ||
+			value.type === 'batch_end' ||
+			value.type === 'batch_received') &&
 		'count' in value &&
 		safeInteger(value.count) &&
 		value.count > 0 &&
@@ -131,7 +129,7 @@ export function parseTransferControl(text: string): TransferControl {
 		safeInteger(value.totalBytes)
 	)
 		return {
-			type: value.type as 'manifest_start',
+			type: value.type,
 			count: value.count,
 			totalBytes: value.totalBytes
 		};
