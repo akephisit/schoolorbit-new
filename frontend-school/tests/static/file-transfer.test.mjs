@@ -140,3 +140,62 @@ test('pairing links keep the code in a fragment and reject arbitrary URL payload
 	])
 		assert.equal(pairingCodeFromHash(value), '');
 });
+
+test('automatic exports keep one reader, coalesce completed prefixes and fence cancelled reads', async () => {
+	const { AutomaticDownloadPump } =
+		await import('../../src/lib/tools/file-transfer-download-pump.ts');
+	let release,
+		reads = 0,
+		active = 0,
+		maxActive = 0;
+	const requested = [];
+	const pump = new AutomaticDownloadPump({
+		read: async (index) => {
+			reads++;
+			active++;
+			maxActive = Math.max(maxActive, active);
+			if (index === 0)
+				await new Promise((resolve) => {
+					release = resolve;
+				});
+			active--;
+			return { file: new File(['x'], `${index}.txt`), name: `${index}.txt` };
+		},
+		request: (index) => requested.push(index),
+		progress: () => {},
+		failure: (error) => {
+			throw error;
+		}
+	});
+	pump.advance(1);
+	pump.advance(100);
+	assert.equal(reads, 1);
+	release();
+	while (requested.length < 100) await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(maxActive, 1);
+	assert.deepEqual(
+		requested,
+		Array.from({ length: 100 }, (_, i) => i)
+	);
+	await pump.stop();
+	let unblock;
+	const late = [];
+	const cancelled = new AutomaticDownloadPump({
+		read: async () => {
+			await new Promise((resolve) => {
+				unblock = resolve;
+			});
+			return { file: new File(['x'], 'late.txt'), name: 'late.txt' };
+		},
+		request: (index) => late.push(index),
+		progress: () => {},
+		failure: (error) => {
+			throw error;
+		}
+	});
+	cancelled.advance(10);
+	const stopped = cancelled.stop();
+	unblock();
+	await stopped;
+	assert.deepEqual(late, []);
+});

@@ -7,6 +7,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { createQrPng } from '#lib/tools/qr-code.js';
@@ -407,6 +408,11 @@
 							<p class="text-sm">
 								{job.batch.fileCount} ไฟล์ · {formatFileSize(job.batch.totalBytes)}
 							</p>
+							{#if job.direction === 'incoming' && job.destinationLabel}<p
+									class="break-words text-sm text-muted-foreground"
+								>
+									ปลายทาง: {job.destinationLabel}
+								</p>{/if}
 							{#if job.error}<p role="alert" class="text-sm text-destructive">{job.error}</p>{/if}
 							{#if job.storageWarning}<p role="status" class="text-sm text-muted-foreground">
 									{job.storageWarning}
@@ -473,11 +479,41 @@
 										</div>{/if}
 									<p class="text-sm text-muted-foreground">
 										ตรวจสอบรายการทั้งหมดก่อนตอบรับ การยืนยันครั้งเดียวอนุญาตให้รับชุดนี้ตามลำดับ
-										ใช้พื้นที่ชั่วคราวของเบราว์เซอร์และต้องเปิดหน้านี้ไว้
+										เลือกวิธีบันทึกอัตโนมัติด้านล่างและเปิดหน้านี้ไว้
 									</p>
+									<fieldset class="space-y-3" disabled={job.pending}>
+										<legend class="text-sm font-medium"
+											>บันทึกไฟล์อัตโนมัติเมื่อรับครบแต่ละไฟล์</legend
+										>
+										<RadioGroup.Root
+											value={job.receiveMode}
+											onValueChange={(mode) => {
+												if (mode === 'folder' || mode === 'browser-download')
+													session?.setReceiveMode(job.id, mode);
+											}}
+										>
+											{#if view.directoryPickerSupported}<div class="flex items-start gap-2">
+													<RadioGroup.Item id={`folder-${job.id}`} value="folder" /><Label
+														for={`folder-${job.id}`}>เลือกโฟลเดอร์แล้วบันทึกลงอุปกรณ์</Label
+													>
+												</div>{/if}
+											<div class="flex items-start gap-2">
+												<RadioGroup.Item id={`browser-${job.id}`} value="browser-download" /><Label
+													for={`browser-${job.id}`}>ดาวน์โหลดผ่านเบราว์เซอร์อัตโนมัติ</Label
+												>
+											</div>
+										</RadioGroup.Root>
+										<p class="text-sm text-muted-foreground">
+											{job.receiveMode === 'folder'
+												? 'กดรับแล้วเลือกโฟลเดอร์หนึ่งครั้ง ระบบจะสร้างโฟลเดอร์ย่อยใหม่และบันทึกแต่ละไฟล์ให้เมื่อรับครบ ไฟล์ที่บันทึกแล้วคงอยู่แม้ออกจากระบบ'
+												: 'เมื่อรับครบแต่ละไฟล์ ระบบจะขอให้เบราว์เซอร์ดาวน์โหลดให้อัตโนมัติ อาจต้องอนุญาตการดาวน์โหลดหลายไฟล์ รูปอาจอยู่ใน Downloads แทนแกลเลอรี ขึ้นกับอุปกรณ์ หากถูกบล็อกยังดาวน์โหลดรายไฟล์หรือ ZIP ได้'}
+										</p>
+									</fieldset>
 									<LoadingButton
 										loading={job.pending}
-										loadingLabel="กำลังตรวจสอบพื้นที่"
+										loadingLabel={job.receiveMode === 'folder'
+											? 'กำลังเลือกโฟลเดอร์'
+											: 'กำลังตรวจสอบพื้นที่'}
 										disabled={job.manifestPending || !job.files.length}
 										onclick={() => session?.acceptFiles(job.id)}>รับไฟล์ทั้งชุด</LoadingButton
 									>
@@ -526,10 +562,22 @@
 				class="gap-0 py-0"
 				><Card.Content class="space-y-4 p-4 sm:p-6">
 					<h2 id="downloads-heading" class="text-lg font-semibold">ไฟล์ที่รับครบแล้ว</h2>
-					<p class="text-sm text-muted-foreground">
-						ไฟล์อยู่ในพื้นที่ชั่วคราวของเบราว์เซอร์ กดดาวน์โหลดเพื่อบันทึก
-						ปิดหน้าหรือออกจากระบบจะล้างไฟล์ ไฟล์ที่รับครบแล้วยังคงอยู่แม้ส่วนที่เหลือถูกยกเลิก
+					<p
+						data-testid="save-status"
+						data-pending={view.automaticDownloadPending}
+						role="status"
+						class="text-sm text-muted-foreground"
+					>
+						{#if view.saveDestination?.mode === 'folder'}บันทึกลงโฟลเดอร์ {view.saveDestination
+								.label} แล้ว {view.downloadCount} ไฟล์ ไฟล์เหล่านี้คงอยู่ในอุปกรณ์แม้ล้างรายการหรือออกจากระบบ{:else}ส่งคำขอดาวน์โหลดอัตโนมัติแล้ว
+							{view.automaticDownloadRequests}/{view.downloadCount} ไฟล์ ยังยืนยันการบันทึกของเบราว์เซอร์ไม่ได้
+							หากถูกบล็อกให้อนุญาตดาวน์โหลดหลายไฟล์ หรือใช้ปุ่มดาวน์โหลดด้านล่าง รูปอาจอยู่ใน Downloads
+							แทนแกลเลอรี ขึ้นกับอุปกรณ์{/if}
 					</p>
+					{#if view.saveDestination?.mode !== 'folder'}<p class="text-sm text-muted-foreground">
+							ไฟล์ที่รับครบยังอยู่ในพื้นที่ชั่วคราวของหน้านี้แม้การส่งส่วนที่เหลือล้มเหลว
+							ปิดหน้าหรือออกจากระบบจะล้างพื้นที่ชั่วคราว
+						</p>{/if}
 					<p class="text-sm">
 						รับครบ {view.downloadCount} ไฟล์ · {formatFileSize(view.downloadBytes)}
 					</p>

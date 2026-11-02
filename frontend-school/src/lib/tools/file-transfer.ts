@@ -163,3 +163,18 @@ export function parseTransferControl(text: string): TransferControl {
 	}
 	throw new Error('ข้อมูลควบคุมไม่ถูกต้อง');
 }
+
+export function numberedFilename(index: number, count: number, name: string): string {
+	const prefix = `${String(index + 1).padStart(String(count).length, '0')} - `;
+	const safe = name.replace(/[<>:"|?*]/g, '_').replace(/[. ]+$/u, '') || 'file';
+	const dot = safe.lastIndexOf('.');
+	const extension = dot > 0 && safe.length - dot <= 24 ? safe.slice(dot) : '';
+	const stem = extension ? safe.slice(0, dot) : safe;
+	const budget = 255 - prefix.length - extension.length;
+	let truncated = '';
+	for (const character of stem) {
+		if (truncated.length + character.length > budget) break;
+		truncated += character;
+	}
+	return prefix + (truncated.replace(/[. ]+$/u, '') || 'file') + extension;
+}

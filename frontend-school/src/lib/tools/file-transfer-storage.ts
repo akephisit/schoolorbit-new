@@ -1,7 +1,9 @@
+import type { ReceiveDestination, ReceiveMode } from './file-transfer-destination.js';
 import {
 	TRANSFER_PAGE_SIZE,
 	validateTransferFile,
 	sameBatch,
+	numberedFilename,
 	type BatchSummary,
 	type FileMetadata
 } from './file-transfer.js';
@@ -13,10 +15,10 @@ export class TransferStorageError extends Error {}
 export function storageMessage(error: unknown): string {
 	if (error instanceof TransferStorageError) return error.message;
 	if (error instanceof DOMException && error.name === 'QuotaExceededError')
-		return 'พื้นที่จัดเก็บของเบราว์เซอร์ไม่พอ ดาวน์โหลดและล้างไฟล์เก่า หรือเพิ่มพื้นที่ว่างแล้วลองใหม่';
+		return 'พื้นที่จัดเก็บปลายทางไม่พอ ดาวน์โหลดและล้างไฟล์เก่า หรือเพิ่มพื้นที่ว่างแล้วลองใหม่';
 	if (error instanceof DOMException && ['SecurityError', 'NotAllowedError'].includes(error.name))
-		return 'เบราว์เซอร์ไม่อนุญาตพื้นที่เก็บไฟล์ชั่วคราว กรุณาเปิดเว็บแบบ HTTPS และใช้ Chrome หรือ Edge รุ่นปัจจุบัน';
-	return 'เขียนไฟล์ลงพื้นที่ชั่วคราวไม่สำเร็จ ตรวจสอบพื้นที่ว่างและสิทธิ์ของเบราว์เซอร์แล้วลองใหม่ ไฟล์ที่รับครบแล้วยังดาวน์โหลดได้';
+		return 'เบราว์เซอร์ไม่อนุญาตให้เขียนพื้นที่ปลายทาง กรุณาตรวจสอบสิทธิ์โฟลเดอร์ หรือเลือกดาวน์โหลดผ่านเบราว์เซอร์ในคำขอใหม่';
+	return 'เขียนไฟล์ลงพื้นที่ปลายทางไม่สำเร็จ ตรวจสอบพื้นที่ว่างและสิทธิ์แล้วลองใหม่ ไฟล์ที่รับครบแล้วยังอยู่';
 }
 export function receivingSupported(): boolean {
 	return (
@@ -77,11 +79,18 @@ export class ReceivedBatchStore {
 	private lockTask: Promise<unknown> | null = null;
 	private root: FileSystemDirectoryHandle | null = null;
 	private directory: FileSystemDirectoryHandle | null = null;
+	private payloadDirectory: FileSystemDirectoryHandle | null = null;
+	destinationMode: ReceiveMode = 'browser-download';
+	destinationLabel = 'ดาวน์โหลดผ่านเบราว์เซอร์';
+	private partialCleanup: Promise<void> | null = null;
 	private manifest: FileSystemWritableFileStream | null = null;
 	private offsets: FileSystemWritableFileStream | null = null;
 	private partial: {
 		index: number;
-		stream: FileSystemWritableFileStream;
+		stream: FileSystemWritableFileStream | null;
+		name: string;
+		created: boolean;
+		closed: boolean;
 		bytes: number;
 		cancelled: boolean;
 	} | null = null;
@@ -108,6 +117,7 @@ export class ReceivedBatchStore {
 				await navigator.storage.getDirectory()
 			).getDirectoryHandle(STORAGE_ROOT, { create: true });
 			store.directory = await store.root.getDirectoryHandle(store.namespace, { create: true });
+			store.payloadDirectory = store.directory;
 			store.manifest = await (
 				await store.directory.getFileHandle('manifest', { create: true })
 			).createWritable();
@@ -233,64 +243,151 @@ export class ReceivedBatchStore {
 			result.push({ ...(await this.metadata(index)), index });
 		return result;
 	}
-	async beginFile(index: number): Promise<void> {
-		if (!this.sealed || this.partial || index !== this.completedCount)
-			throw new Error('invalid_file_order');
+	async configureDestination(destination: ReceiveDestination, signal: AbortSignal): Promise<void> {
+		if (!this.sealed || this.partial || this.completedCount)
+			throw new Error('destination_already_receiving');
+		if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+		if (destination.mode === 'browser-download') {
+			this.live();
+			this.payloadDirectory = this.directory;
+			this.destinationMode = destination.mode;
+			this.destinationLabel = 'ดาวน์โหลดผ่านเบราว์เซอร์';
+			return;
+		}
 		await this.operation(async () => {
-			const stream = await (
-				await this.live().getFileHandle(`file-${index}`, { create: true })
-			).createWritable();
-			this.partial = { index, stream, bytes: 0, cancelled: false };
+			const name = `SchoolOrbit-${crypto.randomUUID()}`;
+			try {
+				await destination.directory.getDirectoryHandle(name);
+				throw new TransferStorageError('พบโฟลเดอร์ชื่อนี้อยู่แล้ว กรุณาเลือกปลายทางใหม่');
+			} catch (error) {
+				if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
+			}
+			if (signal.aborted || this.disposed) throw new DOMException('Cancelled', 'AbortError');
+			const directory = await destination.directory.getDirectoryHandle(name, { create: true });
+			if (signal.aborted || this.disposed) {
+				await destination.directory.removeEntry(name);
+				throw new DOMException('Cancelled', 'AbortError');
+			}
+			this.payloadDirectory = directory;
+			this.destinationMode = 'folder';
+			this.destinationLabel = name;
+		});
+	}
+	async beginFile(index: number): Promise<void> {
+		if (!this.sealed || this.partial || index !== this.completedCount || !this.payloadDirectory)
+			throw new Error('invalid_file_order');
+		const name =
+			this.destinationMode === 'folder'
+				? numberedFilename(index, this.batch.fileCount, (await this.metadata(index)).name)
+				: `file-${index}`;
+		this.live();
+		const directory = this.payloadDirectory;
+		const partial = {
+			index,
+			name,
+			stream: null as FileSystemWritableFileStream | null,
+			bytes: 0,
+			cancelled: false,
+			created: false,
+			closed: false
+		};
+		// Track the new path before createWritable can reject after file creation.
+		this.partial = partial;
+		await this.operation(async () => {
+			try {
+				await directory.getFileHandle(name);
+				throw new TransferStorageError(
+					'มีไฟล์ชื่อนี้ในปลายทางแล้ว ยกเลิกเพื่อป้องกันการเขียนทับไฟล์เดิม'
+				);
+			} catch (error) {
+				if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
+			}
+			if (partial.cancelled || this.disposed) throw new DOMException('Cancelled', 'AbortError');
+			const handle = await directory.getFileHandle(name, { create: true });
+			partial.created = true;
+			partial.stream = await handle.createWritable();
+			if (partial.cancelled || this.disposed) throw new DOMException('Cancelled', 'AbortError');
 		});
 	}
 	async writeFile(bytes: Uint8Array<ArrayBuffer>): Promise<void> {
 		const partial = this.partial;
-		if (!partial) throw new Error('missing_file');
+		if (!partial?.stream || partial.cancelled) throw new Error('missing_file');
+		const stream = partial.stream;
 		await this.operation(async () => {
-			await partial.stream.write(bytes);
+			await stream.write(bytes);
 			partial.bytes += bytes.byteLength;
 		});
 	}
 	async completeFile(index: number, size: number): Promise<void> {
 		const partial = this.partial;
 		if (
-			!partial ||
+			!partial?.stream ||
 			partial.index !== index ||
 			partial.bytes !== size ||
 			index !== this.completedCount
 		)
 			throw new Error('incomplete_file');
+		const stream = partial.stream;
 		await this.operation(async () => {
-			await partial.stream.close();
+			await stream.close();
+			partial.closed = true;
 			if (partial.cancelled || this.disposed) throw new DOMException('Cancelled', 'AbortError');
 			this.partial = null;
 			this.completedCount++;
 			this.completedBytes += size;
 		});
 	}
-	async abortPartial(): Promise<void> {
+	abortPartial(): Promise<void> {
 		if (this.partial) this.partial.cancelled = true;
-		await Promise.allSettled([...this.active]);
-		const partial = this.partial;
-		this.partial = null;
-		if (!partial || !this.directory) return;
-		const errors: unknown[] = [];
-		try {
-			await partial.stream.abort();
-		} catch (error) {
-			if (!(error instanceof TypeError)) errors.push(error);
-		}
-		try {
-			await this.directory.removeEntry(`file-${partial.index}`);
-		} catch (error) {
-			if (!(error instanceof DOMException && error.name === 'NotFoundError')) errors.push(error);
-		}
-		if (errors.length) throw new TransferStorageError(storageMessage(errors[0]));
+		if (this.partialCleanup) return this.partialCleanup;
+		this.partialCleanup = (async () => {
+			await Promise.allSettled([...this.active]);
+			const partial = this.partial;
+			this.partial = null;
+			if (!partial || !this.payloadDirectory) return;
+			const failures: unknown[] = [];
+			if (partial.stream && !partial.closed) {
+				try {
+					await partial.stream.abort();
+				} catch (error) {
+					failures.push(error);
+				}
+			}
+			if (partial.created) {
+				try {
+					await this.payloadDirectory.removeEntry(partial.name);
+				} catch (error) {
+					if (!(error instanceof DOMException && error.name === 'NotFoundError'))
+						failures.push(error);
+				}
+			}
+			if (failures.length) throw new TransferStorageError(storageMessage(failures[0]));
+		})().finally(() => {
+			this.partialCleanup = null;
+		});
+		return this.partialCleanup;
 	}
 	async getCompletedFile(index: number): Promise<File> {
-		if (!Number.isSafeInteger(index) || index < 0 || index >= this.completedCount)
+		if (
+			!Number.isSafeInteger(index) ||
+			index < 0 ||
+			index >= this.completedCount ||
+			!this.payloadDirectory
+		)
 			throw new Error('incomplete_file');
-		return this.operation(async () => (await this.live().getFileHandle(`file-${index}`)).getFile());
+		const metadata = await this.metadata(index),
+			directory = this.payloadDirectory;
+		const name =
+			this.destinationMode === 'folder'
+				? numberedFilename(index, this.batch.fileCount, metadata.name)
+				: `file-${index}`;
+		return this.operation(async () => {
+			const file = await (await directory.getFileHandle(name)).getFile();
+			return new File([file], metadata.name, {
+				type: metadata.mimeType || 'application/octet-stream',
+				lastModified: file.lastModified
+			});
+		});
 	}
 	async archiveTarget(): Promise<FileSystemFileHandle> {
 		return this.operation(() => this.live().getFileHandle('archive.zip', { create: true }));
@@ -309,7 +406,12 @@ export class ReceivedBatchStore {
 		this.disposal = (async () => {
 			await Promise.allSettled([...this.active]);
 			const failures: unknown[] = [];
-			for (const stream of [this.manifest, this.offsets, this.partial?.stream])
+			try {
+				await this.abortPartial();
+			} catch (error) {
+				failures.push(error);
+			}
+			for (const stream of [this.manifest, this.offsets])
 				if (stream) {
 					try {
 						await stream.abort();
@@ -326,6 +428,7 @@ export class ReceivedBatchStore {
 					failures.push(error);
 			} finally {
 				this.directory = null;
+				this.payloadDirectory = null;
 				this.releaseLock?.();
 				this.releaseLock = null;
 				await this.lockTask;

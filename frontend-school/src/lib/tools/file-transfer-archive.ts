@@ -1,21 +1,8 @@
 import type { ReceivedBatchStore } from './file-transfer-storage.js';
 import { checkStorageSpace } from './file-transfer-storage.js';
 
-export function archiveFilename(index: number, count: number, name: string): string {
-	const prefix = `${String(index + 1).padStart(String(count).length, '0')} - `;
-	const safe = name.replace(/[<>:"|?*]/g, '_').replace(/[. ]+$/u, '') || 'file';
-	const dot = safe.lastIndexOf('.');
-	const extension = dot > 0 && safe.length - dot <= 24 ? safe.slice(dot) : '';
-	let stem = extension ? safe.slice(0, dot) : safe;
-	const budget = 255 - prefix.length - extension.length;
-	let truncated = '';
-	for (const character of stem) {
-		if (truncated.length + character.length > budget) break;
-		truncated += character;
-	}
-	stem = truncated.replace(/[. ]+$/u, '') || 'file';
-	return prefix + stem + extension;
-}
+export { numberedFilename as archiveFilename } from './file-transfer.js';
+import { numberedFilename } from './file-transfer.js';
 /** Contents stream one file at a time; zip.js retains central-directory metadata. */
 export async function createTransferArchive(
 	store: ReceivedBatchStore,
@@ -44,7 +31,7 @@ export async function createTransferArchive(
 			if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
 			const metadata = await store.metadata(index),
 				file = await store.getCompletedFile(index);
-			await writer.add(archiveFilename(index, count, metadata.name), new BlobReader(file), {
+			await writer.add(numberedFilename(index, count, metadata.name), new BlobReader(file), {
 				signal,
 				onprogress: (written) => progress(bytes + written)
 			});

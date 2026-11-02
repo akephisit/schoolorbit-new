@@ -36,11 +36,16 @@ async function request(page: Page, labels: string[]) {
 async function viewManifest(page: Page) {
 	await page.getByRole('button', { name: 'ดูรายการไฟล์', exact: true }).click();
 }
-async function accept(page: Page) {
-	await viewManifest(page);
+async function receiveFiles(page: Page) {
+	await page.getByRole('radio', { name: 'ดาวน์โหลดผ่านเบราว์เซอร์อัตโนมัติ', exact: true }).check();
 	await page.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
 }
+async function accept(page: Page) {
+	await viewManifest(page);
+	await receiveFiles(page);
+}
 async function download(page: Page, index: number, name: string): Promise<Buffer> {
+	await expect(page.getByTestId('save-status')).toHaveAttribute('data-pending', 'false');
 	const pending = page.waitForEvent('download');
 	await page.getByRole('button', { name: `ดาวน์โหลด ${index + 1} ${name}`, exact: true }).click();
 	const saved = await (await pending).path();
@@ -155,7 +160,7 @@ test('manifest review and explicit consent transfer zero-byte files, duplicate n
 		await viewManifest(receiver);
 		await expect(incoming(receiver).getByText('1. empty.txt · 0 ไบต์')).toBeVisible();
 		expect(await page.evaluate(() => Reflect.get(window, 'fileTransferFrames'))).toEqual([]);
-		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+		await receiveFiles(receiver);
 		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete', {
 			timeout: 60_000
 		});
@@ -543,7 +548,7 @@ for (const ordering of ['accepted-event-first', 'failed-response-first'] as cons
 			}
 			await expect.poll(() => api.heldSignals).toBe(1);
 			api.releaseSignalDispatch();
-			await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+			await receiveFiles(receiver);
 			await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
 			expect(await download(receiver, 1, 'two.txt')).toEqual(Buffer.from('two'));
 			expect(
@@ -1092,7 +1097,7 @@ test('large and many files use disk manifest pages and one independently readabl
 		await expect(
 			incoming(receiver).getByText('54. ซ้ำ.txt · 6 ไบต์', { exact: true })
 		).toBeVisible();
-		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+		await receiveFiles(receiver);
 		await expect(incoming(receiver).getByText(/MB\/s/)).toBeVisible();
 		await expect(outgoing(page, 'ผู้รับขนาดใหญ่')).toHaveAttribute('data-phase', 'complete', {
 			timeout: 120_000
@@ -1244,7 +1249,7 @@ test('disk backpressure bounds sender credit, active clear is refused, and quota
 			Reflect.set(window, 'transferQuotaFailure', true);
 			window.dispatchEvent(new Event('release-transfer-write'));
 		});
-		await expect(incoming(receiver).getByText(/พื้นที่จัดเก็บของเบราว์เซอร์ไม่พอ/)).toBeVisible();
+		await expect(incoming(receiver).getByText(/พื้นที่จัดเก็บปลายทางไม่พอ/)).toBeVisible();
 		expect(await download(receiver, 0, 'good.txt')).toEqual(Buffer.from('retained'));
 		await expect(
 			receiver.getByRole('button', { name: 'ดาวน์โหลด 2 blocked.bin', exact: true })
@@ -1490,7 +1495,7 @@ test('late metadata accept failure cannot clear the newer file-consent pending o
 		await expect(
 			receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
 		).toBeEnabled();
-		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+		await receiveFiles(receiver);
 		await expect
 			.poll(() => receiver.evaluate(() => Reflect.get(window, 'quotaChecking')))
 			.toBe(true);
@@ -1518,6 +1523,289 @@ test('late metadata accept failure cannot clear the newer file-consent pending o
 		await receiver
 			.evaluate(() => window.dispatchEvent(new Event('release-quota-check')))
 			.catch(() => {});
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('folder receive uses the click gesture and keeps completed device files while cancelling its new partial', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await receiver.addInitScript(() => {
+			window.showDirectoryPicker = async () => {
+				Reflect.set(window, 'pickerGesture', navigator.userActivation.isActive);
+				const root = await (
+					await navigator.storage.getDirectory()
+				).getDirectoryHandle('fixture-device-folder', { create: true });
+				const sentinel = await root.getFileHandle('existing.txt', { create: true });
+				const stream = await sentinel.createWritable();
+				await stream.write(new Uint8Array([9]));
+				await stream.close();
+				return root;
+			};
+			const create = FileSystemFileHandle.prototype.createWritable;
+			FileSystemFileHandle.prototype.createWritable = async function (options) {
+				if (this.name.startsWith('2 - ')) {
+					Reflect.set(window, 'partialOpening', true);
+					await new Promise<void>((resolve) =>
+						window.addEventListener('release-destination-open', () => resolve(), { once: true })
+					);
+				}
+				return create.call(this, options);
+			};
+		});
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [
+			input('keep.txt', 'permanent'),
+			{
+				name: 'partial.bin',
+				mimeType: 'application/octet-stream',
+				buffer: Buffer.alloc(2 * 1024 * 1024)
+			}
+		]);
+		await request(page, ['ผู้รับ']);
+		await viewManifest(receiver);
+		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'pickerGesture')))
+			.toBe(true);
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'partialOpening')))
+			.toBe(true);
+		await expect(receiver.getByTestId('save-status')).toContainText('แล้ว 1 ไฟล์');
+		await incoming(receiver)
+			.getByRole('button', { name: 'ยกเลิกการรับชุดนี้', exact: true })
+			.click();
+		await receiver.evaluate(() => window.dispatchEvent(new Event('release-destination-open')));
+		const saved = () =>
+			receiver.evaluate(async () => {
+				const root = await (
+					await navigator.storage.getDirectory()
+				).getDirectoryHandle('fixture-device-folder');
+				const result: { name: string; bytes: number[] }[] = [];
+				for await (const [name, handle] of root.entries()) {
+					if (handle.kind === 'directory') {
+						const folder = await root.getDirectoryHandle(name);
+						for await (const [fileName, file] of folder.entries())
+							if (file.kind === 'file')
+								result.push({
+									name: fileName,
+									bytes: [
+										...new Uint8Array(
+											await (await (await folder.getFileHandle(fileName)).getFile()).arrayBuffer()
+										)
+									]
+								});
+					}
+				}
+				return result;
+			});
+		await expect.poll(async () => (await saved()).length).toBe(1);
+		expect((await saved())[0]).toEqual({
+			name: '1 - keep.txt',
+			bytes: [...Buffer.from('permanent')]
+		});
+		expect(await download(receiver, 0, 'keep.txt')).toEqual(Buffer.from('permanent'));
+		await receiver.getByRole('button', { name: 'ล้างไฟล์ที่รับแล้วทั้งหมด', exact: true }).click();
+		expect((await saved())[0].bytes).toEqual([...Buffer.from('permanent')]);
+		const device = api.devices.find((d) => d.label === 'ผู้รับ');
+		if (!device) throw new Error('missing device');
+		api.emit(device.id, { type: 'session_invalid', data: {} });
+		await expect(receiver.getByTestId('pairing-code')).toHaveCount(0);
+		expect((await saved())[0].bytes).toEqual([...Buffer.from('permanent')]);
+		expect(
+			await receiver.evaluate(async () => {
+				const root = await (
+					await navigator.storage.getDirectory()
+				).getDirectoryHandle('fixture-device-folder');
+				return [
+					...new Uint8Array(
+						await (await (await root.getFileHandle('existing.txt')).getFile()).arrayBuffer()
+					)
+				];
+			})
+		).toEqual([9]);
+	} finally {
+		await receiver
+			.evaluate(async () => {
+				window.dispatchEvent(new Event('release-destination-open'));
+				await (
+					await navigator.storage.getDirectory()
+				).removeEntry('fixture-device-folder', { recursive: true });
+			})
+			.catch(() => {});
+		await receiver.close();
+		await api.close();
+	}
+});
+
+for (const refusal of ['AbortError', 'NotAllowedError'] as const)
+	test(`picker ${refusal} stays in review until explicit browser fallback, then automatically requests a MIME-correct download`, async ({
+		context,
+		page
+	}) => {
+		const api = await fileTransferFixture(),
+			receiver = await context.newPage();
+		try {
+			await receiver.addInitScript((name) => {
+				window.showDirectoryPicker = async () => {
+					throw new DOMException('fixture refusal', name);
+				};
+				const send = RTCDataChannel.prototype.send;
+				Reflect.set(window, 'receiveReadyRequests', 0);
+				Object.defineProperty(RTCDataChannel.prototype, 'send', {
+					value(data: unknown) {
+						if (typeof data === 'string' && JSON.parse(data).type === 'receive_ready')
+							Reflect.set(
+								window,
+								'receiveReadyRequests',
+								Number(Reflect.get(window, 'receiveReadyRequests')) + 1
+							);
+						return Reflect.apply(send, this, [data]);
+					}
+				});
+				const create = URL.createObjectURL;
+				URL.createObjectURL = function (blob) {
+					Reflect.set(window, 'exportMime', blob instanceof Blob ? blob.type : '');
+					return create(blob);
+				};
+			}, refusal);
+			await api.setup(page);
+			await api.setup(receiver);
+			await open(page, 'ผู้ส่ง');
+			await open(receiver, 'ผู้รับ');
+			const photo = {
+				name: 'รูป.jpg',
+				mimeType: 'image/jpeg',
+				buffer: Buffer.from([255, 216, 1, 2, 255, 217])
+			};
+			await choose(page, [photo]);
+			await request(page, ['ผู้รับ']);
+			await viewManifest(receiver);
+			await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+			await expect(incoming(receiver).getByRole('alert')).toContainText(/ยังไม่ได้รับ/);
+			await expect(incoming(receiver)).toHaveAttribute('data-phase', 'review');
+			expect(await receiver.evaluate(() => Reflect.get(window, 'receiveReadyRequests'))).toBe(0);
+			await expect(receiver.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว' })).toHaveCount(0);
+			const automatic = receiver.waitForEvent('download');
+			await receiveFiles(receiver);
+			const file = await automatic;
+			expect(file.suggestedFilename()).toBe(photo.name);
+			const filename = await file.path();
+			if (!filename) throw new Error('auto download missing');
+			expect(await readFile(filename)).toEqual(photo.buffer);
+			expect(await receiver.evaluate(() => Reflect.get(window, 'exportMime'))).toBe('image/jpeg');
+			expect(await receiver.evaluate(() => Reflect.get(window, 'receiveReadyRequests'))).toBe(1);
+			await expect(receiver.getByTestId('save-status')).toContainText(
+				'ยังยืนยันการบันทึกของเบราว์เซอร์ไม่ได้'
+			);
+		} finally {
+			await receiver.close();
+			await api.close();
+		}
+	});
+
+test('a picker result after logout creates no destination child or binary consent', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await receiver.addInitScript(() => {
+			window.showDirectoryPicker = async () => {
+				const directory = await (
+					await navigator.storage.getDirectory()
+				).getDirectoryHandle('fixture-stale-picker', { create: true });
+				Reflect.set(window, 'pickerWaiting', true);
+				await new Promise<void>((resolve) =>
+					window.addEventListener('resolve-stale-picker', () => resolve(), { once: true })
+				);
+				return directory;
+			};
+		});
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('unconsented.txt', 'private')]);
+		await request(page, ['ผู้รับ']);
+		await viewManifest(receiver);
+		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'pickerWaiting')))
+			.toBe(true);
+		const device = api.devices.find((d) => d.label === 'ผู้รับ');
+		if (!device) throw new Error('missing device');
+		api.emit(device.id, { type: 'session_invalid', data: {} });
+		await expect(receiver.getByTestId('pairing-code')).toHaveCount(0);
+		await receiver.evaluate(() => window.dispatchEvent(new Event('resolve-stale-picker')));
+		await expect
+			.poll(() =>
+				receiver.evaluate(async () => {
+					const directory = await (
+						await navigator.storage.getDirectory()
+					).getDirectoryHandle('fixture-stale-picker');
+					let count = 0;
+					for await (const entry of directory.entries()) {
+						if (entry) count++;
+					}
+					return count;
+				})
+			)
+			.toBe(0);
+		await expect(receiver.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว' })).toHaveCount(0);
+	} finally {
+		await receiver
+			.evaluate(async () => {
+				window.dispatchEvent(new Event('resolve-stale-picker'));
+				await (
+					await navigator.storage.getDirectory()
+				).removeEntry('fixture-stale-picker', { recursive: true });
+			})
+			.catch(() => {});
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('blocked automatic browser downloads retain exact files for manual recovery', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	let events = 0;
+	receiver.on('download', () => events++);
+	try {
+		await receiver.addInitScript(() => {
+			Reflect.set(window, 'blockAutomaticDownloads', true);
+			const click = HTMLAnchorElement.prototype.click;
+			HTMLAnchorElement.prototype.click = function () {
+				if (!Reflect.get(window, 'blockAutomaticDownloads')) click.call(this);
+			};
+		});
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('blocked.txt', 'exact bytes retained')]);
+		await request(page, ['ผู้รับ']);
+		await accept(receiver);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		await expect(receiver.getByTestId('save-status')).toContainText('1/1');
+		expect(events).toBe(0);
+		await expect(receiver.getByTestId('save-status')).toContainText('ยังยืนยันการบันทึก');
+		await receiver.evaluate(() => Reflect.set(window, 'blockAutomaticDownloads', false));
+		expect(await download(receiver, 0, 'blocked.txt')).toEqual(Buffer.from('exact bytes retained'));
+	} finally {
 		await receiver.close();
 		await api.close();
 	}

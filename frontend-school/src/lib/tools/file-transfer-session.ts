@@ -1,3 +1,11 @@
+import {
+	directoryPickerSupported,
+	pickReceiveDirectory,
+	destinationSelectionMessage,
+	type ReceiveMode,
+	type ReceiveDestination
+} from './file-transfer-destination.js';
+import { AutomaticDownloadPump } from './file-transfer-download-pump.js';
 import { ApiClientError } from '#lib/api/client.js';
 import { get } from 'svelte/store';
 import { authStore } from '#lib/stores/auth.js';
@@ -60,6 +68,8 @@ export interface TransferJob {
 	manifestPage: number;
 	manifestPending: boolean;
 	storageWarning: string;
+	receiveMode: ReceiveMode;
+	destinationLabel: string;
 	megabytesPerSecond: number;
 	phase: TransferPhase;
 	bytes: number;
@@ -87,6 +97,10 @@ export interface FileTransferState {
 	downloadPage: number;
 	downloadPending: boolean;
 	downloadError: string;
+	directoryPickerSupported: boolean;
+	saveDestination: { mode: ReceiveMode; label: string } | null;
+	automaticDownloadRequests: number;
+	automaticDownloadPending: boolean;
 	receivingSupported: boolean;
 	archive: { pending: boolean; bytes: number; error: string };
 	sourceFiles: FileMetadata[];
@@ -121,6 +135,10 @@ export function initialTransferState(): FileTransferState {
 		downloadPage: 0,
 		downloadPending: false,
 		downloadError: '',
+		directoryPickerSupported: directoryPickerSupported(),
+		saveDestination: null,
+		automaticDownloadRequests: 0,
+		automaticDownloadPending: false,
 		receivingSupported: receivingSupported(),
 		archive: { pending: false, bytes: 0, error: '' },
 		sourceFiles: [],
@@ -134,6 +152,7 @@ export class FileTransferSession {
 	private downloadStore: ReceivedBatchStore | null = null;
 	private downloadOwner: string | null = null;
 	private downloadAttempt = 0;
+	private automaticPump: AutomaticDownloadPump | null = null;
 	private archiveController: AbortController | null = null;
 	private archiveTask: Promise<void> | null = null;
 	private archiveFile: { store: ReceivedBatchStore; count: number; file: File } | null = null;
@@ -212,7 +231,9 @@ export class FileTransferSession {
 		for (const url of this.urls.values()) URL.revokeObjectURL(url);
 		this.urls.clear();
 		const store = this.downloadStore,
-			archive = this.archiveTask;
+			archive = this.archiveTask,
+			automatic = this.automaticPump?.stop();
+		this.automaticPump = null;
 		this.downloadStore = null;
 		this.downloadOwner = null;
 		this.archiveFile = null;
@@ -224,11 +245,15 @@ export class FileTransferSession {
 			downloadPage: 0,
 			downloadPending: false,
 			downloadError: '',
+			saveDestination: null,
+			automaticDownloadRequests: 0,
+			automaticDownloadPending: false,
 			archive: { pending: false, bytes: 0, error: '' }
 		};
 		if (store)
 			void (async () => {
 				await archive;
+				await automatic;
 				await store.dispose();
 			})().catch(() => console.warn('File transfer received storage cleanup failed'));
 	}
@@ -636,6 +661,8 @@ export class FileTransferSession {
 				manifestPage: 0,
 				manifestPending: false,
 				storageWarning: '',
+				receiveMode: directoryPickerSupported() ? 'folder' : 'browser-download',
+				destinationLabel: '',
 				megabytesPerSecond: 0,
 				phase: direction === 'incoming' ? 'consent' : 'queued',
 				bytes: 0,
@@ -939,6 +966,18 @@ export class FileTransferSession {
 				this.set(entry, { manifestPending: false });
 		}
 	}
+	setReceiveMode(id: string, mode: ReceiveMode) {
+		const entry = this.entries.get(id);
+		if (
+			!entry ||
+			entry.view.direction !== 'incoming' ||
+			entry.view.phase !== 'review' ||
+			entry.view.pending ||
+			(mode === 'folder' && !directoryPickerSupported())
+		)
+			return;
+		this.set(entry, { receiveMode: mode, error: '', storageWarning: '' });
+	}
 	async acceptFiles(id: string) {
 		const entry = this.entries.get(id),
 			generation = this.generation;
@@ -952,29 +991,77 @@ export class FileTransferSession {
 			!entry.consented
 		)
 			return;
-		const operation = ++entry.consentOperation;
-		const store = entry.store,
-			requestId = entry.view.clientRequestId;
+		const operation = ++entry.consentOperation,
+			store = entry.store,
+			requestId = entry.view.clientRequestId,
+			deviceId = this.state.snapshot?.device.id,
+			mode = entry.view.receiveMode;
+		const valid = () =>
+			this.current(generation, entry, requestId) &&
+			entry.consentOperation === operation &&
+			entry.store === store &&
+			entry.consented &&
+			entry.view.phase === 'review' &&
+			this.state.snapshot?.device.id === deviceId;
 		this.set(entry, { pending: true, error: '' });
 		try {
-			const warning = await checkStorageSpace(entry.view.batch.totalBytes);
-			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
-				this.set(entry, { storageWarning: warning ?? '' });
-			if (
-				this.current(generation, entry, requestId) &&
-				entry.consentOperation === operation &&
-				entry.store === store &&
-				entry.consented &&
-				entry.view.phase === 'review'
-			)
-				entry.transport?.acceptFiles();
+			// Start the picker in this user click stack, before the first await.
+			const selected = mode === 'folder' ? pickReceiveDirectory() : null;
+			const directory = selected ? await selected : null;
+			if (!valid()) return;
+			const destination: ReceiveDestination = directory
+				? { mode: 'folder', directory }
+				: { mode: 'browser-download' };
+			await store.configureDestination(destination, entry.controller.signal);
+			if (!valid()) return;
+			const warning =
+				mode === 'browser-download' ? await checkStorageSpace(entry.view.batch.totalBytes) : null;
+			if (!valid()) return;
+			this.set(entry, { storageWarning: warning ?? '', destinationLabel: store.destinationLabel });
+			entry.transport?.acceptFiles();
 		} catch (error) {
-			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
-				this.set(entry, { error: storageMessage(error) });
+			if (valid())
+				this.set(entry, {
+					error: mode === 'folder' ? destinationSelectionMessage(error) : storageMessage(error)
+				});
 		} finally {
 			if (this.current(generation, entry, requestId) && entry.consentOperation === operation)
 				this.set(entry, { pending: false });
 		}
+	}
+	private requestAutomaticDownloads(store: ReceivedBatchStore, owner: string) {
+		if (store.destinationMode !== 'browser-download') return;
+		const valid = () =>
+			!this.disposed && this.downloadStore === store && this.downloadOwner === owner;
+		if (!this.automaticPump)
+			this.automaticPump = new AutomaticDownloadPump({
+				read: async (index) => {
+					const file = await store.getCompletedFile(index);
+					return { file, name: file.name };
+				},
+				request: (index, download) => {
+					if (valid()) this.saveDownload(String(index), download.file, download.name);
+				},
+				progress: (count) => {
+					if (valid())
+						this.publish({
+							automaticDownloadRequests: count,
+							automaticDownloadPending: count < store.completedCount
+						});
+				},
+				failure: () => {
+					if (valid())
+						this.publish({
+							automaticDownloadPending: false,
+							downloadError:
+								'เบราว์เซอร์ไม่ยอมเริ่มดาวน์โหลดอัตโนมัติ ไฟล์ที่รับครบยังอยู่ กดดาวน์โหลดรายไฟล์หรือ ZIP ได้'
+						});
+				}
+			});
+		this.publish({
+			automaticDownloadPending: this.state.automaticDownloadRequests < store.completedCount
+		});
+		this.automaticPump.advance(store.completedCount);
 	}
 	async showDownloadsPage(page: number) {
 		const store = this.downloadStore,
@@ -1235,8 +1322,13 @@ export class FileTransferSession {
 						this.downloadOwner = entry.view.id;
 						this.publish({
 							downloadCount: entry.store.completedCount,
-							downloadBytes: entry.store.completedBytes
+							downloadBytes: entry.store.completedBytes,
+							saveDestination: {
+								mode: entry.store.destinationMode,
+								label: entry.store.destinationLabel
+							}
 						});
+						this.requestAutomaticDownloads(entry.store, entry.view.id);
 						void this.showDownloadsPage(this.state.downloadPage);
 					},
 					complete: () => {

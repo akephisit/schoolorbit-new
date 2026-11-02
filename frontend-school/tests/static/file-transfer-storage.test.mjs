@@ -235,3 +235,84 @@ test('streaming ZIP cancellation removes only partial archive and preserves rece
 		h.restore();
 	}
 });
+
+test('external completed files survive disposal and failed writable creation removes only its new partial', async () => {
+	const h = storageHarness(),
+		destination = new MemoryDirectory();
+	let store;
+	try {
+		const sentinel = await destination.getFileHandle('existing.txt', { create: true });
+		sentinel.bytes = new Uint8Array([9]);
+		store = await ReceivedBatchStore.open({ fileCount: 2, totalBytes: 6 });
+		await manifest(store, [metadata, metadata]);
+		await store.configureDestination(
+			{ mode: 'folder', directory: destination },
+			new AbortController().signal
+		);
+		const folder = [...destination.entriesMap.values()].find(
+			(entry) => entry instanceof MemoryDirectory
+		);
+		assert.ok(folder);
+		await store.beginFile(0);
+		await store.writeFile(new Uint8Array([1, 2, 3]));
+		await store.completeFile(0, 3);
+		const saved = await store.getCompletedFile(0);
+		assert.equal(saved.name, metadata.name);
+		assert.equal(saved.type, metadata.mimeType);
+		const getFile = folder.getFileHandle.bind(folder);
+		folder.getFileHandle = async (name, options) => {
+			const file = await getFile(name, options);
+			if (options?.create && name.startsWith('2 - '))
+				file.createWritable = async () => {
+					throw new DOMException('denied', 'NotAllowedError');
+				};
+			return file;
+		};
+		await assert.rejects(store.beginFile(1));
+		await store.abortPartial();
+		assert.equal(folder.entriesMap.size, 1);
+		await store.dispose();
+		assert.equal(folder.entriesMap.size, 1);
+		assert.deepEqual(
+			new Uint8Array(
+				await (
+					await folder.getFileHandle('1 - ซ้ำ.txt')
+				)
+					.getFile()
+					.then((file) => file.arrayBuffer())
+			),
+			new Uint8Array([1, 2, 3])
+		);
+		assert.equal((await sentinel.getFile()).size, 1);
+	} finally {
+		await store?.dispose();
+		h.restore();
+	}
+});
+
+test('an existing destination filename is never overwritten or removed as a partial', async () => {
+	const h = storageHarness(),
+		destination = new MemoryDirectory();
+	let store;
+	try {
+		store = await ReceivedBatchStore.open({ fileCount: 1, totalBytes: 3 });
+		await manifest(store);
+		await store.configureDestination(
+			{ mode: 'folder', directory: destination },
+			new AbortController().signal
+		);
+		const folder = [...destination.entriesMap.values()][0],
+			sentinel = await folder.getFileHandle('1 - ซ้ำ.txt', { create: true });
+		sentinel.bytes = new Uint8Array([9]);
+		await assert.rejects(store.beginFile(0), /เขียนทับ/);
+		await store.abortPartial();
+		await store.dispose();
+		assert.deepEqual(
+			new Uint8Array(await (await sentinel.getFile()).arrayBuffer()),
+			new Uint8Array([9])
+		);
+	} finally {
+		await store?.dispose();
+		h.restore();
+	}
+});
