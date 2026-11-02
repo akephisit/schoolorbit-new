@@ -401,6 +401,50 @@ mod tests {
     async fn file_transfer_revocation_prioritizes_control_and_removes_binding_before_yield() {
         let (state, session, subscription) = fixture();
         let id = subscription.guard.device_id;
+        let mut peers = Vec::new();
+        for _ in 0..3 {
+            let peer = FileTransferIdentity {
+                tenant_id: session.tenant.tenant_id,
+                user_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+            };
+            let device = state
+                .runtime
+                .register(
+                    peer,
+                    "Peer".into(),
+                    RegisterFileTransferDevice {
+                        label: "Peer".into(),
+                        protocol_version: Some(super::super::runtime::PROTOCOL_VERSION),
+                    },
+                    Utc::now(),
+                )
+                .unwrap();
+            let stream = state
+                .runtime
+                .subscribe(peer, device.device.id, Utc::now())
+                .unwrap();
+            state
+                .runtime
+                .create_pair(
+                    identity(&session),
+                    CreateFileTransferPair {
+                        device_id: id,
+                        target: FileTransferTarget::Device {
+                            device_id: device.device.id,
+                        },
+                        files: vec![FileTransferFile {
+                            name: "empty.txt".into(),
+                            size: 0,
+                            mime_type: "".into(),
+                        }],
+                        client_request_id: Uuid::new_v4(),
+                    },
+                    Utc::now(),
+                )
+                .unwrap();
+            peers.push((peer, device.device.id, stream));
+        }
         let revoked = state.auth_runtime.session_events.subscribe();
         let permissions = state.auth_runtime.permission_events.subscribe();
         state
@@ -429,6 +473,14 @@ mod tests {
             .runtime
             .snapshot(identity(&session), id, Utc::now())
             .is_err());
+        for (peer, device, _) in &peers {
+            assert!(state
+                .runtime
+                .snapshot(*peer, *device, Utc::now())
+                .unwrap()
+                .pairs
+                .is_empty());
+        }
         assert!(stream.next().await.is_none());
     }
     #[tokio::test]

@@ -108,7 +108,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
                 path,
                 token,
                 csrf.as_deref(),
-                json!({"label":"Laptop"}),
+                json!({"label":"Laptop","protocolVersion":2}),
             ))
             .await
             .unwrap();
@@ -130,6 +130,27 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
         assert_eq!(error["success"], false);
         assert_eq!(error["error"], "invalid_request_body");
         assert!(!error.to_string().contains("secret-sentinel"));
+    }
+    for protocol in [None, Some(1), Some(3)] {
+        let payload = match protocol {
+            Some(version) => json!({"label":"Laptop","protocolVersion":version}),
+            None => json!({"label":"Laptop"}),
+        };
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                path,
+                Some(&staff_token),
+                Some(&fixture.csrf(staff_session)),
+                payload,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let error = json_response(response).await;
+        assert_eq!(error["success"], false);
+        assert!(error["error"].as_str().unwrap().contains("รีเฟรช"));
     }
     let malformed_path = app
         .clone()
@@ -153,13 +174,32 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
             path,
             Some(&staff_token),
             Some(&fixture.csrf(staff_session)),
-            json!({"label":"Laptop"}),
+            json!({"label":"Laptop","protocolVersion":2}),
         ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let snapshot = json_response(response).await;
     let device = snapshot["data"]["device"]["id"].as_str().unwrap();
+    assert_eq!(snapshot["data"]["protocolVersion"], 2);
+    assert_eq!(
+        snapshot["data"]["limits"],
+        json!({"maxOutgoingTransfers":3,"maxFilesPerBatch":20,"maxFileBytes":67108864,"maxBatchBytes":134217728})
+    );
+    let metadata = json!({"name":"empty.txt","size":0,"mimeType":"text/plain"});
+    let large = json!({"name":"large.bin","size":67108864,"mimeType":""});
+    for files in [
+        json!([]),
+        json!(vec![metadata.clone(); 21]),
+        json!([large.clone(), large.clone(), large]),
+        json!([{"name":"too-large.bin","size":67108865,"mimeType":""}]),
+    ] {
+        let response=app.clone().oneshot(request(Method::POST,"/api/staff/file-transfer/pairs",Some(&staff_token),Some(&fixture.csrf(staff_session)),json!({"deviceId":device,"target":{"type":"device","deviceId":device},"files":files,"clientRequestId":uuid::Uuid::new_v4()}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let error = json_response(response).await;
+        assert_eq!(error["success"], false);
+    }
+
     let own_path = format!("{path}/{device}");
     let response = app
         .clone()
@@ -236,7 +276,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
             path,
             Some(&other_token),
             Some(&fixture.csrf(other_session)),
-            json!({"label":"x".repeat(70000)}),
+            json!({"label":"x".repeat(70000),"protocolVersion":2}),
         ))
         .await
         .unwrap();

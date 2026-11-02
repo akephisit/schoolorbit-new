@@ -91,7 +91,7 @@ fn conflict() -> AppError {
     AppError::Conflict("File transfer state changed; reconnect and try again".into())
 }
 fn invalid(message: &str) -> AppError {
-    AppError::ValidationError(message.into())
+    AppError::BadRequest(message.into())
 }
 
 impl Registry {

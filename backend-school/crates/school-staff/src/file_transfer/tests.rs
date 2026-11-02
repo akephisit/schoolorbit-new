@@ -466,3 +466,331 @@ fn file_transfer_registration_is_globally_and_tenant_bounded() {
         )
         .is_ok());
 }
+
+#[test]
+fn file_transfer_protocol_and_batch_limits_are_authoritative() {
+    let runtime = FileTransferRuntime::default();
+    let now = Utc::now();
+    let actor = owner(Uuid::new_v4());
+    for version in [None, Some(0), Some(1), Some(3), Some(255)] {
+        assert!(runtime
+            .register(
+                actor,
+                "Staff".into(),
+                RegisterFileTransferDevice {
+                    label: "Laptop".into(),
+                    protocol_version: version
+                },
+                now
+            )
+            .is_err());
+    }
+    let snapshot = runtime
+        .register(actor, "Staff".into(), registration("Laptop"), now)
+        .unwrap();
+    let wire = serde_json::to_value(snapshot).unwrap();
+    assert_eq!(wire["protocolVersion"], 2);
+    assert_eq!(
+        wire["limits"],
+        serde_json::json!({"maxOutgoingTransfers":3,"maxFilesPerBatch":20,"maxFileBytes":67108864,"maxBatchBytes":134217728})
+    );
+    assert!(validate_batch(&[]).is_err());
+    assert!(validate_batch(&vec![file(); 20]).is_ok());
+    assert!(validate_batch(&vec![file(); 21]).is_err());
+    let mut maximum = file();
+    maximum.size = MAX_FILE_SIZE;
+    assert!(validate_batch(&[maximum.clone(), maximum.clone()]).is_ok());
+    assert!(validate_batch(&[maximum.clone(), maximum.clone(), maximum]).is_err());
+    let mut overflow = file();
+    overflow.size = u64::MAX;
+    assert!(validate_batch(&[overflow]).is_err());
+    let mut unsafe_name = file();
+    unsafe_name.name = "../private".into();
+    assert!(validate_batch(&[file(), unsafe_name]).is_err());
+}
+
+#[tokio::test]
+async fn file_transfer_three_recipient_burst_preserves_ordered_batch_consent_and_correlation() {
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let now = Utc::now();
+    let sender = owner(Uuid::new_v4());
+    let (source, mut source_stream) = online(&runtime, sender, now);
+    let mut receivers = Vec::new();
+    let mut pairs = Vec::new();
+    for index in 0..3 {
+        let actor = owner(sender.tenant_id);
+        let (device, stream) = online(&runtime, actor, now);
+        let mut intent = request(source.device.id, device.device.id);
+        let mut second = file();
+        second.name = format!("second-{index}.txt");
+        intent.files.push(second);
+        let correlation = intent.client_request_id;
+        let pair = runtime.create_pair(sender, intent, now).unwrap();
+        assert_eq!(pair.client_request_id, correlation);
+        assert_eq!(pair.files.len(), 2);
+        assert_eq!(pair.files[1].name, format!("second-{index}.txt"));
+        receivers.push((actor, device, stream));
+        pairs.push(pair);
+    }
+    let extra = owner(sender.tenant_id);
+    let (extra_device, _extra_stream) = online(&runtime, extra, now);
+    assert!(runtime
+        .create_pair(
+            sender,
+            request(source.device.id, extra_device.device.id),
+            now
+        )
+        .is_err());
+    let accepted = runtime
+        .accept(receivers[0].0, receivers[0].1.device.id, pairs[0].id, now)
+        .unwrap();
+    assert!(accepted.files == pairs[0].files);
+    assert!(runtime
+        .signal(
+            sender,
+            pairs[1].id,
+            signal(source.device.id, FileTransferSignalType::Offer),
+            now
+        )
+        .is_err());
+    for index in 1..3 {
+        runtime
+            .accept(
+                receivers[index].0,
+                receivers[index].1.device.id,
+                pairs[index].id,
+                now,
+            )
+            .unwrap();
+    }
+    for index in 0..3 {
+        runtime
+            .signal(
+                sender,
+                pairs[index].id,
+                signal(source.device.id, FileTransferSignalType::Offer),
+                now,
+            )
+            .unwrap();
+        runtime
+            .signal(
+                receivers[index].0,
+                pairs[index].id,
+                signal(receivers[index].1.device.id, FileTransferSignalType::Answer),
+                now,
+            )
+            .unwrap();
+    }
+    // Ready + 3 pending + 3 accepted + 3 answers must survive one undrained burst.
+    let mut answers = Vec::new();
+    let mut events = 0;
+    while let Ok(event) = source_stream.receiver.try_recv() {
+        events += 1;
+        if let FileTransferEvent::Signal(value) = event {
+            answers.push(value.pair_id);
+        }
+    }
+    assert_eq!(events, 10);
+    assert_eq!(answers.len(), 3);
+    assert_eq!(
+        runtime
+            .snapshot(sender, source.device.id, now)
+            .unwrap()
+            .pairs
+            .len(),
+        3
+    );
+    for (index, (_, _, stream)) in receivers.iter_mut().enumerate() {
+        let mut offers = Vec::new();
+        while let Ok(event) = stream.receiver.try_recv() {
+            if let FileTransferEvent::Signal(value) = event {
+                offers.push(value.pair_id);
+            }
+        }
+        assert_eq!(offers, vec![pairs[index].id]);
+    }
+    runtime
+        .close(receivers[1].0, receivers[1].1.device.id, pairs[1].id, now)
+        .unwrap();
+    assert_eq!(
+        runtime
+            .snapshot(sender, source.device.id, now)
+            .unwrap()
+            .pairs
+            .len(),
+        2
+    );
+    let replacement = runtime
+        .create_pair(
+            sender,
+            request(source.device.id, extra_device.device.id),
+            now + Duration::seconds(30),
+        )
+        .unwrap();
+    assert_eq!(replacement.expires_at, now + Duration::seconds(150));
+    assert!(runtime
+        .snapshot(sender, source.device.id, now)
+        .unwrap()
+        .pairs
+        .iter()
+        .any(|pair| pair.id == pairs[0].id && pair.status == FileTransferPairStatus::Accepted));
+}
+
+#[tokio::test]
+async fn file_transfer_incoming_role_is_exclusive_and_request_ids_never_authorize() {
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let now = Utc::now();
+    let a = owner(Uuid::new_v4());
+    let b = owner(a.tenant_id);
+    let c = owner(a.tenant_id);
+    let d = owner(a.tenant_id);
+    let (ad, _as) = online(&runtime, a, now);
+    let (bd, _bs) = online(&runtime, b, now);
+    let (cd, _cs) = online(&runtime, c, now);
+    let (dd, _ds) = online(&runtime, d, now);
+    let initial = request(ad.device.id, bd.device.id);
+    let correlation = initial.client_request_id;
+    let pair = runtime.create_pair(a, initial, now).unwrap();
+    assert!(runtime
+        .create_pair(b, request(bd.device.id, cd.device.id), now)
+        .is_err());
+    assert!(runtime
+        .create_pair(c, request(cd.device.id, ad.device.id), now)
+        .is_err());
+    let mut duplicate = request(ad.device.id, cd.device.id);
+    duplicate.client_request_id = correlation;
+    assert!(runtime.create_pair(a, duplicate, now).is_err());
+    let mut independent = request(dd.device.id, cd.device.id);
+    independent.client_request_id = correlation;
+    assert!(runtime.create_pair(d, independent, now).is_ok());
+    assert!(runtime.accept(c, cd.device.id, pair.id, now).is_err());
+    assert!(runtime
+        .signal(
+            c,
+            pair.id,
+            signal(cd.device.id, FileTransferSignalType::Answer),
+            now
+        )
+        .is_err());
+    let foreign = FileTransferIdentity {
+        tenant_id: Uuid::new_v4(),
+        ..a
+    };
+    assert!(runtime.close(foreign, ad.device.id, pair.id, now).is_err());
+    runtime.close(b, bd.device.id, pair.id, now).unwrap();
+    assert!(runtime.accept(b, bd.device.id, pair.id, now).is_err());
+    assert!(runtime
+        .signal(
+            a,
+            pair.id,
+            signal(ad.device.id, FileTransferSignalType::Offer),
+            now
+        )
+        .is_err());
+}
+
+#[tokio::test]
+async fn file_transfer_sender_drop_or_overflow_closes_every_pair_and_receiver_failure_is_isolated()
+{
+    for failure in ["drop", "overflow", "receiver-overflow"] {
+        let runtime = Arc::new(FileTransferRuntime::default());
+        let now = Utc::now();
+        let sender = owner(Uuid::new_v4());
+        let (source, source_stream) = online(&runtime, sender, now);
+        let mut source_stream = Some(source_stream);
+        let mut receivers = Vec::new();
+        for _ in 0..3 {
+            let actor = owner(sender.tenant_id);
+            let (device, stream) = online(&runtime, actor, now);
+            runtime
+                .create_pair(sender, request(source.device.id, device.device.id), now)
+                .unwrap();
+            receivers.push((actor, device, stream));
+        }
+        match failure {
+            "drop" => drop(source_stream.take()),
+            _ => {
+                let target = if failure == "overflow" {
+                    source.device.id
+                } else {
+                    receivers[0].1.device.id
+                };
+                let mut registry = runtime.lock(now).unwrap();
+                for _ in 0..=QUEUE_CAPACITY {
+                    registry.dispatch(vec![(
+                        target,
+                        FileTransferEvent::PairClosed(FileTransferPairClosed {
+                            pair_id: Uuid::new_v4(),
+                            reason: FileTransferCloseReason::Cancelled,
+                        }),
+                    )]);
+                }
+            }
+        }
+        if failure == "receiver-overflow" {
+            assert_eq!(
+                runtime
+                    .snapshot(sender, source.device.id, now)
+                    .unwrap()
+                    .pairs
+                    .len(),
+                2
+            );
+            assert!(runtime
+                .snapshot(receivers[0].0, receivers[0].1.device.id, now)
+                .is_err());
+        } else {
+            assert!(runtime.snapshot(sender, source.device.id, now).is_err());
+        }
+        for (index, (actor, device, _)) in receivers.iter().enumerate() {
+            if failure == "receiver-overflow" && index == 0 {
+                continue;
+            }
+            let state = runtime.snapshot(*actor, device.device.id, now).unwrap();
+            assert_eq!(
+                state.pairs.len(),
+                usize::from(failure == "receiver-overflow")
+            );
+        }
+    }
+}
+
+#[test]
+fn file_transfer_concurrent_recipient_admission_never_exceeds_three() {
+    let runtime = Arc::new(FileTransferRuntime::default());
+    let now = Utc::now();
+    let sender = owner(Uuid::new_v4());
+    let (source, _source_stream) = online(&runtime, sender, now);
+    let mut receivers = Vec::new();
+    for _ in 0..4 {
+        receivers.push(online(&runtime, owner(sender.tenant_id), now));
+    }
+    let barrier = Arc::new(std::sync::Barrier::new(4));
+    let handles: Vec<_> = receivers
+        .iter()
+        .map(|(device, _)| {
+            let runtime = runtime.clone();
+            let barrier = barrier.clone();
+            let intent = request(source.device.id, device.device.id);
+            std::thread::spawn(move || {
+                barrier.wait();
+                runtime.create_pair(sender, intent, now).is_ok()
+            })
+        })
+        .collect();
+    assert_eq!(
+        handles
+            .into_iter()
+            .map(|handle| usize::from(handle.join().unwrap()))
+            .sum::<usize>(),
+        3
+    );
+    assert_eq!(
+        runtime
+            .snapshot(sender, source.device.id, now)
+            .unwrap()
+            .pairs
+            .len(),
+        3
+    );
+}

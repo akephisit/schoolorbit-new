@@ -6,24 +6,33 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { createQrPng } from '#lib/tools/qr-code.js';
-	import { FileTransferSession, initialTransferState } from '#lib/tools/file-transfer-session.js';
 	import {
+		FileTransferSession,
+		initialTransferState,
+		isTransferTerminal,
+		type ReceivedFile,
+		type TransferPhase,
+		type TransferJob
+	} from '#lib/tools/file-transfer-session.js';
+	import {
+		batchBytes,
+		fileMetadata,
 		formatFileSize,
 		pairingCodeFromHash,
 		pairingUrl,
-		validateTransferFile
+		validateTransferBatch
 	} from '#lib/tools/file-transfer.js';
 
 	let view = $state.raw(initialTransferState());
 	let session: FileTransferSession | null = null;
 	let label = $state('อุปกรณ์ของฉัน');
-	let selectedDevice = $state('');
+	let selectedDevices = $state<string[]>([]);
 	let code = $state('');
-	let file = $state.raw<File | null>(null);
+	let files = $state.raw<File[]>([]);
 	let fileInput = $state.raw<HTMLInputElement | null>(null);
 	let fileError = $state('');
 	let codeError = $state('');
@@ -36,35 +45,32 @@
 	let qrAttempt = 0;
 	let disposed = false;
 	const online = $derived(view.status === 'online');
-	const busy = $derived(Boolean(view.pair) || view.pending);
-	const incoming = $derived(view.pair?.recipient.id === view.snapshot?.device.id);
-	const active = $derived(
-		['connecting', 'sending', 'receiving', 'acknowledging'].includes(view.phase)
+	const metadata = $derived(files.map(fileMetadata));
+	const sourceBusy = $derived(
+		view.jobs.some(
+			(job) => job.direction === 'outgoing' && (!isTransferTerminal(job.phase) || job.slotReserved)
+		)
 	);
-	const percent = $derived(
-		view.pair?.file.size
-			? Math.floor((view.bytes / view.pair.file.size) * 100)
-			: view.phase === 'complete'
-				? 100
-				: 0
+	const receiving = $derived(
+		view.jobs.some((job) => job.direction === 'incoming' && job.slotReserved)
 	);
 	const link = $derived(
 		view.snapshot ? pairingUrl(origin, pathname, view.snapshot.pairingCode) : ''
 	);
-	const phaseLabels = {
-		idle: 'พร้อมรับส่งไฟล์',
+	const phaseLabels: Record<TransferPhase, string> = {
+		queued: 'รอคิวส่งคำขอ',
 		requesting: 'กำลังส่งคำขอ',
 		waiting: 'รอผู้รับตอบรับ',
-		consent: 'มีคำขอรับไฟล์',
+		consent: 'มีคำขอรับชุดไฟล์',
 		connecting: 'กำลังเชื่อมต่อโดยตรง',
 		sending: 'กำลังส่งไฟล์',
 		receiving: 'กำลังรับไฟล์',
 		acknowledging: 'รอผู้รับยืนยันว่าได้รับครบ',
-		complete: 'รับส่งไฟล์สำเร็จ',
+		complete: 'รับส่งชุดไฟล์สำเร็จ',
+		declined: 'ผู้รับปฏิเสธคำขอ',
 		cancelled: 'สิ้นสุดคำขอ',
-		failed: 'รับส่งไฟล์ไม่สำเร็จ'
+		failed: 'รับส่งชุดไฟล์ไม่สำเร็จ'
 	};
-
 	onMount(() => {
 		origin = window.location.origin;
 		pathname = window.location.pathname;
@@ -76,20 +82,20 @@
 			if (next.snapshot?.device.id !== view.snapshot?.device.id) {
 				clearQr();
 				if (view.snapshot) {
-					file = null;
+					files = [];
 					fileError = '';
-					selectedDevice = '';
+					selectedDevices = [];
 					if (fileInput) fileInput.value = '';
 				}
 			}
 			view = next;
 		});
-		const pagehide = () => session?.stop();
+		const pagehide = () => session?.dispose();
 		window.addEventListener('pagehide', pagehide);
 		return () => {
 			disposed = true;
 			qrAttempt++;
-			session?.stop();
+			session?.dispose();
 			clearQr();
 			window.removeEventListener('pagehide', pagehide);
 		};
@@ -129,26 +135,22 @@
 			qrError = 'คัดลอกลิงก์ไม่สำเร็จ ใช้รหัสจับคู่หรือ QR แทนได้';
 		}
 	}
-	function download() {
-		if (!view.download) return;
-		const anchor = document.createElement('a');
-		anchor.href = view.download.url;
-		anchor.download = view.download.name;
-		anchor.click();
-	}
-	function selectFile(value: File | undefined) {
-		file = value ?? null;
-		fileError = file
-			? (validateTransferFile({ name: file.name, size: file.size, mimeType: file.type }) ?? '')
+	function selectFiles(list: FileList | null) {
+		files = list ? Array.from(list) : [];
+		fileError = view.snapshot
+			? (validateTransferBatch(files.map(fileMetadata), view.snapshot.limits) ?? '')
 			: '';
 	}
+	function clearFiles() {
+		if (sourceBusy) return;
+		session?.clearSource();
+		files = [];
+		fileError = '';
+		if (fileInput) fileInput.value = '';
+	}
 	function send(byCode = false) {
-		if (!file) {
-			fileError = 'กรุณาเลือกไฟล์';
-			return;
-		}
-		fileError =
-			validateTransferFile({ name: file.name, size: file.size, mimeType: file.type }) ?? '';
+		if (!view.snapshot) return;
+		fileError = validateTransferBatch(metadata, view.snapshot.limits) ?? '';
 		codeError = '';
 		if (fileError) return;
 		if (byCode) {
@@ -157,15 +159,32 @@
 				codeError = 'กรุณาใส่รหัสจับคู่ที่แสดงบนอุปกรณ์ผู้รับ';
 				return;
 			}
-			void session?.send(file, { type: 'code', code: normalized });
-		} else if (selectedDevice)
-			void session?.send(file, { type: 'device', deviceId: selectedDevice });
+			session?.send(files, [{ type: 'code', code: normalized }]);
+		} else
+			session?.send(
+				files,
+				selectedDevices
+					.filter((id) => view.snapshot?.peers.some((peer) => peer.id === id))
+					.map((deviceId) => ({ type: 'device', deviceId }))
+			);
+	}
+	function download(file: ReceivedFile) {
+		const anchor = document.createElement('a');
+		anchor.href = file.url;
+		anchor.download = file.name;
+		anchor.click();
+	}
+	function percent(job: TransferJob) {
+		const total = batchBytes(job.files);
+		return total
+			? Math.min(100, Math.floor((job.bytes / total) * 100))
+			: Math.floor((job.completedFiles / job.files.length) * 100);
 	}
 </script>
 
 <PageShell
 	title="ส่งไฟล์ในเครือข่ายเดียวกัน"
-	description="จับคู่อุปกรณ์ของบุคลากรในโรงเรียน แล้วส่งไฟล์โดยตรงระหว่างเบราว์เซอร์"
+	description="เลือกหลายไฟล์และหลายผู้รับ แต่ละอุปกรณ์ตอบรับไฟล์ทั้งชุดครั้งเดียว แล้วรับไฟล์โดยตรง"
 	backHref="/staff/tools"
 	backLabel="เครื่องมือทั้งหมด"
 	icon={Send}
@@ -173,13 +192,12 @@
 	<div class="space-y-5">
 		<p class="rounded-xl border bg-muted/40 p-4 text-sm text-muted-foreground">
 			ใช้ Wi-Fi หรือ LAN เดียวกันที่อนุญาตให้อุปกรณ์ติดต่อกัน
-			ไฟล์จะส่งโดยตรงและไม่ถูกเก็บบนเซิร์ฟเวอร์
-			ระบบใช้เซิร์ฟเวอร์สำหรับค้นหาอุปกรณ์และจับคู่เท่านั้น เปิดหน้านี้ไว้ทั้งสองเครื่อง
-			ผู้รับต้องตอบรับก่อนเริ่มส่ง
+			ไฟล์ส่งโดยตรงและไม่ถูกเก็บบนเซิร์ฟเวอร์ เปิดหน้านี้ไว้ทั้งสองเครื่อง
+			แต่ละผู้รับรับไฟล์ตามลำดับของชุด การรอหรือยกเลิกผู้รับหนึ่งไม่หยุดผู้รับอื่น
 		</p>
 		{#if view.error}<PageState
 				variant="error"
-				title={view.phase === 'failed' ? 'รับส่งไฟล์ไม่สำเร็จ' : 'สถานะการเชื่อมต่อ'}
+				title="สถานะการเชื่อมต่อ"
 				description={view.error}
 			/>{/if}
 		<div class="grid items-start gap-5 lg:grid-cols-2">
@@ -204,7 +222,7 @@
 									placeholder="เช่น โน้ตบุ๊กห้องพักครู"
 								/>
 								<p class="text-sm text-muted-foreground">
-									ชื่อจะแสดงให้บุคลากรที่เปิดเครื่องมือนี้ในโรงเรียนเห็น ไม่เกิน 60 ตัวอักษร
+									ชื่อแสดงให้บุคลากรที่เปิดเครื่องมือนี้ในโรงเรียนเห็น ไม่เกิน 60 ตัวอักษร
 								</p>
 							</div>
 							<LoadingButton
@@ -221,7 +239,7 @@
 							>
 						</p>
 						<p class="text-sm text-muted-foreground">
-							ออนไลน์ในโรงเรียน · บุคลากรคนอื่นเลือกอุปกรณ์นี้ หรือใช้รหัสด้านล่าง
+							ออนไลน์ในโรงเรียน · ให้อุปกรณ์ส่งเลือกชื่อเครื่องนี้ หรือใช้รหัสด้านล่าง
 						</p>
 						<div class="space-y-2">
 							<p class="text-sm font-medium">รหัสจับคู่อุปกรณ์นี้</p>
@@ -253,55 +271,59 @@
 								และรหัสช่วยจับคู่เท่านั้น ไม่สามารถแก้การปิดกั้นเครือข่ายได้
 							</p>{/if}
 						{#if qrError}<p role="alert" class="text-sm text-destructive">{qrError}</p>{/if}
-						<Button variant="outline" onclick={() => session?.stop()}>ปิดรับส่งไฟล์</Button>
+						<Button variant="outline" onclick={() => session?.stop()}>ปิดรับส่งไฟล์ทั้งหมด</Button>
 					{/if}
 				</Card.Content></Card.Root
 			>
-			<Card.Root
-				role="region"
-				aria-labelledby="send-heading"
-				aria-busy={view.pending}
-				class="min-w-0 gap-0 py-0"
+			<Card.Root role="region" aria-labelledby="send-heading" class="min-w-0 gap-0 py-0"
 				><Card.Content class="space-y-4 p-4 sm:p-6">
-					<h2 id="send-heading" class="text-lg font-semibold">ส่งไฟล์</h2>
+					<h2 id="send-heading" class="text-lg font-semibold">ส่งชุดไฟล์</h2>
 					<div class="space-y-2">
-						<Label for="transfer-file">เลือกไฟล์</Label><Input
-							id="transfer-file"
+						<Label for="transfer-files">เลือกไฟล์หลายไฟล์</Label><Input
+							id="transfer-files"
 							bind:ref={fileInput}
 							type="file"
-							disabled={!online || busy}
+							multiple
+							disabled={!online || sourceBusy || receiving}
 							aria-invalid={Boolean(fileError)}
 							aria-describedby="file-help file-error"
-							onchange={(event) => selectFile(event.currentTarget.files?.[0])}
+							onchange={(event) => selectFiles(event.currentTarget.files)}
 						/>
 						<p id="file-help" class="text-sm text-muted-foreground">
-							ครั้งละ 1 ไฟล์ ไม่เกิน 64 MiB ผู้รับต้องกดดาวน์โหลดเพื่อบันทึกไฟล์
+							{#if view.snapshot}ไม่เกิน {view.snapshot.limits.maxFilesPerBatch} ไฟล์ · ไฟล์ละ {formatFileSize(
+									view.snapshot.limits.maxFileBytes
+								)} · รวม {formatFileSize(view.snapshot.limits.maxBatchBytes)} ส่งพร้อมกันได้ {view
+									.snapshot.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เปิดรับส่งไฟล์เพื่อดูขีดจำกัดและค้นหาอุปกรณ์{/if}
 						</p>
-						<p
-							id="file-error"
-							role={fileError ? 'alert' : undefined}
-							class="text-sm text-destructive"
-						>
-							{fileError}
-						</p>
-						{#if file && !fileError}<p class="break-words text-sm">
-								{file.name} · {formatFileSize(file.size)}
+						{#if fileError}<p id="file-error" role="alert" class="text-sm text-destructive">
+								{fileError}
 							</p>{/if}
+						{#if files.length}<p class="text-sm font-medium" data-testid="source-summary">
+								เลือก {files.length} ไฟล์ · {formatFileSize(batchBytes(metadata))}
+							</p>
+							<ol class="space-y-1 text-sm">
+								{#each metadata as file, index (index)}<li class="break-words">
+										{index + 1}. {file.name} · {formatFileSize(file.size)}
+									</li>{/each}
+							</ol>
+							<Button variant="outline" disabled={sourceBusy} onclick={clearFiles}
+								>ล้างชุดไฟล์ที่เลือก</Button
+							>{/if}
 					</div>
-					<fieldset class="space-y-3" disabled={!online || busy}>
+					<fieldset class="space-y-3" disabled={!online || receiving}>
 						<legend class="mb-2 text-sm font-medium">อุปกรณ์ออนไลน์ในโรงเรียน</legend>
-						{#if view.snapshot?.peers.length}
-							<RadioGroup.Root
-								bind:value={selectedDevice}
-								disabled={!online || busy}
-								aria-label="อุปกรณ์ผู้รับ"
-								class="space-y-2"
-								>{#each view.snapshot.peers as device (device.id)}<Label
+						{#if view.snapshot?.peers.length}<div class="space-y-2">
+								{#each view.snapshot.peers as device (device.id)}<Label
 										for={`recipient-${device.id}`}
 										class="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
-										><RadioGroup.Item
+										><Checkbox
 											id={`recipient-${device.id}`}
-											value={device.id}
+											checked={selectedDevices.includes(device.id)}
+											onCheckedChange={(checked) => {
+												selectedDevices = checked
+													? [...new Set([...selectedDevices, device.id])]
+													: selectedDevices.filter((id) => id !== device.id);
+											}}
 											class="mt-1"
 										/><span class="min-w-0"
 											><span class="block break-words font-medium">{device.displayName}</span><span
@@ -309,20 +331,17 @@
 												>{device.label} · {device.id.slice(-8)}</span
 											></span
 										></Label
-									>{/each}</RadioGroup.Root
-							>
-						{:else}<p class="text-sm text-muted-foreground">
+									>{/each}
+							</div>{:else}<p class="text-sm text-muted-foreground">
 								{online
 									? 'ยังไม่มีอุปกรณ์อื่น เปิดเครื่องมือนี้บนอุปกรณ์ผู้รับ'
 									: 'เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์'}
 							</p>{/if}
-						<LoadingButton
-							loading={view.phase === 'requesting'}
-							loadingLabel="กำลังส่งคำขอ"
-							disabled={!file ||
+						<Button
+							disabled={!files.length ||
 								Boolean(fileError) ||
-								!view.snapshot?.peers.some((device) => device.id === selectedDevice)}
-							onclick={() => send()}>ส่งคำขอไปยังอุปกรณ์ที่เลือก</LoadingButton
+								!selectedDevices.some((id) => view.snapshot?.peers.some((peer) => peer.id === id))}
+							onclick={() => send()}>ส่งชุดไฟล์ให้ผู้รับที่เลือก</Button
 						>
 					</fieldset>
 					<form
@@ -336,78 +355,141 @@
 							<Label for="recipient-code">หรือใช้รหัสอุปกรณ์ผู้รับ</Label><Input
 								id="recipient-code"
 								bind:value={code}
-								disabled={!online || busy}
+								disabled={!online || receiving}
 								autocomplete="off"
 								autocapitalize="characters"
 								placeholder="รหัสที่แสดงบนเครื่องผู้รับ"
 								aria-invalid={Boolean(codeError)}
 								aria-describedby="code-error"
-							/>
-							<p
-								id="code-error"
-								role={codeError ? 'alert' : undefined}
-								class="text-sm text-destructive"
-							>
-								{codeError}
-							</p>
+							/>{#if codeError}<p id="code-error" role="alert" class="text-sm text-destructive">
+									{codeError}
+								</p>{/if}
 						</div>
 						<Button
 							type="submit"
 							variant="outline"
-							disabled={!online || busy || !file || Boolean(fileError)}>ส่งคำขอด้วยรหัส</Button
+							disabled={!online || receiving || !files.length || Boolean(fileError)}
+							>เพิ่มผู้รับด้วยรหัส</Button
 						>
+						<p class="text-sm text-muted-foreground">
+							เพิ่มผู้รับของไฟล์ชุดเดียวกันได้ระหว่างรอคิวหรือกำลังส่ง
+						</p>
 					</form>
 				</Card.Content></Card.Root
 			>
 		</div>
-		<Card.Root role="region" aria-labelledby="transfer-heading" class="gap-0 py-0"
-			><Card.Content class="space-y-4 p-4 sm:p-6">
-				<h2 id="transfer-heading" class="text-lg font-semibold">การรับส่งไฟล์</h2>
-				<p role="status" aria-live="polite" class="font-medium">{phaseLabels[view.phase]}</p>
-				{#if view.pair}
-					<p class="break-words text-sm">
-						{incoming ? 'จาก' : 'ถึง'}
-						{incoming ? view.pair.initiator.displayName : view.pair.recipient.displayName} · {incoming
-							? view.pair.initiator.label
-							: view.pair.recipient.label}
-					</p>
-					<p class="break-words">{view.pair.file.name} · {formatFileSize(view.pair.file.size)}</p>
-					{#if view.phase === 'consent'}<p class="text-sm text-muted-foreground">
-							ตรวจสอบชื่อผู้ส่งและไฟล์ก่อนตอบรับ รับไฟล์จากผู้ที่คุณรู้จักเท่านั้น
-						</p>
-						<div class="flex flex-wrap gap-2">
-							<Button variant="outline" disabled={view.pending} onclick={() => session?.cancel()}
-								>ปฏิเสธ</Button
-							><LoadingButton
-								loading={view.pending}
-								loadingLabel="กำลังตอบรับ"
-								onclick={() => session?.accept()}>รับไฟล์</LoadingButton
-							>
-						</div>
-					{:else if view.phase === 'complete'}
-						<Button variant="outline" onclick={() => session?.finish()}>สิ้นสุดการเชื่อมต่อ</Button>
-					{:else}<Button variant="outline" onclick={() => session?.cancel()}>ยกเลิกการรับส่ง</Button
-						>{/if}
-				{/if}
-				{#if active}<Progress value={percent} aria-label="ความคืบหน้าการรับส่งไฟล์" />
+		<section aria-labelledby="transfers-heading" class="space-y-4">
+			<h2 id="transfers-heading" class="text-lg font-semibold">การรับส่งไฟล์</h2>
+			{#if !view.jobs.length}<p class="text-sm text-muted-foreground">
+					คำขอแต่ละผู้รับจะแสดงที่นี่ ไม่มีการรับไฟล์อัตโนมัติ
+				</p>{/if}
+			<div class="grid items-start gap-4 xl:grid-cols-2">
+				{#each view.jobs as job (job.id)}
+					<Card.Root
+						role="region"
+						aria-labelledby={`job-${job.id}`}
+						class="min-w-0 gap-0 py-0"
+						data-testid="transfer-job"
+						data-direction={job.direction}
+						data-phase={job.phase}
+						><Card.Content class="space-y-3 p-4 sm:p-6">
+							<h3 id={`job-${job.id}`} class="break-words font-semibold">
+								{job.direction === 'incoming' ? 'จาก' : 'ถึง'}
+								{job.label}
+							</h3>
+							<p role="status" aria-live="polite" class="font-medium">{phaseLabels[job.phase]}</p>
+							<p class="text-sm">
+								{job.files.length} ไฟล์ · {formatFileSize(batchBytes(job.files))}
+							</p>
+							{#if job.error}<p role="alert" class="text-sm text-destructive">{job.error}</p>{/if}
+							{#if job.phase === 'consent'}
+								<ol class="space-y-1 text-sm">
+									{#each job.files as file, index (index)}<li class="break-words">
+											{index + 1}. {file.name} · {formatFileSize(file.size)}
+										</li>{/each}
+								</ol>
+								<p class="text-sm text-muted-foreground">
+									ตรวจสอบผู้ส่งและไฟล์ทั้งหมดก่อนตอบรับ
+									การตอบรับครั้งเดียวอนุญาตให้รับไฟล์ชุดนี้ตามลำดับ
+								</p>
+								{#if view.downloads.length}<p class="text-sm text-muted-foreground">
+										ยังมีไฟล์ชุดก่อนอยู่ในหน้านี้ ดาวน์โหลดให้เรียบร้อยแล้วล้างก่อนรับชุดใหม่
+									</p>
+									<Button variant="outline" onclick={() => session?.clearDownloads()}
+										>ล้างไฟล์เดิมก่อนรับชุดใหม่</Button
+									>{/if}
+								<div class="flex flex-wrap gap-2">
+									<Button
+										variant="outline"
+										disabled={job.pending}
+										onclick={() => session?.cancel(job.id)}>ปฏิเสธ</Button
+									><LoadingButton
+										loading={job.pending}
+										loadingLabel="กำลังตอบรับ"
+										disabled={Boolean(view.downloads.length)}
+										onclick={() => session?.accept(job.id)}>รับไฟล์ทั้งชุด</LoadingButton
+									>
+								</div>
+							{:else if !isTransferTerminal(job.phase)}
+								{#if ['sending', 'receiving', 'acknowledging', 'connecting'].includes(job.phase)}<Progress
+										value={percent(job)}
+										aria-label={`ความคืบหน้า ${job.label}`}
+									/>
+									<p class="text-sm text-muted-foreground">
+										{formatFileSize(job.bytes)} · {percent(job)}% · รับครบ {job.completedFiles}/{job
+											.files.length} ไฟล์
+									</p>{/if}
+								<Button variant="outline" onclick={() => session?.cancel(job.id)}
+									>{job.phase === 'queued'
+										? 'ยกเลิกคิว'
+										: job.direction === 'incoming'
+											? 'ยกเลิกการรับชุดนี้'
+											: 'ยกเลิกผู้รับนี้'}</Button
+								>
+							{:else}
+								{#if job.slotReserved}<Button
+										variant="outline"
+										onclick={() => session?.finish(job.id)}>สิ้นสุดคำขอ</Button
+									>{/if}
+								{#if job.direction === 'outgoing' && job.phase !== 'complete'}<Button
+										variant="outline"
+										disabled={!online || !files.length || receiving}
+										onclick={() => session?.retry(job.id)}>ส่งคำขอใหม่</Button
+									>{/if}
+							{/if}
+						</Card.Content></Card.Root
+					>
+				{/each}
+			</div>
+		</section>
+		{#if view.downloads.length}<Card.Root
+				role="region"
+				aria-labelledby="downloads-heading"
+				class="gap-0 py-0"
+				><Card.Content class="space-y-4 p-4 sm:p-6">
+					<h2 id="downloads-heading" class="text-lg font-semibold">ไฟล์ที่รับครบแล้ว</h2>
 					<p class="text-sm text-muted-foreground">
-						{formatFileSize(view.bytes)} · {percent}%
-					</p>{/if}
-				{#if view.download}<div class="space-y-3">
-						<p class="break-words text-sm">
-							ได้รับ {view.download.name} · {formatFileSize(view.download.size)} ไฟล์อยู่ในหน่วยความจำของหน้านี้จนกว่าจะปิดหรือล้าง
-						</p>
-						<div class="flex flex-wrap gap-2">
-							<Button onclick={download}><Download class="size-4" />ดาวน์โหลดไฟล์</Button><Button
-								variant="outline"
-								onclick={() => session?.discard()}>ล้างไฟล์ที่รับแล้ว</Button
+						ไฟล์อยู่ในหน่วยความจำของหน้านี้ กดดาวน์โหลดเพื่อบันทึก ปิดหน้าหรือออกจากระบบจะล้างไฟล์
+						ไฟล์ที่รับครบแล้วยังคงอยู่แม้ส่วนที่เหลือถูกยกเลิก
+					</p>
+					<ol class="space-y-3">
+						{#each view.downloads as file (file.id)}<li
+								class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
 							>
-						</div>
-					</div>{/if}
-				{#if view.phase === 'idle'}<p class="text-sm text-muted-foreground">
-						คำขอที่ส่งเข้ามาจะแสดงที่นี่ ไม่มีการรับไฟล์อัตโนมัติ
-					</p>{/if}
-			</Card.Content></Card.Root
-		>
+								<p class="min-w-0 break-words text-sm">
+									{file.index + 1}. {file.name} · {formatFileSize(file.size)}
+								</p>
+								<Button
+									onclick={() => download(file)}
+									aria-label={`ดาวน์โหลด ${file.index + 1} ${file.name}`}
+									><Download class="size-4" />ดาวน์โหลด</Button
+								>
+							</li>{/each}
+					</ol>
+					<Button variant="outline" onclick={() => session?.clearDownloads()}
+						>ล้างไฟล์ที่รับแล้วทั้งหมด</Button
+					>
+				</Card.Content></Card.Root
+			>{/if}
 	</div>
 </PageShell>

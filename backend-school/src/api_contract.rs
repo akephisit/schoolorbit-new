@@ -7734,6 +7734,43 @@ mod tests {
             "browser callers cannot invent another domain's source"
         );
     }
+    #[test]
+    fn documents_file_transfer_v2_batches_limits_and_correlation() {
+        let document = school_api_value().unwrap();
+        let schemas = &document["components"]["schemas"];
+        for owner in ["FileTransferPair", "CreateFileTransferPair"] {
+            assert!(required(&schemas[owner]).contains(&"files"));
+            assert!(required(&schemas[owner]).contains(&"clientRequestId"));
+            assert!(schemas[owner]["properties"].get("file").is_none());
+            assert_eq!(
+                schemas[owner]["properties"]["files"]["items"]["$ref"],
+                "#/components/schemas/FileTransferFile"
+            );
+        }
+        assert!(required(&schemas["FileTransferSnapshot"]).contains(&"protocolVersion"));
+        assert!(required(&schemas["FileTransferSnapshot"]).contains(&"limits"));
+        assert_eq!(
+            schemas["FileTransferSnapshot"]["properties"]["limits"]["$ref"],
+            "#/components/schemas/FileTransferLimits"
+        );
+        for field in [
+            "maxOutgoingTransfers",
+            "maxFilesPerBatch",
+            "maxFileBytes",
+            "maxBatchBytes",
+        ] {
+            assert!(required(&schemas["FileTransferLimits"]).contains(&field));
+        }
+        assert!(schemas["RegisterFileTransferDevice"]["properties"]
+            .get("protocolVersion")
+            .is_some());
+        assert!(!required(&schemas["RegisterFileTransferDevice"]).contains(&"protocolVersion"));
+        assert_eq!(
+            document["paths"]["/api/staff/file-transfer/devices"]["post"]["responses"]["400"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+    }
 }
 
 #[cfg(test)]

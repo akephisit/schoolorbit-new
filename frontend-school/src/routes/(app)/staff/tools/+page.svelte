@@ -30,7 +30,7 @@
 			<Send class="mb-4 size-8 text-primary" />
 			<h2 class="text-lg font-semibold">ส่งไฟล์ในเครือข่ายเดียวกัน</h2>
 			<p class="mt-2 text-sm text-muted-foreground">
-				ค้นหาอุปกรณ์ของบุคลากร จับคู่ด้วย QR หรือรหัส แล้วส่งไฟล์โดยตรงเมื่อผู้รับตอบรับ
+				เลือกหลายไฟล์ ส่งถึงหลายอุปกรณ์ จับคู่ด้วย QR หรือรหัส และให้แต่ละผู้รับตอบรับไฟล์ทั้งชุด
 			</p>
 			<span class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary"
 				>เปิดเครื่องมือ <ArrowRight class="size-4" /></span

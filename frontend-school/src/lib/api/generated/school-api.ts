@@ -11748,9 +11748,11 @@ export interface components {
 		};
 		ApiResponse_FileTransferPair: {
 			data: {
+				/** Format: uuid */
+				clientRequestId: string;
 				/** Format: date-time */
 				expiresAt: string;
-				file: components['schemas']['FileTransferFile'];
+				files: components['schemas']['FileTransferFile'][];
 				/** Format: uuid */
 				id: string;
 				initiator: components['schemas']['FileTransferDevice'];
@@ -11765,9 +11767,12 @@ export interface components {
 				device: components['schemas']['FileTransferDevice'];
 				/** Format: date-time */
 				expiresAt: string;
+				limits: components['schemas']['FileTransferLimits'];
 				pairingCode: string;
 				pairs: components['schemas']['FileTransferPair'][];
 				peers: components['schemas']['FileTransferDevice'][];
+				/** Format: int32 */
+				protocolVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -19958,8 +19963,10 @@ export interface components {
 		};
 		CreateFileTransferPair: {
 			/** Format: uuid */
+			clientRequestId: string;
+			/** Format: uuid */
 			deviceId: string;
-			file: components['schemas']['FileTransferFile'];
+			files: components['schemas']['FileTransferFile'][];
 			target: components['schemas']['FileTransferTarget'];
 		};
 		CreateHomeroomPlacementRequest: {
@@ -22232,10 +22239,22 @@ export interface components {
 			/** Format: int64 */
 			size: number;
 		};
+		FileTransferLimits: {
+			/** Format: int64 */
+			maxBatchBytes: number;
+			/** Format: int64 */
+			maxFileBytes: number;
+			/** Format: int32 */
+			maxFilesPerBatch: number;
+			/** Format: int32 */
+			maxOutgoingTransfers: number;
+		};
 		FileTransferPair: {
+			/** Format: uuid */
+			clientRequestId: string;
 			/** Format: date-time */
 			expiresAt: string;
-			file: components['schemas']['FileTransferFile'];
+			files: components['schemas']['FileTransferFile'][];
 			/** Format: uuid */
 			id: string;
 			initiator: components['schemas']['FileTransferDevice'];
@@ -22261,9 +22280,12 @@ export interface components {
 			device: components['schemas']['FileTransferDevice'];
 			/** Format: date-time */
 			expiresAt: string;
+			limits: components['schemas']['FileTransferLimits'];
 			pairingCode: string;
 			pairs: components['schemas']['FileTransferPair'][];
 			peers: components['schemas']['FileTransferDevice'][];
+			/** Format: int32 */
+			protocolVersion: number;
 		};
 		FileTransferTarget:
 			| {
@@ -24947,6 +24969,8 @@ export interface components {
 		};
 		RegisterFileTransferDevice: {
 			label: string;
+			/** Format: int32 */
+			protocolVersion?: number | null;
 		};
 		RegisterPushDeviceRequest: {
 			auth: string;
@@ -63084,7 +63108,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Ephemeral device registration and current school-online snapshot */
+			/** @description Protocol 2 device registration and school-online snapshot with batch limits */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -63093,7 +63117,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_FileTransferSnapshot'];
 				};
 			};
-			/** @description Invalid label */
+			/** @description Invalid label or unsupported protocol; refresh both devices */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -63339,7 +63363,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Pending pair with exact file metadata awaiting recipient consent */
+			/** @description Pending batch pair with ordered file metadata and request correlation awaiting recipient consent */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -63348,7 +63372,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_FileTransferPair'];
 				};
 			};
-			/** @description Invalid file metadata */
+			/** @description Invalid batch or file metadata */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -63384,7 +63408,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Device busy or offline */
+			/** @description Device busy, offline or active request correlation duplicated */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -63429,7 +63453,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Recipient accepted exact sender and file */
+			/** @description Recipient accepted exact sender and ordered file batch */
 			200: {
 				headers: {
 					[name: string]: unknown;
