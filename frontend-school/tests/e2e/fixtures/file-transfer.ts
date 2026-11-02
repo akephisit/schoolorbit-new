@@ -29,6 +29,9 @@ export async function fileTransferFixture() {
 	const pairs = new Map<string, TransferPair>();
 	const closedPairs = new Map<string, TransferPair>();
 	let maxOutgoing = 0;
+	let closing = false;
+	let nextCode = 0;
+	let loseNextRegisterResponse = false;
 	let suppressNextCreatedEvent = false;
 	let loseNextCreateResponse = false;
 	let loseCreateForLabel: string | null = null;
@@ -106,6 +109,10 @@ export async function fileTransferFixture() {
 		let body = '';
 		for await (const chunk of request) body += chunk;
 		requests.push({ path, method: request.method ?? 'GET', body });
+		if (closing) {
+			response.writeHead(503).end();
+			return;
+		}
 		const send = (data: unknown, status = 200) => {
 			response.writeHead(status, { 'Content-Type': 'application/json' });
 			response.end(
@@ -132,9 +139,14 @@ export async function fileTransferFixture() {
 					label: input.label
 				},
 				sessionId,
-				code: (devices.size + 1).toString(16).toUpperCase().padStart(10, '0')
+				code: (++nextCode).toString(16).toUpperCase().padStart(10, '0')
 			};
 			devices.set(id, entry);
+			if (loseNextRegisterResponse) {
+				loseNextRegisterResponse = false;
+				response.destroy();
+				return;
+			}
 			send(snapshot(entry));
 			return;
 		}
@@ -347,6 +359,12 @@ export async function fileTransferFixture() {
 			});
 		},
 		emit,
+		dropStream(deviceId: string) {
+			devices.get(deviceId)?.stream?.end();
+		},
+		loseNextRegisterResponse() {
+			loseNextRegisterResponse = true;
+		},
 		holdNextCreatedEvent() {
 			suppressNextCreatedEvent = true;
 		},
@@ -431,15 +449,19 @@ export async function fileTransferFixture() {
 			return [...pairs.values()];
 		},
 		async close() {
+			closing = true;
 			for (const release of closeResponseWaiters.splice(0)) release();
 			for (const release of createWaiters.splice(0)) release();
 			releaseAccept?.();
 			releaseRequest?.();
 			for (const entry of devices.values()) entry.stream?.end();
 			devices.clear();
-			await new Promise<void>((resolve, reject) =>
-				server.close((error) => (error ? reject(error) : resolve()))
-			);
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => (error ? reject(error) : resolve()));
+				// An open sender may begin fresh discovery after its SSE ends.
+				// Teardown owns these disposable HTTP connections and closes admission first.
+				server.closeAllConnections();
+			});
 		}
 	};
 }

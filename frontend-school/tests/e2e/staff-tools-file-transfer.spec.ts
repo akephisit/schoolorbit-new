@@ -19,8 +19,11 @@ const outgoing = (page: Page, label: string) =>
 		.filter({ hasText: label });
 async function open(page: Page, label: string) {
 	await page.goto(path);
+	await expect(page.getByTestId('pairing-code')).toBeVisible();
+	const previousCode = await page.getByTestId('pairing-code').textContent();
 	await page.getByLabel('ชื่ออุปกรณ์', { exact: true }).fill(label);
-	await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+	await page.getByLabel('ชื่ออุปกรณ์', { exact: true }).press('Tab');
+	await expect(page.getByTestId('pairing-code')).not.toHaveText(previousCode!);
 	await expect(page.getByTestId('pairing-code')).toBeVisible();
 }
 async function choose(page: Page, files: InputFile[]) {
@@ -427,7 +430,7 @@ test('incoming cancellation history stays bounded while completed downloads reta
 		);
 		await receiver.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
 		await receiver.getByLabel('ชื่ออุปกรณ์', { exact: true }).fill('ผู้รับใหม่');
-		await receiver.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await receiver.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
 		await expect(receiver.getByTestId('pairing-code')).toBeVisible();
 		await expect(incoming(receiver)).toHaveCount(1);
 		expect(await download(receiver, 0, 'retained.txt')).toEqual(
@@ -480,7 +483,6 @@ test('QR/code pairing handles zero-byte batches and late create/accept responses
 		await page.goto(decoded);
 		await expect(page.getByLabel('หรือใช้รหัสอุปกรณ์ผู้รับ')).toHaveValue(code);
 		await expect(page).toHaveURL(new RegExp(`${path}$`));
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		await choose(page, [input('zero.txt', ''), input('zero.txt', '')]);
 		await page.getByRole('button', { name: 'เพิ่มผู้รับด้วยรหัส' }).click();
@@ -674,8 +676,14 @@ test('count validation, protocol refresh errors and unavailable LAN have truthfu
 		await choose(page, [input('blocked.txt', 'blocked')]);
 		api.blockSignals();
 		await request(page, ['ผู้รับ']);
+		const pair = await fixturePair(api);
 		await receiver.clock.install();
 		await viewManifest(receiver);
+		// The store opens asynchronously; a native offer proves the receiver's
+		// transport and its connection deadline exist before simulated time moves.
+		await expect
+			.poll(() => api.requests.some((entry) => entry.path.endsWith(`/pairs/${pair.id}/signals`)))
+			.toBe(true);
 		await receiver.clock.fastForward(20_001);
 		await expect(
 			incoming(receiver).getByText(
@@ -696,7 +704,6 @@ test('unsupported registration version shows refresh-both-devices guidance', asy
 			route.fallback({ postData: JSON.stringify({ label: 'old client', protocolVersion: 1 }) })
 		);
 		await page.goto(path);
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
 		await expect(page.getByText(/กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ/)).toBeVisible();
 		expect(api.devices).toHaveLength(0);
 	} finally {
@@ -738,7 +745,6 @@ test('pairing fragment survives login redirect and route disposal removes the de
 		await page.reload();
 		await expect(page).toHaveURL(new RegExp(`${path}$`));
 		await expect(page.getByLabel('หรือใช้รหัสอุปกรณ์ผู้รับ')).toHaveValue('012345ABCD');
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		await page.getByRole('link', { name: 'เครื่องมือทั้งหมด' }).click();
 		await expect.poll(() => api.devices.length).toBe(0);
@@ -1002,7 +1008,7 @@ test('a held old close response cannot prevent the retried pair from closing ind
 	}
 });
 
-test('late close success after device restart cannot restore old file references or queue an old retry', async ({
+test('late close success after device restart preserves the same-auth draft without queuing an old retry', async ({
 	context,
 	page
 }) => {
@@ -1014,6 +1020,11 @@ test('late close success after device restart cannot restore old file references
 		await open(page, 'ผู้ส่ง');
 		await open(receiver, 'ผู้รับ');
 		await choose(page, [input('old-selection.txt', 'private previous selection')]);
+		await page
+			.locator('#transfer-files')
+			.evaluate((input: HTMLInputElement) =>
+				Object.defineProperty(window, 'originalTransferDraft', { value: input.files?.[0] })
+			);
 		await request(page, ['ผู้รับ']);
 		const job = outgoing(page, 'ผู้รับ'),
 			pair = await fixturePair(api);
@@ -1033,7 +1044,7 @@ test('late close success after device restart cannot restore old file references
 		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
 		await expect.poll(() => api.pairs.length).toBe(0);
 		await page.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await page.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		const oldResponse = page.waitForResponse(
 			(response) => response.url().endsWith(`/pairs/${pair.id}/close`) && response.status() === 200
@@ -1043,7 +1054,16 @@ test('late close success after device restart cannot restore old file references
 		await page.evaluate(
 			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 		);
-		await expect(page.getByTestId('source-summary')).toHaveCount(0);
+		await expect(page.getByTestId('source-summary')).toHaveText(/เลือก 1 ไฟล์/);
+		expect(
+			await page
+				.locator('#transfer-files')
+				.evaluate(
+					(input: HTMLInputElement) =>
+						input.files?.[0] ===
+						Object.getOwnPropertyDescriptor(window, 'originalTransferDraft')?.value
+				)
+		).toBe(true);
 		await expect(job).toHaveAttribute('data-phase', 'cancelled');
 		expect(
 			new Set(
@@ -1562,6 +1582,7 @@ test('folder receive uses the click gesture and keeps completed device files whi
 		await receiver.addInitScript(() => {
 			window.showDirectoryPicker = async () => {
 				Reflect.set(window, 'pickerGesture', navigator.userActivation.isActive);
+				Reflect.set(window, 'pickerCalls', Number(Reflect.get(window, 'pickerCalls') ?? 0) + 1);
 				const root = await (
 					await navigator.storage.getDirectory()
 				).getDirectoryHandle('fixture-device-folder', { create: true });
@@ -1590,7 +1611,6 @@ test('folder receive uses the click gesture and keeps completed device files whi
 			.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })
 			.setInputFiles([join(sourceDirectory, originalName), join(sourceDirectory, 'partial.bin')]);
 		await request(page, ['ผู้รับ']);
-		await viewManifest(receiver);
 		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
 		await expect
 			.poll(() => receiver.evaluate(() => Reflect.get(window, 'pickerGesture')))
@@ -1598,6 +1618,7 @@ test('folder receive uses the click gesture and keeps completed device files whi
 		await expect
 			.poll(() => receiver.evaluate(() => Reflect.get(window, 'partialOpening')))
 			.toBe(true);
+		expect(await receiver.evaluate(() => Reflect.get(window, 'pickerCalls'))).toBe(1);
 		await expect(receiver.getByTestId('save-status')).toContainText('แล้ว 1 ไฟล์');
 		await incoming(receiver)
 			.getByRole('button', { name: 'ยกเลิกการรับชุดนี้', exact: true })
@@ -1836,6 +1857,310 @@ test('blocked automatic browser downloads retain exact files for manual recovery
 		await receiver.evaluate(() => Reflect.set(window, 'blockAutomaticDownloads', false));
 		expect(await download(receiver, 0, 'blocked.txt')).toEqual(Buffer.from('exact bytes retained'));
 	} finally {
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('automatic readiness accepts an early file draft and recovers SSE loss without resending or replacing File objects', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	let releaseRegistration!: () => void, releaseAuth!: () => void;
+	const registration = new Promise<void>((resolve) => {
+		releaseRegistration = resolve;
+	});
+	const authentication = new Promise<void>((resolve) => {
+		releaseAuth = resolve;
+	});
+	let registrationStarted = false,
+		holdAuth = false;
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await page.route('**/api/staff/file-transfer/devices', async (route) => {
+			if (route.request().method() === 'POST' && !registrationStarted) {
+				registrationStarted = true;
+				await registration;
+			}
+			await route.fallback();
+		});
+		await page.route('**/api/auth/me', async (route) => {
+			if (holdAuth) await authentication;
+			await route.fallback();
+		});
+		await page.goto(path);
+		await expect.poll(() => registrationStarted).toBe(true);
+		await expect(page.getByLabel('ชื่ออุปกรณ์', { exact: true })).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true })).toHaveCount(0);
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
+		await choose(page, [input('picker-return.txt', 'same native File after picker and SSE loss')]);
+		await page
+			.locator('#transfer-files')
+			.evaluate((element: HTMLInputElement) =>
+				Object.defineProperty(window, 'originalTransferDraft', { value: element.files?.[0] })
+			);
+		releaseRegistration();
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		expect(
+			api.requests.filter(
+				(request) => request.path.endsWith('/devices') && request.method === 'POST'
+			)
+		).toHaveLength(1);
+		await open(receiver, 'ผู้รับ');
+		const selected = page.getByRole('checkbox', { name: /ผู้รับ/ });
+		await selected.check();
+		const old = api.devices.find((device) => device.label === 'อุปกรณ์ของฉัน');
+		if (!old) throw new Error('missing automatic device');
+		holdAuth = true;
+		api.dropStream(old.id);
+		await expect(
+			page.getByText('กำลังเชื่อมต่อใหม่ ไฟล์ที่เลือกยังอยู่', { exact: true })
+		).toBeVisible();
+		await expect(page.getByText('สถานะการเชื่อมต่อ', { exact: true })).toHaveCount(0);
+		releaseAuth();
+		holdAuth = false;
+		await expect
+			.poll(() => api.devices.find((device) => device.label === 'อุปกรณ์ของฉัน')?.id)
+			.not.toBe(old.id);
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		await expect(selected).toBeChecked();
+		expect(
+			await page
+				.locator('#transfer-files')
+				.evaluate(
+					(element: HTMLInputElement) =>
+						element.files?.[0] ===
+						Object.getOwnPropertyDescriptor(window, 'originalTransferDraft')?.value
+				)
+		).toBe(true);
+		expect(api.requests.filter((request) => request.path.endsWith('/pairs'))).toHaveLength(0);
+		const automatic = receiver.waitForEvent('download');
+		await request(page, ['ผู้รับ']);
+		await receiveFiles(receiver);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		const downloaded = await (await automatic).path();
+		if (!downloaded) throw new Error('missing automatic download');
+		expect(await readFile(downloaded)).toEqual(
+			Buffer.from('same native File after picker and SSE loss')
+		);
+	} finally {
+		releaseRegistration();
+		releaseAuth();
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('one Receive seals the manifest and saves the batch before a held metadata accept HTTP response returns', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		api.holdAccept();
+		await choose(page, [input('one-click.txt', 'authorized whole immutable batch')]);
+		await request(page, ['ผู้รับ']);
+		const pair = await fixturePair(api),
+			automatic = receiver.waitForEvent('download');
+		await receiveFiles(receiver);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		const result = await (await automatic).path();
+		if (!result) throw new Error('missing one-click download');
+		expect(await readFile(result)).toEqual(Buffer.from('authorized whole immutable batch'));
+		expect(
+			api.requests.filter((request) => request.path.endsWith(`/pairs/${pair.id}/accept`))
+		).toHaveLength(1);
+		api.releaseAccept();
+		await expect(incoming(receiver)).toHaveAttribute('data-phase', 'complete');
+	} finally {
+		api.releaseAccept();
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('a hidden page pauses at sixty seconds and resumes with central auth reconciliation and one fresh device', async ({
+	page
+}) => {
+	const api = await fileTransferFixture();
+	try {
+		await api.setup(page);
+		await page.goto(path);
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		const original = api.devices[0];
+		if (!original) throw new Error('missing initial device');
+		await page.clock.install();
+		await page.evaluate(() => {
+			Reflect.set(window, 'fixtureHidden', true);
+			Object.defineProperty(document, 'hidden', {
+				configurable: true,
+				get: () => Reflect.get(window, 'fixtureHidden')
+			});
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		await page.clock.runFor(59_000);
+		expect(api.devices.some((device) => device.id === original.id)).toBe(true);
+		await page.clock.runFor(1_000);
+		await expect(
+			page.getByText('พักการเชื่อมต่อขณะซ่อนหน้า จะพร้อมรับอีกครั้งเมื่อกลับมา', { exact: true })
+		).toBeVisible();
+		await expect.poll(() => api.devices.length).toBe(0);
+		const authRead = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/auth/me'
+		);
+		await page.evaluate(() => {
+			Reflect.set(window, 'fixtureHidden', false);
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		await authRead;
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		expect(api.devices[0]?.id).not.toBe(original.id);
+		expect(
+			api.requests.filter(
+				(request) => request.path.endsWith('/devices') && request.method === 'POST'
+			)
+		).toHaveLength(2);
+	} finally {
+		await api.close();
+	}
+});
+
+test('an ambiguous automatic registration preserves the draft and never repeats POST until explicit retry', async ({
+	page
+}) => {
+	const api = await fileTransferFixture();
+	try {
+		await api.setup(page);
+		api.loseNextRegisterResponse();
+		await page.clock.install();
+		await page.goto(path);
+		await expect(page.getByText(/ระบบจะไม่ส่งคำขอซ้ำอัตโนมัติ/)).toBeVisible();
+		await choose(page, [input('not-lost.txt', 'draft survives an unknown registration outcome')]);
+		await page.evaluate(() => {
+			window.dispatchEvent(new Event('focus'));
+			window.dispatchEvent(new Event('online'));
+		});
+		await page.clock.runFor(30_000);
+		expect(
+			api.requests.filter(
+				(request) => request.path.endsWith('/devices') && request.method === 'POST'
+			)
+		).toHaveLength(1);
+		await expect(page.getByTestId('source-summary')).toContainText('เลือก 1 ไฟล์');
+		await page.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		expect(
+			api.requests.filter(
+				(request) => request.path.endsWith('/devices') && request.method === 'POST'
+			)
+		).toHaveLength(2);
+		await expect(page.getByTestId('source-summary')).toContainText('เลือก 1 ไฟล์');
+	} finally {
+		await api.close();
+	}
+});
+
+test('server auth unavailability blocks a held automatic export until trusted reconciliation then resumes the remaining prefix once', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	let releaseAuth!: () => void,
+		holdAuth = false,
+		authStarted = false;
+	const authentication = new Promise<void>((resolve) => {
+		releaseAuth = resolve;
+	});
+	const downloads: import('@playwright/test').Download[] = [];
+	try {
+		await receiver.addInitScript(() => {
+			const getFile = FileSystemFileHandle.prototype.getFile;
+			let hold = true;
+			FileSystemFileHandle.prototype.getFile = async function () {
+				if (this.name === 'file-1' && hold) {
+					Reflect.set(window, 'automaticReadWaiting', true);
+					await new Promise<void>((resolve) =>
+						window.addEventListener('release-automatic-read', () => resolve(), { once: true })
+					);
+					hold = false;
+				}
+				const file = await getFile.call(this);
+				if (this.name === 'file-1') Reflect.set(window, 'automaticReadFinished', true);
+				return file;
+			};
+		});
+		await api.setup(page);
+		await api.setup(receiver);
+		await receiver.route('**/api/auth/me', async (route) => {
+			if (holdAuth) {
+				authStarted = true;
+				await authentication;
+			}
+			await route.fallback();
+		});
+		receiver.on('download', (download) => downloads.push(download));
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [
+			input('0.txt', 'first completed file'),
+			input('1.txt', 'second completed file')
+		]);
+		await request(page, ['ผู้รับ']);
+		await receiveFiles(receiver);
+		await expect.poll(() => downloads.length).toBe(1);
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'automaticReadWaiting')))
+			.toBe(true);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		const device = api.devices.find((device) => device.label === 'ผู้รับ');
+		if (!device) throw new Error('missing receiver');
+		holdAuth = true;
+		api.emit(device.id, { type: 'session_unavailable', data: {} });
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 0.txt', exact: true })
+		).toBeDisabled();
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลดทั้งหมดเป็น ZIP', exact: true })
+		).toBeDisabled();
+		await expect.poll(() => authStarted).toBe(true);
+		await receiver.evaluate(() => window.dispatchEvent(new Event('release-automatic-read')));
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'automaticReadFinished')))
+			.toBe(true);
+		expect(downloads).toHaveLength(1);
+		await expect(receiver.getByTestId('save-status')).toContainText('1/2 ไฟล์');
+		releaseAuth();
+		holdAuth = false;
+		await expect.poll(() => downloads.length).toBe(2);
+		await expect(receiver.getByTestId('save-status')).toContainText('2/2 ไฟล์');
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 0.txt', exact: true })
+		).toBeEnabled();
+		for (const [index, download] of downloads.entries()) {
+			expect(download.suggestedFilename()).toBe(`${index}.txt`);
+			const file = await download.path();
+			if (!file) throw new Error('missing completed download');
+			expect(await readFile(file)).toEqual(
+				Buffer.from(index ? 'second completed file' : 'first completed file')
+			);
+		}
+		await receiver.evaluate(() => window.dispatchEvent(new Event('focus')));
+		await expect(receiver.getByTestId('save-status')).toHaveAttribute('data-pending', 'false');
+		expect(downloads).toHaveLength(2);
+	} finally {
+		releaseAuth();
+		await receiver
+			.evaluate(() => window.dispatchEvent(new Event('release-automatic-read')))
+			.catch(() => {});
 		await receiver.close();
 		await api.close();
 	}

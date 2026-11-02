@@ -90,15 +90,16 @@
 			if (disposed) return;
 			if (next.snapshot?.device.id !== view.snapshot?.device.id) {
 				clearQr();
-				if (view.snapshot) {
-					files = [];
-					fileError = '';
-					selectedDevices = [];
-					if (fileInput) fileInput.value = '';
-				}
+			}
+			if (next.draftEpoch !== view.draftEpoch) {
+				files = [];
+				fileError = '';
+				selectedDevices = [];
+				if (fileInput) fileInput.value = '';
 			}
 			view = next;
 		});
+		void session.start(label);
 		const pagehide = () => session?.dispose();
 		window.addEventListener('pagehide', pagehide);
 		return () => {
@@ -187,7 +188,7 @@
 
 <PageShell
 	title="ส่งไฟล์ในเครือข่ายเดียวกัน"
-	description="เลือกหลายไฟล์และหลายผู้รับ ตรวจสอบรายการก่อนยืนยันรับไฟล์ แล้วดาวน์โหลดรวมเป็น ZIP ได้"
+	description="เลือกหลายไฟล์และหลายผู้รับ พร้อมรับคำขออัตโนมัติ กดรับครั้งเดียวแล้วบันทึกไฟล์ และดาวน์โหลดรวมเป็น ZIP ได้"
 	backHref="/staff/tools"
 	backLabel="เครื่องมือทั้งหมด"
 	icon={Send}
@@ -198,7 +199,7 @@
 			ไฟล์ส่งโดยตรงและไม่ถูกเก็บบนเซิร์ฟเวอร์ เปิดหน้านี้ไว้ทั้งสองเครื่อง
 			แต่ละผู้รับรับไฟล์ตามลำดับของชุด การรอหรือยกเลิกผู้รับหนึ่งไม่หยุดผู้รับอื่น
 		</p>
-		{#if view.error}<PageState
+		{#if view.error && !['reconnecting', 'paused'].includes(view.status)}<PageState
 				variant="error"
 				title="สถานะการเชื่อมต่อ"
 				description={view.error}
@@ -209,31 +210,30 @@
 					<h2 id="device-heading" class="flex items-center gap-2 text-lg font-semibold">
 						<Monitor class="size-5" />อุปกรณ์นี้
 					</h2>
-					{#if !online}
-						<form
-							class="space-y-4"
-							onsubmit={(event) => {
-								event.preventDefault();
-								void session?.start(label);
+					<div class="space-y-2">
+						<Label for="device-label">ชื่ออุปกรณ์</Label><Input
+							id="device-label"
+							bind:value={label}
+							disabled={sourceBusy ||
+								receiving ||
+								['connecting', 'reconnecting'].includes(view.status)}
+							onchange={() => {
+								if (session) label = session.rename(label);
 							}}
-						>
-							<div class="space-y-2">
-								<Label for="device-label">ชื่ออุปกรณ์</Label><Input
-									id="device-label"
-									bind:value={label}
-									disabled={view.status === 'connecting'}
-									placeholder="เช่น โน้ตบุ๊กห้องพักครู"
-								/>
-								<p class="text-sm text-muted-foreground">
-									ชื่อแสดงให้บุคลากรที่เปิดเครื่องมือนี้ในโรงเรียนเห็น ไม่เกิน 60 ตัวอักษร
-								</p>
-							</div>
-							<LoadingButton
-								type="submit"
-								loading={view.status === 'connecting'}
-								loadingLabel="กำลังเปิดรับส่งไฟล์">เปิดรับส่งไฟล์</LoadingButton
-							>
-						</form>
+						/>
+					</div>
+					{#if !online}<p role="status" class="text-sm text-muted-foreground">
+							{view.status === 'paused'
+								? 'พักการเชื่อมต่อขณะซ่อนหน้า จะพร้อมรับอีกครั้งเมื่อกลับมา'
+								: ['connecting', 'reconnecting'].includes(view.status)
+									? view.status === 'reconnecting'
+										? 'กำลังเชื่อมต่อใหม่ ไฟล์ที่เลือกยังอยู่'
+										: 'กำลังเตรียมอุปกรณ์ให้พร้อมรับส่งไฟล์'
+									: 'อุปกรณ์ยังไม่พร้อมรับคำขอ ไฟล์ที่เลือกยังอยู่'}
+						</p>
+						{#if view.status === 'offline' || view.status === 'idle'}<Button
+								onclick={() => session?.start(label)}>ลองเชื่อมต่ออีกครั้ง</Button
+							>{/if}
 					{:else if view.snapshot}
 						<p class="break-words font-medium">
 							{view.snapshot.device.label}
@@ -287,7 +287,7 @@
 							bind:ref={fileInput}
 							type="file"
 							multiple
-							disabled={!online || sourceBusy || receiving}
+							disabled={sourceBusy || receiving}
 							aria-invalid={Boolean(fileError)}
 							aria-describedby="file-help file-error"
 							onchange={(event) => selectFiles(event.currentTarget.files)}
@@ -295,7 +295,8 @@
 						<p id="file-help" class="text-sm text-muted-foreground">
 							{#if view.snapshot}ไม่กำหนดเพดานจำนวนหรือขนาดไฟล์
 								ขึ้นกับพื้นที่จัดเก็บและความสามารถของเบราว์เซอร์ ส่งพร้อมกันได้ {view.snapshot
-									.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์{/if}
+									.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เลือกไฟล์ไว้ก่อนได้
+								ระบบกำลังเตรียมการเชื่อมต่อ{/if}
 						</p>
 						{#if fileError}<p id="file-error" role="alert" class="text-sm text-destructive">
 								{fileError}
@@ -342,7 +343,7 @@
 							</div>{:else}<p class="text-sm text-muted-foreground">
 								{online
 									? 'ยังไม่มีอุปกรณ์อื่น เปิดเครื่องมือนี้บนอุปกรณ์ผู้รับ'
-									: 'เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์'}
+									: 'กำลังรอการเชื่อมต่อเพื่อค้นหาอุปกรณ์'}
 							</p>{/if}
 						<Button
 							disabled={!files.length ||
@@ -420,9 +421,40 @@
 							{#if job.cleanupError}<p role="alert" class="text-sm text-destructive">
 									{job.cleanupError}
 								</p>{/if}
+							{#if job.direction === 'incoming' && ['consent', 'review'].includes(job.phase)}
+								<fieldset class="space-y-3" disabled={job.pending}>
+									<legend class="text-sm font-medium"
+										>บันทึกไฟล์อัตโนมัติเมื่อรับครบแต่ละไฟล์</legend
+									>
+									<RadioGroup.Root
+										value={job.receiveMode}
+										onValueChange={(mode) => {
+											if (mode === 'folder' || mode === 'browser-download')
+												session?.setReceiveMode(job.id, mode);
+										}}
+									>
+										{#if view.directoryPickerSupported}<div class="flex items-start gap-2">
+												<RadioGroup.Item id={`folder-${job.id}`} value="folder" /><Label
+													for={`folder-${job.id}`}>เลือกโฟลเดอร์แล้วบันทึกลงอุปกรณ์</Label
+												>
+											</div>{/if}
+										<div class="flex items-start gap-2">
+											<RadioGroup.Item id={`browser-${job.id}`} value="browser-download" /><Label
+												for={`browser-${job.id}`}>ดาวน์โหลดผ่านเบราว์เซอร์อัตโนมัติ</Label
+											>
+										</div>
+									</RadioGroup.Root>
+									<p class="text-sm text-muted-foreground">
+										{job.receiveMode === 'folder'
+											? 'กดรับแล้วเลือกโฟลเดอร์หนึ่งครั้ง ระบบจะสร้างโฟลเดอร์ย่อยใหม่และบันทึกแต่ละไฟล์ให้เมื่อรับครบ ไฟล์ที่บันทึกแล้วคงอยู่แม้ออกจากระบบ'
+											: 'เมื่อรับครบแต่ละไฟล์ ระบบจะขอให้เบราว์เซอร์ดาวน์โหลดให้อัตโนมัติ อาจต้องอนุญาตการดาวน์โหลดหลายไฟล์ รูปอาจอยู่ใน Downloads แทนแกลเลอรี ขึ้นกับอุปกรณ์ หากถูกบล็อกยังดาวน์โหลดรายไฟล์หรือ ZIP ได้'}
+									</p>
+								</fieldset>
+							{/if}
 							{#if job.phase === 'consent'}
 								<p class="text-sm text-muted-foreground">
-									ตรวจสอบผู้ส่งก่อนเปิดดูรายการ การดูรายการยังไม่อนุญาตให้รับเนื้อหาไฟล์
+									ตรวจสอบผู้ส่ง จำนวนและขนาดรวมก่อนกดรับ
+									การรับครั้งเดียวอนุญาตให้บันทึกไฟล์ทั้งชุดนี้ ดูรายชื่อไฟล์ก่อนได้ตามต้องการ
 								</p>
 								{#if !view.receivingSupported}<p role="alert" class="text-sm text-destructive">
 										เบราว์เซอร์นี้ไม่รองรับพื้นที่เก็บไฟล์สำหรับการรับ ใช้ Chrome หรือ Edge
@@ -437,6 +469,12 @@
 										onclick={() => session?.clearDownloads()}>ล้างไฟล์เดิมก่อนรับชุดใหม่</Button
 									>{/if}
 								<div class="flex flex-wrap gap-2">
+									<LoadingButton
+										loading={job.pending}
+										loadingLabel="กำลังเตรียมรับไฟล์"
+										disabled={Boolean(view.downloadCount) || !view.receivingSupported}
+										onclick={() => session?.receive(job.id)}>รับไฟล์ทั้งชุด</LoadingButton
+									>
 									<Button
 										variant="outline"
 										disabled={job.pending}
@@ -481,34 +519,7 @@
 										ตรวจสอบรายการทั้งหมดก่อนตอบรับ การยืนยันครั้งเดียวอนุญาตให้รับชุดนี้ตามลำดับ
 										เลือกวิธีบันทึกอัตโนมัติด้านล่างและเปิดหน้านี้ไว้
 									</p>
-									<fieldset class="space-y-3" disabled={job.pending}>
-										<legend class="text-sm font-medium"
-											>บันทึกไฟล์อัตโนมัติเมื่อรับครบแต่ละไฟล์</legend
-										>
-										<RadioGroup.Root
-											value={job.receiveMode}
-											onValueChange={(mode) => {
-												if (mode === 'folder' || mode === 'browser-download')
-													session?.setReceiveMode(job.id, mode);
-											}}
-										>
-											{#if view.directoryPickerSupported}<div class="flex items-start gap-2">
-													<RadioGroup.Item id={`folder-${job.id}`} value="folder" /><Label
-														for={`folder-${job.id}`}>เลือกโฟลเดอร์แล้วบันทึกลงอุปกรณ์</Label
-													>
-												</div>{/if}
-											<div class="flex items-start gap-2">
-												<RadioGroup.Item id={`browser-${job.id}`} value="browser-download" /><Label
-													for={`browser-${job.id}`}>ดาวน์โหลดผ่านเบราว์เซอร์อัตโนมัติ</Label
-												>
-											</div>
-										</RadioGroup.Root>
-										<p class="text-sm text-muted-foreground">
-											{job.receiveMode === 'folder'
-												? 'กดรับแล้วเลือกโฟลเดอร์หนึ่งครั้ง ระบบจะสร้างโฟลเดอร์ย่อยใหม่และบันทึกแต่ละไฟล์ให้เมื่อรับครบ ไฟล์ที่บันทึกแล้วคงอยู่แม้ออกจากระบบ'
-												: 'เมื่อรับครบแต่ละไฟล์ ระบบจะขอให้เบราว์เซอร์ดาวน์โหลดให้อัตโนมัติ อาจต้องอนุญาตการดาวน์โหลดหลายไฟล์ รูปอาจอยู่ใน Downloads แทนแกลเลอรี ขึ้นกับอุปกรณ์ หากถูกบล็อกยังดาวน์โหลดรายไฟล์หรือ ZIP ได้'}
-										</p>
-									</fieldset>
+
 									<LoadingButton
 										loading={job.pending}
 										loadingLabel={job.receiveMode === 'folder'
@@ -588,7 +599,7 @@
 						<LoadingButton
 							loading={view.archive.pending}
 							loadingLabel="กำลังสร้าง ZIP"
-							disabled={downloadActive}
+							disabled={downloadActive || view.authBlocked}
 							onclick={() => session?.downloadAll()}
 							><Download class="size-4" />ดาวน์โหลดทั้งหมดเป็น ZIP</LoadingButton
 						>{#if view.archive.pending}<Button
@@ -617,6 +628,7 @@
 									{file.index + 1}. {file.name} · {formatFileSize(file.size)}
 								</p>
 								<Button
+									disabled={view.authBlocked}
 									onclick={() => session?.downloadFile(file.index)}
 									aria-label={`ดาวน์โหลด ${file.index + 1} ${file.name}`}
 									><Download class="size-4" />ดาวน์โหลด</Button
