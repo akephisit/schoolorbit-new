@@ -200,6 +200,7 @@ export class FileTransferSession {
 	private connecting: Promise<void> | null = null;
 	private freshAttempted = false;
 	private authBlocked = false;
+	private serverAuthPending = false;
 	private identityOwned = get(authStore).isAuthenticated;
 	private listeners = false;
 	private idle = createVisibilityIdle({
@@ -240,19 +241,9 @@ export class FileTransferSession {
 				this.pendingDeviceId = null;
 			}
 			if (auth.isAuthenticated && !auth.isLoading) this.identityOwned = true;
-			this.authBlocked =
-				auth.isUnavailable || !auth.isAuthenticated || auth.user?.user_type !== 'staff';
+			this.updateAuthBoundary();
 			if (auth.isUnavailable && (this.source || (this.freshAttempted && this.connecting)))
 				this.connectionLost('ยังยืนยันสิทธิ์ไม่ได้ กำลังเชื่อมต่อใหม่');
-			if (this.authBlocked) {
-				this.stopAutomaticDownloads();
-				this.archiveController?.abort();
-				this.publish({ authBlocked: true, automaticDownloadPending: false });
-			} else {
-				this.publish({ authBlocked: false });
-				if (this.downloadStore && this.downloadOwner)
-					this.requestAutomaticDownloads(this.downloadStore, this.downloadOwner);
-			}
 			if (
 				this.enabled &&
 				!auth.isLoading &&
@@ -262,6 +253,34 @@ export class FileTransferSession {
 			)
 				void this.connect(false);
 		});
+	}
+	private authenticationVerified(epoch = this.authEpoch) {
+		const auth = get(authStore);
+		return (
+			this.authEpoch === epoch &&
+			authStore.sessionEpoch === epoch &&
+			!this.serverAuthPending &&
+			!auth.isLoading &&
+			!auth.isUnavailable &&
+			auth.isAuthenticated &&
+			auth.user?.user_type === 'staff'
+		);
+	}
+	private updateAuthBoundary() {
+		this.authBlocked = !this.authenticationVerified();
+		if (this.authBlocked) {
+			this.stopAutomaticDownloads();
+			this.archiveController?.abort();
+			this.publish({ authBlocked: true, automaticDownloadPending: false });
+		} else {
+			this.publish({ authBlocked: false });
+			if (this.downloadStore && this.downloadOwner)
+				this.requestAutomaticDownloads(this.downloadStore, this.downloadOwner);
+		}
+	}
+	private blockServerAuthentication() {
+		this.serverAuthPending = true;
+		this.updateAuthBoundary();
 	}
 	private publish(patch: Partial<FileTransferState> = {}) {
 		this.state = {
@@ -438,11 +457,10 @@ export class FileTransferSession {
 		this.idle.stop();
 		this.disconnect('');
 		const id = this.pendingDeviceId;
-		this.pendingDeviceId = null;
 		if (id)
-			void transferAPI
-				.remove(id)
-				.catch(() => console.warn('File transfer device cleanup could not be confirmed'));
+			void this.cleanupDevice(id, this.authEpoch).catch(() =>
+				console.warn('File transfer device cleanup could not be confirmed')
+			);
 	}
 	dispose() {
 		if (this.disposed) return;
@@ -464,6 +482,10 @@ export class FileTransferSession {
 		return true;
 	}
 	async start(label = 'อุปกรณ์ของฉัน') {
+		if (this.connecting) {
+			await this.connecting;
+			return;
+		}
 		if (this.disposed || !this.useLabel(label)) return;
 		this.enabled = true;
 		this.manualRequired = false;
@@ -477,12 +499,14 @@ export class FileTransferSession {
 		this.idle.start();
 		await this.connect(this.state.status !== 'idle');
 	}
-	async rename(label: string) {
+	rename(label: string): string {
 		if (
 			this.disposed ||
+			this.connecting ||
+			['connecting', 'reconnecting'].includes(this.state.status) ||
 			[...this.entries.values()].some((entry) => !isTransferTerminal(entry.view.phase))
 		)
-			return;
+			return this.label;
 		const previous = this.label;
 		if (
 			!this.useLabel(label) ||
@@ -490,9 +514,10 @@ export class FileTransferSession {
 			!this.enabled ||
 			this.state.status !== 'online'
 		)
-			return;
+			return this.label;
 		this.disconnect('');
-		await this.start(this.label);
+		void this.start(this.label);
+		return this.label;
 	}
 	private connectionLost(message: string, paused = false) {
 		if (this.disposed || !this.enabled) return;
@@ -538,15 +563,26 @@ export class FileTransferSession {
 			void this.connect(true);
 		}, delay);
 	}
-	private discardDevice(id: string, epoch: number) {
-		if (this.authEpoch !== epoch || authStore.sessionEpoch !== epoch) return;
-		if (this.authBlocked) {
-			this.pendingDeviceId = id;
-			return;
+	private async cleanupDevice(id: string, epoch: number): Promise<boolean> {
+		if (this.authEpoch !== epoch || authStore.sessionEpoch !== epoch) return false;
+		if (!this.authenticationVerified(epoch)) {
+			if (!this.disposed) this.pendingDeviceId = id;
+			return false;
 		}
-		void transferAPI
-			.remove(id)
-			.catch(() => console.warn('Late file transfer device cleanup failed'));
+		if (!this.disposed) this.pendingDeviceId = id;
+		try {
+			await transferAPI.remove(id);
+		} catch (error) {
+			if (!(error instanceof ApiClientError && error.status === 404)) throw error;
+		}
+		if (!this.authenticationVerified(epoch)) return false;
+		if (this.pendingDeviceId === id) this.pendingDeviceId = null;
+		return true;
+	}
+	private discardDevice(id: string, epoch: number) {
+		void this.cleanupDevice(id, epoch).catch(() =>
+			console.warn('Late file transfer device cleanup failed')
+		);
 	}
 	private registerDevice(epoch: number): Promise<TransferSnapshot> {
 		const lifetime = this.controller.signal,
@@ -613,6 +649,12 @@ export class FileTransferSession {
 		const generation = this.generation,
 			epoch = this.authEpoch;
 		const valid = () => this.current(generation) && this.enabled && this.authEpoch === epoch;
+		const reconciled = () => {
+			if (!valid()) return false;
+			if (this.authenticationVerified(epoch)) return true;
+			this.scheduleRecovery();
+			return false;
+		};
 		const task = (async () => {
 			this.publish({ status: reconcile ? 'reconnecting' : 'connecting', error: '' });
 			try {
@@ -623,25 +665,30 @@ export class FileTransferSession {
 						if (result === 'unavailable') this.scheduleRecovery();
 						return;
 					}
+					this.serverAuthPending = false;
+					this.updateAuthBoundary();
 				}
-				if (!valid() || this.authBlocked) return;
+				if (!reconciled()) return;
 				if (this.pendingDeviceId) {
 					const id = this.pendingDeviceId;
 					try {
 						await transferAPI.snapshot(id, this.controller.signal);
 						if (!valid()) return;
-						await transferAPI.remove(id);
+						if (!(await this.cleanupDevice(id, epoch))) {
+							if (valid()) this.scheduleRecovery();
+							return;
+						}
 					} catch (error) {
 						if (!(error instanceof ApiClientError && error.status === 404)) throw error;
 					}
-					if (!valid()) return;
-					this.pendingDeviceId = null;
+					if (!reconciled()) return;
+					if (this.pendingDeviceId === id) this.pendingDeviceId = null;
 				}
 			} catch {
 				if (valid()) this.scheduleRecovery();
 				return;
 			}
-			if (!valid()) return;
+			if (!reconciled()) return;
 			if (typeof RTCPeerConnection === 'undefined' || typeof EventSource === 'undefined') {
 				this.manualRequired = true;
 				this.publish({
@@ -745,12 +792,12 @@ export class FileTransferSession {
 			}
 			case 'session_invalid':
 				this.manualRequired = true;
-				this.authBlocked = true;
-				this.publish({ authBlocked: true });
+				this.blockServerAuthentication();
 				this.disconnect('ไม่สามารถยืนยันสิทธิ์ได้ กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์', true);
 				void authAPI.refreshCurrentUser({ silent: true, invalidate: true });
 				break;
 			case 'session_unavailable':
+				this.blockServerAuthentication();
 				this.connectionLost('ยังยืนยันสิทธิ์ไม่ได้ กำลังตรวจสอบใหม่');
 				break;
 		}

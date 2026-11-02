@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { writable, get } from 'svelte/store';
 import * as helpers from '../../src/lib/tools/file-transfer.ts';
 import { recoveryDelay } from '../../src/lib/tools/file-transfer-recovery.ts';
+import { AutomaticDownloadPump } from '../../src/lib/tools/file-transfer-download-pump.ts';
 import {
 	createVisibilityIdle,
 	browserVisibilityDependencies
@@ -32,7 +33,17 @@ async function harness({ loading = false } = {}) {
 	let nextTimer = 0;
 	const streams = [],
 		transports = [],
-		devices = new Map();
+		devices = new Map(),
+		removals = [],
+		exportsRequested = [],
+		fileReads = [],
+		snapshotReads = [],
+		pairs = new Map();
+	documentTarget.createElement = () => ({
+		click() {
+			exportsRequested.push(this.download);
+		}
+	});
 	let registrations = 0,
 		authReads = 0,
 		requests = 0,
@@ -60,7 +71,10 @@ async function harness({ loading = false } = {}) {
 		authGate = null,
 		acceptGate = null,
 		configureGate = null,
-		registerGate = null;
+		registerGate = null,
+		snapshotGate = null,
+		removeGate = null,
+		fileGate = null;
 	class Source extends EventTarget {
 		constructor() {
 			super();
@@ -89,13 +103,31 @@ async function harness({ loading = false } = {}) {
 		constructor(batch) {
 			this.batch = batch;
 			this.completedCount = 0;
+			this.completedBytes = 0;
+			this.destinationMode = 'browser-download';
 		}
 		async dispose() {
 			this.disposed = true;
 		}
+		async page(start, count = 50) {
+			return Array.from({ length: Math.min(count, this.completedCount - start) }, (_, offset) => ({
+				index: start + offset,
+				name: `${start + offset}.txt`,
+				size: 1
+			}));
+		}
+		async metadata(index) {
+			return { index, name: `${index}.txt`, size: 1 };
+		}
+		async getCompletedFile(index) {
+			fileReads.push(index);
+			if (index === 1) await fileGate;
+			return new File(['x'], `${index}.txt`, { type: 'text/plain' });
+		}
 		async configureDestination(destination) {
 			await configureGate;
 			this.destination = destination;
+			this.destinationMode = destination.mode;
 			this.destinationLabel = 'fixture';
 		}
 	}
@@ -105,6 +137,11 @@ async function harness({ loading = false } = {}) {
 			transports.push(this);
 		}
 		offer() {}
+		file() {
+			this.store.completedCount++;
+			this.store.completedBytes++;
+			this.ports.file();
+		}
 		dispose() {
 			this.stopped = true;
 		}
@@ -142,10 +179,14 @@ async function harness({ loading = false } = {}) {
 			return snapshot;
 		},
 		async snapshot(id) {
+			snapshotReads.push(id);
+			await snapshotGate;
 			if (!devices.has(id)) throw new ApiClientError(404);
 			return devices.get(id);
 		},
 		async remove(id) {
+			removals.push(id);
+			await removeGate;
 			devices.delete(id);
 		},
 		eventsUrl: () => '/events',
@@ -155,7 +196,7 @@ async function harness({ loading = false } = {}) {
 		},
 		async accept(id) {
 			await acceptGate;
-			return pair(id);
+			return { ...(pairs.get(id) ?? pair(id)), status: 'accepted' };
 		},
 		async close() {},
 		async signal() {}
@@ -188,7 +229,7 @@ async function harness({ loading = false } = {}) {
 			pickReceiveDirectory: () => windowTarget.showDirectoryPicker(),
 			destinationSelectionMessage: () => 'ยกเลิกการเลือกโฟลเดอร์'
 		},
-		'./file-transfer-download-pump.js': { AutomaticDownloadPump: class {} },
+		'./file-transfer-download-pump.js': { AutomaticDownloadPump },
 		'#lib/api/client.js': { ApiClientError },
 		'svelte/store': { get },
 		'#lib/stores/auth.js': { authStore },
@@ -238,6 +279,10 @@ async function harness({ loading = false } = {}) {
 		streams,
 		transports,
 		devices,
+		removals,
+		exportsRequested,
+		fileReads,
+		snapshotReads,
 		get view() {
 			return view;
 		},
@@ -299,6 +344,15 @@ async function harness({ loading = false } = {}) {
 		setUnavailable() {
 			state.update((value) => ({ ...value, isUnavailable: true }));
 		},
+		set removeGate(value) {
+			removeGate = value;
+		},
+		set snapshotGate(value) {
+			snapshotGate = value;
+		},
+		set fileGate(value) {
+			fileGate = value;
+		},
 		set registerGate(value) {
 			registerGate = value;
 		},
@@ -317,8 +371,10 @@ async function harness({ loading = false } = {}) {
 		set configureGate(value) {
 			configureGate = value;
 		},
-		incoming() {
+		incoming(batch) {
 			const value = pair();
+			if (batch) value.batch = batch;
+			pairs.set(value.id, value);
 			devices.get(value.recipient.id).pairs = [value];
 			streams.at(-1).emit({ type: 'pair_changed', data: value });
 			return view.jobs.at(-1).id;
@@ -634,6 +690,185 @@ test('late registration cleanup after disposal cannot borrow a replacement accou
 		assert.equal(h.devices.has('device-1'), true);
 	} finally {
 		release?.();
+		await h.restore();
+	}
+});
+
+test('disposed late registration refuses cleanup when the same live identity becomes unavailable after unsubscribe', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.session.dispose();
+		await starting;
+		h.setUnavailable();
+		release();
+		await flush();
+		assert.deepEqual(h.removals, []);
+		assert.equal(h.devices.has('device-1'), true);
+		assert.equal(h.streams.length, 0);
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('stopping an unavailable owner defers its known-device cleanup until trusted reconciliation', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.setUnavailable();
+		await starting;
+		release();
+		await flush();
+		h.session.stop();
+		assert.deepEqual(h.removals, []);
+		assert.equal(h.devices.has('device-1'), true);
+		h.registerGate = null;
+		await h.session.start();
+		assert.deepEqual(h.removals, ['device-1']);
+		assert.equal(h.registrations, 2);
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('auth unavailability during old-device snapshot refuses cleanup and a fresh registration', async () => {
+	const h = await harness();
+	let release;
+	try {
+		await h.ready();
+		h.streams.at(-1).onerror();
+		h.snapshotGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		await h.tick();
+		h.setUnavailable();
+		release();
+		await flush();
+		assert.deepEqual(h.removals, []);
+		assert.equal(h.registrations, 1);
+		h.snapshotGate = null;
+		await h.tick();
+		assert.equal(h.registrations, 2);
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('rename and repeated start cannot replace the preferred label captured by a held startup POST', async () => {
+	const h = await harness();
+	let release;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			release = resolve;
+		});
+		const starting = h.session.start('ชื่อเดิม');
+		await flush();
+		assert.equal(h.session.rename('ชื่อใหม่'), 'ชื่อเดิม');
+		const joining = h.session.start('ชื่ออื่น');
+		release();
+		await Promise.all([starting, joining]);
+		h.streams.at(-1).ready();
+		await flush();
+		assert.equal(h.view.snapshot.device.label, 'ชื่อเดิม');
+		assert.equal(h.registrations, 1);
+		h.session.stop();
+		assert.equal(h.session.rename('ชื่อใหม่'), 'ชื่อใหม่');
+	} finally {
+		release?.();
+		await h.restore();
+	}
+});
+test('server auth unavailability fences a real held prefix reader and manual exports until same-owner reconciliation, then resumes once', async () => {
+	const h = await harness();
+	let releaseFile, releaseAuth;
+	try {
+		await h.ready();
+		const id = h.incoming({ fileCount: 2, totalBytes: 2 });
+		await h.session.receive(id);
+		const transport = h.transports.at(-1);
+		transport.manifest();
+		await flush();
+		transport.file();
+		await flush();
+		assert.deepEqual(h.exportsRequested, ['0.txt']);
+		h.fileGate = new Promise((resolve) => {
+			releaseFile = resolve;
+		});
+		transport.file();
+		await flush();
+		assert.deepEqual(h.fileReads, [0, 1]);
+		h.authGate = new Promise((resolve) => {
+			releaseAuth = resolve;
+		});
+		h.streams.at(-1).emit({ type: 'session_unavailable', data: {} });
+		assert.equal(h.view.authBlocked, true);
+		await h.tick();
+		const reads = h.fileReads.length;
+		await h.session.downloadFile(0);
+		h.session.downloadAll();
+		assert.equal(h.fileReads.length, reads);
+		releaseFile();
+		await flush();
+		assert.deepEqual(h.exportsRequested, ['0.txt']);
+		assert.equal(h.view.downloadCount, 2);
+		assert.equal(h.view.automaticDownloadRequests, 1);
+		releaseAuth();
+		await flush();
+		assert.equal(h.view.authBlocked, false);
+		assert.deepEqual(h.exportsRequested, ['0.txt', '1.txt']);
+		assert.equal(h.view.automaticDownloadRequests, 2);
+		await h.wake();
+		await flush();
+		assert.deepEqual(h.exportsRequested, ['0.txt', '1.txt']);
+	} finally {
+		releaseFile?.();
+		releaseAuth?.();
+		await h.restore();
+	}
+});
+
+test('availability loss while cleanup is pending preserves its ID and refuses registration until a new trusted snapshot', async () => {
+	const h = await harness();
+	let releaseRegister, releaseRemove;
+	try {
+		h.registerGate = new Promise((resolve) => {
+			releaseRegister = resolve;
+		});
+		const starting = h.session.start();
+		await flush();
+		h.setUnavailable();
+		await starting;
+		releaseRegister();
+		await flush();
+		h.registerGate = null;
+		h.removeGate = new Promise((resolve) => {
+			releaseRemove = resolve;
+		});
+		const recovery = h.session.start();
+		await flush();
+		assert.deepEqual(h.removals, ['device-1']);
+		h.setUnavailable();
+		releaseRemove();
+		await recovery;
+		assert.equal(h.registrations, 1);
+		const reads = h.snapshotReads.filter((id) => id === 'device-1').length;
+		h.removeGate = null;
+		await h.tick();
+		assert.equal(h.snapshotReads.filter((id) => id === 'device-1').length, reads + 1);
+		assert.equal(h.registrations, 2);
+	} finally {
+		releaseRegister?.();
+		releaseRemove?.();
 		await h.restore();
 	}
 });

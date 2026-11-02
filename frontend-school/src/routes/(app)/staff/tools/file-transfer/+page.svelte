@@ -214,8 +214,12 @@
 						<Label for="device-label">ชื่ออุปกรณ์</Label><Input
 							id="device-label"
 							bind:value={label}
-							disabled={sourceBusy || receiving}
-							onchange={() => session?.rename(label)}
+							disabled={sourceBusy ||
+								receiving ||
+								['connecting', 'reconnecting'].includes(view.status)}
+							onchange={() => {
+								if (session) label = session.rename(label);
+							}}
 						/>
 					</div>
 					{#if !online}<p role="status" class="text-sm text-muted-foreground">

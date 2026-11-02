@@ -1893,6 +1893,7 @@ test('automatic readiness accepts an early file draft and recovers SSE loss with
 		});
 		await page.goto(path);
 		await expect.poll(() => registrationStarted).toBe(true);
+		await expect(page.getByLabel('ชื่ออุปกรณ์', { exact: true })).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true })).toHaveCount(0);
 		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
 		await choose(page, [input('picker-return.txt', 'same native File after picker and SSE loss')]);
@@ -2063,6 +2064,104 @@ test('an ambiguous automatic registration preserves the draft and never repeats 
 		).toHaveLength(2);
 		await expect(page.getByTestId('source-summary')).toContainText('เลือก 1 ไฟล์');
 	} finally {
+		await api.close();
+	}
+});
+
+test('server auth unavailability blocks a held automatic export until trusted reconciliation then resumes the remaining prefix once', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	let releaseAuth!: () => void,
+		holdAuth = false,
+		authStarted = false;
+	const authentication = new Promise<void>((resolve) => {
+		releaseAuth = resolve;
+	});
+	const downloads: import('@playwright/test').Download[] = [];
+	try {
+		await receiver.addInitScript(() => {
+			const getFile = FileSystemFileHandle.prototype.getFile;
+			let hold = true;
+			FileSystemFileHandle.prototype.getFile = async function () {
+				if (this.name === 'file-1' && hold) {
+					Reflect.set(window, 'automaticReadWaiting', true);
+					await new Promise<void>((resolve) =>
+						window.addEventListener('release-automatic-read', () => resolve(), { once: true })
+					);
+					hold = false;
+				}
+				const file = await getFile.call(this);
+				if (this.name === 'file-1') Reflect.set(window, 'automaticReadFinished', true);
+				return file;
+			};
+		});
+		await api.setup(page);
+		await api.setup(receiver);
+		await receiver.route('**/api/auth/me', async (route) => {
+			if (holdAuth) {
+				authStarted = true;
+				await authentication;
+			}
+			await route.fallback();
+		});
+		receiver.on('download', (download) => downloads.push(download));
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [
+			input('0.txt', 'first completed file'),
+			input('1.txt', 'second completed file')
+		]);
+		await request(page, ['ผู้รับ']);
+		await receiveFiles(receiver);
+		await expect.poll(() => downloads.length).toBe(1);
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'automaticReadWaiting')))
+			.toBe(true);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		const device = api.devices.find((device) => device.label === 'ผู้รับ');
+		if (!device) throw new Error('missing receiver');
+		holdAuth = true;
+		api.emit(device.id, { type: 'session_unavailable', data: {} });
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 0.txt', exact: true })
+		).toBeDisabled();
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลดทั้งหมดเป็น ZIP', exact: true })
+		).toBeDisabled();
+		await expect.poll(() => authStarted).toBe(true);
+		await receiver.evaluate(() => window.dispatchEvent(new Event('release-automatic-read')));
+		await expect
+			.poll(() => receiver.evaluate(() => Reflect.get(window, 'automaticReadFinished')))
+			.toBe(true);
+		expect(downloads).toHaveLength(1);
+		await expect(receiver.getByTestId('save-status')).toContainText('1/2 ไฟล์');
+		releaseAuth();
+		holdAuth = false;
+		await expect.poll(() => downloads.length).toBe(2);
+		await expect(receiver.getByTestId('save-status')).toContainText('2/2 ไฟล์');
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 0.txt', exact: true })
+		).toBeEnabled();
+		for (const [index, download] of downloads.entries()) {
+			expect(download.suggestedFilename()).toBe(`${index}.txt`);
+			const file = await download.path();
+			if (!file) throw new Error('missing completed download');
+			expect(await readFile(file)).toEqual(
+				Buffer.from(index ? 'second completed file' : 'first completed file')
+			);
+		}
+		await receiver.evaluate(() => window.dispatchEvent(new Event('focus')));
+		await expect(receiver.getByTestId('save-status')).toHaveAttribute('data-pending', 'false');
+		expect(downloads).toHaveLength(2);
+	} finally {
+		releaseAuth();
+		await receiver
+			.evaluate(() => window.dispatchEvent(new Event('release-automatic-read')))
+			.catch(() => {});
+		await receiver.close();
 		await api.close();
 	}
 });
