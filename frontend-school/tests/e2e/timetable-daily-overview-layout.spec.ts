@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import { installTimetableMock, timetableIds } from './timetable-test-harness';
+import type { DailyTeachingEntry, DailyTeachingOverview } from '../../src/lib/api/timetable.js';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1280, height: 1080 } });
 
@@ -39,7 +40,7 @@ function periods() {
 	});
 }
 
-function activityEntry(index: number, homeroomNames: string[]) {
+function activityEntry(index: number, homeroomNames: string[]): DailyTeachingEntry {
 	return {
 		activityId: '72000000-0000-4000-8000-000000000201',
 		activitySchedulingMode: 'synchronized',
@@ -71,7 +72,7 @@ function activityEntries() {
 	return [activityEntry(1, homeroomNames.slice(0, 9)), activityEntry(2, homeroomNames.slice(9))];
 }
 
-function courseEntry() {
+function courseEntry(): DailyTeachingEntry {
 	return {
 		activityId: null,
 		activitySchedulingMode: null,
@@ -95,7 +96,7 @@ function courseEntry() {
 	};
 }
 
-function overview() {
+function overview(): DailyTeachingOverview {
 	const dailyPeriods = periods();
 	return {
 		academicTermId: timetableIds.term,
@@ -228,7 +229,7 @@ test('gives empty and scheduled period controls meaningful accessible names', as
 	).toBeVisible();
 });
 
-function multiOwnerOverview() {
+function multiOwnerOverview(): DailyTeachingOverview {
 	const data = overview();
 	const first = data.teachers[0];
 	first.periods = data.periods.map((period) => ({
@@ -298,15 +299,19 @@ test('searches and selects owners in either view without another daily read', as
 	await page.getByRole('option', { name: 'ครูร่วมสอน', exact: true }).click();
 	await expect(table.locator('tbody tr')).toHaveCount(1);
 	await expect(teacherPicker).toContainText('ครูร่วมสอน');
-	await page.getByRole('button', { name: 'ครู', exact: true }).click();
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
 	await expect(teacherPicker).toContainText('ครูร่วมสอน');
+	await expect(page.getByRole('radio', { name: 'ครู', exact: true })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
 	await expect(table.locator('tbody tr')).toHaveCount(1);
 	await expect(page).toHaveURL(/owner=/);
 	await teacherPicker.click();
 	await page.getByRole('option', { name: 'ครูทั้งหมด', exact: true }).click();
 	await expect(table.locator('tbody tr')).toHaveCount(3);
 
-	await page.getByRole('button', { name: 'ห้องเรียน', exact: true }).click();
+	await page.getByRole('radio', { name: 'ห้องเรียน', exact: true }).click();
 	await expect(table.locator('tbody tr')).toHaveCount(4);
 	await expect(table.locator('tbody tr td:first-child')).toHaveText([
 		'ม.1/1',
@@ -320,8 +325,12 @@ test('searches and selects owners in either view without another daily read', as
 	await page.getByPlaceholder('ค้นหาห้องเรียน...').fill('ม.1/2');
 	await page.getByRole('option', { name: 'ม.1/2', exact: true }).click();
 	await expect(table.locator('tbody tr')).toHaveCount(1);
-	await page.getByRole('button', { name: 'ห้องเรียน', exact: true }).click();
+	await page.getByRole('radio', { name: 'ห้องเรียน', exact: true }).click();
 	await expect(homeroomPicker).toContainText('ม.1/2');
+	await expect(page.getByRole('radio', { name: 'ห้องเรียน', exact: true })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
 	await page.getByLabel('ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน').fill('ไม่ตรงกับวิชา');
 	await expect(page.getByText('ไม่พบห้องเรียนตามตัวเลือก', { exact: true })).toBeVisible();
 	await page.getByLabel('ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน').fill('');
@@ -371,7 +380,7 @@ test('homeroom details deduplicate team teaching and scope activity instructors 
 	await expect(independentCell).toContainText('กิจกรรมแยก 1');
 	await expect(independentCell).toContainText('กิจกรรมแยก 2');
 	await expect(table).not.toContainText('กิจกรรมไม่ระบุห้อง');
-	await page.getByRole('button', { name: 'ครู', exact: true }).click();
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
 	await expect(table).toContainText('กิจกรรมไม่ระบุห้อง');
 });
 
@@ -388,7 +397,7 @@ test('an owner that disappears on a date change stays explicitly unavailable', a
 	const picker = page.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true });
 	await expect(picker).toContainText('ม.1/10');
 	// The next fixture has 18 synchronized rooms, so select a teacher that actually disappears.
-	await page.getByRole('button', { name: 'ครู', exact: true }).click();
+	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
 	await page.getByRole('combobox', { name: 'เลือกครู', exact: true }).click();
 	await page.getByRole('option', { name: 'ครูร่วมสอน', exact: true }).click();
 	await page.getByRole('button', { name: 'วันถัดไป' }).click();
@@ -419,7 +428,7 @@ for (const width of [390, 1280]) {
 				.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
 				.toBe(theme === 'dark');
 			for (const view of ['ครู', 'ห้องเรียน']) {
-				await page.getByRole('button', { name: view, exact: true }).click();
+				await page.getByRole('radio', { name: view, exact: true }).click();
 				const table = page.getByRole('table');
 				await expect(table).toBeVisible();
 				const geometry = await table.evaluate((element) => {

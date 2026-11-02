@@ -24,6 +24,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import {
@@ -134,11 +135,16 @@
 		else query.set('view', nextView);
 		if (nextOwner === 'all') query.delete('owner');
 		else query.set('owner', nextOwner);
-		void goto(resolve(`/staff/academic/timetable/today?${query}`), {
+		void goto(`${resolve('/(app)/staff/academic/timetable/today')}?${query}`, {
 			shallow: true,
 			state: page.state
 		});
 	}
+	function chooseView(nextView: string): void {
+		if (nextView !== 'teacher' && nextView !== 'homeroom') return;
+		choosePresentation(nextView);
+	}
+
 	const tableMinWidth = $derived(dailyTeachingTableMinWidth(overview?.periods.length ?? 4));
 
 	async function loadOverview(termId = academicTermId): Promise<void> {
@@ -349,25 +355,24 @@
 					>
 				</div>
 			</div>
-			<div class="flex rounded-lg border bg-muted/45 p-1" aria-label="มุมมองตารางสอนรายวัน">
-				<Button
-					type="button"
-					size="sm"
-					class="h-8 rounded-md px-3"
-					variant={view === 'teacher' ? 'default' : 'ghost'}
-					aria-pressed={view === 'teacher'}
-					onclick={() => choosePresentation('teacher')}><UsersRound class="size-3.5" />ครู</Button
+			<ToggleGroup.Root
+				type="single"
+				class="rounded-lg border bg-muted/45 p-1"
+				aria-label="มุมมองตารางสอนรายวัน"
+				bind:value={() => view, chooseView}
+			>
+				<ToggleGroup.Item
+					value="teacher"
+					class="h-8 rounded-md border-transparent px-3"
+					aria-label="ครู"><UsersRound class="size-3.5" aria-hidden="true" />ครู</ToggleGroup.Item
 				>
-				<Button
-					type="button"
-					size="sm"
-					class="h-8 rounded-md px-3"
-					variant={view === 'homeroom' ? 'default' : 'ghost'}
-					aria-pressed={view === 'homeroom'}
-					onclick={() => choosePresentation('homeroom')}
-					><School class="size-3.5" />ห้องเรียน</Button
+				<ToggleGroup.Item
+					value="homeroom"
+					class="h-8 rounded-md border-transparent px-3"
+					aria-label="ห้องเรียน"
+					><School class="size-3.5" aria-hidden="true" />ห้องเรียน</ToggleGroup.Item
 				>
-			</div>
+			</ToggleGroup.Root>
 			<div class="w-full min-w-0 space-y-1.5 sm:w-56">
 				<p class="text-xs font-medium">เลือก{ownerLabel}</p>
 				<TimetableOwnerSelector
