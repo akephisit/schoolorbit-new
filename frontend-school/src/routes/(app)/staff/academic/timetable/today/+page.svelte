@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -128,7 +129,7 @@
 		nextView: DailyTeachingView,
 		nextOwner = nextView === view ? ownerId : 'all'
 	): void {
-		const query = new URLSearchParams(presentationUrl.search);
+		const query = new SvelteURLSearchParams(presentationUrl.search);
 		if (nextView === 'teacher') query.delete('view');
 		else query.set('view', nextView);
 		if (nextOwner === 'all') query.delete('owner');
