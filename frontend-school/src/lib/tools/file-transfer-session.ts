@@ -72,6 +72,7 @@ type Entry = {
 	closingPairId: string | null;
 };
 type Batch = { id: string; files: File[]; metadata: TransferFile[] };
+const MAX_TRANSFER_JOBS = 64;
 const terminal = new Set<TransferPhase>(['complete', 'declined', 'cancelled', 'failed']);
 export function isTransferTerminal(phase: TransferPhase) {
 	return terminal.has(phase);
@@ -155,8 +156,37 @@ export class FileTransferSession {
 		for (const file of this.state.downloads) URL.revokeObjectURL(file.url);
 		this.state = { ...this.state, downloads: [] };
 	}
+	private pruneHistory(requiredSlots = 0, clearIncoming = false) {
+		if (requiredSlots > MAX_TRANSFER_JOBS) return false;
+		const downloadOwners = new Set(this.state.downloads.map((file) => file.jobId));
+		const candidates = [...this.entries.values()].filter(
+			(entry) =>
+				isTransferTerminal(entry.view.phase) &&
+				!entry.view.slotReserved &&
+				!entry.view.pending &&
+				!downloadOwners.has(entry.view.id)
+		);
+		// Incoming history has no retry action. Keep outgoing retries until capacity needs them.
+		for (const direction of ['incoming', 'outgoing'] as const) {
+			for (const entry of candidates) {
+				if (entry.view.direction !== direction) continue;
+				if (
+					this.entries.size + requiredSlots <= MAX_TRANSFER_JOBS &&
+					!(clearIncoming && direction === 'incoming')
+				)
+					break;
+				if (entry.view.pair) this.retire(this.retiredPairs, entry.view.pair.id);
+				this.retire(this.retiredRequests, entry.view.clientRequestId);
+				entry.controller.abort();
+				entry.transport?.dispose();
+				this.entries.delete(entry.view.id);
+			}
+		}
+		return this.entries.size + requiredSlots <= MAX_TRANSFER_JOBS;
+	}
 	clearDownloads() {
 		this.releaseDownloads();
+		this.pruneHistory(0, true);
 		this.publish();
 	}
 	clearSource() {
@@ -199,7 +229,7 @@ export class FileTransferSession {
 		if (clearFiles) {
 			this.releaseDownloads();
 			this.entries.clear();
-		}
+		} else this.pruneHistory(0, true);
 		this.publish({ status: message ? 'offline' : 'idle', snapshot: null, error: message });
 		if (device)
 			void transferAPI
@@ -411,6 +441,13 @@ export class FileTransferSession {
 				this.closeOrphan(pair);
 				return;
 			}
+			if (!this.pruneHistory(1)) {
+				this.closeOrphan(pair);
+				this.publish({
+					error: 'รายการรับส่งเต็ม กรุณาสิ้นสุดคำขอหรือล้างไฟล์ที่รับแล้วก่อนรับชุดใหม่'
+				});
+				return;
+			}
 			entry = this.entry(
 				'incoming',
 				pair.files,
@@ -545,28 +582,28 @@ export class FileTransferSession {
 			this.batch.files.length !== files.length
 		) {
 			this.batch = { id: crypto.randomUUID(), files: [...files], metadata };
-			for (const [id, entry] of this.entries)
-				if (isTransferTerminal(entry.view.phase) && !entry.view.slotReserved)
-					this.entries.delete(id);
 		}
 		const batch = this.batch;
-		if (this.entries.size + targets.length > 64) {
+		const requested = new Set<string>();
+		const additions = targets.filter((target) => {
+			if (target.type === 'device' && target.deviceId === snapshot.device.id) return false;
+			const key = target.type === 'device' ? `device:${target.deviceId}` : `code:${target.code}`;
+			if (requested.has(key)) return false;
+			requested.add(key);
+			return ![...this.entries.values()].some(
+				(item) =>
+					item.batchId === batch.id &&
+					item.target?.type === target.type &&
+					(target.type === 'device'
+						? item.view.recipientId === target.deviceId
+						: item.target.type === 'code' && item.target.code === target.code)
+			);
+		});
+		if (!this.pruneHistory(additions.length)) {
 			this.publish({ error: 'รายชื่อผู้รับเต็ม กรุณาสิ้นสุดชุดเดิมและล้างรายชื่อก่อนเพิ่มผู้รับ' });
 			return;
 		}
-		for (const target of targets) {
-			if (target.type === 'device' && target.deviceId === snapshot.device.id) continue;
-			if (
-				[...this.entries.values()].some(
-					(item) =>
-						item.batchId === batch.id &&
-						item.target?.type === target.type &&
-						(target.type === 'device'
-							? item.view.recipientId === target.deviceId
-							: item.target.type === 'code' && item.target.code === target.code)
-				)
-			)
-				continue;
+		for (const target of additions) {
 			const peer =
 				target.type === 'device'
 					? snapshot.peers.find((item) => item.id === target.deviceId)

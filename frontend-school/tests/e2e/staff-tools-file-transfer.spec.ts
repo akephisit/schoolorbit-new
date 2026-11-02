@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import jsQR from 'jsqr';
-import type { TransferEvent } from '../../src/lib/api/file-transfer.js';
+import type { TransferEvent, TransferPair } from '../../src/lib/api/file-transfer.js';
 import { fileTransferFixture } from './fixtures/file-transfer';
 
 const path = '/staff/tools/file-transfer';
@@ -301,6 +301,107 @@ test('malformed second-file frames preserve the first file and new incoming batc
 		expect(await download(receiver, 0, 'new.txt')).toEqual(Buffer.from('new batch'));
 		await expect(
 			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 good.txt', exact: true })
+		).toHaveCount(0);
+	} finally {
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('incoming cancellation history stays bounded while completed downloads retain their owner and bytes', async ({
+	context,
+	page
+}) => {
+	test.setTimeout(90_000);
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('retained.txt', 'completed bytes survive history churn')]);
+		await request(page, ['ผู้รับ']);
+		await expect(incoming(receiver)).toHaveAttribute('data-phase', 'consent');
+		const original = structuredClone(api.pairs[0]);
+		await accept(receiver);
+		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
+		await expect.poll(() => api.pairs.length).toBe(0);
+		const signalCount = api.requests.filter((entry) => entry.path.endsWith('/signals')).length;
+		let first = original;
+		for (let cycle = 0; cycle < 80; cycle++) {
+			// Native SSE delivers valid, sequential requests withdrawn by the remote sender.
+			// No consent or transport is needed for this metadata-only churn.
+			const pair: TransferPair = {
+				...original,
+				id: randomUUID(),
+				clientRequestId: randomUUID(),
+				files: Array.from({ length: 20 }, (_, index) => ({
+					name: `request-${cycle}-${index}.txt`,
+					size: 1,
+					mimeType: 'text/plain'
+				})),
+				status: 'pending',
+				expiresAt: new Date(Date.now() + 120_000).toISOString()
+			};
+			if (cycle === 0) first = pair;
+			api.emit(original.recipient.id, { type: 'pair_changed', data: pair });
+			await expect(
+				incoming(receiver).getByText(`1. request-${cycle}-0.txt · 1 ไบต์`)
+			).toBeVisible();
+			expect(await incoming(receiver).count()).toBeLessThanOrEqual(64);
+			api.emit(original.recipient.id, {
+				type: 'pair_closed',
+				data: { pairId: pair.id, reason: 'cancelled' }
+			});
+			await expect(
+				receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			).toHaveCount(0);
+		}
+		await expect(incoming(receiver)).toHaveCount(64);
+		await expect(
+			receiver.locator(
+				'[data-testid="transfer-job"][data-direction="incoming"][data-phase="complete"]'
+			)
+		).toHaveCount(1);
+		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(
+			signalCount
+		);
+		expect(api.requests.filter((entry) => entry.path.endsWith('/accept'))).toHaveLength(1);
+		const observed = await observeEvents(receiver);
+		try {
+			api.emit(original.recipient.id, { type: 'pair_changed', data: first });
+			await expect.poll(() => observed.events.length).toBe(1);
+			await expect(incoming(receiver)).toHaveCount(64);
+			await expect(
+				receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+			).toHaveCount(0);
+		} finally {
+			await observed.close();
+		}
+		// Starting an outgoing batch must not prune an incoming download's owner either.
+		await choose(receiver, [input('return.txt', 'not accepted')]);
+		await request(receiver, ['ผู้ส่ง']);
+		await expect(incoming(page)).toHaveAttribute('data-phase', 'consent');
+		await outgoing(receiver, 'ผู้ส่ง')
+			.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true })
+			.click();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		expect(await download(receiver, 0, 'retained.txt')).toEqual(
+			Buffer.from('completed bytes survive history churn')
+		);
+		await receiver.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
+		await receiver.getByLabel('ชื่ออุปกรณ์', { exact: true }).fill('ผู้รับใหม่');
+		await receiver.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await expect(receiver.getByTestId('pairing-code')).toBeVisible();
+		await expect(incoming(receiver)).toHaveCount(1);
+		expect(await download(receiver, 0, 'retained.txt')).toEqual(
+			Buffer.from('completed bytes survive history churn')
+		);
+		await receiver.getByRole('button', { name: 'ล้างไฟล์ที่รับแล้วทั้งหมด', exact: true }).click();
+		await expect(incoming(receiver)).toHaveCount(0);
+		await expect(
+			receiver.getByRole('button', { name: 'ดาวน์โหลด 1 retained.txt', exact: true })
 		).toHaveCount(0);
 	} finally {
 		await receiver.close();
