@@ -444,7 +444,7 @@ run_file_transfer_smoke() {
     chmod 0600 "$registration_body" "$stream_body" "$stream_headers"
     if ! file_transfer_request POST /api/staff/file-transfer/devices \
         "$registration_headers" "$registration_body" \
-        -H 'Content-Type: application/json' --data '{"label":"SchoolOrbit smoke","protocolVersion":2}'; then
+        -H 'Content-Type: application/json' --data '{"label":"SchoolOrbit smoke","protocolVersion":3}'; then
         return 0
     fi
     if [[ $file_transfer_status != 200 ]]; then
@@ -486,8 +486,8 @@ try:
     snapshot = value["data"]
     device = snapshot["device"]
     require(value["success"] is True)
-    require(snapshot["protocolVersion"] == 2)
-    require(snapshot["limits"] == {"maxOutgoingTransfers": 3, "maxFilesPerBatch": 20, "maxFileBytes": 67108864, "maxBatchBytes": 134217728})
+    require(snapshot["protocolVersion"] == 3)
+    require(snapshot["limits"] == {"maxOutgoingTransfers": 6})
     require(str(uuid.UUID(device["userId"])) == device["userId"])
     require(isinstance(device["displayName"], str) and device["displayName"])
     require(device["label"] == "SchoolOrbit smoke")
@@ -548,7 +548,7 @@ try:
                 if value.get("type") == "ready":
                     snapshot = value["data"]
                     require(snapshot["device"] == registered["device"])
-                    require(snapshot["protocolVersion"] == 2)
+                    require(snapshot["protocolVersion"] == 3)
                     require(snapshot["limits"] == registered["limits"])
                     require(snapshot["device"]["id"] == sys.argv[3])
                     require(snapshot["pairingCode"] == registered["pairingCode"])

@@ -882,7 +882,7 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
-    FileTransferFile,
+    FileTransferBatchSummary,
     FileTransferDevice,
     FileTransferPairStatus,
     FileTransferPair,
@@ -7735,32 +7735,47 @@ mod tests {
         );
     }
     #[test]
-    fn documents_file_transfer_v2_batches_limits_and_correlation() {
+    fn documents_file_transfer_v3_summary_limits_and_correlation() {
         let document = school_api_value().unwrap();
         let schemas = &document["components"]["schemas"];
+        assert!(schemas.get("FileTransferFile").is_none());
         for owner in ["FileTransferPair", "CreateFileTransferPair"] {
-            assert!(required(&schemas[owner]).contains(&"files"));
+            assert!(required(&schemas[owner]).contains(&"batch"));
             assert!(required(&schemas[owner]).contains(&"clientRequestId"));
-            assert!(schemas[owner]["properties"].get("file").is_none());
+            assert!(schemas[owner]["properties"].get("files").is_none());
             assert_eq!(
-                schemas[owner]["properties"]["files"]["items"]["$ref"],
-                "#/components/schemas/FileTransferFile"
+                schemas[owner]["properties"]["batch"]["$ref"],
+                "#/components/schemas/FileTransferBatchSummary"
             );
         }
+        for field in ["fileCount", "totalBytes"] {
+            assert!(required(&schemas["FileTransferBatchSummary"]).contains(&field));
+            assert_eq!(
+                schemas["FileTransferBatchSummary"]["properties"][field]["maximum"],
+                9007199254740991_u64
+            );
+        }
+        assert_eq!(
+            schemas["FileTransferBatchSummary"]["additionalProperties"],
+            false
+        );
         assert!(required(&schemas["FileTransferSnapshot"]).contains(&"protocolVersion"));
         assert!(required(&schemas["FileTransferSnapshot"]).contains(&"limits"));
         assert_eq!(
             schemas["FileTransferSnapshot"]["properties"]["limits"]["$ref"],
             "#/components/schemas/FileTransferLimits"
         );
-        for field in [
-            "maxOutgoingTransfers",
-            "maxFilesPerBatch",
-            "maxFileBytes",
-            "maxBatchBytes",
-        ] {
-            assert!(required(&schemas["FileTransferLimits"]).contains(&field));
-        }
+        assert_eq!(
+            required(&schemas["FileTransferLimits"]),
+            vec!["maxOutgoingTransfers"]
+        );
+        assert_eq!(
+            schemas["FileTransferLimits"]["properties"]
+                .as_object()
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(schemas["RegisterFileTransferDevice"]["properties"]
             .get("protocolVersion")
             .is_some());
