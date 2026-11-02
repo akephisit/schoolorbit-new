@@ -1,27 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-	MAX_FILE_BYTES,
-	MAX_BATCH_BYTES,
-	MAX_BATCH_FILES,
 	FILE_CHUNK_BYTES,
 	FILE_READ_BYTES,
 	BUFFER_HIGH_WATER,
 	BUFFER_LOW_WATER,
 	validateTransferFile,
 	validateTransferBatch,
+	validateBatchSummary,
 	batchBytes,
 	sameFiles,
+	sameBatch,
+	batchSummary,
 	parseTransferControl,
 	pairingCodeFromHash,
 	pairingUrl
 } from '../../src/lib/tools/file-transfer.ts';
+import { TransferRate } from '../../src/lib/tools/file-transfer-rate.ts';
 
 const metadata = { name: 'เอกสาร.pdf', size: 0, mimeType: 'application/pdf' };
-test('file and ordered batch bounds include zero files and duplicate names but reject unsafe metadata and aggregate overflow', () => {
-	for (const size of [0, FILE_CHUNK_BYTES, MAX_FILE_BYTES])
+test('safe browser metadata admits files and batches above former business caps', () => {
+	for (const size of [0, FILE_CHUNK_BYTES, 65 * 1024 * 1024, Number.MAX_SAFE_INTEGER])
 		assert.equal(validateTransferFile({ ...metadata, size }), null);
-	for (const size of [-1, 0.5, NaN, Infinity, MAX_FILE_BYTES + 1])
+	for (const size of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
 		assert.ok(validateTransferFile({ ...metadata, size }));
 	for (const name of [
 		'',
@@ -37,31 +38,55 @@ test('file and ordered batch bounds include zero files and duplicate names but r
 		assert.ok(validateTransferFile({ ...metadata, name }));
 	assert.equal(validateTransferFile({ ...metadata, name: '😀'.repeat(255) }), null);
 	assert.ok(validateTransferFile({ ...metadata, mimeType: 'x'.repeat(129) }));
-	assert.equal(validateTransferBatch([metadata, metadata]), null);
-	assert.equal(validateTransferBatch(Array(MAX_BATCH_FILES).fill(metadata)), null);
+	assert.equal(validateTransferBatch(Array(1000).fill(metadata)), null);
 	assert.ok(validateTransferBatch([]));
-	assert.ok(validateTransferBatch(Array(MAX_BATCH_FILES + 1).fill(metadata)));
-	const maximum = [
-		{ ...metadata, size: MAX_FILE_BYTES },
-		{ ...metadata, size: MAX_FILE_BYTES }
+	const files = [
+		{ ...metadata, size: 65 * 1024 * 1024 },
+		{ ...metadata, size: 65 * 1024 * 1024 }
 	];
-	assert.equal(batchBytes(maximum), MAX_BATCH_BYTES);
-	assert.equal(validateTransferBatch(maximum), null);
-	assert.ok(validateTransferBatch([...maximum, { ...metadata, size: 1 }]));
+	assert.equal(batchBytes(files), 130 * 1024 * 1024);
+	assert.equal(validateTransferBatch(files), null);
+	assert.ok(
+		validateTransferBatch([
+			{ ...metadata, size: Number.MAX_SAFE_INTEGER },
+			{ ...metadata, size: 1 }
+		])
+	);
 	assert.equal(
 		sameFiles([metadata, { ...metadata, size: 1 }], [{ ...metadata, size: 1 }, metadata]),
 		false
+	);
+	assert.deepEqual(batchSummary(files), { fileCount: 2, totalBytes: 130 * 1024 * 1024 });
+	assert.equal(sameBatch(batchSummary(files), { fileCount: 2, totalBytes: 1 }), false);
+	for (const batch of [
+		{ fileCount: 0, totalBytes: 0 },
+		{ fileCount: 1, totalBytes: -1 },
+		{ fileCount: Number.MAX_SAFE_INTEGER + 1, totalBytes: 0 }
+	])
+		assert.ok(validateBatchSummary(batch));
+	assert.equal(
+		validateBatchSummary({
+			fileCount: Number.MAX_SAFE_INTEGER,
+			totalBytes: Number.MAX_SAFE_INTEGER
+		}),
+		null
 	);
 	assert.ok(FILE_READ_BYTES > FILE_CHUNK_BYTES);
 	assert.ok(BUFFER_HIGH_WATER >= FILE_READ_BYTES);
 	assert.ok(BUFFER_LOW_WATER < BUFFER_HIGH_WATER - FILE_CHUNK_BYTES);
 });
-test('v2 controls require bounded indices, exact file acknowledgments and nonempty bounded batch totals', () => {
+test('v3 controls keep peer manifests bounded and permit safe large counts and byte credits', () => {
 	for (const control of [
-		{ type: 'file_start', index: 0 },
-		{ type: 'file_end', index: 19, bytes: MAX_FILE_BYTES },
+		{ type: 'manifest_start', count: 1000, totalBytes: 200 * 1024 * 1024 },
+		{ type: 'manifest_file', index: 100, file: metadata },
+		{ type: 'manifest_ack', count: 100 },
+		{ type: 'manifest_ready', count: 1000, totalBytes: 0 },
+		{ type: 'receive_ready', count: 1000, totalBytes: 0 },
+		{ type: 'persisted', bytes: Number.MAX_SAFE_INTEGER },
+		{ type: 'file_start', index: 100 },
+		{ type: 'file_end', index: 999, bytes: 65 * 1024 * 1024 },
 		{ type: 'file_received', index: 0, bytes: 0 },
-		{ type: 'batch_end', count: 20, totalBytes: MAX_BATCH_BYTES },
+		{ type: 'batch_end', count: 1000, totalBytes: 200 * 1024 * 1024 },
 		{ type: 'batch_received', count: 1, totalBytes: 0 }
 	])
 		assert.deepEqual(parseTransferControl(JSON.stringify(control)), control);
@@ -69,16 +94,38 @@ test('v2 controls require bounded indices, exact file acknowledgments and nonemp
 		null,
 		{},
 		[],
+		{ type: 'manifest_file', index: 0, file: { ...metadata, name: '../secret' } },
+		{ type: 'manifest_file', index: 0, file: { ...metadata, size: '1' } },
+		{ type: 'persisted', bytes: -1 },
+		{ type: 'manifest_ack', count: 0.1 },
 		{ type: 'file_start', index: -1 },
-		{ type: 'file_start', index: 20 },
-		{ type: 'file_end', index: 0, bytes: MAX_FILE_BYTES + 1 },
+		{ type: 'file_start', index: Number.MAX_SAFE_INTEGER + 1 },
+		{ type: 'file_end', index: 0, bytes: Number.MAX_SAFE_INTEGER + 1 },
 		{ type: 'batch_end', count: 0, totalBytes: 0 },
-		{ type: 'batch_received', count: 1, totalBytes: MAX_BATCH_BYTES + 1 },
-		{ type: 'end', bytes: 1 },
-		{ type: 'received', bytes: 1 }
+		{ type: 'batch_received', count: 1, totalBytes: -1 },
+		{ type: 'end', bytes: 1 }
 	])
 		assert.throws(() => parseTransferControl(JSON.stringify(value)));
-	assert.throws(() => parseTransferControl(' '.repeat(257)));
+	assert.throws(() => parseTransferControl(' '.repeat(4097)));
+	assert.throws(() =>
+		parseTransferControl(
+			JSON.stringify({
+				type: 'manifest_file',
+				index: 0,
+				file: { ...metadata, name: 'ก'.repeat(2000) }
+			})
+		)
+	);
+});
+test('rates sample acknowledged decimal MB over monotonic time and become zero when idle', () => {
+	const rate = new TransferRate();
+	rate.reset(1000);
+	assert.equal(rate.sample(1499, 1_000_000), 0);
+	assert.equal(rate.sample(1500, 1_000_000), 2);
+	assert.equal(rate.sample(2000, 1_500_000), 1);
+	assert.equal(rate.sample(2500, 1_500_000), 0);
+	assert.equal(rate.sample(3000, 0), 0);
+	assert.equal(rate.sample(2500, 1_000_000), 0);
 });
 test('pairing links keep the code in a fragment and reject arbitrary URL payloads', () => {
 	const url = pairingUrl('https://school.example', '/staff/tools/file-transfer', 'ABCD1234EF');
@@ -92,4 +139,63 @@ test('pairing links keep the code in a fragment and reject arbitrary URL payload
 		'#unrelated=123'
 	])
 		assert.equal(pairingCodeFromHash(value), '');
+});
+
+test('automatic exports keep one reader, coalesce completed prefixes and fence cancelled reads', async () => {
+	const { AutomaticDownloadPump } =
+		await import('../../src/lib/tools/file-transfer-download-pump.ts');
+	let release,
+		reads = 0,
+		active = 0,
+		maxActive = 0;
+	const requested = [];
+	const pump = new AutomaticDownloadPump({
+		read: async (index) => {
+			reads++;
+			active++;
+			maxActive = Math.max(maxActive, active);
+			if (index === 0)
+				await new Promise((resolve) => {
+					release = resolve;
+				});
+			active--;
+			return { file: new File(['x'], `${index}.txt`), name: `${index}.txt` };
+		},
+		request: (index) => requested.push(index),
+		progress: () => {},
+		failure: (error) => {
+			throw error;
+		}
+	});
+	pump.advance(1);
+	pump.advance(100);
+	assert.equal(reads, 1);
+	release();
+	while (requested.length < 100) await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(maxActive, 1);
+	assert.deepEqual(
+		requested,
+		Array.from({ length: 100 }, (_, i) => i)
+	);
+	await pump.stop();
+	let unblock;
+	const late = [];
+	const cancelled = new AutomaticDownloadPump({
+		read: async () => {
+			await new Promise((resolve) => {
+				unblock = resolve;
+			});
+			return { file: new File(['x'], 'late.txt'), name: 'late.txt' };
+		},
+		request: (index) => late.push(index),
+		progress: () => {},
+		failure: (error) => {
+			throw error;
+		}
+	});
+	cancelled.advance(10);
+	const stopped = cancelled.stop();
+	unblock();
+	await stopped;
+	assert.deepEqual(late, []);
 });
