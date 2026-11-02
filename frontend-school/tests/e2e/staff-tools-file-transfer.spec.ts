@@ -33,6 +33,14 @@ async function request(page: Page, labels: string[]) {
 	}
 	await page.getByRole('button', { name: 'ส่งชุดไฟล์ให้ผู้รับที่เลือก', exact: true }).click();
 }
+async function fixturePair(
+	api: Awaited<ReturnType<typeof fileTransferFixture>>
+): Promise<TransferPair> {
+	await expect.poll(() => api.pairs.length).toBe(1);
+	const pair = api.pairs[0];
+	if (!pair) throw new Error('Fixture pair disappeared before snapshot');
+	return structuredClone(pair);
+}
 async function viewManifest(page: Page) {
 	await page.getByRole('button', { name: 'ดูรายการไฟล์', exact: true }).click();
 }
@@ -352,7 +360,7 @@ test('incoming cancellation history stays bounded while completed downloads reta
 		await choose(page, [input('retained.txt', 'completed bytes survive history churn')]);
 		await request(page, ['ผู้รับ']);
 		await expect(incoming(receiver)).toHaveAttribute('data-phase', 'consent');
-		const original = structuredClone(api.pairs[0]);
+		const original = await fixturePair(api);
 		await accept(receiver);
 		await expect(outgoing(page, 'ผู้รับ')).toHaveAttribute('data-phase', 'complete');
 		await expect.poll(() => api.pairs.length).toBe(0);
@@ -514,7 +522,7 @@ for (const ordering of ['accepted-event-first', 'failed-response-first'] as cons
 			await open(receiver, 'ผู้รับ');
 			await choose(page, [input('one.txt', 'one'), input('two.txt', 'two')]);
 			await request(page, ['ผู้รับ']);
-			const pair = structuredClone(api.pairs[0]),
+			const pair = await fixturePair(api),
 				acceptedSeen = () =>
 					observed.events.some(
 						(event) =>
@@ -580,10 +588,10 @@ test('cancellation fences late accepted events and native offers, and retry crea
 		await open(receiver, 'ผู้รับ');
 		await choose(page, [input('cancel.txt', 'cancel')]);
 		await request(page, ['ผู้รับ']);
-		const pair = structuredClone(api.pairs[0]);
+		const pair = await fixturePair(api);
 		await viewManifest(receiver);
 		await expect.poll(() => api.heldSignals).toBe(1);
-		const accepted = structuredClone(api.pairs[0]);
+		const accepted = await fixturePair(api);
 		await incoming(receiver)
 			.getByRole('button', { name: /ยกเลิก/ })
 			.click();
@@ -604,7 +612,7 @@ test('cancellation fences late accepted events and native offers, and retry crea
 		);
 		await outgoing(page, 'ผู้รับ').getByRole('button', { name: 'ส่งคำขอใหม่' }).click();
 		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toBeVisible();
-		expect(api.pairs[0].clientRequestId).not.toBe(pair.clientRequestId);
+		expect((await fixturePair(api)).clientRequestId).not.toBe(pair.clientRequestId);
 		await accept(receiver);
 		expect(await download(receiver, 0, 'cancel.txt')).toEqual(Buffer.from('cancel'));
 	} finally {
@@ -962,14 +970,14 @@ test('a held old close response cannot prevent the retried pair from closing ind
 		await open(receiver, 'ผู้รับ');
 		await choose(page, [input('retry.txt', 'new request')]);
 		await request(page, ['ผู้รับ']);
-		const first = structuredClone(api.pairs[0]),
+		const first = await fixturePair(api),
 			job = outgoing(page, 'ผู้รับ');
 		api.holdCloseResponses();
 		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
 		await expect.poll(() => api.pairs.length).toBe(0);
 		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
 		await expect(receiver.getByRole('button', { name: 'ดูรายการไฟล์', exact: true })).toBeVisible();
-		const second = structuredClone(api.pairs[0]);
+		const second = await fixturePair(api);
 		expect(second.clientRequestId).not.toBe(first.clientRequestId);
 		await accept(receiver);
 		await expect(job).toHaveAttribute('data-phase', 'complete');
@@ -1008,7 +1016,7 @@ test('late close success after device restart cannot restore old file references
 		await choose(page, [input('old-selection.txt', 'private previous selection')]);
 		await request(page, ['ผู้รับ']);
 		const job = outgoing(page, 'ผู้รับ'),
-			pair = structuredClone(api.pairs[0]);
+			pair = await fixturePair(api);
 		api.failSenderClose();
 		const reconciled = page.waitForResponse(
 			(response) =>
@@ -1086,7 +1094,18 @@ test('large and many files use disk manifest pages and one independently readabl
 		await open(receiver, 'ผู้รับขนาดใหญ่');
 		await page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true }).setInputFiles(paths);
 		await request(page, ['ผู้รับขนาดใหญ่']);
-		expect(JSON.parse(api.requests.find((r) => r.path.endsWith('/pairs'))!.body).batch).toEqual({
+		await expect
+			.poll(
+				() =>
+					api.requests.filter((entry) => entry.path.endsWith('/pairs') && entry.method === 'POST')
+						.length
+			)
+			.toBe(1);
+		expect(
+			JSON.parse(
+				api.requests.find((entry) => entry.path.endsWith('/pairs') && entry.method === 'POST')!.body
+			).batch
+		).toEqual({
 			fileCount: 54,
 			totalBytes: 130 * 1024 * 1024 + 11
 		});
