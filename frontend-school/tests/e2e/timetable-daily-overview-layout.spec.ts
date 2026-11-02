@@ -243,6 +243,31 @@ test('shows reference code, subject and separate context lines while keeping ful
 	await expect(dialog).toContainText('กิจกรรมโฮมรูม · v1');
 });
 
+test('keeps saved custom course titles in details while cards show subject code and name', async ({
+	page
+}) => {
+	const data = overview();
+	const customTitle = 'ทบทวนก่อนสอบ';
+	data.teachers[0].periods[9].entries = [{ ...courseEntry(), title: customTitle }];
+	await installDailyOverview(page, data);
+	await page.goto(todayUrl());
+	for (const view of ['ครู', 'ห้องเรียน']) {
+		await page.getByRole('radio', { name: view, exact: true }).click();
+		const cell = page.getByRole('table').getByRole('cell').filter({ hasText: 'ค21101' });
+		await expect(cell.locator('[data-daily-card-code]')).toHaveText('ค21101');
+		await expect(cell.locator('[data-daily-card-title]')).toHaveText('คณิตศาสตร์พื้นฐาน');
+		await expect(cell).not.toContainText(customTitle);
+		await cell.getByRole('button').click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByText(customTitle, { exact: true })).toBeVisible();
+		await expect(dialog.getByText('คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+		await expect(dialog).toContainText('ห้องคณิตศาสตร์');
+		await expect(dialog).toContainText('ค21101');
+		await expect(dialog).not.toContainText('116');
+		await page.keyboard.press('Escape');
+	}
+});
+
 test('gives empty and scheduled period controls meaningful accessible names', async ({ page }) => {
 	await installDailyOverview(page);
 	await page.goto(todayUrl());

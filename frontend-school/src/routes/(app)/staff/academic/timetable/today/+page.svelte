@@ -209,7 +209,7 @@
 	}
 
 	function entryTitle(entry: DailyTeachingEntry): string {
-		return dailyTeachingEntryTitle(entry);
+		return entry.title?.trim() || dailyTeachingEntryTitle(entry);
 	}
 
 	function entryDetailLabels(entry: DailyTeachingEntry): string[] {
