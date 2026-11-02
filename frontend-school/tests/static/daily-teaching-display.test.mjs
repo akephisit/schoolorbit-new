@@ -10,10 +10,8 @@ const {
 	dailyTeachingRows,
 	filterDailyTeachingRows,
 	dailyTeachingGroupInstructors,
-	dailyTeachingHomeroomGroupMeta,
-	dailyTeachingCompactGroupMeta,
-	dailyTeachingCompactTitle,
-	dailyTeachingEntryCardPresentation,
+	dailyTeachingEntryTitle,
+	dailyTeachingCardPresentation,
 	dailyTeachingTableMinWidth,
 	dailyTeachingTeacherCell,
 	displayGroupCountLabel,
@@ -190,42 +188,6 @@ test('teacher cell presentation excludes subject-group subtitles', () => {
 	);
 });
 
-test('uses detailed cards for courses and independent activities', () => {
-	assert.equal(typeof dailyTeachingEntryCardPresentation, 'function');
-	assert.deepEqual(
-		dailyTeachingEntryCardPresentation(
-			entry({ entryType: 'course', activitySchedulingMode: null })
-		),
-		{ tone: 'course', layout: 'details', titleLineLimit: 2 }
-	);
-	assert.deepEqual(
-		dailyTeachingEntryCardPresentation(
-			entry({ entryType: 'activity', activitySchedulingMode: 'independent' })
-		),
-		{ tone: 'activity', layout: 'details', titleLineLimit: 2 }
-	);
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'activity' })), {
-		tone: 'activity',
-		layout: 'centered',
-		titleLineLimit: 3
-	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'structural' })), {
-		tone: 'course',
-		layout: 'centered',
-		titleLineLimit: 3
-	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'homeroom' })), {
-		tone: 'activity',
-		layout: 'centered',
-		titleLineLimit: 3
-	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'break' })), {
-		tone: 'break',
-		layout: 'centered',
-		titleLineLimit: 3
-	});
-});
-
 test('builds an accessible label for a visually empty period cell', () => {
 	assert.equal(typeof dailyTeachingEmptyCellLabel, 'function');
 	assert.equal(
@@ -234,65 +196,120 @@ test('builds an accessible label for a visually empty period cell', () => {
 	);
 });
 
-test('keeps compact daily teaching titles focused on the scheduled item', () => {
-	assert.equal(typeof dailyTeachingCompactTitle, 'function');
-	assert.equal(
-		dailyTeachingCompactTitle(
+function cardPresentation(
+	entries,
+	view = 'teacher',
+	instructors = [{ id: 'teacher-a', displayName: 'นายสมชาย ใจดี' }]
+) {
+	const group = groupDailyTeachingEntries(entries, view)[0];
+	const cell = {
+		bellSchedulePeriodId: 'period-a',
+		entries,
+		instructorsByEntry: new Map(entries.map((item) => [item.entryId, instructors]))
+	};
+	return dailyTeachingCardPresentation(group, cell, view);
+}
+
+test('course cards show code and subject name separately from target and physical room', () => {
+	const course = entry({
+		entryType: 'course',
+		activitySchedulingMode: null,
+		title: null,
+		offeringCode: 'ค21101',
+		offeringName: 'คณิตศาสตร์พื้นฐาน',
+		homeroomNames: ['ม.1/1', 'ม.1/2'],
+		roomName: 'ห้องคณิตศาสตร์'
+	});
+	assert.equal(dailyTeachingEntryTitle(course), 'คณิตศาสตร์พื้นฐาน');
+	assert.deepEqual(cardPresentation([course]), {
+		code: 'ค21101',
+		title: 'คณิตศาสตร์พื้นฐาน',
+		titleLineLimit: 1,
+		targetLabel: 'ม.1/1 +1',
+		teacherLabel: null,
+		teacherTitle: null,
+		roomLabel: 'ห้องคณิตศาสตร์'
+	});
+	const homeroom = cardPresentation([course], 'homeroom', [
+		{ id: 'a', displayName: 'นายสมชาย ใจดี' },
+		{ id: 'b', displayName: 'นางสาวสายใจ วิทยา' }
+	]);
+	assert.equal(homeroom.targetLabel, null);
+	assert.equal(homeroom.teacherLabel, 'ครูสายใจ +1');
+	assert.equal(homeroom.teacherTitle, 'นางสาวสายใจ วิทยา, นายสมชาย ใจดี');
+	assert.equal(homeroom.roomLabel, 'ห้องคณิตศาสตร์');
+	assert.doesNotMatch(JSON.stringify(homeroom), /INTERNAL-ROOM-CODE/);
+});
+
+test('shared homeroom cards wrap meaningful titles and hide teacher metadata and invented codes', () => {
+	for (const overrides of [
+		{ entryType: 'structural', activitySchedulingMode: null },
+		{ entryType: 'break', activitySchedulingMode: null },
+		{ entryType: 'homeroom', activitySchedulingMode: null },
+		{ entryType: 'activity', activitySchedulingMode: 'synchronized' },
+		{ entryType: 'activity', activitySchedulingMode: 'synchronized', offeringId: null }
+	]) {
+		const presentation = cardPresentation(
+			[
+				entry({
+					...overrides,
+					offeringCode: 'SHOULD-NOT-BE-A-CODE',
+					title: 'กิจกรรมส่งเสริมคุณธรรม',
+					roomName: 'หอประชุม'
+				})
+			],
+			'homeroom'
+		);
+		assert.equal(presentation.code, null);
+		assert.equal(presentation.title, 'กิจกรรมส่งเสริมคุณธรรม');
+		assert.equal(presentation.titleLineLimit, 3);
+		assert.equal(presentation.teacherLabel, null);
+		assert.equal(presentation.teacherTitle, null);
+		assert.equal(presentation.targetLabel, null);
+		assert.equal(presentation.roomLabel, 'หอประชุม');
+	}
+});
+
+test('independent homeroom activities retain compact instructor and named-room rows', () => {
+	const presentation = cardPresentation(
+		[
 			entry({
-				entryType: 'course',
-				offeringCode: 'ค21101',
-				offeringName: 'คณิตศาสตร์พื้นฐาน',
-				title: null
+				activitySchedulingMode: 'independent',
+				title: 'ชุมนุมวิทย์',
+				roomId: 'room-a',
+				roomName: null
 			})
-		),
-		'ค21101'
+		],
+		'homeroom'
 	);
+	assert.equal(presentation.title, 'ชุมนุมวิทย์');
+	assert.equal(presentation.code, null);
+	assert.equal(presentation.teacherLabel, 'ครูสมชาย');
+	assert.equal(presentation.roomLabel, 'ไม่พบชื่อห้อง');
+	assert.equal(presentation.titleLineLimit, 1);
 	assert.equal(
-		dailyTeachingCompactTitle(
-			entry({
-				offeringCode: 'ACTIVITY-HOMEROOM',
-				offeringName: 'กิจกรรมโฮมรูม',
-				title: 'โฮมรูม'
-			})
-		),
-		'โฮมรูม'
+		cardPresentation(
+			[entry({ activitySchedulingMode: 'independent', roomId: null, roomName: null })],
+			'homeroom'
+		).roomLabel,
+		'ไม่ระบุห้อง'
 	);
 });
 
-test('summarizes compact targets instead of rendering long classroom lists', () => {
-	assert.equal(typeof dailyTeachingCompactGroupMeta, 'function');
-	const synchronized = groupDailyTeachingEntries([
+test('teacher cards summarize shared targets while keeping room names on their own field', () => {
+	const shared = cardPresentation([
 		entry({
-			homeroomNames: Array.from(
-				{ length: 18 },
-				(_, index) => `ม.${Math.floor(index / 3) + 1}/${(index % 3) + 1}`
-			)
+			homeroomNames: Array.from({ length: 18 }, (_, index) => `ม.1/${index + 1}`),
+			roomName: 'หอประชุม'
 		})
-	])[0];
-	assert.equal(dailyTeachingCompactGroupMeta(synchronized), '18 ห้อง');
-	const sharedBreak = groupDailyTeachingEntries([
-		entry({
-			entryType: 'break',
-			activitySchedulingMode: null,
-			offeringId: null,
-			homeroomNames: Array.from(
-				{ length: 18 },
-				(_, index) => `ม.${Math.floor(index / 3) + 1}/${(index % 3) + 1}`
-			)
-		})
-	])[0];
-	assert.equal(dailyTeachingCompactGroupMeta(sharedBreak), '18 ห้อง');
-
-	const course = groupDailyTeachingEntries([
-		entry({
-			entryType: 'course',
-			activitySchedulingMode: null,
-			homeroomNames: ['ม.1/1', 'ม.1/2'],
-			learningGroupName: 'ม.1/1 · คณิตศาสตร์พื้นฐาน',
-			roomName: '116'
-		})
-	])[0];
-	assert.equal(dailyTeachingCompactGroupMeta(course), 'ม.1/1 +1 · 116');
+	]);
+	assert.equal(shared.targetLabel, '18 ห้อง');
+	assert.equal(shared.roomLabel, 'หอประชุม');
+	assert.equal(shared.teacherLabel, null);
+	assert.equal(
+		dailyTeachingEntryTitle(entry({ entryType: 'break', title: null, offeringName: null })),
+		'พัก'
+	);
 });
 
 test('physical room names display independently from codes and distinct room IDs remain separate', () => {
@@ -348,8 +365,12 @@ test('homeroom projection naturally sorts explicit assignments and deduplicates 
 		['teacher-a', 'teacher-b']
 	);
 	assert.equal(
-		dailyTeachingHomeroomGroupMeta(groupDailyTeachingEntries([shared])[0], rows[0].periods[0]),
-		'ครู ก, ครู ข · ห้องวิทย์'
+		dailyTeachingCardPresentation(
+			groupDailyTeachingEntries([shared])[0],
+			rows[0].periods[0],
+			'homeroom'
+		).teacherLabel,
+		null
 	);
 	assert.deepEqual(source, before);
 });
@@ -430,4 +451,80 @@ test('owner and text filters compose over the whole projection and stale owners 
 	assert.equal(filterDailyTeachingRows(rows, 'ม.1/2', 'คณิตศาสตร์').length, 0);
 	assert.equal(filterDailyTeachingRows(rows, 'removed-owner', '').length, 0);
 	assert.equal(filterDailyTeachingRows(rows, 'all', 'INTERNAL-ROOM-CODE').length, 0);
+});
+
+test('homeroom structural presentation collapses 24 teacher allocations while retaining source evidence', () => {
+	const source = Array.from({ length: 24 }, (_, index) =>
+		teacher(`teacher-${index}`, `ครูผู้สอน ${index}`, [
+			entry({
+				entryId: `structural-${index}`,
+				entryType: 'structural',
+				activitySchedulingMode: null,
+				offeringId: null,
+				title: 'กิจกรรมหน้าเสาธง',
+				homeroomNames: ['ม.1/1'],
+				roomId: 'assembly-room',
+				roomName: 'ลานกิจกรรม',
+				note: 'ร่วมกิจกรรม'
+			})
+		])
+	);
+	const before = structuredClone(source);
+	const row = dailyTeachingRows(source, 'homeroom')[0];
+	const cell = row.periods[0];
+	const groups = groupDailyTeachingEntries(cell.entries, 'homeroom');
+	assert.equal(groups.length, 1);
+	assert.equal(groups[0].entries.length, 24);
+	assert.equal(dailyTeachingGroupInstructors(groups[0].entries, cell).length, 24);
+	assert.equal(dailyTeachingCardPresentation(groups[0], cell, 'homeroom').teacherLabel, null);
+	assert.equal(groupDailyTeachingEntries(cell.entries, 'teacher').length, 24);
+	assert.deepEqual(source, before);
+});
+
+test('structural visual grouping preserves differing title, note, physical room and offering/group identity', () => {
+	const base = entry({
+		entryType: 'structural',
+		activitySchedulingMode: null,
+		title: 'คาบพิเศษ',
+		offeringId: null,
+		roomId: 'room-a',
+		roomName: 'ห้องประชุม',
+		note: null
+	});
+	const changes = [
+		{ title: 'อีกกิจกรรม' },
+		{ note: 'อีกหมายเหตุ' },
+		{ roomId: 'room-b' },
+		{ roomName: 'อีกห้อง' },
+		{ offeringId: 'offering-b' },
+		{ learningGroupId: 'group-b' },
+		{ learningGroupName: 'กลุ่มอื่น' }
+	];
+	const entries = [
+		base,
+		entry({ ...base, entryId: 'same-presentation' }),
+		...changes.map((change, index) => entry({ ...base, entryId: `different-${index}`, ...change }))
+	];
+	const groups = groupDailyTeachingEntries(entries, 'homeroom');
+	assert.equal(groups.length, changes.length + 1);
+	assert.deepEqual(
+		groups[0].entries.map((item) => item.entryId),
+		['entry-a', 'same-presentation']
+	);
+});
+
+test('homeroom visual grouping never collapses independent activities or regular courses', () => {
+	for (const entryType of ['course', 'activity']) {
+		const entries = ['a', 'b'].map((entryId) =>
+			entry({ entryId, entryType, activitySchedulingMode: 'independent', title: 'เหมือนกัน' })
+		);
+		assert.equal(groupDailyTeachingEntries(entries, 'homeroom').length, 2);
+	}
+	for (const entryType of ['break', 'homeroom']) {
+		const entries = ['a', 'b'].map((entryId) =>
+			entry({ entryId, entryType, activitySchedulingMode: null })
+		);
+		assert.equal(groupDailyTeachingEntries(entries, 'homeroom').length, 1);
+		assert.equal(groupDailyTeachingEntries(entries, 'teacher').length, 2);
+	}
 });
