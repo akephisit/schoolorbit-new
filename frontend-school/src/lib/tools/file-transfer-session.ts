@@ -1,3 +1,4 @@
+import { ApiClientError } from '#lib/api/client.js';
 import { get } from 'svelte/store';
 import { authStore } from '#lib/stores/auth.js';
 import {
@@ -7,190 +8,248 @@ import {
 import {
 	parseTransferEvent,
 	transferAPI,
+	type TransferFile,
 	type TransferPair,
 	type TransferSnapshot,
-	type TransferTarget,
-	type TransferSignal
+	type TransferTarget
 } from '#lib/api/file-transfer.js';
+import { batchBytes, fileMetadata, sameFiles, validateTransferBatch } from './file-transfer.js';
 import {
-	BUFFER_HIGH_WATER,
-	BUFFER_LOW_WATER,
-	FILE_CHUNK_BYTES,
-	LAN_CONNECTION_HELP,
-	parseTransferControl,
-	validateTransferFile
-} from './file-transfer.js';
+	FileTransferTransport,
+	type TransportPhase,
+	type TransportProgress
+} from './file-transfer-transport.js';
 
 export type TransferPhase =
-	| 'idle'
+	| 'queued'
 	| 'requesting'
 	| 'waiting'
 	| 'consent'
-	| 'connecting'
-	| 'sending'
-	| 'receiving'
-	| 'acknowledging'
-	| 'complete'
+	| TransportPhase
+	| 'declined'
 	| 'cancelled'
 	| 'failed';
+export interface TransferJob {
+	id: string;
+	clientRequestId: string;
+	direction: 'outgoing' | 'incoming';
+	label: string;
+	recipientId: string | null;
+	pair: TransferPair | null;
+	files: TransferFile[];
+	phase: TransferPhase;
+	bytes: number;
+	fileIndex: number;
+	completedFiles: number;
+	error: string;
+	cleanupError: string;
+	pending: boolean;
+	slotReserved: boolean;
+}
+export interface ReceivedFile {
+	id: string;
+	jobId: string;
+	index: number;
+	name: string;
+	size: number;
+	url: string;
+}
 export interface FileTransferState {
 	status: 'idle' | 'connecting' | 'online' | 'offline';
 	snapshot: TransferSnapshot | null;
-	pair: TransferPair | null;
-	phase: TransferPhase;
-	bytes: number;
+	jobs: TransferJob[];
+	downloads: ReceivedFile[];
+	sourceFiles: TransferFile[];
 	error: string;
-	download: { url: string; name: string; size: number } | null;
-	pending: boolean;
+}
+type Entry = {
+	view: TransferJob;
+	batchId: string;
+	target: TransferTarget | null;
+	controller: AbortController;
+	transport: FileTransferTransport | null;
+	consented: boolean;
+	closingPairId: string | null;
+};
+type Batch = { id: string; files: File[]; metadata: TransferFile[] };
+const MAX_TRANSFER_JOBS = 64;
+const terminal = new Set<TransferPhase>(['complete', 'declined', 'cancelled', 'failed']);
+export function isTransferTerminal(phase: TransferPhase) {
+	return terminal.has(phase);
 }
 export function initialTransferState(): FileTransferState {
-	return {
-		status: 'idle',
-		snapshot: null,
-		pair: null,
-		phase: 'idle',
-		bytes: 0,
-		error: '',
-		download: null,
-		pending: false
-	};
+	return { status: 'idle', snapshot: null, jobs: [], downloads: [], sourceFiles: [], error: '' };
 }
 
-/** Owns this page's registration, signaling, peer and all temporary file memory. */
+/** Owns one discovery identity, the recipient queue, consent and completed download URLs. */
 export class FileTransferSession {
 	private state = initialTransferState();
+	private entries = new Map<string, Entry>();
+	private batch: Batch | null = null;
 	private generation = 0;
-	private attempt = 0;
-	private source: EventSource | null = null;
+	private revision = 0;
 	private controller = new AbortController();
-	private transferController = new AbortController();
-	private peer: RTCPeerConnection | null = null;
-	private channel: RTCDataChannel | null = null;
-	private file: File | null = null;
-	private chunks: ArrayBuffer[] = [];
-	private consented = '';
-	private negotiating = '';
-	private retiredPairs = new Set<string>();
-	private startupDeadline: ReturnType<typeof setTimeout> | null = null;
-	private deadline: ReturnType<typeof setTimeout> | null = null;
-	private stopAuth: (() => void) | null = null;
-	private refreshingGeneration: number | null = null;
+	private source: EventSource | null = null;
+	private startup: ReturnType<typeof setTimeout> | null = null;
+	private disposed = false;
+	private authEpoch = authStore.sessionEpoch;
+	private stopAuth: () => void;
+	private refreshing: { generation: number; promise: Promise<boolean> } | null = null;
 	private refreshAgain = false;
+	private pumping = false;
+	private retiredPairs = new Set<string>();
+	private closedPairs = new Set<string>();
+	private retiredRequests = new Set<string>();
 	private idle = createVisibilityIdle({
 		...browserVisibilityDependencies(),
 		onPause: () =>
 			this.disconnect('พักการเชื่อมต่อเมื่อซ่อนหน้านี้ เปิดรับส่งไฟล์อีกครั้งเมื่อพร้อม'),
 		onResume: () => {}
 	});
-	constructor(private changed: (state: FileTransferState) => void) {}
-	private publish(patch: Partial<FileTransferState>) {
-		this.state = { ...this.state, ...patch };
-		this.changed(this.state);
-	}
-	private current(generation: number, attempt?: number) {
-		return (
-			generation === this.generation &&
-			(attempt === undefined || attempt === this.attempt) &&
-			!this.controller.signal.aborted
-		);
-	}
-	private releaseDownload() {
-		if (this.state.download) URL.revokeObjectURL(this.state.download.url);
-		this.state = { ...this.state, download: null };
-	}
-	private clearDeadline() {
-		if (this.deadline !== null) clearTimeout(this.deadline);
-		this.deadline = null;
-	}
-	private armDeadline(milliseconds: number, message: string) {
-		this.clearDeadline();
-		this.deadline = setTimeout(() => this.fail(message), milliseconds);
-	}
-	private disposeTransfer() {
-		this.attempt++;
-		this.transferController.abort();
-		this.transferController = new AbortController();
-		this.clearDeadline();
-		if (this.channel) {
-			this.channel.onopen =
-				this.channel.onclose =
-				this.channel.onerror =
-				this.channel.onmessage =
-					null;
-			this.channel.close();
-		}
-		if (this.peer) {
-			this.peer.onconnectionstatechange = this.peer.ondatachannel = null;
-			this.peer.close();
-		}
-		this.channel = null;
-		this.peer = null;
-		this.file = null;
-		this.chunks = [];
-		this.consented = '';
-		this.negotiating = '';
-	}
-	private notifyClose(pair = this.state.pair, device = this.state.snapshot?.device) {
-		if (pair) this.retirePair(pair.id);
-		if (pair && device)
-			void transferAPI.close(pair.id, device.id).catch(() => {
-				// The stream/device expiry also closes this pair; never retry an uncertain mutation.
-				console.warn('File transfer cancellation could not be confirmed');
-			});
-	}
-	private retirePair(id: string) {
-		this.retiredPairs.add(id);
-		if (this.retiredPairs.size > 128) {
-			const oldest = this.retiredPairs.values().next().value;
-			if (oldest) this.retiredPairs.delete(oldest);
-		}
-	}
-	private fail(message: string) {
-		// Receipt of exact bytes and the final control commits the completed file locally.
-		// Peer shutdown or a late signaling failure must not revoke that completed result.
-		if (this.state.phase === 'complete') {
-			this.finishCompleted();
-			return;
-		}
-		this.notifyClose();
-		this.disposeTransfer();
-		this.releaseDownload();
-		this.publish({ phase: 'failed', error: message, pending: false });
-	}
-	private disconnect(message: string) {
-		this.stop();
-		this.publish({
-			status: 'offline',
-			snapshot: null,
-			pair: null,
-			phase: 'idle',
-			error: message,
-			pending: false
+	constructor(private changed: (state: FileTransferState) => void) {
+		this.stopAuth = authStore.subscribe((auth) => {
+			if (
+				this.authEpoch !== authStore.sessionEpoch ||
+				!auth.isAuthenticated ||
+				auth.isUnavailable ||
+				auth.user?.user_type !== 'staff'
+			) {
+				this.authEpoch = authStore.sessionEpoch;
+				this.disconnect('การยืนยันตัวตนเปลี่ยนไป กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์', true);
+			}
 		});
 	}
-	stop() {
+	private publish(patch: Partial<FileTransferState> = {}) {
+		this.state = {
+			...this.state,
+			...patch,
+			jobs: [...this.entries.values()].map((entry) => entry.view),
+			sourceFiles: this.batch?.metadata ?? []
+		};
+		if (!this.disposed) this.changed(this.state);
+	}
+	private set(entry: Entry, patch: Partial<TransferJob>) {
+		entry.view = { ...entry.view, ...patch };
+		this.publish();
+	}
+	private current(generation: number, entry?: Entry, requestId?: string) {
+		return (
+			!this.disposed &&
+			generation === this.generation &&
+			!this.controller.signal.aborted &&
+			(!entry ||
+				(this.entries.get(entry.view.id) === entry &&
+					(!requestId || requestId === entry.view.clientRequestId)))
+		);
+	}
+	private retire(set: Set<string>, id: string) {
+		set.add(id);
+		if (set.size > 256) {
+			const oldest = set.values().next().value;
+			if (oldest) set.delete(oldest);
+		}
+	}
+	private message(error: unknown, fallback: string) {
+		return error instanceof Error && /^[ก-๛]/u.test(error.message) ? error.message : fallback;
+	}
+	private releaseDownloads() {
+		for (const file of this.state.downloads) URL.revokeObjectURL(file.url);
+		this.state = { ...this.state, downloads: [] };
+	}
+	private pruneHistory(requiredSlots = 0, clearIncoming = false) {
+		if (requiredSlots > MAX_TRANSFER_JOBS) return false;
+		const downloadOwners = new Set(this.state.downloads.map((file) => file.jobId));
+		const candidates = [...this.entries.values()].filter(
+			(entry) =>
+				isTransferTerminal(entry.view.phase) &&
+				!entry.view.slotReserved &&
+				!entry.view.pending &&
+				!downloadOwners.has(entry.view.id)
+		);
+		// Incoming history has no retry action. Keep outgoing retries until capacity needs them.
+		for (const direction of ['incoming', 'outgoing'] as const) {
+			for (const entry of candidates) {
+				if (entry.view.direction !== direction) continue;
+				if (
+					this.entries.size + requiredSlots <= MAX_TRANSFER_JOBS &&
+					!(clearIncoming && direction === 'incoming')
+				)
+					break;
+				if (entry.view.pair) this.retire(this.retiredPairs, entry.view.pair.id);
+				this.retire(this.retiredRequests, entry.view.clientRequestId);
+				entry.controller.abort();
+				entry.transport?.dispose();
+				this.entries.delete(entry.view.id);
+			}
+		}
+		return this.entries.size + requiredSlots <= MAX_TRANSFER_JOBS;
+	}
+	clearDownloads() {
+		this.releaseDownloads();
+		this.pruneHistory(0, true);
+		this.publish();
+	}
+	clearSource() {
+		if (
+			[...this.entries.values()].some(
+				(entry) =>
+					entry.view.direction === 'outgoing' &&
+					(!isTransferTerminal(entry.view.phase) || entry.view.slotReserved)
+			)
+		)
+			return;
+		this.batch = null;
+		this.publish();
+	}
+	private disconnect(message: string, clearFiles = false) {
 		this.generation++;
-		if (this.startupDeadline !== null) clearTimeout(this.startupDeadline);
-		this.startupDeadline = null;
 		this.controller.abort();
+		if (this.startup !== null) clearTimeout(this.startup);
+		this.startup = null;
 		this.source?.close();
 		this.source = null;
-		this.stopAuth?.();
-		this.stopAuth = null;
 		this.idle.stop();
-		this.disposeTransfer();
-		this.releaseDownload();
 		const device = this.state.snapshot?.device;
+		for (const entry of this.entries.values()) {
+			entry.controller.abort();
+			entry.transport?.dispose();
+			entry.transport = null;
+			entry.consented = false;
+			if (entry.view.pair) this.retire(this.retiredPairs, entry.view.pair.id);
+			this.retire(this.retiredRequests, entry.view.clientRequestId);
+			entry.view = {
+				...entry.view,
+				phase: isTransferTerminal(entry.view.phase) ? entry.view.phase : 'cancelled',
+				pending: false,
+				cleanupError: '',
+				slotReserved: false
+			};
+		}
+		this.batch = null;
+		if (clearFiles) {
+			this.releaseDownloads();
+			this.entries.clear();
+		} else this.pruneHistory(0, true);
+		this.publish({ status: message ? 'offline' : 'idle', snapshot: null, error: message });
 		if (device)
 			void transferAPI
 				.remove(device.id)
 				.catch(() => console.warn('File transfer device cleanup could not be confirmed'));
-		this.state = initialTransferState();
-		this.retiredPairs.clear();
-		this.changed(this.state);
+	}
+	stop() {
+		this.disconnect('');
+	}
+	dispose() {
+		if (this.disposed) return;
+		this.disconnect('', true);
+		this.disposed = true;
+		this.stopAuth();
+		this.entries.clear();
+		this.batch = null;
 	}
 	async start(label: string) {
-		this.stop();
+		if (this.disposed) return;
+		this.disconnect('');
 		if (typeof RTCPeerConnection === 'undefined' || typeof EventSource === 'undefined') {
 			this.publish({
 				status: 'offline',
@@ -204,22 +263,13 @@ export class FileTransferSession {
 		}
 		const auth = get(authStore);
 		if (!auth.isAuthenticated || auth.isUnavailable || auth.user?.user_type !== 'staff') return;
+		this.authEpoch = authStore.sessionEpoch;
 		this.controller = new AbortController();
 		const generation = this.generation;
-		const epoch = authStore.sessionEpoch;
 		this.publish({ status: 'connecting', error: '' });
-		this.startupDeadline = setTimeout(() => {
+		this.startup = setTimeout(() => {
 			if (this.current(generation)) this.disconnect('เปิดการเชื่อมต่อนานเกินไป กรุณาลองใหม่');
 		}, 30_000);
-		this.stopAuth = authStore.subscribe((next) => {
-			if (
-				epoch !== authStore.sessionEpoch ||
-				!next.isAuthenticated ||
-				next.isUnavailable ||
-				next.user?.user_type !== 'staff'
-			)
-				this.disconnect('การยืนยันตัวตนเปลี่ยนไป กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์');
-		});
 		try {
 			const snapshot = await transferAPI.register(label.trim(), this.controller.signal);
 			if (!this.current(generation)) return;
@@ -233,12 +283,14 @@ export class FileTransferSession {
 				try {
 					this.event(parseTransferEvent(event.data), generation);
 				} catch {
-					this.disconnect('ข้อมูลการเชื่อมต่อไม่ถูกต้อง กรุณาเปิดรับส่งไฟล์ใหม่');
+					this.disconnect('ข้อมูลการเชื่อมต่อไม่ถูกต้อง กรุณารีเฟรชหน้าเว็บทั้งสองอุปกรณ์');
 				}
 			});
 			source.onerror = () => {
 				if (this.current(generation))
-					this.disconnect('ขาดการเชื่อมต่อกับระบบ เปิดรับส่งไฟล์ใหม่และจับคู่อีกครั้ง');
+					this.disconnect(
+						'ขาดการเชื่อมต่อกับระบบ เปิดรับส่งไฟล์ใหม่และจับคู่อีกครั้ง ไฟล์ที่รับครบแล้วยังดาวน์โหลดได้'
+					);
 			};
 			this.idle.start();
 		} catch (error) {
@@ -246,21 +298,14 @@ export class FileTransferSession {
 				this.disconnect(this.message(error, 'เปิดรับส่งไฟล์ไม่สำเร็จ กรุณาลองใหม่'));
 		}
 	}
-	private message(error: unknown, fallback: string) {
-		if (
-			error instanceof Error &&
-			/^(?:กรุณา|ไม่|เปิด|โหลด|ส่ง|ตอบ|ยกเลิก|ปิด|รหัส|อุปกรณ์|ไฟล์)/u.test(error.message)
-		)
-			return error.message;
-		return fallback;
-	}
 	private event(event: ReturnType<typeof parseTransferEvent>, generation: number) {
 		switch (event.type) {
 			case 'ready':
-				if (this.startupDeadline !== null) clearTimeout(this.startupDeadline);
-				this.startupDeadline = null;
-				this.applySnapshot(event.data);
+				if (this.startup !== null) clearTimeout(this.startup);
+				this.startup = null;
+				this.snapshot(event.data);
 				this.publish({ status: 'online', error: '' });
+				this.pump();
 				break;
 			case 'presence_changed':
 				void this.refresh(generation);
@@ -269,446 +314,724 @@ export class FileTransferSession {
 				this.applyPair(event.data);
 				break;
 			case 'pair_closed':
-				this.retirePair(event.data.pairId);
-				if (this.state.pair?.id !== event.data.pairId) return;
-				if (['complete', 'failed', 'cancelled'].includes(this.state.phase)) {
-					this.disposeTransfer();
-					this.publish({ pair: null, pending: false });
-					return;
-				}
-				this.disposeTransfer();
-				this.releaseDownload();
-				this.publish({
-					pair: null,
-					phase: 'cancelled',
-					pending: false,
-					error:
-						event.data.reason === 'declined'
-							? 'ผู้รับปฏิเสธคำขอ'
-							: event.data.reason === 'expired'
-								? 'คำขอหมดอายุ กรุณาส่งคำขอใหม่'
-								: 'การรับส่งไฟล์สิ้นสุดแล้ว'
-				});
+				this.pairClosed(event.data.pairId, event.data.reason);
 				break;
-			case 'signal':
-				void this.receiveSignal(event.data, generation);
+			case 'signal': {
+				const entry = [...this.entries.values()].find(
+					(item) => item.view.pair?.id === event.data.pairId
+				);
+				if (!entry || isTransferTerminal(entry.view.phase) || !entry.view.slotReserved) return;
+				if (
+					!entry.transport &&
+					entry.view.direction === 'incoming' &&
+					entry.consented &&
+					entry.view.pair?.status === 'accepted'
+				)
+					this.createTransport(entry);
+				if (entry.transport) void entry.transport.signal(event.data);
 				break;
+			}
 			case 'session_invalid':
 			case 'session_unavailable':
-				this.disconnect('ไม่สามารถยืนยันสิทธิ์ได้ กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์');
+				this.disconnect('ไม่สามารถยืนยันสิทธิ์ได้ กรุณาเข้าสู่ระบบใหม่ก่อนรับส่งไฟล์', true);
 				break;
 		}
 	}
-	private async refresh(generation: number) {
-		if (this.refreshingGeneration === generation) {
-			this.refreshAgain = true;
-			return;
-		}
-		const device = this.state.snapshot?.device;
-		if (!device) return;
-		this.refreshingGeneration = generation;
-		try {
-			do {
-				this.refreshAgain = false;
-				const snapshot = await transferAPI.snapshot(device.id, this.controller.signal);
-				if (!this.current(generation)) return;
-				this.applySnapshot(snapshot);
-			} while (this.refreshAgain);
-		} catch {
-			if (this.current(generation))
-				this.disconnect('โหลดสถานะอุปกรณ์ไม่สำเร็จ กรุณาเปิดรับส่งไฟล์ใหม่');
-		} finally {
-			if (this.refreshingGeneration === generation) this.refreshingGeneration = null;
-		}
-	}
-	private applySnapshot(snapshot: TransferSnapshot) {
-		if (snapshot.device.id !== this.state.snapshot?.device.id) throw new Error('device_changed');
+	private snapshot(snapshot: TransferSnapshot) {
+		if (snapshot.protocolVersion !== 2 || snapshot.device.id !== this.state.snapshot?.device.id)
+			throw new Error('incompatible_snapshot');
 		this.publish({ snapshot });
 		for (const pair of snapshot.pairs) this.applyPair(pair);
 	}
-	private applyPair(pair: TransferPair) {
-		if (this.retiredPairs.has(pair.id)) return;
-		const previous = this.state.pair;
-		if (previous?.id === pair.id) {
-			if (
-				previous.initiator.id !== pair.initiator.id ||
-				previous.recipient.id !== pair.recipient.id ||
-				previous.file.name !== pair.file.name ||
-				previous.file.size !== pair.file.size ||
-				previous.file.mimeType !== pair.file.mimeType
-			)
-				throw new Error('pair_changed_identity');
-			if (previous.status === 'accepted' && pair.status === 'pending') return;
-			if (
-				this.state.phase === 'complete' ||
-				this.state.phase === 'failed' ||
-				this.state.phase === 'cancelled'
-			)
-				return;
+	private async refresh(generation = this.generation): Promise<boolean> {
+		if (this.refreshing?.generation === generation) {
+			this.refreshAgain = true;
+			return this.refreshing.promise;
 		}
-		const id = this.state.snapshot?.device.id;
-		if (!id || (pair.initiator.id !== id && pair.recipient.id !== id))
-			throw new Error('wrong_device');
-		if (validateTransferFile(pair.file)) {
-			this.notifyClose(pair);
-			throw new Error('invalid_file');
-		}
-		if (this.state.pair && this.state.pair.id !== pair.id) throw new Error('unexpected_pair');
-		this.publish({ pair });
-		if (pair.status === 'pending') {
-			if (!previous) this.armDeadline(60_000, 'คำขอหมดอายุ กรุณาส่งคำขอใหม่');
-			this.publish({
-				phase:
-					pair.initiator.id === id
-						? 'waiting'
-						: this.consented === pair.id
-							? 'connecting'
-							: 'consent'
-			});
-		} else if (pair.initiator.id === id && this.negotiating !== pair.id) {
-			if (
-				!this.file ||
-				this.file.name !== pair.file.name ||
-				this.file.size !== pair.file.size ||
-				this.file.type !== pair.file.mimeType
-			) {
-				this.fail('ไฟล์ที่เลือกไม่ตรงกับคำขอ กรุณาเลือกไฟล์ใหม่');
-				return;
+		const device = this.state.snapshot?.device;
+		if (!device || !this.current(generation)) return false;
+		const promise = (async () => {
+			try {
+				do {
+					this.refreshAgain = false;
+					const revision = this.revision;
+					const snapshot = await transferAPI.snapshot(device.id, this.controller.signal);
+					if (!this.current(generation)) return false;
+					const reconcileMissing = revision === this.revision;
+					this.snapshot(snapshot);
+					if (reconcileMissing)
+						for (const entry of this.entries.values())
+							if (
+								entry.view.slotReserved &&
+								entry.view.pair &&
+								!snapshot.pairs.some((pair) => pair.id === entry.view.pair?.id)
+							)
+								this.pairClosed(entry.view.pair.id, 'disconnected');
+				} while (this.refreshAgain && this.current(generation));
+				return true;
+			} catch {
+				if (this.current(generation))
+					this.publish({
+						error: 'โหลดสถานะอุปกรณ์ไม่สำเร็จ การเชื่อมต่อที่ยังเปิดอยู่จะแสดงสถานะต่อไป'
+					});
+				return false;
 			}
-			this.negotiating = pair.id;
-			void this.offer(pair, this.generation);
+		})();
+		this.refreshing = { generation, promise };
+		try {
+			return await promise;
+		} finally {
+			if (this.refreshing?.promise === promise) this.refreshing = null;
 		}
 	}
-	async send(file: File, target: TransferTarget) {
+	private applyPair(pair: TransferPair) {
 		const device = this.state.snapshot?.device;
-		if (this.state.status !== 'online' || !device || this.state.pending || this.state.pair) return;
-		const error = validateTransferFile({ name: file.name, size: file.size, mimeType: file.type });
+		if (!device || (pair.initiator.id !== device.id && pair.recipient.id !== device.id))
+			throw new Error('wrong_device');
+		if (this.closedPairs.has(pair.id)) {
+			const known = [...this.entries.values()].find(
+				(item) =>
+					item.view.direction === 'outgoing' && item.view.clientRequestId === pair.clientRequestId
+			);
+			if (
+				known?.view.slotReserved &&
+				!known.view.pair &&
+				pair.initiator.id === device.id &&
+				sameFiles(known.view.files, pair.files)
+			) {
+				known.view = { ...known.view, pair };
+				this.pairClosed(pair.id, 'cancelled');
+			}
+			return;
+		}
+		if (this.retiredPairs.has(pair.id)) return;
+		if (validateTransferBatch(pair.files, this.state.snapshot!.limits))
+			throw new Error('invalid_batch');
+		const outgoing = pair.initiator.id === device.id;
+		let entry = [...this.entries.values()].find((item) =>
+			outgoing
+				? item.view.clientRequestId === pair.clientRequestId && item.view.direction === 'outgoing'
+				: item.view.pair?.id === pair.id
+		);
+		if (
+			outgoing &&
+			(!entry ||
+				this.retiredRequests.has(pair.clientRequestId) ||
+				isTransferTerminal(entry.view.phase))
+		) {
+			if (
+				entry &&
+				sameFiles(entry.view.files, pair.files) &&
+				(!entry.view.pair || entry.view.pair.id === pair.id)
+			) {
+				// A cancelled/uncertain create may commit after its response is lost. Bind its
+				// correlation to the terminal job for confirmed cleanup, never to restart it.
+				this.revision++;
+				this.set(entry, { pair, recipientId: pair.recipient.id, slotReserved: true });
+				void this.close(entry);
+			} else this.closeOrphan(pair);
+			return;
+		}
+		if (!entry) {
+			if (
+				[...this.entries.values()].some(
+					(item) => item.view.direction === 'outgoing' && !isTransferTerminal(item.view.phase)
+				)
+			) {
+				this.closeOrphan(pair);
+				return;
+			}
+			if (!this.pruneHistory(1)) {
+				this.closeOrphan(pair);
+				this.publish({
+					error: 'รายการรับส่งเต็ม กรุณาสิ้นสุดคำขอหรือล้างไฟล์ที่รับแล้วก่อนรับชุดใหม่'
+				});
+				return;
+			}
+			entry = this.entry(
+				'incoming',
+				pair.files,
+				pair.clientRequestId,
+				'',
+				null,
+				`${pair.initiator.displayName} · ${pair.initiator.label}`
+			);
+			this.entries.set(entry.view.id, entry);
+			entry.view.pair = pair;
+			entry.view.recipientId = device.id;
+			entry.view.slotReserved = true;
+		}
+		const previous = entry.view.pair;
+		if (
+			!sameFiles(entry.view.files, pair.files) ||
+			(previous &&
+				(previous.id !== pair.id ||
+					previous.initiator.id !== pair.initiator.id ||
+					previous.recipient.id !== pair.recipient.id ||
+					previous.clientRequestId !== pair.clientRequestId))
+		)
+			throw new Error('changed_batch_identity');
+		if (previous?.status === 'accepted' && pair.status === 'pending') return;
+		if (
+			outgoing &&
+			[...this.entries.values()].some(
+				(item) =>
+					item !== entry &&
+					item.batchId === entry.batchId &&
+					item.view.direction === 'outgoing' &&
+					item.view.recipientId === pair.recipient.id
+			)
+		) {
+			this.fail(entry, 'อุปกรณ์นี้อยู่ในรายชื่อผู้รับชุดนี้แล้ว', pair);
+			return;
+		}
+		this.revision++;
+		const phase =
+			pair.status === 'pending'
+				? outgoing
+					? 'waiting'
+					: entry.consented
+						? 'connecting'
+						: 'consent'
+				: ['requesting', 'waiting', 'consent'].includes(entry.view.phase)
+					? 'connecting'
+					: entry.view.phase;
+		this.set(entry, {
+			pair,
+			phase,
+			recipientId: pair.recipient.id,
+			label: outgoing
+				? `${pair.recipient.displayName} · ${pair.recipient.label}`
+				: entry.view.label,
+			slotReserved: true,
+			error: pair.status === 'accepted' ? '' : entry.view.error
+		});
+		if (pair.status === 'accepted' && outgoing && !entry.transport) {
+			const transport = this.createTransport(entry);
+			void transport?.offer();
+		}
+	}
+	private entry(
+		direction: TransferJob['direction'],
+		files: TransferFile[],
+		clientRequestId: string,
+		batchId: string,
+		target: TransferTarget | null,
+		label: string
+	): Entry {
+		return {
+			view: {
+				id: crypto.randomUUID(),
+				clientRequestId,
+				direction,
+				label,
+				recipientId: target?.type === 'device' ? target.deviceId : null,
+				pair: null,
+				files,
+				phase: direction === 'incoming' ? 'consent' : 'queued',
+				bytes: 0,
+				fileIndex: 0,
+				completedFiles: 0,
+				error: '',
+				cleanupError: '',
+				pending: false,
+				slotReserved: false
+			},
+			batchId,
+			target,
+			controller: new AbortController(),
+			transport: null,
+			consented: false,
+			closingPairId: null
+		};
+	}
+	send(files: readonly File[], targets: readonly TransferTarget[]) {
+		const snapshot = this.state.snapshot;
+		if (this.state.status !== 'online' || !snapshot || !targets.length) return;
+		const metadata = files.map(fileMetadata),
+			error = validateTransferBatch(metadata, snapshot.limits);
 		if (error) {
 			this.publish({ error });
 			return;
 		}
-		this.disposeTransfer();
-		this.releaseDownload();
-		this.file = file;
-		const generation = this.generation,
-			attempt = this.attempt;
-		this.publish({ phase: 'requesting', pending: true, bytes: 0, error: '' });
+		if (
+			[...this.entries.values()].some(
+				(item) => item.view.direction === 'incoming' && item.view.slotReserved
+			)
+		) {
+			this.publish({ error: 'กรุณาสิ้นสุดคำขอรับชุดไฟล์ก่อนส่งชุดใหม่' });
+			return;
+		}
+		const active = [...this.entries.values()].some(
+			(item) =>
+				item.view.direction === 'outgoing' &&
+				(!isTransferTerminal(item.view.phase) || item.view.slotReserved)
+		);
+		if (
+			active &&
+			(!this.batch ||
+				!this.batch.files.every((file, index) => file === files[index]) ||
+				this.batch.files.length !== files.length)
+		) {
+			this.publish({ error: 'รอให้ผู้รับทุกอุปกรณ์สิ้นสุดก่อนเปลี่ยนชุดไฟล์' });
+			return;
+		}
+		if (
+			!this.batch ||
+			!this.batch.files.every((file, index) => file === files[index]) ||
+			this.batch.files.length !== files.length
+		) {
+			this.batch = { id: crypto.randomUUID(), files: [...files], metadata };
+		}
+		const batch = this.batch;
+		const requested = new Set<string>();
+		const additions = targets.filter((target) => {
+			if (target.type === 'device' && target.deviceId === snapshot.device.id) return false;
+			const key = target.type === 'device' ? `device:${target.deviceId}` : `code:${target.code}`;
+			if (requested.has(key)) return false;
+			requested.add(key);
+			return ![...this.entries.values()].some(
+				(item) =>
+					item.batchId === batch.id &&
+					item.target?.type === target.type &&
+					(target.type === 'device'
+						? item.view.recipientId === target.deviceId
+						: item.target.type === 'code' && item.target.code === target.code)
+			);
+		});
+		if (!this.pruneHistory(additions.length)) {
+			this.publish({ error: 'รายชื่อผู้รับเต็ม กรุณาสิ้นสุดชุดเดิมและล้างรายชื่อก่อนเพิ่มผู้รับ' });
+			return;
+		}
+		for (const target of additions) {
+			const peer =
+				target.type === 'device'
+					? snapshot.peers.find((item) => item.id === target.deviceId)
+					: undefined;
+			const entry = this.entry(
+				'outgoing',
+				batch.metadata,
+				crypto.randomUUID(),
+				batch.id,
+				target,
+				peer
+					? `${peer.displayName} · ${peer.label}`
+					: target.type === 'code'
+						? `รหัส ${target.code}`
+						: 'อุปกรณ์ผู้รับ'
+			);
+			this.entries.set(entry.view.id, entry);
+		}
+		this.publish({ error: '' });
+		this.pump();
+	}
+	private pump() {
+		const snapshot = this.state.snapshot;
+		if (this.pumping || this.state.status !== 'online' || !snapshot) return;
+		if (
+			[...this.entries.values()].some(
+				(entry) => entry.view.direction === 'incoming' && entry.view.slotReserved
+			)
+		)
+			return;
+		this.pumping = true;
+		try {
+			let slots = [...this.entries.values()].filter(
+				(entry) => entry.view.direction === 'outgoing' && entry.view.slotReserved
+			).length;
+			for (const entry of this.entries.values()) {
+				if (slots >= snapshot.limits.maxOutgoingTransfers) break;
+				if (entry.view.direction !== 'outgoing' || entry.view.phase !== 'queued') continue;
+				entry.view = { ...entry.view, phase: 'requesting', pending: true, slotReserved: true };
+				slots++;
+				this.revision++;
+				void this.request(entry, this.generation);
+			}
+			this.publish();
+		} finally {
+			this.pumping = false;
+		}
+	}
+	private async request(entry: Entry, generation: number) {
+		const device = this.state.snapshot?.device,
+			target = entry.target,
+			requestId = entry.view.clientRequestId;
+		if (!device || !target) return;
 		try {
 			const pair = await transferAPI.request(
 				device.id,
 				target,
-				{ name: file.name, size: file.size, mimeType: file.type },
-				this.transferController.signal
+				entry.view.files,
+				requestId,
+				entry.controller.signal
 			);
-			if (this.current(generation, attempt)) this.applyPair(pair);
+			if (this.current(generation, entry, requestId)) this.applyPair(pair);
+			else if (
+				this.current(generation) &&
+				pair.initiator.id === device.id &&
+				!this.retiredPairs.has(pair.id)
+			)
+				this.closeOrphan(pair);
 		} catch (error) {
-			if (this.current(generation, attempt))
-				this.fail(this.message(error, 'ส่งคำขอไม่สำเร็จ ตรวจสอบรหัสหรือเลือกอุปกรณ์ใหม่'));
+			if (!this.current(generation, entry, requestId)) return;
+			if (
+				error instanceof ApiClientError &&
+				error.status >= 400 &&
+				error.status < 500 &&
+				error.status !== 409 &&
+				!entry.view.pair
+			) {
+				this.retire(this.retiredRequests, requestId);
+				this.set(entry, {
+					phase: entry.view.phase === 'cancelled' ? 'cancelled' : 'failed',
+					slotReserved: false,
+					error: this.message(error, 'ส่งคำขอไม่สำเร็จ ตรวจสอบผู้รับหรือรหัสแล้วลองใหม่')
+				});
+				this.pump();
+				return;
+			}
+			const reconciled = await this.refresh(generation);
+			if (!this.current(generation, entry, requestId)) return;
+			if (
+				!entry.view.pair &&
+				error instanceof ApiClientError &&
+				error.status === 409 &&
+				reconciled
+			) {
+				this.retire(this.retiredRequests, requestId);
+				this.set(entry, {
+					phase: entry.view.phase === 'cancelled' ? 'cancelled' : 'failed',
+					slotReserved: false,
+					cleanupError: '',
+					error: this.message(error, 'อุปกรณ์ผู้รับไม่ว่าง กรุณาส่งคำขอใหม่เมื่อพร้อม')
+				});
+				this.pump();
+				return;
+			}
+			if (!entry.view.pair) {
+				this.retire(this.retiredRequests, requestId);
+				// A negative snapshot can race a still-running create. Keep admission
+				// reserved until its matching pair is closed or the device is restarted.
+				this.set(entry, {
+					phase: entry.view.phase === 'cancelled' ? 'cancelled' : 'failed',
+					slotReserved: true,
+					cleanupError:
+						'ยังยืนยันผลคำขอไม่ได้ ช่องส่งนี้ยังถูกจองไว้ กรุณาปิดรับส่งไฟล์ทั้งหมดแล้วเปิดใหม่หากคำขอไม่สิ้นสุด'
+				});
+			}
 		} finally {
-			if (this.current(generation, attempt)) this.publish({ pending: false });
+			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
 		}
 	}
-	async accept() {
-		const pair = this.state.pair,
+	async accept(id: string) {
+		const entry = this.entries.get(id),
 			device = this.state.snapshot?.device;
 		if (
-			!pair ||
+			!entry ||
 			!device ||
-			pair.recipient.id !== device.id ||
-			this.state.phase !== 'consent' ||
-			this.state.pending
+			entry.view.direction !== 'incoming' ||
+			!entry.view.pair ||
+			entry.view.phase !== 'consent' ||
+			entry.view.pending
 		)
 			return;
-		this.releaseDownload();
-		this.consented = pair.id;
+		if (this.state.downloads.length) {
+			this.set(entry, { error: 'กรุณาดาวน์โหลดและล้างไฟล์ชุดก่อนก่อนรับชุดใหม่นี้' });
+			return;
+		}
+		entry.consented = true;
 		const generation = this.generation,
-			attempt = this.attempt;
-		this.publish({ pending: true, phase: 'connecting', error: '' });
-		this.armDeadline(20_000, LAN_CONNECTION_HELP);
+			requestId = entry.view.clientRequestId;
+		this.set(entry, { phase: 'connecting', pending: true, error: '' });
+		this.createTransport(entry);
+		if (!entry.transport || isTransferTerminal(entry.view.phase)) return;
 		try {
-			const accepted = await transferAPI.accept(pair.id, device.id, this.transferController.signal);
-			if (!this.current(generation, attempt)) return;
-			this.applyPair(accepted);
+			const pair = await transferAPI.accept(entry.view.pair.id, device.id, entry.controller.signal);
+			if (this.current(generation, entry, requestId) && !isTransferTerminal(entry.view.phase))
+				this.applyPair(pair);
 		} catch (error) {
-			if (this.current(generation, attempt) && this.consented === pair.id) {
-				// A failed response cannot revoke the user's consent or prove acceptance failed.
-				// The authorized snapshot and SSE may already report the accepted pair.
-				if (this.state.pair?.status !== 'accepted')
-					this.publish({
-						error: this.message(
-							error,
-							'ยังยืนยันการตอบรับกับระบบไม่ได้ กำลังรอการเชื่อมต่อ หากไม่สำเร็จกรุณายกเลิกแล้วส่งคำขอใหม่'
-						)
-					});
+			if (
+				this.current(generation, entry, requestId) &&
+				entry.consented &&
+				!isTransferTerminal(entry.view.phase)
+			) {
+				this.set(entry, {
+					error: this.message(error, 'ยังยืนยันการตอบรับไม่ได้ กำลังรอข้อมูลจากระบบ')
+				});
 				await this.refresh(generation);
 			}
 		} finally {
-			if (this.current(generation, attempt)) this.publish({ pending: false });
+			if (this.current(generation, entry, requestId)) this.set(entry, { pending: false });
 		}
 	}
-	cancel() {
-		this.notifyClose();
-		this.disposeTransfer();
-		this.releaseDownload();
-		this.publish({ pair: null, phase: 'cancelled', bytes: 0, error: '', pending: false });
+	cancel(id: string) {
+		const entry = this.entries.get(id);
+		if (!entry) return;
+		const unknownCreate = entry.view.slotReserved && !entry.view.pair;
+		this.retire(this.retiredRequests, entry.view.clientRequestId);
+		entry.consented = false;
+		// Preserve the metadata request's response while its resource is unknown;
+		// its eventual pair is needed for cleanup. File pumps always stop now.
+		if (!unknownCreate) entry.controller.abort();
+		entry.transport?.dispose();
+		entry.transport = null;
+		this.set(entry, { phase: 'cancelled', pending: false, error: '' });
+		if (entry.view.slotReserved) void this.close(entry);
+		else this.pump();
 	}
-	discard() {
-		this.releaseDownload();
-		this.publish({ download: null });
-	}
-	private finishCompleted() {
-		if (this.state.phase !== 'complete' || !this.state.pair) return;
-		this.notifyClose();
-		this.disposeTransfer();
-		this.publish({ pair: null, pending: false });
-	}
-	finish() {
-		this.finishCompleted();
-	}
-	private createPeer(pair: TransferPair, generation: number, attempt: number) {
-		const peer = new RTCPeerConnection({ iceServers: [] });
-		this.peer = peer;
-		this.publish({ phase: 'connecting', bytes: 0 });
-		this.armDeadline(20_000, LAN_CONNECTION_HELP);
-		peer.onconnectionstatechange = () => {
-			if (!this.current(generation, attempt)) return;
-			if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
-				if (this.state.phase === 'complete') this.finishCompleted();
-				else this.fail(LAN_CONNECTION_HELP);
-			}
-		};
-		peer.ondatachannel = ({ channel }) => {
-			if (
-				!this.current(generation, attempt) ||
-				this.channel ||
-				this.consented !== pair.id ||
-				pair.recipient.id !== this.state.snapshot?.device.id ||
-				channel.label !== 'schoolorbit-file-v1' ||
-				!channel.ordered ||
-				channel.maxRetransmits !== null ||
-				channel.maxPacketLifeTime !== null
-			) {
-				channel.close();
-				if (this.current(generation, attempt)) this.fail('ช่องทางรับไฟล์ไม่ถูกต้อง');
-				return;
-			}
-			this.attachChannel(channel, pair, generation, attempt);
-		};
-		return peer;
-	}
-	private async gathered(peer: RTCPeerConnection, signal: AbortSignal): Promise<string> {
-		if (peer.iceGatheringState !== 'complete')
-			await new Promise<void>((resolve, reject) => {
-				const cleanup = () => {
-					clearTimeout(timer);
-					peer.removeEventListener('icegatheringstatechange', changed);
-					signal.removeEventListener('abort', aborted);
-				};
-				const changed = () => {
-					if (peer.iceGatheringState === 'complete') {
-						cleanup();
-						resolve();
-					}
-				};
-				const aborted = () => {
-					cleanup();
-					reject(new DOMException('Aborted', 'AbortError'));
-				};
-				const timer = setTimeout(() => {
-					cleanup();
-					reject(new Error(LAN_CONNECTION_HELP));
-				}, 10_000);
-				peer.addEventListener('icegatheringstatechange', changed);
-				signal.addEventListener('abort', aborted, { once: true });
-				if (signal.aborted) aborted();
-				else changed();
-			});
-		const sdp = peer.localDescription?.sdp;
-		if (!sdp || sdp.length > 32768) throw new Error('ข้อมูลการเชื่อมต่อไม่ถูกต้อง');
-		return sdp;
-	}
-	private async offer(pair: TransferPair, generation: number) {
-		const attempt = this.attempt,
-			device = this.state.snapshot?.device;
-		if (!device) return;
-		try {
-			const peer = this.createPeer(pair, generation, attempt);
-			this.attachChannel(
-				peer.createDataChannel('schoolorbit-file-v1', { ordered: true }),
-				pair,
-				generation,
-				attempt
-			);
-			await peer.setLocalDescription(await peer.createOffer());
-			const sdp = await this.gathered(peer, this.transferController.signal);
-			if (!this.current(generation, attempt)) return;
-			await transferAPI.signal(pair.id, device.id, 'offer', sdp, this.transferController.signal);
-		} catch {
-			if (this.current(generation, attempt)) this.fail(LAN_CONNECTION_HELP);
-		}
-	}
-	private async receiveSignal(signal: TransferSignal, generation: number) {
-		const pair = this.state.pair,
-			device = this.state.snapshot?.device,
-			attempt = this.attempt;
-		if (!pair || !device || pair.id !== signal.pairId || pair.status !== 'accepted') return;
-		try {
-			if (signal.type === 'offer') {
-				if (pair.recipient.id !== device.id || this.consented !== pair.id || this.peer)
-					throw new Error('unexpected_offer');
-				const peer = this.createPeer(pair, generation, attempt);
-				await peer.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
-				await peer.setLocalDescription(await peer.createAnswer());
-				const sdp = await this.gathered(peer, this.transferController.signal);
-				if (!this.current(generation, attempt)) return;
-				await transferAPI.signal(pair.id, device.id, 'answer', sdp, this.transferController.signal);
-			} else {
-				if (
-					pair.initiator.id !== device.id ||
-					!this.peer ||
-					this.peer.signalingState !== 'have-local-offer'
-				)
-					throw new Error('unexpected_answer');
-				await this.peer.setRemoteDescription({ type: 'answer', sdp: signal.sdp });
-			}
-		} catch {
-			if (this.current(generation, attempt)) this.fail(LAN_CONNECTION_HELP);
-		}
-	}
-	private attachChannel(
-		channel: RTCDataChannel,
-		pair: TransferPair,
-		generation: number,
-		attempt: number
-	) {
-		this.channel = channel;
-		channel.binaryType = 'arraybuffer';
-		channel.bufferedAmountLowThreshold = BUFFER_LOW_WATER;
-		const sending = pair.initiator.id === this.state.snapshot?.device.id;
-		let opened = false;
-		const open = () => {
-			if (opened || !this.current(generation, attempt)) return;
-			opened = true;
-			this.publish({ phase: sending ? 'sending' : 'receiving', error: '' });
-			this.armDeadline(30_000, 'การรับส่งไฟล์หยุดนานเกินไป กรุณาจับคู่และส่งใหม่');
-			if (sending) void this.sendBytes(channel, pair, generation, attempt);
-		};
-		channel.onopen = open;
-		if (channel.readyState === 'open') open();
-		channel.onclose = () => {
-			if (this.current(generation, attempt) && this.state.phase === 'complete') {
-				this.finishCompleted();
-				return;
-			}
-			if (this.current(generation, attempt) && this.state.phase !== 'complete')
-				this.fail('ช่องทางส่งไฟล์ปิดก่อนรับไฟล์ครบ กรุณาส่งใหม่');
-		};
-		channel.onerror = () => {
-			if (this.current(generation, attempt)) this.fail(LAN_CONNECTION_HELP);
-		};
-		channel.onmessage = (event: MessageEvent<unknown>) => {
-			if (!this.current(generation, attempt)) return;
-			if (channel.readyState === 'open') open();
-			try {
-				if (typeof event.data === 'string') {
-					const control = parseTransferControl(event.data);
-					if (sending) {
-						if (
-							control.type !== 'received' ||
-							this.state.phase !== 'acknowledging' ||
-							control.bytes !== pair.file.size
-						)
-							throw new Error('invalid_ack');
-						this.notifyClose();
-						this.disposeTransfer();
-						this.publish({ pair: null, phase: 'complete', bytes: control.bytes, pending: false });
-					} else {
-						if (
-							control.type !== 'end' ||
-							this.state.phase !== 'receiving' ||
-							control.bytes !== pair.file.size ||
-							this.state.bytes !== pair.file.size
-						)
-							throw new Error('invalid_end');
-						const blob = new Blob(this.chunks, { type: 'application/octet-stream' });
-						this.chunks = [];
-						this.releaseDownload();
-						channel.send(JSON.stringify({ type: 'received', bytes: blob.size }));
-						const download = {
-							url: URL.createObjectURL(blob),
-							name: pair.file.name,
-							size: blob.size
-						};
-						this.clearDeadline();
-						this.publish({ phase: 'complete', download, pending: false });
-					}
-				} else {
-					if (
-						sending ||
-						this.state.phase !== 'receiving' ||
-						!(event.data instanceof ArrayBuffer) ||
-						event.data.byteLength === 0 ||
-						event.data.byteLength > FILE_CHUNK_BYTES ||
-						this.state.bytes + event.data.byteLength > pair.file.size
-					)
-						throw new Error('invalid_chunk');
-					this.chunks.push(event.data);
-					this.publish({ bytes: this.state.bytes + event.data.byteLength });
-					this.armDeadline(30_000, 'การรับส่งไฟล์หยุดนานเกินไป กรุณาส่งใหม่');
-				}
-			} catch {
-				this.fail('ข้อมูลไฟล์ไม่ครบหรือไม่ถูกต้อง ยกเลิกการรับไฟล์แล้ว กรุณาส่งใหม่');
-			}
-		};
-	}
-	private async drained(channel: RTCDataChannel, signal: AbortSignal) {
-		if (channel.bufferedAmount <= BUFFER_HIGH_WATER - FILE_CHUNK_BYTES) return;
-		await new Promise<void>((resolve, reject) => {
-			const cleanup = () => {
-				channel.removeEventListener('bufferedamountlow', ready);
-				channel.removeEventListener('close', closed);
-				signal.removeEventListener('abort', closed);
-			};
-			const ready = () => {
-				cleanup();
-				resolve();
-			};
-			const closed = () => {
-				cleanup();
-				reject(new Error('channel_closed'));
-			};
-			channel.addEventListener('bufferedamountlow', ready, { once: true });
-			channel.addEventListener('close', closed, { once: true });
-			signal.addEventListener('abort', closed, { once: true });
-			if (signal.aborted || channel.readyState !== 'open') closed();
-			else if (channel.bufferedAmount <= BUFFER_LOW_WATER) ready();
-		});
-	}
-	private async sendBytes(
-		channel: RTCDataChannel,
-		pair: TransferPair,
-		generation: number,
-		attempt: number
-	) {
-		const file = this.file;
-		if (!file) {
-			this.fail('ไม่พบไฟล์ที่เลือก กรุณาเลือกไฟล์ใหม่');
+
+	async retry(id: string, selectedFiles: readonly File[]) {
+		const entry = this.entries.get(id),
+			snapshot = this.state.snapshot;
+		const files = [...selectedFiles],
+			metadata = files.map(fileMetadata);
+		if (
+			!entry ||
+			!snapshot ||
+			entry.view.direction !== 'outgoing' ||
+			!isTransferTerminal(entry.view.phase) ||
+			validateTransferBatch(metadata, snapshot.limits) ||
+			!sameFiles(entry.view.files, metadata)
+		) {
+			this.publish({ error: 'เลือกชุดไฟล์เดิมก่อนส่งคำขอใหม่ให้ผู้รับนี้' });
 			return;
 		}
-		try {
-			for (let offset = 0; offset < file.size; offset += FILE_CHUNK_BYTES) {
-				await this.drained(channel, this.transferController.signal);
-				const chunk = await file.slice(offset, offset + FILE_CHUNK_BYTES).arrayBuffer();
-				if (!this.current(generation, attempt)) return;
-				channel.send(chunk);
-				this.publish({ bytes: offset + chunk.byteLength });
-				this.armDeadline(30_000, 'การรับส่งไฟล์หยุดนานเกินไป กรุณาส่งใหม่');
-			}
-			if (!this.current(generation, attempt)) return;
-			this.publish({ phase: 'acknowledging' });
-			channel.send(JSON.stringify({ type: 'end', bytes: pair.file.size }));
-		} catch {
-			if (this.current(generation, attempt)) this.fail('ส่งไฟล์ไม่สำเร็จ กรุณาจับคู่และส่งใหม่');
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId,
+			deviceId = snapshot.device.id;
+		if (entry.view.slotReserved && !(await this.close(entry))) return;
+		if (
+			!this.current(generation, entry, requestId) ||
+			this.state.status !== 'online' ||
+			this.state.snapshot?.device.id !== deviceId ||
+			!isTransferTerminal(entry.view.phase) ||
+			[...this.entries.values()].some(
+				(item) => item.view.direction === 'incoming' && item.view.slotReserved
+			)
+		)
+			return;
+		const active = [...this.entries.values()].some(
+			(item) =>
+				item.view.direction === 'outgoing' &&
+				(!isTransferTerminal(item.view.phase) || item.view.slotReserved)
+		);
+		if (
+			active &&
+			(!this.batch ||
+				this.batch.files.length !== files.length ||
+				!this.batch.files.every((file, index) => file === files[index]))
+		) {
+			this.publish({ error: 'รอให้ผู้รับทุกอุปกรณ์สิ้นสุดก่อนเปลี่ยนชุดไฟล์' });
+			return;
 		}
+		if (
+			!this.batch ||
+			this.batch.files.length !== files.length ||
+			!this.batch.files.every((file, index) => file === files[index])
+		)
+			this.batch = { id: crypto.randomUUID(), files, metadata };
+		this.retire(this.retiredRequests, entry.view.clientRequestId);
+		entry.controller = new AbortController();
+		entry.batchId = this.batch.id;
+		this.set(entry, {
+			clientRequestId: crypto.randomUUID(),
+			pair: null,
+			phase: 'queued',
+			bytes: 0,
+			fileIndex: 0,
+			completedFiles: 0,
+			pending: false,
+			error: '',
+			cleanupError: '',
+			slotReserved: false
+		});
+		this.pump();
+	}
+	private createTransport(entry: Entry): FileTransferTransport | null {
+		const pair = entry.view.pair,
+			device = this.state.snapshot?.device;
+		if (!pair || !device || entry.transport || isTransferTerminal(entry.view.phase)) return null;
+		const outgoing = entry.view.direction === 'outgoing';
+		if (!outgoing && !entry.consented) return null;
+		if (
+			outgoing &&
+			(!this.batch ||
+				this.batch.id !== entry.batchId ||
+				!sameFiles(this.batch.metadata, pair.files))
+		) {
+			this.fail(entry, 'ไม่พบชุดไฟล์ต้นฉบับ กรุณาเลือกไฟล์ใหม่');
+			return null;
+		}
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId;
+		const valid = () => this.current(generation, entry, requestId) && entry.view.slotReserved;
+		try {
+			entry.transport = new FileTransferTransport(pair, outgoing ? this.batch!.files : null, {
+				signal: async (type, sdp, signal) => {
+					if (!valid()) throw new Error('cancelled');
+					await transferAPI.signal(pair.id, device.id, type, sdp, signal);
+				},
+				progress: (progress: TransportProgress) => {
+					if (valid() && !isTransferTerminal(entry.view.phase))
+						this.set(entry, { ...progress, error: '' });
+				},
+				file: (index, blob) => {
+					if (
+						!valid() ||
+						!entry.consented ||
+						this.state.downloads.some((file) => file.jobId !== entry.view.id)
+					)
+						throw new Error('unconsented_batch');
+					const file = pair.files[index];
+					if (
+						!file ||
+						blob.size !== file.size ||
+						this.state.downloads.some(
+							(item) => item.jobId === entry.view.id && item.index === index
+						)
+					)
+						throw new Error('invalid_file');
+					this.state = {
+						...this.state,
+						downloads: [
+							...this.state.downloads,
+							{
+								id: `${pair.id}:${index}`,
+								jobId: entry.view.id,
+								index,
+								name: file.name,
+								size: blob.size,
+								url: URL.createObjectURL(blob)
+							}
+						]
+					};
+					this.publish();
+				},
+				complete: () => {
+					if (!valid()) return null;
+					this.set(entry, {
+						phase: 'complete',
+						bytes: batchBytes(pair.files),
+						completedFiles: pair.files.length,
+						pending: false
+					});
+					if (outgoing) void this.close(entry);
+				},
+				failure: (message) => {
+					if (valid()) this.fail(entry, message);
+				},
+				closed: () => {
+					if (valid() && entry.view.phase === 'complete') void this.close(entry);
+				}
+			});
+			return entry.transport;
+		} catch {
+			this.fail(entry, 'เปิดช่องทางรับส่งไม่สำเร็จ กรุณาตรวจสอบเบราว์เซอร์และเครือข่าย');
+			return null;
+		}
+	}
+	private fail(entry: Entry, message: string, pair?: TransferPair) {
+		if (entry.view.phase === 'complete') {
+			void this.close(entry);
+			return;
+		}
+		entry.transport?.dispose();
+		entry.transport = null;
+		entry.consented = false;
+		this.set(entry, {
+			phase: 'failed',
+			error: message,
+			pending: false,
+			...(pair ? { pair, slotReserved: true } : {})
+		});
+		if (entry.view.pair && entry.view.slotReserved) void this.close(entry);
+		else {
+			this.set(entry, { slotReserved: false });
+			this.pump();
+		}
+	}
+	private async close(entry: Entry): Promise<boolean> {
+		const pair = entry.view.pair,
+			device = this.state.snapshot?.device;
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId;
+		if (!device || !entry.view.slotReserved) return true;
+		if (!pair) {
+			await this.refresh(generation);
+			if (!this.current(generation, entry, requestId)) return false;
+			if (entry.view.pair) return this.close(entry);
+			this.set(entry, {
+				cleanupError:
+					'คำขอเดิมยังอาจกำลังประมวลผล ช่องส่งยังถูกจองไว้ กรุณาปิดรับส่งไฟล์ทั้งหมดแล้วเปิดใหม่เพื่อยืนยันการยกเลิก'
+			});
+			return false;
+		}
+		if (entry.closingPairId === pair.id) return false;
+		entry.closingPairId = pair.id;
+		const currentPair = () =>
+			this.current(generation, entry, requestId) && entry.view.pair?.id === pair.id;
+		try {
+			await transferAPI.close(pair.id, device.id);
+			if (!currentPair()) return false;
+			this.pairClosed(pair.id, 'cancelled');
+			return true;
+		} catch {
+			if (currentPair() && entry.view.slotReserved) {
+				this.set(entry, {
+					cleanupError: 'ยังยืนยันการปิดคำขอไม่ได้ กดสิ้นสุดคำขออีกครั้ง หรือเปิดรับส่งไฟล์ใหม่'
+				});
+				await this.refresh(generation);
+			}
+			return currentPair() && !entry.view.slotReserved;
+		} finally {
+			if (entry.closingPairId === pair.id) entry.closingPairId = null;
+		}
+	}
+	finish(id: string) {
+		const entry = this.entries.get(id);
+		if (entry) void this.close(entry);
+	}
+	private closeOrphan(pair: TransferPair) {
+		const device = this.state.snapshot?.device;
+		if (!device) return;
+		this.retire(this.retiredPairs, pair.id);
+		const generation = this.generation;
+		void transferAPI.close(pair.id, device.id).catch(() => {
+			if (this.current(generation))
+				this.publish({ error: 'ปิดคำขอที่สิ้นสุดแล้วไม่สำเร็จ กรุณาเปิดรับส่งไฟล์ใหม่' });
+		});
+	}
+	private pairClosed(
+		pairId: string,
+		reason: 'cancelled' | 'declined' | 'expired' | 'disconnected'
+	) {
+		this.retire(this.retiredPairs, pairId);
+		this.retire(this.closedPairs, pairId);
+		this.revision++;
+		const entry = [...this.entries.values()].find((item) => item.view.pair?.id === pairId);
+		if (!entry) return;
+		entry.controller.abort();
+		entry.transport?.dispose();
+		entry.transport = null;
+		entry.consented = false;
+		const phase = isTransferTerminal(entry.view.phase)
+			? entry.view.phase
+			: reason === 'declined'
+				? 'declined'
+				: 'cancelled';
+		this.set(entry, {
+			phase,
+			slotReserved: false,
+			pending: false,
+			cleanupError: '',
+			error: isTransferTerminal(entry.view.phase)
+				? entry.view.error
+				: reason === 'expired'
+					? 'คำขอหมดอายุ กรุณาส่งคำขอใหม่'
+					: reason === 'disconnected'
+						? 'อุปกรณ์อีกฝั่งขาดการเชื่อมต่อ ไฟล์ที่รับครบแล้วยังดาวน์โหลดได้'
+						: ''
+		});
+		this.pump();
 	}
 }

@@ -7,18 +7,39 @@ import type {
 	TransferSnapshot,
 	TransferEvent
 } from '../../../src/lib/api/file-transfer.js';
+import type { CurrentUserDto } from '../../../src/lib/api/auth.js';
+import { sessionState } from './session-state';
 import { mockStaffHome, actor } from './staff-home-route-data';
 
+export const fileTransferLimits = {
+	maxOutgoingTransfers: 3,
+	maxFilesPerBatch: 20,
+	maxFileBytes: 64 * 1024 * 1024,
+	maxBatchBytes: 128 * 1024 * 1024
+};
 const prefix = '/api/staff/file-transfer';
 const uuidv7 = () => {
 	const time = Date.now().toString(16).padStart(12, '0'),
 		random = randomUUID();
 	return `${time.slice(0, 8)}-${time.slice(8)}-7${random.slice(15, 18)}-${random.slice(19)}`;
 };
-type DeviceEntry = { device: TransferDevice; code: string; stream?: ServerResponse };
+type DeviceEntry = {
+	device: TransferDevice;
+	code: string;
+	sessionId: string;
+	stream?: ServerResponse;
+};
 export async function fileTransferFixture() {
 	const devices = new Map<string, DeviceEntry>();
 	const pairs = new Map<string, TransferPair>();
+	let maxOutgoing = 0;
+	let suppressNextCreatedEvent = false;
+	let loseNextCreateResponse = false;
+	let loseCreateForLabel: string | null = null;
+	let holdCreateMutation = false;
+	const createWaiters: (() => void)[] = [];
+	const heldCreatedEvents: TransferPair[] = [];
+	let failSnapshots = false;
 	let holdAccept = false;
 	let failAccept = false;
 	let holdAcceptedEvents = false;
@@ -28,6 +49,8 @@ export async function fileTransferFixture() {
 	let holdRequest = false;
 	let releaseRequest: (() => void) | null = null;
 	let failSenderClose = false;
+	let holdCloseResponses = false;
+	const closeResponseWaiters: (() => void)[] = [];
 	let releaseAccept: (() => void) | null = null;
 	let blockSignals = false;
 	const requests: { path: string; method: string; body: string }[] = [];
@@ -39,6 +62,8 @@ export async function fileTransferFixture() {
 		for (const id of devices.keys()) emit(id, { type: 'presence_changed', data: {} });
 	};
 	const snapshot = (entry: DeviceEntry): TransferSnapshot => ({
+		protocolVersion: 2,
+		limits: fileTransferLimits,
 		device: entry.device,
 		pairingCode: entry.code,
 		expiresAt: new Date(Date.now() + 90_000).toISOString(),
@@ -91,10 +116,25 @@ export async function fileTransferFixture() {
 			);
 		};
 		if (path === `${prefix}/devices` && request.method === 'POST') {
-			const input: { label: string } = JSON.parse(body);
+			const input: { label: string; protocolVersion?: number } = JSON.parse(body);
+			if (input.protocolVersion !== 2) {
+				send('กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ เพื่อใช้การรับส่งไฟล์รุ่นล่าสุด', 400);
+				return;
+			}
+			const sessionId = String(request.headers['x-fixture-session']);
+			if ([...devices.values()].filter((entry) => entry.sessionId === sessionId).length >= 3) {
+				send('เปิดได้ไม่เกินสามอุปกรณ์ต่อเซสชัน', 409);
+				return;
+			}
 			const id = uuidv7();
 			const entry: DeviceEntry = {
-				device: { id, userId: actor, displayName: 'ครู ทดสอบ', label: input.label },
+				device: {
+					id,
+					userId: String(request.headers['x-fixture-user']),
+					displayName: 'ครู ทดสอบ',
+					label: input.label
+				},
+				sessionId,
 				code: (devices.size + 1).toString(16).toUpperCase().padStart(10, '0')
 			};
 			devices.set(id, entry);
@@ -127,6 +167,10 @@ export async function fileTransferFixture() {
 				send({});
 				return;
 			}
+			if (failSnapshots) {
+				send('fixture snapshot unavailable', 503);
+				return;
+			}
 			send(snapshot(entry));
 			return;
 		}
@@ -134,8 +178,10 @@ export async function fileTransferFixture() {
 			const input: {
 				deviceId: string;
 				target: { type: 'device'; deviceId: string } | { type: 'code'; code: string };
-				file: TransferPair['file'];
+				files: TransferPair['files'];
+				clientRequestId: string;
 			} = JSON.parse(body);
+			if (holdCreateMutation) await new Promise<void>((resolve) => createWaiters.push(resolve));
 			const initiator = devices.get(input.deviceId);
 			const target = input.target;
 			const recipient =
@@ -146,16 +192,43 @@ export async function fileTransferFixture() {
 				send('รหัสไม่ถูกต้องหรืออุปกรณ์ไม่ออนไลน์', 404);
 				return;
 			}
+			if (
+				[...pairs.values()].some(
+					(pair) =>
+						pair.recipient.id === initiator.device.id ||
+						pair.initiator.id === recipient.device.id ||
+						pair.recipient.id === recipient.device.id
+				) ||
+				[...pairs.values()].filter((pair) => pair.initiator.id === initiator.device.id).length >= 3
+			) {
+				send('อุปกรณ์ผู้รับไม่ว่างหรือมีคำขอครบจำนวนแล้ว', 409);
+				return;
+			}
 			const pair: TransferPair = {
 				id: uuidv7(),
 				initiator: initiator.device,
 				recipient: recipient.device,
-				file: input.file,
+				files: input.files,
+				clientRequestId: input.clientRequestId,
 				status: 'pending',
 				expiresAt: new Date(Date.now() + 120_000).toISOString()
 			};
 			pairs.set(pair.id, pair);
-			pairEvent(pair);
+			maxOutgoing = Math.max(
+				maxOutgoing,
+				[...pairs.values()].filter((item) => item.initiator.id === initiator.device.id).length
+			);
+			const loseForRecipient = recipient.device.label === loseCreateForLabel;
+			if (loseForRecipient) loseCreateForLabel = null;
+			if (suppressNextCreatedEvent || loseForRecipient) {
+				suppressNextCreatedEvent = false;
+				heldCreatedEvents.push(structuredClone(pair));
+			} else pairEvent(pair);
+			if (loseNextCreateResponse || loseForRecipient) {
+				loseNextCreateResponse = false;
+				response.destroy();
+				return;
+			}
 			const responsePair = structuredClone(pair);
 			if (holdRequest)
 				await new Promise<void>((resolve) => {
@@ -198,6 +271,8 @@ export async function fileTransferFixture() {
 						? 'declined'
 						: 'cancelled'
 				);
+				if (holdCloseResponses)
+					await new Promise<void>((resolve) => closeResponseWaiters.push(resolve));
 				send({});
 				return;
 			}
@@ -221,8 +296,33 @@ export async function fileTransferFixture() {
 	const origin = `http://127.0.0.1:${address.port}`;
 	return {
 		requests,
-		async setup(page: Page, userType = 'staff') {
+		async setup(
+			page: Page,
+			userType = 'staff',
+			identity: { userId?: string; sessionId?: string } = {}
+		) {
+			const userId = identity.userId ?? actor,
+				sessionId = identity.sessionId ?? uuidv7();
 			await mockStaffHome(page, { userType, permissions: [], menuGroups: [] });
+			const user: CurrentUserDto = {
+				id: userId,
+				username: 'file-transfer-fixture',
+				firstName: 'ครู',
+				lastName: 'ทดสอบ',
+				displayName: 'ครู ทดสอบ',
+				userType,
+				status: 'active',
+				primaryRoleName: null,
+				profileImageFileId: null,
+				permissions: [],
+				session: sessionState(Date.now(), { sessionId })
+			};
+			await page.route('**/api/auth/me', (route) =>
+				route.fulfill({
+					headers: { 'X-CSRF-Token': 'synthetic-csrf' },
+					json: { success: true, data: user }
+				})
+			);
 			await page.route('**/api/notifications', (route) =>
 				route.fulfill({ json: { success: true, data: { items: [], unread_count: 0 } } })
 			);
@@ -231,10 +331,42 @@ export async function fileTransferFixture() {
 			);
 			await page.route(`**${prefix}/**`, (route) => {
 				const url = new URL(route.request().url());
-				return route.continue({ url: `${origin}${url.pathname}${url.search}` });
+				return route.continue({
+					url: `${origin}${url.pathname}${url.search}`,
+					headers: {
+						...route.request().headers(),
+						'x-fixture-user': userId,
+						'x-fixture-session': sessionId
+					}
+				});
 			});
 		},
 		emit,
+		holdNextCreatedEvent() {
+			suppressNextCreatedEvent = true;
+		},
+		releaseCreatedEvents() {
+			for (const pair of heldCreatedEvents.splice(0)) pairEvent(pair);
+		},
+		loseCreateResponseFor(label: string) {
+			loseCreateForLabel = label;
+		},
+		loseNextCreateResponse() {
+			loseNextCreateResponse = true;
+		},
+		failSnapshots() {
+			failSnapshots = true;
+		},
+		restoreSnapshots() {
+			failSnapshots = false;
+		},
+		holdCreateMutation() {
+			holdCreateMutation = true;
+		},
+		releaseCreateMutation() {
+			holdCreateMutation = false;
+			for (const release of createWaiters.splice(0)) release();
+		},
 		failAcceptResponse() {
 			failAccept = true;
 		},
@@ -254,6 +386,13 @@ export async function fileTransferFixture() {
 		},
 		get heldSignals() {
 			return heldSignals.length;
+		},
+		holdCloseResponses() {
+			holdCloseResponses = true;
+		},
+		releaseCloseResponses() {
+			holdCloseResponses = false;
+			for (const release of closeResponseWaiters.splice(0)) release();
 		},
 		failSenderClose() {
 			failSenderClose = true;
@@ -277,6 +416,9 @@ export async function fileTransferFixture() {
 		blockSignals() {
 			blockSignals = true;
 		},
+		get maxOutgoing() {
+			return maxOutgoing;
+		},
 		get devices() {
 			return [...devices.values()].map((entry) => entry.device);
 		},
@@ -284,6 +426,8 @@ export async function fileTransferFixture() {
 			return [...pairs.values()];
 		},
 		async close() {
+			for (const release of closeResponseWaiters.splice(0)) release();
+			for (const release of createWaiters.splice(0)) release();
 			releaseAccept?.();
 			releaseRequest?.();
 			for (const entry of devices.values()) entry.stream?.end();

@@ -15,7 +15,7 @@ const code = 'ABCD012345';
 const csrf = 'synthetic-private-csrf';
 const cookie = 'synthetic-private-cookie';
 const origin = 'https://sandbox.example.test';
-const snapshot = () => ({ device: { id, userId: user, displayName: 'บุคลากรทดสอบ', label: 'SchoolOrbit smoke' }, pairingCode: code, expiresAt: '2030-01-01T00:00:00Z', peers: [], pairs: [] });
+const snapshot = () => ({ protocolVersion: 2, limits: { maxOutgoingTransfers: 3, maxFilesPerBatch: 20, maxFileBytes: 67108864, maxBatchBytes: 134217728 }, device: { id, userId: user, displayName: 'บุคลากรทดสอบ', label: 'SchoolOrbit smoke' }, pairingCode: code, expiresAt: '2030-01-01T00:00:00Z', peers: [], pairs: [] });
 
 function execute(args, env) {
  return new Promise((resolve, reject) => {
@@ -41,10 +41,12 @@ async function fixture(t, mode = 'success') {
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', 'Cache-Control': 'no-store' };
   if (request.method === 'POST') {
    assert.equal(request.url, '/api/staff/file-transfer/devices');
-   assert.deepEqual(JSON.parse(body), { label: 'SchoolOrbit smoke' });
+   assert.deepEqual(JSON.parse(body), { label: 'SchoolOrbit smoke', protocolVersion: 2 });
    if (mode === 'post-transport-failure') { request.socket.destroy(); return; }
    const registered = snapshot();
    if (mode === 'bad-registration') delete registered.pairingCode;
+   if (mode === 'registration-v1') registered.protocolVersion = 1;
+   if (mode === 'registration-bad-limits') registered.limits.maxFilesPerBatch = 999;
    response.writeHead(mode === 'post-http-failure' ? 503 : 200, headers);
    response.end(JSON.stringify({ success: true, data: registered }));
    return;
@@ -63,6 +65,8 @@ async function fixture(t, mode = 'success') {
   if (mode === 'missing-no-store') delete headers['Cache-Control'];
   const ready = snapshot();
   if (mode === 'wrong-id') ready.device.id = user;
+  if (mode === 'stream-v1') ready.protocolVersion = 1;
+  if (mode === 'stream-bad-limits') ready.limits.maxOutgoingTransfers = 4;
   let text = `event: ${mode === 'wrong-event' ? 'notification' : 'file_transfer'}\ndata: ${JSON.stringify({ type: 'ready', data: ready })}\n\n`;
   if (mode === 'missing-ready') text = ': heartbeat\n\n';
   if (mode === 'malformed-ready') text = 'event: file_transfer\ndata: {invalid}\n\n';
@@ -126,7 +130,7 @@ test('file-transfer deployment probe accepts curl timeout only after a flushed r
  assert.equal(result.deletes, 1);
 });
 test('file-transfer deployment probe refuses bad stream state and still cleans the known binding', async t => {
- for (const mode of ['missing-ready', 'wrong-id', 'wrong-event', 'malformed-ready', 'incomplete-frame', 'session-invalid', 'stream-http-failure', 'stream-transport-failure', 'wrong-content-type', 'missing-cors', 'missing-no-store']) {
+ for (const mode of ['stream-v1', 'stream-bad-limits', 'missing-ready', 'wrong-id', 'wrong-event', 'malformed-ready', 'incomplete-frame', 'session-invalid', 'stream-http-failure', 'stream-transport-failure', 'wrong-content-type', 'missing-cors', 'missing-no-store']) {
   await t.test(mode, async child => {
    const result = await fixture(child, mode);
    assert.equal(result.status, 1, mode + result.stdout + result.stderr);
@@ -156,4 +160,14 @@ test('file-transfer deployment probe accepts cleanup 404 and retries a failed cl
  const retried = await fixture(t, 'cleanup-retry');
  assert.equal(retried.status, 1, retried.stdout + retried.stderr);
  assert.equal(retried.deletes, 2);
+});
+
+test('file-transfer deployment probe refuses old protocol and invalid registration limits after binding cleanup', async t => {
+ for (const mode of ['registration-v1', 'registration-bad-limits']) {
+  await t.test(mode, async child => {
+   const result = await fixture(child, mode);
+   assert.equal(result.status, 1, result.stdout + result.stderr);
+   assert.deepEqual(result.observations.map(({ method }) => method), ['POST', 'DELETE']);
+  });
+ }
 });

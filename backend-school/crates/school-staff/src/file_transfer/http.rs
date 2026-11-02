@@ -93,7 +93,7 @@ async fn staff(session: &AuthenticatedSession) -> Result<String, HttpError> {
     Ok(staff_display_name(&session.tenant.pool, session.user_id).await?)
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/devices", operation_id="registerFileTransferDevice", tag="file-transfer", request_body=RegisterFileTransferDevice, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Ephemeral device registration and current school-online snapshot",body=ApiResponse<FileTransferSnapshot>),(status=400,description="Invalid label",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=429,description="Device limit reached",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/devices", operation_id="registerFileTransferDevice", tag="file-transfer", request_body=RegisterFileTransferDevice, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Protocol 2 device registration and school-online snapshot with batch limits",body=ApiResponse<FileTransferSnapshot>),(status=400,description="Invalid label or unsupported protocol; refresh both devices",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=429,description="Device limit reached",body=ApiErrorResponse))))]
 pub async fn register(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -104,7 +104,7 @@ pub async fn register(
     Ok(Json(ApiResponse::ok(state.runtime.register(
         identity(&session),
         display_name,
-        request.label,
+        request,
         Utc::now(),
     )?)))
 }
@@ -133,7 +133,7 @@ pub async fn remove(
     state.runtime.remove(identity(&session), id, Utc::now())?;
     Ok(Json(ApiResponse::empty()))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs", operation_id="createFileTransferPair", tag="file-transfer", request_body=CreateFileTransferPair, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Pending pair with exact file metadata awaiting recipient consent",body=ApiResponse<FileTransferPair>),(status=400,description="Invalid file metadata",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Target unavailable",body=ApiErrorResponse),(status=409,description="Device busy or offline",body=ApiErrorResponse),(status=429,description="Pairing code attempt limit reached",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs", operation_id="createFileTransferPair", tag="file-transfer", request_body=CreateFileTransferPair, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Pending batch pair with ordered file metadata and request correlation awaiting recipient consent",body=ApiResponse<FileTransferPair>),(status=400,description="Invalid batch or file metadata",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=404,description="Target unavailable",body=ApiErrorResponse),(status=409,description="Device busy, offline or active request correlation duplicated",body=ApiErrorResponse),(status=429,description="Pairing code attempt limit reached",body=ApiErrorResponse))))]
 pub async fn create_pair(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -147,7 +147,7 @@ pub async fn create_pair(
         Utc::now(),
     )?)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/accept", operation_id="acceptFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pending pair")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Recipient accepted exact sender and file",body=ApiResponse<FileTransferPair>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff recipient required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse),(status=409,description="Pair changed or disconnected",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/pairs/{pairId}/accept", operation_id="acceptFileTransferPair", tag="file-transfer", params(("pairId"=Uuid,Path,description="Pending pair")), request_body=FileTransferDeviceRequest, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=400,description="Invalid request body or resource identifier",body=ApiErrorResponse),(status=200,description="Recipient accepted exact sender and ordered file batch",body=ApiResponse<FileTransferPair>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff recipient required",body=ApiErrorResponse),(status=404,description="Pair unavailable",body=ApiErrorResponse),(status=409,description="Pair changed or disconnected",body=ApiErrorResponse))))]
 pub async fn accept(
     State(state): State<FileTransferHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -384,7 +384,10 @@ mod tests {
             .register(
                 identity(&session),
                 "Staff".into(),
-                "Laptop".into(),
+                RegisterFileTransferDevice {
+                    label: "Laptop".into(),
+                    protocol_version: Some(super::super::runtime::PROTOCOL_VERSION),
+                },
                 Utc::now(),
             )
             .unwrap();
@@ -398,6 +401,50 @@ mod tests {
     async fn file_transfer_revocation_prioritizes_control_and_removes_binding_before_yield() {
         let (state, session, subscription) = fixture();
         let id = subscription.guard.device_id;
+        let mut peers = Vec::new();
+        for _ in 0..3 {
+            let peer = FileTransferIdentity {
+                tenant_id: session.tenant.tenant_id,
+                user_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+            };
+            let device = state
+                .runtime
+                .register(
+                    peer,
+                    "Peer".into(),
+                    RegisterFileTransferDevice {
+                        label: "Peer".into(),
+                        protocol_version: Some(super::super::runtime::PROTOCOL_VERSION),
+                    },
+                    Utc::now(),
+                )
+                .unwrap();
+            let stream = state
+                .runtime
+                .subscribe(peer, device.device.id, Utc::now())
+                .unwrap();
+            state
+                .runtime
+                .create_pair(
+                    identity(&session),
+                    CreateFileTransferPair {
+                        device_id: id,
+                        target: FileTransferTarget::Device {
+                            device_id: device.device.id,
+                        },
+                        files: vec![FileTransferFile {
+                            name: "empty.txt".into(),
+                            size: 0,
+                            mime_type: "".into(),
+                        }],
+                        client_request_id: Uuid::new_v4(),
+                    },
+                    Utc::now(),
+                )
+                .unwrap();
+            peers.push((peer, device.device.id, stream));
+        }
         let revoked = state.auth_runtime.session_events.subscribe();
         let permissions = state.auth_runtime.permission_events.subscribe();
         state
@@ -426,6 +473,14 @@ mod tests {
             .runtime
             .snapshot(identity(&session), id, Utc::now())
             .is_err());
+        for (peer, device, _) in &peers {
+            assert!(state
+                .runtime
+                .snapshot(*peer, *device, Utc::now())
+                .unwrap()
+                .pairs
+                .is_empty());
+        }
         assert!(stream.next().await.is_none());
     }
     #[tokio::test]

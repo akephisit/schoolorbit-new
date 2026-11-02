@@ -10,6 +10,7 @@ export type TransferSnapshot = Schemas['FileTransferSnapshot'];
 export type TransferEvent = Schemas['FileTransferEvent'];
 export type TransferTarget = Schemas['FileTransferTarget'];
 export type TransferSignal = Schemas['FileTransferSignal'];
+export type TransferLimits = Schemas['FileTransferLimits'];
 const prefix = '/api/staff/file-transfer';
 const devicePath = (id: string) => `${prefix}/devices/${encodeURIComponent(id)}`;
 const pairPath = (id: string) => `${prefix}/pairs/${encodeURIComponent(id)}`;
@@ -34,16 +35,32 @@ const pairSchema = z.object({
 	id: z.string().uuid(),
 	initiator: deviceSchema,
 	recipient: deviceSchema,
-	file: fileSchema,
+	files: z.array(fileSchema).min(1).max(20),
+	clientRequestId: z.string().uuid(),
 	status: z.enum(['pending', 'accepted']),
 	expiresAt: z.string()
 });
 const snapshotSchema = z.object({
+	protocolVersion: z.literal(2),
+	limits: z.object({
+		maxOutgoingTransfers: z.number().int().min(1).max(3),
+		maxFilesPerBatch: z.number().int().min(1).max(20),
+		maxFileBytes: z
+			.number()
+			.int()
+			.min(1)
+			.max(64 * 1024 * 1024),
+		maxBatchBytes: z
+			.number()
+			.int()
+			.min(1)
+			.max(128 * 1024 * 1024)
+	}),
 	device: deviceSchema,
 	pairingCode: z.string().regex(/^[A-F0-9]{10}$/),
 	expiresAt: z.string(),
 	peers: z.array(deviceSchema).max(1000),
-	pairs: z.array(pairSchema).max(1)
+	pairs: z.array(pairSchema).max(3)
 });
 const eventSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('ready'), data: snapshotSchema }),
@@ -71,21 +88,33 @@ export function parseTransferEvent(data: string): TransferEvent {
 	if (data.length > 256 * 1024) throw new Error('ข้อมูลการเชื่อมต่อใหญ่เกินกำหนด');
 	return eventSchema.parse(JSON.parse(data));
 }
+function checkedSnapshot(value: TransferSnapshot): TransferSnapshot {
+	const parsed = snapshotSchema.safeParse(value);
+	if (!parsed.success)
+		throw new Error(
+			'กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ เพื่อใช้การรับส่งไฟล์รุ่นล่าสุด'
+		);
+	return parsed.data;
+}
 export const transferAPI = {
 	async register(label: string, signal?: AbortSignal): Promise<TransferSnapshot> {
-		return requireApiData(
-			await apiClient.post<TransferSnapshot>(
-				`${prefix}/devices`,
-				{ label } satisfies Schemas['RegisterFileTransferDevice'],
-				options(signal)
-			),
-			'เปิดรับส่งไฟล์ไม่สำเร็จ'
+		return checkedSnapshot(
+			requireApiData(
+				await apiClient.post<TransferSnapshot>(
+					`${prefix}/devices`,
+					{ label, protocolVersion: 2 } satisfies Schemas['RegisterFileTransferDevice'],
+					options(signal)
+				),
+				'เปิดรับส่งไฟล์ไม่สำเร็จ'
+			)
 		);
 	},
 	async snapshot(deviceId: string, signal?: AbortSignal): Promise<TransferSnapshot> {
-		return requireApiData(
-			await apiClient.get<TransferSnapshot>(devicePath(deviceId), options(signal)),
-			'โหลดอุปกรณ์ไม่สำเร็จ'
+		return checkedSnapshot(
+			requireApiData(
+				await apiClient.get<TransferSnapshot>(devicePath(deviceId), options(signal)),
+				'โหลดอุปกรณ์ไม่สำเร็จ'
+			)
 		);
 	},
 	async remove(deviceId: string): Promise<void> {
@@ -97,13 +126,14 @@ export const transferAPI = {
 	async request(
 		deviceId: string,
 		target: TransferTarget,
-		file: TransferFile,
+		files: TransferFile[],
+		clientRequestId: string,
 		signal?: AbortSignal
 	): Promise<TransferPair> {
 		return requireApiData(
 			await apiClient.post<TransferPair>(
 				`${prefix}/pairs`,
-				{ deviceId, target, file } satisfies Schemas['CreateFileTransferPair'],
+				{ deviceId, target, files, clientRequestId } satisfies Schemas['CreateFileTransferPair'],
 				options(signal)
 			),
 			'ส่งคำขอไม่สำเร็จ'

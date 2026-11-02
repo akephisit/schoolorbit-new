@@ -11081,12 +11081,19 @@
         "properties": {
           "data": {
             "properties": {
+              "clientRequestId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "expiresAt": {
                 "format": "date-time",
                 "type": "string"
               },
-              "file": {
-                "$ref": "#/components/schemas/FileTransferFile"
+              "files": {
+                "items": {
+                  "$ref": "#/components/schemas/FileTransferFile"
+                },
+                "type": "array"
               },
               "id": {
                 "format": "uuid",
@@ -11106,7 +11113,8 @@
               "id",
               "initiator",
               "recipient",
-              "file",
+              "files",
+              "clientRequestId",
               "status",
               "expiresAt"
             ],
@@ -11136,6 +11144,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "limits": {
+                "$ref": "#/components/schemas/FileTransferLimits"
+              },
               "pairingCode": {
                 "type": "string"
               },
@@ -11150,9 +11161,16 @@
                   "$ref": "#/components/schemas/FileTransferDevice"
                 },
                 "type": "array"
+              },
+              "protocolVersion": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
               }
             },
             "required": [
+              "protocolVersion",
+              "limits",
               "device",
               "pairingCode",
               "expiresAt",
@@ -41258,12 +41276,19 @@
       "CreateFileTransferPair": {
         "additionalProperties": false,
         "properties": {
+          "clientRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "deviceId": {
             "format": "uuid",
             "type": "string"
           },
-          "file": {
-            "$ref": "#/components/schemas/FileTransferFile"
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileTransferFile"
+            },
+            "type": "array"
           },
           "target": {
             "$ref": "#/components/schemas/FileTransferTarget"
@@ -41272,7 +41297,8 @@
         "required": [
           "deviceId",
           "target",
-          "file"
+          "files",
+          "clientRequestId"
         ],
         "type": "object"
       },
@@ -49560,14 +49586,52 @@
         ],
         "type": "object"
       },
+      "FileTransferLimits": {
+        "properties": {
+          "maxBatchBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxFileBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxFilesPerBatch": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxOutgoingTransfers": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "maxOutgoingTransfers",
+          "maxFilesPerBatch",
+          "maxFileBytes",
+          "maxBatchBytes"
+        ],
+        "type": "object"
+      },
       "FileTransferPair": {
         "properties": {
+          "clientRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
           },
-          "file": {
-            "$ref": "#/components/schemas/FileTransferFile"
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileTransferFile"
+            },
+            "type": "array"
           },
           "id": {
             "format": "uuid",
@@ -49587,7 +49651,8 @@
           "id",
           "initiator",
           "recipient",
-          "file",
+          "files",
+          "clientRequestId",
           "status",
           "expiresAt"
         ],
@@ -49652,6 +49717,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "limits": {
+            "$ref": "#/components/schemas/FileTransferLimits"
+          },
           "pairingCode": {
             "type": "string"
           },
@@ -49666,9 +49734,16 @@
               "$ref": "#/components/schemas/FileTransferDevice"
             },
             "type": "array"
+          },
+          "protocolVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
+          "protocolVersion",
+          "limits",
           "device",
           "pairingCode",
           "expiresAt",
@@ -59290,6 +59365,14 @@
         "properties": {
           "label": {
             "type": "string"
+          },
+          "protocolVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -119413,7 +119496,7 @@
                 }
               }
             },
-            "description": "Ephemeral device registration and current school-online snapshot"
+            "description": "Protocol 2 device registration and school-online snapshot with batch limits"
           },
           "400": {
             "content": {
@@ -119423,7 +119506,7 @@
                 }
               }
             },
-            "description": "Invalid label"
+            "description": "Invalid label or unsupported protocol; refresh both devices"
           },
           "401": {
             "content": {
@@ -119717,7 +119800,7 @@
                 }
               }
             },
-            "description": "Pending pair with exact file metadata awaiting recipient consent"
+            "description": "Pending batch pair with ordered file metadata and request correlation awaiting recipient consent"
           },
           "400": {
             "content": {
@@ -119727,7 +119810,7 @@
                 }
               }
             },
-            "description": "Invalid file metadata"
+            "description": "Invalid batch or file metadata"
           },
           "401": {
             "content": {
@@ -119767,7 +119850,7 @@
                 }
               }
             },
-            "description": "Device busy or offline"
+            "description": "Device busy, offline or active request correlation duplicated"
           },
           "413": {
             "content": {
@@ -119829,7 +119912,7 @@
                 }
               }
             },
-            "description": "Recipient accepted exact sender and file"
+            "description": "Recipient accepted exact sender and ordered file batch"
           },
           "400": {
             "content": {

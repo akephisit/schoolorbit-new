@@ -8,10 +8,14 @@ use std::{
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
+pub const PROTOCOL_VERSION: u8 = 2;
+pub const MAX_OUTGOING_TRANSFERS: u8 = 3;
+pub const MAX_FILES_PER_BATCH: u8 = 20;
 pub const MAX_FILE_SIZE: u64 = 64 * 1024 * 1024;
+pub const MAX_BATCH_BYTES: u64 = 128 * 1024 * 1024;
 const DEVICE_SECONDS: i64 = 90;
 const MAX_DEVICES: usize = 256;
-const QUEUE_CAPACITY: usize = 8;
+const QUEUE_CAPACITY: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileTransferIdentity {
@@ -87,7 +91,7 @@ fn conflict() -> AppError {
     AppError::Conflict("File transfer state changed; reconnect and try again".into())
 }
 fn invalid(message: &str) -> AppError {
-    AppError::ValidationError(message.into())
+    AppError::BadRequest(message.into())
 }
 
 impl Registry {
@@ -143,6 +147,8 @@ impl Registry {
             .collect();
         pairs.sort_by_key(|p| p.id);
         Ok(FileTransferSnapshot {
+            protocol_version: PROTOCOL_VERSION,
+            limits: limits(),
             device: device.public.clone(),
             pairing_code: device.code.clone(),
             expires_at: device.expires_at,
@@ -272,10 +278,11 @@ impl FileTransferRuntime {
         &self,
         identity: FileTransferIdentity,
         display_name: String,
-        label: String,
+        request: RegisterFileTransferDevice,
         now: DateTime<Utc>,
     ) -> Result<FileTransferSnapshot, AppError> {
-        let label = label.trim().to_string();
+        validate_protocol(request.protocol_version)?;
+        let label = request.label.trim().to_string();
         if label.is_empty() || label.chars().count() > 60 || label.chars().any(char::is_control) {
             return Err(invalid("Device label must contain 1–60 characters"));
         }
@@ -409,7 +416,7 @@ impl FileTransferRuntime {
         request: CreateFileTransferPair,
         now: DateTime<Utc>,
     ) -> Result<FileTransferPair, AppError> {
-        validate_file(&request.file)?;
+        validate_batch(&request.files)?;
         let mut registry = self.lock(now)?;
         registry.owned(identity, request.device_id)?;
         let target_id = match request.target {
@@ -457,20 +464,39 @@ impl FileTransferRuntime {
         {
             return Err(conflict());
         }
-        if registry.pairs.values().any(|p| {
-            [p.public.initiator.id, p.public.recipient.id]
-                .iter()
-                .any(|id| *id == target_id || *id == request.device_id)
+        let outgoing = registry
+            .pairs
+            .values()
+            .filter(|pair| pair.public.initiator.id == request.device_id)
+            .count();
+        let incoming = registry
+            .pairs
+            .values()
+            .any(|pair| pair.public.recipient.id == request.device_id);
+        let recipient_busy = registry.pairs.values().any(|pair| {
+            pair.public.initiator.id == target_id || pair.public.recipient.id == target_id
+        });
+        if incoming || outgoing >= usize::from(MAX_OUTGOING_TRANSFERS) || recipient_busy {
+            return Err(AppError::Conflict(
+                "อุปกรณ์กำลังรับไฟล์หรือมีรายการส่งครบจำนวนแล้ว".into(),
+            ));
+        }
+        // Correlation is scoped to active pairs of this exact initiating device;
+        // request IDs never replace authenticated ownership or become replay receipts.
+        if registry.pairs.values().any(|pair| {
+            pair.public.initiator.id == request.device_id
+                && pair.public.client_request_id == request.client_request_id
         }) {
             return Err(AppError::Conflict(
-                "Device already has an active transfer".into(),
+                "คำขอนี้กำลังดำเนินการ กรุณาตรวจสอบรายการปัจจุบัน".into(),
             ));
         }
         let pair = FileTransferPair {
             id: Uuid::now_v7(),
             initiator: registry.owned(identity, request.device_id)?.public.clone(),
             recipient: target.public.clone(),
-            file: request.file,
+            files: request.files,
+            client_request_id: request.client_request_id,
             status: FileTransferPairStatus::Pending,
             expires_at: now + Duration::seconds(120),
         };
@@ -591,6 +617,38 @@ impl FileTransferRuntime {
         }
         Ok(())
     }
+}
+
+pub fn limits() -> FileTransferLimits {
+    FileTransferLimits {
+        max_outgoing_transfers: MAX_OUTGOING_TRANSFERS,
+        max_files_per_batch: MAX_FILES_PER_BATCH,
+        max_file_bytes: MAX_FILE_SIZE,
+        max_batch_bytes: MAX_BATCH_BYTES,
+    }
+}
+
+pub fn validate_protocol(version: Option<u8>) -> Result<(), AppError> {
+    if version != Some(PROTOCOL_VERSION) {
+        return Err(invalid(
+            "กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ เพื่อใช้การรับส่งไฟล์รุ่นล่าสุด",
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_batch(files: &[FileTransferFile]) -> Result<(), AppError> {
+    if files.is_empty() || files.len() > usize::from(MAX_FILES_PER_BATCH) {
+        return Err(invalid("กรุณาเลือกไฟล์ตั้งแต่ 1 ถึง 20 ไฟล์"));
+    }
+    files.iter().try_fold(0_u64, |total, file| {
+        validate_file(file)?;
+        total
+            .checked_add(file.size)
+            .filter(|sum| *sum <= MAX_BATCH_BYTES)
+            .ok_or_else(|| invalid("ไฟล์รวมในชุดต้องไม่เกิน 128 MiB"))
+    })?;
+    Ok(())
 }
 
 pub fn validate_file(file: &FileTransferFile) -> Result<(), AppError> {
