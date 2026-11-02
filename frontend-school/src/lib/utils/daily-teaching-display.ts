@@ -328,7 +328,10 @@ export function dailyTeachingCardPresentation(
 	view: DailyTeachingView
 ): DailyTeachingCardPresentation {
 	const entry = group.entries[0];
-	const shared = isStructuralEntry(entry) || group.isSynchronizedActivity;
+	const shared =
+		isStructuralEntry(entry) ||
+		(normalizedEntryType(entry.entryType) === 'activity' &&
+			entry.activitySchedulingMode === 'synchronized');
 	const homeroomNames = [
 		...new Set(
 			group.entries.flatMap((item) =>

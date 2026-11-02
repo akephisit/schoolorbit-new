@@ -246,7 +246,8 @@ test('shared homeroom cards wrap meaningful titles and hide teacher metadata and
 		{ entryType: 'structural', activitySchedulingMode: null },
 		{ entryType: 'break', activitySchedulingMode: null },
 		{ entryType: 'homeroom', activitySchedulingMode: null },
-		{ entryType: 'activity', activitySchedulingMode: 'synchronized' }
+		{ entryType: 'activity', activitySchedulingMode: 'synchronized' },
+		{ entryType: 'activity', activitySchedulingMode: 'synchronized', offeringId: null }
 	]) {
 		const presentation = cardPresentation(
 			[

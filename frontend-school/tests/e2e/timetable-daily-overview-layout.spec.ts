@@ -168,10 +168,13 @@ test('fits ten equal daily periods inside the desktop table', async ({ page }) =
 	expect(Math.max(...layout.periodWidths) - Math.min(...layout.periodWidths)).toBeLessThanOrEqual(
 		1
 	);
-	expect(layout.rowHeight).toBeLessThanOrEqual(64);
+	expect(layout.rowHeight).toBeGreaterThanOrEqual(88);
+	expect(layout.rowHeight).toBeLessThanOrEqual(104);
 });
 
-test('shows only compact lesson context while keeping full details available', async ({ page }) => {
+test('shows reference code, subject and separate context lines while keeping full details available', async ({
+	page
+}) => {
 	await installDailyOverview(page);
 	await page.goto(todayUrl());
 
@@ -187,13 +190,41 @@ test('shows only compact lesson context while keeping full details available', a
 		return {
 			overflow: style.overflow,
 			whiteSpace: style.whiteSpace,
-			isTruncated: element.scrollWidth > element.clientWidth
+			lineClamp: style.webkitLineClamp,
+			height: element.getBoundingClientRect().height,
+			lineHeight: parseFloat(style.lineHeight)
 		};
 	});
-	expect(titleLayout).toEqual({ overflow: 'hidden', whiteSpace: 'nowrap', isTruncated: true });
+	expect(titleLayout.overflow).toBe('hidden');
+	expect(titleLayout.whiteSpace).toBe('pre-line');
+	expect(titleLayout.lineClamp).toBe('3');
+	expect(titleLayout.height).toBeGreaterThan(titleLayout.lineHeight);
+	expect(titleLayout.height).toBeLessThanOrEqual(titleLayout.lineHeight * 3 + 1);
 
 	const courseCell = table.getByRole('cell').filter({ hasText: 'ค21101' });
-	await expect(courseCell.getByText('ม.1/1 · ห้องคณิตศาสตร์', { exact: true })).toBeVisible();
+	await expect(courseCell.locator('[data-daily-card-code]')).toHaveText('ค21101');
+	await expect(courseCell.locator('[data-daily-card-title]')).toHaveText('คณิตศาสตร์พื้นฐาน');
+	await expect(courseCell.locator('[data-daily-card-target]')).toHaveText('ม.1/1');
+	await expect(courseCell.locator('[data-daily-card-room]')).toHaveText('ห้องคณิตศาสตร์');
+	await expect(courseCell.locator('[data-daily-card-room] svg')).toHaveCount(1);
+	await expect(courseCell.locator('[data-daily-card-teachers]')).toHaveCount(0);
+	const lineGeometry = await courseCell.evaluate((cell) => {
+		const code = cell.querySelector('[data-daily-card-code]');
+		const title = cell.querySelector('[data-daily-card-title]');
+		const target = cell.querySelector('[data-daily-card-target]');
+		const room = cell.querySelector('[data-daily-card-room]');
+		if (!code || !title || !target || !room)
+			throw new Error('Course reference lines are incomplete');
+		return {
+			codeBottom: code.getBoundingClientRect().bottom,
+			titleTop: title.getBoundingClientRect().top,
+			targetBottom: target.getBoundingClientRect().bottom,
+			roomTop: room.getBoundingClientRect().top
+		};
+	});
+	expect(lineGeometry.titleTop).toBeGreaterThanOrEqual(lineGeometry.codeBottom);
+	expect(lineGeometry.roomTop).toBeGreaterThanOrEqual(lineGeometry.targetBottom);
+
 	await expect(courseCell).not.toContainText('ม.1/1 · คณิตศาสตร์พื้นฐาน');
 	await expect(courseCell).not.toContainText('116');
 
@@ -355,6 +386,12 @@ test('homeroom details deduplicate team teaching and scope activity instructors 
 	await expect(teamRow.getByTestId('daily-lesson-card')).toHaveCount(1);
 	await expect(teamRow).toContainText('ครูร่วมสอน');
 	await expect(teamRow).toContainText('ห้องคณิตศาสตร์');
+	await expect(teamRow.locator('[data-daily-card-code]')).toHaveText('ค21101');
+	await expect(teamRow.locator('[data-daily-card-title]')).toHaveText('คณิตศาสตร์พื้นฐาน');
+	await expect(teamRow.locator('[data-daily-card-teachers]')).toHaveText('ครูร่วมสอน +1');
+	await expect(teamRow.locator('[data-daily-card-teachers] svg')).toHaveCount(1);
+	await expect(teamRow.locator('[data-daily-card-target]')).toHaveCount(0);
+
 	await teamRow.getByRole('button', { name: /คาบที่ 2/ }).click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByRole('heading', { name: 'ม.1/1', exact: true })).toBeVisible();
@@ -370,6 +407,10 @@ test('homeroom details deduplicate team teaching and scope activity instructors 
 		.filter({ has: page.locator('td:first-child').getByText('ม.1/2', { exact: true }) });
 	const syncCell = activityRow.locator('td').nth(1);
 	await expect(syncCell.getByTestId('daily-lesson-card')).toHaveCount(1);
+	await expect(syncCell.locator('[data-daily-card-teachers]')).toHaveCount(0);
+	await expect(syncCell).not.toContainText('ครูร่วมสอน');
+	await expect(syncCell).not.toContainText('นายทดสอบ');
+
 	await syncCell.getByRole('button').click();
 	await expect(dialog).toContainText('นายทดสอบ ตารางสอน');
 	await expect(dialog).toContainText('ครูร่วมสอน');
@@ -379,6 +420,49 @@ test('homeroom details deduplicate team teaching and scope activity instructors 
 	await expect(independentCell.getByTestId('daily-lesson-card')).toHaveCount(2);
 	await expect(independentCell).toContainText('กิจกรรมแยก 1');
 	await expect(independentCell).toContainText('กิจกรรมแยก 2');
+	await expect(independentCell.locator('[data-daily-card-teachers]')).toHaveText([
+		'ครูทดสอบ',
+		'ครูทดสอบ'
+	]);
+	await expect(independentCell.locator('[data-daily-card-room]')).toHaveText([
+		'ไม่ระบุห้อง',
+		'ไม่ระบุห้อง'
+	]);
+	const stacking = await activityRow.evaluate((row) => {
+		const cells = row.querySelectorAll('td');
+		const single = cells[1].querySelector('[data-testid="daily-lesson-card"]');
+		const cards = Array.from(cells[3].querySelectorAll('[data-testid="daily-lesson-card"]'));
+		if (!single || cards.length !== 2) throw new Error('Missing single/stacked activity cards');
+		return {
+			singleTopGap: single.getBoundingClientRect().top - cells[1].getBoundingClientRect().top,
+			singleBottomGap:
+				cells[1].getBoundingClientRect().bottom - single.getBoundingClientRect().bottom,
+			cards: cards.map((card) => {
+				const lines = card.querySelectorAll(
+					'[data-daily-card-title], [data-daily-card-teachers], [data-daily-card-room]'
+				);
+				const rect = card.getBoundingClientRect();
+				return {
+					top: rect.top,
+					bottom: rect.bottom,
+					lineBottom: Math.max(
+						...Array.from(lines).map((line) => line.getBoundingClientRect().bottom)
+					)
+				};
+			}),
+			cellBottom: cells[3].getBoundingClientRect().bottom
+		};
+	});
+	expect(stacking.singleTopGap).toBeGreaterThanOrEqual(0);
+	expect(stacking.singleTopGap).toBeLessThanOrEqual(5);
+	expect(stacking.singleBottomGap).toBeGreaterThanOrEqual(0);
+	expect(stacking.singleBottomGap).toBeLessThanOrEqual(5);
+	expect(stacking.cards[0].bottom).toBeLessThanOrEqual(stacking.cards[1].top);
+	for (const card of stacking.cards) {
+		expect(card.lineBottom).toBeLessThanOrEqual(card.bottom);
+		expect(card.bottom).toBeLessThanOrEqual(stacking.cellBottom);
+	}
+
 	await expect(table).not.toContainText('กิจกรรมไม่ระบุห้อง');
 	await page.getByRole('radio', { name: 'ครู', exact: true }).click();
 	await expect(table).toContainText('กิจกรรมไม่ระบุห้อง');
@@ -412,6 +496,118 @@ test('an owner that disappears on a date change stays explicitly unavailable', a
 	expect(reads).toBe(2);
 });
 
+const structuralTitle = 'กิจกรรมหน้าเสาธงและส่งเสริมคุณธรรมประจำวัน';
+
+function structuralEntry(
+	index: number,
+	overrides: Partial<DailyTeachingEntry> = {}
+): DailyTeachingEntry {
+	return {
+		...activityEntry(100 + index, ['ม.1/1']),
+		entryType: 'structural',
+		activityId: null,
+		activitySchedulingMode: null,
+		activityVersionDisplayLabel: null,
+		offeringId: null,
+		offeringCode: null,
+		offeringName: null,
+		title: structuralTitle,
+		roomId: timetableIds.room,
+		roomName: 'ลานกิจกรรม',
+		roomCode: 'INTERNAL-ASSEMBLY',
+		note: 'หมายเหตุร่วม',
+		...overrides
+	};
+}
+
+function referenceOverview(): DailyTeachingOverview {
+	const data = overview();
+	data.teachers[0].periods[1].entries = [structuralEntry(0, { roomId: null, roomName: null })];
+	return data;
+}
+
+function structuralAllocationOverview(): DailyTeachingOverview {
+	const data = overview();
+	data.teachers = Array.from({ length: 24 }, (_, index) => ({
+		id: `91000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+		displayName: `นายสมมติ ${index + 1}`,
+		periods: data.periods.map((period) => ({
+			bellSchedulePeriodId: period.id,
+			entries: period.orderIndex === 1 ? [structuralEntry(index)] : []
+		}))
+	}));
+	data.teachers[0].periods[1].entries = [
+		structuralEntry(30),
+		structuralEntry(31, { title: 'ประชุมครูประจำวัน' }),
+		structuralEntry(32, { note: 'หมายเหตุอีกบริบท' }),
+		structuralEntry(33, { roomId: '93000000-0000-4000-8000-000000000001', roomName: 'หอประชุม' })
+	];
+	data.teachers[0].periods[2].entries = [
+		courseEntry(),
+		{ ...courseEntry(), entryId: '94000000-0000-4000-8000-000000000001' }
+	];
+	data.summary = {
+		totalTeacherCount: 24,
+		displayedTeacherCount: 24,
+		teachersTeachingCount: 24,
+		emptyTeacherCount: 0,
+		lessonCount: 30
+	};
+	return data;
+}
+
+test('homeroom structural cards collapse repeated allocations without losing detail evidence or distinct contexts', async ({
+	page
+}) => {
+	await installDailyOverview(page, structuralAllocationOverview());
+	await page.goto(`${todayUrl()}&view=homeroom`);
+	const row = page.getByRole('table').locator('tbody tr');
+	await expect(row).toHaveCount(1);
+	const sharedCell = row.locator('td').nth(1);
+	await expect(sharedCell.getByTestId('daily-lesson-card')).toHaveCount(1);
+	await expect(sharedCell.locator('[data-daily-card-title]')).toHaveText(structuralTitle);
+	await expect(
+		sharedCell.locator('[data-daily-card-code], [data-daily-card-teachers]')
+	).toHaveCount(0);
+	await expect(sharedCell.locator('[data-daily-card-room]')).toHaveText('ลานกิจกรรม');
+	await expect(sharedCell).not.toContainText('นายสมมติ');
+	await expect(sharedCell).not.toContainText('INTERNAL-ASSEMBLY');
+	await sharedCell.getByRole('button').click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('[data-daily-entry-id]')).toHaveCount(24);
+	await expect(dialog).toContainText('นายสมมติ 1');
+	await expect(dialog).toContainText('นายสมมติ 24');
+	await expect(dialog).toContainText('หมายเหตุร่วม');
+	await expect(dialog).not.toContainText('INTERNAL-ASSEMBLY');
+	await page.keyboard.press('Escape');
+
+	const distinctCell = row.locator('td').nth(2);
+	await expect(distinctCell.getByTestId('daily-lesson-card')).toHaveCount(4);
+	await expect(distinctCell.locator('[data-daily-card-title]')).toHaveText([
+		structuralTitle,
+		'ประชุมครูประจำวัน',
+		structuralTitle,
+		structuralTitle
+	]);
+	await expect(distinctCell.locator('[data-daily-card-room]')).toHaveText([
+		'ลานกิจกรรม',
+		'ลานกิจกรรม',
+		'ลานกิจกรรม',
+		'หอประชุม'
+	]);
+	await expect(distinctCell.locator('[data-daily-card-teachers]')).toHaveCount(0);
+	await distinctCell.getByRole('button').click();
+	await expect(dialog.locator('[data-daily-entry-id]')).toHaveCount(4);
+	await expect(dialog).toContainText('หมายเหตุอีกบริบท');
+	await page.keyboard.press('Escape');
+	const courses = row.locator('td').nth(3);
+	await expect(courses.getByTestId('daily-lesson-card')).toHaveCount(2);
+	await expect(courses.locator('[data-daily-card-title]')).toHaveText([
+		'คณิตศาสตร์พื้นฐาน',
+		'คณิตศาสตร์พื้นฐาน'
+	]);
+});
+
 for (const width of [390, 1280]) {
 	for (const theme of ['light', 'dark'] as const) {
 		test(`keeps neutral compact teacher and homeroom grids contained at ${width}px in ${theme}`, async ({
@@ -422,7 +618,7 @@ for (const width of [390, 1280]) {
 				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
 				theme
 			);
-			await installDailyOverview(page);
+			await installDailyOverview(page, referenceOverview());
 			await page.goto(todayUrl());
 			await expect
 				.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
@@ -483,6 +679,26 @@ for (const width of [390, 1280]) {
 						periodWidths: headers.map((header) => header.getBoundingClientRect().width),
 						cardStyles,
 						background: firstOwner ? getComputedStyle(firstOwner).backgroundColor : '',
+						cardLayouts: Array.from(
+							element.querySelectorAll('[data-testid="daily-lesson-card"]')
+						).map((card) => {
+							const cell = card.closest('td');
+							if (!cell) throw new Error('Card has no daily period cell');
+							const cardRect = card.getBoundingClientRect();
+							return {
+								topGap: cardRect.top - cell.getBoundingClientRect().top,
+								bottomGap: cell.getBoundingClientRect().bottom - cardRect.bottom,
+								lines: Array.from(
+									card.querySelectorAll(
+										'[data-daily-card-code], [data-daily-card-title], [data-daily-card-target], [data-daily-card-teachers], [data-daily-card-room]'
+									)
+								).map((line) => ({
+									bottom: line.getBoundingClientRect().bottom,
+									fontSize: parseFloat(getComputedStyle(line).fontSize)
+								})),
+								bottom: cardRect.bottom
+							};
+						}),
 						maxRowHeight: Math.max(
 							...Array.from(element.querySelectorAll('tbody tr')).map(
 								(row) => row.getBoundingClientRect().height
@@ -495,9 +711,22 @@ for (const width of [390, 1280]) {
 				expect(
 					Math.max(...geometry.periodWidths) - Math.min(...geometry.periodWidths)
 				).toBeLessThanOrEqual(1);
-				expect(geometry.maxRowHeight).toBeLessThanOrEqual(64);
+				expect(geometry.maxRowHeight).toBeGreaterThanOrEqual(88);
+				expect(geometry.maxRowHeight).toBeLessThanOrEqual(104);
 				expect(geometry.cardStyles.length).toBeGreaterThan(0);
 				for (const background of geometry.cardStyles) expect(background).toBe(geometry.background);
+				for (const card of geometry.cardLayouts) {
+					expect(card.topGap).toBeGreaterThanOrEqual(0);
+					expect(card.topGap).toBeLessThanOrEqual(5);
+					expect(card.bottomGap).toBeGreaterThanOrEqual(0);
+					expect(card.bottomGap).toBeLessThanOrEqual(5);
+					for (const line of card.lines) {
+						expect(line.bottom).toBeLessThanOrEqual(card.bottom);
+						expect(line.fontSize).toBeGreaterThanOrEqual(9);
+						expect(line.fontSize).toBeLessThanOrEqual(11);
+					}
+				}
+
 				await page.screenshot({
 					path: testInfo.outputPath(`${view}-${width}-${theme}.png`),
 					fullPage: true

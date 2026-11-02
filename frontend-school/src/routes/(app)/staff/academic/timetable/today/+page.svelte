@@ -606,7 +606,7 @@
 				</p>{/if}
 			{#each selectedCell?.entries ?? [] as entry (entry.entryId)}
 				{@const detailTitle = entryTitle(entry)}
-				<div class="rounded-lg border p-4">
+				<div class="rounded-lg border p-4" data-daily-entry-id={entry.entryId}>
 					<div class="flex items-center justify-between gap-3">
 						<div class="min-w-0">
 							<p class="font-medium">{detailTitle}</p>
