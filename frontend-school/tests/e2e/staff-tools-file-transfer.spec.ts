@@ -175,6 +175,9 @@ test('one consent transfers zero-byte files, duplicate names and a real32MiB fil
 			}
 			expect(entry.body.length).toBeLessThan(40_000);
 		}
+		await receiver
+			.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว', exact: true })
+			.screenshot({ path: testInfo.outputPath('batch-downloads-mobile.png') });
 		await page.screenshot({
 			path: testInfo.outputPath('batch-complete-desktop.png'),
 			fullPage: true
