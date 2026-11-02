@@ -1,9 +1,10 @@
 <script lang="ts">
 	import Sidebar from '#lib/components/layout/Sidebar.svelte';
 	import Header from '#lib/components/layout/Header.svelte';
-	import { goto, invalidate } from '$app/navigation';
+	import { beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
+	import { PageHeader } from '#lib/components/app-layout/index.js';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import type { LayoutProps } from './$types';
 	import { createAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
@@ -32,6 +33,37 @@
 	import { notificationStore } from '#lib/stores/notification.js';
 	let { children, data }: LayoutProps = $props();
 	const appMenu = createAppMenuRegion();
+	// Kit 3 exposes shallow on navigation hooks, but not on the navigating state object.
+	let shallowNavigation = $state.raw<Promise<void> | null>(null);
+	beforeNavigate((navigation) => {
+		if (navigation.shallow) shallowNavigation = navigation.complete;
+	});
+	onNavigate((navigation) => {
+		// Also covers a shallow navigation that supersedes an in-progress navigation.
+		if (navigation.shallow) shallowNavigation = navigation.complete;
+	});
+	const pendingMenu = $derived.by(() => {
+		const target = navigating.to;
+		if (
+			!target?.route.id?.startsWith('/(app)/') ||
+			navigating.willUnload ||
+			navigating.complete === shallowNavigation ||
+			target.url.origin !== page.url.origin ||
+			target.url.pathname === page.url.pathname ||
+			!appMenu.loaded ||
+			!userCanAccessRoute($authStore.user, $userPermissions, target.route.id)
+		) {
+			return null;
+		}
+		const item = appMenu.groups
+			.flatMap((group) => group.items)
+			.find((item) => {
+				const url = new URL(item.path, page.url.href);
+				return url.origin === target.url.origin && url.pathname === target.url.pathname;
+			});
+		const title = item?.name ?? (target.url.pathname === '/staff/work' ? 'งานของฉัน' : null);
+		return title ? { title, pathname: target.url.pathname } : null;
+	});
 	const sharedMenuRead = $derived(data.userMenu);
 	const sharedCountsRead = $derived(data.workCounts);
 	const authenticatedUserId = $derived($authStore.user?.id);
@@ -203,7 +235,11 @@
 
 {#if authStatus === 'authenticated'}
 	<div class="h-screen flex flex-col bg-background overflow-hidden">
-		<Sidebar bind:this={sidebarRef} bind:isCollapsed={isSidebarCollapsed} />
+		<Sidebar
+			bind:this={sidebarRef}
+			bind:isCollapsed={isSidebarCollapsed}
+			pendingPath={pendingMenu?.pathname ?? null}
+		/>
 
 		<!-- Wrapper for Header and Main with sidebar offset -->
 		<div
@@ -220,7 +256,21 @@
 
 			<!-- Main Content - scroll อยู่ที่นี่ -->
 			<main class="flex-1 min-h-0 overflow-y-auto">
-				<div class="h-full">
+				{#if pendingMenu}
+					<div
+						class="school-page-shell w-full min-w-0"
+						data-testid="menu-navigation-pending"
+						aria-busy="true"
+					>
+						<PageHeader title={pendingMenu.title} />
+						<div class="school-page-content w-full min-w-0">
+							<span role="status" class="sr-only">กำลังเปิด{pendingMenu.title}</span>
+							<PageSkeleton variant="table" rows={7} />
+						</div>
+					</div>
+				{/if}
+				<!-- Retain the outgoing route and its draft guards until Kit commits the destination. -->
+				<div class="h-full" hidden={!!pendingMenu} inert={!!pendingMenu}>
 					{#if holdAcademicContextPage}
 						<div class="p-4 sm:p-6">
 							<PageSkeleton variant="table" rows={7} />

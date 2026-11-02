@@ -80,7 +80,11 @@ test('shared app layout components define consistent page header and shell', asy
 		'PageShell content wrapper should preserve full-width layout and vertical spacing between page content blocks'
 	);
 	assert.match(pageShell, /@render children/);
-	assert.match(appLayout, /<div class="h-full">/);
+	assert.match(
+		appLayout,
+		/<div class="h-full"(?:\s+(?:hidden|inert)=\{[^}]+\})*>/,
+		'app layout retains the unpadded full-height route wrapper, including pending-navigation visibility'
+	);
 	assert.doesNotMatch(
 		appLayout,
 		/<div class="p-4 lg:p-6 h-full">/,

@@ -26,8 +26,10 @@
 		type SidebarWorkspaceSection
 	} from './sidebar-navigation';
 
-	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } =
-		$props();
+	let {
+		isCollapsed = $bindable($uiPreferences.sidebarCollapsed),
+		pendingPath = null
+	}: { isCollapsed?: boolean; pendingPath?: string | null } = $props();
 	let isMobileOpen = $state(false);
 	const appMenu = getAppMenuRegion();
 	const menuGroups = $derived(appMenu.groups);
@@ -102,10 +104,10 @@
 
 	function navItemClass(item: SidebarMenuItem, nested = false): string {
 		return cn(
-			'relative h-9 w-full justify-start gap-2 rounded-md px-2 text-sm transition-all',
+			'relative h-9 w-full justify-start gap-2 rounded-md px-2 text-sm transition-none',
 			nested && 'pl-3',
 			isActive(item.path)
-				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90 dark:hover:text-primary-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 		);
 	}
@@ -120,9 +122,9 @@
 	function collapsedWorkspaceTriggerClass(workspace: SidebarWorkspaceSection): string {
 		return cn(
 			buttonVariants({ variant: 'ghost', size: 'icon' }),
-			'relative flex h-10 w-10 rounded-lg',
+			'relative flex h-10 w-10 rounded-lg transition-none',
 			workspaceHasActiveItem(workspace)
-				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90 dark:hover:text-primary-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 		);
 	}
@@ -149,9 +151,7 @@
 
 	// Check if a route is active
 	// Only highlights the BEST matching menu item (longest matching path)
-	function isActive(href: string): boolean {
-		const currentPath = page.url.pathname;
-
+	function isActive(href: string, currentPath = pendingPath ?? page.url.pathname): boolean {
 		// Exact match
 		if (currentPath === href) {
 			return true;
@@ -272,25 +272,27 @@
 					<Tooltip.Trigger class="w-full">
 						<Button
 							href="/staff/work"
+							aria-current={isActive('/staff/work', page.url.pathname) ? 'page' : undefined}
+							aria-busy={pendingPath === '/staff/work' || undefined}
 							variant="ghost"
 							onclick={handleNavClick}
 							class={cn(
-								'relative mb-3 h-11 rounded-lg px-0 transition-all duration-300',
+								'relative mb-3 h-11 rounded-lg px-0 transition-none',
 								isCollapsed ? 'mx-auto w-10' : 'w-full justify-start',
 								isActive('/staff/work')
-									? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+									? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90 dark:hover:text-primary-foreground'
 									: 'bg-accent/60 text-foreground hover:bg-accent'
 							)}
 						>
 							<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
 								<Inbox
-									class="w-5 h-5 transition-colors {isActive('/staff/work')
+									class="w-5 h-5 {isActive('/staff/work')
 										? 'text-primary-foreground'
 										: 'text-muted-foreground group-hover:text-accent-foreground'}"
 								/>
 							</div>
 							<span
-								class="font-semibold whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
+								class="font-semibold whitespace-nowrap overflow-hidden transition-[width,opacity] duration-300 {isCollapsed
 									? 'w-0 opacity-0 hidden'
 									: 'w-auto opacity-100 ml-1'}"
 							>
@@ -350,7 +352,7 @@
 												onfocus={() => preloadMenuItem(item, 'hover')}
 												onpointerdown={() => preloadMenuItem(item, 'tap')}
 												class={cn(
-													'cursor-pointer gap-2',
+													'cursor-pointer gap-2 transition-none',
 													isActive(item.path) && 'bg-accent text-accent-foreground font-medium'
 												)}
 											>
@@ -397,6 +399,8 @@
 										{@const Icon = getIconComponent(item.icon)}
 										<Button
 											href={menuHref(item)}
+											aria-current={isActive(item.path, page.url.pathname) ? 'page' : undefined}
+											aria-busy={(pendingPath !== null && isActive(item.path)) || undefined}
 											data-sveltekit-preload-data={menuPreloadPolicy(item)}
 											variant="ghost"
 											onclick={handleNavClick}

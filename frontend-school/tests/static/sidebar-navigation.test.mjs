@@ -97,7 +97,7 @@ test('collapsed sidebar keeps the rail vertical during width transition', async 
 	);
 	assert.match(
 		sidebar,
-		/buttonVariants\(\{ variant: 'ghost', size: 'icon' \}\),\s*'relative flex h-10 w-10 rounded-lg'/,
+		/buttonVariants\(\{ variant: 'ghost', size: 'icon' \}\),\s*'relative flex h-10 w-10 rounded-lg(?: transition-none)?'/,
 		'collapsed workspace triggers should override inline-flex with block-level flex layout'
 	);
 	assert.match(
