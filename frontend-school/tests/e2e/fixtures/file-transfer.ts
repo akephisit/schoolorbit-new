@@ -33,6 +33,13 @@ export async function fileTransferFixture() {
 	const devices = new Map<string, DeviceEntry>();
 	const pairs = new Map<string, TransferPair>();
 	let maxOutgoing = 0;
+	let suppressNextCreatedEvent = false;
+	let loseNextCreateResponse = false;
+	let loseCreateForLabel: string | null = null;
+	let holdCreateMutation = false;
+	const createWaiters: (() => void)[] = [];
+	const heldCreatedEvents: TransferPair[] = [];
+	let failSnapshots = false;
 	let holdAccept = false;
 	let failAccept = false;
 	let holdAcceptedEvents = false;
@@ -42,6 +49,8 @@ export async function fileTransferFixture() {
 	let holdRequest = false;
 	let releaseRequest: (() => void) | null = null;
 	let failSenderClose = false;
+	let holdCloseResponses = false;
+	const closeResponseWaiters: (() => void)[] = [];
 	let releaseAccept: (() => void) | null = null;
 	let blockSignals = false;
 	const requests: { path: string; method: string; body: string }[] = [];
@@ -158,6 +167,10 @@ export async function fileTransferFixture() {
 				send({});
 				return;
 			}
+			if (failSnapshots) {
+				send('fixture snapshot unavailable', 503);
+				return;
+			}
 			send(snapshot(entry));
 			return;
 		}
@@ -168,6 +181,7 @@ export async function fileTransferFixture() {
 				files: TransferPair['files'];
 				clientRequestId: string;
 			} = JSON.parse(body);
+			if (holdCreateMutation) await new Promise<void>((resolve) => createWaiters.push(resolve));
 			const initiator = devices.get(input.deviceId);
 			const target = input.target;
 			const recipient =
@@ -204,7 +218,17 @@ export async function fileTransferFixture() {
 				maxOutgoing,
 				[...pairs.values()].filter((item) => item.initiator.id === initiator.device.id).length
 			);
-			pairEvent(pair);
+			const loseForRecipient = recipient.device.label === loseCreateForLabel;
+			if (loseForRecipient) loseCreateForLabel = null;
+			if (suppressNextCreatedEvent || loseForRecipient) {
+				suppressNextCreatedEvent = false;
+				heldCreatedEvents.push(structuredClone(pair));
+			} else pairEvent(pair);
+			if (loseNextCreateResponse || loseForRecipient) {
+				loseNextCreateResponse = false;
+				response.destroy();
+				return;
+			}
 			const responsePair = structuredClone(pair);
 			if (holdRequest)
 				await new Promise<void>((resolve) => {
@@ -247,6 +271,8 @@ export async function fileTransferFixture() {
 						? 'declined'
 						: 'cancelled'
 				);
+				if (holdCloseResponses)
+					await new Promise<void>((resolve) => closeResponseWaiters.push(resolve));
 				send({});
 				return;
 			}
@@ -316,6 +342,31 @@ export async function fileTransferFixture() {
 			});
 		},
 		emit,
+		holdNextCreatedEvent() {
+			suppressNextCreatedEvent = true;
+		},
+		releaseCreatedEvents() {
+			for (const pair of heldCreatedEvents.splice(0)) pairEvent(pair);
+		},
+		loseCreateResponseFor(label: string) {
+			loseCreateForLabel = label;
+		},
+		loseNextCreateResponse() {
+			loseNextCreateResponse = true;
+		},
+		failSnapshots() {
+			failSnapshots = true;
+		},
+		restoreSnapshots() {
+			failSnapshots = false;
+		},
+		holdCreateMutation() {
+			holdCreateMutation = true;
+		},
+		releaseCreateMutation() {
+			holdCreateMutation = false;
+			for (const release of createWaiters.splice(0)) release();
+		},
 		failAcceptResponse() {
 			failAccept = true;
 		},
@@ -335,6 +386,13 @@ export async function fileTransferFixture() {
 		},
 		get heldSignals() {
 			return heldSignals.length;
+		},
+		holdCloseResponses() {
+			holdCloseResponses = true;
+		},
+		releaseCloseResponses() {
+			holdCloseResponses = false;
+			for (const release of closeResponseWaiters.splice(0)) release();
 		},
 		failSenderClose() {
 			failSenderClose = true;
@@ -368,6 +426,8 @@ export async function fileTransferFixture() {
 			return [...pairs.values()];
 		},
 		async close() {
+			for (const release of closeResponseWaiters.splice(0)) release();
+			for (const release of createWaiters.splice(0)) release();
 			releaseAccept?.();
 			releaseRequest?.();
 			for (const entry of devices.values()) entry.stream?.end();

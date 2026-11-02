@@ -402,6 +402,9 @@
 								{job.files.length} ไฟล์ · {formatFileSize(batchBytes(job.files))}
 							</p>
 							{#if job.error}<p role="alert" class="text-sm text-destructive">{job.error}</p>{/if}
+							{#if job.cleanupError}<p role="alert" class="text-sm text-destructive">
+									{job.cleanupError}
+								</p>{/if}
 							{#if job.phase === 'consent'}
 								<ol class="space-y-1 text-sm">
 									{#each job.files as file, index (index)}<li class="break-words">
@@ -454,7 +457,7 @@
 								{#if job.direction === 'outgoing' && job.phase !== 'complete'}<Button
 										variant="outline"
 										disabled={!online || !files.length || receiving}
-										onclick={() => session?.retry(job.id)}>ส่งคำขอใหม่</Button
+										onclick={() => session?.retry(job.id, files)}>ส่งคำขอใหม่</Button
 									>{/if}
 							{/if}
 						</Card.Content></Card.Root

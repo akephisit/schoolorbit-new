@@ -42,6 +42,7 @@ export interface TransferJob {
 	fileIndex: number;
 	completedFiles: number;
 	error: string;
+	cleanupError: string;
 	pending: boolean;
 	slotReserved: boolean;
 }
@@ -68,7 +69,7 @@ type Entry = {
 	controller: AbortController;
 	transport: FileTransferTransport | null;
 	consented: boolean;
-	closePending: boolean;
+	closingPairId: string | null;
 };
 type Batch = { id: string; files: File[]; metadata: TransferFile[] };
 const terminal = new Set<TransferPhase>(['complete', 'declined', 'cancelled', 'failed']);
@@ -96,6 +97,7 @@ export class FileTransferSession {
 	private refreshAgain = false;
 	private pumping = false;
 	private retiredPairs = new Set<string>();
+	private closedPairs = new Set<string>();
 	private retiredRequests = new Set<string>();
 	private idle = createVisibilityIdle({
 		...browserVisibilityDependencies(),
@@ -189,6 +191,7 @@ export class FileTransferSession {
 				...entry.view,
 				phase: isTransferTerminal(entry.view.phase) ? entry.view.phase : 'cancelled',
 				pending: false,
+				cleanupError: '',
 				slotReserved: false
 			};
 		}
@@ -355,6 +358,22 @@ export class FileTransferSession {
 		const device = this.state.snapshot?.device;
 		if (!device || (pair.initiator.id !== device.id && pair.recipient.id !== device.id))
 			throw new Error('wrong_device');
+		if (this.closedPairs.has(pair.id)) {
+			const known = [...this.entries.values()].find(
+				(item) =>
+					item.view.direction === 'outgoing' && item.view.clientRequestId === pair.clientRequestId
+			);
+			if (
+				known?.view.slotReserved &&
+				!known.view.pair &&
+				pair.initiator.id === device.id &&
+				sameFiles(known.view.files, pair.files)
+			) {
+				known.view = { ...known.view, pair };
+				this.pairClosed(pair.id, 'cancelled');
+			}
+			return;
+		}
 		if (this.retiredPairs.has(pair.id)) return;
 		if (validateTransferBatch(pair.files, this.state.snapshot!.limits))
 			throw new Error('invalid_batch');
@@ -377,6 +396,7 @@ export class FileTransferSession {
 			) {
 				// A cancelled/uncertain create may commit after its response is lost. Bind its
 				// correlation to the terminal job for confirmed cleanup, never to restart it.
+				this.revision++;
 				this.set(entry, { pair, recipientId: pair.recipient.id, slotReserved: true });
 				void this.close(entry);
 			} else this.closeOrphan(pair);
@@ -476,6 +496,7 @@ export class FileTransferSession {
 				fileIndex: 0,
 				completedFiles: 0,
 				error: '',
+				cleanupError: '',
 				pending: false,
 				slotReserved: false
 			},
@@ -484,7 +505,7 @@ export class FileTransferSession {
 			controller: new AbortController(),
 			transport: null,
 			consented: false,
-			closePending: false
+			closingPairId: null
 		};
 	}
 	send(files: readonly File[], targets: readonly TransferTarget[]) {
@@ -607,15 +628,20 @@ export class FileTransferSession {
 				requestId,
 				entry.controller.signal
 			);
-			if (this.current(generation, entry, requestId) && !isTransferTerminal(entry.view.phase))
-				this.applyPair(pair);
-			else if (this.current(generation) && pair.initiator.id === device.id) this.closeOrphan(pair);
+			if (this.current(generation, entry, requestId)) this.applyPair(pair);
+			else if (
+				this.current(generation) &&
+				pair.initiator.id === device.id &&
+				!this.retiredPairs.has(pair.id)
+			)
+				this.closeOrphan(pair);
 		} catch (error) {
 			if (!this.current(generation, entry, requestId)) return;
 			if (
 				error instanceof ApiClientError &&
 				error.status >= 400 &&
 				error.status < 500 &&
+				error.status !== 409 &&
 				!entry.view.pair
 			) {
 				this.retire(this.retiredRequests, requestId);
@@ -627,8 +653,24 @@ export class FileTransferSession {
 				this.pump();
 				return;
 			}
-			await this.refresh(generation);
+			const reconciled = await this.refresh(generation);
 			if (!this.current(generation, entry, requestId)) return;
+			if (
+				!entry.view.pair &&
+				error instanceof ApiClientError &&
+				error.status === 409 &&
+				reconciled
+			) {
+				this.retire(this.retiredRequests, requestId);
+				this.set(entry, {
+					phase: entry.view.phase === 'cancelled' ? 'cancelled' : 'failed',
+					slotReserved: false,
+					cleanupError: '',
+					error: this.message(error, 'อุปกรณ์ผู้รับไม่ว่าง กรุณาส่งคำขอใหม่เมื่อพร้อม')
+				});
+				this.pump();
+				return;
+			}
 			if (!entry.view.pair) {
 				this.retire(this.retiredRequests, requestId);
 				// A negative snapshot can race a still-running create. Keep admission
@@ -636,7 +678,7 @@ export class FileTransferSession {
 				this.set(entry, {
 					phase: entry.view.phase === 'cancelled' ? 'cancelled' : 'failed',
 					slotReserved: true,
-					error:
+					cleanupError:
 						'ยังยืนยันผลคำขอไม่ได้ ช่องส่งนี้ยังถูกจองไว้ กรุณาปิดรับส่งไฟล์ทั้งหมดแล้วเปิดใหม่หากคำขอไม่สิ้นสุด'
 				});
 			}
@@ -701,19 +743,56 @@ export class FileTransferSession {
 		else this.pump();
 	}
 
-	async retry(id: string) {
-		const entry = this.entries.get(id);
+	async retry(id: string, selectedFiles: readonly File[]) {
+		const entry = this.entries.get(id),
+			snapshot = this.state.snapshot;
+		const files = [...selectedFiles],
+			metadata = files.map(fileMetadata);
 		if (
 			!entry ||
+			!snapshot ||
 			entry.view.direction !== 'outgoing' ||
 			!isTransferTerminal(entry.view.phase) ||
-			!this.batch ||
-			!sameFiles(entry.view.files, this.batch.metadata)
+			validateTransferBatch(metadata, snapshot.limits) ||
+			!sameFiles(entry.view.files, metadata)
 		) {
 			this.publish({ error: 'เลือกชุดไฟล์เดิมก่อนส่งคำขอใหม่ให้ผู้รับนี้' });
 			return;
 		}
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId,
+			deviceId = snapshot.device.id;
 		if (entry.view.slotReserved && !(await this.close(entry))) return;
+		if (
+			!this.current(generation, entry, requestId) ||
+			this.state.status !== 'online' ||
+			this.state.snapshot?.device.id !== deviceId ||
+			!isTransferTerminal(entry.view.phase) ||
+			[...this.entries.values()].some(
+				(item) => item.view.direction === 'incoming' && item.view.slotReserved
+			)
+		)
+			return;
+		const active = [...this.entries.values()].some(
+			(item) =>
+				item.view.direction === 'outgoing' &&
+				(!isTransferTerminal(item.view.phase) || item.view.slotReserved)
+		);
+		if (
+			active &&
+			(!this.batch ||
+				this.batch.files.length !== files.length ||
+				!this.batch.files.every((file, index) => file === files[index]))
+		) {
+			this.publish({ error: 'รอให้ผู้รับทุกอุปกรณ์สิ้นสุดก่อนเปลี่ยนชุดไฟล์' });
+			return;
+		}
+		if (
+			!this.batch ||
+			this.batch.files.length !== files.length ||
+			!this.batch.files.every((file, index) => file === files[index])
+		)
+			this.batch = { id: crypto.randomUUID(), files, metadata };
 		this.retire(this.retiredRequests, entry.view.clientRequestId);
 		entry.controller = new AbortController();
 		entry.batchId = this.batch.id;
@@ -726,6 +805,7 @@ export class FileTransferSession {
 			completedFiles: 0,
 			pending: false,
 			error: '',
+			cleanupError: '',
 			slotReserved: false
 		});
 		this.pump();
@@ -836,36 +916,38 @@ export class FileTransferSession {
 	private async close(entry: Entry): Promise<boolean> {
 		const pair = entry.view.pair,
 			device = this.state.snapshot?.device;
+		const generation = this.generation,
+			requestId = entry.view.clientRequestId;
 		if (!device || !entry.view.slotReserved) return true;
 		if (!pair) {
-			const generation = this.generation;
 			await this.refresh(generation);
-			if (!this.current(generation, entry)) return false;
+			if (!this.current(generation, entry, requestId)) return false;
 			if (entry.view.pair) return this.close(entry);
 			this.set(entry, {
-				error:
+				cleanupError:
 					'คำขอเดิมยังอาจกำลังประมวลผล ช่องส่งยังถูกจองไว้ กรุณาปิดรับส่งไฟล์ทั้งหมดแล้วเปิดใหม่เพื่อยืนยันการยกเลิก'
 			});
 			return false;
 		}
-
-		if (entry.closePending) return false;
-		entry.closePending = true;
-		const generation = this.generation;
+		if (entry.closingPairId === pair.id) return false;
+		entry.closingPairId = pair.id;
+		const currentPair = () =>
+			this.current(generation, entry, requestId) && entry.view.pair?.id === pair.id;
 		try {
 			await transferAPI.close(pair.id, device.id);
-			if (this.current(generation, entry)) this.pairClosed(pair.id, 'cancelled');
+			if (!currentPair()) return false;
+			this.pairClosed(pair.id, 'cancelled');
 			return true;
 		} catch {
-			if (this.current(generation, entry)) {
+			if (currentPair() && entry.view.slotReserved) {
 				this.set(entry, {
-					error: 'ยังยืนยันการปิดคำขอไม่ได้ กดสิ้นสุดคำขออีกครั้ง หรือเปิดรับส่งไฟล์ใหม่'
+					cleanupError: 'ยังยืนยันการปิดคำขอไม่ได้ กดสิ้นสุดคำขออีกครั้ง หรือเปิดรับส่งไฟล์ใหม่'
 				});
 				await this.refresh(generation);
 			}
-			return !entry.view.slotReserved;
+			return currentPair() && !entry.view.slotReserved;
 		} finally {
-			entry.closePending = false;
+			if (entry.closingPairId === pair.id) entry.closingPairId = null;
 		}
 	}
 	finish(id: string) {
@@ -887,6 +969,7 @@ export class FileTransferSession {
 		reason: 'cancelled' | 'declined' | 'expired' | 'disconnected'
 	) {
 		this.retire(this.retiredPairs, pairId);
+		this.retire(this.closedPairs, pairId);
 		this.revision++;
 		const entry = [...this.entries.values()].find((item) => item.view.pair?.id === pairId);
 		if (!entry) return;
@@ -903,6 +986,7 @@ export class FileTransferSession {
 			phase,
 			slotReserved: false,
 			pending: false,
+			cleanupError: '',
 			error: isTransferTerminal(entry.view.phase)
 				? entry.view.error
 				: reason === 'expired'

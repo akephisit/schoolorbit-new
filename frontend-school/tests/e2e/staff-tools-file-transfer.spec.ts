@@ -188,7 +188,7 @@ test('one consent transfers zero-byte files, duplicate names and a real32MiB fil
 test('three recipients run independently, a fourth waits outside the backend, and cancellation retains complete files', async ({
 	browser,
 	page
-}) => {
+}, testInfo) => {
 	test.setTimeout(90_000);
 	const api = await fileTransferFixture(),
 		contexts = await Promise.all(
@@ -196,8 +196,13 @@ test('three recipients run independently, a fourth waits outside the backend, an
 		);
 	const recipients = await Promise.all(contexts.map((context) => context.newPage()));
 	try {
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.addInitScript(() =>
+			localStorage.setItem('ui-preferences', JSON.stringify({ theme: 'dark' }))
+		);
 		await api.setup(page);
 		await open(page, 'ผู้ส่งหลายคน');
+		await expect(page.locator('html')).toHaveClass(/dark/);
 		for (const [index, recipient] of recipients.entries()) {
 			if (index === 0) await holdFileAcknowledgments(recipient);
 			await api.setup(recipient, 'staff', { userId: randomUUID(), sessionId: randomUUID() });
@@ -206,6 +211,9 @@ test('three recipients run independently, a fourth waits outside the backend, an
 		await choose(page, [input('first.txt', 'completed first'), input('second.txt', 'later file')]);
 		await request(page, ['ผู้รับ 1', 'ผู้รับ 2', 'ผู้รับ 3', 'ผู้รับ 4']);
 		await expect(outgoing(page, 'ผู้รับ 4')).toHaveAttribute('data-phase', 'queued');
+		await page
+			.locator('section[aria-labelledby="transfers-heading"]')
+			.screenshot({ path: testInfo.outputPath('fanout-queue-dark.png') });
 		expect(api.requests.filter((entry) => entry.path.endsWith('/pairs'))).toHaveLength(3);
 		expect(api.maxOutgoing).toBe(3);
 		await accept(recipients[0]);
@@ -631,3 +639,283 @@ for (const width of [390, 1440])
 				await api.close();
 			}
 		});
+
+test('a lost create response plus failed snapshot keeps its slot until authoritative pair closure', async ({
+	browser,
+	page
+}, testInfo) => {
+	test.setTimeout(90_000);
+	const api = await fileTransferFixture(),
+		contexts = await Promise.all(
+			Array.from({ length: 4 }, () => browser.newContext({ serviceWorkers: 'block' }))
+		);
+	const recipients = await Promise.all(contexts.map((context) => context.newPage()));
+	try {
+		await api.setup(page);
+		await open(page, 'ผู้ส่ง');
+		for (const [index, recipient] of recipients.entries()) {
+			await api.setup(recipient, 'staff', { userId: randomUUID(), sessionId: randomUUID() });
+			await open(recipient, `ปลายทาง ${index + 1}`);
+		}
+		api.loseCreateResponseFor('ปลายทาง 1');
+		api.failSnapshots();
+		await choose(page, [input('unknown.txt', 'unknown response')]);
+		await request(page, ['ปลายทาง 1', 'ปลายทาง 2', 'ปลายทาง 3', 'ปลายทาง 4']);
+		const unknown = outgoing(page, 'ปลายทาง 1');
+		await expect(unknown).toHaveAttribute('data-phase', 'failed');
+		await expect(unknown.getByText(/ช่องส่งนี้ยังถูกจองไว้/)).toBeVisible();
+		await expect(outgoing(page, 'ปลายทาง 4')).toHaveAttribute('data-phase', 'queued');
+		await unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true }).click();
+		await unknown.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
+		await expect(unknown.getByText(/ช่องส่งยังถูกจองไว้/)).toBeVisible();
+		expect(
+			new Set(
+				api.requests
+					.filter((entry) => entry.path.endsWith('/pairs'))
+					.map((entry) => JSON.parse(entry.body).clientRequestId)
+			).size
+		).toBe(3);
+		expect(api.maxOutgoing).toBe(3);
+		api.restoreSnapshots();
+		await unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true }).click();
+		await expect(
+			recipients[3].getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+		).toBeVisible();
+		await expect(unknown.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true })).toHaveCount(0);
+		expect(api.maxOutgoing).toBeLessThanOrEqual(3);
+		api.releaseCreatedEvents();
+		await expect(
+			recipients[0].getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+		).toHaveCount(0);
+		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(0);
+	} finally {
+		const observations = new Map<string, number>();
+		for (const request of api.requests.filter((entry) => entry.path.endsWith('/pairs'))) {
+			const id: string = JSON.parse(request.body).clientRequestId;
+			observations.set(id, (observations.get(id) ?? 0) + 1);
+		}
+		await testInfo.attach('create-request-observations', {
+			body: JSON.stringify({
+				serverPostCount: [...observations.values()].reduce((sum, count) => sum + count, 0),
+				uniqueRequests: observations.size,
+				nonceMultiplicities: [...observations.values()],
+				livePairs: api.pairs.length
+			}),
+			contentType: 'application/json'
+		});
+		api.restoreSnapshots();
+		api.releaseCreatedEvents();
+		await Promise.all(contexts.map((context) => context.close()));
+		await api.close();
+	}
+});
+
+test('cancelled create binds a late successful HTTP pair for cleanup when its SSE event was held', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		api.holdRequest();
+		api.holdNextCreatedEvent();
+		api.failSnapshots();
+		await choose(page, [input('cancelled.txt', 'cancel pending response')]);
+		await request(page, ['ผู้รับ']);
+		const job = outgoing(page, 'ผู้รับ');
+		await expect(job).toHaveAttribute('data-phase', 'requesting');
+		await expect.poll(() => api.pairs.length).toBe(1);
+		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
+		await expect(job).toHaveAttribute('data-phase', 'cancelled');
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeDisabled();
+		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
+		expect(api.requests.filter((entry) => entry.path.endsWith('/pairs'))).toHaveLength(1);
+		api.releaseRequest();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
+		api.releaseCreatedEvents();
+		await expect(receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })).toHaveCount(
+			0
+		);
+		await expect(job).toHaveAttribute('data-phase', 'cancelled');
+		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(0);
+	} finally {
+		api.restoreSnapshots();
+		api.releaseRequest();
+		api.releaseCreatedEvents();
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('a negative snapshot cannot free a cancelled request that is still awaiting server mutation', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		api.holdCreateMutation();
+		await choose(page, [input('pending.txt', 'pending mutation')]);
+		await request(page, ['ผู้รับ']);
+		const job = outgoing(page, 'ผู้รับ');
+		await expect(job).toHaveAttribute('data-phase', 'requesting');
+		await expect
+			.poll(() => api.requests.filter((entry) => entry.path.endsWith('/pairs')).length)
+			.toBe(1);
+		expect(api.pairs).toHaveLength(0);
+		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
+		await job.getByRole('button', { name: 'สิ้นสุดคำขอ', exact: true }).click();
+		await expect(job.getByText(/ช่องส่งยังถูกจองไว้/)).toBeVisible();
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeDisabled();
+		api.releaseCreateMutation();
+		await expect
+			.poll(() => api.requests.filter((entry) => entry.path.endsWith('/close')).length)
+			.toBe(1);
+		await expect.poll(() => api.pairs.length).toBe(0);
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
+		await expect(job).toHaveAttribute('data-phase', 'cancelled');
+		expect(api.requests.filter((entry) => entry.path.endsWith('/signals'))).toHaveLength(0);
+	} finally {
+		api.releaseCreateMutation();
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('explicit retry sends the currently selected file objects even when metadata is unchanged', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('version.txt', 'old')]);
+		await request(page, ['ผู้รับ']);
+		await receiver.getByRole('button', { name: 'ปฏิเสธ', exact: true }).click();
+		await expect(page.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })).toBeEnabled();
+		await choose(page, [input('version.txt', 'new')]);
+		await outgoing(page, 'ผู้รับ').getByRole('button', { name: 'ส่งคำขอใหม่' }).click();
+		await accept(receiver);
+		expect(await download(receiver, 0, 'version.txt')).toEqual(Buffer.from('new'));
+	} finally {
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('a held old close response cannot prevent the retried pair from closing independently', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('retry.txt', 'new request')]);
+		await request(page, ['ผู้รับ']);
+		const first = structuredClone(api.pairs[0]),
+			job = outgoing(page, 'ผู้รับ');
+		api.holdCloseResponses();
+		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
+		await expect(
+			receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true })
+		).toBeVisible();
+		const second = structuredClone(api.pairs[0]);
+		expect(second.clientRequestId).not.toBe(first.clientRequestId);
+		await accept(receiver);
+		await expect(job).toHaveAttribute('data-phase', 'complete');
+		await expect
+			.poll(
+				() =>
+					api.requests.filter(
+						(entry) =>
+							entry.path.endsWith(`/pairs/${second.id}/close`) &&
+							JSON.parse(entry.body).deviceId === second.initiator.id
+					).length
+			)
+			.toBe(1);
+		api.releaseCloseResponses();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		await expect(job.getByRole('alert')).toHaveCount(0);
+		expect(await download(receiver, 0, 'retry.txt')).toEqual(Buffer.from('new request'));
+	} finally {
+		api.releaseCloseResponses();
+		await receiver.close();
+		await api.close();
+	}
+});
+
+test('late close success after device restart cannot restore old file references or queue an old retry', async ({
+	context,
+	page
+}) => {
+	const api = await fileTransferFixture(),
+		receiver = await context.newPage();
+	try {
+		await api.setup(page);
+		await api.setup(receiver);
+		await open(page, 'ผู้ส่ง');
+		await open(receiver, 'ผู้รับ');
+		await choose(page, [input('old-selection.txt', 'private previous selection')]);
+		await request(page, ['ผู้รับ']);
+		const job = outgoing(page, 'ผู้รับ'),
+			pair = structuredClone(api.pairs[0]);
+		api.failSenderClose();
+		const reconciled = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname.endsWith(`/devices/${pair.initiator.id}`) &&
+				response.request().method() === 'GET'
+		);
+		await job.getByRole('button', { name: 'ยกเลิกผู้รับนี้', exact: true }).click();
+		await expect(job.getByText(/ยังยืนยันการปิดคำขอไม่ได้/)).toBeVisible();
+		await (await reconciled).finished();
+		await page.evaluate(
+			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+		);
+		api.holdCloseResponses();
+		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
+		await expect.poll(() => api.pairs.length).toBe(0);
+		await page.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
+		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await expect(page.getByTestId('pairing-code')).toBeVisible();
+		const oldResponse = page.waitForResponse(
+			(response) => response.url().endsWith(`/pairs/${pair.id}/close`) && response.status() === 200
+		);
+		api.releaseCloseResponses();
+		await oldResponse;
+		await page.evaluate(
+			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+		);
+		await expect(page.getByTestId('source-summary')).toHaveCount(0);
+		await expect(job).toHaveAttribute('data-phase', 'cancelled');
+		expect(
+			new Set(
+				api.requests
+					.filter((entry) => entry.path.endsWith('/pairs'))
+					.map((entry) => JSON.parse(entry.body).clientRequestId)
+			).size
+		).toBe(1);
+	} finally {
+		api.releaseCloseResponses();
+		await receiver.close();
+		await api.close();
+	}
+});
