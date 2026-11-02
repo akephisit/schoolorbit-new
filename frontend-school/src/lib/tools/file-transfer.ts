@@ -170,11 +170,17 @@ export function numberedFilename(index: number, count: number, name: string): st
 	const dot = safe.lastIndexOf('.');
 	const extension = dot > 0 && safe.length - dot <= 24 ? safe.slice(dot) : '';
 	const stem = extension ? safe.slice(0, dot) : safe;
-	const budget = 255 - prefix.length - extension.length;
+	const encoder = new TextEncoder();
+	const unitBudget = 255 - prefix.length - extension.length;
+	const byteBudget = 255 - encoder.encode(prefix + extension).byteLength;
 	let truncated = '';
+	let bytes = 0;
 	for (const character of stem) {
-		if (truncated.length + character.length > budget) break;
+		const characterBytes = encoder.encode(character).byteLength;
+		if (truncated.length + character.length > unitBudget || bytes + characterBytes > byteBudget)
+			break;
 		truncated += character;
+		bytes += characterBytes;
 	}
 	return prefix + (truncated.replace(/[. ]+$/u, '') || 'file') + extension;
 }

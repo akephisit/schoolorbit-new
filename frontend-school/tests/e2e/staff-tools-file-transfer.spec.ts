@@ -1533,8 +1533,13 @@ test('folder receive uses the click gesture and keeps completed device files whi
 	page
 }, testInfo) => {
 	const api = await fileTransferFixture(),
-		receiver = await context.newPage();
+		receiver = await context.newPage(),
+		sourceDirectory = await mkdtemp(join(tmpdir(), 'schoolorbit-filename-'));
+	const originalName = 'ก'.repeat(83) + '.txt';
+	const savedName = '1 - ' + 'ก'.repeat(82) + '.txt';
 	try {
+		await writeFile(join(sourceDirectory, originalName), 'permanent');
+		await writeFile(join(sourceDirectory, 'partial.bin'), Buffer.alloc(2 * 1024 * 1024));
 		await receiver.addInitScript(() => {
 			window.showDirectoryPicker = async () => {
 				Reflect.set(window, 'pickerGesture', navigator.userActivation.isActive);
@@ -1562,14 +1567,9 @@ test('folder receive uses the click gesture and keeps completed device files whi
 		await api.setup(receiver);
 		await open(page, 'ผู้ส่ง');
 		await open(receiver, 'ผู้รับ');
-		await choose(page, [
-			input('keep.txt', 'permanent'),
-			{
-				name: 'partial.bin',
-				mimeType: 'application/octet-stream',
-				buffer: Buffer.alloc(2 * 1024 * 1024)
-			}
-		]);
+		await page
+			.getByLabel('เลือกไฟล์หลายไฟล์', { exact: true })
+			.setInputFiles([join(sourceDirectory, originalName), join(sourceDirectory, 'partial.bin')]);
 		await request(page, ['ผู้รับ']);
 		await viewManifest(receiver);
 		await receiver.getByRole('button', { name: 'รับไฟล์ทั้งชุด', exact: true }).click();
@@ -1609,10 +1609,13 @@ test('folder receive uses the click gesture and keeps completed device files whi
 			});
 		await expect.poll(async () => (await saved()).length).toBe(1);
 		expect((await saved())[0]).toEqual({
-			name: '1 - keep.txt',
+			name: savedName,
 			bytes: [...Buffer.from('permanent')]
 		});
-		expect(await download(receiver, 0, 'keep.txt')).toEqual(Buffer.from('permanent'));
+		expect(Buffer.byteLength((await saved())[0].name, 'utf8')).toBeLessThanOrEqual(255);
+		const originalDownload = receiver.waitForEvent('download');
+		expect(await download(receiver, 0, originalName)).toEqual(Buffer.from('permanent'));
+		expect((await originalDownload).suggestedFilename()).toBe(originalName);
 		await receiver
 			.getByRole('region', { name: 'ไฟล์ที่รับครบแล้ว', exact: true })
 			.screenshot({ path: testInfo.outputPath('folder-saved-files-desktop.png') });
@@ -1650,6 +1653,7 @@ test('folder receive uses the click gesture and keeps completed device files whi
 			.catch(() => {});
 		await receiver.close();
 		await api.close();
+		await rm(sourceDirectory, { recursive: true, force: true });
 	}
 });
 

@@ -206,16 +206,31 @@ test('sealed manifest pages remain ordered, quota estimates are advisory and loc
 		h.restore();
 	}
 });
-test('archive names stay unique, flat and within filesystem length including Unicode and extension', () => {
-	const names = ['ซ้ำ.txt', 'ซ้ำ.txt', 'CON', 'a:b?.txt', '😀'.repeat(255) + '.pdf'];
+test('numbered folder and archive names fit UTF-8 bytes and UTF-16 units while retaining extensions and uniqueness', () => {
+	const names = [
+		'ซ้ำ.txt',
+		'ซ้ำ.txt',
+		'CON',
+		'a:b?.txt',
+		'😀'.repeat(255) + '.pdf',
+		'ก'.repeat(83) + '.txt'
+	];
 	const output = names.map((name, index) => archiveFilename(index, names.length, name));
 	assert.equal(new Set(output).size, names.length);
 	for (const name of output) {
 		assert.ok(name.length <= 255);
+		assert.ok(new TextEncoder().encode(name).byteLength <= 255);
+		assert.ok(name.isWellFormed());
 		assert.equal(/[\\/<>:"|?*]/.test(name), false);
 		assert.equal(/[\uD800-\uDBFF]$/.test(name), false);
 	}
-	assert.ok(output.at(-1).endsWith('.pdf'));
+	assert.ok(output[4].endsWith('.pdf'));
+	assert.equal(output[5], '6 - ' + 'ก'.repeat(82) + '.txt');
+	assert.equal(
+		archiveFilename(0, 10, 'ก'.repeat(83) + '.' + 'ข'.repeat(23)),
+		'01 - ' + 'ก'.repeat(60) + '.' + 'ข'.repeat(23)
+	);
+	assert.equal(archiveFilename(0, Number.MAX_SAFE_INTEGER, ''), '0000000000000001 - file');
 });
 test('streaming ZIP cancellation removes only partial archive and preserves received originals', async () => {
 	const h = storageHarness();

@@ -119,7 +119,7 @@ export async function fileTransferFixture() {
 				return;
 			}
 			const sessionId = String(request.headers['x-fixture-session']);
-			if ([...devices.values()].filter((entry) => entry.sessionId === sessionId).length >= 6) {
+			if ([...devices.values()].filter((entry) => entry.sessionId === sessionId).length >= 3) {
 				send('เปิดได้ไม่เกินสามอุปกรณ์ต่อเซสชัน', 409);
 				return;
 			}
