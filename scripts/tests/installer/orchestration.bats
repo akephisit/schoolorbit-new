@@ -411,11 +411,11 @@ case "$url" in
         fi
         ;;
     https://school-api.example.test/api/staff/file-transfer/devices)
-        body="{\"success\":true,\"data\":{\"protocolVersion\":2,\"limits\":{\"maxOutgoingTransfers\":3,\"maxFilesPerBatch\":20,\"maxFileBytes\":67108864,\"maxBatchBytes\":134217728},\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}"
+        body="{\"success\":true,\"data\":{\"protocolVersion\":3,\"limits\":{\"maxOutgoingTransfers\":6},\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}"
         ;;
     https://school-api.example.test/api/staff/file-transfer/devices/00000000-0000-0000-0000-000000000010/events)
         printf "%s\n" "Content-Type: text/event-stream" "Cache-Control: no-store" "Access-Control-Allow-Credentials: true" >>"$headers"
-        body="event: file_transfer\ndata: {\"type\":\"ready\",\"data\":{\"protocolVersion\":2,\"limits\":{\"maxOutgoingTransfers\":3,\"maxFilesPerBatch\":20,\"maxFileBytes\":67108864,\"maxBatchBytes\":134217728},\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}\n\n"
+        body="event: file_transfer\ndata: {\"type\":\"ready\",\"data\":{\"protocolVersion\":3,\"limits\":{\"maxOutgoingTransfers\":6},\"device\":{\"id\":\"00000000-0000-0000-0000-000000000010\",\"userId\":\"00000000-0000-0000-0000-000000000011\",\"displayName\":\"Smoke operator\",\"label\":\"SchoolOrbit smoke\"},\"pairingCode\":\"ABCD012345\",\"expiresAt\":\"2030-01-01T00:00:00Z\",\"peers\":[],\"pairs\":[]}}\n\n"
         if [ "${FILE_TRANSFER_FIXTURE_MODE-}" = invalid-ready ]; then body="event: file_transfer\ndata: {invalid}\n\n"; fi
         printf "%b" "$body" >"$output"
         printf 200

@@ -15,7 +15,7 @@ const code = 'ABCD012345';
 const csrf = 'synthetic-private-csrf';
 const cookie = 'synthetic-private-cookie';
 const origin = 'https://sandbox.example.test';
-const snapshot = () => ({ protocolVersion: 2, limits: { maxOutgoingTransfers: 3, maxFilesPerBatch: 20, maxFileBytes: 67108864, maxBatchBytes: 134217728 }, device: { id, userId: user, displayName: 'บุคลากรทดสอบ', label: 'SchoolOrbit smoke' }, pairingCode: code, expiresAt: '2030-01-01T00:00:00Z', peers: [], pairs: [] });
+const snapshot = () => ({ protocolVersion: 3, limits: { maxOutgoingTransfers: 6 }, device: { id, userId: user, displayName: 'บุคลากรทดสอบ', label: 'SchoolOrbit smoke' }, pairingCode: code, expiresAt: '2030-01-01T00:00:00Z', peers: [], pairs: [] });
 
 function execute(args, env) {
  return new Promise((resolve, reject) => {
@@ -41,12 +41,12 @@ async function fixture(t, mode = 'success') {
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', 'Cache-Control': 'no-store' };
   if (request.method === 'POST') {
    assert.equal(request.url, '/api/staff/file-transfer/devices');
-   assert.deepEqual(JSON.parse(body), { label: 'SchoolOrbit smoke', protocolVersion: 2 });
+   assert.deepEqual(JSON.parse(body), { label: 'SchoolOrbit smoke', protocolVersion: 3 });
    if (mode === 'post-transport-failure') { request.socket.destroy(); return; }
    const registered = snapshot();
    if (mode === 'bad-registration') delete registered.pairingCode;
    if (mode === 'registration-v1') registered.protocolVersion = 1;
-   if (mode === 'registration-bad-limits') registered.limits.maxFilesPerBatch = 999;
+   if (mode === 'registration-bad-limits') registered.limits.maxOutgoingTransfers = 999;
    response.writeHead(mode === 'post-http-failure' ? 503 : 200, headers);
    response.end(JSON.stringify({ success: true, data: registered }));
    return;

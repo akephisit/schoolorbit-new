@@ -11081,6 +11081,9 @@
         "properties": {
           "data": {
             "properties": {
+              "batch": {
+                "$ref": "#/components/schemas/FileTransferBatchSummary"
+              },
               "clientRequestId": {
                 "format": "uuid",
                 "type": "string"
@@ -11088,12 +11091,6 @@
               "expiresAt": {
                 "format": "date-time",
                 "type": "string"
-              },
-              "files": {
-                "items": {
-                  "$ref": "#/components/schemas/FileTransferFile"
-                },
-                "type": "array"
               },
               "id": {
                 "format": "uuid",
@@ -11113,7 +11110,7 @@
               "id",
               "initiator",
               "recipient",
-              "files",
+              "batch",
               "clientRequestId",
               "status",
               "expiresAt"
@@ -41276,6 +41273,9 @@
       "CreateFileTransferPair": {
         "additionalProperties": false,
         "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/FileTransferBatchSummary"
+          },
           "clientRequestId": {
             "format": "uuid",
             "type": "string"
@@ -41284,12 +41284,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/FileTransferFile"
-            },
-            "type": "array"
-          },
           "target": {
             "$ref": "#/components/schemas/FileTransferTarget"
           }
@@ -41297,7 +41291,7 @@
         "required": [
           "deviceId",
           "target",
-          "files",
+          "batch",
           "clientRequestId"
         ],
         "type": "object"
@@ -49384,6 +49378,28 @@
         ],
         "type": "string"
       },
+      "FileTransferBatchSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "fileCount": {
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileCount",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
       "FileTransferCloseReason": {
         "enum": [
           "declined",
@@ -49564,45 +49580,8 @@
           }
         ]
       },
-      "FileTransferFile": {
-        "additionalProperties": false,
-        "properties": {
-          "mimeType": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "size": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "name",
-          "size",
-          "mimeType"
-        ],
-        "type": "object"
-      },
       "FileTransferLimits": {
         "properties": {
-          "maxBatchBytes": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "maxFileBytes": {
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "maxFilesPerBatch": {
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
           "maxOutgoingTransfers": {
             "format": "int32",
             "minimum": 0,
@@ -49610,15 +49589,15 @@
           }
         },
         "required": [
-          "maxOutgoingTransfers",
-          "maxFilesPerBatch",
-          "maxFileBytes",
-          "maxBatchBytes"
+          "maxOutgoingTransfers"
         ],
         "type": "object"
       },
       "FileTransferPair": {
         "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/FileTransferBatchSummary"
+          },
           "clientRequestId": {
             "format": "uuid",
             "type": "string"
@@ -49626,12 +49605,6 @@
           "expiresAt": {
             "format": "date-time",
             "type": "string"
-          },
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/FileTransferFile"
-            },
-            "type": "array"
           },
           "id": {
             "format": "uuid",
@@ -49651,7 +49624,7 @@
           "id",
           "initiator",
           "recipient",
-          "files",
+          "batch",
           "clientRequestId",
           "status",
           "expiresAt"
@@ -119496,7 +119469,7 @@
                 }
               }
             },
-            "description": "Protocol 2 device registration and school-online snapshot with batch limits"
+            "description": "Protocol 3 device registration and school-online snapshot with recipient admission limit"
           },
           "400": {
             "content": {
@@ -119800,7 +119773,7 @@
                 }
               }
             },
-            "description": "Pending batch pair with ordered file metadata and request correlation awaiting recipient consent"
+            "description": "Pending pair with safe numeric batch summary and request correlation awaiting recipient metadata consent"
           },
           "400": {
             "content": {
@@ -119810,7 +119783,7 @@
                 }
               }
             },
-            "description": "Invalid batch or file metadata"
+            "description": "Invalid batch summary"
           },
           "401": {
             "content": {
@@ -119912,7 +119885,7 @@
                 }
               }
             },
-            "description": "Recipient accepted exact sender and ordered file batch"
+            "description": "Recipient allowed exact sender to exchange peer-only manifest before file-byte consent"
           },
           "400": {
             "content": {
@@ -120014,7 +119987,7 @@
                 }
               }
             },
-            "description": "Pair closed"
+            "description": "Pair closed, including authorized retries during the bounded recent-close receipt window"
           },
           "400": {
             "content": {

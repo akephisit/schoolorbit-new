@@ -8,14 +8,14 @@ use std::{
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u8 = 2;
-pub const MAX_OUTGOING_TRANSFERS: u8 = 3;
-pub const MAX_FILES_PER_BATCH: u8 = 20;
-pub const MAX_FILE_SIZE: u64 = 64 * 1024 * 1024;
-pub const MAX_BATCH_BYTES: u64 = 128 * 1024 * 1024;
+pub const PROTOCOL_VERSION: u8 = 3;
+pub const MAX_OUTGOING_TRANSFERS: u8 = 6;
+pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+const CLOSED_RECEIPT_SECONDS: i64 = 120;
+const MAX_CLOSED_RECEIPTS: usize = 1024;
 const DEVICE_SECONDS: i64 = 90;
 const MAX_DEVICES: usize = 256;
-const QUEUE_CAPACITY: usize = 16;
+const QUEUE_CAPACITY: usize = 32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileTransferIdentity {
@@ -43,11 +43,19 @@ struct Pair {
     offered: bool,
     answered: bool,
 }
+struct ClosedPairReceipt {
+    pair_id: Uuid,
+    tenant_id: Uuid,
+    initiator_id: Uuid,
+    recipient_id: Uuid,
+    expires_at: DateTime<Utc>,
+}
 #[derive(Default)]
 struct Registry {
     devices: HashMap<Uuid, Device>,
     pairs: HashMap<Uuid, Pair>,
     attempts: VecDeque<(FileTransferIdentity, DateTime<Utc>)>,
+    closed_pairs: VecDeque<ClosedPairReceipt>,
 }
 #[derive(Default)]
 pub struct FileTransferRuntime {
@@ -74,7 +82,7 @@ impl FileTransferStreamGuard {
                 .and_then(|d| d.stream.as_ref())
                 .is_some_and(|s| s.generation == self.generation)
             {
-                registry.remove_device(self.device_id);
+                registry.remove_device(self.device_id, Utc::now());
             }
         }
     }
@@ -85,10 +93,10 @@ impl Drop for FileTransferStreamGuard {
     }
 }
 fn missing() -> AppError {
-    AppError::NotFound("File transfer device or pair unavailable".into())
+    AppError::NotFound("ไม่พบอุปกรณ์หรือคำขอรับส่งไฟล์ กรุณาเปิดรับส่งไฟล์ใหม่".into())
 }
 fn conflict() -> AppError {
-    AppError::Conflict("File transfer state changed; reconnect and try again".into())
+    AppError::Conflict("สถานะการรับส่งไฟล์เปลี่ยนแล้ว กรุณาตรวจสอบการเชื่อมต่อและลองใหม่".into())
 }
 fn invalid(message: &str) -> AppError {
     AppError::BadRequest(message.into())
@@ -158,7 +166,7 @@ impl Registry {
     }
     // Queue overflow invalidates the binding. The cancellation watch takes priority over
     // buffered events, so stale signaling cannot continue after bounded delivery fails.
-    fn dispatch(&mut self, messages: Vec<(Uuid, FileTransferEvent)>) {
+    fn dispatch(&mut self, messages: Vec<(Uuid, FileTransferEvent)>, now: DateTime<Utc>) {
         let mut pending: VecDeque<_> = messages.into();
         while let Some((id, event)) = pending.pop_front() {
             if matches!(event, FileTransferEvent::PresenceChanged(_)) {
@@ -175,7 +183,7 @@ impl Registry {
                 .and_then(|d| d.stream.as_ref())
                 .is_none_or(|s| s.sender.try_send(event).is_err());
             if failed {
-                pending.extend(self.remove_device_messages(id));
+                pending.extend(self.remove_device_messages(id, now));
             }
         }
     }
@@ -191,7 +199,11 @@ impl Registry {
             })
             .collect()
     }
-    fn remove_device_messages(&mut self, id: Uuid) -> Vec<(Uuid, FileTransferEvent)> {
+    fn remove_device_messages(
+        &mut self,
+        id: Uuid,
+        now: DateTime<Utc>,
+    ) -> Vec<(Uuid, FileTransferEvent)> {
         let Some(device) = self.devices.remove(&id) else {
             return Vec::new();
         };
@@ -206,7 +218,7 @@ impl Registry {
             .collect();
         let mut messages = self.presence_messages(device.identity.tenant_id);
         for pair_id in pair_ids {
-            if let Some(pair) = self.pairs.remove(&pair_id) {
+            if let Some(pair) = self.remove_pair(pair_id, now) {
                 let peer = if pair.public.initiator.id == id {
                     pair.public.recipient.id
                 } else {
@@ -223,9 +235,9 @@ impl Registry {
         }
         messages
     }
-    fn remove_device(&mut self, id: Uuid) {
-        let messages = self.remove_device_messages(id);
-        self.dispatch(messages);
+    fn remove_device(&mut self, id: Uuid, now: DateTime<Utc>) {
+        let messages = self.remove_device_messages(id, now);
+        self.dispatch(messages, now);
     }
     fn sweep(&mut self, now: DateTime<Utc>) {
         let expired_devices: Vec<_> = self
@@ -235,7 +247,7 @@ impl Registry {
             .map(|(id, _)| *id)
             .collect();
         for id in expired_devices {
-            self.remove_device(id);
+            self.remove_device(id, now);
         }
         let expired_pairs: Vec<_> = self
             .pairs
@@ -246,31 +258,49 @@ impl Registry {
             .map(|(id, _)| *id)
             .collect();
         for id in expired_pairs {
-            self.close_pair(id, FileTransferCloseReason::Expired);
+            self.close_pair(id, FileTransferCloseReason::Expired, now);
         }
+        self.closed_pairs.retain(|receipt| receipt.expires_at > now);
         self.attempts
             .retain(|(_, at)| *at > now - Duration::minutes(1));
     }
-    fn close_pair(&mut self, id: Uuid, reason: FileTransferCloseReason) {
-        if let Some(pair) = self.pairs.remove(&id) {
+    fn remove_pair(&mut self, id: Uuid, now: DateTime<Utc>) -> Option<Pair> {
+        let pair = self.pairs.remove(&id)?;
+        self.closed_pairs.retain(|receipt| receipt.expires_at > now);
+        if self.closed_pairs.len() == MAX_CLOSED_RECEIPTS {
+            self.closed_pairs.pop_front();
+        }
+        self.closed_pairs.push_back(ClosedPairReceipt {
+            pair_id: id,
+            tenant_id: pair.tenant_id,
+            initiator_id: pair.public.initiator.id,
+            recipient_id: pair.public.recipient.id,
+            expires_at: now + Duration::seconds(CLOSED_RECEIPT_SECONDS),
+        });
+        Some(pair)
+    }
+    fn close_pair(&mut self, id: Uuid, reason: FileTransferCloseReason, now: DateTime<Utc>) {
+        if let Some(pair) = self.remove_pair(id, now) {
             let event = FileTransferEvent::PairClosed(FileTransferPairClosed {
                 pair_id: id,
                 reason,
             });
-            self.dispatch(vec![
-                (pair.public.initiator.id, event.clone()),
-                (pair.public.recipient.id, event),
-            ]);
+            self.dispatch(
+                vec![
+                    (pair.public.initiator.id, event.clone()),
+                    (pair.public.recipient.id, event),
+                ],
+                now,
+            );
         }
     }
 }
 
 impl FileTransferRuntime {
     fn lock(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, Registry>, AppError> {
-        let mut registry = self
-            .registry
-            .lock()
-            .map_err(|_| AppError::ServiceUnavailable("File transfer unavailable".into()))?;
+        let mut registry = self.registry.lock().map_err(|_| {
+            AppError::ServiceUnavailable("ระบบรับส่งไฟล์ไม่พร้อมใช้งาน กรุณาลองใหม่".into())
+        })?;
         registry.sweep(now);
         Ok(registry)
     }
@@ -284,7 +314,9 @@ impl FileTransferRuntime {
         validate_protocol(request.protocol_version)?;
         let label = request.label.trim().to_string();
         if label.is_empty() || label.chars().count() > 60 || label.chars().any(char::is_control) {
-            return Err(invalid("Device label must contain 1–60 characters"));
+            return Err(invalid(
+                "กรุณาตั้งชื่ออุปกรณ์ตั้งแต่ 1 ถึง 60 ตัวอักษร โดยไม่ใช้อักขระควบคุม",
+            ));
         }
         let mut registry = self.lock(now)?;
         if registry.devices.len() >= MAX_DEVICES
@@ -366,13 +398,13 @@ impl FileTransferRuntime {
         });
         device.expires_at = now + Duration::seconds(DEVICE_SECONDS);
         let snapshot = registry.snapshot(identity, id)?;
-        registry.dispatch(vec![(id, FileTransferEvent::Ready(snapshot))]);
+        registry.dispatch(vec![(id, FileTransferEvent::Ready(snapshot))], now);
         let messages = registry
             .presence_messages(identity.tenant_id)
             .into_iter()
             .filter(|(peer, _)| *peer != id)
             .collect();
-        registry.dispatch(messages);
+        registry.dispatch(messages, now);
         Ok(FileTransferSubscription {
             receiver,
             cancelled: cancelled_rx,
@@ -407,7 +439,7 @@ impl FileTransferRuntime {
     ) -> Result<(), AppError> {
         let mut registry = self.lock(now)?;
         registry.owned(identity, id)?;
-        registry.remove_device(id);
+        registry.remove_device(id, now);
         Ok(())
     }
     pub fn create_pair(
@@ -416,7 +448,7 @@ impl FileTransferRuntime {
         request: CreateFileTransferPair,
         now: DateTime<Utc>,
     ) -> Result<FileTransferPair, AppError> {
-        validate_batch(&request.files)?;
+        validate_batch(&request.batch)?;
         let mut registry = self.lock(now)?;
         registry.owned(identity, request.device_id)?;
         let target_id = match request.target {
@@ -495,7 +527,7 @@ impl FileTransferRuntime {
             id: Uuid::now_v7(),
             initiator: registry.owned(identity, request.device_id)?.public.clone(),
             recipient: target.public.clone(),
-            files: request.files,
+            batch: request.batch,
             client_request_id: request.client_request_id,
             status: FileTransferPairStatus::Pending,
             expires_at: now + Duration::seconds(120),
@@ -509,13 +541,16 @@ impl FileTransferRuntime {
                 answered: false,
             },
         );
-        registry.dispatch(vec![
-            (
-                pair.initiator.id,
-                FileTransferEvent::PairChanged(pair.clone()),
-            ),
-            (target_id, FileTransferEvent::PairChanged(pair.clone())),
-        ]);
+        registry.dispatch(
+            vec![
+                (
+                    pair.initiator.id,
+                    FileTransferEvent::PairChanged(pair.clone()),
+                ),
+                (target_id, FileTransferEvent::PairChanged(pair.clone())),
+            ],
+            now,
+        );
         if !registry.pairs.contains_key(&pair.id) {
             return Err(conflict());
         }
@@ -531,7 +566,9 @@ impl FileTransferRuntime {
         let mut registry = self.lock(now)?;
         let pair = registry.pair_member(identity, device, pair_id)?;
         if pair.public.recipient.id != device {
-            return Err(AppError::Forbidden("Only the recipient can accept".into()));
+            return Err(AppError::Forbidden(
+                "เฉพาะอุปกรณ์รับเท่านั้นที่ยืนยันรับคำขอนี้ได้".into(),
+            ));
         }
         if pair.public.status == FileTransferPairStatus::Accepted {
             return Ok(pair.public.clone());
@@ -540,13 +577,16 @@ impl FileTransferRuntime {
         pair.public.status = FileTransferPairStatus::Accepted;
         pair.public.expires_at = now + Duration::minutes(10);
         let result = pair.public.clone();
-        registry.dispatch(vec![
-            (
-                result.initiator.id,
-                FileTransferEvent::PairChanged(result.clone()),
-            ),
-            (device, FileTransferEvent::PairChanged(result.clone())),
-        ]);
+        registry.dispatch(
+            vec![
+                (
+                    result.initiator.id,
+                    FileTransferEvent::PairChanged(result.clone()),
+                ),
+                (device, FileTransferEvent::PairChanged(result.clone())),
+            ],
+            now,
+        );
         if !registry.pairs.contains_key(&pair_id) {
             return Err(conflict());
         }
@@ -560,6 +600,19 @@ impl FileTransferRuntime {
         now: DateTime<Utc>,
     ) -> Result<(), AppError> {
         let mut registry = self.lock(now)?;
+        registry.owned(identity, device)?;
+        if !registry.pairs.contains_key(&pair_id) {
+            return if registry.closed_pairs.iter().any(|receipt| {
+                receipt.pair_id == pair_id
+                    && receipt.tenant_id == identity.tenant_id
+                    && (receipt.initiator_id == device || receipt.recipient_id == device)
+                    && receipt.expires_at > now
+            }) {
+                Ok(())
+            } else {
+                Err(missing())
+            };
+        }
         let pair = registry.pair_member(identity, device, pair_id)?;
         let reason = if pair.public.status == FileTransferPairStatus::Pending
             && pair.public.recipient.id == device
@@ -568,7 +621,7 @@ impl FileTransferRuntime {
         } else {
             FileTransferCloseReason::Cancelled
         };
-        registry.close_pair(pair_id, reason);
+        registry.close_pair(pair_id, reason, now);
         Ok(())
     }
     pub fn signal(
@@ -604,14 +657,17 @@ impl FileTransferRuntime {
             FileTransferSignalType::Offer => pair.offered = true,
             FileTransferSignalType::Answer => pair.answered = true,
         }
-        registry.dispatch(vec![(
-            target,
-            FileTransferEvent::Signal(FileTransferSignal {
-                pair_id,
-                signal_type: request.signal_type,
-                sdp: request.sdp,
-            }),
-        )]);
+        registry.dispatch(
+            vec![(
+                target,
+                FileTransferEvent::Signal(FileTransferSignal {
+                    pair_id,
+                    signal_type: request.signal_type,
+                    sdp: request.sdp,
+                }),
+            )],
+            now,
+        );
         if !registry.pairs.contains_key(&pair_id) {
             return Err(conflict());
         }
@@ -622,9 +678,6 @@ impl FileTransferRuntime {
 pub fn limits() -> FileTransferLimits {
     FileTransferLimits {
         max_outgoing_transfers: MAX_OUTGOING_TRANSFERS,
-        max_files_per_batch: MAX_FILES_PER_BATCH,
-        max_file_bytes: MAX_FILE_SIZE,
-        max_batch_bytes: MAX_BATCH_BYTES,
     }
 }
 
@@ -637,40 +690,18 @@ pub fn validate_protocol(version: Option<u8>) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn validate_batch(files: &[FileTransferFile]) -> Result<(), AppError> {
-    if files.is_empty() || files.len() > usize::from(MAX_FILES_PER_BATCH) {
-        return Err(invalid("กรุณาเลือกไฟล์ตั้งแต่ 1 ถึง 20 ไฟล์"));
-    }
-    files.iter().try_fold(0_u64, |total, file| {
-        validate_file(file)?;
-        total
-            .checked_add(file.size)
-            .filter(|sum| *sum <= MAX_BATCH_BYTES)
-            .ok_or_else(|| invalid("ไฟล์รวมในชุดต้องไม่เกิน 128 MiB"))
-    })?;
-    Ok(())
-}
-
-pub fn validate_file(file: &FileTransferFile) -> Result<(), AppError> {
-    if file.size > MAX_FILE_SIZE
-        || file.name.trim().is_empty()
-        || file.name.chars().count() > 255
-        || file
-            .name
-            .chars()
-            .any(|c| c == '/' || c == '\\' || c.is_control())
-        || file.name == "."
-        || file.name == ".."
-        || file.mime_type.chars().count() > 128
-        || file.mime_type.chars().any(char::is_control)
+pub fn validate_batch(batch: &FileTransferBatchSummary) -> Result<(), AppError> {
+    if batch.file_count == 0
+        || batch.file_count > MAX_SAFE_INTEGER
+        || batch.total_bytes > MAX_SAFE_INTEGER
     {
-        return Err(invalid("Invalid file metadata or file exceeds 64 MiB"));
+        return Err(invalid("จำนวนไฟล์หรือขนาดรวมไม่ถูกต้อง กรุณาเลือกชุดไฟล์ใหม่"));
     }
     Ok(())
 }
 
 pub fn validate_sdp(sdp: &str) -> Result<(), AppError> {
-    let fail = || invalid("A complete host-only WebRTC data channel description is required");
+    let fail = || invalid("เชื่อมต่อโดยตรงไม่สำเร็จ กรุณาตรวจสอบเครือข่ายและเปิดรับส่งไฟล์ใหม่");
     if sdp.len() > 32 * 1024
         || !sdp.starts_with("v=0\r\n")
         || sdp

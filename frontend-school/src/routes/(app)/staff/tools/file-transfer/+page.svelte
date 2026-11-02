@@ -7,6 +7,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { createQrPng } from '#lib/tools/qr-code.js';
@@ -14,7 +15,6 @@
 		FileTransferSession,
 		initialTransferState,
 		isTransferTerminal,
-		type ReceivedFile,
 		type TransferPhase,
 		type TransferJob
 	} from '#lib/tools/file-transfer-session.js';
@@ -24,7 +24,8 @@
 		formatFileSize,
 		pairingCodeFromHash,
 		pairingUrl,
-		validateTransferBatch
+		validateTransferBatch,
+		TRANSFER_PAGE_SIZE
 	} from '#lib/tools/file-transfer.js';
 
 	let view = $state.raw(initialTransferState());
@@ -54,6 +55,12 @@
 	const receiving = $derived(
 		view.jobs.some((job) => job.direction === 'incoming' && job.slotReserved)
 	);
+	const downloadActive = $derived(
+		view.jobs.some(
+			(job) =>
+				job.direction === 'incoming' && !isTransferTerminal(job.phase) && job.completedFiles > 0
+		)
+	);
 	const link = $derived(
 		view.snapshot ? pairingUrl(origin, pathname, view.snapshot.pairingCode) : ''
 	);
@@ -63,6 +70,8 @@
 		waiting: 'รอผู้รับตอบรับ',
 		consent: 'มีคำขอรับชุดไฟล์',
 		connecting: 'กำลังเชื่อมต่อโดยตรง',
+		manifest: 'กำลังรับส่งรายการไฟล์',
+		review: 'รอตรวจสอบรายการและยืนยันรับไฟล์',
 		sending: 'กำลังส่งไฟล์',
 		receiving: 'กำลังรับไฟล์',
 		acknowledging: 'รอผู้รับยืนยันว่าได้รับครบ',
@@ -168,23 +177,17 @@
 					.map((deviceId) => ({ type: 'device', deviceId }))
 			);
 	}
-	function download(file: ReceivedFile) {
-		const anchor = document.createElement('a');
-		anchor.href = file.url;
-		anchor.download = file.name;
-		anchor.click();
-	}
 	function percent(job: TransferJob) {
-		const total = batchBytes(job.files);
+		const total = job.batch.totalBytes;
 		return total
 			? Math.min(100, Math.floor((job.bytes / total) * 100))
-			: Math.floor((job.completedFiles / job.files.length) * 100);
+			: Math.floor((job.completedFiles / job.batch.fileCount) * 100);
 	}
 </script>
 
 <PageShell
 	title="ส่งไฟล์ในเครือข่ายเดียวกัน"
-	description="เลือกหลายไฟล์และหลายผู้รับ แต่ละอุปกรณ์ตอบรับไฟล์ทั้งชุดครั้งเดียว แล้วรับไฟล์โดยตรง"
+	description="เลือกหลายไฟล์และหลายผู้รับ ตรวจสอบรายการก่อนยืนยันรับไฟล์ แล้วดาวน์โหลดรวมเป็น ZIP ได้"
 	backHref="/staff/tools"
 	backLabel="เครื่องมือทั้งหมด"
 	icon={Send}
@@ -290,10 +293,9 @@
 							onchange={(event) => selectFiles(event.currentTarget.files)}
 						/>
 						<p id="file-help" class="text-sm text-muted-foreground">
-							{#if view.snapshot}ไม่เกิน {view.snapshot.limits.maxFilesPerBatch} ไฟล์ · ไฟล์ละ {formatFileSize(
-									view.snapshot.limits.maxFileBytes
-								)} · รวม {formatFileSize(view.snapshot.limits.maxBatchBytes)} ส่งพร้อมกันได้ {view
-									.snapshot.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เปิดรับส่งไฟล์เพื่อดูขีดจำกัดและค้นหาอุปกรณ์{/if}
+							{#if view.snapshot}ไม่กำหนดเพดานจำนวนหรือขนาดไฟล์
+								ขึ้นกับพื้นที่จัดเก็บและความสามารถของเบราว์เซอร์ ส่งพร้อมกันได้ {view.snapshot
+									.limits.maxOutgoingTransfers} ผู้รับ ผู้รับที่เหลือรอคิว{:else}เปิดรับส่งไฟล์เพื่อค้นหาอุปกรณ์{/if}
 						</p>
 						{#if fileError}<p id="file-error" role="alert" class="text-sm text-destructive">
 								{fileError}
@@ -302,10 +304,15 @@
 								เลือก {files.length} ไฟล์ · {formatFileSize(batchBytes(metadata))}
 							</p>
 							<ol class="space-y-1 text-sm">
-								{#each metadata as file, index (index)}<li class="break-words">
+								{#each metadata.slice(0, TRANSFER_PAGE_SIZE) as file, index (index)}<li
+										class="break-words"
+									>
 										{index + 1}. {file.name} · {formatFileSize(file.size)}
 									</li>{/each}
 							</ol>
+							{#if metadata.length > TRANSFER_PAGE_SIZE}<p class="text-sm text-muted-foreground">
+									แสดง {TRANSFER_PAGE_SIZE} รายการแรกจาก {metadata.length} ไฟล์ ผู้รับตรวจสอบรายการทั้งหมดได้ก่อนรับ
+								</p>{/if}
 							<Button variant="outline" disabled={sourceBusy} onclick={clearFiles}
 								>ล้างชุดไฟล์ที่เลือก</Button
 							>{/if}
@@ -399,27 +406,35 @@
 							</h3>
 							<p role="status" aria-live="polite" class="font-medium">{phaseLabels[job.phase]}</p>
 							<p class="text-sm">
-								{job.files.length} ไฟล์ · {formatFileSize(batchBytes(job.files))}
+								{job.batch.fileCount} ไฟล์ · {formatFileSize(job.batch.totalBytes)}
 							</p>
+							{#if job.direction === 'incoming' && job.destinationLabel}<p
+									class="break-words text-sm text-muted-foreground"
+								>
+									ปลายทาง: {job.destinationLabel}
+								</p>{/if}
 							{#if job.error}<p role="alert" class="text-sm text-destructive">{job.error}</p>{/if}
+							{#if job.storageWarning}<p role="status" class="text-sm text-muted-foreground">
+									{job.storageWarning}
+								</p>{/if}
 							{#if job.cleanupError}<p role="alert" class="text-sm text-destructive">
 									{job.cleanupError}
 								</p>{/if}
 							{#if job.phase === 'consent'}
-								<ol class="space-y-1 text-sm">
-									{#each job.files as file, index (index)}<li class="break-words">
-											{index + 1}. {file.name} · {formatFileSize(file.size)}
-										</li>{/each}
-								</ol>
 								<p class="text-sm text-muted-foreground">
-									ตรวจสอบผู้ส่งและไฟล์ทั้งหมดก่อนตอบรับ
-									การตอบรับครั้งเดียวอนุญาตให้รับไฟล์ชุดนี้ตามลำดับ
+									ตรวจสอบผู้ส่งก่อนเปิดดูรายการ การดูรายการยังไม่อนุญาตให้รับเนื้อหาไฟล์
 								</p>
-								{#if view.downloads.length}<p class="text-sm text-muted-foreground">
-										ยังมีไฟล์ชุดก่อนอยู่ในหน้านี้ ดาวน์โหลดให้เรียบร้อยแล้วล้างก่อนรับชุดใหม่
+								{#if !view.receivingSupported}<p role="alert" class="text-sm text-destructive">
+										เบราว์เซอร์นี้ไม่รองรับพื้นที่เก็บไฟล์สำหรับการรับ ใช้ Chrome หรือ Edge
+										รุ่นปัจจุบันผ่าน HTTPS อุปกรณ์นี้ยังส่งไฟล์ได้
+									</p>{/if}
+								{#if view.downloadCount}<p class="text-sm text-muted-foreground">
+										ยังมีไฟล์ชุดก่อนอยู่ ดาวน์โหลดให้เรียบร้อยแล้วล้างก่อนรับชุดใหม่
 									</p>
-									<Button variant="outline" onclick={() => session?.clearDownloads()}
-										>ล้างไฟล์เดิมก่อนรับชุดใหม่</Button
+									<Button
+										variant="outline"
+										disabled={downloadActive}
+										onclick={() => session?.clearDownloads()}>ล้างไฟล์เดิมก่อนรับชุดใหม่</Button
 									>{/if}
 								<div class="flex flex-wrap gap-2">
 									<Button
@@ -428,19 +443,95 @@
 										onclick={() => session?.cancel(job.id)}>ปฏิเสธ</Button
 									><LoadingButton
 										loading={job.pending}
-										loadingLabel="กำลังตอบรับ"
-										disabled={Boolean(view.downloads.length)}
-										onclick={() => session?.accept(job.id)}>รับไฟล์ทั้งชุด</LoadingButton
+										loadingLabel="กำลังเปิดรายการ"
+										disabled={Boolean(view.downloadCount) || !view.receivingSupported}
+										onclick={() => session?.acceptManifest(job.id)}>ดูรายการไฟล์</LoadingButton
 									>
 								</div>
+							{:else if job.phase === 'review'}
+								{#if job.direction === 'incoming'}
+									<ol class="space-y-1 text-sm" aria-busy={job.manifestPending}>
+										{#each job.files as file, index (index)}<li class="break-words">
+												{job.manifestPage * TRANSFER_PAGE_SIZE + index + 1}. {file.name} · {formatFileSize(
+													file.size
+												)}
+											</li>{/each}
+									</ol>
+									{#if job.batch.fileCount > TRANSFER_PAGE_SIZE}<div
+											class="flex flex-wrap items-center gap-2"
+										>
+											<Button
+												variant="outline"
+												disabled={job.manifestPending || job.manifestPage === 0}
+												onclick={() => session?.showManifestPage(job.id, job.manifestPage - 1)}
+												>รายการก่อนหน้า</Button
+											><span class="text-sm"
+												>หน้า {job.manifestPage + 1}/{Math.ceil(
+													job.batch.fileCount / TRANSFER_PAGE_SIZE
+												)}</span
+											><Button
+												variant="outline"
+												disabled={job.manifestPending ||
+													(job.manifestPage + 1) * TRANSFER_PAGE_SIZE >= job.batch.fileCount}
+												onclick={() => session?.showManifestPage(job.id, job.manifestPage + 1)}
+												>รายการถัดไป</Button
+											>
+										</div>{/if}
+									<p class="text-sm text-muted-foreground">
+										ตรวจสอบรายการทั้งหมดก่อนตอบรับ การยืนยันครั้งเดียวอนุญาตให้รับชุดนี้ตามลำดับ
+										เลือกวิธีบันทึกอัตโนมัติด้านล่างและเปิดหน้านี้ไว้
+									</p>
+									<fieldset class="space-y-3" disabled={job.pending}>
+										<legend class="text-sm font-medium"
+											>บันทึกไฟล์อัตโนมัติเมื่อรับครบแต่ละไฟล์</legend
+										>
+										<RadioGroup.Root
+											value={job.receiveMode}
+											onValueChange={(mode) => {
+												if (mode === 'folder' || mode === 'browser-download')
+													session?.setReceiveMode(job.id, mode);
+											}}
+										>
+											{#if view.directoryPickerSupported}<div class="flex items-start gap-2">
+													<RadioGroup.Item id={`folder-${job.id}`} value="folder" /><Label
+														for={`folder-${job.id}`}>เลือกโฟลเดอร์แล้วบันทึกลงอุปกรณ์</Label
+													>
+												</div>{/if}
+											<div class="flex items-start gap-2">
+												<RadioGroup.Item id={`browser-${job.id}`} value="browser-download" /><Label
+													for={`browser-${job.id}`}>ดาวน์โหลดผ่านเบราว์เซอร์อัตโนมัติ</Label
+												>
+											</div>
+										</RadioGroup.Root>
+										<p class="text-sm text-muted-foreground">
+											{job.receiveMode === 'folder'
+												? 'กดรับแล้วเลือกโฟลเดอร์หนึ่งครั้ง ระบบจะสร้างโฟลเดอร์ย่อยใหม่และบันทึกแต่ละไฟล์ให้เมื่อรับครบ ไฟล์ที่บันทึกแล้วคงอยู่แม้ออกจากระบบ'
+												: 'เมื่อรับครบแต่ละไฟล์ ระบบจะขอให้เบราว์เซอร์ดาวน์โหลดให้อัตโนมัติ อาจต้องอนุญาตการดาวน์โหลดหลายไฟล์ รูปอาจอยู่ใน Downloads แทนแกลเลอรี ขึ้นกับอุปกรณ์ หากถูกบล็อกยังดาวน์โหลดรายไฟล์หรือ ZIP ได้'}
+										</p>
+									</fieldset>
+									<LoadingButton
+										loading={job.pending}
+										loadingLabel={job.receiveMode === 'folder'
+											? 'กำลังเลือกโฟลเดอร์'
+											: 'กำลังตรวจสอบพื้นที่'}
+										disabled={job.manifestPending || !job.files.length}
+										onclick={() => session?.acceptFiles(job.id)}>รับไฟล์ทั้งชุด</LoadingButton
+									>
+								{:else}<p class="text-sm text-muted-foreground">
+										รอผู้รับตรวจสอบรายการและยืนยันรับไฟล์ ยังไม่ได้ส่งเนื้อหาไฟล์
+									</p>{/if}
+								<Button variant="outline" onclick={() => session?.cancel(job.id)}
+									>ยกเลิกชุดนี้</Button
+								>
 							{:else if !isTransferTerminal(job.phase)}
-								{#if ['sending', 'receiving', 'acknowledging', 'connecting'].includes(job.phase)}<Progress
+								{#if ['sending', 'receiving', 'acknowledging', 'connecting', 'manifest'].includes(job.phase)}<Progress
 										value={percent(job)}
 										aria-label={`ความคืบหน้า ${job.label}`}
 									/>
 									<p class="text-sm text-muted-foreground">
-										{formatFileSize(job.bytes)} · {percent(job)}% · รับครบ {job.completedFiles}/{job
-											.files.length} ไฟล์
+										{formatFileSize(job.bytes)} · {job.megabytesPerSecond.toFixed(2)} MB/s · {percent(
+											job
+										)}% · รับครบ {job.completedFiles}/{job.batch.fileCount} ไฟล์
 									</p>{/if}
 								<Button variant="outline" onclick={() => session?.cancel(job.id)}
 									>{job.phase === 'queued'
@@ -465,17 +556,60 @@
 				{/each}
 			</div>
 		</section>
-		{#if view.downloads.length}<Card.Root
+		{#if view.downloadCount}<Card.Root
 				role="region"
 				aria-labelledby="downloads-heading"
 				class="gap-0 py-0"
 				><Card.Content class="space-y-4 p-4 sm:p-6">
 					<h2 id="downloads-heading" class="text-lg font-semibold">ไฟล์ที่รับครบแล้ว</h2>
-					<p class="text-sm text-muted-foreground">
-						ไฟล์อยู่ในหน่วยความจำของหน้านี้ กดดาวน์โหลดเพื่อบันทึก ปิดหน้าหรือออกจากระบบจะล้างไฟล์
-						ไฟล์ที่รับครบแล้วยังคงอยู่แม้ส่วนที่เหลือถูกยกเลิก
+					<p
+						data-testid="save-status"
+						data-pending={view.automaticDownloadPending}
+						role="status"
+						class="text-sm text-muted-foreground"
+					>
+						{#if view.saveDestination?.mode === 'folder'}บันทึกลงโฟลเดอร์ {view.saveDestination
+								.label} แล้ว {view.downloadCount} ไฟล์ ไฟล์เหล่านี้คงอยู่ในอุปกรณ์แม้ล้างรายการหรือออกจากระบบ{:else}ส่งคำขอดาวน์โหลดอัตโนมัติแล้ว
+							{view.automaticDownloadRequests}/{view.downloadCount} ไฟล์ ยังยืนยันการบันทึกของเบราว์เซอร์ไม่ได้
+							หากถูกบล็อกให้อนุญาตดาวน์โหลดหลายไฟล์ หรือใช้ปุ่มดาวน์โหลดด้านล่าง รูปอาจอยู่ใน Downloads
+							แทนแกลเลอรี ขึ้นกับอุปกรณ์{/if}
 					</p>
-					<ol class="space-y-3">
+					{#if view.saveDestination?.mode === 'folder'}<p class="text-sm text-muted-foreground">
+							ปิดหน้าหรือออกจากระบบจะล้างเฉพาะรายการและ ZIP ชั่วคราว ไฟล์ในโฟลเดอร์ที่เลือกยังอยู่
+							ไม่ต้องดาวน์โหลดซ้ำ
+						</p>{:else}<p class="text-sm text-muted-foreground">
+							ไฟล์ที่รับครบยังอยู่ในพื้นที่ชั่วคราวของหน้านี้แม้การส่งส่วนที่เหลือล้มเหลว
+							ปิดหน้าหรือออกจากระบบจะล้างพื้นที่ชั่วคราว
+						</p>{/if}
+					<p class="text-sm">
+						รับครบ {view.downloadCount} ไฟล์ · {formatFileSize(view.downloadBytes)}
+					</p>
+					<div class="flex flex-wrap gap-2">
+						<LoadingButton
+							loading={view.archive.pending}
+							loadingLabel="กำลังสร้าง ZIP"
+							disabled={downloadActive}
+							onclick={() => session?.downloadAll()}
+							><Download class="size-4" />ดาวน์โหลดทั้งหมดเป็น ZIP</LoadingButton
+						>{#if view.archive.pending}<Button
+								variant="outline"
+								onclick={() => session?.cancelArchive()}>ยกเลิกการสร้าง ZIP</Button
+							>{/if}
+					</div>
+					<p class="text-sm text-muted-foreground">
+						สร้าง ZIP ได้เมื่อสิ้นสุดการรับชุดนี้ ZIP จะเติมลำดับหน้าชื่อเพื่อแยกไฟล์ชื่อซ้ำ
+						และต้องมีพื้นที่ว่างเพิ่มใกล้เคียงขนาดไฟล์ที่รับ ไฟล์เดิมยังอยู่หากสร้าง ZIP ไม่สำเร็จ
+					</p>
+					{#if view.archive.pending}<p role="status" class="text-sm">
+							เตรียม ZIP แล้ว {formatFileSize(view.archive.bytes)}
+						</p>{/if}
+					{#if view.archive.error}<p role="alert" class="text-sm text-destructive">
+							{view.archive.error}
+						</p>{/if}
+					{#if view.downloadError}<p role="alert" class="text-sm text-destructive">
+							{view.downloadError}
+						</p>{/if}
+					<ol class="space-y-3" aria-busy={view.downloadPending}>
 						{#each view.downloads as file (file.id)}<li
 								class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
 							>
@@ -483,14 +617,35 @@
 									{file.index + 1}. {file.name} · {formatFileSize(file.size)}
 								</p>
 								<Button
-									onclick={() => download(file)}
+									onclick={() => session?.downloadFile(file.index)}
 									aria-label={`ดาวน์โหลด ${file.index + 1} ${file.name}`}
 									><Download class="size-4" />ดาวน์โหลด</Button
 								>
 							</li>{/each}
 					</ol>
-					<Button variant="outline" onclick={() => session?.clearDownloads()}
-						>ล้างไฟล์ที่รับแล้วทั้งหมด</Button
+					{#if view.downloadCount > TRANSFER_PAGE_SIZE}<div
+							class="flex flex-wrap items-center gap-2"
+						>
+							<Button
+								variant="outline"
+								disabled={view.downloadPending || view.downloadPage === 0}
+								onclick={() => session?.showDownloadsPage(view.downloadPage - 1)}
+								>ไฟล์ก่อนหน้า</Button
+							><span class="text-sm"
+								>หน้า {view.downloadPage + 1}/{Math.ceil(
+									view.downloadCount / TRANSFER_PAGE_SIZE
+								)}</span
+							><Button
+								variant="outline"
+								disabled={view.downloadPending ||
+									(view.downloadPage + 1) * TRANSFER_PAGE_SIZE >= view.downloadCount}
+								onclick={() => session?.showDownloadsPage(view.downloadPage + 1)}>ไฟล์ถัดไป</Button
+							>
+						</div>{/if}
+					<Button
+						variant="outline"
+						disabled={downloadActive}
+						onclick={() => session?.clearDownloads()}>ล้างไฟล์ที่รับแล้วทั้งหมด</Button
 					>
 				</Card.Content></Card.Root
 			>{/if}

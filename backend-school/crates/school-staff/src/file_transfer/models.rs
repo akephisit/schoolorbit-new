@@ -5,10 +5,17 @@ use uuid::Uuid;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
-pub struct FileTransferFile {
-    pub name: String,
-    pub size: u64,
-    pub mime_type: String,
+pub struct FileTransferBatchSummary {
+    #[cfg_attr(
+        feature = "api-docs",
+        schema(minimum = 1, maximum = 9007199254740991_u64)
+    )]
+    pub file_count: u64,
+    #[cfg_attr(
+        feature = "api-docs",
+        schema(minimum = 0, maximum = 9007199254740991_u64)
+    )]
+    pub total_bytes: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,7 +43,7 @@ pub struct FileTransferPair {
     pub id: Uuid,
     pub initiator: FileTransferDevice,
     pub recipient: FileTransferDevice,
-    pub files: Vec<FileTransferFile>,
+    pub batch: FileTransferBatchSummary,
     pub client_request_id: Uuid,
     pub status: FileTransferPairStatus,
     pub expires_at: DateTime<Utc>,
@@ -47,9 +54,6 @@ pub struct FileTransferPair {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 pub struct FileTransferLimits {
     pub max_outgoing_transfers: u8,
-    pub max_files_per_batch: u8,
-    pub max_file_bytes: u64,
-    pub max_batch_bytes: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -92,7 +96,7 @@ pub enum FileTransferTarget {
 pub struct CreateFileTransferPair {
     pub device_id: Uuid,
     pub target: FileTransferTarget,
-    pub files: Vec<FileTransferFile>,
+    pub batch: FileTransferBatchSummary,
     pub client_request_id: Uuid,
 }
 
