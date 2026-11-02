@@ -19,8 +19,11 @@ const outgoing = (page: Page, label: string) =>
 		.filter({ hasText: label });
 async function open(page: Page, label: string) {
 	await page.goto(path);
+	await expect(page.getByTestId('pairing-code')).toBeVisible();
+	const previousCode = await page.getByTestId('pairing-code').textContent();
 	await page.getByLabel('ชื่ออุปกรณ์', { exact: true }).fill(label);
-	await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+	await page.getByLabel('ชื่ออุปกรณ์', { exact: true }).press('Tab');
+	await expect(page.getByTestId('pairing-code')).not.toHaveText(previousCode!);
 	await expect(page.getByTestId('pairing-code')).toBeVisible();
 }
 async function choose(page: Page, files: InputFile[]) {
@@ -427,7 +430,7 @@ test('incoming cancellation history stays bounded while completed downloads reta
 		);
 		await receiver.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
 		await receiver.getByLabel('ชื่ออุปกรณ์', { exact: true }).fill('ผู้รับใหม่');
-		await receiver.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await receiver.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
 		await expect(receiver.getByTestId('pairing-code')).toBeVisible();
 		await expect(incoming(receiver)).toHaveCount(1);
 		expect(await download(receiver, 0, 'retained.txt')).toEqual(
@@ -480,7 +483,7 @@ test('QR/code pairing handles zero-byte batches and late create/accept responses
 		await page.goto(decoded);
 		await expect(page.getByLabel('หรือใช้รหัสอุปกรณ์ผู้รับ')).toHaveValue(code);
 		await expect(page).toHaveURL(new RegExp(`${path}$`));
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await page.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		await choose(page, [input('zero.txt', ''), input('zero.txt', '')]);
 		await page.getByRole('button', { name: 'เพิ่มผู้รับด้วยรหัส' }).click();
@@ -696,7 +699,6 @@ test('unsupported registration version shows refresh-both-devices guidance', asy
 			route.fallback({ postData: JSON.stringify({ label: 'old client', protocolVersion: 1 }) })
 		);
 		await page.goto(path);
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
 		await expect(page.getByText(/กรุณารีเฟรชหน้าเว็บทั้งอุปกรณ์ส่งและอุปกรณ์รับ/)).toBeVisible();
 		expect(api.devices).toHaveLength(0);
 	} finally {
@@ -738,7 +740,6 @@ test('pairing fragment survives login redirect and route disposal removes the de
 		await page.reload();
 		await expect(page).toHaveURL(new RegExp(`${path}$`));
 		await expect(page.getByLabel('หรือใช้รหัสอุปกรณ์ผู้รับ')).toHaveValue('012345ABCD');
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		await page.getByRole('link', { name: 'เครื่องมือทั้งหมด' }).click();
 		await expect.poll(() => api.devices.length).toBe(0);
@@ -1033,7 +1034,7 @@ test('late close success after device restart cannot restore old file references
 		await job.getByRole('button', { name: 'ส่งคำขอใหม่', exact: true }).click();
 		await expect.poll(() => api.pairs.length).toBe(0);
 		await page.getByRole('button', { name: 'ปิดรับส่งไฟล์ทั้งหมด', exact: true }).click();
-		await page.getByRole('button', { name: 'เปิดรับส่งไฟล์', exact: true }).click();
+		await page.getByRole('button', { name: 'ลองเชื่อมต่ออีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('pairing-code')).toBeVisible();
 		const oldResponse = page.waitForResponse(
 			(response) => response.url().endsWith(`/pairs/${pair.id}/close`) && response.status() === 200

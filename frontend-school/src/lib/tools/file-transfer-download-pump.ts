@@ -12,8 +12,10 @@ export class AutomaticDownloadPump {
 	private stopped = false;
 	private task: Promise<void> | null = null;
 	private ports: Ports;
-	constructor(ports: Ports) {
+	constructor(ports: Ports, next = 0) {
 		this.ports = ports;
+		this.next = next;
+		this.desired = next;
 	}
 	advance(completedCount: number) {
 		if (this.stopped || completedCount <= this.desired) return;
