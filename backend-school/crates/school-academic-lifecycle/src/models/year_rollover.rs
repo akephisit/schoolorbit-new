@@ -45,6 +45,7 @@ pub struct YearRolloverStudent {
     pub existing_target_student_year_id: Option<Uuid>,
     pub decision: Option<PromotionDecisionInput>,
     pub suggested_decision: Option<PromotionDecisionInput>,
+    pub current_target: Option<YearRolloverCurrentTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -110,4 +111,21 @@ pub struct YearRolloverOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct YearRolloverOptions {
     pub target_years: Vec<school_academic_core::models::YearLifecycleContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct YearRolloverCurrentTarget {
+    pub student_academic_year_id: Uuid,
+    pub row_version: i64,
+    pub status: school_academic_core::models::StudentAcademicYearStatus,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
+    pub study_program_name: String,
+    pub placement_id: Option<Uuid>,
+    pub placement_row_version: Option<i64>,
+    pub placement_starts_on: Option<chrono::NaiveDate>,
+    pub homeroom_id: Option<Uuid>,
+    pub homeroom_name: Option<String>,
 }

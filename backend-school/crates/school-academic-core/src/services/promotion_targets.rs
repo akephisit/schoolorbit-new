@@ -291,3 +291,68 @@ mod reference_tests {
         );
     }
 }
+
+/// Stable annual identities from accepted Lifecycle receipts. Later planned-year
+/// grade/program/room edits remain owned and audited by Core.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PreparedPromotionTarget {
+    pub student_id: Uuid,
+    pub target_student_year_id: Uuid,
+}
+
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct PreparedPromotionTargetState {
+    pub student_academic_year_id: Uuid,
+    pub row_version: i64,
+    pub status: crate::models::StudentAcademicYearStatus,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
+    pub study_program_name: String,
+    pub placement_id: Option<Uuid>,
+    pub placement_row_version: Option<i64>,
+    pub placement_starts_on: Option<chrono::NaiveDate>,
+    pub homeroom_id: Option<Uuid>,
+    pub homeroom_name: Option<String>,
+    pub homeroom_row_version: Option<i64>,
+}
+
+/// Reaffirm original intent while reading the separately audited current target
+/// projection in one bounded snapshot. No historical placement is rewritten.
+pub async fn verify_prepared_targets(
+    tx: &mut Transaction<'_, Postgres>,
+    target_year: Uuid,
+    targets: &[PreparedPromotionTarget],
+) -> Result<Vec<PreparedPromotionTargetState>, AppError> {
+    if targets.is_empty()
+        || targets.len() > 500
+        || targets
+            .iter()
+            .map(|t| t.target_student_year_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != targets.len()
+    {
+        return Err(AppError::ValidationError(
+            "ตรวจปลายทางที่เตรียมไว้ได้ครั้งละ 1–500 คนโดยไม่ซ้ำ".into(),
+        ));
+    }
+    let states:Vec<PreparedPromotionTargetState>=DbSession::new(&mut **tx).query_as("academic_core.promotion_targets.verify_prepared_targets",
+        "SELECT student_year.id AS student_academic_year_id,student_year.row_version,student_year.status,student_year.grade_level_id,student_year.study_program_id,
+         program.name_th AS study_program_name,placement.id AS placement_id,placement.row_version AS placement_row_version,
+         placement.start_date AS placement_starts_on,room.id AS homeroom_id,room.name AS homeroom_name,room.row_version AS homeroom_row_version
+         FROM jsonb_to_recordset($1) expected(student_id uuid,target_student_year_id uuid)
+         JOIN student_academic_years student_year ON student_year.id=expected.target_student_year_id
+           AND student_year.student_id=expected.student_id AND student_year.academic_year_id=$2 AND student_year.status IN ('planned','withdrawn')
+         JOIN published_study_programs program ON program.id=student_year.study_program_id
+         LEFT JOIN LATERAL(SELECT id,homeroom_id,start_date,row_version FROM homeroom_placements
+           WHERE student_academic_year_id=student_year.id AND status IN ('planned','current')
+           ORDER BY CASE status WHEN 'current' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1) placement ON true
+         LEFT JOIN homerooms room ON room.id=placement.homeroom_id ORDER BY student_year.id")
+        .bind(sqlx::types::Json(targets)).bind(target_year).fetch_all().await?;
+    if states.len() != targets.len() {
+        return Err(AppError::Conflict(
+            "ข้อมูลประจำปีปลายทางเปลี่ยนแล้ว กรุณาตรวจสอบประวัติก่อนยืนยัน".into(),
+        ));
+    }
+    Ok(states)
+}

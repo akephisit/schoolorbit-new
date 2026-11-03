@@ -80,15 +80,14 @@ pub(crate) async fn year_workspace_in_transaction(
     }
     findings.sort_by(|a, b| a.code.cmp(&b.code));
     let can_close = !findings
-            .iter()
-            .any(|row| row.severity == LifecycleSeverity::Blocking);
+        .iter()
+        .any(|row| row.severity == LifecycleSeverity::Blocking);
     // Permission-filtered links and actions are presentation, not source state.
     let finding_state: Vec<_> = findings
         .iter()
         .map(|row| (&row.code, row.severity, row.count))
         .collect();
-    let source_checksum =
-        super::checksum(&(&context, &terms, finding_state))?;
+    let source_checksum = super::checksum(&(&context, &terms, finding_state))?;
     let available_actions = [Action::BeginClosing, Action::CancelClosing, Action::Close]
         .into_iter()
         .filter(|action| {

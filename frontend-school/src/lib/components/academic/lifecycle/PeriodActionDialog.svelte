@@ -15,6 +15,7 @@
 		type TermLifecycleWorkspace,
 		type YearLifecycleWorkspace,
 		type TermTransitionRequest,
+		type TermTransitionOutcome,
 		type YearTransitionRequest
 	} from '#lib/api/academic-lifecycle.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -34,7 +35,8 @@
 		kind,
 		label,
 		disabled = false,
-		oncompleted
+		oncompleted,
+		onactivated
 	}: {
 		yearId: string;
 		termId?: string;
@@ -42,6 +44,7 @@
 		label: string;
 		disabled?: boolean;
 		oncompleted: () => Promise<void>;
+		onactivated?: (outcome: TermTransitionOutcome) => void | Promise<void>;
 	} = $props();
 	let open = $state(false);
 	let loading = $state(false);
@@ -167,11 +170,14 @@
 		busy = true;
 		error = '';
 		try {
-			if (request.kind === 'year') await transitionAcademicYear(yearId, request.input);
-			else await transitionAcademicTerm(termId, request.input);
+			const outcome =
+				request.kind === 'year'
+					? await transitionAcademicYear(yearId, request.input)
+					: await transitionAcademicTerm(termId, request.input);
 			if (!alive || identity !== appIdentityKey()) return;
 			pending = null;
 			open = false;
+			if (outcome.action === 'activate') await onactivated?.(outcome);
 			await oncompleted();
 		} catch (cause) {
 			if (!alive || identity !== appIdentityKey()) return;

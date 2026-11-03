@@ -138,3 +138,27 @@ export function rosterDraftError(
 export function sourceRoomKey(student: YearRolloverStudent): string {
 	return `${student.sourceGradeLevelId}:${student.sourceStudyProgramId}:${student.sourceHomeroomId ?? ''}`;
 }
+
+export function rolloverCounts(
+	preview: YearRolloverPreview,
+	drafts: Record<string, RolloverDraft>
+) {
+	let joining = 0;
+	let unassigned = 0;
+	let notJoining = 0;
+	for (const student of preview.students) {
+		if (student.currentTarget) {
+			if (student.currentTarget.status === 'planned' || student.currentTarget.status === 'active') {
+				joining += 1;
+				if (!student.currentTarget.homeroomId) unassigned += 1;
+			} else notJoining += 1;
+		} else {
+			const draft = drafts[student.studentAcademicYearId];
+			if (draft?.outcome === 'promote' || draft?.outcome === 'repeat') {
+				joining += 1;
+				if (!draft.targetHomeroomId) unassigned += 1;
+			}
+		}
+	}
+	return { joining, unassigned, notJoining };
+}

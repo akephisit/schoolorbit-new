@@ -1,8 +1,6 @@
 use crate::models::*;
 use crate::ports::{ExternalLifecyclePort, RegistrationOutcome};
-use school_academic_core::services::{
-    lifecycle_guard, promotion_execution, promotion_finalization,
-};
+use school_academic_core::services::{lifecycle_guard, promotion_batch};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -78,63 +76,39 @@ pub async fn confirm(
         "academic_lifecycle.year_rollover_command.confirm",
         "UPDATE academic_promotion_runs SET status='executing',approval_id=$2,approved_by=$3,approved_at=now() WHERE id=$1",
     ).bind(run_id).bind(confirmation_id).bind(actor.user_id).execute().await?;
+    if sources.len() != input.preview.decisions.len() {
+        return Err(AppError::Conflict("ต้องยืนยันรายชื่อนักเรียนครบตามตัวอย่าง".into()));
+    }
     let mut items = Vec::with_capacity(sources.len());
+    let mut declarations = Vec::with_capacity(sources.len());
     let mut registration = vec![];
-    let mut roster_ids = vec![];
     for (source, declared) in sources.iter().zip(&input.preview.decisions) {
         if source.student_academic_year_id != declared.student_academic_year_id {
             return Err(AppError::Conflict("ต้องยืนยันรายชื่อนักเรียนครบตามตัวอย่าง".into()));
         }
-        let item_id = Uuid::now_v7();
-        let source_checksum = super::checksum(&(
-            source,
-            &declared.decision,
-            input.preview.outcome_effective_on,
-            input.preview.target_placement_starts_on,
-        ))?;
-        DbSession::new(&mut *tx).query(
-            "academic_lifecycle.year_rollover_command.confirm",
-            "INSERT INTO academic_promotion_run_items(id,run_id,source_year_id,target_year_id,target_placement_starts_on,student_academic_year_id,student_id,
-             source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,
-             existing_target_student_year_id,decision,reviewed_by,reviewed_at,status)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULL,$11,NULL,$12,$13,$14,now(),'reviewed')",
-        ).bind(item_id).bind(run_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id)
-            .bind(input.preview.target_placement_starts_on).bind(source.student_academic_year_id).bind(source.student_id)
-            .bind(source.grade_level_id).bind(source.study_program_id).bind(source.row_version).bind(source_checksum)
-            .bind(source.existing_target_student_year_id).bind(Json(&declared.decision)).bind(actor.user_id).execute().await?;
-        let core_decision = declared.decision.core_command();
-        let mut result = if let Some(target) = source.existing_target_student_year_id {
-            let prior = accepted
-                .get(&source.student_academic_year_id)
-                .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานปลายทางที่เตรียมไว้".into()))?;
-            // The same-transaction preview verified exact accepted identities under
-            // the exclusive tenant transition lock shared by ordinary writers.
-            promotion_execution::PromotionWriteOutcome {
-                target_student_year_id: Some(target),
-                target_placement_id: prior.target_placement_id,
-                source_row_version: source.row_version,
-            }
-        } else {
-            promotion_execution::execute_decision(
-                &mut tx,
-                actor.user_id,
-                input.preview.source_year_id,
-                input.preview.target_year_id,
-                Some(input.preview.target_placement_starts_on),
+        items.push(ManualItem {
+            id: Uuid::now_v7(),
+            student_academic_year_id: source.student_academic_year_id,
+            student_id: source.student_id,
+            source_grade_level_id: source.grade_level_id,
+            source_study_program_id: source.study_program_id,
+            source_row_version: source.row_version,
+            source_checksum: super::checksum(&(
                 source,
-                &core_decision,
-            )
-            .await?
-        };
-        result.source_row_version = promotion_finalization::finish_source(
-            &mut tx,
-            actor.user_id,
-            input.preview.source_year_id,
-            source.student_academic_year_id,
-            input.preview.outcome_effective_on,
-            core_decision.outcome,
-        )
-        .await?;
+                &declared.decision,
+                input.preview.outcome_effective_on,
+                input.preview.target_placement_starts_on,
+            ))?,
+            existing_target_student_year_id: source.existing_target_student_year_id,
+            decision: declared.decision.clone(),
+        });
+        declarations.push(promotion_batch::PromotionBatchDeclaration {
+            source: source.clone(),
+            decision: declared.decision.core_command(),
+            original_target_placement_id: accepted
+                .get(&source.student_academic_year_id)
+                .and_then(|prior| prior.target_placement_id),
+        });
         match declared.decision.outcome {
             PromotionDecisionOutcome::Graduate => {
                 registration.push((source.student_id, RegistrationOutcome::Graduated))
@@ -144,13 +118,42 @@ pub async fn confirm(
             }
             _ => {}
         }
-        roster_ids.push(source.student_academic_year_id);
-        roster_ids.extend(result.target_student_year_id);
-        items.push((item_id, source.student_id, result));
+    }
+    for batch in items.chunks(500) {
+        DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.insert_items",
+            "INSERT INTO academic_promotion_run_items(id,run_id,source_year_id,target_year_id,target_placement_starts_on,student_academic_year_id,student_id,
+             source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id,decision,reviewed_by,reviewed_at,status)
+             SELECT row.id,$2,$3,$4,$5,row.student_academic_year_id,row.student_id,row.source_grade_level_id,row.source_study_program_id,row.source_row_version,
+               NULL,row.source_checksum,NULL,row.existing_target_student_year_id,row.decision,$6,now(),'reviewed'
+             FROM jsonb_to_recordset($1) row(id uuid,student_academic_year_id uuid,student_id uuid,source_grade_level_id uuid,source_study_program_id uuid,
+               source_row_version bigint,source_checksum text,existing_target_student_year_id uuid,decision jsonb)")
+            .bind(Json(batch)).bind(run_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id)
+            .bind(input.preview.target_placement_starts_on).bind(actor.user_id).execute().await?;
+    }
+    let mut written = vec![];
+    for batch in declarations.chunks(500) {
+        written.extend(
+            promotion_batch::apply_declarations(
+                &mut tx,
+                actor.user_id,
+                input.preview.source_year_id,
+                input.preview.target_year_id,
+                input.preview.outcome_effective_on,
+                input.preview.target_placement_starts_on,
+                batch,
+            )
+            .await?,
+        );
     }
     external
         .apply_registration_outcomes(&mut tx, actor.user_id, &registration)
         .await?;
+    let mut roster_ids: Vec<_> = written
+        .iter()
+        .flat_map(|row| {
+            std::iter::once(row.student_academic_year_id).chain(row.write.target_student_year_id)
+        })
+        .collect();
     roster_ids.sort_unstable();
     roster_ids.dedup();
     for batch in roster_ids.chunks(500) {
@@ -161,28 +164,49 @@ pub async fn confirm(
         )
         .await?;
     }
+    let written: std::collections::BTreeMap<_, _> = written
+        .into_iter()
+        .map(|row| (row.student_academic_year_id, row))
+        .collect();
+    let mut batches = vec![];
+    let mut receipt_rows = vec![];
     for (index, batch) in items.chunks(100).enumerate() {
         let batch_id = Uuid::new_v5(
             &input.request_id,
             format!("manual-rollover-batch:{index}").as_bytes(),
         );
-        let ids: Vec<_> = batch.iter().map(|row| row.0).collect();
-        DbSession::new(&mut *tx).query(
-            "academic_lifecycle.year_rollover_command.confirm",
-            "INSERT INTO academic_promotion_execution_batches(request_id,run_id,approval_id,actor_user_id,request_checksum,item_ids) VALUES($1,$2,$3,$4,$5,$6)",
-        ).bind(batch_id).bind(run_id).bind(confirmation_id).bind(actor.user_id).bind(&checksum).bind(&ids).execute().await?;
-        for (item_id, student_id, result) in batch {
-            DbSession::new(&mut *tx).query(
-                "academic_lifecycle.year_rollover_command.confirm",
-                "INSERT INTO academic_promotion_execution_receipts(item_id,run_id,request_id,approval_id,source_year_id,target_year_id,student_id,
-                 target_student_year_id,target_placement_id,source_row_version,executed_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-            ).bind(item_id).bind(run_id).bind(batch_id).bind(confirmation_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id)
-                .bind(student_id).bind(result.target_student_year_id).bind(result.target_placement_id).bind(result.source_row_version).bind(actor.user_id).execute().await?;
+        batches.push(ManualBatch {
+            request_id: batch_id,
+            item_ids: batch.iter().map(|row| row.id).collect(),
+        });
+        for item in batch {
+            let result = written
+                .get(&item.student_academic_year_id)
+                .ok_or_else(|| AppError::Conflict("ผลเตรียมปีใหม่ไม่ครบตามรายชื่อ".into()))?;
+            receipt_rows.push(ManualReceipt {
+                item_id: item.id,
+                request_id: batch_id,
+                student_id: item.student_id,
+                target_student_year_id: result.write.target_student_year_id,
+                target_placement_id: result.write.target_placement_id,
+                source_row_version: result.write.source_row_version,
+            });
         }
-        DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.confirm",
-            "UPDATE academic_promotion_run_items SET status='executed',row_version=row_version+1,updated_at=now() WHERE id=ANY($1)",
-        ).bind(ids).execute().await?;
     }
+    DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.insert_batches",
+        "INSERT INTO academic_promotion_execution_batches(request_id,run_id,approval_id,actor_user_id,request_checksum,item_ids)
+         SELECT request_id,$2,$3,$4,$5,item_ids FROM jsonb_to_recordset($1) row(request_id uuid,item_ids uuid[])")
+        .bind(Json(&batches)).bind(run_id).bind(confirmation_id).bind(actor.user_id).bind(&checksum).execute().await?;
+    for batch in receipt_rows.chunks(500) {
+        DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.insert_receipts",
+            "INSERT INTO academic_promotion_execution_receipts(item_id,run_id,request_id,approval_id,source_year_id,target_year_id,student_id,target_student_year_id,target_placement_id,source_row_version,executed_by)
+             SELECT item_id,$2,request_id,$3,$4,$5,student_id,target_student_year_id,target_placement_id,source_row_version,$6
+             FROM jsonb_to_recordset($1) row(item_id uuid,request_id uuid,student_id uuid,target_student_year_id uuid,target_placement_id uuid,source_row_version bigint)")
+            .bind(Json(batch)).bind(run_id).bind(confirmation_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id).bind(actor.user_id).execute().await?;
+    }
+    DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.complete_items",
+        "UPDATE academic_promotion_run_items SET status='executed',row_version=row_version+1,updated_at=now() WHERE run_id=$1")
+        .bind(run_id).execute().await?;
     DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.confirm",
         "UPDATE academic_promotion_runs SET status='completed',row_version=row_version+1,executed_by=$2,executed_at=now(),updated_at=now() WHERE id=$1",
     ).bind(run_id).bind(actor.user_id).execute().await?;
@@ -269,4 +293,31 @@ mod tests {
         assert!(!valid_checksum(&"A".repeat(64)));
         assert!(!valid_checksum("stale"));
     }
+}
+
+#[derive(serde::Serialize)]
+struct ManualItem {
+    id: Uuid,
+    student_academic_year_id: Uuid,
+    student_id: Uuid,
+    source_grade_level_id: Uuid,
+    source_study_program_id: Uuid,
+    source_row_version: i64,
+    source_checksum: String,
+    existing_target_student_year_id: Option<Uuid>,
+    decision: PromotionDecisionInput,
+}
+#[derive(serde::Serialize)]
+struct ManualBatch {
+    request_id: Uuid,
+    item_ids: Vec<Uuid>,
+}
+#[derive(serde::Serialize)]
+struct ManualReceipt {
+    item_id: Uuid,
+    request_id: Uuid,
+    student_id: Uuid,
+    target_student_year_id: Option<Uuid>,
+    target_placement_id: Option<Uuid>,
+    source_row_version: i64,
 }

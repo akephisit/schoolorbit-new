@@ -15142,144 +15142,6 @@
         ],
         "type": "object"
       },
-      "ApiResponse_PromotionExecutionResult": {
-        "properties": {
-          "data": {
-            "properties": {
-              "failures": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionExecutionFailure"
-                },
-                "type": "array"
-              },
-              "holdCount": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "receipts": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionExecutionReceipt"
-                },
-                "type": "array"
-              },
-              "remainingCount": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "run": {
-                "$ref": "#/components/schemas/PromotionRun"
-              }
-            },
-            "required": [
-              "run",
-              "receipts",
-              "failures",
-              "remainingCount",
-              "holdCount"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionImpactResolution": {
-        "properties": {
-          "data": {
-            "properties": {
-              "correctionId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "impactId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "itemId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "outcome": {
-                "$ref": "#/components/schemas/PromotionImpactResolutionOutcome"
-              },
-              "reason": {
-                "type": "string"
-              },
-              "replacementDecision": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/PromotionDecisionInput"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "requestId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "resolutionKind": {
-                "$ref": "#/components/schemas/PromotionImpactResolutionKind"
-              },
-              "resolvedAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "resolvedBy": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "runId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "sourceChecksum": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "requestId",
-              "runId",
-              "itemId",
-              "correctionId",
-              "impactId",
-              "resolutionKind",
-              "reason",
-              "sourceChecksum",
-              "outcome",
-              "resolvedBy",
-              "resolvedAt"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
       "ApiResponse_PromotionImpactWorkspace": {
         "properties": {
           "data": {
@@ -15329,284 +15191,6 @@
               "totalCount",
               "pendingCount",
               "sourceChecksum"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionItemReview": {
-        "properties": {
-          "data": {
-            "properties": {
-              "item": {
-                "$ref": "#/components/schemas/PromotionRunItem"
-              },
-              "run": {
-                "$ref": "#/components/schemas/PromotionRun"
-              }
-            },
-            "required": [
-              "run",
-              "item"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionPolicyOptions": {
-        "properties": {
-          "data": {
-            "properties": {
-              "grades": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionGradeReference"
-                },
-                "type": "array"
-              },
-              "programs": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionProgramReference"
-                },
-                "type": "array"
-              },
-              "progressionSet": {
-                "$ref": "#/components/schemas/GradeProgressionSet"
-              }
-            },
-            "required": [
-              "grades",
-              "programs",
-              "progressionSet"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionPolicyVersion": {
-        "properties": {
-          "data": {
-            "properties": {
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "progressionRowVersion": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "reviewedAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "reviewedBy": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "rules": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionRuleInput"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "id",
-              "name",
-              "rules",
-              "progressionRowVersion",
-              "reviewedBy",
-              "reviewedAt"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionRun": {
-        "properties": {
-          "data": {
-            "properties": {
-              "approvalId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "approvedAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "approvedBy": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "createdAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "createdBy": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "executedAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "executedBy": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "policyId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "reviewedAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "reviewedBy": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "rowVersion": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "sourceYearId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "status": {
-                "$ref": "#/components/schemas/PromotionRunStatus"
-              },
-              "targetPlacementStartsOn": {
-                "format": "date",
-                "type": "string"
-              },
-              "targetYearId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "updatedAt": {
-                "format": "date-time",
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "sourceYearId",
-              "targetYearId",
-              "targetPlacementStartsOn",
-              "status",
-              "rowVersion",
-              "createdBy",
-              "createdAt",
-              "updatedAt"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_PromotionRunCalculation": {
-        "properties": {
-          "data": {
-            "properties": {
-              "items": {
-                "items": {
-                  "$ref": "#/components/schemas/PromotionRunItem"
-                },
-                "type": "array"
-              },
-              "run": {
-                "$ref": "#/components/schemas/PromotionRun"
-              }
-            },
-            "required": [
-              "run",
-              "items"
             ],
             "type": "object"
           },
@@ -30049,28 +29633,6 @@
         },
         "type": "object"
       },
-      "ApprovePromotionRunInput": {
-        "additionalProperties": false,
-        "properties": {
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "sourceChecksum": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "requestId",
-          "rowVersion",
-          "sourceChecksum"
-        ],
-        "type": "object"
-      },
       "AssessmentCoordinatorOption": {
         "properties": {
           "displayName": {
@@ -34793,24 +34355,6 @@
         },
         "required": [
           "mode"
-        ],
-        "type": "object"
-      },
-      "CalculatePromotionRunInput": {
-        "additionalProperties": false,
-        "properties": {
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "requestId",
-          "rowVersion"
         ],
         "type": "object"
       },
@@ -42337,39 +41881,6 @@
         ],
         "type": "object"
       },
-      "CreatePromotionRunInput": {
-        "additionalProperties": false,
-        "properties": {
-          "policyId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "sourceYearId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "targetPlacementStartsOn": {
-            "format": "date",
-            "type": "string"
-          },
-          "targetYearId": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "requestId",
-          "sourceYearId",
-          "targetYearId",
-          "targetPlacementStartsOn",
-          "policyId"
-        ],
-        "type": "object"
-      },
       "CreateRoleRequest": {
         "properties": {
           "code": {
@@ -49635,30 +49146,6 @@
           "scope",
           "mode",
           "reason"
-        ],
-        "type": "object"
-      },
-      "ExecutePromotionRunInput": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "requestId",
-          "rowVersion",
-          "limit"
         ],
         "type": "object"
       },
@@ -57327,22 +56814,6 @@
         ],
         "type": "string"
       },
-      "PromotionExecutionFailure": {
-        "properties": {
-          "itemId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "itemId",
-          "message"
-        ],
-        "type": "object"
-      },
       "PromotionExecutionReceipt": {
         "properties": {
           "approvalId": {
@@ -57396,41 +56867,6 @@
           "sourceRowVersion",
           "executedBy",
           "executedAt"
-        ],
-        "type": "object"
-      },
-      "PromotionExecutionResult": {
-        "properties": {
-          "failures": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionExecutionFailure"
-            },
-            "type": "array"
-          },
-          "holdCount": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "receipts": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionExecutionReceipt"
-            },
-            "type": "array"
-          },
-          "remainingCount": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "run": {
-            "$ref": "#/components/schemas/PromotionRun"
-          }
-        },
-        "required": [
-          "run",
-          "receipts",
-          "failures",
-          "remainingCount",
-          "holdCount"
         ],
         "type": "object"
       },
@@ -57632,21 +57068,6 @@
         ],
         "type": "object"
       },
-      "PromotionItemReview": {
-        "properties": {
-          "item": {
-            "$ref": "#/components/schemas/PromotionRunItem"
-          },
-          "run": {
-            "$ref": "#/components/schemas/PromotionRun"
-          }
-        },
-        "required": [
-          "run",
-          "item"
-        ],
-        "type": "object"
-      },
       "PromotionItemStatus": {
         "enum": [
           "calculated",
@@ -57655,50 +57076,6 @@
           "failed"
         ],
         "type": "string"
-      },
-      "PromotionPolicyInput": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "rules": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionRuleInput"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "name",
-          "rules"
-        ],
-        "type": "object"
-      },
-      "PromotionPolicyOptions": {
-        "properties": {
-          "grades": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionGradeReference"
-            },
-            "type": "array"
-          },
-          "programs": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionProgramReference"
-            },
-            "type": "array"
-          },
-          "progressionSet": {
-            "$ref": "#/components/schemas/GradeProgressionSet"
-          }
-        },
-        "required": [
-          "grades",
-          "programs",
-          "progressionSet"
-        ],
-        "type": "object"
       },
       "PromotionPolicyVersion": {
         "properties": {
@@ -57735,43 +57112,6 @@
           "progressionRowVersion",
           "reviewedBy",
           "reviewedAt"
-        ],
-        "type": "object"
-      },
-      "PromotionProgramReference": {
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "curriculumLevelId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "editionName": {
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "levelName": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/VersionStatus"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "name",
-          "curriculumLevelId",
-          "levelName",
-          "editionName",
-          "status"
         ],
         "type": "object"
       },
@@ -57984,24 +57324,6 @@
           "createdBy",
           "createdAt",
           "updatedAt"
-        ],
-        "type": "object"
-      },
-      "PromotionRunCalculation": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PromotionRunItem"
-            },
-            "type": "array"
-          },
-          "run": {
-            "$ref": "#/components/schemas/PromotionRun"
-          }
-        },
-        "required": [
-          "run",
-          "items"
         ],
         "type": "object"
       },
@@ -60448,41 +59770,6 @@
         ],
         "type": "object"
       },
-      "ResolvePromotionImpactInput": {
-        "additionalProperties": false,
-        "properties": {
-          "reason": {
-            "type": "string"
-          },
-          "replacementDecision": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/PromotionDecisionInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "resolutionKind": {
-            "$ref": "#/components/schemas/PromotionImpactResolutionKind"
-          },
-          "sourceChecksum": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "requestId",
-          "sourceChecksum",
-          "resolutionKind",
-          "reason"
-        ],
-        "type": "object"
-      },
       "ResponseBatchInput": {
         "properties": {
           "cells": {
@@ -60870,23 +60157,6 @@
             ]
           }
         },
-        "type": "object"
-      },
-      "ReviewPromotionItemInput": {
-        "additionalProperties": false,
-        "properties": {
-          "decision": {
-            "$ref": "#/components/schemas/PromotionDecisionInput"
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "rowVersion",
-          "decision"
-        ],
         "type": "object"
       },
       "ReviseCorrespondenceRequest": {
@@ -74369,6 +73639,75 @@
         ],
         "type": "object"
       },
+      "YearRolloverCurrentTarget": {
+        "properties": {
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placementId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placementRowVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "placementStartsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudentAcademicYearStatus"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studyProgramId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studyProgramName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "rowVersion",
+          "status",
+          "gradeLevelId",
+          "studyProgramId",
+          "studyProgramName"
+        ],
+        "type": "object"
+      },
       "YearRolloverHomeroomReference": {
         "properties": {
           "capacity": {
@@ -74619,6 +73958,16 @@
       },
       "YearRolloverStudent": {
         "properties": {
+          "currentTarget": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/YearRolloverCurrentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "decision": {
             "oneOf": [
               {

@@ -1309,7 +1309,10 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 		/bellSchedulePeriodId:\s*string/
 	);
 	assert.match(timetableApi, /apiClient\.post<TimetableBlockPlacementPreview>/);
-	assert.match(timetableApi, /apiClient\.post<SwapTimetableBlocksResponse, TimetableDraftSourceConflict>/);
+	assert.match(
+		timetableApi,
+		/apiClient\.post<SwapTimetableBlocksResponse, TimetableDraftSourceConflict>/
+	);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);

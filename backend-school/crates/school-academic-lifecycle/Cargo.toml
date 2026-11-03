@@ -12,7 +12,7 @@ api-docs = [
     "school-academic-results/api-docs",
     "school-academic-timetable/api-docs",
 ]
-integration-test-support = []
+integration-test-support = ["school-academic-core/integration-test-support"]
 
 [dependencies]
 school-tenancy = { workspace = true }

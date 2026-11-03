@@ -120,6 +120,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
 				<h3 class="font-medium">{selectedYear.name}</h3>
+				<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>
 				<Badge variant="outline">{academicStatusLabel(selectedYear.status)}</Badge>
 			</div>
 			{#if canManage}<Button
@@ -131,28 +132,31 @@
 					}}>แก้ไขปีการศึกษา</Button
 				>{/if}
 		</div>
-		{#if canManage && schedules.length > 0}{#key selectedYear.id}<AcademicTermSetupStep
-					year={selectedYear}
-					{schedules}
-					{terms}
-					busy={busy.term}
-					onCreate={onCreateTerm}
-					onUpdate={onUpdateTerm}
-					onSaved={() => {}}
-				/>{/key}{:else}<div class="space-y-2">
-				{#each terms as term (term.id)}<div
-						class="flex items-center justify-between rounded-lg border p-3"
-					>
-						<span>{term.name}</span><Badge variant="outline"
-							>{academicStatusLabel(term.status)}</Badge
+		<section class="space-y-4" aria-label="ภาคเรียน">
+			<h3 class="font-semibold">ภาคเรียน</h3>
+			{#if canManage && schedules.length > 0}{#key selectedYear.id}<AcademicTermSetupStep
+						year={selectedYear}
+						{schedules}
+						{terms}
+						busy={busy.term}
+						onCreate={onCreateTerm}
+						onUpdate={onUpdateTerm}
+						onSaved={() => {}}
+					/>{/key}{:else}<div class="space-y-2">
+					{#each terms as term (term.id)}<div
+							class="flex items-center justify-between rounded-lg border p-3"
 						>
-					</div>{/each}{#if canManage}<p class="text-sm text-muted-foreground">
-						เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน
-					</p>
-					<Button variant="outline" href={resolve('staff/academic/core#bell-schedules')}
-						>ตั้งค่าเวลาเรียน</Button
-					>{/if}
-			</div>{/if}
+							<span>{term.name}</span><Badge variant="outline"
+								>{academicStatusLabel(term.status)}</Badge
+							>
+						</div>{/each}{#if canManage}<p class="text-sm text-muted-foreground">
+							เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน
+						</p>
+						<Button variant="outline" href={resolve('staff/academic/core#bell-schedules')}
+							>ตั้งค่าเวลาเรียน</Button
+						>{/if}
+				</div>{/if}
+		</section>
 		{#if contextSettings}<AcademicContextSettingsControls
 				year={selectedYear}
 				{terms}

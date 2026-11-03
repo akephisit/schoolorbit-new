@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mockYearManagement, yearUrl } from './fixtures/year-management';
+import { mockYearManagement, yearUrl, openRoster } from './fixtures/year-management';
 test.use({ serviceWorkers: 'block' });
 test('readers inspect the year and roster without manage-only options or commands', async ({
 	page
@@ -20,6 +20,10 @@ test('readers inspect the year and roster without manage-only options or command
 				(path.endsWith('/options') && path.includes('year-rollovers'))
 		)
 	).toBe(false);
+	await openRoster(page);
+	await expect(
+		page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true })
+	).toHaveCount(0);
 });
 test('retention loads on demand and saves a future-only policy without a purge request', async ({
 	page

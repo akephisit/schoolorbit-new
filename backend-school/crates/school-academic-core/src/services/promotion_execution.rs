@@ -5,13 +5,7 @@ use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromotionWriteOutcome {
-    pub target_student_year_id: Option<Uuid>,
-    pub target_placement_id: Option<Uuid>,
-    pub source_row_version: i64,
-}
+pub use crate::models::PromotionWriteOutcome;
 
 /// Internal Core command. Lifecycle owns permission, approved evidence and the
 /// immutable receipt, in this same transaction under the tenant transition lock.

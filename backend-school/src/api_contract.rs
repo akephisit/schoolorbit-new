@@ -1697,6 +1697,7 @@ fn build_schema_group_9() -> utoipa::openapi::OpenApi {
         YearRolloverPreviewInput,
         YearRolloverStudentInput,
         YearRolloverStudent,
+        YearRolloverCurrentTarget,
         YearRolloverProgramReference,
         YearRolloverHomeroomReference,
         YearRolloverPreview,

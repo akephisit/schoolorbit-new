@@ -15,7 +15,8 @@ const {
 	rosterDecisions,
 	rosterDraftError,
 	sourceRoomKey,
-	academicStatusLabel
+	academicStatusLabel,
+	rolloverCounts
 } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 const student = {
 	studentAcademicYearId: 'annual-id',
@@ -117,4 +118,18 @@ test('accepted conditional destinations carry exact historical intent without be
 	assert.equal(rosterDraftError({ ...preview, students: [retained] }, { 'annual-id': draft }), '');
 	assert.deepEqual(changeOutcome(draft, 'hold', retained), draft);
 	assert.equal(initialRolloverDraft({ ...student, suggestedDecision: decision }).outcome, '');
+});
+
+test('withdrawn prior targets stay out of joining and unassigned counts', () => {
+	const withdrawn = { ...student, currentTarget: { status: 'withdrawn', homeroomId: null } };
+	const planned = {
+		...student,
+		studentAcademicYearId: 'planned',
+		currentTarget: { status: 'planned', homeroomId: null }
+	};
+	assert.deepEqual(rolloverCounts({ ...preview, students: [withdrawn, planned] }, {}), {
+		joining: 1,
+		unassigned: 1,
+		notJoining: 1
+	});
 });

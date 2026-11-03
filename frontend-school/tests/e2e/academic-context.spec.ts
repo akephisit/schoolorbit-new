@@ -1,3 +1,4 @@
+import { mockYearManagement, openRoster, id as yearManagementId } from './fixtures/year-management';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -361,33 +362,26 @@ test('normal history restores selected terms', async ({ page }) => {
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 2');
 });
 
-test('dirty sources require confirmation and cancelling preserves the context', async ({
+test('dirty roster drafts require confirmation and cancelling preserves the context', async ({
 	page
 }) => {
-	await mockAcademicContextApis(page);
-	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
-	await page.evaluate(async () => {
-		const modulePath =
-			performance
-				.getEntriesByType('resource')
-				.map((entry) => entry.name)
-				.find((name) => new URL(name).pathname === '/src/lib/academic-context/store.ts') ??
-			'/src/lib/academic-context/store.ts';
-		const { registerAcademicContextDirtySource } = await import(/* @vite-ignore */ modulePath);
-		registerAcademicContextDirtySource('playwright-draft', () => true);
-	});
-
-	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
-	await page.getByRole('option', { name: /ภาคเรียนที่ 2/ }).click();
+	await mockYearManagement(page);
+	await openRoster(page);
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'กลับไปหน้าจัดการ', exact: true })
+		.click();
+	await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+	await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
+	await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
 	await expect(page.getByRole('alertdialog')).toBeVisible();
-	await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ' }).click();
-	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
+	await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${yearManagementId(1)}`));
 	await expect(page.getByRole('alertdialog')).toHaveCount(0);
-
-	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
-	await page.getByRole('option', { name: /ภาคเรียนที่ 2/ }).click();
-	await page.getByRole('button', { name: 'เปลี่ยนบริบท' }).click();
-	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.readyTerm}`));
+	await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
+	await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
+	await page.getByRole('button', { name: 'เปลี่ยนบริบท', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${yearManagementId(2)}`));
 });
 
 test('mobile trigger summarizes the context and exposes both controls', async ({ page }) => {

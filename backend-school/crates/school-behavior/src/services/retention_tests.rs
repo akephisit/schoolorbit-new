@@ -13,8 +13,10 @@ async fn retention_chunks_resume_the_same_receipt_without_resetting_points_or_cy
             .fetch_one(&pool)
             .await
             .unwrap();
+    let student = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'!','Retention pupil','Fixture','student','active')").bind(student).execute(&pool).await.unwrap();
     let total:Uuid=sqlx::query_scalar("INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,side,source,cycle_id,points) VALUES($1,CURRENT_DATE,$2,(SELECT id FROM grade_levels ORDER BY id LIMIT 1),'merit','arrival',$3,20001) RETURNING id")
-        .bind(actor).bind(term).bind(cycle).fetch_one(&pool).await.unwrap();
+        .bind(student).bind(term).bind(cycle).fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO behavior_entries(total_id,source_key,source_generation,source_revision,source_status,raw_points,item_name,points) SELECT $1,'retention-source-'||n,$2,1,'present',1,'Synthetic contribution',1 FROM generate_series(1,20001) n")
         .bind(total).bind(Uuid::now_v7()).execute(&pool).await.unwrap();
     let request = Uuid::now_v7();

@@ -46,7 +46,9 @@
 		education_level_unknown: 'ยังระบุระดับการศึกษาไม่ได้',
 		outside_policy_effective_period: 'ภาคเรียนเดิมอยู่นอกช่วงที่เปิดใช้นโยบาย',
 		year_not_closed: 'รอปิดปีการศึกษา',
-		grace_period: 'อยู่ในช่วงเก็บรายละเอียด'
+		grace_period: 'อยู่ในช่วงเก็บรายละเอียด',
+		attendance_already_archived:
+			'รายละเอียดเช็กชื่อเก็บถาวรไว้ก่อนหน้านี้ จึงไม่นำมาเก็บกวาดซ้ำอัตโนมัติ'
 	};
 	function date(value: string | null | undefined) {
 		return value

@@ -87,13 +87,8 @@ pub async fn workspace_in_transaction(
                 .is_ok()
     })
     .collect();
-    let source_checksum = super::checksum(&(
-        &context,
-        &delivery,
-        &timetable,
-        &exams,
-        &supervision,
-    ))?;
+    let source_checksum =
+        super::checksum(&(&context, &delivery, &timetable, &exams, &supervision))?;
     Ok(TermLifecycleWorkspace {
         context,
         findings,

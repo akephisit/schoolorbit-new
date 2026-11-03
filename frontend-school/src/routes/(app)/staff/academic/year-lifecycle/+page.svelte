@@ -7,7 +7,8 @@
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import {
 		getYearLifecycleWorkspace,
-		type YearLifecycleWorkspace
+		type YearLifecycleWorkspace,
+		type TermTransitionOutcome
 	} from '#lib/api/academic-lifecycle.js';
 	import { listPromotionRuns, type PromotionRunList } from '#lib/api/academic-promotion.js';
 	import type { YearRolloverOutcome } from '#lib/api/academic-year-management.js';
@@ -40,11 +41,18 @@
 	let historyKey = '';
 	let prepared = $state<YearRolloverOutcome | null>(null);
 	let preparedUnassigned = $state(0);
+	let preparedJoining = $state(0);
+	let activatedContext = $state<TermTransitionOutcome['context'] | null>(null);
+	let activationSettingsError = $state('');
+	let setupRegion = $state<{ refreshAfterLifecycle: () => Promise<void> } | null>(null);
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL));
 	const canReadPromotion = $derived($can.has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL));
 	const canSetup = $derived(
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL) &&
 			$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+	);
+	const canManageSettings = $derived(
+		$can.hasAll(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
 	);
 	const sourceName = $derived(
 		workspace?.context.name ??
@@ -52,7 +60,9 @@
 			'ปีที่เลือก'
 	);
 	const plannedTerms = $derived(
-		workspace?.terms.filter((term) => term.status === 'planning' || term.status === 'ready') ?? []
+		workspace && ['planning', 'ready', 'active'].includes(workspace.context.status)
+			? workspace.terms.filter((term) => term.status === 'planning' || term.status === 'ready')
+			: []
 	);
 	const targetTerm = $derived(
 		plannedTerms.find((term) => term.academicTermId === chosenTerm) ?? plannedTerms[0]
@@ -76,7 +86,7 @@
 			if (yearRead.isCurrent(revision)) loading = false;
 		}
 	}
-	async function reloadHistory() {
+	async function reloadHistory(loadMore = false) {
 		if (!canReadPromotion || !data.academicYearId) return;
 		const yearId = data.academicYearId;
 		const identity = appIdentityKey();
@@ -84,8 +94,15 @@
 		historyLoading = true;
 		historyError = '';
 		try {
-			const result = await listPromotionRuns({ sourceYearId: yearId }, { signal });
-			if (historyRead.isCurrent(revision) && identity === appIdentityKey()) history = result;
+			const cursor = loadMore ? history?.nextCursor : null;
+			const previous = history;
+			const result = await listPromotionRuns(
+				{ sourceYearId: yearId, ...(cursor ? { beforeId: cursor } : {}) },
+				{ signal }
+			);
+			if (historyRead.isCurrent(revision) && identity === appIdentityKey())
+				history =
+					cursor && previous ? { ...result, runs: [...previous.runs, ...result.runs] } : result;
 		} catch (cause) {
 			if (historyRead.isCurrent(revision) && !isAbortError(cause))
 				historyError = cause instanceof Error ? cause.message : 'โหลดประวัติไม่สำเร็จ';
@@ -96,9 +113,21 @@
 	async function changedPeriod() {
 		await Promise.all([reloadYear(), academicContext.retry()]);
 	}
-	function handlePrepared(outcome: YearRolloverOutcome, unassigned: number) {
+	async function handleActivated(outcome: TermTransitionOutcome) {
+		activatedContext = outcome.context;
+		activationSettingsError = '';
+		if (!canSetup || !setupRegion) return;
+		try {
+			await setupRegion.refreshAfterLifecycle();
+		} catch {
+			activationSettingsError =
+				'เริ่มใช้รอบใหม่แล้ว แต่โหลดตัวเลือกและค่าเริ่มต้นล่าสุดไม่สำเร็จ กรุณาลองโหลดในส่วนตั้งค่า';
+		}
+	}
+	function handlePrepared(outcome: YearRolloverOutcome, unassigned: number, joining: number) {
 		prepared = outcome;
 		preparedUnassigned = unassigned;
+		preparedJoining = joining;
 		void reloadHistory();
 	}
 
@@ -114,6 +143,8 @@
 				workspace = null;
 				chosenTerm = '';
 				prepared = null;
+				activatedContext = null;
+				activationSettingsError = '';
 			}
 			regionKey = key;
 			loading = !!promise && allowed;
@@ -192,14 +223,42 @@
 						onprepared={handlePrepared}
 					/>{/key}
 			</div>
+			{#if activatedContext}<section
+					class="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-4"
+					aria-label="ตั้งค่าหลังเริ่มใช้รอบใหม่"
+					role="status"
+				>
+					<h3 class="font-semibold">
+						เริ่มใช้ {activatedContext.yearName} · {activatedContext.termName} แล้ว
+					</h3>
+					<p class="text-sm">
+						หากต้องการให้ครูและนักเรียนเปิดมาที่รอบนี้ ให้แสดงปีและภาคเรียนในตัวเลือก
+						แล้วตั้งภาคเรียนเป็นค่าเริ่มต้นของโรงเรียน
+					</p>
+					{#if canSetup}<p class="text-sm">
+							ในส่วนตั้งค่าด้านล่าง เลือก {activatedContext.yearName} ด้วยช่อง “ปีที่ต้องการตั้งค่า” แล้วใช้
+							“ตัวเลือกและค่าเริ่มต้นของโรงเรียน” ลิงก์นี้พาไปยังส่วนตั้งค่า โดยคงปีและร่างที่กำลังแก้ไขไว้
+						</p>
+						<Button variant="outline" href="#academic-year-settings"
+							>ไปที่ตัวเลือกและค่าเริ่มต้น</Button
+						>{/if}
+					{#if !canManageSettings}<p class="text-sm">
+							ให้ผู้ดูแลที่มีสิทธิ์จัดการปีและภาคเรียนดำเนินการตั้งค่าตัวเลือกและค่าเริ่มต้นนี้
+						</p>{/if}
+					{#if activationSettingsError}<p role="alert" class="text-sm text-destructive">
+							{activationSettingsError}
+						</p>{/if}
+				</section>{/if}
 			{#if prepared}<div
 					class="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-4"
 					role="status"
 				>
 					<p class="font-medium">
-						เตรียมรายชื่อนักเรียนปีใหม่แล้ว {prepared.studentCount} คน · ยังไม่เริ่มใช้
+						บันทึกการขึ้นปีใหม่แล้ว {prepared.studentCount} คน · ยังไม่เริ่มใช้
 					</p>
-					<p class="text-sm">ปีเดิมและประวัติห้องเรียนยังอยู่ เลือกเริ่มใช้เมื่อโรงเรียนพร้อม</p>
+					<p class="text-sm">
+						เตรียมนักเรียนเข้าเรียนปีใหม่ {preparedJoining} คน ปีเดิมและประวัติห้องเรียนยังอยู่ เลือกเริ่มใช้เมื่อโรงเรียนพร้อม
+					</p>
 					{#if preparedUnassigned > 0}<p class="text-sm">
 							ยังไม่จัดห้อง {preparedUnassigned} คน ยังไม่พร้อมใช้เช็กชื่อในห้องเรียน
 						</p>
@@ -279,6 +338,7 @@
 										: 'เปลี่ยนภาคเรียน'}
 									disabled={loading}
 									oncompleted={changedPeriod}
+									onactivated={handleActivated}
 								/>{/key}{/if}{/if}{#if workspace.context.status === 'active' || workspace.context.status === 'closing'}<PeriodActionDialog
 							yearId={workspace.context.academicYearId}
 							kind="close_year"
@@ -327,7 +387,15 @@
 						</div>{:else}<p class="text-sm text-muted-foreground">
 							ยังไม่มีประวัติขึ้นปีใหม่จากปีนี้
 						</p>{/each}{/if}
+
+				{#if history?.nextCursor}<Button
+						variant="outline"
+						disabled={historyLoading}
+						onclick={() => void reloadHistory(true)}>ดูประวัติเก่ากว่านี้</Button
+					>{/if}
 			</section>{/if}
 	{/if}
-	{#if canSetup}<AcademicSetupRegion workspaceLoad={data.setup} />{/if}
+	{#if canSetup}<div id="academic-year-settings">
+			<AcademicSetupRegion bind:this={setupRegion} workspaceLoad={data.setup} />
+		</div>{/if}
 </PageShell>

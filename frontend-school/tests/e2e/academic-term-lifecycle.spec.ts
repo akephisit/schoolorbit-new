@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mockYearManagement, yearUrl, id } from './fixtures/year-management';
+import { mockYearManagement, yearUrl, id, selectOption } from './fixtures/year-management';
 test.use({ serviceWorkers: 'block' });
 test('direct term close and activate use the same annual roster without result preparation', async ({
 	page
@@ -25,4 +25,82 @@ test('legacy term link preserves the year and leads to one canonical workflow', 
 	await page.goto(`/staff/academic/term-lifecycle?academicYearId=${id(1)}&academicTermId=${id(3)}`);
 	await expect(page).toHaveURL(yearUrl);
 	await expect(page.getByRole('heading', { name: 'จัดการปีการศึกษา', exact: true })).toBeVisible();
+});
+
+test('activation names the accepted period and keeps settings explicit and drafts intact', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, {
+		active: true,
+		readyToActivate: true,
+		setupRecords: true
+	});
+	await page.goto(yearUrl);
+	const setup = page.getByRole('region', { name: 'ตั้งค่าปีและภาคเรียน', exact: true });
+	await expect(setup.getByLabel('ปีที่ต้องการตั้งค่า', { exact: true })).toContainText(
+		'ปีการศึกษา 2570'
+	);
+	await setup.getByRole('button', { name: 'แก้ไขปีการศึกษา', exact: true }).click();
+	await page.getByLabel('ปีการศึกษา (พ.ศ.)', { exact: true }).fill('2575');
+	await page.getByRole('button', { name: 'เปลี่ยนภาคเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันเปลี่ยนภาคเรียน', exact: true }).click();
+	const guidance = page.locator('[aria-label="ตั้งค่าหลังเริ่มใช้รอบใหม่"]');
+	await expect(guidance).toContainText('เริ่มใช้ ปีการศึกษา 2569 · ภาคเรียนที่ 2 แล้ว');
+	await expect(guidance).toContainText('เลือก ปีการศึกษา 2569 ด้วยช่อง “ปีที่ต้องการตั้งค่า”');
+	await expect(
+		guidance.getByRole('link', { name: 'ไปที่ตัวเลือกและค่าเริ่มต้น', exact: true })
+	).toHaveAttribute('href', '#academic-year-settings');
+	await expect
+		.poll(() => observed.reads.filter((path) => path === '/api/academic/setup/workspace').length)
+		.toBe(2);
+	await expect(page.locator('[data-testid="academic-setup-ready"]')).toHaveAttribute(
+		'aria-busy',
+		'false'
+	);
+	expect(observed.settingsWrites).toEqual([]);
+	await guidance.getByRole('link', { name: 'ไปที่ตัวเลือกและค่าเริ่มต้น', exact: true }).click();
+	await expect(setup.getByLabel('ปีที่ต้องการตั้งค่า', { exact: true })).toContainText(
+		'ปีการศึกษา 2570'
+	);
+	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)', { exact: true })).toHaveValue('2575');
+	await selectOption(page, 'ปีที่ต้องการตั้งค่า', 'ปีการศึกษา 2569 · ใช้งาน');
+	const controls = page.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น', exact: true });
+	const newTerm = controls.getByRole('group', { name: 'ภาคเรียนที่ 2', exact: true });
+	await expect(
+		newTerm.getByRole('button', { name: 'ตั้งเป็นค่าเริ่มต้น', exact: true })
+	).toBeDisabled();
+	await newTerm.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
+	await newTerm.getByRole('button', { name: 'ตั้งเป็นค่าเริ่มต้น', exact: true }).click();
+	expect(observed.settingsWrites).toHaveLength(2);
+	expect(observed.settingsWrites[0]).toMatchObject({
+		rowVersion: 1,
+		defaultAcademicTermId: id(3),
+		terms: [{ id: id(4), isVisible: true }]
+	});
+	expect(observed.settingsWrites[1]).toMatchObject({
+		rowVersion: 2,
+		defaultAcademicYearId: id(1),
+		defaultAcademicTermId: id(4),
+		years: [],
+		terms: []
+	});
+});
+
+test('activation-only staff see settings-manager guidance without a settings link or read', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, {
+		active: true,
+		readyToActivate: true,
+		activationOnly: true
+	});
+	await page.goto(yearUrl);
+	await page.getByRole('button', { name: 'เปลี่ยนภาคเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันเปลี่ยนภาคเรียน', exact: true }).click();
+	const guidance = page.locator('[aria-label="ตั้งค่าหลังเริ่มใช้รอบใหม่"]');
+	await expect(guidance).toContainText('เริ่มใช้ ปีการศึกษา 2569 · ภาคเรียนที่ 2 แล้ว');
+	await expect(guidance).toContainText('ให้ผู้ดูแลที่มีสิทธิ์จัดการปีและภาคเรียน');
+	await expect(guidance.getByRole('link')).toHaveCount(0);
+	expect(observed.reads).not.toContain('/api/academic/setup/workspace');
+	expect(observed.settingsWrites).toEqual([]);
 });

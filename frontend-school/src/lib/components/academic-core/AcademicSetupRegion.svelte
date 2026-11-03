@@ -98,6 +98,10 @@
 		if (errorMessage) throw new Error(errorMessage);
 	}
 
+	export async function refreshAfterLifecycle() {
+		await reloadContextSettings();
+	}
+
 	$effect.pre(() => {
 		const routeResult = workspaceLoad;
 		const identityState = $authStore;
@@ -308,7 +312,7 @@
 	{:else}
 		<section
 			class="relative"
-			aria-label="ตั้งค่าปีและภาคเรียน"
+			aria-label={mode === 'time' ? 'ข้อมูลเวลาเรียน' : 'ข้อมูลตั้งค่ารอบการศึกษา'}
 			aria-busy={loading}
 			data-testid="academic-setup-ready"
 		>

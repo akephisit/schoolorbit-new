@@ -181,7 +181,7 @@ pub async fn transition_term(
         TermTransitionAction::Cancel => "cancel",
         TermTransitionAction::Activate => "activate",
     };
-    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,clock_timestamp())")
         .bind(request.request_id).bind(request.academic_year_id).bind(term).bind(actor.user_id).bind(action)
         .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).bind(Json(&request)).execute().await?;
     years_terms::append_audit(

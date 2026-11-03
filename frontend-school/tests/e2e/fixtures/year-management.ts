@@ -78,7 +78,8 @@ export function roster(studentCount = 5): S['YearRolloverPreview'] {
 			sourceRowVersion: 1,
 			existingTargetStudentYearId: null,
 			decision: null,
-			suggestedDecision: null
+			suggestedDecision: null,
+			currentTarget: null
 		}))
 	};
 }
@@ -99,6 +100,11 @@ export async function mockYearManagement(
 		uncertain?: boolean;
 		delayWorkspace?: Promise<void>;
 		studentCount?: number;
+		acceptedTarget?: boolean;
+		withdrawnTarget?: boolean;
+		activationOnly?: boolean;
+		readyToActivate?: boolean;
+		setupRecords?: boolean;
 	} = {}
 ) {
 	const observations = {
@@ -106,7 +112,8 @@ export async function mockYearManagement(
 		previews: [] as S['YearRolloverPreviewInput'][],
 		confirms: [] as S['ConfirmYearRolloverInput'][],
 		transitions: [] as S['TermTransitionRequest'][],
-		policies: [] as S['UpdateAcademicRetentionPolicy'][]
+		policies: [] as S['UpdateAcademicRetentionPolicy'][],
+		settingsWrites: [] as S['UpdateAcademicContextSettingsRequest'][]
 	};
 	let currentSource = {
 		...sourceYear,
@@ -117,7 +124,7 @@ export async function mockYearManagement(
 			academicTermId: id(3),
 			name: 'ภาคเรียนที่ 1',
 			sequence: 1,
-			status: options.active ? 'active' : 'closed',
+			status: options.active && !options.readyToActivate ? 'active' : 'closed',
 			rowVersion: 1,
 			includedInYearResult: true,
 			blocksYearClosure: true
@@ -132,6 +139,87 @@ export async function mockYearManagement(
 			blocksYearClosure: true
 		}
 	];
+	let settings: S['AcademicContextSettings'] = {
+		defaultAcademicYearId: id(1),
+		defaultAcademicTermId: options.setupRecords ? id(3) : null,
+		rowVersion: 1
+	};
+	const yearVisibility = new Map([
+		[id(1), true],
+		[id(2), true]
+	]);
+	const termVisibility = new Map([
+		[id(3), true],
+		[id(4), !options.setupRecords]
+	]);
+	function contextOptions(): S['AcademicContextOptions'] {
+		return {
+			...settings,
+			years: [currentSource, targetYear]
+				.filter((year) => yearVisibility.get(year.academicYearId))
+				.map((year) => ({
+					id: year.academicYearId,
+					year: year.year,
+					name: year.name,
+					isVisible: true,
+					status: year.status
+				})),
+			terms: terms
+				.filter((term) => yearVisibility.get(id(1)) && termVisibility.get(term.academicTermId))
+				.map((term) => ({
+					id: term.academicTermId,
+					academicYearId: id(1),
+					sequence: term.sequence,
+					code: String(term.sequence),
+					name: term.name,
+					termType: 'regular',
+					status: term.status,
+					isVisible: true,
+					includedInYearResult: true,
+					blocksYearClosure: true
+				}))
+		};
+	}
+	function setupWorkspace(): S['AcademicSetupWorkspace'] {
+		return {
+			contextSettings: settings,
+			bellSchedules: [],
+			years: options.setupRecords
+				? [currentSource, targetYear].map((year) => ({
+						id: year.academicYearId,
+						year: year.year,
+						name: year.name,
+						status: year.status,
+						rowVersion: year.rowVersion,
+						isVisible: yearVisibility.get(year.academicYearId) ?? false,
+						schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+						migrated: false,
+						createdAt: time,
+						updatedAt: time
+					}))
+				: [],
+			terms: options.setupRecords
+				? terms.map((term) => ({
+						id: term.academicTermId,
+						academicYearId: id(1),
+						bellScheduleId: id(80),
+						sequence: term.sequence,
+						code: String(term.sequence),
+						name: term.name,
+						termType: 'regular',
+						status: term.status,
+						rowVersion: term.rowVersion,
+						isVisible: termVisibility.get(term.academicTermId) ?? false,
+						includedInYearResult: true,
+						blocksYearClosure: true,
+						migrated: false,
+						createdAt: time,
+						updatedAt: time
+					}))
+				: []
+		};
+	}
+
 	const policy: S['AcademicRetentionPolicy'] = {
 		enabled: false,
 		primaryBoundary: 'year',
@@ -159,55 +247,75 @@ export async function mockYearManagement(
 					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
-					permissions: options.reader
+					permissions: options.activationOnly
 						? [
 								'academic_lifecycle.read.school',
-								'academic_promotion.read.school',
+								'academic_lifecycle.activate.school',
 								'academic_context.read.school'
 							]
-						: ['*']
+						: options.reader
+							? [
+									'academic_lifecycle.read.school',
+									'academic_promotion.read.school',
+									'academic_context.read.school'
+								]
+							: ['*']
 				} satisfies S['CurrentUserResponse']);
-			if (path === '/api/academic/context/options')
+			if (path === '/api/academic/context/options') return fulfill(route, contextOptions());
+			if (path === '/api/academic/setup/workspace') return fulfill(route, setupWorkspace());
+			if (path === '/api/academic/context/settings' && method === 'PUT') {
+				const input: S['UpdateAcademicContextSettingsRequest'] = route.request().postDataJSON();
+				observations.settingsWrites.push(input);
+				if (input.rowVersion !== settings.rowVersion)
+					return fulfill(route, 'ข้อมูลเปลี่ยนแล้ว', 409);
+				for (const year of input.years) yearVisibility.set(year.id, year.isVisible);
+				for (const term of input.terms) termVisibility.set(term.id, term.isVisible);
+				settings = {
+					defaultAcademicYearId: input.defaultAcademicYearId,
+					defaultAcademicTermId: input.defaultAcademicTermId,
+					rowVersion: settings.rowVersion + 1
+				};
+				const saved = setupWorkspace();
 				return fulfill(route, {
-					defaultAcademicYearId: id(1),
-					defaultAcademicTermId: null,
-					years: [currentSource, targetYear].map((year) => ({
-						id: year.academicYearId,
-						year: year.year,
-						name: year.name,
-						isVisible: true,
-						status: year.status
-					})),
-					terms: terms.map((term) => ({
-						id: term.academicTermId,
-						academicYearId: id(1),
-						sequence: term.sequence,
-						code: String(term.sequence),
-						name: term.name,
-						termType: 'regular',
-						status: term.status,
-						isVisible: true,
-						includedInYearResult: true,
-						blocksYearClosure: true
-					}))
-				} satisfies S['AcademicContextOptions']);
-			if (path === '/api/academic/setup/workspace')
-				return fulfill(route, {
-					years: [],
-					terms: [],
-					bellSchedules: [],
-					contextSettings: {
-						defaultAcademicYearId: id(1),
-						defaultAcademicTermId: null,
-						rowVersion: 1
-					}
-				} satisfies S['AcademicSetupWorkspace']);
+					settings,
+					years: saved.years.filter((year) => input.years.some((change) => change.id === year.id)),
+					terms: saved.terms.filter((term) => input.terms.some((change) => change.id === term.id)),
+					contextOptions: contextOptions()
+				} satisfies S['AcademicContextSettingsMutationResponse']);
+			}
+
 			if (path === '/api/academic/lifecycle/year-rollovers/options')
 				return fulfill(route, { targetYears: [targetYear] } satisfies S['YearRolloverOptions']);
 			if (path === '/api/academic/lifecycle/year-rollovers/preview') {
 				const input: S['YearRolloverPreviewInput'] = route.request().postDataJSON();
 				observations.previews.push(input);
 				const base = roster(options.studentCount ?? 5);
+				if (options.acceptedTarget)
+					base.students[0] = {
+						...base.students[0],
+						existingTargetStudentYearId: id(90),
+						suggestedDecision: {
+							outcome: 'conditional',
+							targetGradeLevelId: id(11),
+							targetStudyProgramId: id(22),
+							targetHomeroomId: id(30),
+							reason: ' เหตุผลเดิม ',
+							condition: ' เงื่อนไขเดิม '
+						},
+						currentTarget: {
+							status: options.withdrawnTarget ? 'withdrawn' : 'planned',
+							studentAcademicYearId: id(90),
+							rowVersion: 3,
+							gradeLevelId: id(13),
+							studyProgramId: id(22),
+							studyProgramName: 'แผนมัธยมปัจจุบัน',
+							placementId: id(91),
+							placementRowVersion: 2,
+							placementStartsOn: '2026-11-02',
+							homeroomId: id(92),
+							homeroomName: 'ม.4/2'
+						}
+					};
 				return fulfill(route, {
 					...base,
 					sourceYear: currentSource,
@@ -257,6 +365,15 @@ export async function mockYearManagement(
 			}
 			if (path === '/api/academic/lifecycle/promotion-runs')
 				return fulfill(route, { runs: [], nextCursor: null } satisfies S['PromotionRunList']);
+			if (path === `/api/academic/lifecycle/years/${id(2)}`)
+				return fulfill(route, {
+					context: targetYear,
+					terms: [],
+					findings: [],
+					availableActions: [],
+					canClose: false,
+					sourceChecksum: 'e'.repeat(64)
+				} satisfies S['YearLifecycleWorkspace']);
 			if (path === `/api/academic/lifecycle/years/${id(1)}`) {
 				if (options.delayWorkspace) await options.delayWorkspace;
 				return fulfill(route, {
@@ -290,20 +407,27 @@ export async function mockYearManagement(
 					operationDate: '2026-11-01',
 					sequence: term.sequence,
 					termName: term.name,
-					termRowVersion: 1,
+					termRowVersion: term.rowVersion,
 					termStatus: term.status,
 					yearName: sourceYear.name,
-					yearRowVersion: 2,
+					yearRowVersion: currentSource.rowVersion,
 					yearStatus: currentSource.status
 				};
 				if (path.endsWith('/transitions')) {
 					const input: S['TermTransitionRequest'] = route.request().postDataJSON();
 					observations.transitions.push(input);
 					term.status = input.action === 'activate' ? 'active' : 'closed';
+					term.rowVersion += 1;
+					currentSource = { ...currentSource, rowVersion: currentSource.rowVersion + 1 };
 					return fulfill(route, {
 						requestId: input.requestId,
 						action: input.action,
-						context: { ...context, termStatus: term.status },
+						context: {
+							...context,
+							termStatus: term.status,
+							termRowVersion: term.rowVersion,
+							yearRowVersion: currentSource.rowVersion
+						},
 						completedAt: time
 					} satisfies S['TermTransitionOutcome']);
 				}
@@ -406,6 +530,7 @@ export async function setAllDecisions(page: Page) {
 	const outcomes = ['เลื่อนชั้น', 'ซ้ำชั้น', 'จบการศึกษา', 'ย้ายออก', 'พักไว้'];
 	for (let index = 0; index < names.length; index++) {
 		const row = students.filter({ hasText: names[index] });
+		if ((await row.getByLabel('ผลปีใหม่', { exact: true }).count()) === 0) continue;
 		await chooseOption(page, row.getByLabel('ผลปีใหม่', { exact: true }), outcomes[index]);
 		if (index < 2) {
 			if (index === 0) {

@@ -27,7 +27,7 @@ test('one complete preview confirms all manual outcomes and leaves the new year 
 	await setAllDecisions(page);
 	await dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
 	await expect(
-		page.getByText('เตรียมรายชื่อนักเรียนปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
 	).toBeVisible();
 	await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
 	if (process.env.E2E_ARTIFACT_DIR)
@@ -67,9 +67,7 @@ test('stale preview preserves decisions and requires a fresh preview before anot
 	).toBeDisabled();
 	await page.getByRole('button', { name: 'ตรวจตัวอย่างล่าสุด', exact: true }).click();
 	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
-	await expect(
-		page.getByText('เตรียมรายชื่อนักเรียนปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')
-	).toBeVisible();
+	await expect(page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')).toBeVisible();
 	expect(observed.confirms[1].preview.decisions).toEqual(observed.confirms[0].preview.decisions);
 	expect(observed.confirms[1].requestId).not.toEqual(observed.confirms[0].requestId);
 });
@@ -83,9 +81,7 @@ test('ambiguous confirmation only retries on a click and reuses the exact reques
 	await expect(page.getByRole('button', { name: 'ลองยืนยันอีกครั้ง', exact: true })).toBeVisible();
 	expect(observed.confirms).toHaveLength(1);
 	await page.getByRole('button', { name: 'ลองยืนยันอีกครั้ง', exact: true }).click();
-	await expect(
-		page.getByText('เตรียมรายชื่อนักเรียนปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')
-	).toBeVisible();
+	await expect(page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')).toBeVisible();
 	expect(observed.confirms[1]).toEqual(observed.confirms[0]);
 });
 test('source closure does not discard an open roster draft', async ({ page }) => {
@@ -133,11 +129,24 @@ test('bulk decisions include hidden and filtered pupils across roster pages', as
 	);
 
 	const bulk = dialog.getByRole('region', { name: 'กำหนดปลายทางทีละห้อง', exact: true });
-	await chooseOption(page, bulk.getByLabel('ผลปีใหม่', { exact: true }), 'พักไว้');
+	await chooseOption(page, bulk.getByLabel('ผลปีใหม่', { exact: true }), 'เลื่อนชั้น');
+	await chooseOption(page, bulk.getByLabel('ชั้นปลายทาง', { exact: true }), 'ม.1');
+	await chooseOption(
+		page,
+		bulk.getByLabel('แผนการเรียนปลายทาง', { exact: true }),
+		'แผนมัธยม · หลักสูตร 2569'
+	);
+	await chooseOption(page, bulk.getByLabel('ห้องปลายทาง', { exact: true }), 'ม.1/1 (0/40)');
 	await bulk.getByRole('button', { name: 'ใช้กับนักเรียนในห้องนี้', exact: true }).click();
 	const graduate = dialog.locator('section').filter({ hasText: 'ดาว จบการศึกษา' });
 	await chooseOption(page, graduate.getByLabel('ผลปีใหม่', { exact: true }), 'จบการศึกษา');
 	await graduate.getByRole('button', { name: 'เสร็จแล้ว', exact: true }).click();
+	await dialog.getByLabel('ค้นหานักเรียน', { exact: true }).fill('นักเรียน 26');
+	const hidden = dialog.locator('section').filter({ hasText: 'นักเรียน 26' });
+	await expect(hidden).toContainText('เลื่อนชั้น · ม.1 · ม.1/1');
+	await expect(hidden.getByRole('button', { name: 'แก้ไข', exact: true })).toBeVisible();
+	await dialog.getByRole('button', { name: 'ตรวจตัวอย่างล่าสุด', exact: true }).click();
+	await dialog.getByLabel('ค้นหานักเรียน', { exact: true }).fill('');
 	if (process.env.E2E_ARTIFACT_DIR) {
 		await page
 			.getByRole('heading', { name: 'ปอ เรียนต่อ S1', exact: true })
@@ -147,21 +156,61 @@ test('bulk decisions include hidden and filtered pupils across roster pages', as
 			fullPage: true
 		});
 	}
-	await dialog.getByLabel('ค้นหานักเรียน', { exact: true }).fill('นักเรียน 26');
-	const hidden = dialog.locator('section').filter({ hasText: 'นักเรียน 26' });
-	await expect(hidden).toContainText('พักไว้');
-	await expect(hidden.getByRole('button', { name: 'แก้ไข', exact: true })).toBeVisible();
-	await dialog.getByRole('button', { name: 'ตรวจตัวอย่างล่าสุด', exact: true }).click();
 	await dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
 	await expect(
-		page.getByText('เตรียมรายชื่อนักเรียนปีใหม่แล้ว 26 คน · ยังไม่เริ่มใช้', { exact: true })
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 26 คน · ยังไม่เริ่มใช้', { exact: true })
 	).toBeVisible();
 	expect(observed.confirms[0].preview.decisions).toHaveLength(26);
 	expect(
-		observed.confirms[0].preview.decisions.filter((row) => row.decision.outcome === 'hold')
+		observed.confirms[0].preview.decisions.filter((row) => row.decision.outcome === 'promote')
 	).toHaveLength(25);
 	expect(
 		observed.confirms[0].preview.decisions.find((row) => row.studentAcademicYearId === id(65))
-			?.decision.outcome
-	).toBe('hold');
+			?.decision
+	).toMatchObject({ outcome: 'promote', targetHomeroomId: id(30) });
+});
+
+test('accepted conditional history stays read-only while current Core placement is displayed', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { acceptedTarget: true });
+	await openRoster(page);
+	const row = page.getByRole('dialog').locator('section').filter({ hasText: 'ปอ เรียนต่อ' });
+	await expect(row).toContainText('ปลายทางปัจจุบัน: ม.4 · แผนมัธยมปัจจุบัน · ม.4/2');
+	await expect(row).toContainText('เงื่อนไขเดิม');
+	await expect(row.getByLabel('ผลปีใหม่', { exact: true })).toHaveCount(0);
+	await expect(row.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
+	).toBeVisible();
+	expect(observed.confirms[0].preview.decisions[0].decision).toEqual({
+		outcome: 'conditional',
+		targetGradeLevelId: id(11),
+		targetStudyProgramId: id(22),
+		targetHomeroomId: id(30),
+		reason: ' เหตุผลเดิม ',
+		condition: ' เงื่อนไขเดิม '
+	});
+});
+
+test('withdrawn prepared pupils remain read-only and are excluded from joining counts', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { acceptedTarget: true, withdrawnTarget: true });
+	await openRoster(page);
+	const row = page.getByRole('dialog').locator('section').filter({ hasText: 'ปอ เรียนต่อ' });
+	await expect(row).toContainText('ถอนรายชื่อแล้ว ไม่เข้าเรียนปีใหม่');
+	await expect(row.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByText('เตรียมนักเรียนเข้าเรียนปีใหม่ 1 คน', { exact: false })
+	).toBeVisible();
+	expect(observed.confirms[0].preview.decisions[0].decision.outcome).toBe('conditional');
+	expect(observed.transitions).toEqual([]);
 });

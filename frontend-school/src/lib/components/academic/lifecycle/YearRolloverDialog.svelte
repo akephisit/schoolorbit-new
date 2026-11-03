@@ -20,6 +20,7 @@
 	import {
 		gradeLabel,
 		rolloverOutcomeLabels,
+		rolloverCounts,
 		initialRolloverDraft,
 		rosterDecisions,
 		rosterDraftError,
@@ -47,7 +48,7 @@
 		yearId: string;
 		yearName: string;
 		disabled?: boolean;
-		onprepared: (outcome: YearRolloverOutcome, unassigned: number) => void;
+		onprepared: (outcome: YearRolloverOutcome, unassigned: number, joining: number) => void;
 	} = $props();
 	let open = $state(false);
 	let studentSearch = $state('');
@@ -84,6 +85,9 @@
 	const visibleStudents = $derived(
 		matchingStudents.slice(studentPage * pageSize, (studentPage + 1) * pageSize)
 	);
+	const selectedTargetYear = $derived(
+		preview?.targetYear ?? options?.targetYears.find((year) => year.academicYearId === targetYearId)
+	);
 	const decisions = $derived(preview ? rosterDecisions(preview.students, drafts) : []);
 	const input = $derived<YearRolloverPreviewInput | null>(
 		targetYearId && outcomeEffectiveOn && targetPlacementStartsOn
@@ -96,18 +100,10 @@
 				}
 			: null
 	);
-	const unassignedCount = $derived(
-		preview
-			? preview.students.filter((student) => {
-					const draft = drafts[student.studentAcademicYearId];
-					return (
-						draft &&
-						(draft.outcome === 'promote' || draft.outcome === 'repeat') &&
-						!draft.targetHomeroomId
-					);
-				}).length
-			: 0
+	const counts = $derived(
+		preview ? rolloverCounts(preview, drafts) : { joining: 0, unassigned: 0, notJoining: 0 }
 	);
+	const unassignedCount = $derived(counts.unassigned);
 	const draftError = $derived(preview ? rosterDraftError(preview, drafts) : '');
 	const changed = $derived(!input || JSON.stringify(input) !== previewKey);
 	const groups = $derived.by(() => {
@@ -124,7 +120,7 @@
 	const selectedGroup = $derived(groups.find(([key]) => key === chosenGroupKey) ?? groups[0]);
 	function decisionSummary(draft: RolloverDraft) {
 		if (draft.retainedDecision)
-			return `${draft.retainedDecision.outcome === 'conditional' ? 'มีเงื่อนไข (ประวัติเดิม)' : rolloverOutcomeLabels[draft.retainedDecision.outcome]} · ยืนยันปลายทางเดิมแล้ว`;
+			return `${draft.retainedDecision.outcome === 'conditional' ? 'มีเงื่อนไข (ประวัติเดิม)' : rolloverOutcomeLabels[draft.retainedDecision.outcome]} · หลักฐานการยืนยันเดิม`;
 		if (!draft.outcome) return 'ยังไม่เลือกผล';
 		return [
 			rolloverOutcomeLabels[draft.outcome],
@@ -158,7 +154,7 @@
 		if (busy) return;
 		open = value;
 		if (value) {
-			if (!options) void loadOptions();
+			void loadOptions();
 		} else {
 			latest.abort();
 			loading = false;
@@ -185,8 +181,9 @@
 			if (!latest.isCurrent(revision) || identity !== appIdentityKey()) return;
 			const nextDrafts: Record<string, RolloverDraft> = {};
 			for (const student of result.students)
-				nextDrafts[student.studentAcademicYearId] =
-					drafts[student.studentAcademicYearId] ?? initialRolloverDraft(student);
+				nextDrafts[student.studentAcademicYearId] = student.existingTargetStudentYearId
+					? initialRolloverDraft(student)
+					: (drafts[student.studentAcademicYearId] ?? initialRolloverDraft(student));
 			drafts = nextDrafts;
 			preview = result;
 			studentPage = Math.min(
@@ -249,7 +246,7 @@
 			const unassigned = unassignedCount;
 			open = false;
 			pending = null;
-			onprepared(outcome, unassigned);
+			onprepared(outcome, unassigned, counts.joining);
 			preview = null;
 			drafts = {};
 			bulkDrafts = {};
@@ -320,7 +317,11 @@
 		}}
 	>
 		<Dialog.Header
-			><Dialog.Title>เตรียมรายชื่อนักเรียนปีใหม่ (ยังไม่เริ่มใช้)</Dialog.Title><Dialog.Description
+			><Dialog.Title
+				>{selectedTargetYear
+					? `เตรียมรายชื่อ ${yearName} → ${selectedTargetYear.name}`
+					: 'เตรียมรายชื่อนักเรียนปีใหม่'} (ยังไม่เริ่มใช้)</Dialog.Title
+			><Dialog.Description
 				>จาก {yearName} เลือกห้องปลายทางและข้อยกเว้นก่อนยืนยันครั้งเดียว เก็บตัวตนและประวัติปีเดิมไว้
 				การเริ่มใช้ปีใหม่ทำแยกกัน</Dialog.Description
 			></Dialog.Header
@@ -393,7 +394,10 @@
 								สามารถปิดหน้าต่างนี้แล้วกลับมาตรวจตัวอย่างล่าสุด โดยตัวเลือกที่แก้ไว้ยังอยู่
 							</p>{/if}
 					</div>
-					{#if selectedGroup}{@const [key, students] = selectedGroup}{@const first = students[0]}
+					{#if selectedGroup}{@const [key, students] = selectedGroup}{@const first =
+							students[0]}{@const bulkStudent = students.find(
+							(student) => !student.existingTargetStudentYearId
+						)}
 						<section
 							class="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4"
 							aria-label="กำหนดปลายทางทีละห้อง"
@@ -426,22 +430,23 @@
 									></Select.Root
 								>
 							</div>
-							<RolloverDecisionFields
-								id={`bulk-${first.studentAcademicYearId}`}
-								draft={bulkDrafts[key] ?? initialRolloverDraft(first)}
-								student={first}
-								{preview}
-								disabled={busy || !!pending}
-								onchange={(draft) => {
-									bulkDrafts = { ...bulkDrafts, [key]: draft };
-								}}
-							/>
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={busy || !!pending || !bulkDrafts[key]?.outcome}
-								onclick={() => applyBulk(key)}>ใช้กับนักเรียนในห้องนี้</Button
-							>
+							{#if bulkStudent}<RolloverDecisionFields
+									id={`bulk-${first.studentAcademicYearId}`}
+									draft={bulkDrafts[key] ?? initialRolloverDraft(bulkStudent)}
+									student={bulkStudent}
+									{preview}
+									disabled={busy || !!pending}
+									onchange={(draft) => {
+										bulkDrafts = { ...bulkDrafts, [key]: draft };
+									}}
+								/>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={busy || !!pending || !bulkDrafts[key]?.outcome}
+									onclick={() => applyBulk(key)}>ใช้กับนักเรียนในห้องนี้</Button
+								>
+							{:else}<p class="text-sm">นักเรียนห้องนี้มีปลายทางที่ยืนยันไว้แล้วทั้งหมด</p>{/if}
 						</section>{/if}
 					<div class="max-w-md space-y-2">
 						<Label for="roster-search">ค้นหานักเรียน</Label><Input
@@ -492,8 +497,22 @@
 											}}>แก้ไข</Button
 										>{/if}
 								</div>
-								{#if draft.retainedDecision}<p class="text-sm text-muted-foreground">
-										รักษาปลายทางและหลักฐานเดิม{draft.retainedDecision.condition
+								{#if student.currentTarget}<p class="text-sm">
+										ปลายทางปัจจุบัน: {gradeLabel(
+											preview.grades.find(
+												(grade) => grade.id === student.currentTarget?.gradeLevelId
+											)
+										)} · {student.currentTarget.studyProgramName} · {student.currentTarget
+											.homeroomName ?? 'ยังไม่จัดห้อง'}
+									</p>
+									{#if student.currentTarget.status === 'withdrawn'}<p
+											class="text-sm text-muted-foreground"
+										>
+											ถอนรายชื่อแล้ว ไม่เข้าเรียนปีใหม่
+										</p>{/if}{/if}{#if draft.retainedDecision}<p
+										class="text-sm text-muted-foreground"
+									>
+										รักษาคำตัดสินเดิมเพื่อการตรวจสอบ{draft.retainedDecision.condition
 											? ` · เงื่อนไข: ${draft.retainedDecision.condition}`
 											: ''}
 									</p>{:else if editing}<RolloverDecisionFields
@@ -572,17 +591,17 @@
 				disabled={!input || busy || !!pending}
 				onclick={() => void loadPreview()}
 				>{preview ? 'ตรวจตัวอย่างล่าสุด' : 'ดูตัวอย่างรายชื่อนักเรียน'}</LoadingButton
-			><LoadingButton
-				loading={busy}
-				disabled={!canConfirm ||
-					!preview?.canConfirm ||
-					changed ||
-					stale ||
-					!!draftError ||
-					loading}
-				onclick={() => void confirm()}
-				>{pending ? 'ลองยืนยันอีกครั้ง' : 'ยืนยันเตรียมรายชื่อนักเรียน'}</LoadingButton
-			></Dialog.Footer
+			>{#if canConfirm}<LoadingButton
+					loading={busy}
+					disabled={!canConfirm ||
+						!preview?.canConfirm ||
+						changed ||
+						stale ||
+						!!draftError ||
+						loading}
+					onclick={() => void confirm()}
+					>{pending ? 'ลองยืนยันอีกครั้ง' : 'ยืนยันเตรียมรายชื่อนักเรียน'}</LoadingButton
+				>{/if}</Dialog.Footer
 		>
 	</Dialog.Content>
 </Dialog.Root>

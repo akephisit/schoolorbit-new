@@ -11,6 +11,7 @@ pub struct PromotionStudentContext {
     pub student_id: Uuid,
     pub student_code: Option<String>,
     pub student_name: String,
+    pub account_active: bool,
     pub grade_level_id: Uuid,
     pub study_program_id: Uuid,
     pub status: super::super::models::StudentAcademicYearStatus,
@@ -44,7 +45,7 @@ pub async fn read_promotion_students(
     super::lifecycle_context::read_year_context(tx, target_year).await?;
     let rows:Vec<PromotionStudentContext>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_students.read_promotion_students",
         "SELECT source.id AS student_academic_year_id,source.student_id,info.student_id AS student_code,
-         concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name) AS student_name,
+         concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name) AS student_name,student.status='active' AND student.user_type='student' AS account_active,
          source.grade_level_id,source.study_program_id,source.status,source.row_version,
          target.id AS existing_target_student_year_id,target.row_version AS existing_target_row_version
          FROM student_academic_years source JOIN users student ON student.id=source.student_id
@@ -65,6 +66,16 @@ pub async fn validate_run_years(
     source_year: Uuid,
     target_year: Uuid,
 ) -> Result<(), AppError> {
+    validated_run_years(tx, source_year, target_year)
+        .await
+        .map(|_| ())
+}
+
+pub async fn validated_run_years(
+    tx: &mut Transaction<'_, Postgres>,
+    source_year: Uuid,
+    target_year: Uuid,
+) -> Result<(YearLifecycleContext, YearLifecycleContext), AppError> {
     let years: Vec<YearLifecycleContext> = DbSession::new(&mut **tx).query_as("academic_core.services.promotion_students.validate_run_years",
         "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=ANY($1) ORDER BY id FOR SHARE"
     ).bind(vec![source_year,target_year]).fetch_all().await?;
@@ -88,5 +99,5 @@ pub async fn validate_run_years(
             "เลือกปีต้นทางที่เปิดเรียนหรือปิดแล้ว และปีปลายทางที่กำลังวางแผน".into(),
         ));
     }
-    Ok(())
+    Ok((source.clone(), target.clone()))
 }

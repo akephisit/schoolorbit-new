@@ -12823,46 +12823,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_PromotionExecutionResult: {
-			data: {
-				failures: components['schemas']['PromotionExecutionFailure'][];
-				/** Format: int64 */
-				holdCount: number;
-				receipts: components['schemas']['PromotionExecutionReceipt'][];
-				/** Format: int64 */
-				remainingCount: number;
-				run: components['schemas']['PromotionRun'];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionImpactResolution: {
-			data: {
-				/** Format: uuid */
-				correctionId: string;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				impactId: string;
-				/** Format: uuid */
-				itemId: string;
-				outcome: components['schemas']['PromotionImpactResolutionOutcome'];
-				reason: string;
-				replacementDecision?: components['schemas']['PromotionDecisionInput'] | null;
-				/** Format: uuid */
-				requestId: string;
-				resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
-				/** Format: date-time */
-				resolvedAt: string;
-				/** Format: uuid */
-				resolvedBy: string;
-				/** Format: uuid */
-				runId: string;
-				sourceChecksum: string;
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_PromotionImpactWorkspace: {
 			data: {
 				impacts: components['schemas']['PromotionCorrectionImpact'][];
@@ -12877,86 +12837,6 @@ export interface components {
 				/** Format: uuid */
 				targetYearId: string;
 				totalCount: number;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionItemReview: {
-			data: {
-				item: components['schemas']['PromotionRunItem'];
-				run: components['schemas']['PromotionRun'];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionPolicyOptions: {
-			data: {
-				grades: components['schemas']['PromotionGradeReference'][];
-				programs: components['schemas']['PromotionProgramReference'][];
-				progressionSet: components['schemas']['GradeProgressionSet'];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionPolicyVersion: {
-			data: {
-				/** Format: uuid */
-				id: string;
-				name: string;
-				/** Format: int64 */
-				progressionRowVersion: number;
-				/** Format: date-time */
-				reviewedAt: string;
-				/** Format: uuid */
-				reviewedBy: string;
-				rules: components['schemas']['PromotionRuleInput'][];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionRun: {
-			data: {
-				/** Format: uuid */
-				approvalId?: string | null;
-				/** Format: date-time */
-				approvedAt?: string | null;
-				/** Format: uuid */
-				approvedBy?: string | null;
-				/** Format: date-time */
-				createdAt: string;
-				/** Format: uuid */
-				createdBy: string;
-				/** Format: date-time */
-				executedAt?: string | null;
-				/** Format: uuid */
-				executedBy?: string | null;
-				/** Format: uuid */
-				id: string;
-				/** Format: uuid */
-				policyId?: string | null;
-				/** Format: date-time */
-				reviewedAt?: string | null;
-				/** Format: uuid */
-				reviewedBy?: string | null;
-				/** Format: int64 */
-				rowVersion: number;
-				/** Format: uuid */
-				sourceYearId: string;
-				status: components['schemas']['PromotionRunStatus'];
-				/** Format: date */
-				targetPlacementStartsOn: string;
-				/** Format: uuid */
-				targetYearId: string;
-				/** Format: date-time */
-				updatedAt: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_PromotionRunCalculation: {
-			data: {
-				items: components['schemas']['PromotionRunItem'][];
-				run: components['schemas']['PromotionRun'];
 			};
 			message?: string;
 			success: boolean;
@@ -16846,13 +16726,6 @@ export interface components {
 		ApproveObservationRequest: {
 			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
 		};
-		ApprovePromotionRunInput: {
-			/** Format: uuid */
-			requestId: string;
-			/** Format: int64 */
-			rowVersion: number;
-			sourceChecksum: string;
-		};
 		AssessmentCoordinatorOption: {
 			displayName: string;
 			/** Format: int64 */
@@ -18191,12 +18064,6 @@ export interface components {
 			/** Format: date */
 			effectiveFrom?: string | null;
 			mode: components['schemas']['RosterTrackingMode'];
-		};
-		CalculatePromotionRunInput: {
-			/** Format: uuid */
-			requestId: string;
-			/** Format: int64 */
-			rowVersion: number;
 		};
 		/** @enum {string} */
 		CalendarAudienceType: 'all' | 'staff' | 'student' | 'parent';
@@ -20220,18 +20087,6 @@ export interface components {
 			relationship: string;
 			title?: string | null;
 		};
-		CreatePromotionRunInput: {
-			/** Format: uuid */
-			policyId: string;
-			/** Format: uuid */
-			requestId: string;
-			/** Format: uuid */
-			sourceYearId: string;
-			/** Format: date */
-			targetPlacementStartsOn: string;
-			/** Format: uuid */
-			targetYearId: string;
-		};
 		CreateRoleRequest: {
 			code: string;
 			description?: string | null;
@@ -22215,14 +22070,6 @@ export interface components {
 			scope: components['schemas']['BehaviorCleanupScope'];
 			/** Format: uuid */
 			token: string;
-		};
-		ExecutePromotionRunInput: {
-			/** Format: int32 */
-			limit: number;
-			/** Format: uuid */
-			requestId: string;
-			/** Format: int64 */
-			rowVersion: number;
 		};
 		FaceDescriptor: {
 			values: number[];
@@ -24356,11 +24203,6 @@ export interface components {
 		/** @enum {string} */
 		PromotionDecisionOutcome:
 			'promote' | 'repeat' | 'graduate' | 'transfer_out' | 'hold' | 'conditional';
-		PromotionExecutionFailure: {
-			/** Format: uuid */
-			itemId: string;
-			message: string;
-		};
 		PromotionExecutionReceipt: {
 			/** Format: uuid */
 			approvalId: string;
@@ -24380,15 +24222,6 @@ export interface components {
 			targetPlacementId?: string | null;
 			/** Format: uuid */
 			targetStudentYearId?: string | null;
-		};
-		PromotionExecutionResult: {
-			failures: components['schemas']['PromotionExecutionFailure'][];
-			/** Format: int64 */
-			holdCount: number;
-			receipts: components['schemas']['PromotionExecutionReceipt'][];
-			/** Format: int64 */
-			remainingCount: number;
-			run: components['schemas']['PromotionRun'];
 		};
 		PromotionGradeReference: {
 			/** Format: uuid */
@@ -24450,21 +24283,8 @@ export interface components {
 			targetYearId: string;
 			totalCount: number;
 		};
-		PromotionItemReview: {
-			item: components['schemas']['PromotionRunItem'];
-			run: components['schemas']['PromotionRun'];
-		};
 		/** @enum {string} */
 		PromotionItemStatus: 'calculated' | 'reviewed' | 'executed' | 'failed';
-		PromotionPolicyInput: {
-			name: string;
-			rules: components['schemas']['PromotionRuleInput'][];
-		};
-		PromotionPolicyOptions: {
-			grades: components['schemas']['PromotionGradeReference'][];
-			programs: components['schemas']['PromotionProgramReference'][];
-			progressionSet: components['schemas']['GradeProgressionSet'];
-		};
 		PromotionPolicyVersion: {
 			/** Format: uuid */
 			id: string;
@@ -24476,17 +24296,6 @@ export interface components {
 			/** Format: uuid */
 			reviewedBy: string;
 			rules: components['schemas']['PromotionRuleInput'][];
-		};
-		PromotionProgramReference: {
-			code: string;
-			/** Format: uuid */
-			curriculumLevelId: string;
-			editionName: string;
-			/** Format: uuid */
-			id: string;
-			levelName: string;
-			name: string;
-			status: components['schemas']['VersionStatus'];
 		};
 		PromotionRecommendation: {
 			findings: components['schemas']['PromotionRecommendationFinding'][];
@@ -24557,10 +24366,6 @@ export interface components {
 			targetYearId: string;
 			/** Format: date-time */
 			updatedAt: string;
-		};
-		PromotionRunCalculation: {
-			items: components['schemas']['PromotionRunItem'][];
-			run: components['schemas']['PromotionRun'];
 		};
 		PromotionRunItem: {
 			/** Format: uuid */
@@ -25251,14 +25056,6 @@ export interface components {
 			/** Format: uuid */
 			token: string;
 		};
-		ResolvePromotionImpactInput: {
-			reason: string;
-			replacementDecision?: components['schemas']['PromotionDecisionInput'] | null;
-			/** Format: uuid */
-			requestId: string;
-			resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
-			sourceChecksum: string;
-		};
 		ResponseBatchInput: {
 			cells: components['schemas']['ResponseInput'][];
 		};
@@ -25378,11 +25175,6 @@ export interface components {
 		};
 		ReturnObservationRequest: {
 			comment?: string | null;
-		};
-		ReviewPromotionItemInput: {
-			decision: components['schemas']['PromotionDecisionInput'];
-			/** Format: int64 */
-			rowVersion: number;
 		};
 		ReviseCorrespondenceRequest: {
 			annotations?: components['schemas']['DocumentAnnotation'][];
@@ -29004,6 +28796,27 @@ export interface components {
 			findings: components['schemas']['LifecycleFinding'][];
 			sourceChecksum: string;
 		};
+		YearRolloverCurrentTarget: {
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			homeroomName?: string | null;
+			/** Format: uuid */
+			placementId?: string | null;
+			/** Format: int64 */
+			placementRowVersion?: number | null;
+			/** Format: date */
+			placementStartsOn?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['StudentAcademicYearStatus'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			studyProgramId: string;
+			studyProgramName: string;
+		};
 		YearRolloverHomeroomReference: {
 			/** Format: int32 */
 			capacity?: number | null;
@@ -29074,6 +28887,7 @@ export interface components {
 			name: string;
 		};
 		YearRolloverStudent: {
+			currentTarget?: components['schemas']['YearRolloverCurrentTarget'] | null;
 			decision?: components['schemas']['PromotionDecisionInput'] | null;
 			/** Format: uuid */
 			existingTargetStudentYearId?: string | null;

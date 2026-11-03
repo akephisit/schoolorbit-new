@@ -102,6 +102,27 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 				return;
 			}
 			if (await academic(route, url)) return;
+			if (/^\/api\/academic\/lifecycle\/years\/[^/]+$/.test(url.pathname)) {
+				await fulfill(route, {
+					context: {
+						academicYearId: ids.year,
+						year: 2570,
+						name: 'ปีการศึกษา 2570',
+						status: 'active',
+						rowVersion: 1
+					},
+					terms: [],
+					findings: [],
+					canClose: false,
+					availableActions: [],
+					sourceChecksum: 'a'.repeat(64)
+				});
+				return;
+			}
+			if (url.pathname === '/api/academic/lifecycle/promotion-runs') {
+				await fulfill(route, { runs: [], nextCursor: null });
+				return;
+			}
 			if (url.pathname === '/api/notifications/stream') {
 				await route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
 				return;
@@ -213,13 +234,11 @@ test('future term form keeps annual flags consistent and resets editing when swi
 		}
 		return false;
 	});
-	await page.goto('/staff/academic/core');
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
 	await expect(
 		page.getByText('สร้างเป็นร่างที่ซ่อนจากตัวเลือก แสดงในตัวเลือกและตั้งค่าเริ่มต้นได้แยกกัน')
 	).toBeVisible();
-	const termSection = page
-		.getByRole('article')
-		.filter({ has: page.getByRole('heading', { name: 'ภาคเรียน', exact: true }) });
+	const termSection = page.getByRole('region', { name: 'ภาคเรียน', exact: true });
 	await termSection.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await page.getByRole('button', { name: 'ตัวเลือกเพิ่มเติม', exact: true }).click();
 	const include = page.getByRole('checkbox', { name: /รวมผลภาคเรียนนี้ในผลทั้งปี/ });
@@ -235,12 +254,14 @@ test('future term form keeps annual flags consistent and resets editing when swi
 		.toMatchObject({ includedInYearResult: true, blocksYearClosure: true, rowVersion: 1 });
 	await termSection.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'ยกเลิกการแก้ไขภาคเรียน' })).toBeVisible();
-	await page.getByRole('button', { name: /ปีการศึกษา 2569/ }).click();
+	await page.getByLabel('ปีที่ต้องการตั้งค่า', { exact: true }).click();
+	await page.getByRole('option', { name: /ปีการศึกษา 2569/ }).click();
 	await expect(
 		page.getByText('ปีการศึกษานี้ไม่เปิดให้เตรียมหรือแก้ไขภาคเรียนร่าง', { exact: false })
 	).toBeVisible();
 	await expect(termSection.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: /ปีการศึกษา 2570.*กำลังใช้งาน/ }).click();
+	await page.getByLabel('ปีที่ต้องการตั้งค่า', { exact: true }).click();
+	await page.getByRole('option', { name: /ปีการศึกษา 2570.*ใช้งาน/ }).click();
 	await expect(page.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ยกเลิกการแก้ไขภาคเรียน' })).toHaveCount(0);
 });
@@ -300,7 +321,7 @@ test('creates a future planning year and configurable regular, summer, and custo
 		}
 		return false;
 	});
-	await page.goto('/staff/academic/core');
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
 	await expect(page.getByText('ภาคฤดูร้อน')).toBeVisible();
 	await expect(page.getByText('รอบพิเศษ')).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มปีการศึกษา' }).click();
@@ -316,7 +337,11 @@ test('creates a future planning year and configurable regular, summer, and custo
 		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
 	});
 	expect(createYearBody).not.toHaveProperty('name');
-	await expect(page.getByRole('button', { name: /เปิดใช้|ปิดปี|เลื่อนชั้น/ })).toHaveCount(0);
+	await expect(
+		page
+			.getByRole('region', { name: 'ตั้งค่าปีและภาคเรียน', exact: true })
+			.getByRole('button', { name: /เปิดใช้|ปิดปี|เลื่อนชั้น/ })
+	).toHaveCount(0);
 });
 
 test('derives term count from rows and exposes no stored count control', async ({ page }) => {
@@ -348,7 +373,7 @@ test('derives term count from rows and exposes no stored count control', async (
 		}
 		return false;
 	});
-	await page.goto('/staff/academic/core');
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
 	await expect(page.getByText('3 ภาคเรียน').first()).toBeVisible();
 	await expect(page.getByLabel(/จำนวนภาคเรียน/)).toHaveCount(0);
 });
@@ -563,12 +588,12 @@ test('hidden drafts expose separate visibility and default actions and retain an
 		}
 		return false;
 	});
-	await page.goto('/staff/academic/core');
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
 	const controls = page.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น' });
 	const yearControls = controls.getByRole('group', { name: future.name, exact: true });
 	const termControls = controls.getByRole('group', { name: draftTerm.name, exact: true });
 	await expect(yearControls.getByRole('button', { name: 'ตั้งเป็นค่าเริ่มต้น' })).toBeDisabled();
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'แก้ไขปีการศึกษา', exact: true }).click();
 	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2572');
 	await yearControls.getByRole('button', { name: 'แสดงในตัวเลือก', exact: true }).click();
 	await expect(controls.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนแปลง');
@@ -655,7 +680,7 @@ test('a single visible year clears term and all defaults explicitly with pending
 		return false;
 	});
 	const query = `?academicYearId=${ids.year}&academicTermId=${ids.term}`;
-	await page.goto(`/staff/academic/core${query}`);
+	await page.goto(`/staff/academic/year-lifecycle${query}`);
 	const controls = page.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น' });
 	await controls.screenshot({ path: '/tmp/schoolorbit-context-clear-defaults-desktop.png' });
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -677,7 +702,7 @@ test('a single visible year clears term and all defaults explicitly with pending
 		});
 	}
 	await page.setViewportSize({ width: 1280, height: 720 });
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'แก้ไขปีการศึกษา', exact: true }).click();
 	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2572');
 	await controls.getByRole('button', { name: 'ล้างค่าเริ่มต้นภาคเรียน', exact: true }).click();
 	try {
@@ -713,7 +738,7 @@ test('a single visible year clears term and all defaults explicitly with pending
 		2
 	);
 	await expect(page.getByLabel('ปีการศึกษา (พ.ศ.)')).toHaveValue('2572');
-	await expect(page).toHaveURL(`/staff/academic/core${query}`);
+	await expect(page).toHaveURL(`/staff/academic/year-lifecycle${query}`);
 	expect(writes.slice(1)).toEqual([
 		{
 			rowVersion: 2,
@@ -773,8 +798,8 @@ test('a settings response with concurrent year metadata requires review before r
 		}
 		return false;
 	});
-	await page.goto('/staff/academic/core');
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
+	await page.getByRole('button', { name: 'แก้ไขปีการศึกษา', exact: true }).click();
 	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2572');
 	await page
 		.getByRole('region', { name: 'ตัวเลือกและค่าเริ่มต้น' })

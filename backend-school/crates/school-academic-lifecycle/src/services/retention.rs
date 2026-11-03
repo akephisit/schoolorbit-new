@@ -96,7 +96,7 @@ pub async fn update_policy(
     lifecycle_guard::lock_transition(&mut tx).await?;
     let before = policy(&mut tx).await?;
     let result: AcademicRetentionPolicy = DbSession::new(&mut *tx).query_as("academic_lifecycle.retention.update",
-        sqlx::AssertSqlSafe(format!("UPDATE academic_retention_policy SET enabled=$1,primary_boundary=$2,secondary_boundary=$3,grace_days=$4,effective_from=CASE WHEN $1 AND NOT enabled THEN now() ELSE effective_from END,row_version=row_version+1,updated_by=$5,updated_at=now() WHERE singleton AND row_version=$6 RETURNING {POLICY_COLUMNS}")))
+        sqlx::AssertSqlSafe(format!("UPDATE academic_retention_policy SET enabled=$1,primary_boundary=$2,secondary_boundary=$3,grace_days=$4,effective_from=CASE WHEN $1 AND NOT enabled THEN clock_timestamp() ELSE effective_from END,row_version=row_version+1,updated_by=$5,updated_at=now() WHERE singleton AND row_version=$6 RETURNING {POLICY_COLUMNS}")))
         .bind(input.enabled).bind(input.primary_boundary).bind(input.secondary_boundary).bind(input.grace_days)
         .bind(actor.user_id).bind(input.expected_row_version).fetch_optional().await?
         .ok_or_else(|| AppError::Conflict("นโยบายเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".into()))?;
@@ -265,7 +265,11 @@ pub async fn run_due(
     pool: &PgPool,
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
-    enqueue_due(external, pool, now).await?;
+    let mut enqueue_tx =
+        school_tenancy::TenantPool::begin_observed(pool, "academic_lifecycle.retention.enqueue")
+            .await?;
+    enqueue_due(external, &mut enqueue_tx, now).await?;
+    enqueue_tx.commit().await?;
     let lease = Uuid::now_v7();
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "academic_lifecycle.retention.claim")
@@ -297,15 +301,12 @@ pub async fn run_due(
 
 async fn enqueue_due(
     external: &dyn AcademicRetentionPort,
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     now: DateTime<Utc>,
 ) -> Result<(), AppError> {
-    let mut tx =
-        school_tenancy::TenantPool::begin_observed(pool, "academic_lifecycle.retention.enqueue")
-            .await?;
-    lifecycle_guard::lock_transition_shared(&mut tx).await?;
-    let policy = policy(&mut tx).await?;
-    DbSession::new(&mut *tx).query("academic_lifecycle.retention.cancel_stale",r#"
+    lifecycle_guard::lock_transition_shared(tx).await?;
+    let policy = policy(tx).await?;
+    DbSession::new(&mut **tx).query("academic_lifecycle.retention.cancel_stale",r#"
         UPDATE academic_retention_jobs SET status='cancelled',lease_token=NULL,leased_until=NULL
         WHERE id IN(SELECT j.id FROM academic_retention_jobs j JOIN academic_terms t ON t.id=j.academic_term_id
             WHERE j.started_at IS NULL AND j.status='awaiting_attendance' AND (t.status<>'closed'
@@ -314,19 +315,17 @@ async fn enqueue_due(
             ORDER BY j.created_at,j.id LIMIT 64)
     "#).execute().await?;
     if !policy.enabled {
-        tx.commit().await?;
         return Ok(());
     }
-    if !authorizer_is_current(&mut tx, policy.updated_by).await? {
-        tx.commit().await?;
+    if !authorizer_is_current(tx, policy.updated_by).await? {
         return Ok(());
     }
     // A persisted keyset advances past blocked/not-yet-due terms. Wrap only after
     // the end, so more than 64 blocked periods cannot starve a later eligible one.
-    let (after_date,after_id):(Option<DateTime<Utc>>,Option<Uuid>)=DbSession::new(&mut *tx)
+    let (after_date,after_id):(Option<DateTime<Utc>>,Option<Uuid>)=DbSession::new(&mut **tx)
         .query_as("academic_lifecycle.retention.scan_cursor","SELECT after_closed_at,after_request_id FROM academic_retention_scan_state WHERE singleton FOR UPDATE")
         .fetch_one().await?;
-    let boundaries:Vec<(Uuid,DateTime<Utc>,Uuid)>=DbSession::new(&mut *tx)
+    let boundaries:Vec<(Uuid,DateTime<Utc>,Uuid)>=DbSession::new(&mut **tx)
         .query_as("academic_lifecycle.retention.scan_boundaries",r#"
             SELECT r.academic_term_id,r.created_at,r.request_id FROM academic_term_transition_receipts r
             WHERE r.action='close' AND r.created_at>$1
@@ -338,11 +337,11 @@ async fn enqueue_due(
     } else {
         None
     };
-    DbSession::new(&mut *tx).query("academic_lifecycle.retention.advance_cursor",
+    DbSession::new(&mut **tx).query("academic_lifecycle.retention.advance_cursor",
         "UPDATE academic_retention_scan_state SET after_closed_at=$1,after_request_id=$2 WHERE singleton")
         .bind(next.map(|(date,_)|date)).bind(next.map(|(_,id)|id)).execute().await?;
     let term_ids: Vec<Uuid> = boundaries.iter().map(|(term, _, _)| *term).collect();
-    let sources:Vec<TermRetentionSource>=DbSession::new(&mut *tx).query_as("academic_lifecycle.retention.due_sources",
+    let sources:Vec<TermRetentionSource>=DbSession::new(&mut **tx).query_as("academic_lifecycle.retention.due_sources",
         sqlx::AssertSqlSafe(format!("{SOURCE_SQL} WHERE t.id=ANY($1) AND t.status='closed' AND NOT EXISTS(SELECT 1 FROM academic_retention_jobs j WHERE j.academic_term_id=t.id AND (j.started_at IS NOT NULL OR j.status='completed' OR (j.close_request_id=closed.request_id AND j.policy_revision=$2 AND j.status<>'cancelled'))) ORDER BY closed.created_at,t.id")))
         .bind(&term_ids).bind(policy.row_version).fetch_all().await?;
     for source in sources {
@@ -351,7 +350,7 @@ async fn enqueue_due(
             continue;
         }
         if external
-            .impact(&mut tx, source.academic_term_id)
+            .impact(tx, source.academic_term_id)
             .await?
             .attendance_archived
         {
@@ -362,17 +361,16 @@ async fn enqueue_due(
         else {
             continue;
         };
-        DbSession::new(&mut *tx).query("academic_lifecycle.retention.enqueue_job",r#"
-            INSERT INTO academic_retention_jobs(id,academic_term_id,academic_year_id,close_request_id,policy_revision,policy_snapshot,authorized_by,eligible_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+        DbSession::new(&mut **tx).query("academic_lifecycle.retention.enqueue_job",r#"
+            INSERT INTO academic_retention_jobs(id,academic_term_id,academic_year_id,close_request_id,policy_revision,policy_snapshot,authorized_by,eligible_at,next_attempt_at)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
             ON CONFLICT(academic_term_id,close_request_id) DO UPDATE SET policy_revision=EXCLUDED.policy_revision,
                 policy_snapshot=EXCLUDED.policy_snapshot,authorized_by=EXCLUDED.authorized_by,eligible_at=EXCLUDED.eligible_at,
-                status='awaiting_attendance',next_attempt_at=now(),last_error_code=NULL
+                status='awaiting_attendance',next_attempt_at=EXCLUDED.next_attempt_at,last_error_code=NULL
             WHERE academic_retention_jobs.started_at IS NULL AND academic_retention_jobs.lease_token IS NULL
         "#).bind(Uuid::now_v7()).bind(source.academic_term_id).bind(source.academic_year_id).bind(close)
-            .bind(policy.row_version).bind(Json(&policy)).bind(actor).bind(eligible).execute().await?;
+            .bind(policy.row_version).bind(Json(&policy)).bind(actor).bind(eligible).bind(now).execute().await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 

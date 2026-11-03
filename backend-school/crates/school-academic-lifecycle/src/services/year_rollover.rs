@@ -259,6 +259,23 @@ pub(super) async fn preview_in_transaction(
     for source in &sources {
         let decision = decisions.remove(&source.student_academic_year_id);
         let prior = accepted.get(&source.student_academic_year_id);
+        if let Some(target) = source.existing_target_student_year_id {
+            if prior.is_some_and(|prior| prior.target_student_year_id == Some(target)) {
+                prepared_targets.push(
+                    school_academic_core::services::promotion_targets::PreparedPromotionTarget {
+                        student_id: source.student_id,
+                        target_student_year_id: target,
+                    },
+                );
+            } else {
+                block(
+                    "rollover.target_already_exists",
+                    1,
+                    "มีข้อมูลปีปลายทางจากงานอื่นแล้ว ต้องตรวจประวัติก่อนดำเนินการ",
+                );
+            }
+        }
+
         if let Some(decision) = &decision {
             if source.existing_target_student_year_id.is_some() {
                 let same = if let Some(prior) = prior.filter(|prior| {
@@ -274,14 +291,6 @@ pub(super) async fn preview_in_transaction(
                         1,
                         "มีข้อมูลปีปลายทางแล้ว ต้องคงผลเดิมและตรวจประวัติก่อนเปลี่ยน",
                     );
-                } else if let Some(prior) = prior {
-                    if let Some(target) = prior.target_student_year_id {
-                        prepared_targets.push(school_academic_core::services::promotion_finalization::PreparedPromotionTarget {
-                            student_id:source.student_id,target_student_year_id:target,target_placement_id:prior.target_placement_id,
-                            starts_on:input.target_placement_starts_on,grade_level_id:decision.target_grade_level_id,
-                            study_program_id:decision.target_study_program_id,homeroom_id:decision.target_homeroom_id,
-                        });
-                    }
                 }
             } else {
                 if decision.outcome == PromotionDecisionOutcome::Conditional {
@@ -289,6 +298,18 @@ pub(super) async fn preview_in_transaction(
                         "rollover.conditional_history_only",
                         1,
                         "ผลมีเงื่อนไขใช้ยืนยันปลายทางเดิมจากประวัติได้เท่านั้น",
+                    );
+                }
+                if !source.account_active
+                    && matches!(
+                        decision.outcome,
+                        PromotionDecisionOutcome::Promote | PromotionDecisionOutcome::Repeat
+                    )
+                {
+                    block(
+                        "rollover.student_inactive",
+                        1,
+                        "บัญชีนักเรียนไม่ใช้งานแล้ว ต้องตรวจทะเบียนก่อนเตรียมปีใหม่",
                     );
                 }
                 new_targets.push((source, decision.core_command()));
@@ -309,6 +330,7 @@ pub(super) async fn preview_in_transaction(
             source_homeroom_name: room.map(|row| row.name.clone()),
             source_row_version: source.row_version,
             existing_target_student_year_id: source.existing_target_student_year_id,
+            current_target: None,
             suggested_decision: prior
                 .filter(|prior| prior.target_student_year_id.is_some())
                 .map(|prior| prior.decision.clone())
@@ -316,21 +338,44 @@ pub(super) async fn preview_in_transaction(
             decision,
         });
     }
+    let mut current_targets = vec![];
     for batch in prepared_targets.chunks(500) {
-        if let Err(error) =
-            school_academic_core::services::promotion_finalization::verify_prepared_targets(
-                tx,
-                input.target_year_id,
-                batch,
-            )
-            .await
+        match school_academic_core::services::promotion_targets::verify_prepared_targets(
+            tx,
+            input.target_year_id,
+            batch,
+        )
+        .await
         {
-            match error {
-                AppError::Conflict(message) | AppError::ValidationError(message) => {
-                    block("rollover.target_changed", 1, &message)
-                }
-                other => return Err(other),
+            Ok(states) => current_targets.extend(states),
+            Err(AppError::Conflict(message) | AppError::ValidationError(message)) => {
+                block("rollover.target_changed", 1, &message)
             }
+            Err(other) => return Err(other),
+        }
+    }
+    let current_by_id: BTreeMap<_, _> = current_targets
+        .iter()
+        .map(|target| (target.student_academic_year_id, target))
+        .collect();
+    for student in &mut students {
+        if let Some(target) = student
+            .existing_target_student_year_id
+            .and_then(|id| current_by_id.get(&id).copied())
+        {
+            student.current_target = Some(YearRolloverCurrentTarget {
+                student_academic_year_id: target.student_academic_year_id,
+                row_version: target.row_version,
+                status: target.status,
+                grade_level_id: target.grade_level_id,
+                study_program_id: target.study_program_id,
+                study_program_name: target.study_program_name.clone(),
+                placement_id: target.placement_id,
+                placement_row_version: target.placement_row_version,
+                placement_starts_on: target.placement_starts_on,
+                homeroom_id: target.homeroom_id,
+                homeroom_name: target.homeroom_name.clone(),
+            });
         }
     }
     if !decisions.is_empty() {
@@ -396,6 +441,7 @@ pub(super) async fn preview_in_transaction(
         input.target_placement_starts_on,
         inflight,
         &other_successors,
+        &current_targets,
         &findings,
     ))?;
     Ok(YearRolloverPreview {

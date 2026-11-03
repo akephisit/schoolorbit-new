@@ -838,6 +838,18 @@ administrative registration through Students in the same transaction. Student UU
 historical year/room records remain. Account deactivation, session revocation and guardian
 identity deletion are independent operations and are not implied by these declarations.
 
+An immutable promotion receipt proves the original accepted declaration and target annual
+identity. Core's separately audited current planned-year grade, program, room and withdrawn
+status remain authoritative for the current roster. Existing targets show their prior intent
+read-only alongside actual `currentTarget` metadata/status. Ordinary room/program edits or a
+Students account-deactivation withdrawal do not freeze historical receipts or prevent an
+unrelated hold from being resolved or the remaining roster from activating. A withdrawn
+pupil must remain withdrawn. Investigate current Core state and its audit when reconciling
+these differences; never rewrite an old receipt or restore a pupil from its original placement.
+New room/annual setup requires an active published program, its published active level/edition
+and declared grade coverage. Empty course/activity requirement collections do not make an
+otherwise valid published program ineligible for roster setup.
+
 Deploy [migration 152](../backend-school/migrations/152_manual_year_rollover.sql) and
 [migration 153](../backend-school/migrations/153_academic_detail_retention.sql) with the matching
 backend, generated contracts and frontend under the usual universal-maintenance, all-tenant
@@ -863,7 +875,10 @@ The separate retention section reads
 `academic_lifecycle.read.school`, `attendance.delete.school` and
 `behavior_cleanup.execute.school`; saves additionally require `academic_lifecycle.manage.school`.
 Enabling is an explicit school decision under those permissions. The server records its
-effective timestamp, and only later term closures enter automatic eligibility. The default
+effective timestamp using acceptance wall time after acquiring the lifecycle lock, and new
+term/year close receipts use the same acceptance ordering. Transaction-start `now()` must not
+make a request that waited for the lock appear accepted earlier. Existing immutable timestamps
+remain untouched. Only later term closures enter automatic eligibility. The default
 grace is 90 days, configurable from 1 to 3650. Primary defaults to a year boundary and secondary
 to a term boundary; both minimum boundaries can be configured. The
 [Lifecycle policy/controller](../backend-school/crates/school-academic-lifecycle/src/services/retention.rs)

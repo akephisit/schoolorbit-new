@@ -281,3 +281,117 @@ async fn promotion_destination_checks_homeroom_year_grade_program_and_active_sta
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn operational_room_and_annual_context_use_published_grade_coverage_without_course_requirements(
+) {
+    use school_academic_core::{
+        models::{
+            CreateHomeroomRequest, CreateStudentAcademicYearRequest,
+            UpdateStudentAcademicYearRequest,
+        },
+        services::student_years,
+    };
+    let (pool, source, target, input) = fixture("operational_empty_program_context").await;
+    let grade = input.target_grade_level_id.unwrap();
+    let target_program = input.target_study_program_id.unwrap();
+    let requirements:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM published_curriculum_course_requirements WHERE study_program_id=$1)+(SELECT count(*) FROM published_curriculum_activity_requirements WHERE study_program_id=$1)").bind(target_program).fetch_one(&pool).await.unwrap();
+    assert_eq!(requirements, 0);
+    let request = CreateHomeroomRequest {
+        academic_year_id: target,
+        custom_name: Some("Operational class".into()),
+        grade_level_id: grade,
+        room_number: "70".into(),
+        study_program_id: target_program,
+        capacity: 30,
+    };
+    student_years::create_homeroom(&pool, request.clone())
+        .await
+        .unwrap();
+    let actor: Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let annual = student_years::create_student_year(
+        &pool,
+        actor,
+        CreateStudentAcademicYearRequest {
+            student_id: source.student_id,
+            academic_year_id: target,
+            grade_level_id: grade,
+            study_program_id: target_program,
+        },
+    )
+    .await
+    .unwrap();
+    student_years::update_student_year(
+        &pool,
+        actor,
+        annual.id,
+        UpdateStudentAcademicYearRequest {
+            grade_level_id: source.grade_level_id,
+            study_program_id: target_program,
+            row_version: annual.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let outside: Uuid = sqlx::query_scalar(
+        "SELECT id FROM grade_levels WHERE is_active IS TRUE AND id<>ALL($1) ORDER BY id LIMIT 1",
+    )
+    .bind(vec![source.grade_level_id, grade])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let unpublished = program(&pool, target, None, vec![grade], false).await;
+    for (bad_grade, bad_program) in [
+        (Uuid::new_v4(), target_program),
+        (outside, target_program),
+        (grade, Uuid::new_v4()),
+        (grade, unpublished),
+    ] {
+        let mut invalid = request.clone();
+        invalid.room_number = "71".into();
+        invalid.grade_level_id = bad_grade;
+        invalid.study_program_id = bad_program;
+        assert!(matches!(
+            student_years::create_homeroom(&pool, invalid).await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    sqlx::query("UPDATE grade_levels SET is_active=false WHERE id=$1")
+        .bind(grade)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut inactive = request.clone();
+    inactive.room_number = "71".into();
+    assert!(matches!(
+        student_years::create_homeroom(&pool, inactive.clone()).await,
+        Err(AppError::ValidationError(_))
+    ));
+    sqlx::query("UPDATE grade_levels SET is_active=true WHERE id=$1")
+        .bind(grade)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let edition:Uuid=sqlx::query_scalar("SELECT level.edition_id FROM study_programs p JOIN curriculum_levels level ON level.id=p.curriculum_level_id WHERE p.id=$1").bind(target_program).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE curriculum_editions SET is_active=false WHERE id=$1")
+        .bind(edition)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        student_years::create_homeroom(&pool, inactive.clone()).await,
+        Err(AppError::ValidationError(_))
+    ));
+    sqlx::query("UPDATE curriculum_editions SET is_active=true WHERE id=$1")
+        .bind(edition)
+        .execute(&pool)
+        .await
+        .unwrap();
+    student_years::create_homeroom(&pool, inactive)
+        .await
+        .unwrap();
+}
