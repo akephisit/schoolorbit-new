@@ -1230,7 +1230,7 @@ async fn validate_homeroom_context(
     let grade: (String, i32) = DbSession::new(&mut **transaction)
         .query_as(
             "academic_core.services.student_years.validate_homeroom_context",
-            "SELECT level_type, year FROM grade_levels WHERE id = $1",
+            "SELECT level_type, year FROM grade_levels WHERE id = $1 AND is_active IS TRUE",
         )
         .bind(grade_level_id)
         .fetch_optional()
@@ -1242,11 +1242,10 @@ async fn validate_homeroom_context(
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE program.id = $1 AND program.status = 'published'
              AND curriculum.status = 'published' AND (curriculum.is_active IS TRUE AND version.is_active)
-             AND (EXISTS (SELECT 1 FROM published_curriculum_course_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2)
-                  OR EXISTS (SELECT 1 FROM published_curriculum_activity_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2))"#,
+             AND version.grade_level_ids @> to_jsonb(ARRAY[$2::uuid])"#,
     ).bind(study_program_id).bind(grade_level_id).fetch_optional().await?;
     valid_program.map(|_| grade).ok_or_else(|| {
-        AppError::ValidationError("เลือกแผนในฉบับที่เผยแพร่แล้วและมีโครงสร้างสำหรับระดับชั้นนี้".to_string())
+        AppError::ValidationError("เลือกแผนที่เผยแพร่และเปิดใช้งานซึ่งครอบคลุมระดับชั้นนี้".to_string())
     })
 }
 

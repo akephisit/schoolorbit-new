@@ -16,6 +16,8 @@ pub struct AcademicHttpState {
         &'static dyn school_academic_delivery::ports::AssessmentPublicationPort,
     pub publication_history: &'static dyn school_academic_delivery::ports::PublicationHistoryPort,
     pub lifecycle_providers: &'static dyn ExternalLifecyclePort,
+    pub retention:
+        &'static dyn school_academic_lifecycle::services::retention::AcademicRetentionPort,
 }
 
 #[derive(Clone)]

@@ -387,8 +387,13 @@ test('new workspaces use focused typed APIs without legacy academic paths', asyn
 	const coreEditor = allUi[0];
 	assert.match(coreEditor, /onUpdateYear/);
 	assert.match(coreEditor, /onUpdateTerm/);
-	assert.match(coreEditor, /onReplaceBellSchedulePeriods/);
-	assert.match(coreEditor, /BellSchedulePeriodsStep/);
+	const timeEditor = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/components/academic-core/TimeSetupEditor.svelte'),
+		'utf8'
+	);
+	assert.match(timeEditor, /onReplaceBellSchedulePeriods/);
+	assert.match(timeEditor, /BellSchedulePeriodsStep/);
+	assert.doesNotMatch(coreEditor, /onReplaceBellSchedulePeriods/);
 });
 
 test('legacy academic workspace routes are removed without aliases', async () => {

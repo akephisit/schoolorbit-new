@@ -4,8 +4,4 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-{#key data.runId}<PromotionRunDetail
-		runId={data.runId}
-		workspaceLoad={data.workspace}
-		optionsLoad={data.options}
-	/>{/key}
+{#key data.runId}<PromotionRunDetail runId={data.runId} workspaceLoad={data.workspace} />{/key}

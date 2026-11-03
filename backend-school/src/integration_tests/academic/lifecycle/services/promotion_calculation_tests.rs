@@ -22,8 +22,13 @@ async fn promotion_calculation_keeps_missing_results_visible_and_replays_without
         assert_eq!(item.source_year_id, create.source_year_id);
         assert_eq!(item.target_year_id, create.target_year_id);
         assert!(item.annual_revision_id.is_none());
-        assert!(item.recommendation.suggested_outcome.is_none());
-        assert!(!item.recommendation.findings.is_empty());
+        assert!(item
+            .recommendation
+            .as_ref()
+            .unwrap()
+            .suggested_outcome
+            .is_none());
+        assert!(!item.recommendation.as_ref().unwrap().findings.is_empty());
         assert!(item.decision.is_none() && item.reviewed_by.is_none());
         assert_eq!(item.status, PromotionItemStatus::Calculated);
     }

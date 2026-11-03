@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import {
 		ArrowRight,
 		CalendarRange,
@@ -62,31 +63,12 @@
 			(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined)
 	);
 
-	const statusLabels: Record<ContextStatus, string> = {
-		planning: 'กำลังวางแผน',
-		ready: 'พร้อมใช้งาน',
-		active: 'กำลังใช้งาน',
-		closing: 'กำลังปิด',
-		closed: 'ปิดแล้ว',
-		archived: 'เก็บถาวร',
-		cancelled: 'ยกเลิกแล้ว'
-	};
-
 	function statusClass(status: ContextStatus): string {
-		switch (status) {
-			case 'active':
-				return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
-			case 'ready':
-				return 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300';
-			case 'planning':
-				return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300';
-			case 'closing':
-				return 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-300';
-			case 'closed':
-			case 'archived':
-			case 'cancelled':
-				return 'border-border bg-muted text-muted-foreground';
-		}
+		if (status === 'active' || status === 'closing')
+			return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+		if (status === 'planning' || status === 'ready')
+			return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300';
+		return 'border-border bg-muted text-muted-foreground';
 	}
 
 	async function applyChange(change: PendingChange): Promise<void> {
@@ -206,7 +188,7 @@
 								<span class="flex min-w-0 items-center gap-2">
 									<span class="truncate">{year.name}</span>
 									<Badge variant="outline" class={statusClass(year.status)}>
-										{statusLabels[year.status]}
+										{academicStatusLabel(year.status)}
 									</Badge>
 								</span>
 							</Select.Item>
@@ -241,7 +223,7 @@
 									<span class="flex min-w-0 items-center gap-2">
 										<span class="truncate">{term.name}</span>
 										<Badge variant="outline" class={statusClass(term.status)}>
-											{statusLabels[term.status]}
+											{academicStatusLabel(term.status)}
 										</Badge>
 									</span>
 								</Select.Item>
@@ -297,7 +279,7 @@
 											<span class="flex items-center gap-2">
 												<span>{year.name}</span>
 												<Badge variant="outline" class={statusClass(year.status)}>
-													{statusLabels[year.status]}
+													{academicStatusLabel(year.status)}
 												</Badge>
 											</span>
 										</Select.Item>
@@ -330,7 +312,7 @@
 												<span class="flex items-center gap-2">
 													<span>{term.name}</span>
 													<Badge variant="outline" class={statusClass(term.status)}>
-														{statusLabels[term.status]}
+														{academicStatusLabel(term.status)}
 													</Badge>
 												</span>
 											</Select.Item>

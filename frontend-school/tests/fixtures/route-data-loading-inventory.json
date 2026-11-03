@@ -304,7 +304,7 @@
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Route loads one bounded setup workspace for years, terms, and bell schedules; period details remain lazy and mutations patch or refresh only affected year schedules."
+			"notes": "Time setup uses the bounded setup snapshot; period details stay lazy. Year/term editing belongs to the canonical year-management page."
 		},
 		{
 			"route": "staff/academic/curricula",
@@ -449,17 +449,12 @@
 		{
 			"route": "staff/academic/promotion",
 			"wave": "results-lifecycle",
-			"dataOwner": "route",
+			"dataOwner": "no-data",
 			"preload": "tap",
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Year-scoped 50-row cursor list starts in the route after layout permissions settle. First skeleton, retained refresh/error/retry, year supersession, and typed create patch are verified. Create-dialog policy options remain lazy behind manage permission.",
-			"browserMount": {
-				"reason": "Dirty dialog registration and disposal only; promotion list is route-owned.",
-				"tests": ["tests/static/academic-promotion-list-region-loading.test.mjs"],
-				"eventReads": []
-			}
+			"notes": "Compatibility redirect preserves selected year and leads to the single canonical academic year workspace. No legacy workflow reads or commands remain."
 		},
 		{
 			"route": "staff/academic/promotion/[id]",
@@ -469,17 +464,17 @@
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Selected run workspace and display references start independently after layout permission resolution. Workspace skeleton/error/retry, delayed sibling, retained refresh, and exact mutation/idempotency flows are browser verified. Homeroom search, correction impacts, and command reads remain action-lazy; large workspace link uses tap preload."
+			"notes": "Read-only preserved run workspace; no live Results, policy-option or mutation workflows. Initial skeleton and error retry use the route-owned promise."
 		},
 		{
 			"route": "staff/academic/promotion/policies",
 			"wave": "results-lifecycle",
-			"dataOwner": "route",
+			"dataOwner": "no-data",
 			"preload": "tap",
-			"context": "none",
+			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Bounded policy-version list starts in the route after layout permissions settle. First skeleton and focused retry are verified; existing rows remain during refresh. Grade/program/progression references stay lazy on the exact read/manage dialog and typed policy creation patches the list."
+			"notes": "Compatibility redirect preserves selected year and leads to the single canonical academic year workspace. No legacy workflow reads or commands remain."
 		},
 		{
 			"route": "staff/academic/question-bank",
@@ -644,17 +639,12 @@
 		{
 			"route": "staff/academic/term-lifecycle",
 			"wave": "results-lifecycle",
-			"dataOwner": "route",
+			"dataOwner": "no-data",
 			"preload": "tap",
-			"context": "term_required",
+			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "URL year/term owns one cohesive readiness workspace. First skeleton, retained refresh/error/retry, old-context supersession, and transition/reopen/activation workflows are verified. Opening policy and term preparation dialogs remain action-lazy; volatile cross-domain readiness uses tap preload.",
-			"browserMount": {
-				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
-				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],
-				"eventReads": []
-			}
+			"notes": "Compatibility redirect preserves selected year and leads to the single canonical academic year workspace. No legacy workflow reads or commands remain."
 		},
 		{
 			"route": "staff/academic/timetable",
@@ -708,7 +698,7 @@
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "URL year owns one cohesive year readiness workspace. First skeleton, retained refresh/error/retry, and close/reopening safety are verified. Reopening preview remains action-lazy; volatile annual coverage uses tap preload.",
+			"notes": "Independent permission-gated year summary, setup snapshot and bounded history reads start in route. Roster options, preview, direct period checks and retention eligibility stay action-lazy; drafts survive source closure refresh.",
 			"browserMount": {
 				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
 				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],

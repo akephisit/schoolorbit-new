@@ -42,5 +42,8 @@ school-authorization = { workspace = true }
 school-permissions = { workspace = true }
 school-crypto = { workspace = true }
 school-file-platform = { workspace = true }
+[dev-dependencies]
+school-test-db = { workspace = true }
+
 [lints]
 workspace = true

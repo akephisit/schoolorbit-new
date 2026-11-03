@@ -121,12 +121,14 @@ async fn promotion_workspace_rehydrates_student_names_and_exact_approval_intent_
         .unwrap();
     assert_eq!(workspace.students.len(), 1);
     assert!(!workspace.students[0].student_name.is_empty());
-    assert!(workspace.students[0].annual_result_current);
-    assert!(!workspace.students[0].needs_recalculation);
     assert!(workspace.students[0].receipt.is_none());
     assert_eq!(
-        workspace.approval_checksum,
-        super::promotion_approval::intent_checksum(&calc.run, &calc.items).unwrap()
+        workspace.students[0].item.annual_revision_id,
+        calc.items[0].annual_revision_id
+    );
+    assert_eq!(
+        workspace.students[0].item.source_checksum,
+        calc.items[0].source_checksum
     );
     let review = review_item(&pool, &reviewer, calc.run.id, calc.items[0].id, hold(1))
         .await
@@ -136,7 +138,10 @@ async fn promotion_workspace_rehydrates_student_names_and_exact_approval_intent_
         .unwrap();
     assert_eq!(after.run.row_version, review.run.row_version);
     assert_eq!(after.students[0].item.row_version, review.item.row_version);
-    assert_ne!(after.approval_checksum, workspace.approval_checksum);
+    assert_eq!(
+        after.students[0].item.decision.as_ref().unwrap().outcome,
+        PromotionDecisionOutcome::Hold
+    );
     let serialized = serde_json::to_value(after).unwrap();
     assert!(!serialized.to_string().contains("nationalId"));
     assert!(serde_json::from_value::<PromotionRunListQuery>(

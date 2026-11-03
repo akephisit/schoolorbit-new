@@ -21,7 +21,7 @@ const workspace = {
 	findings: [{ code: 'exams.warning', severity: 'warning', count: 1 }]
 };
 
-test('term closure needs current capability, complete coverage, exact warning acknowledgements', () => {
+test('term closure needs current capability, blocker-free state and exact warning acknowledgements', () => {
 	assert.equal(canConfirmTransition(workspace, 'close', '', ['exams.warning']), true);
 	for (const ack of [[], ['exams.warning', 'extra'], ['exams.warning', 'exams.warning']]) {
 		assert.equal(canConfirmTransition(workspace, 'close', '', ack), false);
@@ -30,12 +30,7 @@ test('term closure needs current capability, complete coverage, exact warning ac
 		canConfirmTransition({ ...workspace, availableActions: [] }, 'close', '', ['exams.warning']),
 		false
 	);
-	assert.equal(
-		canConfirmTransition({ ...workspace, coverage: { ready: false } }, 'close', '', [
-			'exams.warning'
-		]),
-		false
-	);
+
 	assert.equal(
 		canConfirmTransition(
 			{ ...workspace, findings: [{ code: 'delivery.blocking', severity: 'blocking' }] },

@@ -10,7 +10,7 @@ use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
-/// Atomically opens a ready term and, when it is the first term of a planning
+/// Atomically opens a prepared term and, when it is the first term of a planning
 /// year, the year plus its planned enrollment and currently eligible placements.
 pub(crate) async fn activate_term(
     pool: &PgPool,
@@ -176,7 +176,7 @@ pub(crate) async fn activate_term(
         .query(
             "academic_lifecycle.services.term_activation.activate_term",
             "UPDATE academic_terms SET status='active',row_version=row_version+1,updated_at=now()
-         WHERE id=$1 AND academic_year_id=$2 AND row_version=$3 AND status='ready'",
+         WHERE id=$1 AND academic_year_id=$2 AND row_version=$3 AND status IN ('planning','ready')",
         )
         .bind(term_id)
         .bind(request.academic_year_id)

@@ -11,11 +11,7 @@ export function canConfirmTransition(
 ): boolean {
 	if (!workspace.availableActions.includes(action)) return false;
 	if (action === 'close') {
-		if (
-			!workspace.coverage.ready ||
-			workspace.findings.some((finding) => finding.severity === 'blocking')
-		)
-			return false;
+		if (workspace.findings.some((finding) => finding.severity === 'blocking')) return false;
 		const warnings = workspace.findings
 			.filter((finding) => finding.severity === 'warning')
 			.map((finding) => finding.code);

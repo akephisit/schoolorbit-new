@@ -8,3 +8,5 @@ pub mod parents;
 mod validation;
 
 pub mod guardian_relationships;
+
+pub mod registration_outcomes;

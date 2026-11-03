@@ -36,7 +36,7 @@ pub(crate) mod services {
     pub(crate) mod promotion_targets {
         pub use school_academic_core::services::promotion_targets::*;
 
-        pub(super) mod tests;
+        pub(crate) mod tests;
     }
 
     pub(crate) mod promotion_execution {

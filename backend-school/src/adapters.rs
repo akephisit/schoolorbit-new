@@ -8,3 +8,5 @@ pub mod publication_history;
 pub mod staff_directory;
 
 pub mod budget;
+
+pub mod academic_retention;

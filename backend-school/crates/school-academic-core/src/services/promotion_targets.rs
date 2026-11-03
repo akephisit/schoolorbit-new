@@ -1,6 +1,6 @@
 use super::super::models::{
-    AcademicYearStatus, GradeProgression, GradeProgressionKind, PromotionDestinationCommand,
-    PromotionDestinationOutcome as Outcome, StudentAcademicYearStatus,
+    AcademicYearStatus, PromotionDestinationCommand, PromotionDestinationOutcome as Outcome,
+    StudentAcademicYearStatus,
 };
 use super::promotion_students::PromotionStudentContext;
 use school_database::DbSession;
@@ -15,7 +15,8 @@ pub async fn validate_destination(
     target_year: Uuid,
     decision: &PromotionDestinationCommand,
 ) -> Result<(), AppError> {
-    validate_destinations_with_owned_target(tx, target_year, &[(source, decision)], None).await
+    validate_destinations_with_owned_target(tx, target_year, &[(source, decision)], None, true)
+        .await
 }
 
 pub async fn validate_reconciliation_destination(
@@ -35,6 +36,7 @@ pub async fn validate_reconciliation_destination(
         target_year,
         &[(source, decision)],
         owned_target_student_year_id,
+        true,
     )
     .await
 }
@@ -46,7 +48,15 @@ pub async fn validate_destinations(
     target_year: Uuid,
     items: &[(&PromotionStudentContext, &PromotionDestinationCommand)],
 ) -> Result<(), AppError> {
-    validate_destinations_with_owned_target(tx, target_year, items, None).await
+    validate_destinations_with_owned_target(tx, target_year, items, None, true).await
+}
+
+pub async fn preview_destinations(
+    tx: &mut Transaction<'_, Postgres>,
+    target_year: Uuid,
+    items: &[(&PromotionStudentContext, &PromotionDestinationCommand)],
+) -> Result<(), AppError> {
+    validate_destinations_with_owned_target(tx, target_year, items, None, false).await
 }
 
 async fn validate_destinations_with_owned_target(
@@ -54,6 +64,7 @@ async fn validate_destinations_with_owned_target(
     target_year: Uuid,
     items: &[(&PromotionStudentContext, &PromotionDestinationCommand)],
     owned_target_student_year_id: Option<Uuid>,
+    lock_references: bool,
 ) -> Result<(), AppError> {
     if items.is_empty()
         || items.len() > 500
@@ -71,7 +82,11 @@ async fn validate_destinations_with_owned_target(
     let status: Option<AcademicYearStatus> = DbSession::new(&mut **tx)
         .scalar(
             "academic_core.services.promotion_targets.validate_destinations_with_owned_target",
-            "SELECT status FROM academic_years WHERE id=$1 FOR SHARE",
+            if lock_references {
+                "SELECT status FROM academic_years WHERE id=$1 FOR SHARE"
+            } else {
+                "SELECT status FROM academic_years WHERE id=$1"
+            },
         )
         .bind(target_year)
         .fetch_optional()
@@ -79,13 +94,6 @@ async fn validate_destinations_with_owned_target(
     if status != Some(AcademicYearStatus::Planning) {
         return Err(AppError::Conflict("ปีปลายทางต้องอยู่ระหว่างวางแผน".into()));
     }
-    DbSession::new(&mut **tx)
-        .query(
-            "academic_core.services.promotion_targets.validate_destinations_with_owned_target",
-            "SELECT id FROM grade_level_progression_sets WHERE id=1 FOR SHARE",
-        )
-        .execute()
-        .await?;
     let program_ids: Vec<Uuid> = items
         .iter()
         .flat_map(|(source, decision)| {
@@ -114,28 +122,26 @@ async fn validate_destinations_with_owned_target(
         .into_iter()
         .collect();
     let programs:Vec<ProgramReference>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target",
-        "SELECT program.id,version.id AS curriculum_level_id,COALESCE(version.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
+        sqlx::AssertSqlSafe(reference_sql("SELECT program.id,COALESCE(version.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
          (program.status='published' AND curriculum.status='published' AND (curriculum.is_active IS TRUE AND version.is_active)
 ) AS is_applicable
          FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id
          JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
-         WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF curriculum"
+         WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF curriculum",lock_references))
     ).bind(program_ids).fetch_all().await?;
     let programs: BTreeMap<_, _> = programs.into_iter().map(|row| (row.id, row)).collect();
     let grades: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_core.services.promotion_targets.validate_destinations_with_owned_target",
-        "SELECT id FROM grade_levels WHERE id=ANY($1) AND is_active IS TRUE ORDER BY id FOR SHARE",
+        sqlx::AssertSqlSafe(reference_sql("SELECT id FROM grade_levels WHERE id=ANY($1) AND is_active IS TRUE ORDER BY id FOR SHARE",lock_references)),
     )
     .bind(&grade_ids)
     .fetch_all()
     .await?;
     let grades: BTreeSet<_> = grades.into_iter().collect();
-    let mappings:Vec<GradeProgression>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target", "SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE from_grade_level_id=ANY($1) AND is_active ORDER BY id").bind(grade_ids).fetch_all().await?;
-    let rooms:Vec<RoomReference>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target", "SELECT id,academic_year_id,grade_level_id,study_program_id,is_active IS TRUE AS is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(room_ids).fetch_all().await?;
+    let rooms:Vec<RoomReference>=DbSession::new(&mut **tx).query_as("academic_core.services.promotion_targets.validate_destinations_with_owned_target", sqlx::AssertSqlSafe(reference_sql("SELECT id,academic_year_id,grade_level_id,study_program_id,is_active IS TRUE AS is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE",lock_references))).bind(room_ids).fetch_all().await?;
     let rooms: BTreeMap<_, _> = rooms.into_iter().map(|row| (row.id, row)).collect();
     let references = References {
         programs,
         grades,
-        mappings,
         rooms,
     };
     for (source, decision) in items {
@@ -153,7 +159,6 @@ async fn validate_destinations_with_owned_target(
 #[derive(sqlx::FromRow)]
 struct ProgramReference {
     id: Uuid,
-    curriculum_level_id: Uuid,
     grade_level_ids: Json<Vec<Uuid>>,
     is_applicable: bool,
 }
@@ -168,7 +173,6 @@ struct RoomReference {
 struct References {
     programs: BTreeMap<Uuid, ProgramReference>,
     grades: BTreeSet<Uuid>,
-    mappings: Vec<GradeProgression>,
     rooms: BTreeMap<Uuid, RoomReference>,
 }
 
@@ -212,38 +216,6 @@ fn validate_reference(
     }
     if decision.outcome == Outcome::TransferOut {
         return Ok(());
-    }
-    let source_program = references
-        .programs
-        .get(&source.study_program_id)
-        .ok_or_else(|| AppError::ValidationError("ไม่พบแผนการเรียนต้นทาง".into()))?;
-    let mapped = references.mappings.iter().any(|mapping| {
-        let kind_matches = match decision.outcome {
-            Outcome::Graduate => mapping.transition_kind == GradeProgressionKind::Graduate,
-            Outcome::Repeat => mapping.transition_kind == GradeProgressionKind::Repeat,
-            Outcome::Promote => matches!(
-                mapping.transition_kind,
-                GradeProgressionKind::Promote | GradeProgressionKind::Exception
-            ),
-            Outcome::Conditional => matches!(
-                mapping.transition_kind,
-                GradeProgressionKind::Promote
-                    | GradeProgressionKind::Repeat
-                    | GradeProgressionKind::Exception
-            ),
-            Outcome::Hold | Outcome::TransferOut => false,
-        };
-        kind_matches
-            && mapping.from_grade_level_id == source.grade_level_id
-            && mapping.to_grade_level_id == decision.target_grade_level_id
-            && mapping
-                .curriculum_level_id
-                .is_none_or(|id| id == source_program.curriculum_level_id)
-    });
-    if !mapped {
-        return Err(AppError::ValidationError(
-            "ไม่มีกฎการเลื่อนระดับชั้นที่ใช้ได้กับชั้นและหลักสูตรต้นทางนี้".into(),
-        ));
     }
     if decision.outcome == Outcome::Graduate {
         return Ok(());
@@ -289,4 +261,98 @@ fn validate_reference(
         }
     }
     Ok(())
+}
+
+fn reference_sql(sql: &str, lock: bool) -> String {
+    if lock {
+        sql.to_owned()
+    } else {
+        sql.replace(" FOR SHARE OF curriculum", "")
+            .replace(" FOR SHARE", "")
+    }
+}
+
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+    #[test]
+    fn read_only_preview_uses_the_same_projection_without_row_locks() {
+        assert_eq!(
+            reference_sql("SELECT id FROM refs FOR SHARE", false),
+            "SELECT id FROM refs"
+        );
+        assert_eq!(
+            reference_sql("SELECT id FROM refs FOR SHARE OF curriculum", false),
+            "SELECT id FROM refs"
+        );
+        assert_eq!(
+            reference_sql("SELECT id FROM refs FOR SHARE", true),
+            "SELECT id FROM refs FOR SHARE"
+        );
+    }
+}
+
+/// Stable annual identities from accepted Lifecycle receipts. Later planned-year
+/// grade/program/room edits remain owned and audited by Core.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PreparedPromotionTarget {
+    pub student_id: Uuid,
+    pub target_student_year_id: Uuid,
+}
+
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct PreparedPromotionTargetState {
+    pub student_academic_year_id: Uuid,
+    pub row_version: i64,
+    pub status: crate::models::StudentAcademicYearStatus,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
+    pub study_program_name: String,
+    pub placement_id: Option<Uuid>,
+    pub placement_row_version: Option<i64>,
+    pub placement_starts_on: Option<chrono::NaiveDate>,
+    pub homeroom_id: Option<Uuid>,
+    pub homeroom_name: Option<String>,
+    pub homeroom_row_version: Option<i64>,
+}
+
+/// Reaffirm original intent while reading the separately audited current target
+/// projection in one bounded snapshot. No historical placement is rewritten.
+pub async fn verify_prepared_targets(
+    tx: &mut Transaction<'_, Postgres>,
+    target_year: Uuid,
+    targets: &[PreparedPromotionTarget],
+) -> Result<Vec<PreparedPromotionTargetState>, AppError> {
+    if targets.is_empty()
+        || targets.len() > 500
+        || targets
+            .iter()
+            .map(|t| t.target_student_year_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != targets.len()
+    {
+        return Err(AppError::ValidationError(
+            "ตรวจปลายทางที่เตรียมไว้ได้ครั้งละ 1–500 คนโดยไม่ซ้ำ".into(),
+        ));
+    }
+    let states:Vec<PreparedPromotionTargetState>=DbSession::new(&mut **tx).query_as("academic_core.promotion_targets.verify_prepared_targets",
+        "SELECT student_year.id AS student_academic_year_id,student_year.row_version,student_year.status,student_year.grade_level_id,student_year.study_program_id,
+         program.name_th AS study_program_name,placement.id AS placement_id,placement.row_version AS placement_row_version,
+         placement.start_date AS placement_starts_on,room.id AS homeroom_id,room.name AS homeroom_name,room.row_version AS homeroom_row_version
+         FROM jsonb_to_recordset($1) expected(student_id uuid,target_student_year_id uuid)
+         JOIN student_academic_years student_year ON student_year.id=expected.target_student_year_id
+           AND student_year.student_id=expected.student_id AND student_year.academic_year_id=$2 AND student_year.status IN ('planned','withdrawn')
+         JOIN published_study_programs program ON program.id=student_year.study_program_id
+         LEFT JOIN LATERAL(SELECT id,homeroom_id,start_date,row_version FROM homeroom_placements
+           WHERE student_academic_year_id=student_year.id AND status IN ('planned','current')
+           ORDER BY CASE status WHEN 'current' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1) placement ON true
+         LEFT JOIN homerooms room ON room.id=placement.homeroom_id ORDER BY student_year.id")
+        .bind(sqlx::types::Json(targets)).bind(target_year).fetch_all().await?;
+    if states.len() != targets.len() {
+        return Err(AppError::Conflict(
+            "ข้อมูลประจำปีปลายทางเปลี่ยนแล้ว กรุณาตรวจสอบประวัติก่อนยืนยัน".into(),
+        ));
+    }
+    Ok(states)
 }

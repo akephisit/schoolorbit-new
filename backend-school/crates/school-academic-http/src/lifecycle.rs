@@ -3,7 +3,7 @@ pub mod handlers;
 #[inline(never)]
 pub fn routes() -> axum::Router<crate::state::AcademicHttpState> {
     use axum::{
-        routing::{get, post, put},
+        routing::{get, post},
         Router,
     };
     Router::new()
@@ -13,43 +13,39 @@ pub fn routes() -> axum::Router<crate::state::AcademicHttpState> {
         )
         .route(
             "/lifecycle/promotion-runs",
-            get(handlers::list_promotion_runs).post(handlers::create_promotion_run),
+            get(handlers::list_promotion_runs),
         )
         .route(
             "/lifecycle/promotion-runs/{run_id}",
             get(handlers::get_promotion_run_workspace),
         )
         .route(
-            "/lifecycle/promotion-runs/{run_id}/calculate",
-            post(handlers::calculate_promotion_run),
-        )
-        .route(
             "/lifecycle/promotion-runs/{run_id}/impacts",
             get(handlers::promotion_runs::get_promotion_run_impacts),
         )
         .route(
-            "/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve",
-            post(handlers::promotion_runs::resolve_promotion_run_impact),
-        )
-        .route(
-            "/lifecycle/promotion-runs/{run_id}/items/{item_id}",
-            put(handlers::review_promotion_run_item),
-        )
-        .route(
-            "/lifecycle/promotion-runs/{run_id}/approve",
-            post(handlers::approve_promotion_run),
-        )
-        .route(
-            "/lifecycle/promotion-runs/{run_id}/execute",
-            post(handlers::execute_promotion_run),
-        )
-        .route(
-            "/lifecycle/promotion-policies/options",
-            get(handlers::get_promotion_policy_options),
-        )
-        .route(
             "/lifecycle/promotion-policies",
-            get(handlers::list_promotion_policies).post(handlers::create_promotion_policy),
+            get(handlers::list_promotion_policies),
+        )
+        .route(
+            "/lifecycle/year-rollovers/options",
+            get(handlers::year_rollovers::options),
+        )
+        .route(
+            "/lifecycle/year-rollovers/preview",
+            post(handlers::year_rollovers::preview),
+        )
+        .route(
+            "/lifecycle/year-rollovers/confirm",
+            post(handlers::year_rollovers::confirm),
+        )
+        .route(
+            "/lifecycle/years/{year_id}/retention",
+            get(handlers::year_rollovers::retention_workspace),
+        )
+        .route(
+            "/lifecycle/retention-policy",
+            axum::routing::put(handlers::year_rollovers::update_retention_policy),
         )
         .route(
             "/lifecycle/years/{year_id}",

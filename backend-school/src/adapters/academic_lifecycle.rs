@@ -6,7 +6,7 @@ use school_academic_core::ports::{
     PendingTermWork, TermPreparationContext, TermPreparationMappingKind,
     TermPreparationModuleOutcome,
 };
-use school_academic_lifecycle::ports::ExternalLifecyclePort;
+use school_academic_lifecycle::ports::{ExternalLifecyclePort, RegistrationOutcome};
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -18,6 +18,50 @@ pub(crate) static LIFECYCLE_PROVIDERS: ApplicationLifecycleProviders =
 
 #[async_trait]
 impl ExternalLifecyclePort for ApplicationLifecycleProviders {
+    async fn require_reopen_allowed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        academic_year_id: Uuid,
+        academic_term_id: Option<Uuid>,
+    ) -> Result<(), AppError> {
+        school_attendance::services::retention::require_reopen_allowed(
+            transaction,
+            academic_year_id,
+            academic_term_id,
+        )
+        .await
+    }
+
+    async fn apply_registration_outcomes(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        actor_user_id: Uuid,
+        outcomes: &[(Uuid, RegistrationOutcome)],
+    ) -> Result<(), AppError> {
+        let outcomes: Vec<_> = outcomes
+            .iter()
+            .map(|(id, outcome)| {
+                (
+                    *id,
+                    match outcome {
+                        RegistrationOutcome::Graduated => {
+                            school_students::models::StudentRegistrationStatus::Graduated
+                        }
+                        RegistrationOutcome::TransferredOut => {
+                            school_students::models::StudentRegistrationStatus::TransferredOut
+                        }
+                    },
+                )
+            })
+            .collect();
+        school_students::registration_outcomes::apply_in_transaction(
+            transaction,
+            actor_user_id,
+            &outcomes,
+        )
+        .await
+    }
+
     async fn require_attendance_delivery_complete(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

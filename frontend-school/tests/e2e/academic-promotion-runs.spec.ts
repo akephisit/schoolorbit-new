@@ -1,864 +1,216 @@
-import { sessionState } from './fixtures/session-state';
-import { expect, test, type Page, type Route } from '@playwright/test';
-import type { components } from '../../src/lib/api/generated/school-api';
-
+import { expect, test } from '@playwright/test';
+import { join } from 'node:path';
+import {
+	mockYearManagement,
+	chooseOption,
+	openRoster,
+	setAllDecisions,
+	yearUrl,
+	id
+} from './fixtures/year-management';
 test.use({ serviceWorkers: 'block' });
-type Schema = components['schemas'];
-const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const time = '2026-09-11T12:00:00Z';
-const root = '/api/academic/lifecycle/promotion-runs';
-const pageUrl = `/staff/academic/promotion/${id(3)}`;
 
-function fixture(): Schema['PromotionRunWorkspace'] {
-	return {
-		run: {
-			id: id(3),
-			sourceYearId: id(1),
-			targetYearId: id(2),
-			policyId: id(6),
-			targetPlacementStartsOn: '2027-05-16',
-			status: 'calculated',
-			rowVersion: 2,
-			createdBy: id(20),
-			createdAt: time,
-			updatedAt: time,
-			reviewedBy: null,
-			reviewedAt: null,
-			approvedBy: null,
-			approvedAt: null,
-			approvalId: null,
-			executedBy: null,
-			executedAt: null
-		},
-		sourceYear: {
-			academicYearId: id(1),
-			year: 2569,
-			name: 'ปีการศึกษา 2569',
-			status: 'active',
-			rowVersion: 1
-		},
-		targetYear: {
-			academicYearId: id(2),
-			year: 2570,
-			name: 'ปีการศึกษา 2570',
-			status: 'planning',
-			rowVersion: 1
-		},
-		approvalChecksum: 'a'.repeat(64),
-		students: [
-			{
-				studentCode: 'E2E-001',
-				studentName: 'นักเรียน ทดสอบ',
-				annualResultCurrent: true,
-				needsRecalculation: false,
-				receipt: null,
-				item: {
-					id: id(5),
-					runId: id(3),
-					targetPlacementStartsOn: null,
-					sourceYearId: id(1),
-					targetYearId: id(2),
-					studentAcademicYearId: id(7),
-					studentId: id(4),
-					sourceGradeLevelId: id(10),
-					sourceStudyProgramId: id(12),
-					sourceRowVersion: 1,
-					annualRevisionId: id(8),
-					sourceChecksum: 'b'.repeat(64),
-					recommendation: {
-						suggestedOutcome: 'promote',
-						targetGradeLevelId: id(11),
-						targetStudyProgramId: id(12),
-						findings: []
-					},
-					existingTargetStudentYearId: null,
-					decision: null,
-					reviewedBy: null,
-					reviewedAt: null,
-					status: 'calculated',
-					rowVersion: 1,
-					createdAt: time,
-					updatedAt: time
-				}
-			}
-		]
-	};
-}
-async function reply(route: Route, data: unknown, status = 200) {
-	await route.fulfill({
-		status,
-		contentType: 'application/json',
-		headers: { 'X-CSRF-Token': 'synthetic-csrf' },
-		body: JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data })
-	});
-}
-async function mock(
-	page: Page,
-	level: 'reader' | 'manager' | 'approver' | 'executor' | 'corrector' = 'reader',
-	conflict = false,
-	calculateConflict = false,
-	loseExecutionResponse = false,
-	impactScenario: 'changed' | 'empty' | 'changed-page' | null = null,
-	impactResolveConflict = false
-) {
-	const current = fixture();
-	const writes: Array<{ path: string; body: unknown }> = [];
-	const impactReads: string[] = [];
-	let impactResolution: Schema['PromotionImpactResolution'] | null = null;
-	let completedCommand: {
-		input: Schema['ExecutePromotionRunInput'];
-		result: Schema['PromotionExecutionResult'];
-	} | null = null;
-	if (level === 'approver' || level === 'executor') {
-		current.run.status = level === 'approver' ? 'reviewed' : 'approved';
-		current.run.rowVersion = 3;
-		current.students[0].item.status = 'reviewed';
-		current.students[0].item.targetPlacementStartsOn = '2027-05-17';
-		current.students[0].item.decision = {
-			outcome: 'promote',
-			targetGradeLevelId: id(11),
-			targetStudyProgramId: id(12),
-			targetHomeroomId: id(14),
-			reason: null,
-			condition: null
-		};
-		current.students[0].item.reviewedBy = id(20);
-		current.students[0].item.reviewedAt = time;
-		if (level === 'executor') {
-			current.run.approvalId = id(30);
-			current.run.approvedBy = id(20);
-			current.run.approvedAt = time;
-		}
-	}
-	if (impactScenario) {
-		current.run.status = 'completed';
-		current.run.approvalId = id(30);
-		current.run.approvedBy = id(20);
-		current.run.approvedAt = time;
-		current.run.executedBy = id(20);
-		current.run.executedAt = time;
-		current.students[0].item.status = 'executed';
-		current.students[0].item.decision = {
-			outcome: 'promote',
-			targetGradeLevelId: id(11),
-			targetStudyProgramId: id(12),
-			targetHomeroomId: id(14),
-			reason: null,
-			condition: null
-		};
-		current.students[0].receipt = {
-			itemId: id(5),
-			runId: id(3),
-			requestId: id(31),
-			approvalId: id(30),
-			targetStudentYearId: id(40),
-			targetPlacementId: id(41),
-			sourceRowVersion: 1,
-			executedBy: id(20),
-			executedAt: time
-		};
-		current.students[0].annualResultCurrent = impactScenario === 'empty';
-	}
-	await page.route(
-		(url) => url.pathname.startsWith('/api/'),
-		async (route) => {
-			const url = new URL(route.request().url());
-			const path = url.pathname;
-			const method = route.request().method();
-			if (path === '/api/auth/me')
-				return reply(route, {
-					id: id(20),
-					username: 'E2E-LIFECYCLE-run',
-					firstName: 'วิชาการ',
-					displayName: 'วิชาการ ทดสอบ',
-					lastName: 'ทดสอบ',
-					userType: 'staff',
-					status: 'active',
-					session: sessionState(),
-					profileImageFileId: null,
-					primaryRoleName: null,
-					permissions: [
-						'academic_promotion.read.school',
-						...(level === 'manager' ? ['academic_year.read.school'] : []),
-						...(level === 'reader'
-							? []
-							: level === 'corrector'
-								? ['academic_promotion.correct.school']
-								: [
-										`academic_promotion.${level === 'manager' ? 'manage' : level === 'approver' ? 'approve' : 'execute'}.school`
-									])
-					]
-				} satisfies Schema['CurrentUserResponse']);
-			if (path === '/api/academic/context/options')
-				return reply(route, {
-					defaultAcademicYearId: id(1),
-					defaultAcademicTermId: null,
-					terms: [],
-					years: [current.sourceYear, current.targetYear].map((year) => ({
-						isVisible: true,
-						id: year.academicYearId,
-						year: year.year,
-						name: year.name,
-						status: year.status
-					}))
-				});
-			if (path === '/api/academic/years')
-				return reply(
-					route,
-					[current.sourceYear, current.targetYear].map((year) => ({
-						id: year.academicYearId,
-						year: year.year,
-						name: year.name,
-						status: year.status,
-						rowVersion: year.rowVersion,
-						isVisible: true,
-						schoolDays: ['MON'],
-						migrated: false,
-						createdAt: time,
-						updatedAt: time
-					}))
-				);
-
-			if (path === '/api/academic/lifecycle/promotion-policies/options')
-				return reply(route, {
-					grades: [
-						{ id: id(10), levelType: 'secondary', year: 1, isActive: true },
-						{ id: id(11), levelType: 'secondary', year: 2, isActive: true }
-					],
-					programs: [
-						{
-							id: id(12),
-							code: 'SCI',
-							name: 'วิทย์–คณิต',
-							curriculumLevelId: id(13),
-							levelName: 'หลักสูตรสถานศึกษา',
-							editionName: '2569',
-							status: 'published'
-						}
-					],
-					progressionSet: { rowVersion: 1, progressions: [] }
-				});
-			if (path === '/api/lookup/homerooms')
-				return reply(route, [
-					{ id: id(14), name: 'ม.2/1', gradeLevelId: id(11), gradeLevel: 'ม.2' }
-				]);
-			if (path === '/api/academic/lifecycle/promotion-policies')
-				return reply(route, [
-					{
-						id: id(6),
-						name: 'เกณฑ์ที่ยืนยันแล้ว',
-						rules: [],
-						progressionRowVersion: 1,
-						reviewedBy: id(20),
-						reviewedAt: time
-					}
-				]);
-			if (path === root && method === 'GET')
-				return reply(route, { runs: [current.run], nextCursor: null });
-			if (path === `${root}/${id(3)}` && method === 'GET') return reply(route, current);
-			if (path === `${root}/${id(3)}/impacts` && method === 'GET') {
-				impactReads.push(url.search);
-				return reply(route, {
-					runId: id(3),
-					sourceYearId: id(1),
-					targetYearId: id(2),
-					totalCount: impactScenario === 'empty' ? 0 : impactScenario === 'changed-page' ? 2 : 1,
-					pendingCount:
-						impactScenario === 'empty' || impactResolution
-							? 0
-							: impactScenario === 'changed-page'
-								? 2
-								: 1,
-					nextCursor:
-						impactScenario === 'changed-page' && !url.searchParams.has('afterId') ? id(60) : null,
-					sourceChecksum: (url.searchParams.has('afterId') ? 'd' : 'c').repeat(64),
-					impacts:
-						impactScenario === 'empty'
-							? []
-							: [
-									{
-										id: id(url.searchParams.has('afterId') ? 61 : 60),
-										itemId: id(5),
-										studentAcademicYearId: id(7),
-										resolution: impactResolution,
-										evidence: {
-											annualRevisionId: id(8),
-											academicTermId: id(9),
-											termName: 'ภาคเรียนที่ 2',
-											resultId: id(62),
-											sourceEffectiveVersion: 1,
-											offeringCode: 'ค21101',
-											offeringName: 'คณิตศาสตร์พื้นฐาน',
-											criterionName: null,
-											evaluationDomain: null,
-											correction: {
-												id: id(63),
-												expectedEffectiveVersion: 1,
-												previous: { kind: 'course', outcome: 'numeric', numericGrade: '0' },
-												corrected: { kind: 'course', outcome: 'numeric', numericGrade: '4' },
-												correctedBy: id(20),
-												correctedAt: time
-											}
-										}
-									}
-								]
-				});
-			}
-			if (path === `${root}/${id(3)}/impacts/${id(60)}/resolve` && method === 'POST') {
-				const body: Schema['ResolvePromotionImpactInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				if (impactResolveConflict) {
-					impactResolveConflict = false;
-					return reply(route, 'ผลแก้ไขเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด', 409);
-				}
-				impactResolution = {
-					id: id(70),
-					requestId: body.requestId,
-					runId: id(3),
-					itemId: id(5),
-					correctionId: id(63),
-					impactId: id(60),
-					resolutionKind: body.resolutionKind,
-					replacementDecision: body.replacementDecision ?? null,
-					reason: body.reason,
-					sourceChecksum: body.sourceChecksum,
-					outcome: {
-						adjusted: body.resolutionKind === 'replace_decision',
-						targetStudentYearId: id(40),
-						targetPlacementId: id(41),
-						sourceRowVersion: 2
-					},
-					resolvedBy: id(20),
-					resolvedAt: time
-				};
-				return reply(route, impactResolution);
-			}
-			if (path === root && method === 'POST') {
-				const body: Schema['CreatePromotionRunInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				current.run.targetPlacementStartsOn = body.targetPlacementStartsOn;
-				return reply(route, { ...current.run, status: 'draft', rowVersion: 1 });
-			}
-			if (path === `${root}/${id(3)}/calculate`) {
-				const body: Schema['CalculatePromotionRunInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				if (calculateConflict) {
-					calculateConflict = false;
-					current.run.rowVersion++;
-					return reply(route, 'มีการแก้ไขรอบ กรุณาโหลดข้อมูลล่าสุด', 409);
-				}
-				if (body.rowVersion !== current.run.rowVersion)
-					return reply(route, 'รุ่นข้อมูลเปลี่ยนแล้ว', 409);
-				current.run.rowVersion++;
-				return reply(route, { run: current.run, items: current.students.map((row) => row.item) });
-			}
-			if (path === `${root}/${id(3)}/items/${id(5)}` && method === 'PUT') {
-				const body: Schema['ReviewPromotionItemInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				if (conflict) return reply(route, 'ข้อมูลเปลี่ยนแล้ว กรุณาตรวจรายการล่าสุด', 409);
-				current.run.status = 'reviewed';
-				current.run.rowVersion++;
-				const row = current.students[0].item;
-				row.decision = body.decision;
-				row.status = 'reviewed';
-				row.rowVersion++;
-				row.reviewedBy = id(20);
-				row.reviewedAt = time;
-				return reply(route, { run: current.run, item: row });
-			}
-			if (path === `${root}/${id(3)}/approve`) {
-				const body: Schema['ApprovePromotionRunInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				current.run.status = 'approved';
-				current.run.rowVersion++;
-				current.run.approvalId = body.requestId;
-				current.run.approvedBy = id(20);
-				current.run.approvedAt = time;
-				return reply(route, current.run);
-			}
-			if (path === `${root}/${id(3)}/execute`) {
-				const body: Schema['ExecutePromotionRunInput'] = route.request().postDataJSON();
-				writes.push({ path, body });
-				if (completedCommand) {
-					if (JSON.stringify(body) !== JSON.stringify(completedCommand.input))
-						return reply(route, 'คำขอเปลี่ยนแล้ว', 409);
-					return reply(route, completedCommand.result);
-				}
-				current.run.status = 'completed';
-				current.run.rowVersion++;
-				current.run.executedBy = id(20);
-				current.run.executedAt = time;
-				const receipt: Schema['PromotionExecutionReceipt'] = {
-					itemId: id(5),
-					runId: id(3),
-					requestId: body.requestId,
-					approvalId: current.run.approvalId!,
-					targetStudentYearId: id(40),
-					targetPlacementId: null,
-					sourceRowVersion: 1,
-					executedBy: id(20),
-					executedAt: time
-				};
-				current.students[0].receipt = receipt;
-				current.students[0].item.status = 'executed';
-				const result: Schema['PromotionExecutionResult'] = {
-					run: current.run,
-					receipts: [receipt],
-					failures: [],
-					remainingCount: 0,
-					holdCount: 0
-				};
-				completedCommand = { input: body, result: structuredClone(result) };
-				if (loseExecutionResponse) return route.abort('failed');
-				return reply(route, result);
-			}
-			if (path === '/api/notifications/stream')
-				return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
-			if (path === '/api/school/public')
-				return reply(route, { schoolName: 'โรงเรียนทดสอบ', logoFileId: null });
-			if (path === '/api/menu/user') return reply(route, { groups: [] });
-			if (path === '/api/notifications') return reply(route, { items: [], unread_count: 0 });
-			if (path === '/api/me/work-items/counts')
-				return reply(route, { open: 0, dueSoon: 0, overdue: 0, submitted: 0, closed: 0, total: 0 });
-			return reply(route, 'ไม่เปิดใช้ในชุดทดสอบนี้', 403);
-		}
-	);
-	return { current, writes, impactReads };
-}
-
-test('executed promotion corrections are lazy read-only evidence and persist on reload', async ({
+test('one complete preview confirms all manual outcomes and leaves the new year prepared', async ({
 	page
-}, testInfo) => {
-	const observed = await mock(page, 'reader', false, false, false, 'changed');
-	await page.goto(pageUrl);
-	const inspect = page.getByRole('button', { name: 'ตรวจผลแก้ไขหลังเลื่อนชั้น', exact: true });
-	await expect(inspect).toBeVisible();
-	expect(observed.impactReads).toHaveLength(0);
-	await inspect.click();
+}) => {
+	const observed = await mockYearManagement(page);
+	await openRoster(page);
+	if (process.env.E2E_ARTIFACT_DIR)
+		await page.screenshot({
+			path: join(process.env.E2E_ARTIFACT_DIR, 'roster-preview-desktop.png'),
+			fullPage: true
+		});
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
-	await expect(dialog.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
-	await expect(dialog.getByLabel('ผลก่อนแก้')).toHaveText('0');
-	await expect(dialog.getByLabel('ผลหลังแก้')).toHaveText('4');
-	await expect(dialog.getByText(/การเปิดดูหน้านี้ไม่เปลี่ยนชั้นหรือห้อง/)).toBeVisible();
-	await expect(dialog.getByRole('button', { name: 'ยืนยันแก้ไข' })).toHaveCount(0);
-	await page.reload();
-	await inspect.click();
-	await expect(dialog.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
-	expect(observed.writes).toHaveLength(0);
-	expect(observed.impactReads).toHaveLength(2);
-	await page.screenshot({
-		path: testInfo.outputPath('promotion-impacts-desktop.png'),
-		fullPage: true,
-		animations: 'disabled'
-	});
-});
-
-test('empty promotion impacts can be dismissed on mobile', async ({ page }, testInfo) => {
-	await page.setViewportSize({ width: 390, height: 844 });
-	await mock(page, 'reader', false, false, false, 'empty');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ตรวจผลแก้ไขหลังเลื่อนชั้น', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByText('ยังไม่พบผลแก้ไขหลังเลื่อนชั้น', { exact: true })).toBeVisible();
-	await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
 	await expect(
-		dialog.getByRole('button', { name: 'กลับไปรอบเลื่อนชั้น', exact: true })
+		dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true })
+	).toBeDisabled();
+	await setAllDecisions(page);
+	await dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
 	).toBeVisible();
-	await page.screenshot({
-		path: testInfo.outputPath('promotion-impacts-mobile.png'),
-		fullPage: true,
-		animations: 'disabled'
+	await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+	if (process.env.E2E_ARTIFACT_DIR)
+		await page.screenshot({
+			path: join(process.env.E2E_ARTIFACT_DIR, 'prepared-year-desktop.png'),
+			fullPage: true
+		});
+	expect(observed.confirms).toHaveLength(1);
+	expect(observed.confirms[0].preview.decisions.map((row) => row.decision.outcome)).toEqual([
+		'promote',
+		'repeat',
+		'graduate',
+		'transfer_out',
+		'hold'
+	]);
+	expect(observed.confirms[0].preview.decisions[0]).toMatchObject({
+		studentAcademicYearId: id(40),
+		decision: { targetGradeLevelId: id(11), targetStudyProgramId: id(22) }
 	});
-	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-	await expect(dialog).toHaveCount(0);
+	expect(observed.transitions).toEqual([]);
+	expect(observed.reads.some((path) => /result|aggregate|promotion-polic/.test(path))).toBe(false);
 });
-
-test('promotion impact pages never merge different evidence revisions', async ({ page }) => {
-	await mock(page, 'reader', false, false, false, 'changed-page');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ตรวจผลแก้ไขหลังเลื่อนชั้น', exact: true }).click();
+test('stale preview preserves decisions and requires a fresh preview before another confirmation', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { conflict: true });
+	await openRoster(page);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('ข้อมูลเปลี่ยนแล้ว กรุณาตรวจตัวอย่างล่าสุด ตัวเลือกที่แก้ไว้ยังอยู่', {
+			exact: true
+		})
+	).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true })
+	).toBeDisabled();
+	await page.getByRole('button', { name: 'ตรวจตัวอย่างล่าสุด', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')).toBeVisible();
+	expect(observed.confirms[1].preview.decisions).toEqual(observed.confirms[0].preview.decisions);
+	expect(observed.confirms[1].requestId).not.toEqual(observed.confirms[0].requestId);
+});
+test('ambiguous confirmation only retries on a click and reuses the exact request', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { uncertain: true });
+	await openRoster(page);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ลองยืนยันอีกครั้ง', exact: true })).toBeVisible();
+	expect(observed.confirms).toHaveLength(1);
+	await page.getByRole('button', { name: 'ลองยืนยันอีกครั้ง', exact: true }).click();
+	await expect(page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้')).toBeVisible();
+	expect(observed.confirms[1]).toEqual(observed.confirms[0]);
+});
+test('source closure does not discard an open roster draft', async ({ page }) => {
+	const observed = await mockYearManagement(page, { active: true });
+	await openRoster(page);
 	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'แสดงเพิ่มเติม', exact: true }).click();
-	await expect(dialog.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนระหว่างตรวจสอบ');
-	await expect(dialog.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toHaveCount(1);
-	await expect(dialog.getByRole('button', { name: 'แสดงเพิ่มเติม', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุด', exact: true }).click();
-	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	const row = dialog.locator('section').filter({ hasText: 'ปอ เรียนต่อ' });
+	await row.getByLabel('ผลปีใหม่', { exact: true }).click();
+	await page.getByRole('option', { name: 'พักไว้', exact: true }).click();
+	await dialog.getByRole('button', { name: 'กลับไปหน้าจัดการ', exact: true }).click();
+	await page.getByRole('button', { name: 'ปิดปีการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันปิดปีการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ขึ้นปีการศึกษาใหม่', exact: true }).click();
+	await expect(
+		page
+			.getByRole('dialog')
+			.locator('section')
+			.filter({ hasText: 'ปอ เรียนต่อ' })
+			.getByLabel('ผลปีใหม่', { exact: true })
+	).toContainText('พักไว้');
+	expect(observed.confirms).toEqual([]);
 });
-
-test('authorized corrector explicitly retains an executed decision and sees its history', async ({
+test('legacy promotion entrypoints lead to the canonical workspace without old mutation UI', async ({
 	page
 }) => {
-	const observed = await mock(page, 'corrector', false, false, false, 'changed');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ตรวจผลแก้ไขหลังเลื่อนชั้น', exact: true }).click();
-	const evidence = page.getByRole('dialog', { name: 'ผลแก้ไขหลังเลื่อนชั้น' });
-	await expect(evidence.getByText('รอจัดการ 1 รายการ', { exact: true })).toBeVisible();
-	await evidence.getByRole('button', { name: 'จัดการผลกระทบ', exact: true }).click();
-	const resolution = page.getByRole('dialog', { name: 'จัดการผลกระทบหลังแก้ผล' });
-	await resolution
-		.getByLabel('เหตุผลการจัดการ', { exact: true })
-		.fill('ตรวจแล้วไม่กระทบผลเลื่อนชั้นเดิม');
-	await resolution.getByRole('button', { name: 'ยืนยันการจัดการ', exact: true }).click();
-	await expect(resolution).toHaveCount(0);
-	await expect(evidence.getByText('จัดการแล้ว · คงผลเดิม', { exact: true })).toBeVisible();
-	await expect(evidence.getByText('รอจัดการ 0 รายการ', { exact: true })).toBeVisible();
-	expect(observed.writes).toHaveLength(1);
-	expect(observed.writes[0].body).toMatchObject({
-		resolutionKind: 'keep_existing',
-		reason: 'ตรวจแล้วไม่กระทบผลเลื่อนชั้นเดิม',
-		replacementDecision: null,
-		sourceChecksum: 'c'.repeat(64)
-	});
+	await mockYearManagement(page);
+	for (const suffix of ['promotion', 'promotion/policies']) {
+		await page.goto(`/staff/academic/${suffix}?academicYearId=${id(1)}`);
+		await expect(page).toHaveURL(yearUrl);
+		await expect(
+			page.getByRole('heading', { name: 'จัดการปีการศึกษา', exact: true })
+		).toBeVisible();
+		await expect(
+			page.getByRole('button', { name: /คำนวณ|อนุมัติรอบ|สร้างรอบเลื่อนชั้น/ })
+		).toHaveCount(0);
+	}
 });
 
-test('corrector refreshes stale evidence then replaces the decision with explicit destination data', async ({
-	page
-}) => {
-	const observed = await mock(page, 'corrector', false, false, false, 'changed', true);
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ตรวจผลแก้ไขหลังเลื่อนชั้น', exact: true }).click();
-	await page.getByRole('button', { name: 'จัดการผลกระทบ', exact: true }).click();
-	const resolution = page.getByRole('dialog', { name: 'จัดการผลกระทบหลังแก้ผล' });
-	await resolution.getByLabel('วิธีจัดการ', { exact: true }).click();
-	await page.getByRole('option', { name: 'ปรับผลเลื่อนชั้นใหม่', exact: true }).click();
-	await resolution.getByLabel('เหตุผลการจัดการ', { exact: true }).fill('ปรับตามผลรายปีล่าสุด');
-	await resolution.getByRole('button', { name: 'ยืนยันการจัดการ', exact: true }).click();
-	await expect(resolution.getByRole('alert')).toContainText('ผลแก้ไขเปลี่ยนแล้ว');
-	await resolution.getByRole('button', { name: 'โหลดหลักฐานล่าสุด', exact: true }).click();
-	await expect(resolution.getByRole('alert')).toHaveCount(0);
-	await resolution.getByRole('button', { name: 'ยืนยันการจัดการ', exact: true }).click();
-	await expect(resolution).toHaveCount(0);
-	expect(observed.writes).toHaveLength(2);
-	expect(observed.writes[1].body).toMatchObject({
-		resolutionKind: 'replace_decision',
-		reason: 'ปรับตามผลรายปีล่าสุด',
-		replacementDecision: {
-			outcome: 'promote',
-			targetGradeLevelId: id(11),
-			targetStudyProgramId: id(12),
-			targetHomeroomId: id(14),
-			reason: 'ปรับตามผลรายปีล่าสุด'
-		}
-	});
-});
-
-test('promotion reader sees source and destination ledger without mutation controls', async ({
-	page
-}, testInfo) => {
-	const observed = await mock(page);
-	await page.goto(pageUrl);
-	await expect(page.getByRole('heading', { name: 'ตรวจรอบเลื่อนชั้น', exact: true })).toBeVisible();
-	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'พิจารณา', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'อนุมัติรอบ', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'ดำเนินการเลื่อนชั้น', exact: true })).toHaveCount(
+test('bulk decisions include hidden and filtered pupils across roster pages', async ({ page }) => {
+	const observed = await mockYearManagement(page, { studentCount: 26 });
+	await openRoster(page);
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('heading', { name: 'นักเรียน 26 S26', exact: true })).toHaveCount(
 		0
 	);
-	expect(observed.writes).toHaveLength(0);
-	await page.screenshot({
-		path: testInfo.outputPath('promotion-ledger.png'),
-		fullPage: true,
-		animations: 'disabled'
-	});
-});
 
-test('promotion workspace is usable before display references finish and retries them locally', async ({
-	page
-}) => {
-	await mock(page, 'reader');
-	let release = () => {};
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	let attempts = 0;
-	await page.route('**/api/academic/lifecycle/promotion-policies/options', async (route) => {
-		attempts++;
-		if (attempts === 1) {
-			await gate;
-			return reply(route, 'ข้อมูลชื่อชั้นชั่วคราวไม่พร้อม', 503);
-		}
-		return route.fallback();
-	});
-	await page.goto(pageUrl);
-	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
-	await expect(page.getByText('กำลังโหลดชื่อชั้นและแผน...')).toBeVisible();
-	release();
-	await expect(page.getByText('ข้อมูลชื่อชั้นชั่วคราวไม่พร้อม')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('ม.1')).toBeVisible();
-	expect(attempts).toBe(2);
-});
-
-test('promotion detail shows a first skeleton and retries only its failed workspace', async ({
-	page
-}) => {
-	await mock(page, 'reader');
-	let release = () => {};
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	let attempts = 0;
-	await page.route(`**${root}/${id(3)}`, async (route) => {
-		if (route.request().method() !== 'GET') return route.fallback();
-		attempts++;
-		if (attempts === 1) {
-			await gate;
-			return reply(route, 'ข้อมูลรอบชั่วคราวไม่พร้อม', 503);
-		}
-		return route.fallback();
-	});
-	await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
-	await expect(page.getByRole('heading', { name: 'ตรวจรอบเลื่อนชั้น', exact: true })).toBeVisible();
-	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toHaveCount(0);
-	release();
-	await expect(page.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
-	expect(attempts).toBe(2);
-});
-
-test('manager reviews a recommendation explicitly without approving or executing', async ({
-	page
-}) => {
-	const observed = await mock(page, 'manager');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'พิจารณา', exact: true }).click();
-	await expect(page.getByRole('dialog')).toBeVisible();
-	await page.getByRole('button', { name: 'บันทึกผลพิจารณา', exact: true }).click();
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-	expect(observed.writes).toHaveLength(1);
-	expect(observed.writes[0].body).toMatchObject({
-		rowVersion: 1,
-		decision: { outcome: 'promote', targetGradeLevelId: id(11), targetStudyProgramId: id(12) }
-	});
-	await expect(page.getByRole('button', { name: 'อนุมัติรอบ', exact: true })).toHaveCount(0);
-});
-
-test('conflicting review preserves the teachers draft for inspection', async ({ page }) => {
-	await mock(page, 'manager', true);
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'พิจารณา', exact: true }).click();
-	await page.getByLabel('เหตุผล', { exact: true }).fill('ตรวจทานกับทะเบียนแล้ว');
-	await page.getByRole('button', { name: 'บันทึกผลพิจารณา', exact: true }).click();
-	await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
-	await expect(page.getByLabel('เหตุผล', { exact: true })).toHaveValue('ตรวจทานกับทะเบียนแล้ว');
-	await page.getByRole('button', { name: 'ปิด', exact: true }).click();
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-});
-
-test('approver confirms the whole reviewed checksum without student edits', async ({ page }) => {
-	const observed = await mock(page, 'approver');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'อนุมัติรอบ', exact: true }).click();
-	expect(observed.writes).toHaveLength(0);
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByText('อนุมัติแล้ว', { exact: true })).toBeVisible();
-	expect(observed.writes[0].body).toMatchObject({ rowVersion: 3, sourceChecksum: 'a'.repeat(64) });
-	await expect(page.getByRole('button', { name: 'พิจารณา', exact: true })).toHaveCount(0);
-});
-
-test('executor uses approved batch then reloads canonical receipts', async ({ page }) => {
-	const observed = await mock(page, 'executor');
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ดำเนินการเลื่อนชั้น', exact: true }).click();
-	expect(observed.writes).toHaveLength(0);
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByText('ดำเนินการครบแล้ว', { exact: true })).toBeVisible();
-	expect(observed.writes[0].body).toMatchObject({ rowVersion: 3, limit: 100 });
-	await page.reload();
-	await expect(page.getByText('ดำเนินการแล้ว', { exact: true })).toBeVisible();
-	await expect(
-		page.getByRole('button', { name: 'ดำเนินการเลื่อนชั้น', exact: true })
-	).toBeDisabled();
-	expect(observed.writes).toHaveLength(1);
-});
-
-test('mobile details retain a visible close control', async ({ page }, testInfo) => {
-	await page.setViewportSize({ width: 390, height: 844 });
-	await mock(page);
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'รายละเอียด', exact: true }).click();
-	await expect(
-		page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true })
-	).toBeVisible();
-	await page.screenshot({
-		path: testInfo.outputPath('promotion-mobile-details.png'),
-		fullPage: true,
-		animations: 'disabled'
-	});
-	await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-});
-
-for (const [outcome, label] of [
-	['repeat', 'ซ้ำชั้น'],
-	['graduate', 'จบการศึกษา'],
-	['transfer_out', 'ย้ายออก'],
-	['hold', 'พักรายการ'],
-	['conditional', 'มีเงื่อนไข']
-] as const) {
-	test(`manager records explicit ${outcome} with applicable fields`, async ({ page }) => {
-		const observed = await mock(page, 'manager');
-		await page.goto(pageUrl);
-		await page.getByRole('button', { name: 'พิจารณา', exact: true }).click();
-		await page.getByLabel('ผลพิจารณา', { exact: true }).click();
-		await page.getByRole('option', { name: label, exact: true }).click();
-		await page.getByLabel('เหตุผล', { exact: true }).fill('ผ่านการพิจารณาของฝ่ายวิชาการ');
-		if (outcome === 'conditional') {
-			await expect(
-				page.getByRole('button', { name: 'บันทึกผลพิจารณา', exact: true })
-			).toBeDisabled();
-			await page
-				.getByLabel('เงื่อนไขที่ต้องติดตาม', { exact: true })
-				.fill('ส่งผลแก้รายวิชาที่ค้าง');
-		}
-		await page.getByRole('button', { name: 'บันทึกผลพิจารณา', exact: true }).click();
-		await expect(page.getByRole('dialog')).toHaveCount(0);
-		expect(observed.writes[0].body).toMatchObject({
-			decision: {
-				outcome,
-				targetGradeLevelId:
-					outcome === 'repeat' ? id(10) : outcome === 'conditional' ? id(11) : null,
-				targetStudyProgramId: ['repeat', 'conditional'].includes(outcome) ? id(12) : null
-			}
+	const bulk = dialog.getByRole('region', { name: 'กำหนดปลายทางทีละห้อง', exact: true });
+	await chooseOption(page, bulk.getByLabel('ผลปีใหม่', { exact: true }), 'เลื่อนชั้น');
+	await chooseOption(page, bulk.getByLabel('ชั้นปลายทาง', { exact: true }), 'ม.1');
+	await chooseOption(
+		page,
+		bulk.getByLabel('แผนการเรียนปลายทาง', { exact: true }),
+		'แผนมัธยม · หลักสูตร 2569'
+	);
+	await chooseOption(page, bulk.getByLabel('ห้องปลายทาง', { exact: true }), 'ม.1/1 (0/40)');
+	await bulk.getByRole('button', { name: 'ใช้กับนักเรียนในห้องนี้', exact: true }).click();
+	const graduate = dialog.locator('section').filter({ hasText: 'ดาว จบการศึกษา' });
+	await chooseOption(page, graduate.getByLabel('ผลปีใหม่', { exact: true }), 'จบการศึกษา');
+	await graduate.getByRole('button', { name: 'เสร็จแล้ว', exact: true }).click();
+	await dialog.getByLabel('ค้นหานักเรียน', { exact: true }).fill('นักเรียน 26');
+	const hidden = dialog.locator('section').filter({ hasText: 'นักเรียน 26' });
+	await expect(hidden).toContainText('เลื่อนชั้น · ม.1 · ม.1/1');
+	await expect(hidden.getByRole('button', { name: 'แก้ไข', exact: true })).toBeVisible();
+	await dialog.getByRole('button', { name: 'ตรวจตัวอย่างล่าสุด', exact: true }).click();
+	await dialog.getByLabel('ค้นหานักเรียน', { exact: true }).fill('');
+	if (process.env.E2E_ARTIFACT_DIR) {
+		await page
+			.getByRole('heading', { name: 'ปอ เรียนต่อ S1', exact: true })
+			.scrollIntoViewIfNeeded();
+		await page.screenshot({
+			path: join(process.env.E2E_ARTIFACT_DIR, 'roster-after-bulk-desktop.png'),
+			fullPage: true
 		});
-	});
-}
-
-test('list creates a run only for the chosen source and future planning year', async ({ page }) => {
-	const observed = await mock(page, 'manager');
-	await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
-	await page.getByRole('button', { name: 'สร้างรอบเลื่อนชั้น', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ปีการศึกษาปลายทาง', { exact: true }).click();
-	await page.getByRole('option', { name: 'ปีการศึกษา 2570', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'สร้างรอบ', exact: true })).toBeDisabled();
-	await dialog
-		.getByRole('button', { name: 'วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่', exact: true })
-		.click();
-	await page
-		.locator('[data-calendar-day]:not([data-outside-month])')
-		.filter({ hasText: /^15$/ })
-		.click();
-	await dialog.getByRole('button', { name: 'สร้างรอบ', exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(`/promotion/${id(3)}$`));
-	expect(observed.writes[0].body).toMatchObject({
-		sourceYearId: id(1),
-		targetYearId: id(2),
-		policyId: id(6),
-		targetPlacementStartsOn: expect.stringMatching(/^\d{4}-\d{2}-15$/)
-	});
-});
-
-test('promotion run list reload shows a fresh skeleton and focused retry', async ({ page }) => {
-	await mock(page, 'reader');
-	await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
-	await expect(page.getByText('เปิดรอบ')).toBeVisible();
-	let release = () => {};
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	let attempts = 0;
-	await page.route('**/api/academic/lifecycle/promotion-runs*', async (route) => {
-		if (route.request().method() !== 'GET') return route.fallback();
-		attempts++;
-		if (attempts === 1) {
-			await gate;
-			return reply(route, 'อ่านรอบชั่วคราวไม่สำเร็จ', 503);
-		}
-		return route.fallback();
-	});
-	await page.reload();
-	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
-	await expect(page.getByText('เปิดรอบ')).toHaveCount(0);
-	release();
-	await expect(page.getByText('อ่านรอบชั่วคราวไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('เปิดรอบ')).toBeVisible();
-	expect(attempts).toBe(2);
-});
-
-test('promotion run list ignores the old year after switching academic context', async ({
-	page
-}) => {
-	await mock(page, 'reader');
-	let releaseOld = () => {};
-	const oldGate = new Promise<void>((resolve) => {
-		releaseOld = resolve;
-	});
-	let oldStarted = () => {};
-	const oldRequest = new Promise<void>((resolve) => {
-		oldStarted = resolve;
-	});
-	await page.route('**/api/academic/lifecycle/promotion-runs*', async (route) => {
-		if (route.request().method() !== 'GET') return route.fallback();
-		const sourceYear = new URL(route.request().url()).searchParams.get('sourceYearId');
-		if (sourceYear === id(1)) {
-			oldStarted();
-			await oldGate;
-			return reply(route, { runs: [fixture().run], nextCursor: null });
-		}
-		expect(sourceYear).toBe(id(2));
-		return reply(route, { runs: [], nextCursor: null });
-	});
-	try {
-		await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
-		await oldRequest;
-		await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
-		await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
-		await expect(page).toHaveURL(new RegExp(`academicYearId=${id(2)}`));
-		await expect(page.getByText('ยังไม่มีรอบเลื่อนชั้นของปีนี้')).toBeVisible();
-	} finally {
-		releaseOld();
 	}
-	await expect(page.getByText('เปิดรอบ')).toHaveCount(0);
-});
-
-test('focused conflict recovery lets a manager recalculate with a new version', async ({
-	page
-}) => {
-	const observed = await mock(page, 'manager', false, true);
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByRole('alert')).toContainText('มีการแก้ไขรอบ');
-	await page.getByRole('button', { name: 'โหลดข้อมูลล่าสุด', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true })).toBeEnabled();
-	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true })).toBeEnabled();
-	await expect(page.getByRole('alert')).toHaveCount(0);
-	expect(observed.writes.map((write) => write.body)).toEqual([
-		expect.objectContaining({ rowVersion: 2 }),
-		expect.objectContaining({ rowVersion: 3 })
-	]);
-});
-
-test('uncertain execution retry retains the original request ID and does not repeat writes', async ({
-	page
-}) => {
-	const observed = await mock(page, 'executor', false, false, true);
-	await page.goto(pageUrl);
-	await page.getByRole('button', { name: 'ดำเนินการเลื่อนชั้น', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByRole('alert')).toBeVisible();
-	await page.getByRole('button', { name: 'ดำเนินการเลื่อนชั้น', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
-	await expect(page.getByText('ดำเนินการครบแล้ว', { exact: true })).toBeVisible();
-	expect(observed.writes).toHaveLength(2);
-	expect(observed.writes[1].body).toEqual(observed.writes[0].body);
-	expect(observed.current.run.rowVersion).toBe(4);
-});
-
-test('reviewed placement dates display independently of the default for new promotion items', async ({
-	page
-}) => {
-	await mock(page, 'executor');
-	await page.goto(pageUrl);
+	await dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
 	await expect(
-		page.getByText('วันเริ่มจัดห้องตั้งต้นสำหรับรายการใหม่: 16 พ.ค. 2570', { exact: true })
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 26 คน · ยังไม่เริ่มใช้', { exact: true })
 	).toBeVisible();
-	await expect(page.getByText('เริ่มจัดห้อง 17 พ.ค. 2570', { exact: true })).toBeVisible();
+	expect(observed.confirms[0].preview.decisions).toHaveLength(26);
+	expect(
+		observed.confirms[0].preview.decisions.filter((row) => row.decision.outcome === 'promote')
+	).toHaveLength(25);
+	expect(
+		observed.confirms[0].preview.decisions.find((row) => row.studentAcademicYearId === id(65))
+			?.decision
+	).toMatchObject({ outcome: 'promote', targetHomeroomId: id(30) });
+});
+
+test('accepted conditional history stays read-only while current Core placement is displayed', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { acceptedTarget: true });
+	await openRoster(page);
+	const row = page.getByRole('dialog').locator('section').filter({ hasText: 'ปอ เรียนต่อ' });
+	await expect(row).toContainText('ปลายทางปัจจุบัน: ม.4 · แผนมัธยมปัจจุบัน · ม.4/2');
+	await expect(row).toContainText('เงื่อนไขเดิม');
+	await expect(row.getByLabel('ผลปีใหม่', { exact: true })).toHaveCount(0);
+	await expect(row.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
+	).toBeVisible();
+	expect(observed.confirms[0].preview.decisions[0].decision).toEqual({
+		outcome: 'conditional',
+		targetGradeLevelId: id(11),
+		targetStudyProgramId: id(22),
+		targetHomeroomId: id(30),
+		reason: ' เหตุผลเดิม ',
+		condition: ' เงื่อนไขเดิม '
+	});
+});
+
+test('withdrawn prepared pupils remain read-only and are excluded from joining counts', async ({
+	page
+}) => {
+	const observed = await mockYearManagement(page, { acceptedTarget: true, withdrawnTarget: true });
+	await openRoster(page);
+	const row = page.getByRole('dialog').locator('section').filter({ hasText: 'ปอ เรียนต่อ' });
+	await expect(row).toContainText('ถอนรายชื่อแล้ว ไม่เข้าเรียนปีใหม่');
+	await expect(row.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+	await setAllDecisions(page);
+	await page.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true }).click();
+	await expect(
+		page.getByText('บันทึกการขึ้นปีใหม่แล้ว 5 คน · ยังไม่เริ่มใช้', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByText('เตรียมนักเรียนเข้าเรียนปีใหม่ 1 คน', { exact: false })
+	).toBeVisible();
+	expect(observed.confirms[0].preview.decisions[0].decision.outcome).toBe('conditional');
+	expect(observed.transitions).toEqual([]);
 });

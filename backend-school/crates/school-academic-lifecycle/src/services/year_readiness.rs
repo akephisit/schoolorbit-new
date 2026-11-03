@@ -3,7 +3,6 @@ use crate::models::{
     LifecycleFinding, LifecycleSeverity, YearLifecycleWorkspace, YearTransitionAction as Action,
 };
 use school_academic_core::models::AcademicTermStatus as Term;
-use school_academic_results::{self as results, policy::aggregate};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -41,43 +40,7 @@ pub(crate) async fn year_workspace_in_transaction(
 ) -> Result<YearLifecycleWorkspace, AppError> {
     let context = year_transitions::read_context(tx, year).await?;
     let terms = year_transitions::read_terms(tx, year).await?;
-    let coverage = results::services::annual_closure_coverage(tx, year).await?;
-    let annual_url = aggregate::require_aggregate_read(actor)
-        .is_ok()
-        .then(|| format!("/staff/academic/results/annual?academicYearId={year}"));
     let mut findings = vec![];
-    if !coverage.ready {
-        findings.push(LifecycleFinding {
-            code: "year.annual_missing".into(),
-            severity: LifecycleSeverity::Blocking,
-            count: coverage
-                .students
-                .iter()
-                .filter(|row| !row.is_current)
-                .count(),
-            message: if coverage.students.is_empty() {
-                "ยังไม่มีนักเรียนที่ใช้ตรวจผลสรุปรายปี"
-            } else {
-                "ผลสรุปรายปียังไม่ยืนยัน ไม่ครบ หรือข้อมูลต้นทางเปลี่ยนแปลง"
-            }
-            .into(),
-            resolution_url: annual_url.clone(),
-        });
-    }
-    let holds = coverage
-        .students
-        .iter()
-        .filter(|row| row.is_current && row.hold_reason.is_some())
-        .count();
-    if holds > 0 {
-        findings.push(LifecycleFinding {
-            code: "year.annual_holds".into(),
-            severity: LifecycleSeverity::Warning,
-            count: holds,
-            message: "มีผลค้างรายปีที่ตรวจและระบุเหตุผลแล้ว ต้องติดตามต่อหลังปิดปี".into(),
-            resolution_url: annual_url,
-        });
-    }
     let open = terms
         .iter()
         .filter(|term| {
@@ -116,17 +79,15 @@ pub(crate) async fn year_workspace_in_transaction(
         });
     }
     findings.sort_by(|a, b| a.code.cmp(&b.code));
-    let can_close = coverage.ready
-        && !findings
-            .iter()
-            .any(|row| row.severity == LifecycleSeverity::Blocking);
+    let can_close = !findings
+        .iter()
+        .any(|row| row.severity == LifecycleSeverity::Blocking);
     // Permission-filtered links and actions are presentation, not source state.
     let finding_state: Vec<_> = findings
         .iter()
         .map(|row| (&row.code, row.severity, row.count))
         .collect();
-    let source_checksum =
-        super::checksum(&(&context, &terms, &coverage.source_checksum, finding_state))?;
+    let source_checksum = super::checksum(&(&context, &terms, finding_state))?;
     let available_actions = [Action::BeginClosing, Action::CancelClosing, Action::Close]
         .into_iter()
         .filter(|action| {
@@ -137,7 +98,6 @@ pub(crate) async fn year_workspace_in_transaction(
     Ok(YearLifecycleWorkspace {
         context,
         terms,
-        coverage,
         findings,
         available_actions,
         can_close,

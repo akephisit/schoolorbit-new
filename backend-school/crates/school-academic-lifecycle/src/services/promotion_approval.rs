@@ -156,7 +156,9 @@ pub async fn approve_run(
             super::promotion_decision::validate_decision(
                 decision,
                 source.grade_level_id,
-                &item.recommendation,
+                item.recommendation
+                    .as_ref()
+                    .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานคำแนะนำเดิม".into()))?,
             )?;
             destinations.push((source, decision.core_command()));
         }

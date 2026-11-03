@@ -565,9 +565,10 @@ test('layout initialization and responsive topbar remain explicit', async () => 
 	assert.match(switcher, /ทั้งปี/);
 	assert.match(switcher, /ปีการศึกษา/);
 	assert.match(switcher, /ภาคเรียน/);
-	for (const label of ['กำลังวางแผน', 'พร้อมใช้งาน', 'กำลังใช้งาน', 'ปิดแล้ว']) {
-		assert.match(switcher, new RegExp(label));
-	}
+	assert.match(switcher, /academicStatusLabel/);
+	const presentation = await readProjectFile('src/lib/academic/lifecycle/year-management.ts');
+	for (const label of ['เตรียมการ', 'ใช้งาน', 'ปิดแล้ว'])
+		assert.match(presentation, new RegExp(label));
 	assert.doesNotMatch(`${layout}\n${header}\n${switcher}`, /activate|is_active/i);
 });
 
@@ -589,12 +590,12 @@ test('desktop academic context triggers stay compact while dropdowns retain stat
 	assert.equal(triggers.length, 2);
 	for (const trigger of triggers) {
 		assert.doesNotMatch(trigger, /บริบทงาน/);
-		assert.doesNotMatch(trigger, /statusLabels/);
+		assert.doesNotMatch(trigger, /academicStatusLabel/);
 		assert.doesNotMatch(trigger, /<Badge/);
 	}
 	assert.ok(contents.length >= 2);
 	for (const content of contents) {
-		assert.match(content, /statusLabels/);
+		assert.match(content, /academicStatusLabel/);
 		assert.match(content, /<Badge/);
 	}
 });

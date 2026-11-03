@@ -9,7 +9,7 @@ use uuid::Uuid;
 use super::super::models::{
     PromotionDecisionInput, PromotionDecisionOutcome, PromotionItemStatus, PromotionRunStatus,
 };
-use school_academic_core::models::{HomeroomPlacementStatus, StudentAcademicYearStatus};
+use school_academic_core::models::StudentAcademicYearStatus;
 use school_academic_results::services::corrections_after_annuals;
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,12 +48,7 @@ struct ReceiptReference {
     target_placement_id: Option<Uuid>,
     source_status: StudentAcademicYearStatus,
     actual_target_student_id: Option<Uuid>,
-    actual_target_grade_level_id: Option<Uuid>,
-    actual_target_study_program_id: Option<Uuid>,
     actual_target_status: Option<StudentAcademicYearStatus>,
-    actual_placement_student_year_id: Option<Uuid>,
-    actual_placement_homeroom_id: Option<Uuid>,
-    actual_placement_status: Option<HomeroomPlacementStatus>,
 }
 
 #[doc(hidden)]
@@ -71,7 +66,7 @@ pub async fn read_in_transaction(
         .scalar(
             "academic_lifecycle.services.promotion_opening.read_in_transaction",
             "SELECT id FROM student_academic_years
-         WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 10001",
+         WHERE academic_year_id=$1 AND status IN ('active','completed') ORDER BY id LIMIT 10001",
         )
         .bind(source_year_id)
         .fetch_all()
@@ -102,7 +97,7 @@ pub async fn read_in_transaction(
     } else {
         DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_opening.read_in_transaction",
             "WITH effective AS (
-                 SELECT receipt.run_id,receipt.item_id,
+                 SELECT DISTINCT ON(item.student_academic_year_id) receipt.run_id,receipt.item_id,
                         item.student_academic_year_id AS source_student_year_id,
                         item.student_id,item.status AS item_status,item.annual_revision_id,
                         CASE WHEN resolution.resolution_kind='replace_decision'
@@ -123,24 +118,20 @@ pub async fn read_in_transaction(
                      ORDER BY resolved_at DESC,id DESC LIMIT 1
                  ) resolution ON TRUE
                  WHERE receipt.run_id=ANY($1)
+                 ORDER BY item.student_academic_year_id,receipt.executed_at DESC,item.id DESC
              )
              SELECT effective.run_id,effective.item_id,effective.source_student_year_id,
                     effective.student_id,effective.item_status,effective.annual_revision_id,
                     effective.decision,effective.target_student_year_id,effective.target_placement_id,
                     source.status AS source_status,target.student_id AS actual_target_student_id,
-                    target.grade_level_id AS actual_target_grade_level_id,
-                    target.study_program_id AS actual_target_study_program_id,
-                    target.status AS actual_target_status,
-                    placement.student_academic_year_id AS actual_placement_student_year_id,
-                    placement.homeroom_id AS actual_placement_homeroom_id,
-                    placement.status AS actual_placement_status
+                    target.status AS actual_target_status
              FROM effective
              JOIN student_academic_years source ON source.id=effective.source_student_year_id
-             LEFT JOIN student_academic_years target ON target.id=effective.target_student_year_id
-             LEFT JOIN homeroom_placements placement ON placement.id=effective.target_placement_id
+             LEFT JOIN student_academic_years target ON target.id=effective.target_student_year_id AND target.academic_year_id=$2
              ORDER BY effective.run_id,effective.item_id LIMIT 10001",
         )
         .bind(&run_ids)
+        .bind(target_year_id)
         .fetch_all()
         .await?
     };
@@ -234,8 +225,7 @@ pub async fn read_in_transaction(
 }
 
 fn receipt_is_consistent(receipt: &ReceiptReference) -> bool {
-    if receipt.item_status != PromotionItemStatus::Executed || receipt.annual_revision_id.is_none()
-    {
+    if receipt.item_status != PromotionItemStatus::Executed {
         return false;
     }
     let Some(decision) = receipt.decision.as_ref() else {
@@ -244,8 +234,7 @@ fn receipt_is_consistent(receipt: &ReceiptReference) -> bool {
     let no_target = receipt.target_student_year_id.is_none()
         && receipt.target_placement_id.is_none()
         && receipt.actual_target_student_id.is_none()
-        && receipt.actual_target_status.is_none()
-        && receipt.actual_placement_student_year_id.is_none();
+        && receipt.actual_target_status.is_none();
     match decision.outcome {
         PromotionDecisionOutcome::Hold => {
             receipt.source_status == StudentAcademicYearStatus::Active && no_target
@@ -259,33 +248,15 @@ fn receipt_is_consistent(receipt: &ReceiptReference) -> bool {
         PromotionDecisionOutcome::Promote
         | PromotionDecisionOutcome::Repeat
         | PromotionDecisionOutcome::Conditional => {
-            receipt.source_status == StudentAcademicYearStatus::Active
-                && receipt.target_student_year_id.is_some()
+            matches!(
+                receipt.source_status,
+                StudentAcademicYearStatus::Active | StudentAcademicYearStatus::Completed
+            ) && receipt.target_student_year_id.is_some()
                 && receipt.actual_target_student_id == Some(receipt.student_id)
-                && receipt.actual_target_grade_level_id == decision.target_grade_level_id
-                && receipt.actual_target_study_program_id == decision.target_study_program_id
-                && receipt.actual_target_status == Some(StudentAcademicYearStatus::Planned)
-                && placement_is_consistent(receipt)
-        }
-    }
-}
-
-fn placement_is_consistent(receipt: &ReceiptReference) -> bool {
-    let Some(decision) = receipt.decision.as_ref() else {
-        return false;
-    };
-    match decision.target_homeroom_id {
-        None => {
-            receipt.target_placement_id.is_none()
-                && receipt.actual_placement_student_year_id.is_none()
-                && receipt.actual_placement_homeroom_id.is_none()
-                && receipt.actual_placement_status.is_none()
-        }
-        Some(homeroom) => {
-            receipt.target_placement_id.is_some()
-                && receipt.actual_placement_student_year_id == receipt.target_student_year_id
-                && receipt.actual_placement_homeroom_id == Some(homeroom)
-                && receipt.actual_placement_status == Some(HomeroomPlacementStatus::Planned)
+                && matches!(
+                    receipt.actual_target_status,
+                    Some(StudentAcademicYearStatus::Planned | StudentAcademicYearStatus::Withdrawn)
+                )
         }
     }
 }
@@ -314,12 +285,7 @@ mod tests {
             target_placement_id: None,
             source_status: StudentAcademicYearStatus::Active,
             actual_target_student_id: None,
-            actual_target_grade_level_id: None,
-            actual_target_study_program_id: None,
             actual_target_status: None,
-            actual_placement_student_year_id: None,
-            actual_placement_homeroom_id: None,
-            actual_placement_status: None,
         }
     }
 
@@ -340,29 +306,19 @@ mod tests {
     }
 
     #[test]
-    fn continuing_receipts_require_the_receipt_owned_planned_target_and_placement() {
-        let mut receipt = executed_receipt(PromotionDecisionOutcome::Promote);
-        let target_student_year_id = Uuid::new_v4();
-        let grade_level_id = Uuid::new_v4();
-        let study_program_id = Uuid::new_v4();
-        let homeroom_id = Uuid::new_v4();
-        receipt.target_student_year_id = Some(target_student_year_id);
-        receipt.actual_target_student_id = Some(receipt.student_id);
-        receipt.actual_target_grade_level_id = Some(grade_level_id);
-        receipt.actual_target_study_program_id = Some(study_program_id);
-        receipt.actual_target_status = Some(StudentAcademicYearStatus::Planned);
+    fn continuing_receipts_preserve_provenance_while_core_owns_current_planning_and_withdrawal() {
+        let mut receipt = executed_receipt(PromotionDecisionOutcome::Conditional);
+        receipt.target_student_year_id = Some(Uuid::new_v4());
         receipt.target_placement_id = Some(Uuid::new_v4());
-        receipt.actual_placement_student_year_id = Some(target_student_year_id);
-        receipt.actual_placement_homeroom_id = Some(homeroom_id);
-        receipt.actual_placement_status = Some(HomeroomPlacementStatus::Planned);
-        let decision = receipt.decision.as_mut().expect("decision");
-        decision.target_grade_level_id = Some(grade_level_id);
-        decision.target_study_program_id = Some(study_program_id);
-        decision.target_homeroom_id = Some(homeroom_id);
-
+        receipt.actual_target_student_id = Some(receipt.student_id);
+        receipt.actual_target_status = Some(StudentAcademicYearStatus::Planned);
         assert!(receipt_is_consistent(&receipt));
-
+        receipt.actual_target_status = Some(StudentAcademicYearStatus::Withdrawn);
+        assert!(receipt_is_consistent(&receipt));
         receipt.actual_target_status = Some(StudentAcademicYearStatus::Active);
+        assert!(!receipt_is_consistent(&receipt));
+        receipt.actual_target_status = Some(StudentAcademicYearStatus::Planned);
+        receipt.actual_target_student_id = Some(Uuid::new_v4());
         assert!(!receipt_is_consistent(&receipt));
     }
 }

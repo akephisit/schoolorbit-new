@@ -10,8 +10,28 @@ use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy)]
+pub enum RegistrationOutcome {
+    Graduated,
+    TransferredOut,
+}
+
 #[async_trait]
 pub trait ExternalLifecyclePort: Send + Sync {
+    async fn require_reopen_allowed(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        academic_year_id: Uuid,
+        academic_term_id: Option<Uuid>,
+    ) -> Result<(), AppError>;
+
+    async fn apply_registration_outcomes(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        actor_user_id: Uuid,
+        outcomes: &[(Uuid, RegistrationOutcome)],
+    ) -> Result<(), AppError>;
+
     async fn require_attendance_delivery_complete(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

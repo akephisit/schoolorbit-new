@@ -28,3 +28,5 @@ pub mod http_models;
 
 #[cfg(test)]
 mod cleanup_watch_tests;
+
+pub mod retention;

@@ -4,9 +4,11 @@ use school_errors::AppError;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
-use super::super::models::PromotionPolicyOptions;
-use super::super::models::{PromotionPolicyInput, PromotionPolicyVersion, PromotionRuleInput};
+#[cfg(feature = "integration-test-support")]
+use super::super::models::{PromotionPolicyInput, PromotionPolicyOptions};
+use super::super::models::{PromotionPolicyVersion, PromotionRuleInput};
 
+#[cfg(feature = "integration-test-support")]
 pub async fn get_promotion_policy_options(
     pool: &PgPool,
     actor: &ActorContext,
@@ -28,6 +30,7 @@ pub async fn get_promotion_policy_options(
     tx.commit().await?;
     Ok(options)
 }
+#[cfg(feature = "integration-test-support")]
 use super::promotion_context::validate_promotion_rules;
 use school_permissions::registry::codes;
 
@@ -88,6 +91,7 @@ fn require_promotion_policy_read(actor: &ActorContext) -> Result<(), AppError> {
     Ok(())
 }
 
+#[cfg(feature = "integration-test-support")]
 pub async fn create_promotion_policy(
     pool: &PgPool,
     actor: &ActorContext,

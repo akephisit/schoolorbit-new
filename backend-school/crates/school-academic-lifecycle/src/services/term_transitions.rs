@@ -105,11 +105,10 @@ pub async fn transition_term(
         external
             .require_attendance_delivery_complete(&mut tx, term, before.operation_date)
             .await?;
-        if !workspace.coverage.ready
-            || workspace
-                .findings
-                .iter()
-                .any(|finding| finding.severity == LifecycleSeverity::Blocking)
+        if workspace
+            .findings
+            .iter()
+            .any(|finding| finding.severity == LifecycleSeverity::Blocking)
         {
             return Err(AppError::Conflict("ยังมีข้อมูลที่ต้องแก้ไขก่อนปิดภาคเรียน".into()));
         }
@@ -133,6 +132,11 @@ pub async fn transition_term(
         ));
     }
     if request.action == TermTransitionAction::Reopen {
+        super::retention::require_reopen_allowed(&mut tx, request.academic_year_id, Some(term))
+            .await?;
+        external
+            .require_reopen_allowed(&mut tx, request.academic_year_id, Some(term))
+            .await?;
         school_academic_results::services::require_term_without_annual_results(
             &mut tx,
             request.academic_year_id,
@@ -177,7 +181,7 @@ pub async fn transition_term(
         TermTransitionAction::Cancel => "cancel",
         TermTransitionAction::Activate => "activate",
     };
-    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,canonical_request,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,clock_timestamp())")
         .bind(request.request_id).bind(request.academic_year_id).bind(term).bind(actor.user_id).bind(action)
         .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).bind(Json(&request)).execute().await?;
     years_terms::append_audit(
@@ -279,9 +283,14 @@ pub(crate) fn target_state(
     match (current, action) {
         (T::Planning, A::MarkReady) => Ok(T::Ready),
         (T::Planning, A::Cancel) => Ok(T::Cancelled),
+        (T::Planning | T::Ready, A::Activate)
+            if matches!(year, Y::Planning | Y::Ready | Y::Active) =>
+        {
+            Ok(T::Active)
+        }
         (T::Active, A::BeginClosing) => Ok(T::Closing),
         (T::Closing, A::CancelClosing) => Ok(T::Active),
-        (T::Closing, A::Close) => Ok(T::Closed),
+        (T::Active | T::Closing, A::Close) => Ok(T::Closed),
         (T::Closed, A::Reopen) => Ok(T::Closing),
         _ => Err(AppError::Conflict(
             "สถานะภาคเรียนหรือปีการศึกษาไม่รองรับการดำเนินการนี้".into(),
@@ -365,7 +374,7 @@ mod tests {
                 T::Closed,
                 T::Cancelled,
             ] {
-                if invalid != source {
+                if invalid != source && !(action == A::Close && invalid == T::Active) {
                     assert!(target_state(invalid, Y::Active, action).is_err());
                 }
             }
@@ -374,7 +383,14 @@ mod tests {
             }
         }
         for year in [Y::Planning, Y::Ready, Y::Active, Y::Closing] {
-            assert!(target_state(T::Ready, year, A::Activate).is_err());
+            assert_eq!(
+                target_state(T::Planning, year, A::Activate).is_ok(),
+                matches!(year, Y::Planning | Y::Ready | Y::Active)
+            );
+            assert_eq!(
+                target_state(T::Ready, year, A::Activate).is_ok(),
+                matches!(year, Y::Planning | Y::Ready | Y::Active)
+            );
         }
     }
 }

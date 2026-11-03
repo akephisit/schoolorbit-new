@@ -206,7 +206,8 @@ pub static APPLICATION_BEHAVIOR: ApplicationBehavior = ApplicationBehavior;
 #[async_trait::async_trait]
 impl school_attendance::runtime::AttendanceBehaviorPort for ApplicationBehavior {
     async fn run(&self, pool: &PgPool) -> Result<(), AppError> {
-        run(pool).await
+        run(pool).await?;
+        crate::adapters::academic_retention::run(pool).await
     }
 }
 

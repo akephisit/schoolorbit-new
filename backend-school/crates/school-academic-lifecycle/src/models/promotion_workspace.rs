@@ -25,8 +25,6 @@ pub struct PromotionRunStudent {
     pub item: PromotionRunItem,
     pub student_code: Option<String>,
     pub student_name: String,
-    pub annual_result_current: bool,
-    pub needs_recalculation: bool,
     pub receipt: Option<PromotionExecutionReceipt>,
 }
 
@@ -38,5 +36,4 @@ pub struct PromotionRunWorkspace {
     pub source_year: school_academic_core::models::YearLifecycleContext,
     pub target_year: school_academic_core::models::YearLifecycleContext,
     pub students: Vec<PromotionRunStudent>,
-    pub approval_checksum: String,
 }

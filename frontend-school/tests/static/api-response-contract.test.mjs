@@ -1117,7 +1117,7 @@ test('new academic workspace mutations use typed returned resources', async () =
 	const coreApi = await readRepoFile('frontend-school/src/lib/api/academic-core.ts');
 	const deliveryApi = await readRepoFile('frontend-school/src/lib/api/learning-delivery.ts');
 	const corePage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/core/+page.svelte'
+		'frontend-school/src/lib/components/academic-core/AcademicSetupRegion.svelte'
 	);
 	const deliveryPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte'
@@ -1297,19 +1297,22 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /TimetableBlock\s*=\s*Schemas\['TimetableBlock'\]/);
 	assert.match(timetableApi, /TimetableBlockWorkspaceQuery\s*=\s*NonNullable/);
 	assert.match(timetableApi, /MyTimetableFilters\s*=\s*operations\['getMyTimetable'\]/);
-	assert.match(timetableApi, /async function timetableData<T>/);
+	assert.match(timetableApi, /async function timetableData<T, E>/);
 	assert.match(timetableApi, /response\.status === 409/);
 	assert.match(timetableApi, /requireApiData\(response, fallback\)/);
 	assert.match(timetableApi, /academicTermId:\s*requiredTerm\(filters\.academicTermId\)/);
-	assert.match(timetableApi, /apiClient\.post<TimetableBlock>/);
-	assert.match(timetableApi, /apiClient\.put<TimetableBlock>/);
+	assert.match(timetableApi, /apiClient\.post<TimetableBlock, TimetableDraftSourceConflict>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableBlock, TimetableDraftSourceConflict>/);
 	assert.match(timetableApi, /periodsFromTimetableBlocks/);
 	assert.match(
 		extractGeneratedSchemaBlock(generated, 'TimetableBlock'),
 		/bellSchedulePeriodId:\s*string/
 	);
 	assert.match(timetableApi, /apiClient\.post<TimetableBlockPlacementPreview>/);
-	assert.match(timetableApi, /apiClient\.post<SwapTimetableBlocksResponse>/);
+	assert.match(
+		timetableApi,
+		/apiClient\.post<SwapTimetableBlocksResponse, TimetableDraftSourceConflict>/
+	);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);

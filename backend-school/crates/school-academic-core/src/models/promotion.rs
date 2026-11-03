@@ -24,3 +24,11 @@ pub struct PromotionDestinationCommand {
     pub reason: Option<String>,
     pub condition: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromotionWriteOutcome {
+    pub target_student_year_id: Option<Uuid>,
+    pub target_placement_id: Option<Uuid>,
+    pub source_row_version: i64,
+}

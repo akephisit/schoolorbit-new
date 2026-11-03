@@ -1018,7 +1018,7 @@ test('settings workspace pages gate module actions with permission booleans', as
 test('academic structure workspace pages gate read and mutation actions', async () => {
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/core/+page.svelte',
+			file: 'frontend-school/src/lib/components/academic-core/AcademicSetupRegion.svelte',
 			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL',

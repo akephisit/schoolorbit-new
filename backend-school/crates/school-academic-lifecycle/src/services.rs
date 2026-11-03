@@ -1,45 +1,47 @@
+mod year_rollover;
+mod year_rollover_command;
 use school_database::DbSession;
+pub use year_rollover::{options as get_year_rollover_options, preview as preview_year_rollover};
+pub use year_rollover_command::confirm as confirm_year_rollover;
 mod opening_policy;
 mod opening_readiness;
-#[cfg(not(feature = "integration-test-support"))]
-mod promotion_approval;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_approval;
 pub use opening_policy::{get_opening_policy, update_opening_policy};
 pub(crate) use opening_readiness::activation_evidence_in_transaction;
 pub use opening_readiness::get_activation_workspace;
+#[cfg(feature = "integration-test-support")]
 pub use promotion_approval::approve_run;
-#[cfg(not(feature = "integration-test-support"))]
-mod promotion_calculation;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_calculation;
+#[cfg(feature = "integration-test-support")]
 mod promotion_context;
+#[cfg(feature = "integration-test-support")]
 pub use promotion_calculation::calculate_run;
+#[cfg(feature = "integration-test-support")]
 mod promotion_decision;
-#[cfg(not(feature = "integration-test-support"))]
-mod promotion_execution;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_execution;
+#[cfg(feature = "integration-test-support")]
 pub use promotion_execution::execute_run;
 #[cfg(not(feature = "integration-test-support"))]
 mod promotion_opening;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_opening;
 mod promotion_policy;
+#[cfg(feature = "integration-test-support")]
 mod promotion_recommendation;
-#[cfg(not(feature = "integration-test-support"))]
-mod promotion_run_review;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_run_review;
+#[cfg(feature = "integration-test-support")]
 pub use promotion_run_review::review_item;
-#[cfg(not(feature = "integration-test-support"))]
-mod promotion_runs;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_runs;
 mod promotion_workspace;
-pub use promotion_policy::{
-    create_promotion_policy, get_promotion_policy_options, list_promotion_policies,
-};
+pub use promotion_policy::list_promotion_policies;
+#[cfg(feature = "integration-test-support")]
+pub use promotion_policy::{create_promotion_policy, get_promotion_policy_options};
+#[cfg(feature = "integration-test-support")]
 pub use promotion_runs::create_run;
 pub use promotion_workspace::{get_run_workspace, list_runs};
 #[cfg(not(feature = "integration-test-support"))]
@@ -56,12 +58,14 @@ pub use year_readiness::get_year_workspace;
 pub(crate) use year_readiness::year_workspace_in_transaction;
 pub use year_reopening::get_year_reopening_workspace;
 pub(crate) use year_reopening::reopening_workspace_in_transaction;
+#[cfg(feature = "integration-test-support")]
 mod promotion_impact_resolutions;
 mod promotion_impacts;
 #[cfg(not(feature = "integration-test-support"))]
 mod term_preparation;
 #[cfg(feature = "integration-test-support")]
 pub mod term_preparation;
+#[cfg(feature = "integration-test-support")]
 pub use promotion_impact_resolutions::resolve_promotion_impact;
 pub use promotion_impacts::get_promotion_impacts;
 pub use term_preparation::{apply as apply_term_preparation, preview as preview_term_preparation};
@@ -103,3 +107,5 @@ pub fn checksum(value: &impl serde::Serialize) -> Result<String, school_errors::
     })?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
+
+pub mod retention;

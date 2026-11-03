@@ -18,7 +18,10 @@ pub mod homeroom_roster;
 pub mod lifecycle_context;
 pub mod lifecycle_guard;
 pub mod progressions;
+pub mod promotion_batch;
+#[cfg(feature = "integration-test-support")]
 pub mod promotion_execution;
+#[cfg(feature = "integration-test-support")]
 pub mod promotion_reconciliation;
 pub mod promotion_students;
 pub mod promotion_targets;

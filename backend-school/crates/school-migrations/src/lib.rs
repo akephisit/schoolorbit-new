@@ -176,6 +176,12 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(152), "MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED") => {
+            "MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED"
+        }
+        (Some(152), "MANUAL_ROLLOVER152_PRESERVATION_FAILED") => {
+            "MANUAL_ROLLOVER152_PRESERVATION_FAILED"
+        }
         (Some(151), "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE") => {
             "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE"
         }
@@ -617,6 +623,25 @@ mod tests {
             connection.into_legacy_message(),
             "Migration failed: pool_timeout"
         );
+    }
+    #[test]
+    fn manual_rollover152_refusal_codes_are_exact_and_sanitized() {
+        for code in [
+            "MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED",
+            "MANUAL_ROLLOVER152_PRESERVATION_FAILED",
+        ] {
+            assert_eq!(refusal_code(Some(152), &native(code, "23514")), code);
+            assert_eq!(
+                refusal_code(Some(151), &native(code, "23514")),
+                "unclassified"
+            );
+            let failure = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(&format!("{code} private-sentinel"), "23514"),
+                152,
+            ));
+            assert_eq!(failure.diagnostic.code, "unclassified");
+            assert!(!format!("{failure:?}").contains("private-sentinel"));
+        }
     }
     use std::sync::{
         atomic::{AtomicUsize, Ordering},

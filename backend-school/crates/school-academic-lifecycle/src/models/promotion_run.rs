@@ -45,7 +45,7 @@ pub struct PromotionRun {
     pub source_year_id: Uuid,
     pub target_year_id: Uuid,
     pub target_placement_starts_on: chrono::NaiveDate,
-    pub policy_id: Uuid,
+    pub policy_id: Option<Uuid>,
     pub status: PromotionRunStatus,
     pub row_version: i64,
     pub created_by: Uuid,

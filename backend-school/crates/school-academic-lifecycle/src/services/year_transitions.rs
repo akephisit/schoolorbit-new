@@ -42,7 +42,7 @@ pub(crate) fn target_state(
     match (state, action) {
         (State::Active, Action::BeginClosing) => Ok(State::Closing),
         (State::Closing, Action::CancelClosing) => Ok(State::Active),
-        (State::Closing, Action::Close) => Ok(State::Closed),
+        (State::Active | State::Closing, Action::Close) => Ok(State::Closed),
         _ => Err(AppError::Conflict(
             "สถานะปีการศึกษาไม่รองรับการดำเนินการนี้".into(),
         )),
@@ -152,7 +152,7 @@ pub async fn transition_year(
         context: read_context(&mut tx, year).await?,
         completed_at: chrono::Utc::now(),
     };
-    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_transitions.transition_year", "INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(input.request_id).bind(year).bind(actor.user_id).bind(action).bind(checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.year_transitions.transition_year", "INSERT INTO academic_year_transition_receipts(request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp())").bind(input.request_id).bind(year).bind(actor.user_id).bind(action).bind(checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
     years_terms::append_audit(
         &mut tx,
         &format!("academic.year.{action}"),
@@ -188,7 +188,7 @@ mod tests {
                 let wanted = match (state, action) {
                     (State::Active, Action::BeginClosing) => Some(State::Closing),
                     (State::Closing, Action::CancelClosing) => Some(State::Active),
-                    (State::Closing, Action::Close) => Some(State::Closed),
+                    (State::Active | State::Closing, Action::Close) => Some(State::Closed),
                     _ => None,
                 };
                 assert_eq!(

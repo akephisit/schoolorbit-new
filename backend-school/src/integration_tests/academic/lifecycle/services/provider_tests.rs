@@ -13,13 +13,31 @@ use sqlx::{Postgres, Transaction};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-struct StubExternalLifecyclePort {
-    exam_revision: &'static str,
-    fail_exams: bool,
+pub(super) struct StubExternalLifecyclePort {
+    pub(super) exam_revision: &'static str,
+    pub(super) fail_exams: bool,
 }
 
 #[async_trait]
 impl ExternalLifecyclePort for StubExternalLifecyclePort {
+    async fn require_reopen_allowed(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _academic_year_id: Uuid,
+        _academic_term_id: Option<Uuid>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn apply_registration_outcomes(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _actor_user_id: Uuid,
+        _outcomes: &[(Uuid, school_academic_lifecycle::ports::RegistrationOutcome)],
+    ) -> Result<(), AppError> {
+        Err(AppError::Conflict("unused registration provider".into()))
+    }
+
     async fn require_attendance_delivery_complete(
         &self,
         _transaction: &mut Transaction<'_, Postgres>,

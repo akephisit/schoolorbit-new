@@ -1,11 +1,8 @@
 use super::super::models::*;
 use super::year_transitions;
-use super::{
-    promotion_calculation::{evidence_checksum, ITEM_COLUMNS},
-    promotion_runs::RUN_COLUMNS,
-};
+pub(super) const RUN_COLUMNS: &str = "id,source_year_id,target_year_id,target_placement_starts_on,policy_id,status,row_version,created_by,created_at,updated_at,reviewed_by,reviewed_at,approved_by,approved_at,approval_id,executed_by,executed_at";
+pub(super) const ITEM_COLUMNS: &str = "id,run_id,source_year_id,target_year_id,target_placement_starts_on,student_academic_year_id,student_id,source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id,decision,reviewed_by,reviewed_at,status,row_version,created_at,updated_at";
 use school_academic_core::services::promotion_students;
-use school_academic_results as results;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -100,7 +97,6 @@ pub async fn get_run_workspace(
             "รอบมีนักเรียนเกิน 10000 รายการ".into(),
         ));
     }
-    let approval_checksum = super::promotion_approval::intent_checksum(&run, &items)?;
     let receipts:Vec<PromotionExecutionReceipt>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_workspace.get_run_workspace", "SELECT item_id,run_id,request_id,approval_id,target_student_year_id,target_placement_id,source_row_version,executed_by,executed_at FROM academic_promotion_execution_receipts WHERE run_id=$1 ORDER BY item_id")
         .bind(run_id).fetch_all().await?;
     let mut receipts: BTreeMap<_, _> = receipts.into_iter().map(|row| (row.item_id, row)).collect();
@@ -121,26 +117,14 @@ pub async fn get_run_workspace(
             .into_iter()
             .map(|row| (row.student_academic_year_id, row))
             .collect();
-        let annual =
-            results::services::promotion_annual_sources(&mut tx, run.source_year_id, &ids).await?;
         for item in batch {
             let source = sources
                 .remove(&item.student_academic_year_id)
                 .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียนต้นทาง".into()))?;
-            let annual = annual
-                .get(&item.student_academic_year_id)
-                .and_then(Option::as_ref);
-            let annual_result_current =
-                annual.is_some_and(|row| row.is_current && Some(row.id) == item.annual_revision_id);
-            let needs_recalculation = item.status != PromotionItemStatus::Executed
-                && (!annual_result_current
-                    || evidence_checksum(run.policy_id, &source, annual)? != item.source_checksum);
             students.push(PromotionRunStudent {
                 item: item.clone(),
                 student_code: source.student_code,
                 student_name: source.student_name,
-                annual_result_current,
-                needs_recalculation,
                 receipt: receipts.remove(&item.id),
             });
         }
@@ -151,6 +135,5 @@ pub async fn get_run_workspace(
         source_year,
         target_year,
         students,
-        approval_checksum,
     })
 }

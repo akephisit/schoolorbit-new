@@ -119,12 +119,15 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .unwrap();
     let version = Uuid::new_v4();
     let delivery_version = Uuid::new_v4();
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,$4,'published','{\"offerings\":[]}', $5,now(),uuid_generate_v4(),repeat('0',64))")
-        .bind(delivery_version).bind(term.id).bind(year.id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).bind(actor)
+    // Synthetic reader evidence obeys the migration 151 publication sequence and
+    // records the selected offering through Delivery's authoritative graph capture.
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no)
+        VALUES($1,$2,$3,$4,'published',academic_capture_delivery_snapshot($2,$4,jsonb_build_array(jsonb_build_object('id',$6::uuid,'weekly_period_target',1))),$5,now(),uuid_generate_v4(),repeat('0',64),1)")
+        .bind(delivery_version).bind(term.id).bind(year.id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).bind(actor).bind(offering)
         .execute(&mut *setup).await.unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id,publication_no)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7,1)",
     )
     .bind(version)
     .bind(term.id)
@@ -137,8 +140,8 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id,publication_no)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7,2)",
     )
     .bind(Uuid::new_v4())
     .bind(term.id)

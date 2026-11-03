@@ -649,6 +649,17 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
             && call.args.iter().any(|argument| {
                 borrowed_name(argument).is_some_and(|name| self.resources.contains(&name))
             });
+        // The retention adapter passes its OWNED transaction into Attendance's
+        // canonical archive port. Attendance consumes commit before its final pool
+        // read, so manifest acceptance and archive stay atomic without nested admission.
+        // A borrowed transaction, another provider or another caller is not this protocol.
+        let retention_archive_port = self.file.to_string_lossy().replace('\\', "/")
+            .ends_with("src/adapters/academic_retention.rs")
+            && matches!(&*call.func, Expr::Path(path)
+                if path.path.segments.iter().map(|part| part.ident.to_string()).collect::<Vec<_>>()
+                    == ["school_attendance", "services", "retention", "archive_in_transaction"])
+            && call.args.get(1).is_some_and(|argument| matches!(argument,
+                Expr::Path(path) if path.path.get_ident().is_some_and(|name| self.resources.contains(&name.to_string()))));
         let borrowed_transaction_factory = path_name.as_deref() == Some("prepare_delete")
             && self
                 .file
@@ -662,6 +673,7 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
             && !transparent_repository_factory
             && !borrowed_transaction_factory
             && !consuming_transaction_port
+            && !retention_archive_port
         {
             self.problem(&format!("pool helper {} called while a connection or transaction is held; propagate its connection", path_name.as_deref().unwrap_or("<call>")));
         }
@@ -1057,4 +1069,26 @@ fn guard_follows_external_cfg_modules_without_test_filename_exemptions() {
     assert!(problems
         .iter()
         .any(|problem| problem.contains("runtime_tests.rs::normal")));
+}
+
+#[test]
+fn retention_archive_port_requires_the_exact_owner_and_an_owned_transaction() {
+    let owner = "src/adapters/academic_retention.rs";
+    let owned="pub async fn advance(pool:&PgPool,tx:ObservedTransaction) { school_attendance::services::retention::archive_in_transaction(pool,tx,actor,term).await?; }";
+    assert!(inspect_snippet_at(owner, owned).is_empty());
+    for (file, source) in [
+        (owner, owned.replace("pool,tx,actor", "pool,&mut tx,actor")),
+        (
+            owner,
+            owned.replace("school_attendance", "unrelated_provider"),
+        ),
+        ("src/adapters/unrelated.rs", owned.to_owned()),
+    ] {
+        assert!(
+            inspect_snippet_at(file, &source)
+                .iter()
+                .any(|problem| problem.contains("pool helper archive_in_transaction")),
+            "unexpectedly accepted {file}: {source}"
+        );
+    }
 }

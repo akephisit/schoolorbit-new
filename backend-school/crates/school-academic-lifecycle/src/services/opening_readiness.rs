@@ -204,7 +204,11 @@ pub(crate) async fn activation_evidence_in_transaction(
             if count > 0 {
                 findings.push(LifecycleFinding {
                     code: code.into(),
-                    severity: LifecycleSeverity::Blocking,
+                    severity: if code == "opening.promotion_correction_unresolved" {
+                        LifecycleSeverity::Warning
+                    } else {
+                        LifecycleSeverity::Blocking
+                    },
                     count,
                     message: message.into(),
                     resolution_url: promotion_url.clone(),

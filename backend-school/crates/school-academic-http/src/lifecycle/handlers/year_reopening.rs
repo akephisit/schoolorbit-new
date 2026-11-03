@@ -41,6 +41,7 @@ pub async fn reopen_year(
 ) -> Result<Json<ApiResponse<YearReopeningOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let outcome = services::year_reopening_command::reopen_year(
+        state.lifecycle_providers,
         &context.tenant.pool,
         &context.actor,
         year,

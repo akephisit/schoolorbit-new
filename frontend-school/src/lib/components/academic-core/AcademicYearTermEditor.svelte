@@ -1,452 +1,169 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { resolve } from '$app/paths';
 	import type {
+		AcademicYear,
+		AcademicTerm,
+		BellSchedule,
 		AcademicContextSettings,
 		AcademicContextSettingsMutationResponse,
 		UpdateAcademicContextSettingsRequest,
-		AcademicTerm,
-		AcademicYear,
-		BellSchedule,
-		BellSchedulePeriod,
-		CreateAcademicTermRequest,
 		CreateAcademicYearRequest,
-		CreateBellScheduleRequest,
-		ReplaceBellSchedulePeriodsRequest,
-		UpdateAcademicTermRequest,
 		UpdateAcademicYearRequest,
-		UpdateBellScheduleRequest
+		CreateAcademicTermRequest,
+		UpdateAcademicTermRequest
 	} from '#lib/api/academic-core.js';
+	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
+	import AcademicYearSetupStep from './setup/AcademicYearSetupStep.svelte';
+	import AcademicTermSetupStep from './setup/AcademicTermSetupStep.svelte';
 	import AcademicContextSettingsControls from './AcademicContextSettingsControls.svelte';
-	import AcademicTermSetupStep from '#lib/components/academic-core/setup/AcademicTermSetupStep.svelte';
-	import AcademicYearSetupStep from '#lib/components/academic-core/setup/AcademicYearSetupStep.svelte';
-	import BellSchedulePeriodsStep from '#lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte';
-	import BellScheduleSetupStep from '#lib/components/academic-core/setup/BellScheduleSetupStep.svelte';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import {
-		BookOpenCheck,
-		CalendarDays,
-		Check,
-		ChevronRight,
-		Plus,
-		School,
-		TimerReset
-	} from '@lucide/svelte';
-
-	type StepKey = 'year' | 'schedule' | 'periods' | 'term';
-
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	let {
 		years,
 		termsByYear,
-		bellSchedules = [],
-		canManage = false,
-		busy = { year: false, term: false, schedule: false, periods: false },
+		bellSchedules,
+		canManage,
 		contextSettings,
+		busy,
 		onUpdateContextSettings,
 		onReloadContextSettings,
 		onCreateYear,
 		onUpdateYear,
-		onCreateBellSchedule,
-		onUpdateBellSchedule,
-		onLoadBellSchedulePeriods,
-		onReplaceBellSchedulePeriods,
 		onCreateTerm,
 		onUpdateTerm
 	}: {
 		years: AcademicYear[];
 		termsByYear: Map<string, AcademicTerm[]>;
-		bellSchedules?: BellSchedule[];
-		canManage?: boolean;
-		busy?: { year: boolean; term: boolean; schedule: boolean; periods: boolean };
+		bellSchedules: BellSchedule[];
+		canManage: boolean;
 		contextSettings: AcademicContextSettings | null;
-		onReloadContextSettings: () => Promise<void>;
+		busy: { year: boolean; term: boolean };
 		onUpdateContextSettings: (
-			draft: UpdateAcademicContextSettingsRequest
+			input: UpdateAcademicContextSettingsRequest
 		) => Promise<AcademicContextSettingsMutationResponse>;
-		onCreateYear: (draft: CreateAcademicYearRequest) => Promise<AcademicYear>;
-		onUpdateYear: (id: string, draft: UpdateAcademicYearRequest) => Promise<AcademicYear>;
-		onCreateBellSchedule: (draft: CreateBellScheduleRequest) => Promise<BellSchedule>;
-		onUpdateBellSchedule: (id: string, draft: UpdateBellScheduleRequest) => Promise<BellSchedule>;
-		onLoadBellSchedulePeriods: (id: string) => Promise<BellSchedulePeriod[]>;
-		onReplaceBellSchedulePeriods: (
-			id: string,
-			draft: ReplaceBellSchedulePeriodsRequest
-		) => Promise<BellSchedulePeriod[]>;
-		onCreateTerm: (draft: CreateAcademicTermRequest) => Promise<AcademicTerm>;
-		onUpdateTerm: (id: string, draft: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
+		onReloadContextSettings: () => Promise<void>;
+		onCreateYear: (input: CreateAcademicYearRequest) => Promise<AcademicYear>;
+		onUpdateYear: (id: string, input: UpdateAcademicYearRequest) => Promise<AcademicYear>;
+		onCreateTerm: (input: CreateAcademicTermRequest) => Promise<AcademicTerm>;
+		onUpdateTerm: (id: string, input: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 	} = $props();
-
-	let selectedYearId = $state(
-		untrack(() => years.find((year) => year.status === 'planning')?.id ?? years[0]?.id ?? '')
+	let selectedYearId = $state(untrack(() => years[0]?.id ?? ''));
+	let creating = $state(false);
+	let editing = $state(false);
+	const selectedYear = $derived(
+		years.find((year) => year.id === selectedYearId) ?? years[0] ?? null
 	);
-	let activeStep = $state<StepKey>(
-		untrack(() => (selectedYearId ? firstIncompleteStep(selectedYearId) : 'year'))
+	const terms = $derived(selectedYear ? (termsByYear.get(selectedYear.id) ?? []) : []);
+	const schedules = $derived(
+		bellSchedules.filter((schedule) => schedule.academicYearId === selectedYear?.id)
 	);
-	let creatingYear = $state(untrack(() => years.length === 0));
-	let configuredScheduleIds = $state<string[]>([]);
-
-	const selectedYear = $derived(years.find((year) => year.id === selectedYearId) ?? null);
-	const selectedSchedules = $derived(
-		bellSchedules.filter((schedule) => schedule.academicYearId === selectedYearId)
-	);
-	const selectedTerms = $derived(termsByYear.get(selectedYearId) ?? []);
 	const suggestedYear = $derived(
-		years.length === 0
-			? new Date().getFullYear() + 543
-			: Math.max(...years.map((year) => year.year)) + 1
+		years.length ? Math.max(...years.map((year) => year.year)) + 1 : new Date().getFullYear() + 543
 	);
-
-	function firstIncompleteStep(yearId: string): StepKey {
-		const schedules = bellSchedules.filter((schedule) => schedule.academicYearId === yearId);
-		if (schedules.length === 0) return 'schedule';
-		if ((termsByYear.get(yearId) ?? []).length === 0) return 'periods';
-		return 'term';
-	}
-
-	function selectYear(id: string) {
-		selectedYearId = id;
-		creatingYear = false;
-		activeStep = firstIncompleteStep(id);
-	}
-
-	function startNewYear() {
-		creatingYear = true;
-		activeStep = 'year';
-	}
-
-	function editSelectedYear() {
-		creatingYear = false;
-		activeStep = 'year';
-	}
-
-	function handleYearSaved(year: AcademicYear) {
-		selectedYearId = year.id;
-		creatingYear = false;
-		activeStep = 'schedule';
-	}
-
-	function handleScheduleSaved(_schedule: BellSchedule) {
-		activeStep = 'periods';
-	}
-
-	function handlePeriodsSaved(scheduleId: string, _periods: BellSchedulePeriod[]) {
-		if (!configuredScheduleIds.includes(scheduleId)) {
-			configuredScheduleIds = [...configuredScheduleIds, scheduleId];
-		}
-		activeStep = 'term';
-	}
-
-	function handleTermSaved(_term: AcademicTerm) {
-		activeStep = 'term';
-	}
-
-	function statusLabel(status: AcademicYear['status']) {
-		return {
-			planning: 'ฉบับเตรียมการ',
-			ready: 'พร้อมใช้งาน',
-			active: 'กำลังใช้งาน',
-			closing: 'กำลังปิดรอบ',
-			closed: 'ปิดแล้ว',
-			archived: 'เก็บถาวร'
-		}[status];
-	}
 </script>
 
-<div class="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-	<aside class="space-y-3 xl:sticky xl:top-20 xl:self-start" aria-label="ปีการศึกษา">
-		<div class="flex items-center justify-between gap-3">
-			<div>
-				<p class="text-sm font-semibold">ปีการศึกษา</p>
-				<p class="text-xs text-muted-foreground">เลือกปีที่จะวางแผนหรือดูข้อมูลเดิม</p>
-			</div>
-			{#if canManage}
-				<Button
-					type="button"
-					size="icon-sm"
-					variant="outline"
-					onclick={startNewYear}
-					aria-label="เพิ่มปีการศึกษา"
-				>
-					<Plus class="size-4" />
-				</Button>
-			{/if}
-		</div>
-		<div class="space-y-2">
-			{#each years as year (year.id)}
-				<button
-					type="button"
-					class={[
-						'w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-						year.id === selectedYearId
-							? 'border-primary bg-primary/[0.06]'
-							: 'bg-card hover:bg-muted/40'
-					]}
-					onclick={() => selectYear(year.id)}
-				>
-					<span class="flex items-center justify-between gap-2">
-						<strong class="truncate text-sm">{year.name}</strong>
-						{#if year.id === selectedYearId}<Check class="size-4 shrink-0 text-primary" />{/if}
-					</span>
-					<span class="mt-1 block text-xs text-muted-foreground">
-						{(termsByYear.get(year.id) ?? []).length} ภาคเรียน · {statusLabel(year.status)}
-					</span>
-				</button>
-			{:else}
-				<p class="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-					ยังไม่มีปีการศึกษา เริ่มจากขั้นที่ 1
-				</p>
-			{/each}
-		</div>
-	</aside>
-
-	<section class="min-w-0 space-y-4" aria-label="ลำดับการตั้งค่างานวิชาการ">
-		<div class="overflow-hidden rounded-2xl border bg-card">
-			<div
-				class="border-b bg-gradient-to-r from-primary/[0.09] via-primary/[0.03] to-transparent p-5 sm:p-6"
+<section class="space-y-5 rounded-xl border bg-card p-4 sm:p-5" aria-label="ตั้งค่าปีและภาคเรียน">
+	<div class="flex flex-wrap items-end justify-between gap-3">
+		<div class="w-full max-w-sm space-y-2">
+			<h2 class="text-lg font-semibold">ตั้งค่าปีและภาคเรียน</h2>
+			<Label for="setup-year">ปีที่ต้องการตั้งค่า</Label><Select.Root
+				type="single"
+				value={selectedYear?.id ?? ''}
+				onValueChange={(value) => {
+					selectedYearId = value;
+					creating = false;
+					editing = false;
+				}}
+				><Select.Trigger id="setup-year" class="w-full"
+					><span>{selectedYear?.name ?? 'ยังไม่มีปีการศึกษา'}</span></Select.Trigger
+				><Select.Content
+					>{#each years as year (year.id)}<Select.Item value={year.id}
+							>{year.name} · {academicStatusLabel(year.status)}</Select.Item
+						>{/each}</Select.Content
+				></Select.Root
 			>
-				<div class="flex flex-wrap items-start justify-between gap-4">
-					<div>
-						<p class="text-xs font-semibold tracking-wide text-primary">เส้นทางตั้งค่างานวิชาการ</p>
-						<h2 class="mt-1 text-xl font-semibold">
-							{creatingYear
-								? 'สร้างปีสำหรับวางแผน'
-								: (selectedYear?.name ?? 'เริ่มตั้งค่าปีการศึกษา')}
-						</h2>
-						<p class="mt-2 max-w-2xl text-sm text-muted-foreground">
-							ทำตามลำดับ 4 ขั้น ข้อมูลในขั้นก่อนหน้าจะถูกส่งต่อให้ขั้นถัดไปโดยอัตโนมัติ
-						</p>
-					</div>
-					<Badge variant="secondary">ฉบับเตรียมการ</Badge>
-				</div>
-			</div>
-			<div class="flex gap-3 border-b bg-muted/20 px-5 py-3 text-xs text-muted-foreground sm:px-6">
-				<School class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-				<p>
-					สร้างปีและภาคเรียนเป็นร่างที่ซ่อนอยู่ จากนั้นเลือกแสดงและตั้งค่าเริ่มต้นได้ การปิดภาคเรียน
-					และการเลื่อนชั้นเป็นขั้นตอนแยกเมื่อระบบผลการเรียนพร้อม
-				</p>
-			</div>
 		</div>
-
-		{#if selectedYear && contextSettings && !creatingYear}
-			<AcademicContextSettingsControls
+		{#if canManage}<Button
+				variant="outline"
+				onclick={() => {
+					creating = true;
+					editing = false;
+				}}>เพิ่มปีการศึกษา</Button
+			>{/if}
+	</div>
+	{#if canManage && (creating || editing || !selectedYear)}<div
+			class="space-y-3 rounded-lg border p-4"
+		>
+			{#key creating ? 'new' : selectedYear?.id}<AcademicYearSetupStep
+					existing={creating ? null : selectedYear}
+					{suggestedYear}
+					busy={busy.year}
+					onCreate={onCreateYear}
+					onUpdate={onUpdateYear}
+					onSaved={(year) => {
+						selectedYearId = year.id;
+						creating = false;
+						editing = false;
+					}}
+				/>{/key}{#if selectedYear}<Button
+					variant="outline"
+					onclick={() => {
+						creating = false;
+						editing = false;
+					}}>ยกเลิก</Button
+				>{/if}
+		</div>{/if}
+	{#if selectedYear}
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex items-center gap-2">
+				<h3 class="font-medium">{selectedYear.name}</h3>
+				<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>
+				<Badge variant="outline">{academicStatusLabel(selectedYear.status)}</Badge>
+			</div>
+			{#if canManage}<Button
+					size="sm"
+					variant="ghost"
+					onclick={() => {
+						editing = true;
+						creating = false;
+					}}>แก้ไขปีการศึกษา</Button
+				>{/if}
+		</div>
+		<section class="space-y-4" aria-label="ภาคเรียน">
+			<h3 class="font-semibold">ภาคเรียน</h3>
+			{#if canManage && schedules.length > 0}{#key selectedYear.id}<AcademicTermSetupStep
+						year={selectedYear}
+						{schedules}
+						{terms}
+						busy={busy.term}
+						onCreate={onCreateTerm}
+						onUpdate={onUpdateTerm}
+						onSaved={() => {}}
+					/>{/key}{:else}<div class="space-y-2">
+					{#each terms as term (term.id)}<div
+							class="flex items-center justify-between rounded-lg border p-3"
+						>
+							<span>{term.name}</span><Badge variant="outline"
+								>{academicStatusLabel(term.status)}</Badge
+							>
+						</div>{/each}{#if canManage}<p class="text-sm text-muted-foreground">
+							เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน
+						</p>
+						<Button variant="outline" href={resolve('staff/academic/core#bell-schedules')}
+							>ตั้งค่าเวลาเรียน</Button
+						>{/if}
+				</div>{/if}
+		</section>
+		{#if contextSettings}<AcademicContextSettingsControls
 				year={selectedYear}
-				terms={selectedTerms}
+				{terms}
 				settings={contextSettings}
 				{canManage}
 				onsave={onUpdateContextSettings}
 				onreload={onReloadContextSettings}
-			/>
-		{/if}
-
-		<article class="overflow-hidden rounded-2xl border bg-card">
-			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
-				<div
-					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
-				>
-					1
-				</div>
-				<div class="min-w-0 flex-1">
-					<h3 class="font-semibold">ปีการศึกษา</h3>
-					<p class="text-xs text-muted-foreground">ปี พ.ศ. และวันเรียนปกติ</p>
-				</div>
-				{#if selectedYear && !creatingYear}
-					<Badge variant="outline"><Check class="size-3" /> บันทึกแล้ว</Badge>
-				{/if}
-				{#if canManage && selectedYear && activeStep !== 'year'}
-					<Button type="button" size="sm" variant="ghost" onclick={editSelectedYear}>แก้ไข</Button>
-				{/if}
-			</header>
-			{#if canManage && activeStep === 'year'}
-				<div class="p-4 sm:p-6">
-					{#key creatingYear ? 'new-year' : (selectedYear?.id ?? 'year')}
-						<AcademicYearSetupStep
-							existing={creatingYear ? null : selectedYear}
-							{suggestedYear}
-							busy={busy.year}
-							onCreate={onCreateYear}
-							onUpdate={onUpdateYear}
-							onSaved={handleYearSaved}
-						/>
-					{/key}
-				</div>
-			{:else if selectedYear}
-				<div class="grid gap-3 p-4 text-sm sm:grid-cols-3 sm:p-5">
-					<div>
-						<span class="text-muted-foreground">ชื่อ</span><strong class="block"
-							>{selectedYear.name}</strong
-						>
-					</div>
-					<div>
-						<span class="text-muted-foreground">วันเรียน</span><strong class="block"
-							>{selectedYear.schoolDays.length} วันต่อสัปดาห์</strong
-						>
-					</div>
-				</div>
-			{/if}
-		</article>
-
-		<article id="bell-schedules" class="scroll-mt-20 overflow-hidden rounded-2xl border bg-card">
-			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
-				<div
-					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-				>
-					2
-				</div>
-				<div class="min-w-0 flex-1">
-					<h3 class="font-semibold">ตารางเวลา</h3>
-					<p class="text-xs text-muted-foreground">ตั้งชื่อชุดเวลาและเลือกตารางหลักของปี</p>
-				</div>
-				{#if selectedSchedules.length > 0}
-					<Badge variant="outline">{selectedSchedules.length} ตาราง</Badge>
-				{/if}
-				{#if canManage && selectedYear && activeStep !== 'schedule'}
-					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'schedule')}
-						>จัดการ</Button
-					>
-				{/if}
-			</header>
-			{#if !selectedYear}
-				<p class="p-5 text-sm text-muted-foreground">บันทึกปีการศึกษาก่อนจึงจะเพิ่มตารางเวลาได้</p>
-			{:else if canManage && activeStep === 'schedule'}
-				<div class="p-4 sm:p-6">
-					<BellScheduleSetupStep
-						year={selectedYear}
-						schedules={selectedSchedules}
-						busy={busy.schedule}
-						onCreate={onCreateBellSchedule}
-						onUpdate={onUpdateBellSchedule}
-						onSaved={handleScheduleSaved}
-					/>
-				</div>
-			{:else if selectedSchedules.length > 0}
-				<div class="flex flex-wrap gap-2 p-4 sm:p-5">
-					{#each selectedSchedules as schedule (schedule.id)}
-						<Badge variant={schedule.isDefault ? 'default' : 'secondary'}>
-							{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
-						</Badge>
-					{/each}
-				</div>
-			{/if}
-		</article>
-
-		<article class="overflow-hidden rounded-2xl border bg-card">
-			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
-				<div
-					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-				>
-					3
-				</div>
-				<div class="min-w-0 flex-1">
-					<h3 class="font-semibold">คาบเรียน</h3>
-					<p class="text-xs text-muted-foreground">กำหนดเวลาและวันที่ใช้ของแต่ละคาบ</p>
-				</div>
-				{#if configuredScheduleIds.length > 0}
-					<Badge variant="outline"><Check class="size-3" /> บันทึกแล้ว</Badge>
-				{/if}
-				{#if canManage && selectedSchedules.length > 0 && activeStep !== 'periods'}
-					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'periods')}
-						>จัดการ</Button
-					>
-				{/if}
-			</header>
-			{#if selectedSchedules.length === 0}
-				<p class="p-5 text-sm text-muted-foreground">เพิ่มตารางเวลาก่อนจึงจะจัดคาบเรียนได้</p>
-			{:else if selectedYear && canManage && activeStep === 'periods'}
-				<div class="p-4 sm:p-6">
-					<BellSchedulePeriodsStep
-						year={selectedYear}
-						schedules={selectedSchedules}
-						busy={busy.periods}
-						onLoad={onLoadBellSchedulePeriods}
-						onReplace={onReplaceBellSchedulePeriods}
-						onSaved={handlePeriodsSaved}
-					/>
-				</div>
-			{:else}
-				<p class="p-5 text-sm text-muted-foreground">
-					เลือก “จัดการ” เพื่อตรวจหรือแก้คาบของแต่ละตารางเวลา
-				</p>
-			{/if}
-		</article>
-
-		<article class="overflow-hidden rounded-2xl border bg-card">
-			<header class="flex items-center gap-3 border-b p-4 sm:p-5">
-				<div
-					class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-				>
-					4
-				</div>
-				<div class="min-w-0 flex-1">
-					<h3 class="font-semibold">ภาคเรียน</h3>
-					<p class="text-xs text-muted-foreground">ผูกช่วงเรียนเข้ากับตารางเวลาที่เตรียมไว้</p>
-				</div>
-				{#if selectedTerms.length > 0}
-					<Badge variant="outline">{selectedTerms.length} ภาคเรียน</Badge>
-				{/if}
-				{#if canManage && selectedSchedules.length > 0 && activeStep !== 'term'}
-					<Button type="button" size="sm" variant="ghost" onclick={() => (activeStep = 'term')}
-						>จัดการ</Button
-					>
-				{/if}
-			</header>
-			{#if selectedSchedules.length === 0}
-				<p class="p-5 text-sm text-muted-foreground">เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียน</p>
-			{:else if selectedYear && canManage && activeStep === 'term'}
-				<div class="p-4 sm:p-6">
-					{#key selectedYear.id}
-						<AcademicTermSetupStep
-							year={selectedYear}
-							schedules={selectedSchedules}
-							terms={selectedTerms}
-							busy={busy.term}
-							onCreate={onCreateTerm}
-							onUpdate={onUpdateTerm}
-							onSaved={handleTermSaved}
-						/>
-					{/key}
-				</div>
-			{:else if selectedTerms.length > 0}
-				<div class="divide-y">
-					{#each selectedTerms as term (term.id)}
-						<div class="flex items-center justify-between gap-3 p-4 text-sm sm:px-5">
-							<div>
-								<strong>{term.name}</strong>
-							</div>
-							<ChevronRight class="size-4 text-muted-foreground" />
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</article>
-
-		<div
-			class="grid gap-3 rounded-2xl border border-dashed bg-muted/10 p-4 text-sm sm:grid-cols-3 sm:p-5"
-		>
-			<div class="flex gap-3">
-				<CalendarDays class="size-4 shrink-0 text-primary" />
-				<p>
-					<strong class="block">แสดงและตั้งค่าเริ่มต้น</strong><span
-						class="text-xs text-muted-foreground">เลือกแสดงเมื่อพร้อมให้บุคลากรเลือกใช้งาน</span
-					>
-				</p>
-			</div>
-			<div class="flex gap-3">
-				<TimerReset class="size-4 shrink-0 text-primary" />
-				<p>
-					<strong class="block">ปิดภาคเรียนภายหลัง</strong><span
-						class="text-xs text-muted-foreground">เมื่อคะแนนและผลการเรียนครบ</span
-					>
-				</p>
-			</div>
-			<div class="flex gap-3">
-				<BookOpenCheck class="size-4 shrink-0 text-primary" />
-				<p>
-					<strong class="block">เลื่อนชั้นภายหลัง</strong><span
-						class="text-xs text-muted-foreground">เป็น workflow แยก ไม่เกิดจากการสร้างปีใหม่</span
-					>
-				</p>
-			</div>
-		</div>
-	</section>
-</div>
+			/>{/if}
+	{/if}
+</section>

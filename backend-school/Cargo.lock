@@ -4192,6 +4192,7 @@ dependencies = [
  "school-notifications",
  "school-permissions",
  "school-tenancy",
+ "school-test-db",
  "serde",
  "serde_json",
  "sha2 0.11.1",
