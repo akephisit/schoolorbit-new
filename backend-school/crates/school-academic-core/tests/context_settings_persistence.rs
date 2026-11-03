@@ -25,7 +25,7 @@ async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, AcademicYear) {
         CreateAcademicYearRequest {
             year: 2901,
             custom_name: None,
-            school_days: vec!["MON".into()],
+            default_school_days: vec!["MON".into()],
         },
     )
     .await
@@ -248,7 +248,7 @@ async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filte
         CreateAcademicYearRequest {
             year: 2902,
             custom_name: None,
-            school_days: vec!["MON".into()],
+            default_school_days: vec!["MON".into()],
         },
     )
     .await
@@ -405,7 +405,7 @@ async fn scoped_options_keep_visible_enrollment_history_without_inaccessible_def
         CreateAcademicYearRequest {
             year: 2901,
             custom_name: None,
-            school_days: vec!["MON".into()],
+            default_school_days: vec!["MON".into()],
         },
     )
     .await

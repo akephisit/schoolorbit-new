@@ -82,7 +82,7 @@ pub(crate) async fn fixture(
     .fetch_one(&pool)
     .await
     .unwrap();
-    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let mut tx = pool.begin().await.unwrap();
     let source = super::super::promotion_students::read_promotion_students(
         &mut tx,

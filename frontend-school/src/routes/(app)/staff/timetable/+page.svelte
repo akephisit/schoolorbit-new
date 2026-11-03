@@ -60,12 +60,8 @@
 	let interactionRevision = 0;
 	onDestroy(() => request.abort());
 
-	const schoolDays = $derived.by(() => {
-		const configured = new Set(blocks.map((block) => block.dayOfWeek));
-		return configured.size > 0
-			? dayOptions.filter((day) => configured.has(day.value))
-			: dayOptions.slice(0, 5);
-	});
+	const schoolDays = $derived(dayOptions.filter((day) => selectedTerm?.schoolDays.includes(day.value)));
+
 	const canDownloadPdf = $derived(
 		canDownloadStaffOwnTimetablePdf({
 			loading,

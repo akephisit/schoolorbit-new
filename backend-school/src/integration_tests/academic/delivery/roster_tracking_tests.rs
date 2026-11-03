@@ -283,7 +283,7 @@ async fn room_tracking_annual_membership_pinned_spans_partition_at_real_transfer
     let shared = members(&f, f.groups[2]).await[0].clone();
     sqlx::query("UPDATE homeroom_placements SET placement_scope='academic_year',start_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
         .bind(learner.student_academic_year_id).execute(&f.pool).await.unwrap();
-    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT min(year)-1,'Excluded pinned annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
+    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT min(year)-1,'Excluded pinned annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
     let other_room: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT uuidv7(),'FOREIGN-PIN','Other year pin',$1,grade_level_id,'FOREIGN-PIN',study_program_id,40,true FROM homerooms WHERE id=$2 RETURNING id")
         .bind(other_year).bind(f.room).fetch_one(&f.pool).await.unwrap();
     let other_annual: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT uuidv7(),student_id,$1,grade_level_id,study_program_id,'active' FROM student_academic_years WHERE id=$2 RETURNING id")

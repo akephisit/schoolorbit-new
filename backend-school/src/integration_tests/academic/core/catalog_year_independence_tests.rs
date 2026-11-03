@@ -212,7 +212,7 @@ async fn catalog_year_independence_outside_and_overlapping_years_keep_domain_gua
     .await
     .is_err());
     for (index, year) in [2599, 2600].into_iter().enumerate() {
-        sqlx::query("INSERT INTO academic_years(id,year,name,school_days,status) VALUES($1,$2,'Independent fixture','MON','planning')")
+        sqlx::query("INSERT INTO academic_years(id,year,name,default_school_days,status) VALUES($1,$2,'Independent fixture','MON','planning')")
             .bind(Uuid::new_v4()).bind(year).execute(&pool).await.unwrap();
         let stable = stable_subject(&pool, &format!("YEAR-FREE-OVERLAP-{index}")).await;
         assert!(

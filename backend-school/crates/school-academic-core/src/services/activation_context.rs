@@ -36,14 +36,7 @@ pub async fn read_activation_state(
             "จำนวนปีหรือภาคเรียนเกินขอบเขตที่ตรวจพร้อมกันได้".into(),
         ));
     }
-    let school_days: String = DbSession::new(&mut **tx)
-        .scalar(
-            "academic_core.services.activation_context.read_activation_state",
-            "SELECT school_days FROM academic_years WHERE id=$1",
-        )
-        .bind(year)
-        .fetch_one()
-        .await?;
+    let school_days = super::school_days::for_term_on_connection(tx, term).await?.join(",");
     let opens_year = matches!(
         context.year_status,
         AcademicYearStatus::Planning | AcademicYearStatus::Ready
@@ -164,31 +157,26 @@ pub async fn read_activation_state(
             "ตารางเวลามีคาบเกิน 1,000 รายการ".into(),
         ));
     }
-    let active_periods: Vec<_> = periods
+    let active_periods = periods
         .iter()
         .filter(|row| row.is_active)
-        .map(|row| BellSchedulePeriodInput {
+        .map(|row| Ok(BellSchedulePeriodInput {
             name: row.name.clone(),
             start_time: row.start_time,
             end_time: row.end_time,
             order_index: row.order_index,
-            applicable_days: row
-                .applicable_days
-                .as_deref()
-                .map(|days| days.split(',').map(str::to_owned).collect())
-                .unwrap_or_default(),
+            applicable_days: Some(super::school_days::effective_period_days(
+                row.applicable_days.as_deref(),
+                &school_days.split(',').map(str::to_owned).collect::<Vec<_>>(),
+            )?),
             is_active: true,
-        })
-        .collect();
+        }))
+        .collect::<Result<Vec<_>, school_errors::AppError>>();
     let bell_invalid = bell
         .as_ref()
         .is_none_or(|row| row.academic_year_id != year || row.status == VersionStatus::Archived)
-        || active_periods.is_empty()
-        || super::bell_schedules::validate_periods(&active_periods).is_err()
-        || active_periods
-            .iter()
-            .flat_map(|row| &row.applicable_days)
-            .any(|day| !allowed_days.contains(day.as_str()));
+        || active_periods.as_ref().map_or(true, |periods| periods.is_empty()
+            || super::bell_schedules::validate_periods(periods).is_err());
     push(&mut issues, Code::BellSchedule, usize::from(bell_invalid));
     let (students, placements) = read_enrollment(tx, &context).await?;
     push(

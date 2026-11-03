@@ -4,7 +4,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { MapPin, Users } from '@lucide/svelte';
-	let { blocks }: { blocks: TimetableBlock[] } = $props();
+	let { blocks, schoolDays }: { blocks: TimetableBlock[]; schoolDays: readonly string[] } = $props();
 	const dayOptions = [
 		{ value: 'MON', label: 'จันทร์' },
 		{ value: 'TUE', label: 'อังคาร' },
@@ -16,7 +16,7 @@
 	];
 	const periods = $derived(periodsFromTimetableBlocks(blocks));
 	const days = $derived(
-		dayOptions.filter((day) => blocks.some((block) => block.dayOfWeek === day.value))
+		dayOptions.filter((day) => schoolDays.includes(day.value))
 	);
 	function cell(day: string, period: string) {
 		return blocks.filter(

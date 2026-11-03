@@ -158,7 +158,7 @@ async fn deactivation_lifecycle_fixture(
     for (year, is_future) in
         std::iter::once((historical_year, false)).chain(future_year.map(|year| (year, true)))
     {
-        sqlx::query("INSERT INTO academic_years (id,year,name,school_days,status) VALUES ($1,$2,'Deactivation test year','MON,TUE,WED,THU,FRI',$3)")
+        sqlx::query("INSERT INTO academic_years (id,year,name,default_school_days,status) VALUES ($1,$2,'Deactivation test year','MON,TUE,WED,THU,FRI',$3)")
             .bind(year).bind(if is_future {2598} else {2597}).bind(if is_future {"planning"} else {historical_status}).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id,grade_level_id) VALUES ($1,$2)").bind(year).bind(grade).execute(&pool).await.unwrap();
         let homeroom = Uuid::new_v4();
@@ -2407,7 +2407,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     let update_year = UpdateAcademicYearRequest {
         year: future.year,
         custom_name: Some("ปีการศึกษา 2026 เตรียมการ".to_string()),
-        school_days: future.school_days,
+        default_school_days: future.default_school_days,
         row_version: future.row_version,
     };
     let updated = years_terms::update_year(&pool, actor, FUTURE_YEAR_ID, update_year)
@@ -2421,7 +2421,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         UpdateAcademicYearRequest {
             year: future.year,
             custom_name: Some("ข้อมูลเก่า".to_string()),
-            school_days: vec!["MON".to_string()],
+            default_school_days: vec!["MON".to_string()],
             row_version: future.row_version,
         },
     )

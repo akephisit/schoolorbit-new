@@ -107,9 +107,9 @@ mod tests {
         .await
         .unwrap();
         let year_sql = if version < 148 {
-            "INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','2027-05-01','2028-03-31','MON,TUE,WED,THU,FRI','planning') RETURNING id"
+            "INSERT INTO academic_years(year,name,start_date,end_date,default_school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','2027-05-01','2028-03-31','MON,TUE,WED,THU,FRI','planning') RETURNING id"
         } else {
-            "INSERT INTO academic_years(year,name,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"
+            "INSERT INTO academic_years(year,name,default_school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"
         };
         let academic_year_id: Uuid = sqlx::query_scalar(sqlx::AssertSqlSafe(year_sql))
             .fetch_one(&pool)

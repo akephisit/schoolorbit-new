@@ -438,6 +438,33 @@ pub async fn create_term(
     Ok(created(term))
 }
 
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/terms/copy-school-schedule",operation_id="createAcademicTermCopySchoolSchedule",tag="academic",request_body=CreateAcademicTermCopySchoolScheduleRequest,responses((status=201,description="Term and independent copied bell schedule created atomically",body=ApiResponse<AcademicTermSchoolScheduleCopyResponse>),(status=400,description="Invalid school days or term configuration",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Term management permission denied",body=ApiErrorResponse),(status=404,description="Source or target context not found",body=ApiErrorResponse),(status=409,description="Source revision or target lifecycle conflict",body=ApiErrorResponse))))]
+pub async fn create_term_copy_school_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateAcademicTermCopySchoolScheduleRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context.actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let outcome = school_academic_core::services::term_school_schedule::create(&context.tenant.pool, context.actor.user_id, request).await?;
+    signal_core_changed(&state,&session,&context.actor,"academic_term",Some(outcome.term.id),Some(outcome.term.academic_year_id),Some(outcome.term.id));
+    Ok(created(outcome))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/terms/{id}/copy-school-schedule",operation_id="copyAcademicTermSchoolSchedule",tag="academic",params(("id"=Uuid,Path,description="Unopened target term identity")),request_body=CopyAcademicTermSchoolScheduleRequest,responses((status=200,description="Independent bell schedule and target weekdays assigned atomically",body=ApiResponse<AcademicTermSchoolScheduleCopyResponse>),(status=400,description="Invalid school days or term configuration",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Term management permission denied",body=ApiErrorResponse),(status=404,description="Source or target context not found",body=ApiErrorResponse),(status=409,description="Source or target revision, reference or lifecycle conflict",body=ApiErrorResponse))))]
+pub async fn copy_term_school_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CopyAcademicTermSchoolScheduleRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context.actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let outcome = school_academic_core::services::term_school_schedule::copy_into(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    signal_core_changed(&state,&session,&context.actor,"academic_term",Some(outcome.term.id),Some(outcome.term.academic_year_id),Some(outcome.term.id));
+    Ok(ok(outcome))
+}
+
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/terms/{id}",

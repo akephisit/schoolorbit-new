@@ -93,6 +93,7 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true
@@ -156,7 +157,7 @@ const year = {
 	id: ids.year,
 	year: 2570,
 	name: 'ปีการศึกษา 2570',
-	schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+	defaultSchoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 	status: 'planning',
 	rowVersion: 1,
 	migrated: false,
@@ -171,6 +172,7 @@ const term = {
 	code: '1',
 	name: 'ภาคเรียนที่ 1',
 	termType: 'regular',
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 	includedInYearResult: true,
 	blocksYearClosure: true,
 	bellScheduleId: ids.bell,
@@ -334,7 +336,7 @@ test('creates a future planning year and configurable regular, summer, and custo
 	expect(createYearBody).toMatchObject({
 		year: 2571,
 		customName: null,
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
+		defaultSchoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
 	});
 	expect(createYearBody).not.toHaveProperty('name');
 	await expect(

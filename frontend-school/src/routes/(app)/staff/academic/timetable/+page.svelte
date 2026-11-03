@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SCHOOL_WEEKDAYS, periodAllowsSchoolDay } from '#lib/academic-core/school-schedule.js';
 	import {
 		initialTimetablePublicationDate,
 		draftSaveOutcome,
@@ -324,13 +325,7 @@
 		href: '/staff/facility/buildings'
 	};
 
-	const days = [
-		{ id: 'MON', label: 'จันทร์' },
-		{ id: 'TUE', label: 'อังคาร' },
-		{ id: 'WED', label: 'พุธ' },
-		{ id: 'THU', label: 'พฤหัสบดี' },
-		{ id: 'FRI', label: 'ศุกร์' }
-	];
+	const days = $derived(SCHOOL_WEEKDAYS.filter((day) => $academicContext.options?.terms.find((term) => term.id === academicTermId)?.schoolDays.includes(day.code)).map((day) => ({id: day.code, label: day.label})));
 	const noRoomValue = '__none__';
 	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
@@ -446,7 +441,8 @@
 				structuralForm.teacherIds.includes(item.id)
 			)
 	);
-	let overviewDay = $state('MON');
+	let selectedOverviewDay = $state('');
+	const overviewDay = $derived(days.some((day) => day.id === selectedOverviewDay) ? selectedOverviewDay : days[0]?.id ?? '');
 	let workspaceRoot = $state<HTMLElement | null>(null);
 	let dragInteraction = $state.raw<LocalInteraction | null>(null);
 	let editInteraction = $state.raw<LocalInteraction | null>(null);
@@ -1454,7 +1450,11 @@
 		return `${dayOfWeek}:${periodId}`;
 	}
 
+	function validPeriodDay(dayOfWeek: string, periodId: string): boolean {
+		return periodAllowsSchoolDay(controller?.workspace.bellPeriods.find((period) => period.id === periodId), dayOfWeek, days.map((day) => day.id));
+	}
 	function cellState(dayOfWeek: string, periodId: string): TimetableCellState {
+		if (!validPeriodDay(dayOfWeek, periodId)) return 'blocked';
 		if (pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId))) return 'saving';
 		if (
 			controller?.selectedOwnerId &&
@@ -1596,6 +1596,7 @@
 			busy
 		)
 			return;
+		if (!validPeriodDay(dayOfWeek, periodId)) { toast.error('คาบนี้ไม่เปิดใช้ในวันที่เลือก'); return; }
 		const operationController = controller;
 		const interaction = dragInteraction;
 		const dragSource: TimetableDragSource = controller.dragSource;
@@ -1894,7 +1895,8 @@
 			$academicContext.options?.terms.find((term) => term.id === academicTermId)?.name ?? '',
 			$academicContext.options?.years.find((year) => year.id === academicYearId)?.name ?? '',
 			ownerIds,
-			layout
+			layout,
+			days.map((day) => day.id)
 		);
 		if (!download.pages.length) return;
 		exportingPdf = true;
@@ -3452,7 +3454,7 @@
 		if (context.viewMode === 'wholeSchool') {
 			const targetDay =
 				!connection.anchor && editingBlock ? editingBlock.dayOfWeek : context.dayOfWeek;
-			if (targetDay && days.some((day) => day.id === targetDay)) overviewDay = targetDay;
+			if (targetDay && days.some((day) => day.id === targetDay)) selectedOverviewDay = targetDay;
 			pointerOwnerId = context.viewId ?? null;
 		} else {
 			selectedController.setView(context.viewMode);
@@ -3857,7 +3859,7 @@
 							{#if activeView === 'wholeSchool'}
 								<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 									<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
-									<Select.Root type="single" bind:value={overviewDay}>
+									<Select.Root type="single" value={overviewDay} onValueChange={(value) => selectedOverviewDay = value}>
 										<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
 											{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
 										</Select.Trigger>

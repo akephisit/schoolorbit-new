@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
 		AcademicYear,
 		CreateAcademicYearRequest,
@@ -7,27 +8,14 @@
 	} from '#lib/api/academic-core.js';
 	import {
 		customNameFromStored,
-		normalizeSchoolDays,
-		standardAcademicYearName,
-		type AcademicWeekday
+		standardAcademicYearName
 	} from '#lib/academic-core/foundation-presentation.js';
 	import { yearDraftBase, yearDraftMetadataMatches } from '#lib/academic-core/context-drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ChevronDown, Save } from '@lucide/svelte';
-
-	const WEEKDAYS: Array<{ code: AcademicWeekday; label: string; short: string }> = [
-		{ code: 'MON', label: 'วันจันทร์', short: 'จ' },
-		{ code: 'TUE', label: 'วันอังคาร', short: 'อ' },
-		{ code: 'WED', label: 'วันพุธ', short: 'พ' },
-		{ code: 'THU', label: 'วันพฤหัสบดี', short: 'พฤ' },
-		{ code: 'FRI', label: 'วันศุกร์', short: 'ศ' },
-		{ code: 'SAT', label: 'วันเสาร์', short: 'ส' },
-		{ code: 'SUN', label: 'วันอาทิตย์', short: 'อา' }
-	];
 
 	let {
 		existing = null,
@@ -51,9 +39,6 @@
 			existing ? customNameFromStored(existing.name, standardAcademicYearName(existing.year)) : ''
 		)
 	);
-	let schoolDays = $state<AcademicWeekday[]>(
-		untrack(() => normalizeSchoolDays(existing?.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI']))
-	);
 	let advancedOpen = $state(untrack(() => customName.length > 0));
 	let errorMessage = $state('');
 
@@ -65,31 +50,27 @@
 	const standardName = $derived(standardAcademicYearName(year));
 	const displayName = $derived(customName.trim() || standardName);
 
-	function toggleDay(day: AcademicWeekday, checked: boolean) {
-		schoolDays = normalizeSchoolDays(
-			checked ? [...schoolDays, day] : schoolDays.filter((item) => item !== day)
-		);
-	}
+	let disposed = false;
+	onDestroy(() => { disposed = true; });
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy || metadataChanged) return;
 		errorMessage = '';
-		if (schoolDays.length === 0) {
-			errorMessage = 'กรุณาเลือกวันเรียนอย่างน้อย 1 วัน';
-			return;
-		}
 		const common = {
 			year,
 			customName: customName.trim() || null,
-			schoolDays
+			defaultSchoolDays: existing?.defaultSchoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI']
 		};
+		const identity = appIdentityKey();
 		try {
 			const saved = existing
 				? await onUpdate(existing.id, { ...common, rowVersion: existing.rowVersion })
 				: await onCreate(common);
+			if (disposed || identity !== appIdentityKey()) return;
 			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey()) return;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกปีการศึกษาไม่สำเร็จ';
 		}
 	}
@@ -110,28 +91,6 @@
 			<Input id="academic-year-value" type="number" min="2400" bind:value={year} required />
 		</div>
 	</div>
-
-	<fieldset class="space-y-2">
-		<legend class="text-sm font-medium">วันเรียนปกติของปีนี้</legend>
-		<p class="text-xs text-muted-foreground">
-			ใช้ตรวจว่าคาบเรียนถูกกำหนดเฉพาะวันที่โรงเรียนเปิดเรียน
-		</p>
-		<div class="grid grid-cols-4 gap-2 sm:grid-cols-7">
-			{#each WEEKDAYS as day (day.code)}
-				<label
-					class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border bg-background px-2 py-2.5 text-sm hover:bg-muted/50"
-					title={day.label}
-				>
-					<Checkbox
-						checked={schoolDays.includes(day.code)}
-						onCheckedChange={(checked) => toggleDay(day.code, checked ?? false)}
-						aria-label={`เลือก${day.label}`}
-					/>
-					<span>{day.short}</span>
-				</label>
-			{/each}
-		</div>
-	</fieldset>
 
 	<Collapsible.Root bind:open={advancedOpen} class="rounded-xl border bg-muted/20">
 		<Collapsible.Trigger
@@ -156,9 +115,7 @@
 		>
 			<p class="font-medium">ข้อมูลปีการศึกษาที่บันทึกไว้เปลี่ยนระหว่างแก้ไข</p>
 			<p>
-				ข้อมูลล่าสุด: {existing.name} · ปี {existing.year} · วันเรียน {existing.schoolDays.join(
-					', '
-				)}
+				ข้อมูลล่าสุด: {existing.name} · ปี {existing.year}
 			</p>
 			<p>ฉบับร่างของคุณยังอยู่ ตรวจสอบกับข้อมูลล่าสุดก่อนบันทึก</p>
 			<Button

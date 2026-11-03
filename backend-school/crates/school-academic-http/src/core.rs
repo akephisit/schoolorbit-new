@@ -25,6 +25,8 @@ pub fn routes() -> Router<AcademicHttpState> {
             "/terms",
             get(handlers::list_terms).post(handlers::create_term),
         )
+        .route("/terms/copy-school-schedule", post(handlers::create_term_copy_school_schedule))
+        .route("/terms/{id}/copy-school-schedule", post(handlers::copy_term_school_schedule))
         .route(
             "/terms/{id}",
             get(handlers::get_term)

@@ -18,7 +18,7 @@ const SCHEDULE_COLUMNS: &str = r#"
     id, academic_year_id, code, name, is_default, status,
     owning_organization_unit_id, row_version, created_at, updated_at
 "#;
-const SCHOOL_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const SCHOOL_DAYS: &[&str] = &super::school_days::ALL;
 
 pub async fn list(pool: &PgPool, academic_year_id: Uuid) -> Result<Vec<BellSchedule>, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -163,15 +163,26 @@ pub async fn clone_schedule(
     source_id: Uuid,
     request: CloneBellScheduleRequest,
 ) -> Result<BellSchedule, AppError> {
-    validate_schedule_fields(&request.name)?;
-    parse_row_version(request.row_version)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_core.services.bell_schedules.clone_schedule",
     )
     .await?;
-    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
-    let source_year: Uuid = DbSession::new(&mut *transaction)
+    let result = clone_schedule_in_transaction(&mut transaction, actor_user_id, source_id, request).await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+pub(super) async fn clone_schedule_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    source_id: Uuid,
+    request: CloneBellScheduleRequest,
+) -> Result<BellSchedule, AppError> {
+    validate_schedule_fields(&request.name)?;
+    parse_row_version(request.row_version)?;
+    lifecycle_guard::lock_transition_shared(transaction).await?;
+    let source_year: Uuid = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT academic_year_id FROM bell_schedules WHERE id=$1",
@@ -182,7 +193,7 @@ pub async fn clone_schedule(
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบต้นฉบับ".into()))?;
     // Source may be historical. Lock both parents in a stable order without
     // applying the destination's writable-state rule to the historical source.
-    let _: Vec<Uuid> = DbSession::new(&mut *transaction)
+    let _: Vec<Uuid> = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT id FROM academic_years WHERE id=ANY($1) ORDER BY id FOR UPDATE",
@@ -190,8 +201,8 @@ pub async fn clone_schedule(
         .bind(vec![source_year, request.academic_year_id])
         .fetch_all()
         .await?;
-    require_setup_year(&mut transaction, request.academic_year_id).await?;
-    let actual_version: i64 = DbSession::new(&mut *transaction)
+    require_setup_year(transaction, request.academic_year_id).await?;
+    let actual_version: i64 = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT row_version FROM bell_schedules WHERE id=$1 FOR SHARE",
@@ -204,7 +215,7 @@ pub async fn clone_schedule(
             "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
         ));
     }
-    let source_periods = list_periods_on_connection(&mut transaction, source_id).await?;
+    let source_periods = list_periods_on_connection(transaction, source_id).await?;
     let inputs: Vec<_> = source_periods
         .iter()
         .map(|period| BellSchedulePeriodInput {
@@ -215,22 +226,12 @@ pub async fn clone_schedule(
             applicable_days: period
                 .applicable_days
                 .as_deref()
-                .map(|days| days.split(',').map(str::to_owned).collect())
-                .unwrap_or_default(),
+                .map(|days| days.split(',').map(str::to_owned).collect()),
             is_active: period.is_active,
         })
         .collect();
     validate_periods(&inputs)?;
-    let school_days: String = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_core.services.bell_schedules.clone_schedule",
-            "SELECT school_days FROM academic_years WHERE id=$1",
-        )
-        .bind(request.academic_year_id)
-        .fetch_one()
-        .await?;
-    validate_period_days_for_year(&inputs, &school_days)?;
-    let count: i64 = DbSession::new(&mut *transaction)
+    let count: i64 = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT count(*) FROM bell_schedules WHERE academic_year_id=$1",
@@ -241,7 +242,7 @@ pub async fn clone_schedule(
     let id = Uuid::now_v7();
     let sql = format!("INSERT INTO bell_schedules (id,academic_year_id,code,name,is_default,status,owning_organization_unit_id) \
         VALUES($1,$2,$3,$4,$5,'draft',$6) RETURNING {SCHEDULE_COLUMNS}");
-    let mut schedule: BellSchedule = DbSession::new(&mut *transaction)
+    let mut schedule: BellSchedule = DbSession::new(&mut **transaction)
         .query_as(
             "academic_core.services.bell_schedules.clone_schedule",
             sqlx::AssertSqlSafe(sql),
@@ -259,15 +260,14 @@ pub async fn clone_schedule(
         .fetch_one()
         .await
         .map_err(map_schedule_write_error)?;
-    DbSession::new(&mut *transaction).query("academic_core.services.bell_schedules.clone_schedule",
+    DbSession::new(&mut **transaction).query("academic_core.services.bell_schedules.clone_schedule",
         "INSERT INTO bell_schedule_periods (id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active) \
-         SELECT uuid_generate_v4(),$1,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$2")
+         SELECT uuidv7(),$1,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$2")
         .bind(id).bind(source_id).execute().await?;
-    append_audit(&mut transaction, "bell_schedule.cloned", "bell_schedule", id,
+    append_audit(transaction, "bell_schedule.cloned", "bell_schedule", id,
         Some(request.academic_year_id), None, actor_user_id,
         serde_json::json!({"sourceBellScheduleId": source_id, "sourceRowVersion": actual_version, "periodCount": source_periods.len()})).await?;
-    attach_editability(&mut transaction, std::slice::from_mut(&mut schedule)).await?;
-    transaction.commit().await?;
+    attach_editability(transaction, std::slice::from_mut(&mut schedule)).await?;
     Ok(schedule)
 }
 
@@ -419,15 +419,6 @@ pub async fn replace_periods(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".to_string()))?;
-    let configured_school_days: String = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_core.services.bell_schedules.replace_periods",
-            "SELECT school_days FROM academic_years WHERE id = $1",
-        )
-        .bind(academic_year_id)
-        .fetch_one()
-        .await?;
-    validate_period_days_for_year(&request.periods, &configured_school_days)?;
     if actual_version != request.row_version {
         return Err(AppError::Conflict("ตารางคาบถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
@@ -456,7 +447,7 @@ pub async fn replace_periods(
             .bind(period.start_time)
             .bind(period.end_time)
             .bind(period.order_index)
-            .bind(normalize_period_days(&period.applicable_days)?.join(","))
+            .bind(period.applicable_days.as_deref().map(normalize_period_days).transpose()?.map(|days| days.join(",")))
             .bind(period.is_active)
             .execute()
             .await?;
@@ -511,20 +502,23 @@ pub fn validate_periods(periods: &[BellSchedulePeriodInput]) -> Result<(), AppEr
                 "เวลาเริ่มคาบต้องอยู่ก่อนเวลาสิ้นสุด".to_string(),
             ));
         }
-        normalize_period_days(&period.applicable_days)?;
+        if let Some(days) = &period.applicable_days { normalize_period_days(days)?; }
     }
     for (index, period) in periods.iter().enumerate() {
         if !period.is_active {
             continue;
         }
+        let all_days = SCHOOL_DAYS.iter().map(|day| (*day).to_owned()).collect::<Vec<_>>();
         let days = period
             .applicable_days
+            .as_ref().unwrap_or(&all_days)
             .iter()
             .map(|day| day.trim().to_ascii_uppercase())
             .collect::<HashSet<_>>();
         for other in periods.iter().skip(index + 1).filter(|item| item.is_active) {
             let shares_day = other
                 .applicable_days
+                .as_ref().unwrap_or(&all_days)
                 .iter()
                 .map(|day| day.trim().to_ascii_uppercase())
                 .any(|day| days.contains(&day));
@@ -562,24 +556,6 @@ fn normalize_period_days(days: &[String]) -> Result<Vec<String>, AppError> {
         return Err(AppError::ValidationError("วันที่ใช้คาบเรียนไม่ถูกต้อง".to_string()));
     }
     Ok(normalized)
-}
-
-fn validate_period_days_for_year(
-    periods: &[BellSchedulePeriodInput],
-    configured_school_days: &str,
-) -> Result<(), AppError> {
-    let allowed = configured_school_days.split(',').collect::<HashSet<_>>();
-    if periods.iter().any(|period| {
-        period
-            .applicable_days
-            .iter()
-            .any(|day| !allowed.contains(day.trim().to_ascii_uppercase().as_str()))
-    }) {
-        return Err(AppError::ValidationError(
-            "วันที่ใช้คาบเรียนต้องเป็นวันเรียนของปีการศึกษา".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 const ASSIGNABLE_TERMS_SQL: &str = r#"SELECT term.id FROM academic_terms term

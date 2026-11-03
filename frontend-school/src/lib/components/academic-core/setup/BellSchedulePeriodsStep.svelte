@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { periodSchoolDayOverride, periodDaysOutsideTerm, SCHOOL_WEEKDAYS } from '#lib/academic-core/school-schedule.js';
 	import { bellScheduleBlockMessage } from '#lib/academic-core/period-setup.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
 		AcademicYear,
+		AcademicTerm,
 		BellSchedule,
 		BellSchedulePeriod,
 		BellSchedulePeriodsSnapshot,
@@ -36,6 +38,7 @@
 
 	let {
 		year,
+		term,
 		schedules,
 		busy = false,
 		canManage = false,
@@ -44,6 +47,7 @@
 		onSaved
 	}: {
 		year: AcademicYear;
+		term?: AcademicTerm;
 		schedules: BellSchedule[];
 		busy?: boolean;
 		canManage?: boolean;
@@ -58,7 +62,9 @@
 		onSaved: (snapshot: BellSchedulePeriodsSnapshot) => void;
 	} = $props();
 
-	let selectedScheduleId = $state('');
+	const inputPrefix = $derived(term ? `term-${term.id}` : `template-${year.id}`);
+	let selectedScheduleId = $state(untrack(() => term?.bellScheduleId ?? ''));
+	onMount(() => { if (selectedScheduleId) void selectSchedule(selectedScheduleId); });
 	let periods = $state<PeriodDraft[]>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
@@ -82,20 +88,20 @@
 	const selectedSchedule = $derived(
 		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
 	);
-	const schoolDays = $derived(normalizeSchoolDays(year.schoolDays));
+	const schoolDays = $derived(normalizeSchoolDays(term && term.bellScheduleId === selectedScheduleId ? term.schoolDays : SCHOOL_WEEKDAYS.map((day) => day.code)));
 	const editable = $derived(canManage && selectedSchedule?.editBlockedReason === null);
 	const changed = $derived(
 		baseVersion !== null && (selectedSchedule?.rowVersion ?? 0) > baseVersion
 	);
 
 	function draftFromPeriod(period?: BellSchedulePeriod): PeriodDraft {
-		const storedDays = period?.applicableDays?.match(/[A-Za-z]+/g) ?? [];
+
 		return {
 			name: period?.name ?? null,
 			startTime: period?.startTime.slice(0, 5) ?? '08:30',
 			endTime: period?.endTime.slice(0, 5) ?? '09:20',
 			orderIndex: period?.orderIndex ?? periods.length + 1,
-			applicableDays: period ? normalizeSchoolDays(storedDays) : [...schoolDays],
+			applicableDays: period ? periodSchoolDayOverride(period) : null,
 			isActive: period?.isActive ?? true
 		};
 	}
@@ -114,16 +120,16 @@
 		if (!id) return;
 		try {
 			const result = await onLoad(id, { signal });
-			if (latest.isCurrent(revision) && identity === appIdentityKey()) {
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) {
 				periods = result.periods.map((period) => draftFromPeriod(period));
 				baseVersion = result.rowVersion;
 				savedDraft = JSON.stringify(periods);
 			}
 		} catch (error) {
-			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(error))
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(error))
 				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
 		}
 	}
 
@@ -135,12 +141,12 @@
 		comparing = true;
 		try {
 			const result = await onLoad(scheduleId, { signal });
-			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparison = result;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) comparison = result;
 		} catch (cause) {
-			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
 				errorMessage = cause instanceof Error ? cause.message : 'โหลดคาบล่าสุดไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparing = false;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) comparing = false;
 		}
 	}
 
@@ -155,22 +161,20 @@
 	}
 
 	function usesEverySchoolDay(period: PeriodDraft): boolean {
-		const normalized = normalizeSchoolDays(period.applicableDays);
-		return (
-			schoolDays.every((day) => normalized.includes(day)) && normalized.length === schoolDays.length
-		);
+		return period.applicableDays === null;
 	}
 
 	function toggleEverySchoolDay(index: number, checked: boolean) {
-		periods[index].applicableDays = checked ? [...schoolDays] : [];
+		periods[index].applicableDays = checked ? null : [...schoolDays];
 	}
 
 	function toggleDay(index: number, day: AcademicWeekday, checked: boolean) {
-		const current = periods[index].applicableDays;
+		const current = periods[index].applicableDays ?? schoolDays;
 		periods[index].applicableDays = normalizeSchoolDays(
 			checked ? [...current, day] : current.filter((item) => item !== day)
 		);
 	}
+	const outsideDays = $derived(periodDaysOutsideTerm(periods.map((period) => ({applicableDays: period.applicableDays?.join(',') ?? null})), schoolDays));
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -180,7 +184,7 @@
 			errorMessage = 'กรุณาเพิ่มคาบเรียนอย่างน้อย 1 คาบ';
 			return;
 		}
-		if (periods.some((period) => period.applicableDays.length === 0)) {
+		if (periods.some((period) => period.applicableDays !== null && period.applicableDays.length === 0)) {
 			errorMessage = 'ทุกคาบต้องเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
 		}
@@ -192,7 +196,7 @@
 				periods: periods.map((period) => ({
 					...period,
 					name: period.name?.trim() || null,
-					applicableDays: normalizeSchoolDays(period.applicableDays)
+					applicableDays: period.applicableDays === null ? null : normalizeSchoolDays(period.applicableDays)
 				}))
 			});
 			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
@@ -210,14 +214,14 @@
 
 <form class="space-y-5" onsubmit={submit}>
 	<div class="space-y-1.5">
-		<Label for="period-schedule">ตารางเวลาที่จะจัดคาบ</Label>
+		<Label for={`${inputPrefix}-period-schedule`}>{term ? 'ตารางเวลาของภาคเรียนที่แสดง' : 'ตารางเวลาที่จะจัดคาบ'}</Label>
 		<Select.Root
 			type="single"
 			value={selectedScheduleId}
 			disabled={busy}
 			onValueChange={(value) => void selectSchedule(value)}
 		>
-			<Select.Trigger id="period-schedule" class="w-full">
+			<Select.Trigger id={`${inputPrefix}-period-schedule`} class="w-full">
 				{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
 			</Select.Trigger>
 			<Select.Content>
@@ -229,7 +233,7 @@
 			</Select.Content>
 		</Select.Root>
 		<p class="text-xs text-muted-foreground">
-			วันเรียนของ {year.name}: {schoolDays
+			วันเรียนของ {term && term.bellScheduleId === selectedScheduleId ? term.name : 'ตารางต้นแบบ'}: {schoolDays
 				.map((code) => WEEKDAYS.find((day) => day.code === code)?.label)
 				.join(', ')}
 		</p>
@@ -240,6 +244,7 @@
 			กำลังโหลดคาบเรียน…
 		</p>
 	{:else if selectedSchedule}
+		{#if outsideDays.length}<p role="alert" class="text-sm text-destructive">คาบที่บันทึกมีวันนอกวันเรียนของภาคนี้: {outsideDays.join(', ')} ข้อมูลเดิมยังอยู่ ตรวจวันเรียนและวันเฉพาะคาบก่อนบันทึก</p>{/if}
 		{#if selectedSchedule.editBlockedReason}<p class="rounded-lg border bg-muted/20 p-3 text-sm">
 				{bellScheduleBlockMessage(selectedSchedule.editBlockedReason)}
 			</p>{/if}
@@ -288,9 +293,9 @@
 					</div>
 					<div class="grid gap-3 sm:grid-cols-[80px_minmax(160px,1fr)_130px_130px]">
 						<div class="space-y-1.5">
-							<Label for={`period-order-${index}`}>ลำดับ</Label>
+							<Label for={`${inputPrefix}-period-order-${index}`}>ลำดับ</Label>
 							<Input
-								id={`period-order-${index}`}
+								id={`${inputPrefix}-period-order-${index}`}
 								type="number"
 								min="1"
 								bind:value={period.orderIndex}
@@ -298,25 +303,25 @@
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for={`period-name-${index}`}>ชื่อคาบ (ไม่บังคับ)</Label>
+							<Label for={`${inputPrefix}-period-name-${index}`}>ชื่อคาบ (ไม่บังคับ)</Label>
 							<Input
-								id={`period-name-${index}`}
+								id={`${inputPrefix}-period-name-${index}`}
 								bind:value={period.name}
 								placeholder={`คาบ ${index + 1}`}
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for={`period-start-${index}`}>เริ่ม</Label>
+							<Label for={`${inputPrefix}-period-start-${index}`}>{term ? 'เริ่มคาบของภาคเรียน' : 'เริ่ม'}</Label>
 							<Input
-								id={`period-start-${index}`}
+								id={`${inputPrefix}-period-start-${index}`}
 								type="time"
 								bind:value={period.startTime}
 								required
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for={`period-end-${index}`}>สิ้นสุด</Label>
-							<Input id={`period-end-${index}`} type="time" bind:value={period.endTime} required />
+							<Label for={`${inputPrefix}-period-end-${index}`}>{term ? 'สิ้นสุดคาบของภาคเรียน' : 'สิ้นสุด'}</Label>
+							<Input id={`${inputPrefix}-period-end-${index}`} type="time" bind:value={period.endTime} required />
 						</div>
 					</div>
 
@@ -333,12 +338,12 @@
 						</label>
 					</div>
 					<div class="flex flex-wrap gap-2">
-						{#each WEEKDAYS.filter((day) => schoolDays.includes(day.code)) as day (day.code)}
+						{#each WEEKDAYS.filter((day) => schoolDays.includes(day.code) || period.applicableDays?.includes(day.code)) as day (day.code)}
 							<label
 								class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"
 							>
 								<Checkbox
-									checked={period.applicableDays.includes(day.code)}
+									checked={period.applicableDays === null || period.applicableDays.includes(day.code)}
 									onCheckedChange={(checked) => toggleDay(index, day.code, checked ?? false)}
 								/>
 								{day.label}
@@ -358,7 +363,7 @@
 					<Plus class="size-4" /> เพิ่มคาบ
 				</Button>
 				<Button type="submit" disabled={busy || changed || periods.length === 0}>
-					<Save class="size-4" /> บันทึกคาบทั้งหมด
+					<Save class="size-4" /> {term ? 'บันทึกคาบทั้งหมดของภาคเรียน' : 'บันทึกคาบทั้งหมด'}
 				</Button>
 			</div>{/if}
 	{/if}

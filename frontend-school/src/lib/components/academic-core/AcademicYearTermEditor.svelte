@@ -11,6 +11,9 @@
 		CreateAcademicYearRequest,
 		UpdateAcademicYearRequest,
 		CreateAcademicTermRequest,
+		CreateAcademicTermCopySchoolScheduleRequest,
+		AcademicTermSchoolScheduleCopyResponse,
+		BellSchedulePeriodsSnapshot,
 		UpdateAcademicTermRequest
 	} from '#lib/api/academic-core.js';
 	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
@@ -32,6 +35,8 @@
 		onReloadContextSettings,
 		onCreateYear,
 		onUpdateYear,
+		onCreateTermCopy,
+		onLoadBellSchedulePeriods,
 		onCreateTerm,
 		onUpdateTerm
 	}: {
@@ -47,6 +52,8 @@
 		onReloadContextSettings: () => Promise<void>;
 		onCreateYear: (input: CreateAcademicYearRequest) => Promise<AcademicYear>;
 		onUpdateYear: (id: string, input: UpdateAcademicYearRequest) => Promise<AcademicYear>;
+		onCreateTermCopy: (input: CreateAcademicTermCopySchoolScheduleRequest) => Promise<AcademicTermSchoolScheduleCopyResponse>;
+		onLoadBellSchedulePeriods: (id: string, options?: {signal?: AbortSignal}) => Promise<BellSchedulePeriodsSnapshot>;
 		onCreateTerm: (input: CreateAcademicTermRequest) => Promise<AcademicTerm>;
 		onUpdateTerm: (id: string, input: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 	} = $props();
@@ -136,6 +143,11 @@
 			<h3 class="font-semibold">ภาคเรียน</h3>
 			{#if canManage && schedules.length > 0}{#key selectedYear.id}<AcademicTermSetupStep
 						year={selectedYear}
+						{years}
+						allTerms={[...termsByYear.values()].flat()}
+						allSchedules={bellSchedules}
+						onCreateCopy={onCreateTermCopy}
+						onLoadPeriods={onLoadBellSchedulePeriods}
 						{schedules}
 						{terms}
 						busy={busy.term}

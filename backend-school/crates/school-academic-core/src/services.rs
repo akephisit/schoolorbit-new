@@ -20,6 +20,8 @@ pub mod lifecycle_guard;
 pub mod opening_diagnostics;
 pub mod placement_interval;
 pub mod progressions;
+pub mod school_days;
+pub mod term_school_schedule;
 pub mod promotion_batch;
 #[cfg(feature = "integration-test-support")]
 pub mod promotion_execution;

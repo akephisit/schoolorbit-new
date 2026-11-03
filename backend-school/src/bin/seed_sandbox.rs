@@ -592,14 +592,14 @@ async fn upsert_academic_year(
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_academic_year",
             r#"
-        INSERT INTO academic_years (year, name, school_days, status, is_visible, metadata)
+        INSERT INTO academic_years (year, name, default_school_days, status, is_visible, metadata)
         VALUES ($1, $2, 'MON,TUE,WED,THU,FRI', 'active', true,
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (year) DO UPDATE SET
             name = EXCLUDED.name,
             status = 'active',
             is_visible = true,
-            school_days = EXCLUDED.school_days,
+            default_school_days = EXCLUDED.default_school_days,
             row_version = academic_years.row_version + 1,
             metadata = COALESCE(academic_years.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()

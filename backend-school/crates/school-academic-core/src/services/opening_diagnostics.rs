@@ -110,7 +110,7 @@ fn bell_diagnostics(
                 format!("ตารางคาบ {name}: {label} เวลาเริ่มต้องอยู่ก่อนเวลาสิ้นสุด"),
             );
         }
-        let raw = period.applicable_days.as_deref().unwrap_or("");
+        let raw = period.applicable_days.as_deref().unwrap_or(school_days);
         if raw.is_empty() {
             push(
                 "opening.bell_period_days_missing",
@@ -129,8 +129,8 @@ fn bell_diagnostics(
             );
         } else if days.iter().any(|day| !allowed.contains(day)) {
             push(
-                "opening.bell_period_days_outside_year",
-                format!("ตารางคาบ {name}: {label} ใช้วันที่ไม่อยู่ในวันเรียนของปีการศึกษา กรุณาแก้วันที่ใช้คาบ"),
+                "opening.bell_period_days_outside_term",
+                format!("ตารางคาบ {name}: {label} ใช้วันที่ไม่อยู่ในวันเรียนของภาคเรียน กรุณาแก้วันที่ใช้คาบ"),
             );
         }
     }
@@ -138,14 +138,14 @@ fn bell_diagnostics(
         let days: BTreeSet<_> = period
             .applicable_days
             .as_deref()
-            .unwrap_or("")
+            .unwrap_or(school_days)
             .split(',')
             .collect();
         for other in active.iter().skip(index + 1) {
             let shares_day = other
                 .applicable_days
                 .as_deref()
-                .unwrap_or("")
+                .unwrap_or(school_days)
                 .split(',')
                 .any(|day| !day.is_empty() && days.contains(day));
             if shares_day
@@ -209,10 +209,10 @@ mod tests {
     fn bell_diagnostics_distinguishes_real_causes_and_names_the_period() {
         let year = Uuid::new_v4();
         for (days, code) in [
-            (None, "opening.bell_period_days_missing"),
+            (Some(""), "opening.bell_period_days_missing"),
             (Some("{MON,TUE}"), "opening.bell_period_days_invalid"),
             (Some(" MON "), "opening.bell_period_days_invalid"),
-            (Some("TUE"), "opening.bell_period_days_outside_year"),
+            (Some("TUE"), "opening.bell_period_days_outside_term"),
         ] {
             let facts = period(days);
             let diagnostics = bell_diagnostics(

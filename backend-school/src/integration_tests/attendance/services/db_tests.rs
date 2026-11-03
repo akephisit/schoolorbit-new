@@ -1478,7 +1478,7 @@ async fn attendance_annual_membership_transfer_projects_exact_daily_roster_and_s
         .bind(TERM).bind(sqlx::types::Json(AttendanceConfiguration {enabled:true,..Default::default()})).bind(TEACHER).execute(&f.pool).await.unwrap();
     // The same pupil also has ended annual history in another year. Its open
     // civil bounds must neither enter this term nor change during the transfer.
-    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT min(year)-1,'Excluded annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
+    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT min(year)-1,'Excluded annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
     let other_room: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT uuidv7(),'OTHER-YEAR','Other year room',$1,grade_level_id,'OTHER-YEAR',study_program_id,40,true FROM homerooms WHERE id=$2 RETURNING id")
         .bind(other_year).bind(old_room).fetch_one(&f.pool).await.unwrap();
     let other_annual: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT uuidv7(),student_id,$1,grade_level_id,study_program_id,'completed' FROM student_academic_years WHERE id=$2 RETURNING id")

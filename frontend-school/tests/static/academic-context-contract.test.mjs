@@ -996,8 +996,8 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 	await importAcademicContextStore();
 	const { yearDraftBase, termDraftBase, yearDraftMetadataMatches, termDraftMetadataMatches } =
 		await academicContextStoreServer.ssrLoadModule('/src/lib/academic-core/context-drafts.ts');
-	const year = { ...contextOptions().years[0], schoolDays: ['MON', 'TUE'], rowVersion: 1 };
-	const term = { ...contextOptions().terms[0], bellScheduleId: 'bell', rowVersion: 1 };
+	const year = { ...contextOptions().years[0], defaultSchoolDays: ['MON', 'TUE'], rowVersion: 1 };
+	const term = { ...contextOptions().terms[0], bellScheduleId: 'bell', schoolDays: ['MON', 'TUE'], rowVersion: 1 };
 	const yearBase = yearDraftBase(year),
 		termBase = termDraftBase(term);
 	assert.equal(
@@ -1005,7 +1005,7 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 			...year,
 			isVisible: false,
 			rowVersion: 2,
-			schoolDays: ['TUE', 'MON']
+			defaultSchoolDays: ['TUE', 'MON']
 		}),
 		true
 	);
@@ -1016,12 +1016,13 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 	for (const change of [
 		{ name: 'Changed by another actor' },
 		{ year: year.year + 1 },
-		{ schoolDays: ['MON'] }
+		{ defaultSchoolDays: ['MON'] }
 	])
 		assert.equal(yearDraftMetadataMatches(yearBase, { ...year, ...change, rowVersion: 3 }), false);
 	for (const change of [
 		{ name: 'Changed term' },
 		{ bellScheduleId: 'other-bell' },
+		{ schoolDays: ['MON'] },
 		{ includedInYearResult: false },
 		{ termType: 'summer' }
 	])

@@ -40,7 +40,7 @@ async function fixture(
 		id: yearId,
 		year: 2569,
 		name: 'ปีการศึกษา 2569',
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+		defaultSchoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 		status,
 		isVisible: true,
 		rowVersion: 1,
@@ -55,6 +55,7 @@ async function fixture(
 		code: String(index + 1),
 		name: options.readyLegacyName && index === 1 ? 'ภาคเรียนที่ 7' : `ภาคเรียนที่ ${index + 1}`,
 		termType: 'regular' as const,
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 		status:
 			index === 0
 				? ('active' as const)
@@ -173,6 +174,7 @@ async function fixture(
 					bellSchedules: identitySwitched ? [] : schedules,
 					bellScheduleSetupYearIds: options.closed ? [] : [yearId],
 					bellScheduleSetupTermIds: options.timetableDraft ? [] : [nextTermId],
+					schoolDaysEditableTermIds: options.closed ? [] : [nextTermId],
 					contextSettings: {
 						defaultAcademicYearId: yearId,
 						defaultAcademicTermId: firstTermId,
@@ -268,7 +270,7 @@ async function fixture(
 							...period,
 							id: id(511),
 							bellScheduleId: selected,
-							applicableDays: period.applicableDays.join(',')
+							applicableDays: period.applicableDays?.join(',') ?? null
 						}))
 					};
 					if (options.successfulConcurrentWriter && observed.periodWrites.length === 1) {
@@ -383,6 +385,7 @@ test('term two clones and edits independent periods while term one remains locke
 	await expect(
 		page.getByRole('button', { name: 'แก้ไข ตารางเดิมภาคเรียนที่ 1', exact: true })
 	).toHaveCount(0);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางภาคเรียนที่ 2');
 	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
@@ -470,6 +473,7 @@ test('period conflict compares saved periods while retaining the local draft and
 }) => {
 	const observed = await fixture(page, { periodConflict: true });
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางภาคเรียนที่ 2');
 	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
@@ -543,6 +547,7 @@ test('capacity diagnostic destination focuses only a matching room in the select
 test('ready-term table assignment preserves exact existing non-bell metadata', async ({ page }) => {
 	const observed = await fixture(page, { readyLegacyName: true });
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางภาคเรียนพร้อมใช้');
 	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
@@ -553,6 +558,7 @@ test('ready-term table assignment preserves exact existing non-bell metadata', a
 		rowVersion: 1,
 		customName: 'ภาคเรียนที่ 7',
 		termType: 'regular',
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 		includedInYearResult: true,
 		blocksYearClosure: true
 	});
@@ -563,6 +569,7 @@ test('successful period save retains its paired revision when a concurrent write
 }) => {
 	const observed = await fixture(page, { successfulConcurrentWriter: true });
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางทดสอบสองผู้ใช้');
 	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
@@ -617,7 +624,8 @@ test('delayed schedule success refresh cannot restore the previous identity work
 	const observed = await fixture(page, { metadataGate, replacementWorkspaceGate });
 	try {
 		await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
-		await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+		await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
+	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 		await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ข้อมูลตัวตนเก่า');
 		await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
 		await page.getByRole('button', { name: 'แก้ไข ข้อมูลตัวตนเก่า', exact: true }).click();
@@ -689,6 +697,7 @@ test('newer period GET does not rebase older name metadata and period writes use
 }) => {
 	const observed = await fixture(page, { initialSnapshotAhead: true });
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ชื่อตารางในหน้าฉบับแรก');
 	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
@@ -794,6 +803,7 @@ test('switching schedules supersedes a pending comparison and leaves the next co
 	const observed = await fixture(page, { comparisonGate, periodConflictPerSchedule: true });
 	try {
 		await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+		await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 		for (const name of ['ตาราง A', 'ตาราง B']) {
 			await page
 				.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { page } from '$app/state';
 	import { can } from '#lib/stores/permissions.js';
@@ -14,14 +14,18 @@
 		CloneBellScheduleRequest,
 		UpdateBellScheduleRequest,
 		ReplaceBellSchedulePeriodsRequest,
+		CopyAcademicTermSchoolScheduleRequest,
+		AcademicTermSchoolScheduleCopyResponse,
 		UpdateAcademicTermRequest
 	} from '#lib/api/academic-core.js';
 	import { standardTermName } from '#lib/academic-core/foundation-presentation.js';
 	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import BellScheduleSetupStep from './setup/BellScheduleSetupStep.svelte';
 	import BellSchedulePeriodsStep from './setup/BellSchedulePeriodsStep.svelte';
+	import TermSchoolScheduleEditor from './setup/TermSchoolScheduleEditor.svelte';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	let {
 		years,
@@ -29,6 +33,8 @@
 		termsByYear,
 		setupYearIds,
 		setupTermIds,
+		schoolDaysEditableTermIds,
+		onCopySchoolSchedule,
 		canManage,
 		busy,
 		onCreateBellSchedule,
@@ -43,6 +49,8 @@
 		termsByYear: Map<string, AcademicTerm[]>;
 		setupYearIds: string[];
 		setupTermIds: string[];
+		schoolDaysEditableTermIds: string[];
+		onCopySchoolSchedule: (id: string, input: CopyAcademicTermSchoolScheduleRequest) => Promise<AcademicTermSchoolScheduleCopyResponse>;
 		canManage: boolean;
 		busy: { schedule: boolean; periods: boolean; term: boolean };
 		onCreateBellSchedule: (input: CreateBellScheduleRequest) => Promise<BellSchedule>;
@@ -59,7 +67,10 @@
 		) => Promise<BellSchedulePeriodsSnapshot>;
 	} = $props();
 	let selectedId = $state(
-		untrack(() => page.url.searchParams.get('academicYearId') ?? years[0]?.id ?? '')
+		untrack(() => {
+			const targetTermId = page.url.searchParams.get('academicTermId');
+			return [...termsByYear.values()].flat().find((item) => item.id === targetTermId)?.academicYearId ?? page.url.searchParams.get('academicYearId') ?? years[0]?.id ?? '';
+		})
 	);
 	const year = $derived(years.find((item) => item.id === selectedId) ?? years[0]);
 	const schedules = $derived(
@@ -75,6 +86,9 @@
 	let termBase = $state<AcademicTerm | null>(null);
 	let chosenScheduleId = $state('');
 	let error = $state('');
+	let daysDirty = $state(false);
+	let disposed = false;
+	onDestroy(() => { disposed = true; });
 	onMount(() => registerAcademicContextDirtySource('bell-term-assignment', () => !!termBase));
 	const canSetup = $derived(!!year && canManage && setupYearIds.includes(year.id));
 	const canAccessTimetable = $derived($can.hasModule(PERMISSION_MODULES.ACADEMIC_TIMETABLE));
@@ -110,13 +124,14 @@
 				includedInYearResult: termBase.includedInYearResult,
 				blocksYearClosure: termBase.blocksYearClosure,
 				bellScheduleId: chosenScheduleId,
+				schoolDays: [...termBase.schoolDays],
 				rowVersion: termBase.rowVersion
 			});
-			if (identity !== appIdentityKey()) return;
+			if (disposed || identity !== appIdentityKey()) return;
 			termBase = null;
 			chosenScheduleId = '';
 		} catch (cause) {
-			if (identity !== appIdentityKey()) return;
+			if (disposed || identity !== appIdentityKey()) return;
 			error = cause instanceof Error ? cause.message : 'บันทึกตารางเวลาของภาคเรียนไม่สำเร็จ';
 		}
 	}
@@ -133,7 +148,7 @@
 				termBase = null;
 				chosenScheduleId = '';
 			}}
-			disabled={!!termBase}
+			disabled={!!termBase || daysDirty}
 			><Select.Trigger id="time-year" class="w-full"
 				><span>{year?.name ?? 'ยังไม่มีปีการศึกษา'}</span></Select.Trigger
 			><Select.Content
@@ -150,7 +165,7 @@
 				<Label for="time-term">ภาคเรียนที่จะตั้งค่า</Label><Select.Root
 					type="single"
 					value={term?.id ?? ''}
-					disabled={!!termBase}
+					disabled={!!termBase || daysDirty}
 					onValueChange={(value) => {
 						selectedTermId = value;
 						error = '';
@@ -162,12 +177,13 @@
 							>{/each}</Select.Content
 					></Select.Root
 				>
+				{#if term}{#key term.id}<TermSchoolScheduleEditor {year} {years} {term} terms={[...termsByYear.values()].flat()} schedules={bellSchedules} canEditDays={canManage && schoolDaysEditableTermIds.includes(term.id)} canCopy={canAssign} busy={busy.term} onUpdate={onUpdateTerm} onCopy={onCopySchoolSchedule} onLoad={onLoadBellSchedulePeriods} ondirtychange={(dirty) => daysDirty = dirty} />{/key}{/if}
 				{#if term && ['planning', 'ready'].includes(term.status) && canAssign}
 					<Label for="time-term-schedule">ตารางเวลาที่ภาคเรียนนี้ใช้</Label><Select.Root
 						type="single"
 						value={chosenScheduleId || term.bellScheduleId}
 						onValueChange={chooseSchedule}
-						disabled={busy.term}
+						disabled={busy.term || daysDirty}
 						><Select.Trigger id="time-term-schedule" class="w-full"
 							>{schedules.find((item) => item.id === (chosenScheduleId || term.bellScheduleId))
 								?.name ?? 'เลือกตารางเวลา'}</Select.Trigger
@@ -215,35 +231,24 @@
 							</p>{/if}{/if}{/if}
 				{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
 			</section>{/if}
-		{#key year.id}<section class="rounded-xl border bg-card p-4">
-				<h2 class="mb-4 font-semibold">ตารางเวลา</h2>
-				<BellScheduleSetupStep
-					{year}
-					{schedules}
-					canManage={canSetup}
-					busy={busy.schedule}
-					onCreate={onCreateBellSchedule}
-					onClone={onCloneBellSchedule}
-					onUpdate={onUpdateBellSchedule}
-					onSaved={() => {}}
-					onCloned={(schedule) => {
-						if (term && ['planning', 'ready'].includes(term.status)) chooseSchedule(schedule.id);
-					}}
-				/>
+		{#if term}{#key `${term.id}:${term.bellScheduleId}`}<section class="rounded-xl border bg-card p-4" aria-label="คาบเรียนของภาคเรียน">
+			<h2 class="mb-4 font-semibold">คาบเรียนของ {term.name}</h2>
+			<BellSchedulePeriodsStep {year} {term} schedules={schedules.filter((schedule) => schedule.id === term.bellScheduleId)} canManage={canAssign && schoolDaysEditableTermIds.includes(term.id)} busy={busy.periods} onLoad={onLoadBellSchedulePeriods} onReplace={onReplaceBellSchedulePeriods} onSaved={() => {}} />
+		</section>{/key}{/if}
+		<Collapsible.Root class="rounded-xl border bg-card p-4">
+			<Collapsible.Trigger class="text-sm font-medium">จัดการตารางเวลาต้นแบบเพิ่มเติม</Collapsible.Trigger>
+			<Collapsible.Content class="mt-4 space-y-4">
+			{#key year.id}<section aria-label="ตารางเวลาต้นแบบ">
+				<h2 class="mb-4 font-semibold">ตารางเวลาต้นแบบ</h2>
+				<BellScheduleSetupStep {year} {schedules} canManage={canSetup} busy={busy.schedule} onCreate={onCreateBellSchedule} onClone={onCloneBellSchedule} onUpdate={onUpdateBellSchedule} onSaved={() => {}} onCloned={(schedule) => { if (term && ['planning', 'ready'].includes(term.status)) chooseSchedule(schedule.id); }} />
 			</section>
-			<section class="rounded-xl border bg-card p-4">
-				<h2 class="mb-4 font-semibold">คาบเรียน</h2>
-				<BellSchedulePeriodsStep
-					{year}
-					{schedules}
-					canManage={canSetup}
-					busy={busy.periods}
-					onLoad={onLoadBellSchedulePeriods}
-					onReplace={onReplaceBellSchedulePeriods}
-					onSaved={() => {}}
-				/>
+			<section aria-label="คาบของตารางต้นแบบ">
+				<h2 class="mb-4 font-semibold">คาบของตารางต้นแบบ</h2>
+				<BellSchedulePeriodsStep {year} {schedules} canManage={canSetup} busy={busy.periods} onLoad={onLoadBellSchedulePeriods} onReplace={onReplaceBellSchedulePeriods} onSaved={() => {}} />
 			</section>{/key}
+			</Collapsible.Content>
+		</Collapsible.Root>
 	{:else}<p class="text-sm text-muted-foreground">
-			เพิ่มปีการศึกษาที่หน้าจัดการปีการศึกษาก่อน
-		</p>{/if}
+		เพิ่มปีการศึกษาที่หน้าจัดการปีการศึกษาก่อน
+	</p>{/if}
 </div>

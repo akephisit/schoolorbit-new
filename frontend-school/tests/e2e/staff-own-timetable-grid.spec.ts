@@ -77,6 +77,7 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
+							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true

@@ -32,7 +32,7 @@ pub(crate) async fn ready_year(
         CreateAcademicYearRequest {
             year: year_number,
             custom_name: None,
-            school_days: vec!["MON".into()],
+            default_school_days: vec!["MON".into()],
         },
     )
     .await

@@ -120,7 +120,7 @@ async fn ready_run_cohort(
         .await
         .unwrap();
     }
-    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let (grade, program): (Uuid, Uuid) = sqlx::query_as(
         "SELECT grade_level_id,study_program_id FROM student_academic_years WHERE id=$1",
     )
