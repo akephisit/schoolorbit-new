@@ -940,6 +940,198 @@ test('new term previews the previous term and atomically copies edited Saturday 
 	).toBeVisible();
 });
 
+test('a newly created empty year copies its first term without a local bell schedule', async ({
+	page
+}) => {
+	let copied:
+		import('../../src/lib/api/academic-core').CreateAcademicTermCopySchoolScheduleRequest | null =
+		null;
+	const unexpectedMutations: string[] = [];
+	const sourceTerm = { ...term, status: 'active', rowVersion: 4 };
+	const targetYear = {
+		...year,
+		id: ids.futureYear,
+		year: 2571,
+		name: 'ปีการศึกษา 2571',
+		isVisible: false
+	};
+	const sourceSchedule = {
+		id: ids.bell,
+		academicYearId: ids.year,
+		code: 'NORMAL',
+		name: 'ตารางภาคเดิม',
+		isDefault: true,
+		status: 'published',
+		rowVersion: 2,
+		owningOrganizationUnitId: null,
+		createdAt: '',
+		updatedAt: ''
+	};
+	const copiedSchedule = {
+		...sourceSchedule,
+		id: '30000000-0000-4000-8000-000000000002',
+		academicYearId: ids.futureYear,
+		name: 'ตารางภาคใหม่ที่คัดลอก',
+		status: 'draft',
+		rowVersion: 1,
+		isDefault: false
+	};
+	const copiedTerm = {
+		...term,
+		id: '20000000-0000-4000-8000-000000000002',
+		academicYearId: ids.futureYear,
+		bellScheduleId: copiedSchedule.id,
+		schoolDays: [...term.schoolDays, 'SAT'],
+		isVisible: false
+	};
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [{ ...year, status: 'active' }],
+				terms: [{ ...sourceTerm, rowVersion: 1 }],
+				bellSchedules: [sourceSchedule],
+				bellScheduleSetupYearIds: [],
+				bellScheduleSetupTermIds: [],
+				schoolDaysEditableTermIds: [],
+				contextSettings: null
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/years' && route.request().method() === 'POST') {
+			await fulfill(route, targetYear, 201);
+			return true;
+		}
+		if (url.pathname === `/api/academic/terms/${sourceTerm.id}`) {
+			await fulfill(route, sourceTerm);
+			return true;
+		}
+		if (url.pathname === `/api/academic/terms/${copiedTerm.id}`) {
+			await fulfill(route, copiedTerm);
+			return true;
+		}
+		if (url.pathname.endsWith('/periods')) {
+			const bellScheduleId = url.pathname.split('/').at(-2);
+			await fulfill(route, {
+				bellScheduleId,
+				rowVersion: bellScheduleId === ids.bell ? 7 : 1,
+				periods: [
+					{
+						id: `${bellScheduleId}p`,
+						bellScheduleId,
+						name: 'คาบต้นแบบข้ามปี',
+						startTime: '08:30',
+						endTime: '09:20',
+						orderIndex: 1,
+						isActive: true,
+						applicableDays: null
+					}
+				]
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/terms/copy-school-schedule') {
+			copied = route.request().postDataJSON();
+			await fulfill(
+				route,
+				{
+					term: copiedTerm,
+					bellSchedule: copiedSchedule,
+					canEditSchoolDays: true,
+					canAssignBellSchedule: true
+				},
+				201
+			);
+			return true;
+		}
+		if (route.request().method() !== 'GET') unexpectedMutations.push(url.pathname);
+		return false;
+	});
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
+	await page.getByRole('button', { name: 'เพิ่มปีการศึกษา', exact: true }).click();
+	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2571');
+	await page.getByRole('button', { name: 'สร้างปีสำหรับวางแผน', exact: true }).click();
+	const region = page.getByRole('region', { name: 'ภาคเรียน', exact: true });
+	await expect(page.getByRole('heading', { name: targetYear.name, exact: true })).toBeVisible();
+	await expect(region.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toContainText(
+		'คาบต้นแบบข้ามปี'
+	);
+	await expect(region.getByLabel('คัดลอกวันเรียนและคาบเรียนจาก')).toContainText(year.name);
+	await expect(region.getByRole('link', { name: 'ตั้งค่าเวลาเรียน', exact: true })).toHaveCount(0);
+	const copyMode = region.getByRole('checkbox', {
+		name: 'คัดลอกวันเรียนและคาบจากภาคเรียนเดิม',
+		exact: true
+	});
+	await copyMode.uncheck();
+	await expect(region.getByRole('link', { name: 'ตั้งค่าเวลาเรียน', exact: true })).toHaveAttribute(
+		'href',
+		`/staff/academic/core?academicYearId=${ids.futureYear}#bell-schedules`
+	);
+	await expect(region.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true })).toBeDisabled();
+	await region.locator('form').evaluate((form: HTMLFormElement) => form.requestSubmit());
+	await expect(region.getByRole('alert')).toHaveText('กรุณาเลือกตารางเวลา');
+	expect(copied).toBeNull();
+	expect(unexpectedMutations).toEqual([]);
+	await copyMode.check();
+	await expect(region.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toBeVisible();
+	await region.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await region.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true }).click();
+	await expect
+		.poll(() => copied)
+		.toEqual({
+			academicYearId: ids.futureYear,
+			termType: 'regular',
+			customName: null,
+			includedInYearResult: true,
+			blocksYearClosure: true,
+			sourceTermId: ids.term,
+			sourceTermRowVersion: 4,
+			sourceBellScheduleRowVersion: 7,
+			schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+		});
+	await expect(region.getByText(copiedSchedule.name, { exact: true })).toBeVisible();
+	await region.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(region.getByLabel('ตารางเวลาที่ใช้')).toContainText(copiedSchedule.name);
+	await expect(region.getByRole('button', { name: 'บันทึกภาคเรียน', exact: true })).toBeEnabled();
+	expect(unexpectedMutations).toEqual([]);
+});
+
+test('an empty year without source terms keeps the schedule prerequisite and blocks creation', async ({
+	page
+}) => {
+	const mutations: string[] = [];
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [year],
+				terms: [],
+				bellSchedules: [],
+				bellScheduleSetupYearIds: [ids.year],
+				bellScheduleSetupTermIds: [],
+				schoolDaysEditableTermIds: [],
+				contextSettings: null
+			});
+			return true;
+		}
+		if (route.request().method() !== 'GET') mutations.push(url.pathname);
+		return false;
+	});
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
+	const region = page.getByRole('region', { name: 'ภาคเรียน', exact: true });
+	await expect(
+		region.getByText('เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียนโดยไม่คัดลอก')
+	).toBeVisible();
+	await expect(region.getByRole('link', { name: 'ตั้งค่าเวลาเรียน', exact: true })).toHaveAttribute(
+		'href',
+		`/staff/academic/core?academicYearId=${ids.year}#bell-schedules`
+	);
+	await expect(region.getByLabel('คัดลอกวันเรียนและคาบเรียนจาก')).toHaveCount(0);
+	await expect(region.getByLabel('ตารางเวลาที่ใช้')).toHaveCount(0);
+	await expect(region.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true })).toBeDisabled();
+	await region.locator('form').evaluate((form: HTMLFormElement) => form.requestSubmit());
+	await expect(region.getByRole('alert')).toHaveText('กรุณาเลือกตารางเวลา');
+	expect(mutations).toEqual([]);
+});
+
 test('first term uses the retained year preset without requiring fabricated copied periods', async ({
 	page
 }) => {

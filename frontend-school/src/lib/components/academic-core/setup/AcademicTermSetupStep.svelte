@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import {
@@ -254,7 +255,7 @@
 			</div>
 		{:else}
 			<p class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-				ยังไม่มีภาคเรียน สร้างหลังจากกำหนดตารางเวลาและคาบเรียนแล้ว
+				ยังไม่มีภาคเรียน คัดลอกจากภาคเรียนเดิมหรือเตรียมตารางเวลาและคาบเรียนก่อนสร้าง
 			</p>
 		{/each}
 	</div>
@@ -325,21 +326,32 @@
 						วันเรียนและคาบเรียน แก้ไขได้ที่หน้าเวลาเรียนและคาบเรียนของภาคนี้
 					</p>{/if}
 
-				<div class="space-y-1.5">
-					<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
-					<Select.Root type="single" bind:value={bellScheduleId}>
-						<Select.Trigger id="term-bell-schedule" class="w-full">
-							{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each schedules as schedule (schedule.id)}
-								<Select.Item value={schedule.id}>
-									{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+				{#if schedules.length === 0}
+					<div class="space-y-2 rounded-lg border bg-muted/20 p-3">
+						<p class="text-sm text-muted-foreground">
+							เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียนโดยไม่คัดลอก
+						</p>
+						<Button
+							variant="outline"
+							href={resolve(`staff/academic/core?academicYearId=${year.id}#bell-schedules`)}
+							>ตั้งค่าเวลาเรียน</Button
+						>
+					</div>
+				{:else}<div class="space-y-1.5">
+						<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
+						<Select.Root type="single" bind:value={bellScheduleId}>
+							<Select.Trigger id="term-bell-schedule" class="w-full">
+								{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each schedules as schedule (schedule.id)}
+									<Select.Item value={schedule.id}>
+										{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>{/if}
 			{/if}
 
 			<Collapsible.Root bind:open={advancedOpen} class="rounded-xl border bg-muted/20">
