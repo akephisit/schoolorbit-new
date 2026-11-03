@@ -71,7 +71,7 @@ pub async fn read_in_transaction(
         .scalar(
             "academic_lifecycle.services.promotion_opening.read_in_transaction",
             "SELECT id FROM student_academic_years
-         WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 10001",
+         WHERE academic_year_id=$1 AND status IN ('active','completed') ORDER BY id LIMIT 10001",
         )
         .bind(source_year_id)
         .fetch_all()
@@ -102,7 +102,7 @@ pub async fn read_in_transaction(
     } else {
         DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_opening.read_in_transaction",
             "WITH effective AS (
-                 SELECT receipt.run_id,receipt.item_id,
+                 SELECT DISTINCT ON(item.student_academic_year_id) receipt.run_id,receipt.item_id,
                         item.student_academic_year_id AS source_student_year_id,
                         item.student_id,item.status AS item_status,item.annual_revision_id,
                         CASE WHEN resolution.resolution_kind='replace_decision'
@@ -123,6 +123,7 @@ pub async fn read_in_transaction(
                      ORDER BY resolved_at DESC,id DESC LIMIT 1
                  ) resolution ON TRUE
                  WHERE receipt.run_id=ANY($1)
+                 ORDER BY item.student_academic_year_id,receipt.executed_at DESC,item.id DESC
              )
              SELECT effective.run_id,effective.item_id,effective.source_student_year_id,
                     effective.student_id,effective.item_status,effective.annual_revision_id,
@@ -234,8 +235,7 @@ pub async fn read_in_transaction(
 }
 
 fn receipt_is_consistent(receipt: &ReceiptReference) -> bool {
-    if receipt.item_status != PromotionItemStatus::Executed || receipt.annual_revision_id.is_none()
-    {
+    if receipt.item_status != PromotionItemStatus::Executed {
         return false;
     }
     let Some(decision) = receipt.decision.as_ref() else {
@@ -259,8 +259,10 @@ fn receipt_is_consistent(receipt: &ReceiptReference) -> bool {
         PromotionDecisionOutcome::Promote
         | PromotionDecisionOutcome::Repeat
         | PromotionDecisionOutcome::Conditional => {
-            receipt.source_status == StudentAcademicYearStatus::Active
-                && receipt.target_student_year_id.is_some()
+            matches!(
+                receipt.source_status,
+                StudentAcademicYearStatus::Active | StudentAcademicYearStatus::Completed
+            ) && receipt.target_student_year_id.is_some()
                 && receipt.actual_target_student_id == Some(receipt.student_id)
                 && receipt.actual_target_grade_level_id == decision.target_grade_level_id
                 && receipt.actual_target_study_program_id == decision.target_study_program_id

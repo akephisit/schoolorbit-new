@@ -3,7 +3,7 @@ pub use school_academic_lifecycle::services::{
     get_activation_workspace, get_opening_policy, get_promotion_impacts,
     get_promotion_policy_options, get_run_workspace, get_year_reopening_workspace,
     get_year_workspace, list_promotion_policies, list_runs, resolve_promotion_impact, review_item,
-    update_opening_policy, year_reopening_command, year_transitions,
+    update_opening_policy, year_transitions,
 };
 
 #[cfg(test)]
@@ -185,3 +185,32 @@ mod year_reopening_dependency_tests;
 pub(crate) mod year_reopening_tests;
 #[cfg(test)]
 mod year_transition_tests;
+
+#[cfg(test)]
+pub mod year_reopening_command {
+    pub async fn reopen_year(
+        pool: &sqlx::PgPool,
+        actor: &school_authorization::ActorContext,
+        year: uuid::Uuid,
+        input: school_academic_lifecycle::models::YearReopeningRequest,
+    ) -> Result<school_academic_lifecycle::models::YearReopeningOutcome, school_errors::AppError>
+    {
+        school_academic_lifecycle::services::year_reopening_command::reopen_year(
+            &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+            pool,
+            actor,
+            year,
+            input,
+        )
+        .await
+    }
+}
+
+#[cfg(test)]
+mod year_rollover_tests;
+
+#[cfg(test)]
+mod manual_period_tests;
+
+#[cfg(test)]
+mod manual_rollover_migration_tests;

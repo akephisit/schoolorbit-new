@@ -3,7 +3,7 @@ use crate::integration_tests::academic::core;
 use school_permissions::registry::codes;
 
 #[tokio::test]
-async fn year_lifecycle_readiness_distinguishes_missing_annual_results_and_optional_terms() {
+async fn year_lifecycle_readiness_uses_operational_terms_without_annual_result_prerequisites() {
     let pool = core::services_tests::prepare_core_fixture("year_lifecycle_readiness").await;
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
@@ -30,11 +30,11 @@ async fn year_lifecycle_readiness_distinguishes_missing_annual_results_and_optio
         .iter()
         .filter(|row| row.code.starts_with("year.annual"))
         .all(|row| row.resolution_url.is_some()));
-    assert!(!ws.can_close && !ws.coverage.ready && ws.available_actions.is_empty());
+    assert!(!ws.can_close && ws.available_actions.is_empty());
     assert!(ws
         .findings
         .iter()
-        .any(|row| row.code == "year.annual_missing"));
+        .all(|row| !row.code.starts_with("year.annual")));
     assert!(ws.findings.iter().any(|row| row.code == "year.terms_open"));
     assert!(ws
         .findings

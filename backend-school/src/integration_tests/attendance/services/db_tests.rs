@@ -1,4 +1,6 @@
 use super::*;
+#[path = "academic_retention_tests.rs"]
+mod academic_retention_tests;
 #[path = "publication_source_tests.rs"]
 mod publication_source_tests;
 use crate::integration_tests::academic::{

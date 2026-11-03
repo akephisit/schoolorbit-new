@@ -115,6 +115,7 @@ impl Fixture {
                 &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
             lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         };
         let ws = AcademicWebSocketState {
             collaboration: manager.collaboration(),

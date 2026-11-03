@@ -168,7 +168,8 @@ async fn promotion_destination_requires_published_applicable_program_and_explici
 }
 
 #[tokio::test]
-async fn promotion_destination_checks_transition_and_never_adopts_existing_enrollment() {
+async fn promotion_destination_accepts_explicit_outcomes_without_progression_and_never_adopts_existing_enrollment(
+) {
     let (pool, source, target, input) = fixture("promotion_destination_transition").await;
     let mut tx = pool.begin().await.unwrap();
     assert!(validate_destination(&mut tx, &source, target, &input)
@@ -199,7 +200,7 @@ async fn promotion_destination_checks_transition_and_never_adopts_existing_enrol
     sqlx::query("DELETE FROM grade_level_progressions WHERE from_grade_level_id=$1 AND transition_kind='graduate'").bind(source.grade_level_id).execute(&mut *tx).await.unwrap();
     assert!(validate_destination(&mut tx, &source, target, &terminal)
         .await
-        .is_err());
+        .is_ok());
     sqlx::query("INSERT INTO grade_level_progressions(from_grade_level_id,transition_kind) VALUES ($1,'graduate')").bind(source.grade_level_id).execute(&mut *tx).await.unwrap();
     assert!(validate_destination(&mut tx, &source, target, &terminal)
         .await
@@ -219,7 +220,7 @@ async fn promotion_destination_checks_transition_and_never_adopts_existing_enrol
         .unwrap();
     assert!(validate_destination(&mut tx, &source, target, &input)
         .await
-        .is_err());
+        .is_ok());
 }
 
 #[tokio::test]

@@ -62,9 +62,7 @@ test('learning-area bookmarks redirect to the single organization menu without a
 
 test('period editing has one owner under academic core', async () => {
 	const periodsMeta = await readProjectFile('src/routes/(app)/staff/academic/periods/+page.ts');
-	const editor = await readProjectFile(
-		'src/lib/components/academic-core/AcademicYearTermEditor.svelte'
-	);
+	const editor = await readProjectFile('src/lib/components/academic-core/TimeSetupEditor.svelte');
 
 	assert.match(periodsMeta, /access:\s*\{/);
 	assert.doesNotMatch(periodsMeta, /menu:\s*\{/);

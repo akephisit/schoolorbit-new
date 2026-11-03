@@ -468,12 +468,12 @@ test('status labels are visible and option failure is actionable without guessin
 	await mockAcademicContextApis(page);
 	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
 	await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
-	for (const label of ['กำลังวางแผน', 'กำลังใช้งาน', 'ปิดแล้ว']) {
+	for (const label of ['เตรียมการ', 'ใช้งาน', 'ปิดแล้ว']) {
 		await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
 	}
 	await page.keyboard.press('Escape');
 	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
-	await expect(page.getByText('พร้อมใช้งาน', { exact: true }).first()).toBeVisible();
+	await expect(page.getByText('เตรียมการ', { exact: true }).first()).toBeVisible();
 
 	const failedPage = await page.context().newPage();
 	await mockAcademicContextApis(failedPage, { contextFailure: true });

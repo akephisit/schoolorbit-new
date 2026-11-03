@@ -8,15 +8,13 @@ use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 pub mod promotion_runs;
 pub mod year_reopening;
+pub mod year_rollovers;
 use crate::state::AcademicHttpState;
 use axum::{
     extract::{Extension, Path, Query, State},
     Json,
 };
-pub use promotion_runs::{
-    approve_promotion_run, calculate_promotion_run, create_promotion_run, execute_promotion_run,
-    get_promotion_run_workspace, list_promotion_runs, review_promotion_run_item,
-};
+pub use promotion_runs::{get_promotion_run_workspace, list_promotion_runs};
 use school_academic_lifecycle::services::{term_transitions, year_transitions};
 use uuid::Uuid;
 
@@ -54,18 +52,6 @@ pub async fn update_opening_policy(
     Ok(Json(ApiResponse::ok(policy)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies/options",operation_id="getPromotionPolicyOptions",tag="academic",
-    responses((status=200, description = "Promotion policy options returned",body=ApiResponse<PromotionPolicyOptions>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
-pub async fn get_promotion_policy_options(
-    State(state): State<AcademicHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-) -> Result<Json<ApiResponse<PromotionPolicyOptions>>, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    Ok(Json(ApiResponse::ok(
-        services::get_promotion_policy_options(&context.tenant.pool, &context.actor).await?,
-    )))
-}
-
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies",operation_id="listPromotionPolicies",tag="academic",
     responses((status=200, description = "Promotion policy versions returned",body=ApiResponse<Vec<PromotionPolicyVersion>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_promotion_policies(
@@ -76,28 +62,6 @@ pub async fn list_promotion_policies(
     Ok(Json(ApiResponse::ok(
         services::list_promotion_policies(&context.tenant.pool, &context.actor).await?,
     )))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/promotion-policies",operation_id="createPromotionPolicy",tag="academic",
-    request_body=PromotionPolicyInput,
-    responses((status=200, description = "Promotion policy version created",body=ApiResponse<PromotionPolicyVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
-pub async fn create_promotion_policy(
-    State(state): State<AcademicHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(input): Json<PromotionPolicyInput>,
-) -> Result<Json<ApiResponse<PromotionPolicyVersion>>, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let policy =
-        services::create_promotion_policy(&context.tenant.pool, &context.actor, input).await?;
-    state.websocket_manager.broadcast_academic_core_changed(
-        session.tenant.subdomain.clone(),
-        session.user_id,
-        "promotion_policy",
-        Some(policy.id),
-        None,
-        None,
-    );
-    Ok(Json(ApiResponse::ok(policy)))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}",operation_id="getYearLifecycleWorkspace",tag="academic",

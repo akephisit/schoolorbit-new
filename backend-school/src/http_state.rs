@@ -28,6 +28,7 @@ impl FromRef<AppState> for AcademicHttpState {
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
             placement_rosters: &PLACEMENT_ROSTERS,
             lifecycle_providers: &LIFECYCLE_PROVIDERS,
+            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         }
     }
 }

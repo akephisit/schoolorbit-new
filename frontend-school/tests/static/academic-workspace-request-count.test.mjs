@@ -66,7 +66,12 @@ test('academic core setup uses the bounded setup workspace', async () => {
 	assert.match(loader, /captureRouteLoad/);
 	assert.match(loader, /requestFetch:\s*fetch/);
 	assert.match(page, /data\.workspace/);
-	assert.match(page, /current = false/);
+	const region = await readFile(
+		path.join(projectRoot, 'src/lib/components/academic-core/AcademicSetupRegion.svelte'),
+		'utf8'
+	);
+	assert.match(region, /current = false/);
+	assert.match(page, /AcademicSetupRegion/);
 	assert.doesNotMatch(page, /getAcademicSetupWorkspace\(/);
 	assert.doesNotMatch(page, /listAcademicTerms\(year\.id\)/);
 	assert.doesNotMatch(page, /listBellSchedules\(year\.id\)/);

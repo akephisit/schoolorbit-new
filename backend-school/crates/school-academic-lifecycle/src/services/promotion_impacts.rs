@@ -93,7 +93,7 @@ pub(crate) async fn impacts_in_transaction(
         "SELECT item.id AS item_id,item.student_academic_year_id,item.annual_revision_id
          FROM academic_promotion_execution_receipts receipt
          JOIN academic_promotion_run_items item ON item.id=receipt.item_id AND item.run_id=receipt.run_id
-         WHERE receipt.run_id=$1 AND receipt.source_year_id=$2
+         WHERE receipt.run_id=$1 AND receipt.source_year_id=$2 AND item.annual_revision_id IS NOT NULL
          ORDER BY item.id LIMIT 10001",
     ).bind(run).bind(source_year).fetch_all().await?;
     if sources.len() > 10_000 {

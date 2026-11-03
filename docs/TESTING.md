@@ -271,6 +271,44 @@ implementation paths; cross-domain/database fixtures retain application-level ow
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+### Manual year rollover and detail retention
+
+Use the repository's disposable PostgreSQL runner from the repository root. These are recipes,
+not a record of checks already passed. Keep one shared Cargo/formatter owner when writers
+share the checkout.
+
+```bash
+./scripts/test_backend_school.sh year_rollover_tests -- --nocapture
+./scripts/test_backend_school.sh academic_retention_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-lifecycle retention_ -- --nocapture
+./scripts/test_backend_school.sh --package school-attendance retained_attendance_blocks_reopening -- --nocapture
+./scripts/test_backend_school.sh --package school-behavior retention_chunks -- --nocapture
+./scripts/test_backend_school.sh --package school-file-platform retention_manifest -- --nocapture
+./scripts/test_backend_school.sh integration_tests::attendance::services::db_tests::retention_tests -- --nocapture
+```
+
+The [roster cases](../backend-school/src/integration_tests/academic/lifecycle/services/year_rollover_tests.rs)
+cover all five outcomes, closed-source/planning-target guards, explicit effective dates,
+prepared-versus-activated state, preserved identities/history/registration, stale/capacity and
+successor refusals, exact concurrent replay and later hold resolution without Results.
+The [policy persistence cases](../backend-school/crates/school-academic-lifecycle/tests/retention_persistence.rs)
+cover exact permissions, revision conflicts, grace bounds, the enable timestamp, current
+authorizer grants, more than 64 blocked candidates, mixed/unknown education levels,
+reopen/reclose deadlines and read-only previews. The
+[application cases](../backend-school/src/integration_tests/attendance/services/academic_retention_tests.rs)
+exercise actual Attendance/Behavior/Files providers, retained summaries/totals/cycles,
+original file manifests, logical versus pending/failed physical progress, accepted-work
+continuation after disable/revocation, and manual-archive exclusion. Colocated domain tests
+cover irreversible Attendance archive guards, chunked Behavior receipt replay and Files
+legal-hold/missing/current-failure projections. The existing Attendance `retention_tests`
+module owns storage-provider and FileCleaner object/version reconciliation fixtures; metadata
+projection tests alone are not evidence of external object deletion.
+
+Run the affected lifecycle transition/reopening suites and canonical migration/contract guards
+selected under `.rules` as well. Preserve explicit Results reporting/locking tests: Results are
+still supported, while their locks/credits no longer gate period closure or manual rollover.
+Never point these fixtures or retention acceptance at an existing school database.
+
 For the connection-bound query provider, run its public API/type/observation checks
 from `backend-school`:
 
@@ -1036,15 +1074,28 @@ Then, from another terminal in `frontend-school`:
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-core-cutover.spec.ts tests/e2e/academic-context.spec.ts --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-navigation.spec.ts --grep 'creating an activity with groups' --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts --grep 'a missing (course|independent|synchronized) opens' --project=chromium --workers=1
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-requests.spec.ts tests/e2e/behavior-workflow.spec.ts tests/e2e/academic-term-lifecycle.spec.ts --grep 'enrollment year|direct event defaults|manager selects event settings|scheduled behavior cutoffs|final closure|closed term prepares' --project=chromium --workers=1
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-final-region-loading.spec.ts tests/e2e/academic-promotion-runs.spec.ts --grep 'enrollment shows the round|list creates a run|reviewed placement dates' --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-requests.spec.ts tests/e2e/behavior-workflow.spec.ts --grep 'enrollment year|direct event defaults|manager selects event settings|scheduled behavior cutoffs' --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-final-region-loading.spec.ts --grep 'enrollment shows the round' --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-year-lifecycle.spec.ts tests/e2e/academic-term-lifecycle.spec.ts tests/e2e/academic-promotion-runs.spec.ts tests/e2e/academic-promotion-policies.spec.ts --project=chromium --workers=1
+```
+
+The lifecycle browser filenames now cover the unified year-management reader, independent
+regions and lazy retention settings; direct closure/activation and former-route redirects;
+one roster preview/confirmation with five outcomes; stale/ambiguous retry identity and draft
+preservation; and the retired policy-route redirect. Their synthetic shared data lives in
+`tests/e2e/fixtures/year-management.ts`. Do not restore old policy/calculation/approval workflows
+just to retain an obsolete browser assertion. Before browser acceptance, run the focused
+source-contract and presentation checks from `frontend-school`:
+
+```bash
+node --test tests/static/academic-lifecycle-presentation.test.mjs tests/static/academic-lifecycle-region-loading.test.mjs tests/static/academic-promotion-presentation.test.mjs tests/static/academic-promotion-list-region-loading.test.mjs tests/static/academic-promotion-detail-region-loading.test.mjs tests/static/academic-foundation-clarity.test.mjs tests/static/academic-foundation-route-loading.test.mjs
 ```
 
 Actual event, offering, placement and Behavior cutoff dates stay in their owning forms.
 Curriculum preparation requires a matching preview after changing the actual offering date.
 Calendar targeting selects an enrollment year explicitly; a cutoff is the final inclusive
-day of a Behavior cycle, with the next cycle starting the following day. A Promotion run date is
-the default for new items; existing per-item placement dates remain independent. After stopping the dev
+day of a Behavior cycle, with the next cycle starting the following day. Manual roster outcome and
+placement dates are explicit; historical per-item placement evidence remains independent. After stopping the dev
 server, run the public calendar fixture alone; it owns its API and Vite servers and checks
 unrestricted actual month navigation, cross-month search, focused retry and mobile/desktop themes:
 

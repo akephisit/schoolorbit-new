@@ -99,7 +99,9 @@ pub async fn review_item(
     super::promotion_decision::validate_decision(
         &input.decision,
         source.grade_level_id,
-        &item.recommendation,
+        item.recommendation
+            .as_ref()
+            .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานคำแนะนำเดิม".into()))?,
     )?;
     let core_decision = input.decision.core_command();
     promotion_targets::validate_destination(&mut tx, &source, run.target_year_id, &core_decision)

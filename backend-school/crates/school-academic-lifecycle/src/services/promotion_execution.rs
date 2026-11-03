@@ -275,7 +275,10 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
     super::promotion_decision::validate_decision(
         decision,
         source.grade_level_id,
-        &approved.recommendation,
+        approved
+            .recommendation
+            .as_ref()
+            .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานคำแนะนำเดิม".into()))?,
     )?;
     let core_decision = decision.core_command();
     let outcome = core_execution::execute_decision(

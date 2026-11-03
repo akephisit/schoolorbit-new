@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import type {
 		AcademicTerm,
 		AcademicTermType,
@@ -135,9 +136,7 @@
 				<div>
 					<div class="flex flex-wrap items-center gap-2">
 						<p class="font-medium">{term.name}</p>
-						<Badge variant="outline"
-							>{term.status === 'planning' ? 'ฉบับเตรียมการ' : term.status}</Badge
-						>
+						<Badge variant="outline">{academicStatusLabel(term.status)}</Badge>
 					</div>
 					<p class="mt-1 text-xs text-muted-foreground">
 						{schedules.find((schedule) => schedule.id === term.bellScheduleId)?.name ??

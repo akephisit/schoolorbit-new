@@ -78,7 +78,7 @@ test('academic top-level workspaces use shared frontend state components', async
 	const pages = [
 		'src/routes/(app)/staff/academic/admission/+page.svelte',
 		'src/routes/(app)/staff/academic/homerooms/+page.svelte',
-		'src/routes/(app)/staff/academic/core/+page.svelte',
+		'src/lib/components/academic-core/AcademicSetupRegion.svelte',
 		'src/lib/components/staff/LearningAreaWorkspace.svelte'
 	];
 

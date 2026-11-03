@@ -4,18 +4,16 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 
-test('academic core is a four-step planning path with focused shadcn controls', () => {
+test('year and term setup shares canonical management while time controls keep their own owner', () => {
 	const orchestrator = read('src/lib/components/academic-core/AcademicYearTermEditor.svelte');
-	for (const component of [
-		'AcademicYearSetupStep',
-		'BellScheduleSetupStep',
-		'BellSchedulePeriodsStep',
-		'AcademicTermSetupStep'
-	]) {
+	for (const component of ['AcademicYearSetupStep', 'AcademicTermSetupStep']) {
 		assert.match(orchestrator, new RegExp(component));
 	}
-	assert.match(orchestrator, /ฉบับเตรียมการ/);
-	assert.match(orchestrator, /ตั้งค่าเริ่มต้น.*การปิด.*การเลื่อนชั้น/s);
+	assert.match(orchestrator, /academicStatusLabel/);
+	assert.match(orchestrator, /AcademicContextSettingsControls/);
+	const time = read('src/lib/components/academic-core/TimeSetupEditor.svelte');
+	assert.match(time, /BellScheduleSetupStep/);
+	assert.match(time, /BellSchedulePeriodsStep/);
 
 	const yearStep = read('src/lib/components/academic-core/setup/AcademicYearSetupStep.svelte');
 	assert.match(yearStep, /ui\/checkbox/);

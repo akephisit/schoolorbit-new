@@ -1,27 +1,13 @@
-import type { PageLoad } from './$types';
-import { waitForPromotionReadAccess } from '#lib/academic/lifecycle/promotion-access.js';
-import { listPromotionPolicies } from '#lib/api/academic-promotion.js';
-import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { redirect } from '@sveltejs/kit';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
-
+import type { PageLoad } from './$types';
 export const _meta = {
-	academicContext: 'none' as const,
-	menu: {
-		title: 'เกณฑ์การเลื่อนชั้น',
-		icon: 'ListChecks',
-		group: 'academic_assessment',
-		workspace: 'academic',
-		order: 80,
-		user_type: 'staff',
-		permission: PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL
-	}
+	academicContext: 'year_required' as const,
+	access: { user_type: 'staff', permission: PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL }
 };
-export const load: PageLoad = ({ fetch }) => ({
-	title: _meta.menu.title,
-	policies: captureRouteLoad(
-		waitForPromotionReadAccess().then((allowed) =>
-			allowed ? listPromotionPolicies({ requestFetch: fetch }) : []
-		),
-		'โหลดเกณฑ์เลื่อนชั้นไม่สำเร็จ'
-	)
-});
+export const load: PageLoad = ({ url }) => {
+	const destination = new URL('/staff/academic/year-lifecycle', url);
+	const yearId = url.searchParams.get('academicYearId');
+	if (yearId) destination.searchParams.set('academicYearId', yearId);
+	return redirect(307, destination.pathname + destination.search);
+};

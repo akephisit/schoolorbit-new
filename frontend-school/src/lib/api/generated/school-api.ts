@@ -1747,22 +1747,6 @@ export interface paths {
 		};
 		get: operations['listPromotionPolicies'];
 		put?: never;
-		post: operations['createPromotionPolicy'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/lifecycle/promotion-policies/options': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getPromotionPolicyOptions'];
-		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -1779,7 +1763,7 @@ export interface paths {
 		};
 		get: operations['listPromotionRuns'];
 		put?: never;
-		post: operations['createPromotionRun'];
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1802,54 +1786,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/lifecycle/promotion-runs/{run_id}/approve': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['approvePromotionRun'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/lifecycle/promotion-runs/{run_id}/calculate': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['calculatePromotionRun'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/lifecycle/promotion-runs/{run_id}/execute': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['executePromotionRun'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/academic/lifecycle/promotion-runs/{run_id}/impacts': {
 		parameters: {
 			query?: never;
@@ -1866,7 +1802,7 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve': {
+	'/api/academic/lifecycle/retention-policy': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -1874,23 +1810,7 @@ export interface paths {
 			cookie?: never;
 		};
 		get?: never;
-		put?: never;
-		post: operations['resolvePromotionRunImpact'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/lifecycle/promotion-runs/{run_id}/items/{item_id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put: operations['reviewPromotionRunItem'];
+		put: operations['updateAcademicRetentionPolicy'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -1978,6 +1898,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/lifecycle/year-rollovers/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmYearRollover'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/year-rollovers/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getYearRolloverOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/year-rollovers/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewYearRollover'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/lifecycle/years/{year_id}': {
 		parameters: {
 			query?: never;
@@ -2004,6 +1972,22 @@ export interface paths {
 		get: operations['getYearReopeningWorkspace'];
 		put?: never;
 		post: operations['reopenAcademicYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/lifecycle/years/{year_id}/retention': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAcademicRetentionWorkspace'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -8833,6 +8817,67 @@ export interface components {
 			name: string;
 			workspaceCode: string;
 		};
+		/** @enum {string} */
+		AcademicRetentionBoundary: 'term' | 'year';
+		AcademicRetentionImpact: {
+			attendanceArchived: boolean;
+			/** Format: int64 */
+			attendanceRecords: number;
+			/** Format: int64 */
+			behaviorEntries: number;
+			/** Format: int64 */
+			evidenceBytes: number;
+			/** Format: int64 */
+			evidenceFiles: number;
+		};
+		AcademicRetentionJobStatus: {
+			/** Format: int64 */
+			failedFiles: number;
+			/** Format: uuid */
+			id: string;
+			lastErrorCode?: string | null;
+			logicalCleanupComplete: boolean;
+			/** Format: int64 */
+			pendingFiles: number;
+			physicalCleanupComplete: boolean;
+			status: string;
+		};
+		AcademicRetentionPolicy: {
+			/** Format: date-time */
+			effectiveFrom?: string | null;
+			enabled: boolean;
+			/** Format: int32 */
+			graceDays: number;
+			primaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+			/** Format: int64 */
+			rowVersion: number;
+			secondaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+			/** Format: uuid */
+			updatedBy?: string | null;
+		};
+		AcademicRetentionTermPreview: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			blockedReasons: string[];
+			/** Format: date-time */
+			closedAt?: string | null;
+			eligible: boolean;
+			/** Format: date-time */
+			eligibleAt?: string | null;
+			impact: components['schemas']['AcademicRetentionImpact'];
+			job?: components['schemas']['AcademicRetentionJobStatus'] | null;
+			levelTypes: string[];
+			preservesAttendanceSummaries: boolean;
+			preservesBehaviorTotals: boolean;
+			requiredBoundary: components['schemas']['AcademicRetentionBoundary'];
+		};
+		AcademicRetentionWorkspace: {
+			policy: components['schemas']['AcademicRetentionPolicy'];
+			terms: components['schemas']['AcademicRetentionTermPreview'][];
+			wholeTermCleanup: boolean;
+		};
 		AcademicSetupWorkspace: {
 			bellSchedules: components['schemas']['BellSchedule'][];
 			contextSettings: components['schemas']['AcademicContextSettings'];
@@ -9595,6 +9640,32 @@ export interface components {
 				untouchedCustomItemCount: number;
 				/** Format: int64 */
 				untouchedNonAcademicRouteCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicRetentionPolicy: {
+			data: {
+				/** Format: date-time */
+				effectiveFrom?: string | null;
+				enabled: boolean;
+				/** Format: int32 */
+				graceDays: number;
+				primaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+				/** Format: int64 */
+				rowVersion: number;
+				secondaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+				/** Format: uuid */
+				updatedBy?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AcademicRetentionWorkspace: {
+			data: {
+				policy: components['schemas']['AcademicRetentionPolicy'];
+				terms: components['schemas']['AcademicRetentionTermPreview'][];
+				wholeTermCleanup: boolean;
 			};
 			message?: string;
 			success: boolean;
@@ -12862,7 +12933,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
-				policyId: string;
+				policyId?: string | null;
 				/** Format: date-time */
 				reviewedAt?: string | null;
 				/** Format: uuid */
@@ -12901,7 +12972,6 @@ export interface components {
 		};
 		ApiResponse_PromotionRunWorkspace: {
 			data: {
-				approvalChecksum: string;
 				run: components['schemas']['PromotionRun'];
 				sourceYear: components['schemas']['YearLifecycleContext'];
 				students: components['schemas']['PromotionRunStudent'][];
@@ -13941,7 +14011,6 @@ export interface components {
 			data: {
 				availableActions: components['schemas']['TermTransitionAction'][];
 				context: components['schemas']['TermLifecycleContext'];
-				coverage: components['schemas']['TermClosureCoverage'];
 				findings: components['schemas']['LifecycleFinding'][];
 				sourceChecksum: string;
 			};
@@ -16602,7 +16671,6 @@ export interface components {
 				availableActions: components['schemas']['YearTransitionAction'][];
 				canClose: boolean;
 				context: components['schemas']['YearLifecycleContext'];
-				coverage: components['schemas']['AnnualClosureCoverage'];
 				findings: components['schemas']['LifecycleFinding'][];
 				sourceChecksum: string;
 				terms: components['schemas']['YearTermLifecycleState'][];
@@ -16627,6 +16695,52 @@ export interface components {
 				context: components['schemas']['YearLifecycleContext'];
 				findings: components['schemas']['LifecycleFinding'][];
 				sourceChecksum: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearRolloverOptions: {
+			data: {
+				targetYears: components['schemas']['YearLifecycleContext'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearRolloverOutcome: {
+			data: {
+				activated: boolean;
+				/** Format: date-time */
+				completedAt: string;
+				prepared: boolean;
+				receipts: components['schemas']['PromotionExecutionReceipt'][];
+				/** Format: uuid */
+				requestId: string;
+				/** Format: uuid */
+				runId: string;
+				/** Format: uuid */
+				sourceYearId: string;
+				studentCount: number;
+				/** Format: uuid */
+				targetYearId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_YearRolloverPreview: {
+			data: {
+				canConfirm: boolean;
+				findings: components['schemas']['LifecycleFinding'][];
+				grades: components['schemas']['PromotionGradeReference'][];
+				homerooms: components['schemas']['YearRolloverHomeroomReference'][];
+				/** Format: date */
+				outcomeEffectiveOn: string;
+				programs: components['schemas']['YearRolloverProgramReference'][];
+				sourceChecksum: string;
+				sourceYear: components['schemas']['YearLifecycleContext'];
+				students: components['schemas']['YearRolloverStudent'][];
+				/** Format: date */
+				targetPlacementStartsOn: string;
+				targetYear: components['schemas']['YearLifecycleContext'];
 			};
 			message?: string;
 			success: boolean;
@@ -19371,6 +19485,12 @@ export interface components {
 			rosterChecksum: string;
 			/** Format: int64 */
 			rowVersion?: number | null;
+			sourceChecksum: string;
+		};
+		ConfirmYearRolloverInput: {
+			preview: components['schemas']['YearRolloverPreviewInput'];
+			/** Format: uuid */
+			requestId: string;
 			sourceChecksum: string;
 		};
 		ConsentRecordResponse: {
@@ -24421,7 +24541,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
-			policyId: string;
+			policyId?: string | null;
 			/** Format: date-time */
 			reviewedAt?: string | null;
 			/** Format: uuid */
@@ -24452,7 +24572,7 @@ export interface components {
 			existingTargetStudentYearId?: string | null;
 			/** Format: uuid */
 			id: string;
-			recommendation: components['schemas']['PromotionRecommendation'];
+			recommendation?: components['schemas']['PromotionRecommendation'] | null;
 			/** Format: date-time */
 			reviewedAt?: string | null;
 			/** Format: uuid */
@@ -24499,15 +24619,12 @@ export interface components {
 		PromotionRunStatus:
 			'draft' | 'calculated' | 'reviewed' | 'approved' | 'executing' | 'completed' | 'failed';
 		PromotionRunStudent: {
-			annualResultCurrent: boolean;
 			item: components['schemas']['PromotionRunItem'];
-			needsRecalculation: boolean;
 			receipt?: components['schemas']['PromotionExecutionReceipt'] | null;
 			studentCode?: string | null;
 			studentName: string;
 		};
 		PromotionRunWorkspace: {
-			approvalChecksum: string;
 			run: components['schemas']['PromotionRun'];
 			sourceYear: components['schemas']['YearLifecycleContext'];
 			students: components['schemas']['PromotionRunStudent'][];
@@ -27390,7 +27507,6 @@ export interface components {
 		TermLifecycleWorkspace: {
 			availableActions: components['schemas']['TermTransitionAction'][];
 			context: components['schemas']['TermLifecycleContext'];
-			coverage: components['schemas']['TermClosureCoverage'];
 			findings: components['schemas']['LifecycleFinding'][];
 			sourceChecksum: string;
 		};
@@ -28147,6 +28263,15 @@ export interface components {
 			terms: components['schemas']['AcademicContextVisibilityInput'][];
 			years: components['schemas']['AcademicContextVisibilityInput'][];
 		};
+		UpdateAcademicRetentionPolicy: {
+			enabled: boolean;
+			/** Format: int64 */
+			expectedRowVersion: number;
+			/** Format: int32 */
+			graceDays: number;
+			primaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+			secondaryBoundary: components['schemas']['AcademicRetentionBoundary'];
+		};
 		UpdateAcademicTermChangeSetRequest: {
 			reason: string;
 			/** Format: date */
@@ -28854,7 +28979,6 @@ export interface components {
 			availableActions: components['schemas']['YearTransitionAction'][];
 			canClose: boolean;
 			context: components['schemas']['YearLifecycleContext'];
-			coverage: components['schemas']['AnnualClosureCoverage'];
 			findings: components['schemas']['LifecycleFinding'][];
 			sourceChecksum: string;
 			terms: components['schemas']['YearTermLifecycleState'][];
@@ -28879,6 +29003,101 @@ export interface components {
 			context: components['schemas']['YearLifecycleContext'];
 			findings: components['schemas']['LifecycleFinding'][];
 			sourceChecksum: string;
+		};
+		YearRolloverHomeroomReference: {
+			/** Format: int32 */
+			capacity?: number | null;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			occupiedCount: number;
+			/** Format: uuid */
+			studyProgramId: string;
+		};
+		YearRolloverOptions: {
+			targetYears: components['schemas']['YearLifecycleContext'][];
+		};
+		YearRolloverOutcome: {
+			activated: boolean;
+			/** Format: date-time */
+			completedAt: string;
+			prepared: boolean;
+			receipts: components['schemas']['PromotionExecutionReceipt'][];
+			/** Format: uuid */
+			requestId: string;
+			/** Format: uuid */
+			runId: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			studentCount: number;
+			/** Format: uuid */
+			targetYearId: string;
+		};
+		YearRolloverPreview: {
+			canConfirm: boolean;
+			findings: components['schemas']['LifecycleFinding'][];
+			grades: components['schemas']['PromotionGradeReference'][];
+			homerooms: components['schemas']['YearRolloverHomeroomReference'][];
+			/** Format: date */
+			outcomeEffectiveOn: string;
+			programs: components['schemas']['YearRolloverProgramReference'][];
+			sourceChecksum: string;
+			sourceYear: components['schemas']['YearLifecycleContext'];
+			students: components['schemas']['YearRolloverStudent'][];
+			/** Format: date */
+			targetPlacementStartsOn: string;
+			targetYear: components['schemas']['YearLifecycleContext'];
+		};
+		YearRolloverPreviewInput: {
+			decisions: components['schemas']['YearRolloverStudentInput'][];
+			/** Format: date */
+			outcomeEffectiveOn: string;
+			/** Format: uuid */
+			sourceYearId: string;
+			/** Format: date */
+			targetPlacementStartsOn: string;
+			/** Format: uuid */
+			targetYearId: string;
+		};
+		YearRolloverProgramReference: {
+			code: string;
+			/** Format: uuid */
+			curriculumLevelId: string;
+			editionName: string;
+			gradeLevelIds: string[];
+			/** Format: uuid */
+			id: string;
+			levelName: string;
+			name: string;
+		};
+		YearRolloverStudent: {
+			decision?: components['schemas']['PromotionDecisionInput'] | null;
+			/** Format: uuid */
+			existingTargetStudentYearId?: string | null;
+			/** Format: uuid */
+			sourceGradeLevelId: string;
+			/** Format: uuid */
+			sourceHomeroomId?: string | null;
+			sourceHomeroomName?: string | null;
+			/** Format: int64 */
+			sourceRowVersion: number;
+			/** Format: uuid */
+			sourceStudyProgramId: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode?: string | null;
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
+			suggestedDecision?: components['schemas']['PromotionDecisionInput'] | null;
+		};
+		YearRolloverStudentInput: {
+			decision: components['schemas']['PromotionDecisionInput'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
 		};
 		YearTermLifecycleState: {
 			/** Format: uuid */
@@ -37902,122 +38121,6 @@ export interface operations {
 			};
 		};
 	};
-	createPromotionPolicy: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['PromotionPolicyInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion policy version created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionPolicyVersion'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getPromotionPolicyOptions: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Promotion policy options returned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionPolicyOptions'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	listPromotionRuns: {
 		parameters: {
 			query: {
@@ -38038,93 +38141,6 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_PromotionRunList'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Internal server error */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createPromotionRun: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreatePromotionRunInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion run created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionRun'];
 				};
 			};
 			/** @description Invalid input */
@@ -38277,273 +38293,6 @@ export interface operations {
 			};
 		};
 	};
-	approvePromotionRun: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				run_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ApprovePromotionRunInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion run approval result returned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionRun'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Internal server error */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	calculatePromotionRun: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				run_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CalculatePromotionRunInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion run calculation result returned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionRunCalculation'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Internal server error */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	executePromotionRun: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				run_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ExecutePromotionRunInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion run execution result returned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionExecutionResult'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Internal server error */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	getPromotionRunImpacts: {
 		parameters: {
 			query?: {
@@ -38622,38 +38371,26 @@ export interface operations {
 			};
 		};
 	};
-	resolvePromotionRunImpact: {
+	updateAcademicRetentionPolicy: {
 		parameters: {
 			query?: never;
 			header?: never;
-			path: {
-				impact_id: string;
-				run_id: string;
-			};
+			path?: never;
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['ResolvePromotionImpactInput'];
+				'application/json': components['schemas']['UpdateAcademicRetentionPolicy'];
 			};
 		};
 		responses: {
-			/** @description Promotion run impact resolution result returned */
+			/** @description Future retention policy saved without deleting details */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionImpactResolution'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
+					'application/json': components['schemas']['ApiResponse_AcademicRetentionPolicy'];
 				};
 			};
 			/** @description Authentication required */
@@ -38674,16 +38411,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
+			/** @description Policy revision changed */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -38692,97 +38420,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Validation failed */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Internal server error */
-			500: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	reviewPromotionRunItem: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				item_id: string;
-				run_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ReviewPromotionItemInput'];
-			};
-		};
-		responses: {
-			/** @description Promotion run item review saved */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_PromotionItemReview'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Validation failed */
+			/** @description Invalid retention policy */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -39212,6 +38850,209 @@ export interface operations {
 			};
 		};
 	};
+	confirmYearRollover: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ConfirmYearRolloverInput'];
+			};
+		};
+		responses: {
+			/** @description Roster prepared; target year remains inactive */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearRolloverOutcome'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Preview or replay identity changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid roster declaration */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Internal server error */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getYearRolloverOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Planning target years returned */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearRolloverOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Internal server error */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewYearRollover: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['YearRolloverPreviewInput'];
+			};
+		};
+		responses: {
+			/** @description Manual roster preview returned without writes */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearRolloverPreview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic context not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster conflicts with the current state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid roster declaration */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Internal server error */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getYearLifecycleWorkspace: {
 		parameters: {
 			query?: never;
@@ -39435,6 +39276,64 @@ export interface operations {
 			};
 			/** @description Validation failed */
 			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Internal server error */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAcademicRetentionWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				year_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Retention policy and term eligibility returned */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicRetentionWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

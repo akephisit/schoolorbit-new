@@ -30,11 +30,13 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
     )
     .await
     .unwrap();
-    let workspace = lifecycle::get_year_workspace(&pool, &actor, ctx.academic_year_id)
+    let mut coverage_tx = pool.begin().await.unwrap();
+    let coverage = annual_closure_coverage(&mut coverage_tx, ctx.academic_year_id)
         .await
         .unwrap();
-    assert!(!workspace.coverage.students.is_empty());
-    for student in workspace.coverage.students {
+    coverage_tx.rollback().await.unwrap();
+    assert!(!coverage.students.is_empty());
+    for student in coverage.students {
         let id = student.student_academic_year_id;
         let preview = preview_aggregate(
             &pool,
@@ -136,8 +138,8 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
 }
 
 #[tokio::test]
-async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warning_acknowledgement()
-{
+async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_operational_warning_acknowledgement(
+) {
     use crate::integration_tests::academic::{
         core::{
             models::{AcademicTermStatus, TermTransitionAction, TermTransitionRequest},
@@ -161,11 +163,10 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     )
     .await
     .unwrap();
-    let workspace =
-        lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
-            .await
-            .unwrap();
-    for student in &workspace.coverage.students {
+    let mut coverage_tx = pool.begin().await.unwrap();
+    let coverage = term_closure_coverage(&mut coverage_tx, &ctx).await.unwrap();
+    coverage_tx.rollback().await.unwrap();
+    for student in &coverage.students {
         let preview = preview_aggregate(
             &pool,
             &actor,
@@ -205,7 +206,10 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
         lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
             .await
             .unwrap();
-    assert!(workspace.coverage.ready);
+    assert!(workspace
+        .findings
+        .iter()
+        .all(|row| !row.code.starts_with("results.")));
     let mut request = TermTransitionRequest {
         academic_year_id: ctx.academic_year_id,
         request_id: Uuid::new_v4(),

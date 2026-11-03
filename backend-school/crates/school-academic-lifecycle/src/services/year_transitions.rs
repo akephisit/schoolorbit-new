@@ -188,7 +188,7 @@ mod tests {
                 let wanted = match (state, action) {
                     (State::Active, Action::BeginClosing) => Some(State::Closing),
                     (State::Closing, Action::CancelClosing) => Some(State::Active),
-                    (State::Closing, Action::Close) => Some(State::Closed),
+                    (State::Active | State::Closing, Action::Close) => Some(State::Closed),
                     _ => None,
                 };
                 assert_eq!(

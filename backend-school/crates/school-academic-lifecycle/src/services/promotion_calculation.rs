@@ -180,7 +180,7 @@ struct PreparedItem {
 }
 
 pub(super) fn evidence_checksum(
-    policy: Uuid,
+    policy: Option<Uuid>,
     source: &promotion_students::PromotionStudentContext,
     annual: Option<&results::models::AnnualResultRevision>,
 ) -> Result<String, AppError> {

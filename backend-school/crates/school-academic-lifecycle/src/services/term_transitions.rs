@@ -106,9 +106,9 @@ pub async fn transition_term(
             .require_attendance_delivery_complete(&mut tx, term, before.operation_date)
             .await?;
         if workspace
-                .findings
-                .iter()
-                .any(|finding| finding.severity == LifecycleSeverity::Blocking)
+            .findings
+            .iter()
+            .any(|finding| finding.severity == LifecycleSeverity::Blocking)
         {
             return Err(AppError::Conflict("ยังมีข้อมูลที่ต้องแก้ไขก่อนปิดภาคเรียน".into()));
         }
@@ -132,6 +132,11 @@ pub async fn transition_term(
         ));
     }
     if request.action == TermTransitionAction::Reopen {
+        super::retention::require_reopen_allowed(&mut tx, request.academic_year_id, Some(term))
+            .await?;
+        external
+            .require_reopen_allowed(&mut tx, request.academic_year_id, Some(term))
+            .await?;
         school_academic_results::services::require_term_without_annual_results(
             &mut tx,
             request.academic_year_id,
@@ -278,6 +283,11 @@ pub(crate) fn target_state(
     match (current, action) {
         (T::Planning, A::MarkReady) => Ok(T::Ready),
         (T::Planning, A::Cancel) => Ok(T::Cancelled),
+        (T::Planning | T::Ready, A::Activate)
+            if matches!(year, Y::Planning | Y::Ready | Y::Active) =>
+        {
+            Ok(T::Active)
+        }
         (T::Active, A::BeginClosing) => Ok(T::Closing),
         (T::Closing, A::CancelClosing) => Ok(T::Active),
         (T::Active | T::Closing, A::Close) => Ok(T::Closed),
@@ -364,7 +374,7 @@ mod tests {
                 T::Closed,
                 T::Cancelled,
             ] {
-                if invalid != source {
+                if invalid != source && !(action == A::Close && invalid == T::Active) {
                     assert!(target_state(invalid, Y::Active, action).is_err());
                 }
             }
@@ -373,7 +383,14 @@ mod tests {
             }
         }
         for year in [Y::Planning, Y::Ready, Y::Active, Y::Closing] {
-            assert!(target_state(T::Ready, year, A::Activate).is_err());
+            assert_eq!(
+                target_state(T::Planning, year, A::Activate).is_ok(),
+                matches!(year, Y::Planning | Y::Ready | Y::Active)
+            );
+            assert_eq!(
+                target_state(T::Ready, year, A::Activate).is_ok(),
+                matches!(year, Y::Planning | Y::Ready | Y::Active)
+            );
         }
     }
 }

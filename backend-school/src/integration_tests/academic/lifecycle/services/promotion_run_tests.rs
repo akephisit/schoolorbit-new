@@ -69,7 +69,7 @@ async fn promotion_run_creation_replays_only_its_actor_and_intent_without_studen
     assert_eq!(first.row_version, 1);
     assert_eq!(first.source_year_id, input.source_year_id);
     assert_eq!(first.target_year_id, input.target_year_id);
-    assert_eq!(first.policy_id, input.policy_id);
+    assert_eq!(first.policy_id, Some(input.policy_id));
     let again = create_run(&pool, &actor, input.clone()).await.unwrap();
     assert_eq!(again.id, first.id);
     let mut changed = input.clone();

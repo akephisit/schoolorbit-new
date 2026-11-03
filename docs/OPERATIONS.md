@@ -810,6 +810,93 @@ Accepted JPEG evidence uses the existing private File Platform/R2 path and its c
 
 Term detail purge is restricted to authorized managers and closed terms. Preview the record/byte impact, verify authoritative notification acceptance/terminal progress, provide a reason and confirm the expected record count. The service reconciles explicit results plus virtual unchecked coverage, freezes arrival/lesson/special and assigned-teacher summaries, and enqueues evidence deletion in the same transaction before removing details. Purged terms cannot be edited; summaries and their unchecked coverage remain readable. Export any required individual evidence/history before purge, because aggregate summaries cannot reconstruct deleted details. Do not test purge on a live tenant. Roll forward with a compatible fix rather than altering migration checksums or deleting history.
 
+## Academic year management and optional detail retention
+
+The canonical staff workspace is `/staff/academic/year-lifecycle`. It combines year/term setup,
+period closure and preparation of the next roster. The presentation groups `planning`/`ready`
+as preparation and `active`/`closing` as in use; stored historical statuses and evidence keep
+their original meaning. Closing a term retains the same annual enrollment and dated room
+history for the next term. Closing terms/years and manually preparing a new roster do not
+require locked Results, annual credit calculations or a promotion policy. Attendance
+finalization/source delivery and actual successor/ownership conflicts retain their guards.
+
+Use the [canonical Lifecycle routes](../backend-school/crates/school-academic-http/src/lifecycle.rs)
+and [typed roster contract](../backend-school/crates/school-academic-lifecycle/src/models/year_rollover.rs).
+`POST /api/academic/lifecycle/year-rollovers/preview` reads the complete roster and explicit
+outcome/placement dates; `POST /api/academic/lifecycle/year-rollovers/confirm` accepts its current
+checksum and request identity once. The options/preview reads require
+`academic_promotion.read.school`; confirmation also requires `academic_promotion.execute.school`.
+The source year must be closed and the destination planning. Staff select promote, repeat,
+graduate, transfer out or hold. A successful response reports `prepared: true` and
+`activated: false`: opening the destination is a separate authorized operation. Reconcile an
+ambiguous confirmation with its original request identity; do not create a new request merely
+to retry the same accepted intent. Former policy/run calculation, approval and execution
+commands are retired; their existing evidence remains available through read-only history.
+
+Graduation/transfer finalize annual membership and dated placement through Core and update
+administrative registration through Students in the same transaction. Student UUIDs and
+historical year/room records remain. Account deactivation, session revocation and guardian
+identity deletion are independent operations and are not implied by these declarations.
+
+Deploy [migration 152](../backend-school/migrations/152_manual_year_rollover.sql) and
+[migration 153](../backend-school/migrations/153_academic_detail_retention.sql) with the matching
+backend, generated contracts and frontend under the usual universal-maintenance, all-tenant
+migration and authenticated acceptance gates. Migration 152 checks the six existing promotion
+ledger populations before allowing absent manual policy/recommendation evidence. It refuses
+an executing legacy run or any accepted execution batch item without its receipt with
+`MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED`; preservation drift raises
+`MANUAL_ROLLOVER152_PRESERVATION_FAILED`. Investigate bounded findings on a protected copy;
+never fabricate receipts, edit source rows to pass the gate or alter migration history.
+
+If 152 aborts before consumer cutover, its transaction leaves schema 151 in place. After
+verifying exact history, an explicitly scoped recovery may use the compatible schema-151
+runtime to finish the original legacy work before retrying the canonical migration. Once 152
+commits and manual nullable-policy receipts exist, an older runtime cannot interpret that
+ledger. Retain maintenance and repair forward with a compatible release. Migration 153 adds
+disabled policy/job state; it neither enables retention nor queues historical periods, deletes
+detail/evidence or resets scores. Feature deployment does not authorize destructive cleanup
+of existing or production data.
+
+The separate retention section reads
+`GET /api/academic/lifecycle/years/{year_id}/retention` and saves the versioned policy through
+`PUT /api/academic/lifecycle/retention-policy`. Reads require
+`academic_lifecycle.read.school`, `attendance.delete.school` and
+`behavior_cleanup.execute.school`; saves additionally require `academic_lifecycle.manage.school`.
+Enabling is an explicit school decision under those permissions. The server records its
+effective timestamp, and only later term closures enter automatic eligibility. The default
+grace is 90 days, configurable from 1 to 3650. Primary defaults to a year boundary and secondary
+to a term boundary; both minimum boundaries can be configured. The
+[Lifecycle policy/controller](../backend-school/crates/school-academic-lifecycle/src/services/retention.rs)
+owns the exact contract and source checks.
+
+Cleanup removes whole-term Attendance and Behavior details. A mixed annual roster waits for
+the latest configured boundary, so primary year retention can also delay secondary details
+until year closure plus grace. All annual membership statuses contribute to scope. Unknown
+education levels block automatic cleanup. The newest accepted close receipt starts the
+deadline; reopening/reclosing invalidates an unstarted job and recalculates grace. Manually
+archived Attendance periods are explicitly excluded because their original physical deletion
+manifest belongs to that earlier operation. Course Results and other module details are
+outside this automatic policy. Retention does not start a new Behavior score cycle.
+
+The existing tenant background turn advances an indexed persisted cursor over at most 64
+close receipts and one leased job stage per turn. It validates the current policy authorizer
+before accepting new deletion work. Attendance first reconciles school/teacher summaries,
+source-score delivery and notification acceptance, and atomically records the original
+evidence UUID manifest with archive acceptance. Behavior then retains totals/cycle ownership
+while its existing bounded chunk jobs remove detail. Files owns object/version retries and
+physical deletion. Disabling the policy stops unstarted work; already accepted partial work
+continues through its original receipts even if the authorizer later loses permissions.
+Preparing/opening the next period never waits for purge.
+
+Use the retention workspace's job state to distinguish logical completion from physical
+completion. `awaiting_files` can report logical completion while original evidence objects
+remain pending or have a current terminal failure; only reconciled Files metadata, versions
+and derivatives permit physical completion. A missing manifest UUID remains unresolved.
+Historical failed operations superseded by a successful replacement do not keep a deleted
+target failed. Preserve manifests, restore the relevant Files provider/scanner and use its
+existing owner recovery procedure; never delete bucket objects directly or mark a job
+completed by hand. Detail cleanup is irreversible; retained aggregates cannot reconstruct it.
+
 ## Required Environment and Secrets
 
 All secrets and environment-specific URLs come from the runtime environment or deployment secret store. Example files are templates only.

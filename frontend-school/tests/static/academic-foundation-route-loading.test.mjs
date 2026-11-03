@@ -35,7 +35,7 @@ test('academic setup and curriculum list own first-visible reads in their route 
 		if (entry.route === 'core')
 			assert.doesNotMatch(page, new RegExp(`\\b${entry.read}\\s*\\(`), entry.route);
 		assert.doesNotMatch(page, /\bonMount\s*\(/, entry.route);
-		if (entry.route === 'core') assert.match(page, /\blistBellSchedulePeriods\b/);
+		if (entry.route === 'core') assert.match(page, /AcademicSetupRegion/);
 		else {
 			const dialog = await readFile(
 				path.resolve(
@@ -50,7 +50,10 @@ test('academic setup and curriculum list own first-visible reads in their route 
 });
 
 test('loaded empty regions remain visible with focused retry during failed refresh', async () => {
-	const setup = await readFile(path.join(routesRoot, 'core/+page.svelte'), 'utf8');
+	const setup = await readFile(
+		new URL('../../src/lib/components/academic-core/AcademicSetupRegion.svelte', import.meta.url),
+		'utf8'
+	);
 	const curricula = await readFile(path.join(routesRoot, 'curricula/+page.svelte'), 'utf8');
 	assert.match(setup, /loading\s*&&\s*!workspaceReady/);
 	assert.match(setup, /errorMessage\s*&&\s*!workspaceReady/);
@@ -65,7 +68,10 @@ test('loaded empty regions remain visible with focused retry during failed refre
 });
 
 test('older setup workspace results cannot overwrite a completed local mutation', async () => {
-	const setup = await readFile(path.join(routesRoot, 'core/+page.svelte'), 'utf8');
+	const setup = await readFile(
+		new URL('../../src/lib/components/academic-core/AcademicSetupRegion.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(setup, /const initialMutationRevision = mutationRevision/);
 	assert.match(setup, /mutationRevision === initialMutationRevision/);
 	assert.match(setup, /mutationRevision \+= 1/);

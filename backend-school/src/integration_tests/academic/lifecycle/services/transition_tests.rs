@@ -190,7 +190,10 @@ async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_
         ],
     };
     let workspace = get_workspace(&pool, &actor, year, term).await.unwrap();
-    assert!(!workspace.coverage.ready);
+    assert!(workspace
+        .findings
+        .iter()
+        .all(|row| !row.code.starts_with("results.")));
     let request = TermTransitionRequest {
         academic_year_id: year,
         request_id: Uuid::new_v4(),

@@ -7,7 +7,7 @@ import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'none',
 	menu: {
-		title: 'ปีการศึกษา ภาคเรียน และเวลาเรียน',
+		title: 'เวลาเรียนและคาบเรียน',
 		icon: 'CalendarRange',
 		group: 'academic_delivery',
 		workspace: 'academic',

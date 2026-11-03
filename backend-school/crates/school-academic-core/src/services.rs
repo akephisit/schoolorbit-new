@@ -19,6 +19,7 @@ pub mod lifecycle_context;
 pub mod lifecycle_guard;
 pub mod progressions;
 pub mod promotion_execution;
+pub mod promotion_finalization;
 pub mod promotion_reconciliation;
 pub mod promotion_students;
 pub mod promotion_targets;

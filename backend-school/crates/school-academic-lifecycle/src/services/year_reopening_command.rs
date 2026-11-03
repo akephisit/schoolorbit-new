@@ -8,6 +8,7 @@ use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 pub async fn reopen_year(
+    external: &dyn crate::ports::ExternalLifecyclePort,
     pool: &PgPool,
     actor: &ActorContext,
     year: Uuid,
@@ -65,6 +66,8 @@ pub async fn reopen_year(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
+    super::retention::require_reopen_allowed(&mut tx, year, None).await?;
+    external.require_reopen_allowed(&mut tx, year, None).await?;
     let workspace = super::reopening_workspace_in_transaction(&mut tx, actor, year).await?;
     if workspace.context.row_version != input.expected_year_version
         || workspace.source_checksum != input.source_checksum

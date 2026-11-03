@@ -1,416 +1,333 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { resolve } from '$app/paths';
-	import { toast } from 'svelte-sonner';
-	import { ArrowUpRight } from '@lucide/svelte';
-	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '#lib/academic-context/store.js';
-	import { termStatusLabels } from '#lib/academic/lifecycle/presentation.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import {
 		getYearLifecycleWorkspace,
-		transitionAcademicYear,
-		type YearLifecycleWorkspace,
-		type YearTransitionAction,
-		type YearTransitionRequest
+		type YearLifecycleWorkspace
 	} from '#lib/api/academic-lifecycle.js';
-	import { ApiClientError } from '#lib/api/client.js';
-	import type { YearReopeningOutcome } from '#lib/api/academic-lifecycle.js';
+	import { listPromotionRuns, type PromotionRunList } from '#lib/api/academic-promotion.js';
+	import type { YearRolloverOutcome } from '#lib/api/academic-year-management.js';
+	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
+	import AcademicSetupRegion from '#lib/components/academic-core/AcademicSetupRegion.svelte';
+	import YearRolloverDialog from '#lib/components/academic/lifecycle/YearRolloverDialog.svelte';
+	import PeriodActionDialog from '#lib/components/academic/lifecycle/PeriodActionDialog.svelte';
+	import AcademicRetentionSettings from '#lib/components/academic/lifecycle/AcademicRetentionSettings.svelte';
 	import YearReopeningDialog from '#lib/components/academic/lifecycle/YearReopeningDialog.svelte';
-	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
-
 	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
-	const latest = new LatestRequest();
-	const labels: Record<YearTransitionAction, string> = {
-		begin_closing: 'เริ่มขั้นตอนปิดปี',
-		cancel_closing: 'กลับไปใช้งานปีนี้',
-		close: 'ปิดปีการศึกษา'
-	};
-	const explanations: Record<YearTransitionAction, string> = {
-		begin_closing: 'เริ่มตรวจความพร้อมปิดปี ไม่เปลี่ยนผลการเรียนหรือเปิดช่องกรอกคะแนน',
-		cancel_closing: 'กลับไปสถานะใช้งาน โดยคงการปิดภาคเรียนและผลที่ล็อกไว้ตามเดิม',
-		close:
-			'ปิดปีนี้เมื่อผลรายปีและภาคเรียนครบแล้ว เก็บข้อมูลเดิมไว้ ไม่เลื่อนชั้นและไม่เปิดปีใหม่อัตโนมัติ'
-	};
-	const statusLabels: Record<YearLifecycleWorkspace['context']['status'], string> = {
-		planning: 'เตรียมปีการศึกษา',
-		ready: 'พร้อมเริ่ม',
-		active: 'ใช้งาน',
-		closing: 'กำลังปิด',
-		closed: 'ปิดแล้ว',
-		archived: 'เก็บถาวร'
-	};
-	const permissions: Record<YearTransitionAction, string> = {
-		begin_closing: PERMISSIONS.ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
-		cancel_closing: PERMISSIONS.ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
-		close: PERMISSIONS.ACADEMIC_LIFECYCLE_CLOSE_SCHOOL
-	};
 	let workspace = $state.raw<YearLifecycleWorkspace | null>(null);
 	let loading = $state(false);
-	let busy = $state(false);
-	let loadError = $state('');
-	let mutationError = $state('');
-	let dialogOpen = $state(false);
-	let action = $state<YearTransitionAction>('begin_closing');
-	let acknowledged = $state<string[]>([]);
-	let needsRefresh = $state(false);
-	let pending: { key: string; request: YearTransitionRequest } | null = null;
-	const yearId = $derived(data.academicYearId);
+	let error = $state('');
+	let regionKey = '';
+	let chosenTerm = $state('');
+	let history = $state.raw<PromotionRunList | null>(null);
+	let historyError = $state('');
+	let historyLoading = $state(false);
+	let historyKey = '';
+	let prepared = $state<YearRolloverOutcome | null>(null);
+	let preparedUnassigned = $state(0);
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL));
-	const canReadAnnual = $derived(
-		$can.hasAll(
-			PERMISSIONS.ACADEMIC_RESULT_READ_SCHOOL,
-			PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL
-		)
+	const canReadPromotion = $derived($can.has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL));
+	const canSetup = $derived(
+		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL) &&
+			$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
 	);
-	const availableActions = $derived(
-		workspace?.availableActions.filter((candidate) => $can.has(permissions[candidate])) ?? []
+	const sourceName = $derived(
+		workspace?.context.name ??
+			$academicContext.options?.years.find((year) => year.id === data.academicYearId)?.name ??
+			'ปีที่เลือก'
 	);
-	const warnings = $derived(workspace?.findings.filter((row) => row.severity === 'warning') ?? []);
-	const readyCount = $derived(
-		workspace?.coverage.students.filter((row) => row.isCurrent).length ?? 0
+	const plannedTerms = $derived(
+		workspace?.terms.filter((term) => term.status === 'planning' || term.status === 'ready') ?? []
 	);
-	const confirmable = $derived(
-		!busy &&
-			!loading &&
-			!needsRefresh &&
-			!!workspace &&
-			availableActions.includes(action) &&
-			(action !== 'close' ||
-				(workspace.canClose &&
-					warnings.length === acknowledged.length &&
-					warnings.every((row) => acknowledged.includes(row.code))))
+	const targetTerm = $derived(
+		plannedTerms.find((term) => term.academicTermId === chosenTerm) ?? plannedTerms[0]
 	);
-
-	async function loadWorkspace() {
-		if (!yearId || !canRead) return;
-		const selectedYear = yearId;
-		const { revision, signal } = latest.begin();
+	const yearRead = new LatestRequest();
+	const historyRead = new LatestRequest();
+	async function reloadYear() {
+		if (!canRead || !data.academicYearId) return;
+		const yearId = data.academicYearId;
+		const identity = appIdentityKey();
+		const { revision, signal } = yearRead.begin();
 		loading = true;
-		loadError = '';
+		error = '';
 		try {
-			const data = await getYearLifecycleWorkspace(selectedYear, { signal });
-			if (!latest.isCurrent(revision)) return;
-			workspace = data;
-			needsRefresh = false;
-			acknowledged = [];
-			pending = null;
-		} catch (error) {
-			if (!isAbortError(error) && latest.isCurrent(revision))
-				loadError = error instanceof Error ? error.message : 'โหลดความพร้อมไม่สำเร็จ';
+			const result = await getYearLifecycleWorkspace(yearId, { signal });
+			if (yearRead.isCurrent(revision) && identity === appIdentityKey()) workspace = result;
+		} catch (cause) {
+			if (yearRead.isCurrent(revision) && !isAbortError(cause))
+				error = cause instanceof Error ? cause.message : 'โหลดปีการศึกษาไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision)) loading = false;
+			if (yearRead.isCurrent(revision)) loading = false;
 		}
 	}
-	async function handleReopened(outcome: YearReopeningOutcome) {
-		if (!workspace || outcome.context.academicYearId !== yearId) return;
-		workspace = { ...workspace, context: outcome.context, availableActions: [] };
+	async function reloadHistory() {
+		if (!canReadPromotion || !data.academicYearId) return;
+		const yearId = data.academicYearId;
+		const identity = appIdentityKey();
+		const { revision, signal } = historyRead.begin();
+		historyLoading = true;
+		historyError = '';
 		try {
-			await academicContext.retry();
-		} catch {
-			toast.warning('เปิดปีเก่ากลับแล้ว แต่รีเฟรชตัวเลือกปีไม่สำเร็จ กรุณาตรวจข้อมูลล่าสุด');
-		}
-		await loadWorkspace();
-	}
-	function openAction(next: YearTransitionAction) {
-		if (busy || loading || !availableActions.includes(next)) return;
-		action = next;
-		acknowledged = [];
-		mutationError = '';
-		needsRefresh = false;
-		pending = null;
-		dialogOpen = true;
-	}
-	async function confirm() {
-		if (!confirmable || !workspace || !yearId) return;
-		const selectedYear = yearId;
-		const body = {
-			action,
-			expectedYearVersion: workspace.context.rowVersion,
-			readinessChecksum: workspace.sourceChecksum,
-			acknowledgedWarningCodes: [...acknowledged].sort()
-		};
-		const key = JSON.stringify(body);
-		if (pending?.key !== key)
-			pending = { key, request: { ...body, requestId: crypto.randomUUID() } };
-		busy = true;
-		mutationError = '';
-		try {
-			const outcome = await transitionAcademicYear(selectedYear, pending.request);
-			if (yearId === selectedYear) {
-				workspace = { ...workspace, context: outcome.context, availableActions: [] };
-				dialogOpen = false;
-				toast.success(`${labels[outcome.action]}แล้ว`);
-				await academicContext.retry();
-				await loadWorkspace();
-			}
-			pending = null;
-		} catch (error) {
-			mutationError = error instanceof Error ? error.message : 'เปลี่ยนสถานะปีไม่สำเร็จ';
-			if (error instanceof ApiClientError && error.status === 409) needsRefresh = true;
+			const result = await listPromotionRuns({ sourceYearId: yearId }, { signal });
+			if (historyRead.isCurrent(revision) && identity === appIdentityKey()) history = result;
+		} catch (cause) {
+			if (historyRead.isCurrent(revision) && !isAbortError(cause))
+				historyError = cause instanceof Error ? cause.message : 'โหลดประวัติไม่สำเร็จ';
 		} finally {
-			busy = false;
+			if (historyRead.isCurrent(revision)) historyLoading = false;
 		}
 	}
-	onMount(() => {
-		const unregister = registerAcademicContextDirtySource(
-			'year-lifecycle',
-			() => dialogOpen || busy
-		);
-		return () => {
-			unregister();
-			latest.abort();
-		};
-	});
+	async function changedPeriod() {
+		await Promise.all([reloadYear(), academicContext.retry()]);
+	}
+	function handlePrepared(outcome: YearRolloverOutcome, unassigned: number) {
+		prepared = outcome;
+		preparedUnassigned = unassigned;
+		void reloadHistory();
+	}
+
 	$effect.pre(() => {
-		const routeWorkspace = data.workspace;
-		const { revision } = latest.begin();
+		const promise = data.workspace;
+		const { revision } = yearRead.begin();
+		const identityState = $authStore;
+		const key = `${data.academicYearId ?? ''}:${appIdentityKey()}`;
+		const allowed = canRead && identityState.isAuthenticated;
+		let current = true;
 		untrack(() => {
-			workspace = null;
-			loading = Boolean(routeWorkspace);
-			loadError = '';
-			dialogOpen = false;
-			pending = null;
-			needsRefresh = false;
+			if (key !== regionKey || !allowed) {
+				workspace = null;
+				chosenTerm = '';
+				prepared = null;
+			}
+			regionKey = key;
+			loading = !!promise && allowed;
+			error = '';
 		});
-		if (routeWorkspace)
-			void routeWorkspace.then((result) => {
-				if (!latest.isCurrent(revision)) return;
+		if (promise && allowed)
+			void promise.then((result) => {
+				if (!current || !yearRead.isCurrent(revision)) return;
 				untrack(() => {
-					if (result.ok) {
-						workspace = result.data;
-						acknowledged = [];
-					} else loadError = result.error;
+					if (result.ok) workspace = result.data;
+					else error = result.error;
 					loading = false;
 				});
 			});
-		return () => latest.abort();
+		return () => {
+			current = false;
+			yearRead.abort();
+		};
+	});
+	$effect.pre(() => {
+		const promise = data.history;
+		const { revision } = historyRead.begin();
+		const identityState = $authStore;
+		const key = `${data.academicYearId ?? ''}:${appIdentityKey()}`;
+		const allowed = canReadPromotion && identityState.isAuthenticated;
+		let current = true;
+		untrack(() => {
+			if (key !== historyKey || !allowed) history = null;
+			historyKey = key;
+			historyLoading = !!promise && allowed;
+			historyError = '';
+		});
+		if (promise && allowed)
+			void promise.then((result) => {
+				if (!current || !historyRead.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) history = result.data;
+					else historyError = result.error;
+					historyLoading = false;
+				});
+			});
+		return () => {
+			current = false;
+			historyRead.abort();
+		};
 	});
 </script>
 
 <PageShell
-	title="ปิดปีการศึกษา"
-	description="ตรวจผลรายปีและภาคเรียนก่อนปิดปี โดยไม่เลื่อนชั้นหรือเปิดปีถัดไปอัตโนมัติ"
+	title="จัดการปีการศึกษา"
+	description="ตั้งค่าปีและภาคเรียน เปลี่ยนภาคเรียน และเตรียมรายชื่อนักเรียนปีใหม่ในที่เดียว"
 >
-	{#if !canRead}
-		<PageState variant="permission" title="ไม่มีสิทธิ์ดูความพร้อมระดับโรงเรียน" />
-	{:else if !yearId}
-		<PageState
+	{#if !data.academicYearId}<PageState
 			variant="empty"
-			title="เลือกปีการศึกษาก่อน"
-			description="เลือกปีที่ต้องการตรวจบนแถบด้านบน การเลือกดูข้อมูลไม่เปลี่ยนปีที่กำลังใช้งาน"
-		/>
-	{:else if loading && !workspace}
-		<PageSkeleton variant="table" rows={4} columns={4} />
-	{:else if loadError && !workspace}
-		<PageState
-			variant="error"
-			title="โหลดความพร้อมไม่สำเร็จ"
-			description={loadError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => void loadWorkspace()}
-		/>
-	{:else if workspace}
-		<section class="rounded-xl border bg-card p-4" aria-label="สถานะปีการศึกษา" aria-busy={loading}>
-			<div class="flex flex-wrap items-center justify-between gap-3">
+			title="เลือกปีการศึกษา"
+			description="เลือกปีที่ต้องการจัดการจากแถบด้านบน หรือเพิ่มปีการศึกษาในส่วนตั้งค่าด้านล่าง"
+		/>{:else}
+		<section
+			class="space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+			aria-label="จัดการรอบการศึกษา"
+			aria-busy={loading}
+		>
+			<div class="flex flex-wrap items-start justify-between gap-4">
 				<div>
-					<h2 class="text-lg font-semibold">{workspace.context.name}</h2>
-					<p class="mt-1 text-sm text-muted-foreground">
-						ปิดภาคเรียนครบแล้ว ปีการศึกษาจะยังไม่ปิดจนกว่าจะยืนยันที่หน้านี้
+					<h2 class="text-xl font-semibold">{sourceName}</h2>
+					{#if workspace}<Badge variant="outline"
+							>{academicStatusLabel(workspace.context.status)}</Badge
+						>{/if}
+					<p class="mt-2 text-sm text-muted-foreground">
+						เปลี่ยนภาคเรียนใช้ชั้นและห้องเดิม การขึ้นปีใหม่เตรียมรายชื่อก่อน และเริ่มใช้ปีใหม่แยกกัน
 					</p>
 				</div>
-				<span class="rounded-md bg-primary/10 px-3 py-1 text-sm font-medium text-primary"
-					>{statusLabels[workspace.context.status]}</span
-				>
+				{#key data.academicYearId}<YearRolloverDialog
+						yearId={data.academicYearId}
+						yearName={sourceName}
+						onprepared={handlePrepared}
+					/>{/key}
 			</div>
-		</section>
-		{#if loadError}<p role="alert" class="text-sm text-destructive">
-				{loadError}
-				<Button size="sm" variant="outline" onclick={() => void loadWorkspace()}>ลองใหม่</Button>
-			</p>{/if}
-		<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
-			<div class="min-w-0 space-y-4">
-				<section
-					class="overflow-hidden rounded-xl border bg-card"
-					aria-labelledby="year-terms-heading"
-					aria-busy={loading}
+			{#if prepared}<div
+					class="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-4"
+					role="status"
 				>
-					<div class="border-b p-4">
-						<h2 id="year-terms-heading" class="font-semibold">ภาคเรียนของปีนี้</h2>
-						<p class="mt-1 text-sm text-muted-foreground">
-							แยกการรวมผลรายปีออกจากเงื่อนไขปิดปี เช่น ภาคฤดูร้อนหรือภาคซ่อมเสริม
+					<p class="font-medium">
+						เตรียมรายชื่อนักเรียนปีใหม่แล้ว {prepared.studentCount} คน · ยังไม่เริ่มใช้
+					</p>
+					<p class="text-sm">ปีเดิมและประวัติห้องเรียนยังอยู่ เลือกเริ่มใช้เมื่อโรงเรียนพร้อม</p>
+					{#if preparedUnassigned > 0}<p class="text-sm">
+							ยังไม่จัดห้อง {preparedUnassigned} คน ยังไม่พร้อมใช้เช็กชื่อในห้องเรียน
 						</p>
-					</div>
+						{#if $can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL)}<Button
+								variant="outline"
+								href={resolve(`staff/academic/homerooms?academicYearId=${prepared.targetYearId}`)}
+								>จัดห้องปีปลายทาง</Button
+							>{/if}{/if}<Button
+						href={resolve(`staff/academic/year-lifecycle?academicYearId=${prepared.targetYearId}`)}
+						>ไปเริ่มใช้ปีใหม่</Button
+					><Button variant="outline" href={resolve(`staff/academic/promotion/${prepared.runId}`)}
+						>ดูหลักฐานการเตรียมรายชื่อ</Button
+					>
+				</div>{/if}
+			{#if loading && !workspace}<PageSkeleton
+					variant="table"
+					rows={3}
+					columns={3}
+				/>{:else if error}<PageState
+					variant="error"
+					title="โหลดปีการศึกษาไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={reloadYear}
+				/>{/if}
+			{#if workspace}
+				<div class="overflow-x-auto">
 					<Table.Root
 						><Table.Header
 							><Table.Row
-								><Table.Head class="min-w-40">ภาคเรียน</Table.Head><Table.Head class="min-w-24"
-									>สถานะ</Table.Head
-								><Table.Head class="min-w-28">รวมผลรายปี</Table.Head><Table.Head class="min-w-32"
-									>ต้องปิดก่อนปิดปี</Table.Head
-								><Table.Head><span class="sr-only">ตรวจภาคเรียน</span></Table.Head></Table.Row
+								><Table.Head>ภาคเรียน</Table.Head><Table.Head>สถานะ</Table.Head><Table.Head
+									>ดำเนินการ</Table.Head
+								></Table.Row
 							></Table.Header
-						>
-						<Table.Body
+						><Table.Body
 							>{#each workspace.terms as term (term.academicTermId)}<Table.Row
-									><Table.Cell class="font-medium">{term.name}</Table.Cell><Table.Cell
-										>{termStatusLabels[term.status]}</Table.Cell
-									><Table.Cell>{term.includedInYearResult ? 'รวม' : 'ไม่รวม'}</Table.Cell
-									><Table.Cell>{term.blocksYearClosure ? 'ต้องปิด' : 'ไม่บังคับ'}</Table.Cell
+									><Table.Cell>{term.name}</Table.Cell><Table.Cell
+										>{academicStatusLabel(term.status)}</Table.Cell
 									><Table.Cell
-										><Button
-											variant="ghost"
-											size="sm"
-											href={resolve(
-												`staff/academic/term-lifecycle?academicYearId=${yearId}&academicTermId=${term.academicTermId}`
-											)}
-											data-sveltekit-preload-data="tap"
-											>ตรวจภาคเรียน<ArrowUpRight class="size-4" /></Button
-										></Table.Cell
+										>{#if term.status === 'active' || term.status === 'closing'}<PeriodActionDialog
+												yearId={workspace.context.academicYearId}
+												termId={term.academicTermId}
+												kind="close_term"
+												label="ปิดภาคเรียน"
+												disabled={loading}
+												oncompleted={changedPeriod}
+											/>{/if}</Table.Cell
 									></Table.Row
 								>{/each}</Table.Body
-						>
-					</Table.Root>
-				</section>
-				<section
-					class="overflow-hidden rounded-xl border bg-card"
-					aria-labelledby="annual-readiness-heading"
-					aria-busy={loading}
-				>
-					<div class="flex flex-wrap items-center justify-between gap-3 border-b p-4">
-						<div>
-							<h2 id="annual-readiness-heading" class="font-semibold">
-								ผลรายปีและเรื่องที่ต้องตรวจ
-							</h2>
-							<p class="mt-1 text-sm text-muted-foreground">
-								ผลล่าสุดครบ <span class="tabular-nums"
-									>{readyCount} / {workspace.coverage.students.length}</span
-								> คน
-							</p>
+						></Table.Root
+					>
+				</div>
+				<div class="flex flex-wrap items-end gap-3">
+					{#if plannedTerms.length > 0}<div class="w-full max-w-sm space-y-2">
+							<Label for="next-term">ภาคเรียนที่จะเริ่มใช้</Label><Select.Root
+								type="single"
+								value={targetTerm?.academicTermId ?? ''}
+								onValueChange={(value) => {
+									chosenTerm = value;
+								}}
+								><Select.Trigger id="next-term" class="w-full"
+									><span>{targetTerm?.name ?? 'เลือกภาคเรียน'}</span></Select.Trigger
+								><Select.Content
+									>{#each plannedTerms as term (term.academicTermId)}<Select.Item
+											value={term.academicTermId}>{term.name}</Select.Item
+										>{/each}</Select.Content
+								></Select.Root
+							>
 						</div>
-						{#if canReadAnnual}<Button
-								variant="outline"
-								size="sm"
-								href={resolve(`staff/academic/results/annual?academicYearId=${yearId}`)}
-								>ตรวจผลรายปี<ArrowUpRight class="size-4" /></Button
-							>{/if}
-					</div>
-					{#if workspace.findings.length === 0 && workspace.canClose}<p class="p-4 text-sm">
-							ผลรายปีครบและภาคเรียนพร้อมปิดปีแล้ว
-						</p>{:else}<ul class="divide-y">
-							{#each workspace.findings as finding (finding.code)}<li
-									class="flex flex-wrap items-start gap-3 p-4"
-								>
-									<span
-										class={[
-											'rounded-md px-2 py-1 text-xs font-medium',
-											finding.severity === 'blocking'
-												? 'bg-destructive/10 text-destructive'
-												: 'bg-amber-50 text-amber-900'
-										]}>{finding.severity === 'blocking' ? 'ต้องแก้ก่อนปิด' : 'ตรวจและยืนยัน'}</span
-									>
-									<div class="min-w-0 flex-1">
-										<p class="text-sm">{finding.message}</p>
-										<p class="mt-1 text-xs text-muted-foreground">{finding.count} รายการ</p>
-									</div>
-									{#if finding.resolutionUrl}<Button
-											variant="ghost"
-											size="sm"
-											href={finding.resolutionUrl}>ไปตรวจสอบ<ArrowUpRight class="size-4" /></Button
-										>{/if}
-								</li>{/each}
-						</ul>{/if}
-				</section>
-			</div>
-			<aside class="space-y-3" aria-label="การดำเนินการปีการศึกษา">
-				<h2 class="font-semibold">ดำเนินการกับปีนี้</h2>
-				<p class="text-sm text-muted-foreground">
-					การปิดปีไม่เปลี่ยนคะแนน ผลที่ล็อก หรือห้องเรียนของนักเรียน การเตรียมปีใหม่ทำแยกกัน
-				</p>
-				{#each availableActions as candidate (candidate)}<Button
-						class="w-full justify-start whitespace-normal text-start"
-						variant={candidate === 'close' ? 'destructive' : 'outline'}
-						disabled={busy || loading || (candidate === 'close' && !workspace.canClose)}
-						onclick={() => openAction(candidate)}>{labels[candidate]}</Button
-					>{/each}
-				{#if workspace.context.status === 'closed'}
-					{#key yearId}<YearReopeningDialog
-							{yearId}
+						{#if targetTerm}{#key targetTerm.academicTermId}<PeriodActionDialog
+									yearId={workspace.context.academicYearId}
+									termId={targetTerm.academicTermId}
+									kind="activate"
+									label={workspace.context.status === 'planning' ||
+									workspace.context.status === 'ready'
+										? 'เริ่มใช้ปีใหม่'
+										: 'เปลี่ยนภาคเรียน'}
+									disabled={loading}
+									oncompleted={changedPeriod}
+								/>{/key}{/if}{/if}{#if workspace.context.status === 'active' || workspace.context.status === 'closing'}<PeriodActionDialog
+							yearId={workspace.context.academicYearId}
+							kind="close_year"
+							label="ปิดปีการศึกษา"
+							disabled={loading}
+							oncompleted={changedPeriod}
+						/>{:else if workspace.context.status === 'closed'}<YearReopeningDialog
+							yearId={workspace.context.academicYearId}
 							yearName={workspace.context.name}
-							disabled={busy || loading}
-							onreopened={handleReopened}
-						/>{/key}
-				{:else if availableActions.length === 0}<p
-						class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
-					>
-						ดูข้อมูลได้ ไม่มีคำสั่งที่ใช้ได้ตามสถานะและสิทธิ์ของบัญชีนี้
-					</p>{/if}
-			</aside>
-		</div>
+							onreopened={changedPeriod}
+						/>{/if}
+				</div>
+			{/if}
+		</section>
+		{#if canRead}{#key data.academicYearId}<AcademicRetentionSettings
+					yearId={data.academicYearId}
+					terms={workspace?.terms ?? []}
+				/>{/key}{/if}
+		{#if canReadPromotion}<section
+				class="space-y-3 rounded-xl border bg-card p-4 sm:p-5"
+				aria-label="ประวัติขึ้นปีการศึกษาใหม่"
+				aria-busy={historyLoading}
+			>
+				<h2 class="text-lg font-semibold">ประวัติขึ้นปีการศึกษาใหม่</h2>
+				{#if historyLoading && !history}<PageSkeleton
+						variant="table"
+						rows={2}
+						columns={2}
+					/>{/if}{#if historyError}<PageState
+						variant="error"
+						title="โหลดประวัติไม่สำเร็จ"
+						description={historyError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={reloadHistory}
+					/>{/if}{#if history}{#each history.runs as run (run.id)}<div
+							class="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+						>
+							<p>
+								บันทึก {new Date(run.createdAt).toLocaleDateString('th-TH', {
+									timeZone: 'Asia/Bangkok'
+								})}
+							</p>
+							<Button variant="outline" href={resolve(`staff/academic/promotion/${run.id}`)}
+								>ดูประวัติ</Button
+							>
+						</div>{:else}<p class="text-sm text-muted-foreground">
+							ยังไม่มีประวัติขึ้นปีใหม่จากปีนี้
+						</p>{/each}{/if}
+			</section>{/if}
 	{/if}
+	{#if canSetup}<AcademicSetupRegion workspaceLoad={data.setup} />{/if}
 </PageShell>
-
-<Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content
-		class="max-h-[85dvh] overflow-y-auto"
-		showCloseButton={!busy}
-		onInteractOutside={(event) => {
-			if (busy) event.preventDefault();
-		}}
-		onEscapeKeydown={(event) => {
-			if (busy) event.preventDefault();
-		}}
-	>
-		<Dialog.Header
-			><Dialog.Title>{labels[action]}</Dialog.Title><Dialog.Description
-				>{explanations[action]}</Dialog.Description
-			></Dialog.Header
-		>
-		<p class="text-sm font-medium">{workspace?.context.name}</p>
-		{#if action === 'close'}{#each warnings as warning (warning.code)}<div
-					class="flex items-start gap-3 rounded-lg border p-3"
-				>
-					<Checkbox
-						id={`ack-${warning.code}`}
-						checked={acknowledged.includes(warning.code)}
-						disabled={busy}
-						onCheckedChange={(checked) => {
-							acknowledged = checked
-								? [...acknowledged, warning.code]
-								: acknowledged.filter((code) => code !== warning.code);
-						}}
-					/><Label for={`ack-${warning.code}`} class="leading-relaxed"
-						>รับทราบ: {warning.message} ({warning.count} รายการ)</Label
-					>
-				</div>{/each}{/if}
-		{#if mutationError}<p role="alert" class="text-sm text-destructive">{mutationError}</p>{/if}
-		{#if needsRefresh}<LoadingButton
-				variant="outline"
-				{loading}
-				onclick={() => void loadWorkspace()}>โหลดความพร้อมล่าสุด</LoadingButton
-			>{/if}
-		<Dialog.Footer
-			><Button
-				variant="outline"
-				disabled={busy}
-				onclick={() => {
-					dialogOpen = false;
-				}}>กลับไปตรวจสอบ</Button
-			><LoadingButton loading={busy} disabled={!confirmable} onclick={() => void confirm()}
-				>ยืนยัน{labels[action]}</LoadingButton
-			></Dialog.Footer
-		>
-	</Dialog.Content>
-</Dialog.Root>

@@ -559,16 +559,13 @@ use utoipa::OpenApi;
         school_academic_http::lifecycle::handlers::update_opening_policy,
         school_academic_http::lifecycle::handlers::promotion_runs::list_promotion_runs,
         school_academic_http::lifecycle::handlers::promotion_runs::get_promotion_run_workspace,
-        school_academic_http::lifecycle::handlers::promotion_runs::create_promotion_run,
-        school_academic_http::lifecycle::handlers::promotion_runs::calculate_promotion_run,
-        school_academic_http::lifecycle::handlers::promotion_runs::review_promotion_run_item,
-        school_academic_http::lifecycle::handlers::promotion_runs::approve_promotion_run,
-        school_academic_http::lifecycle::handlers::promotion_runs::execute_promotion_run,
         school_academic_http::lifecycle::handlers::promotion_runs::get_promotion_run_impacts,
-        school_academic_http::lifecycle::handlers::promotion_runs::resolve_promotion_run_impact,
         school_academic_http::lifecycle::handlers::list_promotion_policies,
-        school_academic_http::lifecycle::handlers::create_promotion_policy,
-        school_academic_http::lifecycle::handlers::get_promotion_policy_options,
+        school_academic_http::lifecycle::handlers::year_rollovers::options,
+        school_academic_http::lifecycle::handlers::year_rollovers::preview,
+        school_academic_http::lifecycle::handlers::year_rollovers::confirm,
+        school_academic_http::lifecycle::handlers::year_rollovers::retention_workspace,
+        school_academic_http::lifecycle::handlers::year_rollovers::update_retention_policy,
         school_academic_http::lifecycle::handlers::get_year_workspace,
         school_academic_http::lifecycle::handlers::transition_year,
         school_academic_http::lifecycle::handlers::year_reopening::get_year_reopening_workspace,
@@ -1696,23 +1693,33 @@ fn build_schema_group_9() -> utoipa::openapi::OpenApi {
         YearReopeningOutcome,
         YearReopeningWorkspace,
         YearLifecycleWorkspace,
-        PromotionPolicyInput,
+        YearRolloverOptions,
+        YearRolloverPreviewInput,
+        YearRolloverStudentInput,
+        YearRolloverStudent,
+        YearRolloverProgramReference,
+        YearRolloverHomeroomReference,
+        YearRolloverPreview,
+        ConfirmYearRolloverInput,
+        YearRolloverOutcome,
+        AcademicRetentionBoundary,
+        AcademicRetentionPolicy,
+        UpdateAcademicRetentionPolicy,
+        AcademicRetentionWorkspace,
+        AcademicRetentionTermPreview,
+        AcademicRetentionImpact,
+        ApiResponse<YearRolloverOptions>,
+        ApiResponse<YearRolloverPreview>,
+        ApiResponse<YearRolloverOutcome>,
+        ApiResponse<AcademicRetentionWorkspace>,
+        ApiResponse<AcademicRetentionPolicy>,
         PromotionRun,
         PromotionRunStatus,
         PromotionDecisionOutcome,
         PromotionDecisionInput,
-        CreatePromotionRunInput,
-        CalculatePromotionRunInput,
-        ApprovePromotionRunInput,
-        ExecutePromotionRunInput,
-        ReviewPromotionItemInput,
         PromotionRunItem,
         PromotionItemStatus,
-        PromotionItemReview,
-        PromotionRunCalculation,
         PromotionExecutionReceipt,
-        PromotionExecutionFailure,
-        PromotionExecutionResult,
         PromotionRunListQuery,
         PromotionRunList,
         PromotionRunStudent,
@@ -1722,27 +1729,17 @@ fn build_schema_group_9() -> utoipa::openapi::OpenApi {
         PromotionCorrectionImpact,
         PromotionImpactWorkspace,
         ApiResponse<PromotionImpactWorkspace>,
-        ResolvePromotionImpactInput,
         PromotionImpactResolutionKind,
         PromotionImpactResolutionOutcome,
         PromotionImpactResolution,
-        ApiResponse<PromotionImpactResolution>,
-        ApiResponse<PromotionRun>,
-        ApiResponse<PromotionRunCalculation>,
-        ApiResponse<PromotionItemReview>,
-        ApiResponse<PromotionExecutionResult>,
         ApiResponse<PromotionRunList>,
         ApiResponse<PromotionRunWorkspace>,
-        PromotionPolicyOptions,
         PromotionGradeReference,
-        PromotionProgramReference,
-        ApiResponse<PromotionPolicyOptions>,
         PromotionPolicyVersion,
         PromotionRuleInput,
         PromotionSuccessOutcome,
         PromotionRecommendation,
         PromotionRecommendationFinding,
-        ApiResponse<PromotionPolicyVersion>,
         ApiResponse<Vec<PromotionPolicyVersion>>,
         ApiResponse<YearLifecycleWorkspace>
 )))]
@@ -7278,104 +7275,54 @@ mod tests {
     }
 
     #[test]
-    fn documents_promotion_policy_review_without_implicit_context() {
+    fn documents_manual_year_rollover_and_retires_multistep_mutation_routes() {
         let document = school_api_value().unwrap();
-        assert_eq!(
-            document["paths"]["/api/academic/lifecycle/promotion-policies/options"]["get"]
-                ["operationId"],
-            "getPromotionPolicyOptions"
-        );
-        let path = &document["paths"]["/api/academic/lifecycle/promotion-policies"];
-        for (method, operation) in [
-            ("get", "listPromotionPolicies"),
-            ("post", "createPromotionPolicy"),
+        let root = "/api/academic/lifecycle/year-rollovers";
+        for (suffix, method, operation) in [
+            ("options", "get", "getYearRolloverOptions"),
+            ("preview", "post", "previewYearRollover"),
+            ("confirm", "post", "confirmYearRollover"),
         ] {
-            assert_eq!(path[method]["operationId"], operation);
-            assert!(path[method]["parameters"]
-                .as_array()
-                .is_none_or(|params| params.is_empty()));
-            for status in ["200", "400", "401", "403", "422"] {
-                assert!(path[method]["responses"][status].is_object());
-            }
+            assert_eq!(
+                document["paths"][format!("{root}/{suffix}")][method]["operationId"],
+                operation
+            );
         }
-        let request = &document["components"]["schemas"]["PromotionPolicyInput"];
-        assert_eq!(request["additionalProperties"], false);
-        assert!(request["required"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("rules")));
-        let rule = &document["components"]["schemas"]["PromotionRuleInput"];
-        assert_eq!(rule["additionalProperties"], false);
-        assert!(rule["properties"]["minimumEarnedCredits"].is_object());
-        assert!(rule["properties"]["minimumLearnerLevel"].is_object());
-        assert_eq!(
-            document["components"]["schemas"]["PromotionSuccessOutcome"]["enum"],
-            serde_json::json!(["promote", "graduate"])
-        );
-    }
-
-    #[test]
-    fn documents_promotion_run_commands_with_exact_context_and_typed_outcomes() {
-        let document = school_api_value().unwrap();
-        let root = "/api/academic/lifecycle/promotion-runs";
-        for (path, method, operation) in [
-            (root.to_string(), "get", "listPromotionRuns"),
-            (root.to_string(), "post", "createPromotionRun"),
-            (
-                format!("{root}/{{run_id}}"),
-                "get",
-                "getPromotionRunWorkspace",
-            ),
-            (
-                format!("{root}/{{run_id}}/calculate"),
-                "post",
-                "calculatePromotionRun",
-            ),
-            (
-                format!("{root}/{{run_id}}/items/{{item_id}}"),
-                "put",
-                "reviewPromotionRunItem",
-            ),
-            (
-                format!("{root}/{{run_id}}/approve"),
-                "post",
-                "approvePromotionRun",
-            ),
-            (
-                format!("{root}/{{run_id}}/execute"),
-                "post",
-                "executePromotionRun",
-            ),
-        ] {
-            assert_eq!(document["paths"][&path][method]["operationId"], operation);
-            for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
-                assert!(
-                    document["paths"][&path][method]["responses"][status].is_object(),
-                    "{path} {method} {status}"
-                );
-            }
-        }
-        assert!(document["paths"][root]["get"]["parameters"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p["name"] == "sourceYearId" && p["required"] == true));
         for schema in [
-            "CreatePromotionRunInput",
-            "CalculatePromotionRunInput",
-            "ReviewPromotionItemInput",
-            "ApprovePromotionRunInput",
-            "ExecutePromotionRunInput",
+            "YearRolloverPreviewInput",
+            "YearRolloverStudentInput",
+            "ConfirmYearRolloverInput",
         ] {
             assert_eq!(
                 document["components"]["schemas"][schema]["additionalProperties"],
                 false
             );
         }
-        let properties =
-            &document["components"]["schemas"]["PromotionExecutionResult"]["properties"];
-        for name in ["run", "receipts", "failures", "remainingCount", "holdCount"] {
-            assert!(properties[name].is_object());
+        let required = document["components"]["schemas"]["YearRolloverPreviewInput"]["required"]
+            .as_array()
+            .unwrap();
+        for name in [
+            "sourceYearId",
+            "targetYearId",
+            "outcomeEffectiveOn",
+            "targetPlacementStartsOn",
+            "decisions",
+        ] {
+            assert!(required.contains(&serde_json::json!(name)));
+        }
+        let legacy = "/api/academic/lifecycle/promotion-runs";
+        assert_eq!(
+            document["paths"][legacy]["get"]["operationId"],
+            "listPromotionRuns"
+        );
+        assert!(document["paths"][legacy]["post"].is_null());
+        for suffix in ["calculate", "approve", "execute", "items/{item_id}"] {
+            assert!(document["paths"][format!("{legacy}/{{run_id}}/{suffix}")].is_null());
+        }
+        assert!(document["paths"]["/api/academic/lifecycle/promotion-policies"]["post"].is_null());
+        assert!(document["paths"]["/api/academic/lifecycle/promotion-policies/options"].is_null());
+        for schema in ["TermLifecycleWorkspace", "YearLifecycleWorkspace"] {
+            assert!(document["components"]["schemas"][schema]["properties"]["coverage"].is_null());
         }
     }
 
@@ -7425,15 +7372,8 @@ mod tests {
         }
         let resolution_path =
             "/api/academic/lifecycle/promotion-runs/{run_id}/impacts/{impact_id}/resolve";
-        assert_operations(
-            &document,
-            &[(resolution_path, "post", "resolvePromotionRunImpact")],
-        );
-        for status in ["200", "400", "401", "403", "404", "409", "422", "500"] {
-            assert!(document["paths"][resolution_path]["post"]["responses"][status].is_object());
-        }
+        assert!(document["paths"][resolution_path].is_null());
         for schema in [
-            "ResolvePromotionImpactInput",
             "PromotionImpactResolution",
             "PromotionImpactResolutionOutcome",
         ] {

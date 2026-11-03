@@ -2,127 +2,119 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
-
 const source = await readFile(
-	new URL('../../src/lib/academic/lifecycle/promotion-presentation.ts', import.meta.url),
+	new URL('../../src/lib/academic/lifecycle/year-management.ts', import.meta.url),
 	'utf8'
 );
 const { outputText } = ts.transpileModule(source, {
 	compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 }
 });
-const { initialDecision, decisionUsesDestination, decisionError, canApproveRun, canExecuteRun } =
-	await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
-const item = {
-	status: 'reviewed',
-	sourceGradeLevelId: 'old',
-	decision: null,
-	recommendation: {
-		suggestedOutcome: 'promote',
-		targetGradeLevelId: 'new',
-		targetStudyProgramId: 'program',
-		findings: []
-	}
+const {
+	initialRolloverDraft,
+	changeOutcome,
+	rosterDecisions,
+	rosterDraftError,
+	sourceRoomKey,
+	academicStatusLabel
+} = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const student = {
+	studentAcademicYearId: 'annual-id',
+	studentId: 'same-person',
+	studentName: 'นักเรียน',
+	sourceGradeLevelId: 'P6',
+	sourceStudyProgramId: 'primary',
+	sourceHomeroomId: 'old-room',
+	suggestedDecision: null,
+	decision: null
 };
-
-test('promotion draft suggests but does not invent a decision and does not mutate history', () => {
-	const draft = initialDecision(item);
-	assert.equal(draft.outcome, 'promote');
-	assert.equal(draft.targetGradeLevelId, 'new');
-	assert.equal(draft.targetStudyProgramId, 'program');
-	assert.equal(
-		initialDecision({ ...item, recommendation: { suggestedOutcome: null } }).outcome,
-		''
-	);
-	const reviewed = { ...item, decision: { ...draft, reason: 'reviewed' } };
-	initialDecision(reviewed).reason = 'edited';
-	assert.equal(reviewed.decision.reason, 'reviewed');
-});
-
-test('promotion editor requires explicit targets reasons and conditional terms', () => {
-	const draft = initialDecision(item);
-	assert.equal(decisionError(draft, item), '');
-	for (const outcome of ['promote', 'repeat', 'conditional'])
-		assert.equal(decisionUsesDestination(outcome), true);
-	for (const outcome of ['hold', 'graduate', 'transfer_out', ''])
-		assert.equal(decisionUsesDestination(outcome), false);
-	for (const invalid of [
-		{ ...draft, outcome: '' },
-		{ ...draft, targetGradeLevelId: null },
-		{ ...draft, targetStudyProgramId: null },
-		{ ...draft, targetGradeLevelId: 'old' },
-		{ ...draft, outcome: 'repeat', reason: 'reason' },
-		{ ...draft, outcome: 'conditional', reason: 'reason', condition: ' ' },
-		{ ...draft, outcome: 'hold' },
-		{ ...draft, reason: 'x'.repeat(1001) },
-		{ ...draft, targetStudyProgramId: 'different', reason: ' ' }
-	])
-		assert.notEqual(decisionError(invalid, item), '');
-	assert.equal(
-		decisionError(
-			{ ...draft, outcome: 'conditional', reason: 'reason', condition: 'follow up' },
-			item
-		),
-		''
-	);
-	assert.equal(
-		decisionError(
-			{ ...draft, outcome: 'repeat', targetGradeLevelId: 'old', reason: 'repeat' },
-			item
-		),
-		''
-	);
-	assert.equal(
-		decisionError(
-			{
-				...draft,
-				outcome: 'hold',
-				targetGradeLevelId: null,
-				targetStudyProgramId: null,
-				reason: 'review later'
-			},
-			item
-		),
-		''
-	);
-});
-
-test('promotion approval and execution remain separate and interrupted completion can resume', () => {
-	const workspace = {
-		run: { status: 'reviewed', approvalId: null },
-		students: [
-			{
-				item: { ...item, decision: initialDecision(item) },
-				annualResultCurrent: true,
-				needsRecalculation: false
-			}
-		]
+const preview = {
+	students: [student],
+	programs: [
+		{ id: 'secondary', gradeLevelIds: ['M1'] },
+		{ id: 'primary', gradeLevelIds: ['P6'] }
+	],
+	homerooms: [{ id: 'new-room', gradeLevelId: 'M1', studyProgramId: 'secondary' }]
+};
+test('final grades require explicit choices and retain source identity', () => {
+	const draft = initialRolloverDraft(student);
+	assert.equal(draft.outcome, '');
+	assert.notEqual(rosterDraftError(preview, { 'annual-id': draft }), '');
+	const decision = {
+		outcome: 'promote',
+		targetGradeLevelId: 'M1',
+		targetStudyProgramId: 'secondary',
+		targetHomeroomId: null,
+		reason: null,
+		condition: null
 	};
-	assert.equal(canApproveRun(workspace), true);
-	assert.equal(canExecuteRun(workspace), false);
-	assert.equal(canApproveRun({ ...workspace, students: [] }), false);
+	assert.equal(rosterDraftError(preview, { 'annual-id': decision }), '');
 	assert.equal(
-		canApproveRun({
-			...workspace,
-			students: [{ ...workspace.students[0], needsRecalculation: true }]
-		}),
-		false
+		rosterDecisions([student], { 'annual-id': decision })[0].studentAcademicYearId,
+		'annual-id'
 	);
-	for (const status of ['approved', 'executing', 'failed']) {
-		const ready = { ...workspace, run: { status, approvalId: 'approval' } };
-		assert.equal(canExecuteRun(ready), true);
-		assert.equal(canApproveRun(ready), false);
-		assert.equal(canExecuteRun({ ...ready, run: { status, approvalId: null } }), false);
+	assert.equal(student.studentId, 'same-person');
+});
+test('repeat uses original grade, while non-destination outcomes clear placement fields', () => {
+	const draft = {
+		outcome: 'promote',
+		targetGradeLevelId: 'M1',
+		targetStudyProgramId: 'secondary',
+		targetHomeroomId: 'new-room'
+	};
+	assert.equal(changeOutcome(draft, 'repeat', student).targetGradeLevelId, 'P6');
+	for (const outcome of ['hold', 'graduate', 'transfer_out']) {
+		const next = changeOutcome(draft, outcome, student);
+		assert.equal(next.targetGradeLevelId, null);
+		assert.equal(next.targetStudyProgramId, null);
+		assert.equal(next.targetHomeroomId, null);
+		assert.equal(rosterDraftError(preview, { 'annual-id': next }), '');
 	}
-	assert.equal(
-		canExecuteRun({
-			...workspace,
-			run: { status: 'executing', approvalId: 'approval' },
-			students: [{ ...workspace.students[0], item: { ...item, status: 'executed' } }]
-		}),
-		true
+});
+test('destination room must match grade and program, and unassigned rooms remain explicit', () => {
+	const valid = {
+		outcome: 'promote',
+		targetGradeLevelId: 'M1',
+		targetStudyProgramId: 'secondary',
+		targetHomeroomId: null
+	};
+	assert.equal(rosterDraftError(preview, { 'annual-id': valid }), '');
+	assert.notEqual(
+		rosterDraftError(preview, { 'annual-id': { ...valid, targetHomeroomId: 'old-room' } }),
+		''
 	);
 	assert.equal(
-		canExecuteRun({ ...workspace, run: { status: 'completed', approvalId: 'approval' } }),
-		false
+		rosterDraftError(preview, { 'annual-id': { ...valid, targetHomeroomId: 'new-room' } }),
+		''
 	);
+	assert.notEqual(
+		sourceRoomKey(student),
+		sourceRoomKey({ ...student, sourceHomeroomId: 'other-room' })
+	);
+});
+test('historical intermediate statuses use only the three simple labels', () => {
+	assert.equal(academicStatusLabel('ready'), 'เตรียมการ');
+	assert.equal(academicStatusLabel('closing'), 'ใช้งาน');
+	assert.equal(academicStatusLabel('archived'), 'ปิดแล้ว');
+});
+
+test('accepted conditional destinations carry exact historical intent without becoming a new choice', () => {
+	const decision = {
+		outcome: 'conditional',
+		targetGradeLevelId: 'M1',
+		targetStudyProgramId: 'secondary',
+		targetHomeroomId: 'new-room',
+		reason: ' เหตุผลเดิม ',
+		condition: ' เงื่อนไขเดิม '
+	};
+	const retained = {
+		...student,
+		existingTargetStudentYearId: 'prior-target',
+		suggestedDecision: decision
+	};
+	const draft = initialRolloverDraft(retained);
+	assert.deepEqual(draft.retainedDecision, decision);
+	assert.deepEqual(rosterDecisions([retained], { 'annual-id': draft })[0].decision, decision);
+	assert.equal(rosterDraftError({ ...preview, students: [retained] }, { 'annual-id': draft }), '');
+	assert.deepEqual(changeOutcome(draft, 'hold', retained), draft);
+	assert.equal(initialRolloverDraft({ ...student, suggestedDecision: decision }).outcome, '');
 });

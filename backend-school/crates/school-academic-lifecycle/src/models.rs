@@ -78,3 +78,6 @@ pub struct TermLifecycleWorkspace {
     pub available_actions: Vec<TermTransitionAction>,
     pub source_checksum: String,
 }
+
+mod retention;
+pub use retention::*;
