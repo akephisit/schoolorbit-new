@@ -108,8 +108,10 @@ mod tests {
         .unwrap();
         let year_sql = if version < 148 {
             "INSERT INTO academic_years(year,name,start_date,end_date,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','2027-05-01','2028-03-31','MON,TUE,WED,THU,FRI','planning') RETURNING id"
-        } else {
+        } else if version < 155 {
             "INSERT INTO academic_years(year,name,school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"
+        } else {
+            "INSERT INTO academic_years(year,name,default_school_days,status) VALUES(2570,'ปีการศึกษาอนาคต','MON,TUE,WED,THU,FRI','planning') RETURNING id"
         };
         let academic_year_id: Uuid = sqlx::query_scalar(sqlx::AssertSqlSafe(year_sql))
             .fetch_one(&pool)
@@ -938,8 +940,8 @@ mod tests {
         .await
         .unwrap();
         let term: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,status,included_in_year_result,blocks_year_closure,bell_schedule_id)
-             VALUES($1,'Future term',1,'1','regular','planning',true,true,$2) RETURNING id",
+            "INSERT INTO academic_terms(school_days, academic_year_id,name,sequence_no,code,term_type,status,included_in_year_result,blocks_year_closure,bell_schedule_id)
+             VALUES( 'MON,TUE,WED,THU,FRI',$1,'Future term',1,'1','regular','planning',true,true,$2) RETURNING id",
         ).bind(fixture.academic_year_id).bind(schedule.id).fetch_one(&fixture.pool).await.unwrap();
         let rosters = std::sync::Arc::new(PausingEnrollmentRosters::default());
         let first_rosters = rosters.clone();

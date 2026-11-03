@@ -996,8 +996,13 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 	await importAcademicContextStore();
 	const { yearDraftBase, termDraftBase, yearDraftMetadataMatches, termDraftMetadataMatches } =
 		await academicContextStoreServer.ssrLoadModule('/src/lib/academic-core/context-drafts.ts');
-	const year = { ...contextOptions().years[0], schoolDays: ['MON', 'TUE'], rowVersion: 1 };
-	const term = { ...contextOptions().terms[0], bellScheduleId: 'bell', rowVersion: 1 };
+	const year = { ...contextOptions().years[0], defaultSchoolDays: ['MON', 'TUE'], rowVersion: 1 };
+	const term = {
+		...contextOptions().terms[0],
+		bellScheduleId: 'bell',
+		schoolDays: ['MON', 'TUE'],
+		rowVersion: 1
+	};
 	const yearBase = yearDraftBase(year),
 		termBase = termDraftBase(term);
 	assert.equal(
@@ -1005,7 +1010,7 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 			...year,
 			isVisible: false,
 			rowVersion: 2,
-			schoolDays: ['TUE', 'MON']
+			defaultSchoolDays: ['TUE', 'MON']
 		}),
 		true
 	);
@@ -1016,14 +1021,121 @@ test('draft metadata guards allow visibility-only revisions but detect concurren
 	for (const change of [
 		{ name: 'Changed by another actor' },
 		{ year: year.year + 1 },
-		{ schoolDays: ['MON'] }
+		{ defaultSchoolDays: ['MON'] }
 	])
 		assert.equal(yearDraftMetadataMatches(yearBase, { ...year, ...change, rowVersion: 3 }), false);
 	for (const change of [
 		{ name: 'Changed term' },
 		{ bellScheduleId: 'other-bell' },
+		{ schoolDays: ['MON'] },
 		{ includedInYearResult: false },
 		{ termType: 'summer' }
 	])
 		assert.equal(termDraftMetadataMatches(termBase, { ...term, ...change, rowVersion: 3 }), false);
+});
+
+test('accepted term discovery refresh preserves explicit selection and dirty drafts', async () => {
+	const {
+		createAcademicContextStore,
+		registerAcademicContextDirtySource,
+		hasAcademicContextDirtySource
+	} = await importAcademicContextStore();
+	const original = contextOptions();
+	let reads = 0;
+	const latest = {
+		...original,
+		terms: original.terms.map((term) => ({ ...term, schoolDays: ['MON', 'SAT'] }))
+	};
+	const store = createAcademicContextStore({
+		navigate: async () => {
+			throw new Error('refresh must not navigate');
+		},
+		loadOptions: async () => (++reads === 1 ? original : latest)
+	});
+	let snapshot;
+	const unsubscribe = store.subscribe((value) => (snapshot = value));
+	await store.sync(
+		'/(app)/staff/academic/delivery',
+		new URL(
+			'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+		)
+	);
+	const selected = snapshot.selected;
+	const unregister = registerAcademicContextDirtySource('accepted-day-draft', () => true);
+	assert.equal(await store.refreshOptions(), true);
+	assert.deepEqual(snapshot.options, latest);
+	assert.deepEqual(snapshot.selected, selected);
+	assert.equal(hasAcademicContextDirtySource(), true);
+	unregister();
+	unsubscribe();
+	store.reset();
+});
+
+test('late discovery refresh cannot repopulate a reset identity or replace newer options', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	let resolve;
+	const old = new Promise((done) => (resolve = done));
+	const store = createAcademicContextStore({ navigate: async () => {}, loadOptions: () => old });
+	let snapshot;
+	const unsubscribe = store.subscribe((value) => (snapshot = value));
+	const afterReset = store.refreshOptions();
+	store.reset();
+	resolve(contextOptions());
+	assert.equal(await afterReset, false);
+	assert.equal(snapshot.options, null);
+	let finish;
+	const newerStore = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: () => new Promise((done) => (finish = done))
+	});
+	let newerSnapshot;
+	const stop = newerStore.subscribe((value) => (newerSnapshot = value));
+	const pending = newerStore.refreshOptions();
+	const latest = { ...contextOptions(), defaultAcademicTermId: null };
+	newerStore.replaceOptions(latest);
+	finish(contextOptions());
+	assert.equal(await pending, false);
+	assert.deepEqual(newerSnapshot.options, latest);
+	unsubscribe();
+	stop();
+	newerStore.reset();
+});
+
+test('failed accepted-save refresh stays retryable and a later refresh wins an older one', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	let reads = 0;
+	const options = contextOptions();
+	const store = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: async () => {
+			if (++reads === 1) throw new Error('read failed');
+			return options;
+		}
+	});
+	assert.equal(await store.refreshOptions(), false);
+	await store.sync(
+		'/(app)/staff/academic/delivery',
+		new URL(
+			'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+		)
+	);
+	assert.equal(reads, 2);
+	let resolveOld;
+	const old = new Promise((resolve) => (resolveOld = resolve));
+	let calls = 0;
+	const latest = { ...options, defaultAcademicTermId: null };
+	const racing = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: async () => (++calls === 1 ? old : latest)
+	});
+	let snapshot;
+	const stop = racing.subscribe((value) => (snapshot = value));
+	const pending = racing.refreshOptions();
+	assert.equal(await racing.refreshOptions(), true);
+	resolveOld(options);
+	assert.equal(await pending, false);
+	assert.deepEqual(snapshot.options, latest);
+	stop();
+	store.reset();
+	racing.reset();
 });

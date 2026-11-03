@@ -26,7 +26,7 @@ pub(crate) async fn fixture(name: &str) -> (PgPool, ActorContext, CreatePromotio
     .fetch_one(&pool)
     .await
     .unwrap();
-    let target_year_id = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-next','MON,TUE,WED,THU,FRI','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target_year_id = sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-next','MON,TUE,WED,THU,FRI','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let (grade, next): (Uuid,Uuid) = sqlx::query_as("SELECT from_grade_level_id,to_grade_level_id FROM grade_level_progressions WHERE transition_kind='promote' AND to_grade_level_id IS NOT NULL LIMIT 1").fetch_one(&pool).await.unwrap();
     let program = sqlx::query_scalar("SELECT id FROM study_programs ORDER BY id LIMIT 1")
         .fetch_one(&pool)

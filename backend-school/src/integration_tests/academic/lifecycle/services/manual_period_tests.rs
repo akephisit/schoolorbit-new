@@ -133,6 +133,13 @@ async fn manual_period_next_term_activates_from_planning_without_promoting_or_re
         &pool,
         actor.user_id,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: year,
             term_type: AcademicTermType::Regular,
             custom_name: None,

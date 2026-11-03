@@ -89,6 +89,24 @@ export function createAcademicContextStore({
 		state.update((current) => ({ ...current, options }));
 	}
 
+	async function refreshOptions(): Promise<boolean> {
+		const currentGeneration = sessionGeneration;
+		const refreshRevision = ++optionsRevision;
+		cachedOptions = null;
+		try {
+			const options = await optionsForSession();
+			if (currentGeneration !== sessionGeneration || refreshRevision !== optionsRevision)
+				return false;
+			// Refresh discovery only. Explicit selections and open drafts retain their owners.
+			state.update((current) => ({ ...current, options }));
+			return true;
+		} catch {
+			// The mutation already succeeded. Keep usable discovery and retry the read on
+			// the next route sync instead of reporting an ambiguous save failure.
+			return false;
+		}
+	}
+
 	async function primeOptions(): Promise<void> {
 		const currentGeneration = sessionGeneration;
 		try {
@@ -218,6 +236,7 @@ export function createAcademicContextStore({
 	return {
 		subscribe: state.subscribe,
 		primeOptions,
+		refreshOptions,
 		replaceOptions,
 		sync,
 		selectYear,

@@ -29,7 +29,7 @@ async fn period_setup_period_snapshots_keep_the_accepted_cas_base_across_later_a
             start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
             end_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
             order_index: 1,
-            applicable_days: vec!["MON".into()],
+            applicable_days: Some(vec!["MON".into()]),
             is_active: true,
         }],
     };
@@ -204,6 +204,19 @@ async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_cont
     let before: String = sqlx::query_scalar("SELECT jsonb_build_object('rooms',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM homerooms r),'schedules',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM bell_schedules s),'audit',(SELECT count(*) FROM academic_audit_events))::text").fetch_one(&pool).await.unwrap();
     for (method, path, body) in [
         (
+            "POST",
+            "/api/academic/terms/copy-school-schedule".into(),
+            json!({"academicYearId":CURRENT_YEAR_ID,"termType":"regular","customName":null,"includedInYearResult":true,"blocksYearClosure":true,"schoolDays":["MON"],"sourceTermId":Uuid::new_v4(),"sourceTermRowVersion":1,"sourceBellScheduleRowVersion":1}),
+        ),
+        (
+            "POST",
+            format!(
+                "/api/academic/terms/{}/copy-school-schedule",
+                Uuid::new_v4()
+            ),
+            json!({"schoolDays":["MON"],"sourceTermId":Uuid::new_v4(),"sourceTermRowVersion":1,"sourceBellScheduleRowVersion":1,"rowVersion":1}),
+        ),
+        (
             "PATCH",
             format!("/api/academic/homerooms/{}/capacity", room.id),
             json!({"capacity":room.capacity+1,"rowVersion":room.row_version}),
@@ -304,7 +317,7 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
                 start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
                 end_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
                 order_index: 1,
-                applicable_days: vec!["MON".into()],
+                applicable_days: Some(vec!["MON".into()]),
                 is_active: true,
             }],
         },
@@ -313,7 +326,7 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     .unwrap()
     .snapshot
     .periods;
-    let term = add_unopened_term(&pool, actor, schedule.id).await;
+    let mut term = add_unopened_term(&pool, actor, schedule.id).await;
     // A valid accepted empty delivery graph with a real draft structural block.
     let delivery: Uuid = sqlx::query_scalar("INSERT INTO academic_delivery_versions(academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no) VALUES($1,$2,CURRENT_DATE,'published','{\"offerings\":[]}', $3,now(),uuidv7(),repeat('a',64),1) RETURNING id")
         .bind(term.id).bind(CURRENT_YEAR_ID).bind(actor).fetch_one(&pool).await.unwrap();
@@ -321,6 +334,37 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
         .bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).bind(delivery).bind(actor).fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_timetable_blocks(timetable_version_id,academic_term_id,academic_year_id,bell_schedule_id,bell_schedule_period_id,day_of_week,block_kind,structural_kind,title) VALUES($1,$2,$3,$4,$5,'MON','STRUCTURAL','BREAK','Real draft block')")
         .bind(version).bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).bind(periods[0].id).execute(&pool).await.unwrap();
+    let change_days = |days, version| UpdateAcademicTermRequest {
+        school_days: days,
+        custom_name: Some(term.name.clone()),
+        term_type: term.term_type,
+        included_in_year_result: term.included_in_year_result,
+        blocks_year_closure: term.blocks_year_closure,
+        bell_schedule_id: term.bell_schedule_id,
+        row_version: version,
+    };
+    let mut expanded = term.school_days.clone();
+    expanded.push("SAT".into());
+    let accepted = years_terms::update_term(
+        &pool,
+        actor,
+        term.id,
+        change_days(expanded.clone(), term.row_version),
+    )
+    .await
+    .unwrap();
+    assert_eq!(accepted.school_days, expanded);
+    assert!(matches!(
+        years_terms::update_term(
+            &pool,
+            actor,
+            term.id,
+            change_days(vec!["TUE".into()], accepted.row_version)
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    term = accepted;
     let guarded = bell_schedules::get(&pool, schedule.id).await.unwrap();
     assert_eq!(
         guarded.edit_blocked_reason,
@@ -366,6 +410,13 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
             actor,
             term.id,
             UpdateAcademicTermRequest {
+                school_days: vec![
+                    "MON".into(),
+                    "TUE".into(),
+                    "WED".into(),
+                    "THU".into(),
+                    "FRI".into()
+                ],
                 custom_name: Some(term.name),
                 term_type: term.term_type,
                 included_in_year_result: term.included_in_year_result,
@@ -387,6 +438,7 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     .await
     .unwrap();
     assert!(!workspace.bell_schedule_setup_term_ids.contains(&term.id));
+    assert!(workspace.school_days_editable_term_ids.contains(&term.id));
     assert_eq!(sqlx::query_scalar::<_, Uuid>("SELECT bell_schedule_period_id FROM academic_timetable_blocks WHERE timetable_version_id=$1").bind(version).fetch_one(&pool).await.unwrap(), periods[0].id);
 }
 
@@ -645,6 +697,13 @@ async fn add_unopened_term(
         pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: CURRENT_YEAR_ID,
             term_type: AcademicTermType::Regular,
             custom_name: Some("ภาคเรียนใหม่".into()),
@@ -655,6 +714,96 @@ async fn add_unopened_term(
     )
     .await
     .unwrap()
+}
+
+#[tokio::test]
+async fn period_setup_term_school_schedule_http_accepts_manage_and_refuses_stale_target_without_partial_copy(
+) {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+    let pool = prepare_current_core_fixture("term_school_schedule_http").await;
+    let actor = fixture_actor(&pool).await;
+    let source_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let source = years_terms::get_term(&pool, source_id).await.unwrap();
+    let schedule = bell_schedules::get(&pool, source.bell_schedule_id)
+        .await
+        .unwrap();
+    let payload = json!({"academicYearId":CURRENT_YEAR_ID,"termType":"regular","customName":null,"includedInYearResult":true,"blocksYearClosure":true,"schoolDays":["MON","TUE","WED","THU","FRI","SAT"],"sourceTermId":source.id,"sourceTermRowVersion":source.row_version,"sourceBellScheduleRowVersion":schedule.row_version});
+    let app = crate::integration_tests::academic::delivery::authenticated_academic_router(
+        &pool,
+        actor,
+        &[codes::ACADEMIC_TERM_MANAGE_SCHOOL],
+        school_academic_http::core::routes(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/academic/terms/copy-school-schedule")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let bytes = axum::body::to_bytes(response.into_body(), 100_000)
+        .await
+        .unwrap();
+    let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let copied: school_academic_core::models::AcademicTermSchoolScheduleCopyResponse =
+        serde_json::from_value(response["data"].clone()).unwrap();
+    assert_ne!(copied.bell_schedule.id, schedule.id);
+    assert!(copied.can_edit_school_days && copied.can_assign_bell_schedule);
+    assert_eq!(
+        copied.term.school_days.last().map(String::as_str),
+        Some("SAT")
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM bell_schedules")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    for (row_version, status) in [
+        (copied.term.row_version + 1, StatusCode::CONFLICT),
+        (copied.term.row_version, StatusCode::OK),
+    ] {
+        let payload = json!({"sourceTermId":source.id,"sourceTermRowVersion":source.row_version,"sourceBellScheduleRowVersion":schedule.row_version,"schoolDays":copied.term.school_days,"rowVersion":row_version});
+        let app = crate::integration_tests::academic::delivery::authenticated_academic_router(
+            &pool,
+            actor,
+            &[codes::ACADEMIC_TERM_MANAGE_SCHOOL],
+            school_academic_http::core::routes(),
+        );
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/academic/terms/{}/copy-school-schedule",
+                        copied.term.id
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        let actual: i64 = sqlx::query_scalar("SELECT count(*) FROM bell_schedules")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(actual, count + i64::from(status == StatusCode::OK));
+    }
 }
 
 #[tokio::test]
@@ -780,6 +929,13 @@ async fn period_setup_shared_schedule_stays_locked_and_clone_is_atomic_for_unope
         .unwrap();
     let ready = years_terms::get_term(&pool, term.id).await.unwrap();
     let mut assignment = UpdateAcademicTermRequest {
+        school_days: vec![
+            "MON".into(),
+            "TUE".into(),
+            "WED".into(),
+            "THU".into(),
+            "FRI".into(),
+        ],
         term_type: ready.term_type,
         custom_name: Some(ready.name.clone()),
         included_in_year_result: ready.included_in_year_result,
@@ -878,6 +1034,13 @@ async fn period_setup_opening_diagnostics_preserve_raw_invalid_days_and_identify
         actor,
         term.id,
         UpdateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             term_type: term.term_type,
             custom_name: Some(term.name),
             included_in_year_result: term.included_in_year_result,
@@ -1073,6 +1236,42 @@ async fn period_setup_published_and_cancelled_used_schedules_cannot_be_reopened_
             ReplaceBellSchedulePeriodsRequest {
                 periods: vec![],
                 row_version: used.row_version
+            }
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(new_term.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reopened = years_terms::get_term(&pool, new_term.id).await.unwrap();
+    let workspace = workspaces::setup_workspace(
+        &pool,
+        &ActorContext {
+            user_id: actor,
+            permissions: vec![codes::WILDCARD.into()],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!workspace
+        .school_days_editable_term_ids
+        .contains(&reopened.id));
+    assert!(matches!(
+        years_terms::update_term(
+            &pool,
+            actor,
+            reopened.id,
+            UpdateAcademicTermRequest {
+                school_days: vec!["SAT".into()],
+                term_type: reopened.term_type,
+                custom_name: Some(reopened.name),
+                included_in_year_result: reopened.included_in_year_result,
+                blocks_year_closure: reopened.blocks_year_closure,
+                bell_schedule_id: reopened.bell_schedule_id,
+                row_version: reopened.row_version
             }
         )
         .await,

@@ -1,4 +1,20 @@
 <script lang="ts">
+	import { onDestroy, onMount, untrack } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import {
+		normalizeSchoolDays,
+		type AcademicWeekday
+	} from '#lib/academic-core/foundation-presentation.js';
+	import {
+		previousSchoolScheduleTerm,
+		schoolScheduleSourceFields,
+		periodDaysOutsideTerm,
+		type SchoolScheduleSource
+	} from '#lib/academic-core/school-schedule.js';
+	import SchoolScheduleSourcePreview from './SchoolScheduleSourcePreview.svelte';
+	import SchoolDaysField from './SchoolDaysField.svelte';
 	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import type {
 		AcademicTerm,
@@ -6,6 +22,9 @@
 		AcademicYear,
 		BellSchedule,
 		CreateAcademicTermRequest,
+		CreateAcademicTermCopySchoolScheduleRequest,
+		AcademicTermSchoolScheduleCopyResponse,
+		BellSchedulePeriodsSnapshot,
 		UpdateAcademicTermRequest
 	} from '#lib/api/academic-core.js';
 	import {
@@ -32,6 +51,11 @@
 
 	let {
 		year,
+		years,
+		allTerms,
+		allSchedules,
+		onCreateCopy,
+		onLoadPeriods,
 		schedules,
 		terms,
 		busy = false,
@@ -40,6 +64,16 @@
 		onSaved
 	}: {
 		year: AcademicYear;
+		years: AcademicYear[];
+		allTerms: AcademicTerm[];
+		allSchedules: BellSchedule[];
+		onCreateCopy: (
+			draft: CreateAcademicTermCopySchoolScheduleRequest
+		) => Promise<AcademicTermSchoolScheduleCopyResponse>;
+		onLoadPeriods: (
+			id: string,
+			options?: { signal?: AbortSignal }
+		) => Promise<BellSchedulePeriodsSnapshot>;
 		schedules: BellSchedule[];
 		terms: AcademicTerm[];
 		busy?: boolean;
@@ -47,6 +81,43 @@
 		onUpdate: (id: string, draft: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 		onSaved: (term: AcademicTerm) => void;
 	} = $props();
+
+	const previousTerm = $derived(previousSchoolScheduleTerm(year, years, allTerms));
+	let useSource = $state(untrack(() => !!previousTerm));
+	let sourceGeneration = $state(0);
+	let source = $state<SchoolScheduleSource | null>(null);
+	let schoolDays = $state<AcademicWeekday[]>(
+		untrack(() => normalizeSchoolDays(year.defaultSchoolDays))
+	);
+	const sourceInvalid = $derived(
+		!source ||
+			!source.snapshot.periods.some((period) => period.isActive) ||
+			source.schoolDays.length === 0 ||
+			periodDaysOutsideTerm(source.snapshot.periods, source.schoolDays).length > 0 ||
+			(allTerms.find((term) => term.id === source?.term.id)?.rowVersion ?? 0) >
+				source.term.rowVersion ||
+			(allSchedules.find((schedule) => schedule.id === source?.term.bellScheduleId)?.rowVersion ??
+				0) > source.snapshot.rowVersion
+	);
+	let disposed = false;
+	let operation = 0;
+	onDestroy(() => {
+		disposed = true;
+		operation += 1;
+	});
+	onMount(() =>
+		registerAcademicContextDirtySource(
+			`term-setup:${year.id}`,
+			() =>
+				!!editing ||
+				customName.length > 0 ||
+				termType !== 'regular' ||
+				(source !== null &&
+					(source.term.id !== previousTerm?.id ||
+						JSON.stringify(source.schoolDays) !==
+							JSON.stringify(normalizeSchoolDays(source.term.schoolDays))))
+		)
+	);
 
 	let editing = $state<AcademicTerm | null>(null);
 	let draftBase = $state<ReturnType<typeof termDraftBase> | null>(null);
@@ -83,10 +154,17 @@
 		includedInYearResult = true;
 		blocksYearClosure = true;
 		advancedOpen = false;
+		source = null;
+		sourceGeneration += 1;
+		useSource = !!previousTerm;
+		schoolDays = normalizeSchoolDays(year.defaultSchoolDays);
+		operation += 1;
 	}
 
 	function beginEdit(term: AcademicTerm) {
 		if (!canPlan || busy || term.status !== 'planning') return;
+		operation += 1;
+		schoolDays = normalizeSchoolDays(term.schoolDays);
 		editing = term;
 		draftBase = termDraftBase(term);
 		termType = term.termType;
@@ -102,7 +180,12 @@
 		event.preventDefault();
 		if (!canPlan || busy || metadataChanged) return;
 		errorMessage = '';
-		if (!bellScheduleId) {
+		if (
+			(!editing && useSource && sourceInvalid) ||
+			(schoolDays.length === 0 && (editing || !useSource))
+		)
+			return;
+		if (!bellScheduleId && (editing || !useSource)) {
 			errorMessage = 'กรุณาเลือกตารางเวลา';
 			return;
 		}
@@ -110,18 +193,33 @@
 			termType,
 			customName: customName.trim() || null,
 			...termAnnualFlags(includedInYearResult, blocksYearClosure),
-			bellScheduleId
+			bellScheduleId,
+			schoolDays
 		};
+		const identity = appIdentityKey();
+		const submittedOperation = ++operation;
 		try {
 			const saved = editing
 				? await onUpdate(editing.id, {
 						...common,
 						rowVersion: latestEditing?.rowVersion ?? editing.rowVersion
 					})
-				: await onCreate({ academicYearId: year.id, ...common });
+				: useSource && source
+					? (
+							await onCreateCopy({
+								academicYearId: year.id,
+								termType,
+								customName: customName.trim() || null,
+								...termAnnualFlags(includedInYearResult, blocksYearClosure),
+								...schoolScheduleSourceFields(source)
+							})
+						).term
+					: await onCreate({ academicYearId: year.id, ...common });
+			if (disposed || identity !== appIdentityKey() || operation !== submittedOperation) return;
 			onSaved(saved);
 			resetDraft();
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey() || operation !== submittedOperation) return;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกภาคเรียนไม่สำเร็จ';
 		}
 	}
@@ -157,7 +255,7 @@
 			</div>
 		{:else}
 			<p class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-				ยังไม่มีภาคเรียน สร้างหลังจากกำหนดตารางเวลาและคาบเรียนแล้ว
+				ยังไม่มีภาคเรียน คัดลอกจากภาคเรียนเดิมหรือเตรียมตารางเวลาและคาบเรียนก่อนสร้าง
 			</p>
 		{/each}
 	</div>
@@ -203,21 +301,58 @@
 				</Select.Root>
 			</div>
 
-			<div class="space-y-1.5">
-				<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
-				<Select.Root type="single" bind:value={bellScheduleId}>
-					<Select.Trigger id="term-bell-schedule" class="w-full">
-						{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each schedules as schedule (schedule.id)}
-							<Select.Item value={schedule.id}>
-								{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
+			{#if !editing && allTerms.length > 0}
+				<label class="flex items-center gap-2 text-sm"
+					><Checkbox bind:checked={useSource} disabled={busy} /> คัดลอกวันเรียนและคาบจากภาคเรียนเดิม</label
+				>
+			{/if}
+			{#if !editing && useSource}
+				{#key sourceGeneration}<SchoolScheduleSourcePreview
+						{years}
+						terms={allTerms}
+						schedules={allSchedules}
+						defaultSourceId={previousTerm?.id ?? ''}
+						disabled={busy}
+						onLoad={onLoadPeriods}
+						onchange={(value) => (source = value)}
+					/>{/key}
+			{:else}
+				{#if !editing}<SchoolDaysField
+						value={schoolDays}
+						disabled={busy}
+						onchange={(days) => (schoolDays = days)}
+					/>
+				{:else}<p class="text-sm text-muted-foreground">
+						วันเรียนและคาบเรียน แก้ไขได้ที่หน้าเวลาเรียนและคาบเรียนของภาคนี้
+					</p>{/if}
+
+				{#if schedules.length === 0}
+					<div class="space-y-2 rounded-lg border bg-muted/20 p-3">
+						<p class="text-sm text-muted-foreground">
+							เตรียมตารางเวลาและคาบเรียนก่อนเพิ่มภาคเรียนโดยไม่คัดลอก
+						</p>
+						<Button
+							variant="outline"
+							href={resolve(`staff/academic/core?academicYearId=${year.id}#bell-schedules`)}
+							>ตั้งค่าเวลาเรียน</Button
+						>
+					</div>
+				{:else}<div class="space-y-1.5">
+						<Label for="term-bell-schedule">ตารางเวลาที่ใช้</Label>
+						<Select.Root type="single" bind:value={bellScheduleId}>
+							<Select.Trigger id="term-bell-schedule" class="w-full">
+								{selectedSchedule?.name ?? 'เลือกตารางเวลา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each schedules as schedule (schedule.id)}
+									<Select.Item value={schedule.id}>
+										{schedule.name}{schedule.isDefault ? ' · ตารางหลัก' : ''}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>{/if}
+			{/if}
 
 			<Collapsible.Root bind:open={advancedOpen} class="rounded-xl border bg-muted/20">
 				<Collapsible.Trigger
@@ -301,7 +436,14 @@
 				</p>
 			{/if}
 
-			<Button type="submit" disabled={busy || metadataChanged || schedules.length === 0}>
+			<Button
+				type="submit"
+				disabled={busy ||
+					metadataChanged ||
+					(!editing && useSource
+						? sourceInvalid
+						: schedules.length === 0 || schoolDays.length === 0)}
+			>
 				{#if editing}<Save class="size-4" /> บันทึกภาคเรียน{:else}<Plus class="size-4" /> เพิ่มภาคเรียน{/if}
 			</Button>
 		</form>

@@ -8,7 +8,7 @@ async fn year_reopening_core_evidence_keeps_successor_activation_history() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    let target: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-recovery-history','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let target: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT max(year)+1,'E2E-LIFECYCLE-recovery-history','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let actor: Uuid =
         sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1")
             .fetch_one(&pool)

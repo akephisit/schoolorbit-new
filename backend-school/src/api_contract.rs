@@ -611,6 +611,8 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::update_year,
         school_academic_http::core::handlers::list_terms,
         school_academic_http::core::handlers::create_term,
+        school_academic_http::core::handlers::create_term_copy_school_schedule,
+        school_academic_http::core::handlers::copy_term_school_schedule,
         school_academic_http::core::handlers::get_term,
         school_academic_http::core::handlers::update_term,
         school_academic_http::core::handlers::delete_term,
@@ -1340,6 +1342,9 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         UpdateAcademicYearRequest,
         CreateAcademicTermRequest,
         UpdateAcademicTermRequest,
+        CreateAcademicTermCopySchoolScheduleRequest,
+        CopyAcademicTermSchoolScheduleRequest,
+        AcademicTermSchoolScheduleCopyResponse,
         BellSchedulePeriodInput,
         ReplaceBellSchedulePeriodsRequest,
         GradeProgressionInput,
@@ -1484,6 +1489,7 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<AcademicYear>,
         ApiResponse<Vec<AcademicTerm>>,
         ApiResponse<AcademicTerm>,
+        ApiResponse<AcademicTermSchoolScheduleCopyResponse>,
         ApiResponse<Vec<BellSchedule>>,
         ApiResponse<BellSchedule>,
         ApiResponse<BellSchedulePeriodsSnapshot>,
@@ -3578,12 +3584,12 @@ mod tests {
             required(&schemas["AcademicYear"]),
             vec![
                 "createdAt",
+                "defaultSchoolDays",
                 "id",
                 "isVisible",
                 "migrated",
                 "name",
                 "rowVersion",
-                "schoolDays",
                 "status",
                 "updatedAt",
                 "year"
@@ -3603,6 +3609,7 @@ mod tests {
                 "migrated",
                 "name",
                 "rowVersion",
+                "schoolDays",
                 "sequence",
                 "status",
                 "termType",
@@ -3668,7 +3675,7 @@ mod tests {
         );
         for field in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
             let mut request =
-                serde_json::json!({"year":2570,"customName":null,"schoolDays":["MON"]});
+                serde_json::json!({"year":2570,"customName":null,"defaultSchoolDays":["MON"]});
             request[field] = serde_json::json!("2027-05-01");
             assert!(serde_json::from_value::<
                 school_academic_core::models::CreateAcademicYearRequest,

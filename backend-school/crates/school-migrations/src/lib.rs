@@ -176,6 +176,19 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(155), "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET") => {
+            "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET"
+        }
+        (Some(155), "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED") => {
+            "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED"
+        }
+        (Some(155), "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED") => {
+            "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED"
+        }
+        (Some(155), "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID") => {
+            "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID"
+        }
+
         (Some(152), "MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED") => {
             "MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED"
         }
@@ -641,6 +654,28 @@ mod tests {
             ));
             assert_eq!(failure.diagnostic.code, "unclassified");
             assert!(!format!("{failure:?}").contains("private-sentinel"));
+        }
+    }
+    #[test]
+    fn term_school_days155_refusal_codes_are_exact_and_sanitized() {
+        for code in [
+            "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET",
+            "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+            "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED",
+            "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID",
+        ] {
+            assert_eq!(refusal_code(Some(155), &native(code, "23514")), code);
+            assert_eq!(
+                refusal_code(Some(154), &native(code, "23514")),
+                "unclassified"
+            );
+            assert_eq!(
+                refusal_code(
+                    Some(155),
+                    &native(&format!("{code} private-sentinel"), "23514")
+                ),
+                "unclassified"
+            );
         }
     }
     use std::sync::{

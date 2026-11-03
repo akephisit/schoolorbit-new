@@ -592,14 +592,14 @@ async fn upsert_academic_year(
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_academic_year",
             r#"
-        INSERT INTO academic_years (year, name, school_days, status, is_visible, metadata)
+        INSERT INTO academic_years (year, name, default_school_days, status, is_visible, metadata)
         VALUES ($1, $2, 'MON,TUE,WED,THU,FRI', 'active', true,
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (year) DO UPDATE SET
             name = EXCLUDED.name,
             status = 'active',
             is_visible = true,
-            school_days = EXCLUDED.school_days,
+            default_school_days = EXCLUDED.default_school_days,
             row_version = academic_years.row_version + 1,
             metadata = COALESCE(academic_years.metadata, '{}'::jsonb) || EXCLUDED.metadata,
             updated_at = NOW()
@@ -662,11 +662,11 @@ async fn upsert_terms(
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
-        INSERT INTO academic_terms (
+        INSERT INTO academic_terms (school_days,
             academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular',
+        VALUES ( 'MON,TUE,WED,THU,FRI',$1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular',
                 true, true, $2, 'active',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET
@@ -693,11 +693,11 @@ async fn upsert_terms(
         .query(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
-        INSERT INTO academic_terms (
+        INSERT INTO academic_terms (school_days,
             academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular',
+        VALUES ( 'MON,TUE,WED,THU,FRI',$1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular',
                 true, true, $2, 'ready',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET

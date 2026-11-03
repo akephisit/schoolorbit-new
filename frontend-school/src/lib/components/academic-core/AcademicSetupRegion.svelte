@@ -2,7 +2,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
 		getAcademicSetupWorkspace,
@@ -10,6 +10,9 @@
 		type AcademicContextSettings,
 		type UpdateAcademicContextSettingsRequest,
 		createAcademicTerm,
+		createAcademicTermCopySchoolSchedule,
+		copyAcademicTermSchoolSchedule,
+		type AcademicTermSchoolScheduleCopyResponse,
 		createAcademicYear,
 		createBellSchedule,
 		cloneBellSchedule,
@@ -48,6 +51,12 @@
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let bellScheduleSetupYearIds = $state<string[]>([]);
 	let bellScheduleSetupTermIds = $state<string[]>([]);
+	let schoolDaysEditableTermIds = $state<string[]>([]);
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		latest.abort();
+	});
 	let loading = $state(true);
 	let workspaceReady = $state(false);
 	let busy = $state({ year: false, term: false, schedule: false, periods: false });
@@ -84,6 +93,7 @@
 		bellSchedules = workspace.bellSchedules;
 		bellScheduleSetupYearIds = workspace.bellScheduleSetupYearIds;
 		bellScheduleSetupTermIds = workspace.bellScheduleSetupTermIds;
+		schoolDaysEditableTermIds = workspace.schoolDaysEditableTermIds;
 		contextSettings = workspace.contextSettings;
 		workspaceReady = true;
 	}
@@ -103,10 +113,15 @@
 			)
 				applyWorkspace(result);
 		} catch (cause) {
-			if (latest.isCurrent(revision) && !isAbortError(cause))
+			if (
+				!disposed &&
+				latest.isCurrent(revision) &&
+				identity === appIdentityKey() &&
+				!isAbortError(cause)
+			)
 				errorMessage = cause instanceof Error ? cause.message : 'โหลดตั้งค่าไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision)) loading = false;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
 		}
 	}
 	async function reloadContextSettings() {
@@ -136,6 +151,7 @@
 				bellSchedules = [];
 				bellScheduleSetupYearIds = [];
 				bellScheduleSetupTermIds = [];
+				schoolDaysEditableTermIds = [];
 				contextSettings = null;
 				workspaceReady = false;
 				busy = { year: false, term: false, schedule: false, periods: false };
@@ -166,7 +182,7 @@
 	async function saveContextSettings(draft: UpdateAcademicContextSettingsRequest) {
 		const identity = appIdentityKey();
 		const result = await updateAcademicContextSettings(draft);
-		if (identity !== appIdentityKey()) return result;
+		if (disposed || identity !== appIdentityKey()) return result;
 		mutationRevision += 1;
 		if (contextSettings && contextSettings.rowVersion > result.settings.rowVersion) return result;
 		contextSettings = result.settings;
@@ -192,14 +208,58 @@
 		busy.year = true;
 		try {
 			const created = await createAcademicYear(draft);
-			if (identity !== appIdentityKey()) return created;
+			if (disposed || identity !== appIdentityKey()) return created;
 			mutationRevision += 1;
 			years = [created, ...years].sort((a, b) => b.year - a.year);
 			termsByYear.set(created.id, []);
 			return created;
 		} finally {
-			if (identity === appIdentityKey()) busy.year = false;
+			if (!disposed && identity === appIdentityKey()) busy.year = false;
 		}
+	}
+
+	function patchTerm(term: AcademicTerm) {
+		const current = termsByYear.get(term.academicYearId) ?? [];
+		const previous = current.find((item) => item.id === term.id);
+		if (previous && previous.rowVersion > term.rowVersion) return false;
+		termsByYear.set(
+			term.academicYearId,
+			[...current.filter((item) => item.id !== term.id), term].sort(
+				(a, b) => a.sequence - b.sequence
+			)
+		);
+		return true;
+	}
+	function patchCopiedSchoolSchedule(result: AcademicTermSchoolScheduleCopyResponse) {
+		const current = termsByYear
+			.get(result.term.academicYearId)
+			?.find((term) => term.id === result.term.id);
+		if (current && current.rowVersion > result.term.rowVersion) return false;
+		patchTerm(result.term);
+		const previous = bellSchedules.find((schedule) => schedule.id === result.bellSchedule.id);
+		if (!previous || previous.rowVersion <= result.bellSchedule.rowVersion)
+			bellSchedules = [
+				...bellSchedules.filter((schedule) => schedule.id !== result.bellSchedule.id),
+				result.bellSchedule
+			];
+		schoolDaysEditableTermIds = [
+			...schoolDaysEditableTermIds.filter((id) => id !== result.term.id),
+			...(result.canEditSchoolDays ? [result.term.id] : [])
+		];
+		bellScheduleSetupTermIds = [
+			...bellScheduleSetupTermIds.filter((id) => id !== result.term.id),
+			...(result.canAssignBellSchedule ? [result.term.id] : [])
+		];
+		return true;
+	}
+	async function reconcileTermConflict(cause: unknown, identity: string): Promise<void> {
+		if (
+			cause instanceof ApiClientError &&
+			cause.status === 409 &&
+			!disposed &&
+			identity === appIdentityKey()
+		)
+			await loadWorkspace();
 	}
 
 	async function addTerm(draft: Parameters<typeof createAcademicTerm>[0]) {
@@ -208,16 +268,57 @@
 		try {
 			const created = await createAcademicTerm(draft);
 			if (identity !== appIdentityKey()) return created;
+			void academicContext.refreshOptions();
+			if (disposed) return created;
 			mutationRevision += 1;
-			termsByYear.set(
-				created.academicYearId,
-				[...(termsByYear.get(created.academicYearId) ?? []), created].sort(
-					(a, b) => a.sequence - b.sequence
-				)
-			);
+			patchTerm(created);
+			schoolDaysEditableTermIds = [...schoolDaysEditableTermIds, created.id];
+			bellScheduleSetupTermIds = [...bellScheduleSetupTermIds, created.id];
 			return created;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
-			if (identity === appIdentityKey()) busy.term = false;
+			if (!disposed && identity === appIdentityKey()) busy.term = false;
+		}
+	}
+	async function addTermCopy(draft: Parameters<typeof createAcademicTermCopySchoolSchedule>[0]) {
+		const identity = appIdentityKey();
+		busy.term = true;
+		try {
+			const result = await createAcademicTermCopySchoolSchedule(draft);
+			if (identity !== appIdentityKey()) return result;
+			void academicContext.refreshOptions();
+			if (disposed) return result;
+			mutationRevision += 1;
+			patchCopiedSchoolSchedule(result);
+			return result;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
+		} finally {
+			if (!disposed && identity === appIdentityKey()) busy.term = false;
+		}
+	}
+	async function copyTermSchoolSchedule(
+		id: string,
+		draft: Parameters<typeof copyAcademicTermSchoolSchedule>[1]
+	) {
+		const identity = appIdentityKey();
+		busy.term = true;
+		try {
+			const result = await copyAcademicTermSchoolSchedule(id, draft);
+			if (identity !== appIdentityKey()) return result;
+			void academicContext.refreshOptions();
+			if (disposed) return result;
+			mutationRevision += 1;
+			patchCopiedSchoolSchedule(result);
+			return result;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
+		} finally {
+			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -226,7 +327,7 @@
 		busy.year = true;
 		try {
 			const updated = await updateAcademicYear(id, draft);
-			if (identity !== appIdentityKey()) return updated;
+			if (disposed || identity !== appIdentityKey()) return updated;
 			mutationRevision += 1;
 			years = years
 				.map((year) =>
@@ -235,7 +336,7 @@
 				.sort((a, b) => b.year - a.year);
 			return updated;
 		} finally {
-			if (identity === appIdentityKey()) busy.year = false;
+			if (!disposed && identity === appIdentityKey()) busy.year = false;
 		}
 	}
 
@@ -245,18 +346,16 @@
 		try {
 			const updated = await updateAcademicTerm(id, draft);
 			if (identity !== appIdentityKey()) return updated;
+			void academicContext.refreshOptions();
+			if (disposed) return updated;
 			mutationRevision += 1;
-			termsByYear.set(
-				updated.academicYearId,
-				(termsByYear.get(updated.academicYearId) ?? [])
-					.map((term) =>
-						term.id === updated.id && updated.rowVersion >= term.rowVersion ? updated : term
-					)
-					.sort((a, b) => a.sequence - b.sequence)
-			);
+			patchTerm(updated);
 			return updated;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
-			if (identity === appIdentityKey()) busy.term = false;
+			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -265,12 +364,12 @@
 		busy.schedule = true;
 		try {
 			const created = await createBellSchedule(draft);
-			if (identity !== appIdentityKey()) return created;
+			if (disposed || identity !== appIdentityKey()) return created;
 			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			if (identity === appIdentityKey()) busy.schedule = false;
+			if (!disposed && identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 	async function copyBellSchedule(id: string, draft: Parameters<typeof cloneBellSchedule>[1]) {
@@ -278,12 +377,12 @@
 		busy.schedule = true;
 		try {
 			const created = await cloneBellSchedule(id, draft);
-			if (identity !== appIdentityKey()) return created;
+			if (disposed || identity !== appIdentityKey()) return created;
 			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			if (identity === appIdentityKey()) busy.schedule = false;
+			if (!disposed && identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 
@@ -292,17 +391,17 @@
 		busy.schedule = true;
 		try {
 			const updated = await updateBellSchedule(id, draft);
-			if (identity !== appIdentityKey()) return updated;
+			if (disposed || identity !== appIdentityKey()) return updated;
 			mutationRevision += 1;
 			const refreshed = await listBellSchedules(updated.academicYearId);
-			if (identity !== appIdentityKey()) return updated;
+			if (disposed || identity !== appIdentityKey()) return updated;
 			bellSchedules = [
 				...bellSchedules.filter((item) => item.academicYearId !== updated.academicYearId),
 				...refreshed
 			];
 			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
-			if (identity === appIdentityKey()) busy.schedule = false;
+			if (!disposed && identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 
@@ -322,7 +421,7 @@
 	) {
 		const identity = appIdentityKey();
 		const snapshot = await listBellSchedulePeriods(id, options);
-		if (identity !== appIdentityKey()) return snapshot;
+		if (disposed || identity !== appIdentityKey()) return snapshot;
 		mutationRevision += 1;
 		return snapshot;
 	}
@@ -335,7 +434,7 @@
 		busy.periods = true;
 		try {
 			const snapshot = await replaceBellSchedulePeriods(id, draft);
-			if (identity !== appIdentityKey()) return snapshot;
+			if (disposed || identity !== appIdentityKey()) return snapshot;
 			mutationRevision += 1;
 			applyPeriodSnapshot(snapshot, draft.rowVersion);
 			return snapshot;
@@ -348,7 +447,7 @@
 				const schedule = bellSchedules.find((item) => item.id === id);
 				if (schedule) {
 					const refreshed = await listBellSchedules(schedule.academicYearId);
-					if (identity === appIdentityKey()) {
+					if (!disposed && identity === appIdentityKey()) {
 						const versions = new Map(bellSchedules.map((item) => [item.id, item]));
 						bellSchedules = [
 							...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
@@ -362,7 +461,7 @@
 			}
 			throw cause;
 		} finally {
-			if (identity === appIdentityKey()) busy.periods = false;
+			if (!disposed && identity === appIdentityKey()) busy.periods = false;
 		}
 	}
 </script>
@@ -404,6 +503,8 @@
 					onCreateYear={addYear}
 					onUpdateYear={editYear}
 					onCreateTerm={addTerm}
+					onCreateTermCopy={addTermCopy}
+					onLoadBellSchedulePeriods={loadBellSchedulePeriods}
 					onUpdateTerm={editTerm}
 				/>
 			{:else}
@@ -413,6 +514,8 @@
 					{termsByYear}
 					setupYearIds={bellScheduleSetupYearIds}
 					setupTermIds={bellScheduleSetupTermIds}
+					{schoolDaysEditableTermIds}
+					onCopySchoolSchedule={copyTermSchoolSchedule}
 					{canManage}
 					{busy}
 					onCreateBellSchedule={addBellSchedule}

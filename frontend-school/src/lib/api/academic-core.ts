@@ -106,6 +106,12 @@ export type CreateAcademicYearRequest = Schemas['CreateAcademicYearRequest'];
 export type UpdateAcademicYearRequest = Schemas['UpdateAcademicYearRequest'];
 export type CreateAcademicTermRequest = Schemas['CreateAcademicTermRequest'];
 export type UpdateAcademicTermRequest = Schemas['UpdateAcademicTermRequest'];
+export type CreateAcademicTermCopySchoolScheduleRequest =
+	Schemas['CreateAcademicTermCopySchoolScheduleRequest'];
+export type CopyAcademicTermSchoolScheduleRequest =
+	Schemas['CopyAcademicTermSchoolScheduleRequest'];
+export type AcademicTermSchoolScheduleCopyResponse =
+	Schemas['AcademicTermSchoolScheduleCopyResponse'];
 export type CreateBellScheduleRequest = Schemas['CreateBellScheduleRequest'];
 export type UpdateBellScheduleRequest = Schemas['UpdateBellScheduleRequest'];
 export type ReplaceBellSchedulePeriodsRequest = Schemas['ReplaceBellSchedulePeriodsRequest'];
@@ -198,12 +204,39 @@ export const listAcademicTerms = (academicYearId: string, options: ApiRequestOpt
 		'ไม่สามารถโหลดภาคเรียนได้'
 	);
 };
+export const getAcademicTerm = (id: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<AcademicTerm>(`/api/academic/terms/${requiredContext(id, 'ภาคเรียน')}`, options),
+		'โหลดข้อมูลภาคเรียนไม่สำเร็จ'
+	);
+
 export const createAcademicTerm = (body: CreateAcademicTermRequest) =>
 	academicData(apiClient.post<AcademicTerm>('/api/academic/terms', body), 'สร้างภาคเรียนไม่สำเร็จ');
 export const updateAcademicTerm = (id: string, body: UpdateAcademicTermRequest) =>
 	academicData(
 		apiClient.patch<AcademicTerm>(`/api/academic/terms/${id}`, body),
 		'แก้ไขภาคเรียนไม่สำเร็จ'
+	);
+export const createAcademicTermCopySchoolSchedule = (
+	body: CreateAcademicTermCopySchoolScheduleRequest
+) =>
+	academicData(
+		apiClient.post<AcademicTermSchoolScheduleCopyResponse>(
+			'/api/academic/terms/copy-school-schedule',
+			body
+		),
+		'สร้างภาคเรียนจากต้นแบบไม่สำเร็จ'
+	);
+export const copyAcademicTermSchoolSchedule = (
+	id: string,
+	body: CopyAcademicTermSchoolScheduleRequest
+) =>
+	academicData(
+		apiClient.post<AcademicTermSchoolScheduleCopyResponse>(
+			`/api/academic/terms/${id}/copy-school-schedule`,
+			body
+		),
+		'คัดลอกวันเรียนและคาบเรียนไม่สำเร็จ'
 	);
 export const deleteAcademicTerm = (id: string) =>
 	academicData(

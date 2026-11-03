@@ -45,7 +45,7 @@ async fn fixture(name: &str) -> Fixture {
     let start = today - Duration::days(40);
     let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status)VALUES(2999,'Behavior Fixture','active')RETURNING id").fetch_one(&pool).await.unwrap();
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default)VALUES(uuidv7(),$1,'BEHAVIOR','Behavior fixture',true)RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
-    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)VALUES($1,1,'B1','Behavior Term','regular',$2,'active',true,true)RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
+    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)VALUES( 'MON,TUE,WED,THU,FRI',$1,1,'B1','Behavior Term','regular',$2,'active',true,true)RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
     let grade:Uuid=sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active)VALUES('secondary',1,true)ON CONFLICT(level_type,year)DO UPDATE SET is_active=true RETURNING id").fetch_one(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id)VALUES($1,$2)ON CONFLICT DO NOTHING").bind(year).bind(grade).execute(&pool).await.unwrap();
     let edition:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(id,name,revision_year)VALUES(uuidv7(),'Behavior Curriculum',2999)RETURNING id").fetch_one(&pool).await.unwrap();
@@ -1209,8 +1209,8 @@ async fn summaries_retain_other_term_history_and_resets_require_explicit_inclusi
     let f = fixture("behavior_cross_term_history").await;
     let now = today();
     let closed_on = now - Duration::days(1);
-    let old_term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,2,'OLD','Archived Term','custom',bell_schedule_id,'closed',false,false FROM academic_terms WHERE id=$1 RETURNING id").bind(f.term).fetch_one(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,3,'UNUSED','Never Activated','custom',bell_schedule_id,'planning',false,false FROM academic_terms WHERE id=$1").bind(f.term).execute(&f.pool).await.unwrap();
+    let old_term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT 'MON,TUE,WED,THU,FRI', academic_year_id,2,'OLD','Archived Term','custom',bell_schedule_id,'closed',false,false FROM academic_terms WHERE id=$1 RETURNING id").bind(f.term).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT 'MON,TUE,WED,THU,FRI', academic_year_id,3,'UNUSED','Never Activated','custom',bell_schedule_id,'planning',false,false FROM academic_terms WHERE id=$1").bind(f.term).execute(&f.pool).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_years(year,name,status)VALUES(2998,'Unactivated year','planning')",
     )

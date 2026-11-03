@@ -117,8 +117,11 @@ async fn prepare(name: &str) -> Prepared {
         .date_naive();
     // A school may teach any configured weekday. This fixture needs a real lesson
     // on the actual scan day, including weekends; no injected clock or skipped case.
-    sqlx::query("UPDATE academic_years SET school_days='MON,TUE,WED,THU,FRI,SAT,SUN' WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
-        .bind(TERM).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET school_days='MON,TUE,WED,THU,FRI,SAT,SUN' WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE bell_schedule_periods SET applicable_days=NULL WHERE bell_schedule_id=(SELECT bell_schedule_id FROM academic_terms WHERE id=$1)")
         .bind(TERM).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO bell_schedule_periods(id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active) SELECT uuidv7(),base.bell_schedule_id,'Publication race fixture',base.start_time+step*interval '1 hour',base.end_time+step*interval '1 hour',base.order_index+step,NULL,true FROM (SELECT * FROM bell_schedule_periods WHERE bell_schedule_id=(SELECT bell_schedule_id FROM academic_terms WHERE id=$1) ORDER BY order_index DESC LIMIT 1) base CROSS JOIN generate_series(1,8) step")

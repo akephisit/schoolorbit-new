@@ -40,6 +40,7 @@ export const academicOptions: AcademicContextOptionsResponse = {
 		sequence: i + 1,
 		status: 'active',
 		termType: 'regular',
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 		includedInYearResult: true,
 		blocksYearClosure: true
 	}))

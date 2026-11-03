@@ -474,6 +474,7 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 		code: String(sequence),
 		sequence,
 		termType: 'regular' as const,
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 		status: 'active' as const,
 		includedInYearResult: true,
 		blocksYearClosure: true

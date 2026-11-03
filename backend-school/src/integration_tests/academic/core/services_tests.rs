@@ -158,7 +158,7 @@ async fn deactivation_lifecycle_fixture(
     for (year, is_future) in
         std::iter::once((historical_year, false)).chain(future_year.map(|year| (year, true)))
     {
-        sqlx::query("INSERT INTO academic_years (id,year,name,school_days,status) VALUES ($1,$2,'Deactivation test year','MON,TUE,WED,THU,FRI',$3)")
+        sqlx::query("INSERT INTO academic_years (id,year,name,default_school_days,status) VALUES ($1,$2,'Deactivation test year','MON,TUE,WED,THU,FRI',$3)")
             .bind(year).bind(if is_future {2598} else {2597}).bind(if is_future {"planning"} else {historical_status}).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id,grade_level_id) VALUES ($1,$2)").bind(year).bind(grade).execute(&pool).await.unwrap();
         let homeroom = Uuid::new_v4();
@@ -1747,7 +1747,7 @@ fn academic_foundation_period_overlap_is_scoped_to_shared_school_days() {
             start_time: NaiveTime::from_hms_opt(start_hour, 0, 0).unwrap(),
             end_time: NaiveTime::from_hms_opt(end_hour, 0, 0).unwrap(),
             order_index,
-            applicable_days: days.iter().map(|day| (*day).to_string()).collect(),
+            applicable_days: Some(days.iter().map(|day| (*day).to_string()).collect()),
             is_active,
         };
 
@@ -1792,7 +1792,7 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
     let payload = json!({
         "year": 2570,
         "customName": "ปีแห่งการอ่าน",
-        "schoolDays": ["MON", "TUE"],
+        "defaultSchoolDays": ["MON", "TUE"],
         "rowVersion": 3
     });
     let request: UpdateAcademicYearRequest = serde_json::from_value(payload).unwrap();
@@ -1812,7 +1812,8 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "customName": null,
         "includedInYearResult": true,
         "blocksYearClosure": true,
-        "bellScheduleId": Uuid::new_v4()
+        "bellScheduleId": Uuid::new_v4(),
+        "schoolDays": ["MON"]
     });
     assert!(serde_json::from_value::<CreateAcademicTermRequest>(term).is_ok());
     let retired_term = json!({
@@ -1823,7 +1824,8 @@ fn request_dtos_use_camel_case_and_reject_unknown_fields() {
         "endDate": "2027-09-30",
         "includedInYearResult": true,
         "blocksYearClosure": true,
-        "bellScheduleId": Uuid::new_v4()
+        "bellScheduleId": Uuid::new_v4(),
+        "schoolDays": ["MON"]
     });
     assert!(serde_json::from_value::<CreateAcademicTermRequest>(retired_term).is_err());
 
@@ -2066,6 +2068,13 @@ async fn create_term_seeds_phase_controls() {
         &pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: FUTURE_YEAR_ID,
             term_type: AcademicTermType::Remedial,
             custom_name: None,
@@ -2142,6 +2151,13 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         &pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: year.id,
             term_type: AcademicTermType::Summer,
             custom_name: None,
@@ -2159,6 +2175,13 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         actor,
         created.id,
         UpdateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             term_type: created.term_type,
             custom_name: Some("ภาคฤดูร้อนสำหรับเตรียมงาน".into()),
             included_in_year_result: true,
@@ -2177,6 +2200,13 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         actor,
         active.id,
         UpdateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             term_type: active.term_type,
             custom_name: Some("ห้ามแก้ภาคที่ใช้อยู่".into()),
             included_in_year_result: active.included_in_year_result,
@@ -2245,6 +2275,13 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
     .await
     .unwrap();
     let request = CreateAcademicTermRequest {
+        school_days: vec![
+            "MON".into(),
+            "TUE".into(),
+            "WED".into(),
+            "THU".into(),
+            "FRI".into(),
+        ],
         academic_year_id: year.id,
         term_type: AcademicTermType::Summer,
         custom_name: None,
@@ -2260,6 +2297,13 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
         &pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             included_in_year_result: false,
             ..request
         },
@@ -2267,6 +2311,13 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
     .await
     .unwrap();
     let invalid_update = UpdateAcademicTermRequest {
+        school_days: vec![
+            "MON".into(),
+            "TUE".into(),
+            "WED".into(),
+            "THU".into(),
+            "FRI".into(),
+        ],
         term_type: created.term_type,
         custom_name: None,
         included_in_year_result: true,
@@ -2329,6 +2380,13 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
     .await
     .unwrap();
     let request = CreateAcademicTermRequest {
+        school_days: vec![
+            "MON".into(),
+            "TUE".into(),
+            "WED".into(),
+            "THU".into(),
+            "FRI".into(),
+        ],
         academic_year_id: year.id,
         term_type: AcademicTermType::Custom,
         custom_name: None,
@@ -2369,6 +2427,13 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
                     actor,
                     created.id,
                     UpdateAcademicTermRequest {
+                        school_days: vec![
+                            "MON".into(),
+                            "TUE".into(),
+                            "WED".into(),
+                            "THU".into(),
+                            "FRI".into()
+                        ],
                         term_type: created.term_type,
                         custom_name: None,
                         included_in_year_result: false,
@@ -2407,7 +2472,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     let update_year = UpdateAcademicYearRequest {
         year: future.year,
         custom_name: Some("ปีการศึกษา 2026 เตรียมการ".to_string()),
-        school_days: future.school_days,
+        default_school_days: future.default_school_days,
         row_version: future.row_version,
     };
     let updated = years_terms::update_year(&pool, actor, FUTURE_YEAR_ID, update_year)
@@ -2421,7 +2486,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         UpdateAcademicYearRequest {
             year: future.year,
             custom_name: Some("ข้อมูลเก่า".to_string()),
-            school_days: vec!["MON".to_string()],
+            default_school_days: vec!["MON".to_string()],
             row_version: future.row_version,
         },
     )
@@ -2447,6 +2512,13 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         &pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: FUTURE_YEAR_ID,
             term_type: AcademicTermType::Remedial,
             custom_name: None,
@@ -2477,6 +2549,13 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         ]
     );
     let update_term = UpdateAcademicTermRequest {
+        school_days: vec![
+            "MON".into(),
+            "TUE".into(),
+            "WED".into(),
+            "THU".into(),
+            "FRI".into(),
+        ],
         term_type: AcademicTermType::Custom,
         custom_name: Some("ภาคซ่อมเสริมปรับปรุง".to_string()),
         included_in_year_result: created.included_in_year_result,
@@ -2495,6 +2574,13 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
         actor,
         created.id,
         UpdateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             term_type: created.term_type,
             custom_name: Some("ข้อมูลเก่า".to_string()),
             included_in_year_result: created.included_in_year_result,
@@ -2674,7 +2760,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
                 start_time: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
                 end_time: NaiveTime::from_hms_opt(9, 20, 0).unwrap(),
                 order_index: 1,
-                applicable_days: vec!["MON".to_string(), "TUE".to_string()],
+                applicable_days: Some(vec!["MON".to_string(), "TUE".to_string()]),
                 is_active: true,
             },
             BellSchedulePeriodInput {
@@ -2682,7 +2768,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
                 start_time: NaiveTime::from_hms_opt(9, 20, 0).unwrap(),
                 end_time: NaiveTime::from_hms_opt(10, 10, 0).unwrap(),
                 order_index: 2,
-                applicable_days: vec!["MON".to_string(), "TUE".to_string()],
+                applicable_days: Some(vec!["MON".to_string(), "TUE".to_string()]),
                 is_active: true,
             },
         ],
@@ -4811,7 +4897,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
                 start_time: NaiveTime::from_hms_opt(7, 30, 0).unwrap(),
                 end_time: NaiveTime::from_hms_opt(8, 20, 0).unwrap(),
                 order_index: 1,
-                applicable_days: vec!["MON".to_string()],
+                applicable_days: Some(vec!["MON".to_string()]),
                 is_active: true,
             }],
             row_version: extra_schedule.row_version,

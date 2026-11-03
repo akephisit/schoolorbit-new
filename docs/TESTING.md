@@ -1055,6 +1055,25 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-man
 ```
 
 Academic context visibility and school defaults are independent of operational lifecycle status.
+Term weekday and independent bell-copy coverage uses the Core package fixtures:
+
+```bash
+./scripts/test_backend_school.sh --package school-academic-core --test term_school_days_migration -- --test-threads=2
+./scripts/test_backend_school.sh --package school-academic-core --test term_school_schedule_persistence -- --test-threads=2
+./scripts/test_backend_school.sh period_setup -- --test-threads=2
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh activation_context -- --test-threads=2 timetable_block_service_tests publication_source_tests attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwrite_it attendance_guarded_reads_digest_and_archive_work_with_one_connection concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries historical_term_transition_replays_canonical_request_without_rewriting_evidence assessment_migration_150_preserves_populated_data_and_exam_source_identity
+```
+
+These exercise populated historical backfill, malformed-preset refusal, first
+future-term creation in an active year, fresh nullable-period identities, source
+and target revisions, concurrent target copies and transaction rollback. Run the
+affected period-setup, activation, Timetable and Attendance cases for their
+consumer and authenticated HTTP boundaries. Saved Attendance configurations and
+pre-155 receipt replay remain preservation requirements. The final command uses
+the test harness's multiple OR filters and a disposable encryption key for the
+scan fixture; it also verifies new archive snapshots for unsaved Saturday terms
+without rewriting an accepted snapshot.
+
 The focused cases below cover explicit defaults, invalid parent/term selection, preserving existing
 URLs and open drafts, stale option reads after an authoritative settings response, separate
 visibility/default actions, metadata-conflict review without discarding drafts, and date-free year/term contracts. Run static/type checks before browser

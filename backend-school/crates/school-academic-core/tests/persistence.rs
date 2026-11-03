@@ -24,7 +24,7 @@ async fn academic_year_command_persists_through_the_core_crate_boundary() {
         CreateAcademicYearRequest {
             year: 2701,
             custom_name: Some("ปีทดสอบ crate".into()),
-            school_days: vec!["MON".into(), "TUE".into(), "WED".into()],
+            default_school_days: vec!["MON".into(), "TUE".into(), "WED".into()],
         },
     )
     .await

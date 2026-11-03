@@ -343,7 +343,11 @@ pub async fn purge_in_transaction(
         .bind(term)
         .fetch_optional()
         .await?;
-    DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "INSERT INTO attendance_term_archives(academic_term_id,archived_by,record_count,counted_record_count,settings_snapshot) VALUES($1,$2,$3,$4,$5)").bind(term).bind(actor).bind(count).bind(expected).bind(configuration.unwrap_or(Json(AttendanceConfiguration::default()))).execute().await?;
+    let configuration = match configuration {
+        Some(saved) => saved,
+        None => Json(settings::initial_configuration(&mut tx, term).await?),
+    };
+    DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "INSERT INTO attendance_term_archives(academic_term_id,archived_by,record_count,counted_record_count,settings_snapshot) VALUES($1,$2,$3,$4,$5)").bind(term).bind(actor).bind(count).bind(expected).bind(configuration).execute().await?;
     let file_ids:Vec<Uuid>=DbSession::new(&mut *tx).scalar("attendance.services.reports.purge_in_transaction", "SELECT e.evidence_file_id FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id WHERE s.academic_term_id=$1 ORDER BY e.evidence_file_id").bind(term).fetch_all().await?;
     let repository = SqlFileRepository::new(pool.clone());
     for file in file_ids {

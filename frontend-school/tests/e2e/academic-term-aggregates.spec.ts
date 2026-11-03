@@ -141,6 +141,7 @@ async function mock(page: Page, manager = false, conflict = false) {
 							name: 'ภาคเรียนที่ 1',
 							sequence: 1,
 							termType: 'regular',
+							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'closing',
 							includedInYearResult: true,
 							blocksYearClosure: true

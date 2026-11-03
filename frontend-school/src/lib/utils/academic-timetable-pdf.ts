@@ -40,7 +40,8 @@ export function buildAcademicTimetablePdfDownload(
 	termName: string,
 	yearName: string,
 	selectedOwnerIds?: readonly string[],
-	layout: NonNullable<GeneratePdfOptions['layout']> = 'full'
+	layout: NonNullable<GeneratePdfOptions['layout']> = 'full',
+	schoolDays: readonly string[] = []
 ): { pages: TimetablePage[]; fileName: string } {
 	const ownerView = view === 'wholeSchool' ? 'homeroom' : view;
 	const rows = rowsForTimetableView(createTimetableBoardState(workspace), ownerView).filter(
@@ -52,17 +53,7 @@ export function buildAcademicTimetablePdfDownload(
 	const periods = workspace.bellPeriods
 		.filter((period) => period.isActive)
 		.sort((a, b) => a.orderIndex - b.orderIndex);
-	const dayValues = [
-		...new Set([
-			'MON',
-			'TUE',
-			'WED',
-			'THU',
-			'FRI',
-			...periods.flatMap((period) => (period.applicableDays ?? '').split(',').filter(Boolean)),
-			...workspace.blocks.filter((block) => block.isActive).map((block) => block.dayOfWeek)
-		])
-	];
+	const dayValues = [...schoolDays];
 	const context = `${termName || 'ภาคเรียน'} ${yearName || 'ปีการศึกษา'}`;
 	const versionLabel = workspace.version.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว';
 	const subTitle = context;

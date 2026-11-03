@@ -5,7 +5,7 @@ export function yearDraftBase(year: AcademicYear) {
 		id: year.id,
 		year: year.year,
 		name: year.name,
-		schoolDays: year.schoolDays.toSorted()
+		defaultSchoolDays: year.defaultSchoolDays.toSorted()
 	};
 }
 
@@ -18,6 +18,7 @@ export function termDraftBase(term: AcademicTerm) {
 		name: term.name,
 		termType: term.termType,
 		bellScheduleId: term.bellScheduleId,
+		schoolDays: term.schoolDays.toSorted(),
 		includedInYearResult: term.includedInYearResult,
 		blocksYearClosure: term.blocksYearClosure
 	};

@@ -78,7 +78,27 @@ pub(crate) async fn preview_placement(
         .bind(request.target_bell_schedule_period_id)
         .fetch_one()
         .await?;
-    if !version_valid {
+    let day_valid = if version_valid {
+        let schedule: Uuid = DbSession::new(connection)
+            .scalar(
+                "academic_timetable.services.timetable_block_conflicts.preview_placement.schedule",
+                "SELECT bell_schedule_id FROM academic_timetable_versions WHERE id=$1",
+            )
+            .bind(request.timetable_version_id)
+            .fetch_one()
+            .await?;
+        school_academic_core::services::school_days::period_allows_day_on_connection(
+            connection,
+            request.academic_term_id,
+            schedule,
+            request.target_bell_schedule_period_id,
+            &target_day,
+        )
+        .await?
+    } else {
+        false
+    };
+    if !version_valid || !day_valid {
         return Ok(blocked_preview(
             source_block_id,
             request.expected_target_block_id,
@@ -87,8 +107,13 @@ pub(crate) async fn preview_placement(
             candidate,
             TimetableBlockConflict {
                 conflict_type: TimetableBlockConflictType::Version,
-                code: "TIMETABLE_VERSION_NOT_EDITABLE".to_string(),
-                message: "รุ่นตารางสอนไม่พร้อมแก้ไขหรือคาบไม่อยู่ในตารางเวลาที่เลือก".to_string(),
+                code: if version_valid {
+                    "TIMETABLE_DAY_NOT_ALLOWED"
+                } else {
+                    "TIMETABLE_VERSION_NOT_EDITABLE"
+                }
+                .to_string(),
+                message: "รุ่นตารางสอนไม่พร้อมแก้ไข หรือคาบและวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียน".to_string(),
                 existing_block_id: None,
                 target_kind: None,
                 target_id: None,

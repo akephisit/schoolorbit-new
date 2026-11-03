@@ -41,7 +41,7 @@ impl AttendanceReadContext {
             settings: AttendanceSettings {
                 academic_term_id: term,
                 configuration: if row_version == 0 {
-                    AttendanceConfiguration::default()
+                    initial_configuration(connection, term).await?
                 } else {
                     configuration.map(|v| v.0).unwrap_or_default()
                 },
@@ -52,6 +52,19 @@ impl AttendanceReadContext {
             term_writable,
         })
     }
+}
+
+pub(crate) async fn initial_configuration(
+    connection: &mut PgConnection,
+    term: Uuid,
+) -> Result<AttendanceConfiguration, AppError> {
+    let days =
+        school_academic_core::services::school_days::for_term_on_connection(connection, term)
+            .await?;
+    Ok(AttendanceConfiguration {
+        weekdays: school_academic_core::services::school_days::iso_weekdays(&days)?,
+        ..AttendanceConfiguration::default()
+    })
 }
 
 pub async fn save(
@@ -170,9 +183,10 @@ pub async fn save_days(
         return Err(AppError::Conflict("การตั้งค่าเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
     DbSession::new(&mut *tx).query("attendance.services.settings.save_days", "INSERT INTO attendance_days(academic_term_id,date,counted,note) SELECT $1,date,counted,note FROM jsonb_to_recordset($2) AS d(date date,counted boolean,note text) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=excluded.counted,note=excluded.note").bind(term).bind(Json(&p.days)).execute().await?;
+    let initial_configuration = initial_configuration(&mut tx, term).await?;
     DbSession::new(&mut *tx).query("attendance.services.settings.save_days", "INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3) ON CONFLICT(academic_term_id) DO UPDATE SET row_version=attendance_settings.row_version+1,updated_by=excluded.updated_by,updated_at=now()")
         .bind(term)
-        .bind(Json(AttendanceConfiguration::default()))
+        .bind(Json(initial_configuration))
         .bind(actor)
         .execute()
         .await?;

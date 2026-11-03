@@ -303,7 +303,7 @@ async fn manual_year_rollover_stale_capacity_closed_source_and_other_successor_r
     )
     .await
     .unwrap();
-    let another:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT max(year)+1,'synthetic other successor','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
+    let another:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,default_school_days,status) SELECT max(year)+1,'synthetic other successor','MON','planning' FROM academic_years RETURNING id").fetch_one(&pool).await.unwrap();
     let mut other = input;
     other.target_year_id = another;
     other.decisions.clear();

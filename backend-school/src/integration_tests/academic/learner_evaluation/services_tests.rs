@@ -239,7 +239,7 @@ async fn learner_assignment_ids_missing_source_preserves_confirmation_and_never_
     let offering = Uuid::now_v7();
     let group = Uuid::now_v7();
     let mut tx = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Learner no source',1000,'LEARNER-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
+    sqlx::query("INSERT INTO academic_terms(school_days, id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT 'MON,TUE,WED,THU,FRI', $1,academic_year_id,'Learner no source',1000,'LEARNER-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
         .bind(term).bind(old_ctx.academic_term_id).execute(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) SELECT $1,$2,o.academic_year_id,'course','LEARNER-NO-SOURCE','Learner no source','draft',current_date,o.owning_organization_unit_id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$3")
         .bind(offering).bind(term).bind(source_group).execute(&mut *tx).await.unwrap();

@@ -19,6 +19,7 @@
 
 	let {
 		state,
+		schoolDays,
 		colors,
 		view,
 		row,
@@ -40,6 +41,7 @@
 		onRemoveBlock
 	}: {
 		state: TimetableBoardState;
+		schoolDays: readonly string[];
 		colors: TimetableLessonColors;
 		view: TimetableBoardView;
 		row: TimetableBoardRow;
@@ -61,13 +63,16 @@
 		onRemoveBlock?: (block: TimetableBlock) => void;
 	} = $props();
 
-	const days: Day[] = [
+	const allDays: Day[] = [
 		{ id: 'MON', label: 'วันจันทร์', shortLabel: 'จ.' },
 		{ id: 'TUE', label: 'วันอังคาร', shortLabel: 'อ.' },
 		{ id: 'WED', label: 'วันพุธ', shortLabel: 'พ.' },
 		{ id: 'THU', label: 'วันพฤหัสบดี', shortLabel: 'พฤ.' },
-		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' }
+		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' },
+		{ id: 'SAT', label: 'วันเสาร์', shortLabel: 'ส.' },
+		{ id: 'SUN', label: 'วันอาทิตย์', shortLabel: 'อา.' }
 	];
+	const days = $derived(allDays.filter((day) => schoolDays.includes(day.id)));
 	const rowLabel = $derived(view === 'teacher' ? timetableTeacherLabel(row.label) : row.label);
 	const homeroomNamesById = $derived(
 		new Map(state.workspace.homerooms.map((homeroom) => [homeroom.id, homeroom.name]))

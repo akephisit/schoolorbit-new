@@ -124,7 +124,7 @@ pub enum GradeProgressionKind {
 pub struct CreateAcademicYearRequest {
     pub year: i32,
     pub custom_name: Option<String>,
-    pub school_days: Vec<String>,
+    pub default_school_days: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,7 +133,7 @@ pub struct CreateAcademicYearRequest {
 pub struct UpdateAcademicYearRequest {
     pub year: i32,
     pub custom_name: Option<String>,
-    pub school_days: Vec<String>,
+    pub default_school_days: Vec<String>,
     pub row_version: i64,
 }
 
@@ -147,6 +147,7 @@ pub struct CreateAcademicTermRequest {
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
+    pub school_days: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,7 +159,44 @@ pub struct UpdateAcademicTermRequest {
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
+    pub school_days: Vec<String>,
     pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateAcademicTermCopySchoolScheduleRequest {
+    pub academic_year_id: Uuid,
+    pub term_type: AcademicTermType,
+    pub custom_name: Option<String>,
+    pub included_in_year_result: bool,
+    pub blocks_year_closure: bool,
+    pub school_days: Vec<String>,
+    pub source_term_id: Uuid,
+    pub source_term_row_version: i64,
+    pub source_bell_schedule_row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CopyAcademicTermSchoolScheduleRequest {
+    pub source_term_id: Uuid,
+    pub source_term_row_version: i64,
+    pub source_bell_schedule_row_version: i64,
+    pub school_days: Vec<String>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermSchoolScheduleCopyResponse {
+    pub term: AcademicTerm,
+    pub bell_schedule: BellSchedule,
+    pub can_edit_school_days: bool,
+    pub can_assign_bell_schedule: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +207,9 @@ pub struct BellSchedulePeriodInput {
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
     pub order_index: i32,
-    pub applicable_days: Vec<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable")]
+    pub applicable_days: Option<Vec<String>>,
     pub is_active: bool,
 }
 
@@ -207,7 +247,7 @@ pub struct AcademicYear {
     pub id: Uuid,
     pub year: i32,
     pub name: String,
-    pub school_days: Vec<String>,
+    pub default_school_days: Vec<String>,
     pub is_visible: bool,
     pub status: AcademicYearStatus,
     pub row_version: i64,
@@ -229,6 +269,7 @@ pub struct AcademicTerm {
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub bell_schedule_id: Uuid,
+    pub school_days: Vec<String>,
     pub is_visible: bool,
     pub status: AcademicTermStatus,
     pub row_version: i64,
@@ -262,6 +303,7 @@ pub struct AcademicTermOption {
     pub blocks_year_closure: bool,
     pub is_visible: bool,
     pub status: AcademicTermStatus,
+    pub school_days: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1273,6 +1315,7 @@ pub struct AcademicSetupWorkspace {
     pub bell_schedules: Vec<BellSchedule>,
     pub bell_schedule_setup_year_ids: Vec<Uuid>,
     pub bell_schedule_setup_term_ids: Vec<Uuid>,
+    pub school_days_editable_term_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

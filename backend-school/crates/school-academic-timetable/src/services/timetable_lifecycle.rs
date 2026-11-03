@@ -545,7 +545,10 @@ async fn resource_evidence(
         .fetch_all()
         .await?;
     let periods = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT id,bell_schedule_id,is_active,applicable_days FROM bell_schedule_periods WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(&period_ids).fetch_all().await?;
-    let school_days = DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT year.school_days FROM academic_years year JOIN academic_terms term ON term.academic_year_id=year.id WHERE term.id=$1 FOR SHARE OF year").bind(term_id).fetch_one().await?;
+    let school_days =
+        school_academic_core::services::school_days::for_term_on_connection(tx, term_id)
+            .await?
+            .join(",");
     let schedule_ready:bool=DbSession::new(&mut **tx).scalar("academic_timetable.services.timetable_lifecycle.resource_evidence", "SELECT EXISTS(SELECT 1 FROM academic_terms term JOIN bell_schedules schedule ON schedule.id=term.bell_schedule_id AND schedule.academic_year_id=term.academic_year_id WHERE term.id=$1 AND schedule.status='published' FOR SHARE OF schedule)").bind(term_id).fetch_one().await?;
     Ok(PlacementResourceEvidence {
         rooms,
@@ -560,6 +563,11 @@ fn resources_ready(evidence: &PlacementResourceEvidence, blocks: &[TimetableBloc
     if !evidence.schedule_ready {
         return false;
     }
+    let Ok(term_days) =
+        school_academic_core::services::school_days::parse_stored(&evidence.school_days)
+    else {
+        return false;
+    };
     let rooms = evidence.rooms.iter().copied().collect::<BTreeMap<_, _>>();
     let homerooms = evidence
         .homerooms
@@ -575,9 +583,11 @@ fn resources_ready(evidence: &PlacementResourceEvidence, blocks: &[TimetableBloc
                 *id == block.bell_schedule_period_id
                     && *schedule == block.bell_schedule_id
                     && *active
-                    && days
-                        .as_ref()
-                        .is_none_or(|days| days.split(',').any(|day| day == block.day_of_week))
+                    && school_academic_core::services::school_days::effective_period_days(
+                        days.as_deref(),
+                        &term_days,
+                    )
+                    .is_ok_and(|days| days.contains(&block.day_of_week))
             })
             && block
                 .groups

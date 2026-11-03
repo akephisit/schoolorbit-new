@@ -13,8 +13,6 @@ use super::super::models::{
 };
 use super::{lifecycle_guard, parse_row_version};
 
-const SCHOOL_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DerivedTermIdentity {
     pub code: String,
@@ -73,7 +71,7 @@ struct AcademicYearRow {
     year: i32,
     name: String,
     is_visible: bool,
-    school_days: String,
+    default_school_days: String,
     status: AcademicYearStatus,
     row_version: i64,
     migrated: bool,
@@ -87,8 +85,8 @@ impl From<AcademicYearRow> for AcademicYear {
             id: row.id,
             year: row.year,
             name: row.name,
-            school_days: row
-                .school_days
+            default_school_days: row
+                .default_school_days
                 .split(',')
                 .filter(|day| !day.is_empty())
                 .map(str::to_string)
@@ -115,6 +113,7 @@ struct AcademicTermRow {
     included_in_year_result: bool,
     blocks_year_closure: bool,
     bell_schedule_id: Uuid,
+    school_days: String,
     status: AcademicTermStatus,
     row_version: i64,
     migrated: bool,
@@ -134,6 +133,7 @@ impl From<AcademicTermRow> for AcademicTerm {
             included_in_year_result: row.included_in_year_result,
             blocks_year_closure: row.blocks_year_closure,
             bell_schedule_id: row.bell_schedule_id,
+            school_days: row.school_days.split(',').map(str::to_owned).collect(),
             is_visible: row.is_visible,
             status: row.status,
             row_version: row.row_version,
@@ -161,14 +161,14 @@ struct AcademicTermUpdateRow {
 }
 
 const YEAR_COLUMNS: &str = r#"
-    id, year, name, is_visible, school_days, status, row_version,
+    id, year, name, is_visible, default_school_days, status, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
 
 const TERM_COLUMNS: &str = r#"
     id, academic_year_id, sequence_no AS sequence, code, name, term_type,
     is_visible, included_in_year_result, blocks_year_closure,
-    bell_schedule_id, status, row_version,
+    bell_schedule_id, school_days, status, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
 
@@ -262,7 +262,7 @@ pub async fn create_year(
     request: CreateAcademicYearRequest,
 ) -> Result<AcademicYear, AppError> {
     let name = derive_academic_year_name(request.year, request.custom_name.as_deref())?;
-    let school_days = validate_year_fields(request.year, &request.school_days)?;
+    let default_school_days = validate_year_fields(request.year, &request.default_school_days)?;
     let id = Uuid::now_v7();
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -271,7 +271,7 @@ pub async fn create_year(
     .await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let sql = format!(
-        "INSERT INTO academic_years (id, year, name, school_days, status) \
+        "INSERT INTO academic_years (id, year, name, default_school_days, status) \
          VALUES ($1, $2, $3, $4, 'planning') RETURNING {YEAR_COLUMNS}"
     );
     let row = DbSession::new(&mut *transaction)
@@ -282,7 +282,7 @@ pub async fn create_year(
         .bind(id)
         .bind(request.year)
         .bind(name)
-        .bind(school_days.join(","))
+        .bind(default_school_days.join(","))
         .fetch_one()
         .await
         .map_err(map_year_write_error)?;
@@ -308,7 +308,7 @@ pub async fn update_year(
     request: UpdateAcademicYearRequest,
 ) -> Result<AcademicYear, AppError> {
     let name = derive_academic_year_name(request.year, request.custom_name.as_deref())?;
-    let school_days = validate_year_fields(request.year, &request.school_days)?;
+    let default_school_days = validate_year_fields(request.year, &request.default_school_days)?;
     parse_row_version(request.row_version)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -322,8 +322,8 @@ pub async fn update_year(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "UPDATE academic_years SET year = $1, name = $2, school_days = $3, row_version = row_version + 1, updated_at = now() \
-         WHERE id = $4 AND row_version = $5 AND status = 'planning' RETURNING {returning}, jsonb_build_object('year', OLD.year, 'name', OLD.name, 'schoolDays', OLD.school_days, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('year', NEW.year, 'name', NEW.name, 'schoolDays', NEW.school_days, 'rowVersion', NEW.row_version) AS after"
+        "UPDATE academic_years SET year = $1, name = $2, default_school_days = $3, row_version = row_version + 1, updated_at = now() \
+         WHERE id = $4 AND row_version = $5 AND status = 'planning' RETURNING {returning}, jsonb_build_object('year', OLD.year, 'name', OLD.name, 'defaultSchoolDays', OLD.default_school_days, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('year', NEW.year, 'name', NEW.name, 'defaultSchoolDays', NEW.default_school_days, 'rowVersion', NEW.row_version) AS after"
     );
     let row = DbSession::new(&mut *transaction)
         .query_as::<AcademicYearUpdateRow>(
@@ -332,7 +332,7 @@ pub async fn update_year(
         )
         .bind(request.year)
         .bind(name)
-        .bind(school_days.join(","))
+        .bind(default_school_days.join(","))
         .bind(id)
         .bind(request.row_version)
         .fetch_optional()
@@ -441,19 +441,30 @@ pub async fn create_term(
     actor_user_id: Uuid,
     request: CreateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
-    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_core.services.years_terms.create_term",
     )
     .await?;
+    let result = create_term_in_transaction(&mut transaction, actor_user_id, request).await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+pub(super) async fn create_term_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    request: CreateAcademicTermRequest,
+) -> Result<AcademicTerm, AppError> {
+    let school_days = super::school_days::normalize(&request.school_days)?;
+    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     validate_term_context(
-        &mut transaction,
+        transaction,
         request.academic_year_id,
         request.bell_schedule_id,
     )
     .await?;
-    let sequence: i32 = DbSession::new(&mut *transaction).scalar("academic_core.services.years_terms.create_term",
+    let sequence: i32 = DbSession::new(&mut **transaction).scalar("academic_core.services.years_terms.create_term",
         "SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM academic_terms WHERE academic_year_id = $1",
     )
     .bind(request.academic_year_id)
@@ -463,7 +474,7 @@ pub async fn create_term(
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
     validate_term_fields(&identity.name)?;
     let code = unique_term_code(
-        &mut transaction,
+        transaction,
         request.academic_year_id,
         &identity.code,
         sequence,
@@ -472,11 +483,11 @@ pub async fn create_term(
     let id = Uuid::now_v7();
     let sql = format!(
         "INSERT INTO academic_terms (id, academic_year_id, sequence_no, code, name, term_type, \
-         included_in_year_result, blocks_year_closure, bell_schedule_id, status) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'planning') \
+         included_in_year_result, blocks_year_closure, bell_schedule_id, school_days, status) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'planning') \
          RETURNING {TERM_COLUMNS}"
     );
-    let row = DbSession::new(&mut *transaction)
+    let row = DbSession::new(&mut **transaction)
         .query_as::<AcademicTermRow>(
             "academic_core.services.years_terms.create_term",
             sqlx::AssertSqlSafe(sql),
@@ -490,10 +501,11 @@ pub async fn create_term(
         .bind(request.included_in_year_result)
         .bind(request.blocks_year_closure)
         .bind(request.bell_schedule_id)
+        .bind(school_days.join(","))
         .fetch_one()
         .await
         .map_err(map_term_write_error)?;
-    DbSession::new(&mut *transaction)
+    DbSession::new(&mut **transaction)
         .query(
             "academic_core.services.years_terms.create_term",
             r#"INSERT INTO academic_assessment_phase_controls (
@@ -513,7 +525,7 @@ pub async fn create_term(
         .bind(actor_user_id)
         .execute()
         .await?;
-    DbSession::new(&mut *transaction)
+    DbSession::new(&mut **transaction)
         .query(
             "academic_core.services.years_terms.create_term",
             r#"INSERT INTO academic_gradebook_phase_controls (
@@ -528,7 +540,7 @@ pub async fn create_term(
         .bind(actor_user_id)
         .execute()
         .await?;
-    DbSession::new(&mut *transaction)
+    DbSession::new(&mut **transaction)
         .query(
             "academic_core.services.years_terms.create_term",
             r#"INSERT INTO academic_learner_evaluation_controls (
@@ -544,7 +556,7 @@ pub async fn create_term(
         .execute()
         .await?;
     append_audit(
-        &mut transaction,
+        transaction,
         "academic_term.created",
         "academic_term",
         id,
@@ -554,7 +566,6 @@ pub async fn create_term(
         json!({"sequence": sequence, "code": code}),
     )
     .await?;
-    transaction.commit().await?;
     Ok(row.into())
 }
 
@@ -565,15 +576,27 @@ pub async fn update_term(
     request: UpdateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
     parse_row_version(request.row_version)?;
-    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_core.services.years_terms.update_term",
     )
     .await?;
+    let result = update_term_in_transaction(&mut transaction, actor_user_id, id, request).await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+pub(super) async fn update_term_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    id: Uuid,
+    request: UpdateAcademicTermRequest,
+) -> Result<AcademicTerm, AppError> {
+    let school_days = super::school_days::normalize(&request.school_days)?;
+    validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
     // Resolve identity without taking the child lock. Configuration and lifecycle
     // writers lock the year before the term to avoid inverse-order deadlocks.
-    let (academic_year_id, sequence): (Uuid, i32) = DbSession::new(&mut *transaction)
+    let (academic_year_id, sequence): (Uuid, i32) = DbSession::new(&mut **transaction)
         .query_as(
             "academic_core.services.years_terms.update_term",
             "SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1",
@@ -583,7 +606,7 @@ pub async fn update_term(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
     let year_status =
-        lifecycle_guard::require_year_write_exclusive(&mut transaction, academic_year_id).await?;
+        lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
     if !matches!(
         year_status,
         AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active
@@ -592,11 +615,11 @@ pub async fn update_term(
             "เปลี่ยนตารางคาบได้เฉพาะปีที่กำลังเตรียมหรือกำลังใช้งาน".into(),
         ));
     }
-    validate_term_schedule(&mut transaction, academic_year_id, request.bell_schedule_id).await?;
+    validate_term_schedule(transaction, academic_year_id, request.bell_schedule_id).await?;
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
     validate_term_fields(&identity.name)?;
-    let current = get_term_on_connection(&mut transaction, id).await?;
+    let current = get_term_on_connection(transaction, id).await?;
     let metadata_unchanged = current.name == identity.name
         && current.term_type == request.term_type
         && current.included_in_year_result == request.included_in_year_result
@@ -605,7 +628,7 @@ pub async fn update_term(
         && !metadata_unchanged
     {
         return Err(AppError::Conflict(
-            "ภาคเรียนหรือปีที่พร้อมเปิดให้เปลี่ยนได้เฉพาะตารางคาบ โดยคงข้อมูลอื่นเดิม".into(),
+            "ภาคเรียนหรือปีที่พร้อมเปิดให้เปลี่ยนได้เฉพาะวันเรียนและตารางคาบ โดยคงข้อมูลอื่นเดิม".into(),
         ));
     }
     if !matches!(
@@ -614,7 +637,7 @@ pub async fn update_term(
     ) {
         return Err(AppError::Conflict("แก้ไขได้เฉพาะภาคเรียนที่ยังไม่เปิด".into()));
     }
-    let used: bool = DbSession::new(&mut *transaction)
+    let used: bool = DbSession::new(&mut **transaction)
         .scalar("academic_core.services.years_terms.update_term",
             "SELECT EXISTS(SELECT 1 FROM academic_term_transition_receipts WHERE academic_term_id=$1 AND action='activate')")
         .bind(id).fetch_one().await?;
@@ -623,8 +646,17 @@ pub async fn update_term(
             "ภาคเรียนนี้เคยเปิดใช้งานแล้ว เปลี่ยนการตั้งค่าเดิมไม่ได้".into(),
         ));
     }
+    let removed_referenced_day: bool = DbSession::new(&mut **transaction)
+        .scalar("academic_core.services.years_terms.update_term.days",
+            "SELECT EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE academic_term_id=$1 AND NOT(day_of_week=ANY($2)))")
+        .bind(id).bind(&school_days).fetch_one().await?;
+    if removed_referenced_day {
+        return Err(AppError::Conflict(
+            "วันเรียนที่มีคาบในตารางสอนอ้างอิงอยู่ไม่สามารถนำออกได้".into(),
+        ));
+    }
     if current.bell_schedule_id != request.bell_schedule_id {
-        if !super::bell_schedules::term_schedule_is_assignable(&mut transaction, id).await? {
+        if !super::bell_schedules::term_schedule_is_assignable(transaction, id).await? {
             return Err(AppError::Conflict(
                 "ภาคเรียนนี้มีรุ่นตารางสอนที่อ้างอิงตารางคาบเดิม กรุณาจัดการรุ่นตารางสอนก่อนเปลี่ยน".into(),
             ));
@@ -636,11 +668,11 @@ pub async fn update_term(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "UPDATE academic_terms SET name = $1, term_type = $2, included_in_year_result = $3, blocks_year_closure = $4, bell_schedule_id = $5, \
+        "UPDATE academic_terms SET name = $1, term_type = $2, included_in_year_result = $3, blocks_year_closure = $4, bell_schedule_id = $5, school_days = $8, \
          row_version = row_version + 1, updated_at = now() \
-         WHERE id = $6 AND row_version = $7 AND status IN ('planning','ready') RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'rowVersion', NEW.row_version) AS after"
+         WHERE id = $6 AND row_version = $7 AND status IN ('planning','ready') RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'schoolDays', OLD.school_days, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'schoolDays', NEW.school_days, 'rowVersion', NEW.row_version) AS after"
     );
-    let row = DbSession::new(&mut *transaction)
+    let row = DbSession::new(&mut **transaction)
         .query_as::<AcademicTermUpdateRow>(
             "academic_core.services.years_terms.update_term",
             sqlx::AssertSqlSafe(sql),
@@ -652,19 +684,18 @@ pub async fn update_term(
         .bind(request.bell_schedule_id)
         .bind(id)
         .bind(request.row_version)
+        .bind(school_days.join(","))
         .fetch_optional()
         .await
         .map_err(map_term_write_error)?;
     let row = match row {
         Some(row) => row,
         None => {
-            return Err(
-                classify_term_update_failure(&mut transaction, id, request.row_version).await?,
-            );
+            return Err(classify_term_update_failure(transaction, id, request.row_version).await?);
         }
     };
     append_audit(
-        &mut transaction,
+        transaction,
         "academic_term.updated",
         "academic_term",
         id,
@@ -674,7 +705,6 @@ pub async fn update_term(
         json!({"rowVersion": row.row.row_version, "before": row.before, "after": row.after}),
     )
     .await?;
-    transaction.commit().await?;
     Ok(row.row.into())
 }
 
@@ -763,32 +793,7 @@ fn validate_year_fields(year: i32, school_days: &[String]) -> Result<Vec<String>
     if year <= 0 {
         return Err(AppError::ValidationError("ข้อมูลปีการศึกษาไม่ถูกต้อง".to_string()));
     }
-    if school_days.is_empty() {
-        return Err(AppError::ValidationError(
-            "ต้องกำหนดวันเรียนอย่างน้อยหนึ่งวัน".to_string(),
-        ));
-    }
-    let mut normalized = Vec::new();
-    for supported in SCHOOL_DAYS {
-        let count = school_days
-            .iter()
-            .filter(|day| day.trim().eq_ignore_ascii_case(supported))
-            .count();
-        if count > 1 {
-            return Err(AppError::ValidationError(
-                "วันเรียนไม่ถูกต้องหรือซ้ำกัน".to_string(),
-            ));
-        }
-        if count == 1 {
-            normalized.push((*supported).to_string());
-        }
-    }
-    if normalized.len() != school_days.len() {
-        return Err(AppError::ValidationError(
-            "วันเรียนไม่ถูกต้องหรือซ้ำกัน".to_string(),
-        ));
-    }
-    Ok(normalized)
+    super::school_days::normalize(school_days)
 }
 
 fn validate_term_fields(name: &str) -> Result<(), AppError> {

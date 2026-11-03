@@ -171,6 +171,7 @@ test('personal timetable starts once in the route and clears the old term before
 				code: String(index + 1),
 				sequence: index + 1,
 				termType: 'regular',
+				schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 				status: 'active',
 				includedInYearResult: true,
 				blocksYearClosure: true

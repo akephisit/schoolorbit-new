@@ -56,6 +56,151 @@ impl StaffDirectoryPort for WorkspaceStaffDirectory {
 }
 
 #[tokio::test]
+async fn timetable_term_days_control_wildcard_period_preview_and_writes() {
+    use school_academic_timetable::models::timetable_block::{
+        TimetableBlockKind, TimetableBlockPlacementCandidate,
+        TimetableBlockPlacementPreviewRequest, TimetableBlockPlacementSource,
+        TimetableBlockPlacementState,
+    };
+
+    let pool = migrated_pool("timetable_term_days_wildcard").await;
+    let actor = Uuid::parse_str(ACTOR_ID).unwrap();
+    let (version, term, _, bell) = draft_version(&pool).await;
+    let period: Uuid = sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 1")
+        .bind(bell).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE bell_schedule_periods SET applicable_days=NULL WHERE id=$1")
+        .bind(period)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET school_days='MON,TUE,WED,THU,FRI' WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let structural = |day: &str| CreateStructuralTimetableBlocksRequest {
+        timetable_version_id: version,
+        academic_term_id: term,
+        structural_kind: TimetableStructuralKind::Other,
+        title: "วันเรียนของภาคเรียน".into(),
+        note: None,
+        slots: vec![TimetableStructuralSlotInput {
+            day_of_week: day.into(),
+            bell_schedule_period_id: period,
+        }],
+        homeroom_ids: vec![],
+        teacher_ids: vec![],
+        all_homerooms: true,
+        all_teachers: false,
+        room_id: None,
+    };
+    let source = timetable_block_service::create_structural_blocks(
+        &pool,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
+        structural("MON"),
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let preview_request = TimetableBlockPlacementPreviewRequest {
+        timetable_version_id: version,
+        academic_term_id: term,
+        source: TimetableBlockPlacementSource::ExistingBlock {
+            block_id: source.id,
+            row_version: source.row_version,
+        },
+        candidate: TimetableBlockPlacementCandidate {
+            block_kind: TimetableBlockKind::Structural,
+            learning_group_id: None,
+            learning_offering_id: None,
+            room_id: None,
+            homeroom_ids: vec![],
+            teacher_ids: vec![],
+            instructor_ids: vec![],
+        },
+        target_day_of_week: "SAT".into(),
+        target_bell_schedule_period_id: period,
+        expected_target_block_id: None,
+        expected_target_row_version: None,
+    };
+    // A wildcard uses only this term's weekdays, regardless of the reusable template.
+    let preview = timetable_block_service::preview_placement(&pool, preview_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_DAY_NOT_ALLOWED"));
+    assert!(matches!(
+        timetable_block_service::create_structural_blocks(
+            &pool,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor
+            ),
+            structural("SAT"),
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    sqlx::query("UPDATE academic_terms SET school_days='MON,TUE,WED,THU,FRI,SAT' WHERE id=$1")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let preview = timetable_block_service::preview_placement(&pool, preview_request.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Move);
+    // An explicit period override remains narrower than the term's weekdays.
+    sqlx::query("UPDATE bell_schedule_periods SET applicable_days='MON' WHERE id=$1")
+        .bind(period)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let preview = timetable_block_service::preview_placement(&pool, preview_request)
+        .await
+        .unwrap();
+    assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
+    assert!(matches!(
+        timetable_block_service::create_structural_blocks(
+            &pool,
+            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+                &pool, actor
+            ),
+            structural("SAT"),
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    sqlx::query("UPDATE bell_schedule_periods SET applicable_days=NULL WHERE id=$1")
+        .bind(period)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let saturday = timetable_block_service::create_structural_blocks(
+        &pool,
+        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+            &pool, actor,
+        ),
+        structural("SAT"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saturday.len(), 1);
+    assert_eq!(saturday[0].day_of_week, "SAT");
+    assert_eq!(
+        timetable_block_service::get_block(&pool, source.id)
+            .await
+            .unwrap()
+            .day_of_week,
+        "MON"
+    );
+}
+
+#[tokio::test]
 async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
     let pool = migrated_pool("timetable_lifecycle_blocks").await;
     let actor = Uuid::parse_str(ACTOR_ID).unwrap();

@@ -101,6 +101,7 @@ async fn scoped_options(
           COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id',term.id,'academicYearId',term.academic_year_id,'sequence',term.sequence_no,
             'code',term.code,'name',term.name,'termType',term.term_type,'isVisible',term.is_visible,
+            'schoolDays',string_to_array(term.school_days,','),
             'includedInYearResult',term.included_in_year_result,'blocksYearClosure',term.blocks_year_closure,'status',term.status
           ) ORDER BY year.year DESC,term.sequence_no,term.id) FROM allowed_terms term
             JOIN allowed_years year ON year.id=term.academic_year_id),'[]'::jsonb),

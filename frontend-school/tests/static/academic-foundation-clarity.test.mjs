@@ -16,7 +16,8 @@ test('year and term setup shares canonical management while time controls keep t
 	assert.match(time, /BellSchedulePeriodsStep/);
 
 	const yearStep = read('src/lib/components/academic-core/setup/AcademicYearSetupStep.svelte');
-	assert.match(yearStep, /ui\/checkbox/);
+	assert.doesNotMatch(yearStep, /วันเรียนปกติ|SchoolDaysField|ui\/checkbox/);
+	assert.match(yearStep, /defaultSchoolDays/);
 	assert.match(yearStep, /ui\/collapsible/);
 	assert.match(yearStep, /standardAcademicYearName/);
 	assert.doesNotMatch(yearStep, /startDate|endDate|DatePicker/);

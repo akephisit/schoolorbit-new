@@ -788,7 +788,7 @@ async fn results_assignment_ids_missing_source_retains_confirmation_and_invalida
     let group = Uuid::now_v7();
     let mut tx = pool.begin().await.unwrap();
     // Planning is writable and preserves the existing single active term.
-    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,academic_year_id,'Results no source',1000,'RESULT-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
+    sqlx::query("INSERT INTO academic_terms(school_days, id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT 'MON,TUE,WED,THU,FRI', $1,academic_year_id,'Results no source',1000,'RESULT-NO-SOURCE','custom',false,false,'planning',bell_schedule_id FROM academic_terms WHERE id=$2")
         .bind(term).bind(old_context.academic_term_id).execute(&mut *tx).await.unwrap();
     let source: Uuid = sqlx::query_scalar("SELECT learning_offering_id FROM activity_offering_details WHERE academic_term_id=$1 ORDER BY learning_offering_id LIMIT 1")
         .bind(old_context.academic_term_id).fetch_one(&mut *tx).await.unwrap();

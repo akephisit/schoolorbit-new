@@ -106,7 +106,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 				);
 			});
 			await page.goto(scheduleRoute(resource));
-			await page.getByRole('button', { name: 'ภาคเรียน', exact: true }).click();
+			await page.getByLabel('ภาคเรียน', { exact: true }).click();
 			await page.getByRole('option', { name: 'ภาคสอง', exact: true }).click();
 			const next = ready[resource].replace('ภาคหนึ่ง', 'ภาคสอง');
 			await expect(page.getByText(next, { exact: true }).first()).toBeVisible();

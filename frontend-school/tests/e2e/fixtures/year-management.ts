@@ -172,6 +172,7 @@ export async function mockYearManagement(
 					code: String(term.sequence),
 					name: term.name,
 					termType: 'regular',
+					schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 					status: term.status,
 					isVisible: true,
 					includedInYearResult: true,
@@ -183,6 +184,7 @@ export async function mockYearManagement(
 		return {
 			contextSettings: settings,
 			bellScheduleSetupYearIds: [],
+			schoolDaysEditableTermIds: [id(4)],
 			bellScheduleSetupTermIds: [],
 			bellSchedules: [],
 			years: options.setupRecords
@@ -193,7 +195,7 @@ export async function mockYearManagement(
 						status: year.status,
 						rowVersion: year.rowVersion,
 						isVisible: yearVisibility.get(year.academicYearId) ?? false,
-						schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+						defaultSchoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 						migrated: false,
 						createdAt: time,
 						updatedAt: time
@@ -208,6 +210,7 @@ export async function mockYearManagement(
 						code: String(term.sequence),
 						name: term.name,
 						termType: 'regular',
+						schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 						status: term.status,
 						rowVersion: term.rowVersion,
 						isVisible: termVisibility.get(term.academicTermId) ?? false,

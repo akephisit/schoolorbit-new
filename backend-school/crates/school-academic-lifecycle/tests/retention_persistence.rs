@@ -113,7 +113,7 @@ async fn add_term(
     sequence: i32,
     closed: DateTime<Utc>,
 ) -> Uuid {
-    let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,$2,$3,'Retention term','regular',$4,'closed',true,true) RETURNING id")
+    let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES( 'MON,TUE,WED,THU,FRI',$1,$2,$3,'Retention term','regular',$4,'closed',true,true) RETURNING id")
         .bind(year).bind(sequence).bind(format!("T{sequence}")).bind(bell).fetch_one(&f.pool).await.unwrap();
     close_receipt(f, year, term, closed).await;
     term

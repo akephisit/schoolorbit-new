@@ -43,7 +43,7 @@ async fn fixture(name: &str) -> Fixture {
     let placement_start = date - chrono::Duration::days(30);
     let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,status,is_visible) VALUES(2988,'Care fixture','active',true) RETURNING id").fetch_one(&pool).await.unwrap();
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE','Care fixture',true) RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
-    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES($1,1,'CARE','Care fixture','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
+    let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure,is_visible) VALUES( 'MON,TUE,WED,THU,FRI',$1,1,'CARE','Care fixture','regular',$2,'active',true,true,true) RETURNING id").bind(year).bind(bell).fetch_one(&pool).await.unwrap();
     let grade:Uuid=sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active) VALUES('secondary',1,true) ON CONFLICT(level_type,year) DO UPDATE SET is_active=true RETURNING id").fetch_one(&pool).await.unwrap();
     sqlx::query(
         "INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id) VALUES($1,$2)",

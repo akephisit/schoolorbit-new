@@ -95,7 +95,7 @@ async fn assessment_coordinator_uses_latest_published_allocation_after_teaching_
     let group = Uuid::now_v7();
     let plan = Uuid::now_v7();
     let mut transaction = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,offering.academic_year_id,'Allocation history',1000,'ALLOC-HISTORY','custom',false,false,'planning',term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms term ON term.id=offering.academic_term_id WHERE offering.id=$2")
+    sqlx::query("INSERT INTO academic_terms(school_days, id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT 'MON,TUE,WED,THU,FRI', $1,offering.academic_year_id,'Allocation history',1000,'ALLOC-HISTORY','custom',false,false,'planning',term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms term ON term.id=offering.academic_term_id WHERE offering.id=$2")
         .bind(term).bind(source).execute(&mut *transaction).await.unwrap();
     sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id) SELECT $1,$2,academic_year_id,'course','ALLOC-HISTORY','Allocation history','draft',current_date-100,owning_organization_unit_id FROM learning_offerings WHERE id=$3")
         .bind(offering).bind(term).bind(source).execute(&mut *transaction).await.unwrap();

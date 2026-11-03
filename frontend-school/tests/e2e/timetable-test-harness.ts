@@ -590,6 +590,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
+							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true
