@@ -97,6 +97,8 @@
 	let capacityDraft = $state(1);
 	let capacityBusy = $state(false);
 	let capacityError = $state('');
+	let capacityDialogGeneration = 0;
+	let capacityOperationGeneration = 0;
 	const latestCapacityRoom = $derived(homerooms.find((room) => room.id === capacityRoom?.id));
 	const capacityChanged = $derived(
 		!!capacityRoom &&
@@ -106,6 +108,8 @@
 	const canCreate = $derived(canManage && yearStatus === 'planning');
 
 	function editCapacity(room: Homeroom) {
+		if (capacityBusy) return;
+		capacityDialogGeneration += 1;
 		capacityRoom = { ...room };
 		capacityDraft = room.capacity;
 		capacityError = '';
@@ -124,17 +128,28 @@
 			return;
 		capacityError = homeroomCapacityError(capacityDraft, capacityRoom.studentCount);
 		if (capacityError) return;
+		const identity = appIdentityKey();
+		const dialogGeneration = capacityDialogGeneration;
+		const operationGeneration = ++capacityOperationGeneration;
+		const room = capacityRoom;
+		const ownsOperation = () =>
+			identity === appIdentityKey() &&
+			dialogGeneration === capacityDialogGeneration &&
+			operationGeneration === capacityOperationGeneration;
+		const ownsDialog = () => ownsOperation() && capacityRoom?.id === room.id;
 		capacityBusy = true;
 		try {
-			await onUpdateCapacity(capacityRoom, {
+			await onUpdateCapacity(room, {
 				capacity: capacityDraft,
-				rowVersion: capacityRoom.rowVersion
+				rowVersion: room.rowVersion
 			});
+			if (!ownsDialog()) return;
 			capacityRoom = null;
 		} catch (cause) {
+			if (!ownsDialog()) return;
 			capacityError = cause instanceof Error ? cause.message : 'บันทึกความจุห้องไม่สำเร็จ';
 		} finally {
-			capacityBusy = false;
+			if (ownsOperation()) capacityBusy = false;
 		}
 	}
 
@@ -150,7 +165,11 @@
 		const unsubscribe = authStore.subscribe(() => {
 			const next = appIdentityKey();
 			if (identity !== next) {
+				capacityDialogGeneration += 1;
+				capacityOperationGeneration += 1;
 				capacityRoom = null;
+				capacityBusy = false;
+				capacityError = '';
 				roomDialogOpen = false;
 				advisorDialogOpen = false;
 				editingRoom = null;
@@ -164,6 +183,8 @@
 			() => !!capacityRoom || roomDialogOpen || advisorDialogOpen
 		);
 		return () => {
+			capacityDialogGeneration += 1;
+			capacityOperationGeneration += 1;
 			unsubscribe();
 			unregister();
 		};

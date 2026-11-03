@@ -103,6 +103,8 @@
 	async function selectSchedule(id: string) {
 		if (busy) return;
 		const { revision, signal } = latest.begin();
+		comparing = false;
+		loading = Boolean(id);
 		const identity = appIdentityKey();
 		selectedScheduleId = id;
 		periods = [];
@@ -110,7 +112,6 @@
 		baseVersion = null;
 		errorMessage = '';
 		if (!id) return;
-		loading = true;
 		try {
 			const result = await onLoad(id, { signal });
 			if (latest.isCurrent(revision) && identity === appIdentityKey()) {

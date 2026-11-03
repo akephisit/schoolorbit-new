@@ -263,5 +263,5 @@ pub async fn advisor_for_student_on_connection(
     student: Uuid,
     date: NaiveDate,
 ) -> Result<bool, AppError> {
-    Ok(DbSession::new(connection).scalar("academic_core.services.attendance_roster.advisor_for_student_on_connection", "SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN academic_years year ON year.id=y.academic_year_id AND year.status='active' JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND y.status='active' AND p.status='current' AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$3))").bind(teacher).bind(student).bind(date).fetch_one().await?)
+    Ok(DbSession::new(connection).scalar("academic_core.services.attendance_roster.advisor_for_student_on_connection", "SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN academic_years year ON year.id=y.academic_year_id AND year.status='active' JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND y.status='active' AND p.status IN ('current','ended') AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$3))").bind(teacher).bind(student).bind(date).fetch_one().await?)
 }

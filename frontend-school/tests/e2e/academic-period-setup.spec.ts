@@ -15,7 +15,11 @@ async function fixture(
 	options: {
 		closed?: boolean;
 		capacityConflict?: boolean;
+		capacityGates?: Promise<void>[];
+		oldCapacityFailure?: boolean;
 		periodConflict?: boolean;
+		periodConflictPerSchedule?: boolean;
+		comparisonGate?: Promise<void>;
 		successfulConcurrentWriter?: boolean;
 		initialSnapshotAhead?: boolean;
 		metadataGate?: Promise<void>;
@@ -111,6 +115,8 @@ async function fixture(
 	];
 	let identitySwitched = false;
 	let periodStart = '08:30:00';
+	const conflictedSchedules = new Set<string>();
+	const periodReadCounts = new Map<string, number>();
 	const observed = {
 		switchIdentity: () => {
 			identitySwitched = true;
@@ -119,6 +125,7 @@ async function fixture(
 		authReads: 0,
 		scheduleWrites: 0,
 		scheduleBases: [] as number[],
+		completedComparisons: [] as string[],
 		capacities: [] as S['UpdateHomeroomCapacityRequest'][],
 		clones: [] as S['CloneBellScheduleRequest'][],
 		assignments: [] as S['UpdateAcademicTermRequest'][],
@@ -188,6 +195,14 @@ async function fixture(
 			if (path === `/api/academic/homerooms/${roomId}/capacity`) {
 				const body = route.request().postDataJSON();
 				observed.capacities.push(body);
+				const requestIndex = observed.capacities.length - 1;
+				const acceptedRoom = { ...room, capacity: body.capacity, rowVersion: room.rowVersion + 1 };
+				if (options.capacityGates?.[requestIndex]) {
+					await options.capacityGates[requestIndex];
+					if (requestIndex === 0 && options.oldCapacityFailure)
+						return fulfill(route, 'ข้อผิดพลาดจากตัวตนเก่า', 503);
+					return fulfill(route, acceptedRoom);
+				}
 				if (options.capacityConflict && observed.capacities.length === 1) {
 					room = { ...room, capacity: 42, rowVersion: 8 };
 					return fulfill(route, 'ข้อมูลห้องเปลี่ยนแล้ว', 409);
@@ -200,7 +215,7 @@ async function fixture(
 				observed.clones.push(body);
 				const clone: S['BellSchedule'] = {
 					...schedules[0],
-					id: id(510),
+					id: id(510 + observed.clones.length - 1),
 					name: body.name,
 					isDefault: false,
 					status: 'draft',
@@ -239,8 +254,13 @@ async function fixture(
 					if (body.rowVersion !== schedule.rowVersion)
 						return fulfill(route, 'คาบเรียนเปลี่ยนระหว่างแก้ไข', 409);
 					schedule.rowVersion++;
-					if (options.periodConflict && observed.periodWrites.length === 1)
+					if (
+						(options.periodConflict && observed.periodWrites.length === 1) ||
+						(options.periodConflictPerSchedule && !conflictedSchedules.has(selected))
+					) {
+						conflictedSchedules.add(selected);
 						return fulfill(route, 'คาบเรียนเปลี่ยนระหว่างแก้ไข', 409);
+					}
 					const accepted = {
 						bellScheduleId: selected,
 						rowVersion: schedule.rowVersion,
@@ -257,17 +277,28 @@ async function fixture(
 					}
 					return fulfill(route, accepted);
 				}
-				return fulfill(route, {
+				const readCount = (periodReadCounts.get(selected) ?? 0) + 1;
+				periodReadCounts.set(selected, readCount);
+				if (selected === id(510) && readCount === 2 && options.comparisonGate)
+					await options.comparisonGate;
+				const response = await fulfill(route, {
 					bellScheduleId: selected,
 					rowVersion: schedule.rowVersion,
 					periods: periods.map((period) => ({
 						...period,
+						name: options.periodConflictPerSchedule
+							? selected === id(510)
+								? 'คาบ A ล่าสุด'
+								: 'คาบ B ล่าสุด'
+							: period.name,
 						startTime: selected === scheduleId ? period.startTime : periodStart,
 						endTime: periodStart === '10:00:00' ? '10:50:00' : period.endTime,
 						bellScheduleId: selected,
 						id: selected === scheduleId ? period.id : id(511)
 					}))
 				});
+				if (readCount === 2) observed.completedComparisons.push(selected);
+				return response;
 			}
 			if (path === `/api/academic/terms/${nextTermId}` && method === 'PATCH') {
 				const body = route.request().postDataJSON();
@@ -679,4 +710,124 @@ test('newer period GET does not rebase older name metadata and period writes use
 	await expect(page.getByLabel('แก้ไขชื่อตารางเวลา', { exact: true })).toHaveValue(
 		'ชื่อฉบับร่างของเรา'
 	);
+});
+
+for (const oldOutcome of ['success', 'failure'] as const) {
+	test(`old capacity ${oldOutcome} cannot close, error, or clear a new identity's pending dialog for the same room`, async ({
+		page
+	}) => {
+		let releaseOld = () => {},
+			releaseNew = () => {};
+		const oldGate = new Promise<void>((resolve) => {
+			releaseOld = resolve;
+		});
+		const newGate = new Promise<void>((resolve) => {
+			releaseNew = resolve;
+		});
+		const observed = await fixture(page, {
+			capacityGates: [oldGate, newGate],
+			oldCapacityFailure: oldOutcome === 'failure'
+		});
+		try {
+			await page.goto(`/staff/academic/homerooms?academicYearId=${yearId}`);
+			await page.getByRole('button', { name: 'แก้ไขความจุ ม.1/1', exact: true }).click();
+			await page.getByRole('dialog').getByLabel('ความจุ (คน)', { exact: true }).fill('45');
+			await page
+				.getByRole('dialog')
+				.getByRole('button', { name: 'บันทึกความจุ', exact: true })
+				.click();
+			await expect.poll(() => observed.capacities.length).toBe(1);
+			observed.switchIdentity();
+			await page.evaluate(async (session) => {
+				const modulePath = '/src/lib/stores/auth.ts';
+				const { authStore } = await import(modulePath);
+				authStore.setUser(
+					{
+						id: '10000000-0000-4000-8000-000000000598',
+						firstName: 'ตัวตนใหม่',
+						lastName: 'ทดสอบ',
+						role: 'staff',
+						user_type: 'staff',
+						status: 'active'
+					},
+					['*'],
+					session
+				);
+			}, sessionState());
+			await expect(page.getByRole('dialog')).toHaveCount(0);
+			await page.getByRole('button', { name: 'แก้ไขความจุ ม.1/1', exact: true }).click();
+			const dialog = page.getByRole('dialog');
+			await dialog.getByLabel('ความจุ (คน)', { exact: true }).fill('50');
+			await dialog.getByRole('button', { name: 'บันทึกความจุ', exact: true }).click();
+			await expect.poll(() => observed.capacities.length).toBe(2);
+			const oldResponse = page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname.endsWith('/capacity') &&
+					response.request().postDataJSON().capacity === 45
+			);
+			releaseOld();
+			await oldResponse;
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByLabel('ความจุ (คน)', { exact: true })).toHaveValue('50');
+			await expect(dialog.getByLabel('ความจุ (คน)', { exact: true })).toBeDisabled();
+			await expect(
+				dialog.getByRole('button', { name: 'บันทึกความจุ', exact: true })
+			).toBeDisabled();
+			await expect(dialog.getByRole('alert')).toHaveCount(0);
+			releaseNew();
+			await expect(dialog).toHaveCount(0);
+			await expect(page.getByRole('cell', { name: '35 / 50', exact: true })).toBeVisible();
+		} finally {
+			releaseOld();
+			releaseNew();
+		}
+	});
+}
+
+test('switching schedules supersedes a pending comparison and leaves the next comparison usable', async ({
+	page
+}) => {
+	let releaseComparison = () => {};
+	const comparisonGate = new Promise<void>((resolve) => {
+		releaseComparison = resolve;
+	});
+	const observed = await fixture(page, { comparisonGate, periodConflictPerSchedule: true });
+	try {
+		await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+		for (const name of ['ตาราง A', 'ตาราง B']) {
+			await page
+				.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })
+				.click();
+			await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill(name);
+			await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
+		}
+		await chooseOption(page, page.getByLabel('ตารางเวลาที่จะจัดคาบ', { exact: true }), 'ตาราง A');
+		await page.getByLabel('เริ่ม', { exact: true }).fill('09:00');
+		await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+		const compare = page.getByRole('button', {
+			name: 'โหลดคาบล่าสุดเพื่อเปรียบเทียบ',
+			exact: true
+		});
+		await compare.click();
+		await expect(compare).toBeDisabled();
+		await chooseOption(page, page.getByLabel('ตารางเวลาที่จะจัดคาบ', { exact: true }), 'ตาราง B');
+		await page.getByLabel('เริ่ม', { exact: true }).fill('09:30');
+		await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+		await expect(compare).toBeEnabled();
+		await compare.click();
+		await expect(page.getByText('คาบ B ล่าสุด · 08:30–09:20', { exact: true })).toBeVisible();
+		releaseComparison();
+		await expect.poll(() => observed.completedComparisons.includes(id(510))).toBe(true);
+		await expect(page.getByText('คาบ A ล่าสุด · 08:30–09:20', { exact: true })).toHaveCount(0);
+		await expect(page.getByText('คาบ B ล่าสุด · 08:30–09:20', { exact: true })).toBeVisible();
+		await expect(page.getByLabel('เริ่ม', { exact: true })).toHaveValue('09:30');
+		await page
+			.getByRole('button', { name: 'ตรวจสอบแล้ว ใช้ฉบับล่าสุดเป็นฐาน', exact: true })
+			.click();
+		await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+		await expect.poll(() => observed.periodWrites.length).toBe(3);
+		expect(observed.periodWrites.at(-1)).toMatchObject({ id: id(511), body: { rowVersion: 2 } });
+	} finally {
+		releaseComparison();
+	}
 });

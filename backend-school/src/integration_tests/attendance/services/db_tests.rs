@@ -1429,6 +1429,318 @@ async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope
 }
 
 #[tokio::test]
+async fn attendance_annual_membership_transfer_projects_exact_daily_roster_and_score_room() {
+    use school_academic_core::{models as cm, services::student_years};
+    use school_academic_delivery::services::roster_tracking::RoomRosterTracking;
+    use school_attendance::services::score_changes;
+    let f = fixture("attendance_annual_membership_transfer").await;
+    let before = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let transfer = before.succ_opt().unwrap();
+    let after = transfer.succ_opt().unwrap();
+    let annual = f.students[0].student_academic_year_id;
+    sqlx::query("UPDATE homeroom_placements SET placement_scope='academic_year',start_date=NULL,class_number=7 WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(annual).execute(&f.pool).await.unwrap();
+    let placement = student_years::list_placements(&f.pool, annual)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|p| p.status == cm::HomeroomPlacementStatus::Current)
+        .unwrap();
+    let old_room = placement.homeroom_id;
+    let old_name = student_years::get_homeroom(&f.pool, old_room)
+        .await
+        .unwrap()
+        .name;
+    let new_room = Uuid::now_v7();
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT $1,'ANNUAL-MOVED','Annual destination',academic_year_id,grade_level_id,'ANNUAL-MOVED',study_program_id,40,true FROM homerooms WHERE id=$2")
+        .bind(new_room).bind(old_room).execute(&f.pool).await.unwrap();
+    sqlx::query("DELETE FROM attendance_days WHERE academic_term_id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    for day in [before, transfer, after] {
+        sqlx::query(
+            "INSERT INTO attendance_days(academic_term_id,date,counted) VALUES($1,$2,true)",
+        )
+        .bind(TERM)
+        .bind(day)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(before)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3) ON CONFLICT(academic_term_id) DO UPDATE SET configuration=EXCLUDED.configuration")
+        .bind(TERM).bind(sqlx::types::Json(AttendanceConfiguration {enabled:true,..Default::default()})).bind(TEACHER).execute(&f.pool).await.unwrap();
+    // The same pupil also has ended annual history in another year. Its open
+    // civil bounds must neither enter this term nor change during the transfer.
+    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT min(year)-1,'Excluded annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
+    let other_room: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT uuidv7(),'OTHER-YEAR','Other year room',$1,grade_level_id,'OTHER-YEAR',study_program_id,40,true FROM homerooms WHERE id=$2 RETURNING id")
+        .bind(other_year).bind(old_room).fetch_one(&f.pool).await.unwrap();
+    let other_annual: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT uuidv7(),student_id,$1,grade_level_id,study_program_id,'completed' FROM student_academic_years WHERE id=$2 RETURNING id")
+        .bind(other_year).bind(annual).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,placement_scope,status,enrollment_type,class_number) VALUES(uuidv7(),$1,$2,$3,'academic_year','ended','promotion',99)")
+        .bind(other_annual).bind(other_year).bind(other_room).execute(&f.pool).await.unwrap();
+    let foreign_facts: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('annual',to_jsonb(y),'placements',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM homeroom_placements p WHERE p.student_academic_year_id=y.id)) FROM student_academic_years y WHERE id=$1")
+        .bind(other_annual).fetch_one(&f.pool).await.unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![
+            codes::ATTENDANCE_READ_SCHOOL.into(),
+            codes::ATTENDANCE_UPDATE_SCHOOL.into(),
+        ],
+    };
+    let annual_virtual = history(
+        &f.pool,
+        &actor,
+        AttendanceHistoryQuery {
+            academic_term_id: TERM,
+            student_id: STUDENT,
+            start: before,
+            end: before,
+        },
+    )
+    .await
+    .unwrap();
+    let annual_arrivals: Vec<_> = annual_virtual
+        .iter()
+        .filter(|row| row.kind == AttendanceKind::Arrival)
+        .collect();
+    assert_eq!(annual_arrivals.len(), 1);
+    assert_eq!(annual_arrivals[0].result, AttendanceResult::Unchecked);
+    assert!(annual_arrivals[0].title.contains(&old_name));
+    let mut initial_query = report_query(Some(STUDENT), 1, 100);
+    initial_query.category = Some("school".into());
+    let initial_report = report(&f.pool, &actor, initial_query).await.unwrap();
+    assert_eq!(initial_report.summaries.len(), 1);
+    assert_eq!(initial_report.summaries[0].expected, 3);
+    assert_eq!(initial_report.summaries[0].unchecked, 3);
+    let original = seeds(&f.pool, TERM, before)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| {
+            s.session.kind == AttendanceKind::Arrival
+                && s.students.iter().any(|s| s.student_id == STUDENT)
+        })
+        .unwrap();
+    assert_eq!(original.session.homeroom_id, Some(old_room));
+    let preview = open(&f.pool, &actor, session_context(&original.session))
+        .await
+        .unwrap();
+    let saved_before = save(
+        &f.pool,
+        &actor,
+        preview.session.id,
+        save_payload(&preview, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let request = cm::TransferHomeroomPlacementRequest {
+        target_homeroom_id: new_room,
+        transfer_date: transfer,
+        enrollment_type: "room_transfer".into(),
+        class_number: Some(42),
+        reason: "Annual membership actual transfer".into(),
+        row_version: placement.row_version,
+        idempotency_key: Uuid::now_v7(),
+    };
+    let moved = student_years::transfer_placement(
+        &f.pool,
+        &RoomRosterTracking,
+        TEACHER,
+        placement.id,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            moved.ended_placement.start_date,
+            moved.ended_placement.end_date
+        ),
+        (None, Some(before))
+    );
+    assert_eq!(
+        (
+            moved.new_placement.placement_scope,
+            moved.new_placement.start_date
+        ),
+        (cm::HomeroomPlacementScope::Dated, Some(transfer))
+    );
+    let replay = student_years::transfer_placement(
+        &f.pool,
+        &RoomRosterTracking,
+        TEACHER,
+        placement.id,
+        request,
+    )
+    .await
+    .unwrap();
+    assert!(replay.replayed);
+    assert_eq!(replay.new_placement.id, moved.new_placement.id);
+    for (day, room, number) in [
+        (before, old_room, 7),
+        (transfer, new_room, 42),
+        (after, new_room, 42),
+    ] {
+        let daily = workspace(
+            &f.pool,
+            &actor,
+            AttendanceQuery {
+                academic_term_id: TERM,
+                date: day,
+            },
+        )
+        .await
+        .unwrap();
+        let eligible_seeds: Vec<_> = seeds(&f.pool, TERM, day)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|s| {
+                s.session.kind == AttendanceKind::Arrival
+                    && s.students.iter().any(|p| p.student_id == STUDENT)
+            })
+            .collect();
+        assert_eq!(
+            eligible_seeds.len(),
+            1,
+            "one eligible pupil arrival from the canonical attendance provider on {day}"
+        );
+        assert_eq!(eligible_seeds[0].session.homeroom_id, Some(room));
+        let arrivals: Vec<_> = daily
+            .sessions
+            .iter()
+            .filter(|s| s.kind == AttendanceKind::Arrival && s.homeroom_id == Some(room))
+            .collect();
+        assert_eq!(
+            arrivals.len(),
+            1,
+            "one arrival for the selected pupil on {day}"
+        );
+        assert_eq!(arrivals[0].homeroom_id, Some(room));
+        let detail = open(&f.pool, &actor, session_context(arrivals[0]))
+            .await
+            .unwrap();
+        let pupil = detail
+            .students
+            .iter()
+            .find(|p| p.student_id == STUDENT)
+            .unwrap();
+        assert_eq!(
+            (pupil.student_academic_year_id, pupil.class_number),
+            (annual, Some(number))
+        );
+        if day == before {
+            assert_eq!(
+                detail.session.roster_token,
+                saved_before.session.roster_token
+            );
+            assert_eq!(pupil.result, AttendanceResult::Present);
+        } else if day == transfer {
+            save(
+                &f.pool,
+                &actor,
+                detail.session.id,
+                save_payload(&detail, STUDENT, AttendanceResult::Late),
+            )
+            .await
+            .unwrap();
+        }
+    }
+    let items = history(
+        &f.pool,
+        &actor,
+        AttendanceHistoryQuery {
+            academic_term_id: TERM,
+            student_id: STUDENT,
+            start: before,
+            end: after,
+        },
+    )
+    .await
+    .unwrap();
+    let arrivals: Vec<_> = items
+        .iter()
+        .filter(|r| r.kind == AttendanceKind::Arrival)
+        .collect();
+    assert_eq!(arrivals.len(), 3);
+    for (day, result, name) in [
+        (before, AttendanceResult::Present, old_name.as_str()),
+        (transfer, AttendanceResult::Late, "Annual destination"),
+        (after, AttendanceResult::Unchecked, "Annual destination"),
+    ] {
+        let rows: Vec<_> = arrivals.iter().filter(|r| r.date == day).collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].result, result);
+        assert!(rows[0].title.contains(name));
+    }
+    let mut query = report_query(Some(STUDENT), 1, 100);
+    query.category = Some("school".into());
+    let projected = report(&f.pool, &actor, query).await.unwrap();
+    assert_eq!(projected.summaries.len(), 1);
+    let summary = &projected.summaries[0];
+    assert_eq!(
+        (
+            summary.expected,
+            summary.present,
+            summary.late,
+            summary.unchecked,
+            summary.absent
+        ),
+        (3, 1, 1, 1, 0)
+    );
+    let mut connection = f.pool.acquire().await.unwrap();
+    for (day, room, result) in [
+        (before, old_room, AttendanceResult::Present),
+        (transfer, new_room, AttendanceResult::Late),
+    ] {
+        let facts = score_changes::day_facts_on_connection(&mut connection, TERM, day)
+            .await
+            .unwrap();
+        let pupil: Vec<_> = facts
+            .iter()
+            .filter(|r| r.student_id == STUDENT && r.kind == AttendanceKind::Arrival)
+            .collect();
+        assert_eq!(pupil.len(), 1);
+        assert_eq!(
+            (
+                pupil[0].student_academic_year_id,
+                pupil[0].homeroom_id,
+                pupil[0].result
+            ),
+            (annual, Some(room), result)
+        );
+    }
+    assert!(
+        score_changes::day_facts_on_connection(&mut connection, TERM, after)
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.student_id != STUDENT)
+    );
+    drop(connection);
+    let retained: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('annual',to_jsonb(y),'placements',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM homeroom_placements p WHERE p.student_academic_year_id=y.id)) FROM student_academic_years y WHERE id=$1")
+        .bind(other_annual).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(retained, foreign_facts);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn attendance_scoped_arrival_uses_latest_dated_placement_and_keeps_saved_roster() {
     let f = fixture("attendance_scoped_arrival_transfer").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
