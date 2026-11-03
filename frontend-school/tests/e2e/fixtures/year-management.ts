@@ -172,7 +172,7 @@ export async function mockYearManagement(
 					code: String(term.sequence),
 					name: term.name,
 					termType: 'regular',
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+					schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 					status: term.status,
 					isVisible: true,
 					includedInYearResult: true,
@@ -185,7 +185,7 @@ export async function mockYearManagement(
 			contextSettings: settings,
 			bellScheduleSetupYearIds: [],
 			schoolDaysEditableTermIds: [id(4)],
-					bellScheduleSetupTermIds: [],
+			bellScheduleSetupTermIds: [],
 			bellSchedules: [],
 			years: options.setupRecords
 				? [currentSource, targetYear].map((year) => ({
@@ -210,7 +210,7 @@ export async function mockYearManagement(
 						code: String(term.sequence),
 						name: term.name,
 						termType: 'regular',
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+						schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 						status: term.status,
 						rowVersion: term.rowVersion,
 						isVisible: termVisibility.get(term.academicTermId) ?? false,

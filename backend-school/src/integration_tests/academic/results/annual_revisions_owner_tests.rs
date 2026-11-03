@@ -387,7 +387,7 @@ async fn annual_preview_ignores_nonparticipant_summer_but_requires_participant_r
         ],
     };
     sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),term_type='summer' WHERE academic_year_id=$1").bind(context.academic_year_id).bind(context.academic_term_id).execute(&pool).await.unwrap();
-    let empty:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) SELECT academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'empty-summer','Empty summer','summer',bell_schedule_id,'planning',true,true FROM academic_terms WHERE id=$2 RETURNING id").bind(context.academic_year_id).bind(context.academic_term_id).fetch_one(&pool).await.unwrap();
+    let empty:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) SELECT 'MON,TUE,WED,THU,FRI', academic_year_id,(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=$1),'empty-summer','Empty summer','summer',bell_schedule_id,'planning',true,true FROM academic_terms WHERE id=$2 RETURNING id").bind(context.academic_year_id).bind(context.academic_term_id).fetch_one(&pool).await.unwrap();
     let preview = preview_annual(&pool, &office, context.academic_year_id, student)
         .await
         .unwrap();

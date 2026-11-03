@@ -9,7 +9,7 @@ async fn retained_attendance_blocks_reopening_the_exact_term_and_its_year() {
     let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'RETENTION','Retention',true) RETURNING id").bind(year).fetch_one(&pool).await.unwrap();
     let mut terms = Vec::new();
     for sequence in 1..=2 {
-        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,$2,$3,'Retention','regular',$4,'closed',true,true) RETURNING id")
+        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES( 'MON,TUE,WED,THU,FRI',$1,$2,$3,'Retention','regular',$4,'closed',true,true) RETURNING id")
             .bind(year).bind(sequence).bind(format!("T{sequence}")).bind(bell).fetch_one(&pool).await.unwrap();
         terms.push(term);
     }

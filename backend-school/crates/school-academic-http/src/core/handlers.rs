@@ -445,9 +445,24 @@ pub async fn create_term_copy_school_schedule(
     Json(request): Json<CreateAcademicTermCopySchoolScheduleRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    context.actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
-    let outcome = school_academic_core::services::term_school_schedule::create(&context.tenant.pool, context.actor.user_id, request).await?;
-    signal_core_changed(&state,&session,&context.actor,"academic_term",Some(outcome.term.id),Some(outcome.term.academic_year_id),Some(outcome.term.id));
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let outcome = school_academic_core::services::term_school_schedule::create(
+        &context.tenant.pool,
+        context.actor.user_id,
+        request,
+    )
+    .await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "academic_term",
+        Some(outcome.term.id),
+        Some(outcome.term.academic_year_id),
+        Some(outcome.term.id),
+    );
     Ok(created(outcome))
 }
 
@@ -459,9 +474,25 @@ pub async fn copy_term_school_schedule(
     Json(request): Json<CopyAcademicTermSchoolScheduleRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    context.actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
-    let outcome = school_academic_core::services::term_school_schedule::copy_into(&context.tenant.pool, context.actor.user_id, id, request).await?;
-    signal_core_changed(&state,&session,&context.actor,"academic_term",Some(outcome.term.id),Some(outcome.term.academic_year_id),Some(outcome.term.id));
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let outcome = school_academic_core::services::term_school_schedule::copy_into(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "academic_term",
+        Some(outcome.term.id),
+        Some(outcome.term.academic_year_id),
+        Some(outcome.term.id),
+    );
     Ok(ok(outcome))
 }
 

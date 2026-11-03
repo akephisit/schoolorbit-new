@@ -990,3 +990,71 @@ test('zero period courses have no waiting card while their existing lessons stay
 	await expect(page.locator('aside article[draggable="true"]')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
 });
+
+for (const includeSaturday of [false, true]) {
+	test(`selected term ${includeSaturday ? 'includes Saturday' : 'keeps Monday to Friday'} independently of period overrides`, async ({
+		page
+	}) => {
+		const schoolDays = ['MON', 'TUE', 'WED', 'THU', 'FRI', ...(includeSaturday ? ['SAT'] : [])];
+		const mock = await installTimetableMock(page, {
+			terms: [
+				{
+					id: timetableIds.term,
+					academicYearId: timetableIds.year,
+					name: includeSaturday ? 'ภาคเรียนที่ 2' : 'ภาคเรียนที่ 1',
+					code: includeSaturday ? '2' : '1',
+					sequence: includeSaturday ? 2 : 1,
+					termType: 'regular',
+					schoolDays,
+					isVisible: true,
+					status: 'active',
+					includedInYearResult: true,
+					blocksYearClosure: true
+				}
+			],
+			bellPeriods: [null, 'MON', 'SAT'].map((applicableDays, index) => ({
+				id: [timetableIds.period1, timetableIds.period2, timetableIds.period3][index],
+				bellScheduleId: timetableIds.schedule,
+				name: `คาบ ${index + 1}`,
+				orderIndex: index + 1,
+				startTime: '08:30',
+				endTime: '09:20',
+				applicableDays,
+				isActive: true
+			}))
+		});
+		await page.goto(timetableUrl());
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const saturday = page.locator('td[data-timetable-day="SAT"]');
+		await expect(saturday).toHaveCount(includeSaturday ? 3 : 0);
+		if (includeSaturday) {
+			const tray = page.locator('aside article').first();
+			const transfer = await page.evaluateHandle(() => new DataTransfer());
+			await tray.dispatchEvent('dragstart', { dataTransfer: transfer });
+			await saturday.nth(1).dispatchEvent('dragover', { dataTransfer: transfer });
+			await expect(saturday.nth(1)).toHaveAttribute('data-state', 'blocked');
+			await saturday.nth(1).dispatchEvent('drop', { dataTransfer: transfer });
+			await tray.dispatchEvent('dragend', { dataTransfer: transfer });
+			expect(mock.createRequestCount()).toBe(0);
+			expect(mock.previewRequestCount()).toBe(0);
+			for (const index of [0, 2]) {
+				await tray.dispatchEvent('dragstart', { dataTransfer: transfer });
+				await saturday.nth(index).dispatchEvent('dragover', { dataTransfer: transfer });
+				await expect(saturday.nth(index)).toHaveAttribute('data-state', 'move');
+				await saturday.nth(index).dispatchEvent('drop', { dataTransfer: transfer });
+				await tray.dispatchEvent('dragend', { dataTransfer: transfer });
+				await expect.poll(() => mock.createRequestCount()).toBe(index === 0 ? 1 : 2);
+			}
+			expect(mock.blocks().map((block) => block.dayOfWeek)).toEqual(['SAT', 'SAT']);
+		}
+		await page.getByRole('button', { name: 'โรงเรียน', exact: true }).click();
+		await page.getByRole('combobox', { name: 'เลือกวันดูภาพรวม', exact: true }).click();
+		await expect(page.getByRole('option', { name: 'วันเสาร์', exact: true })).toHaveCount(
+			includeSaturday ? 1 : 0
+		);
+		if (includeSaturday) {
+			await page.getByRole('option', { name: 'วันเสาร์', exact: true }).click();
+			await expect(page.getByText('ภาพรวมทั้งโรงเรียน · วันเสาร์', { exact: true })).toBeVisible();
+		}
+	});
+}

@@ -325,7 +325,13 @@
 		href: '/staff/facility/buildings'
 	};
 
-	const days = $derived(SCHOOL_WEEKDAYS.filter((day) => $academicContext.options?.terms.find((term) => term.id === academicTermId)?.schoolDays.includes(day.code)).map((day) => ({id: day.code, label: day.label})));
+	const days = $derived(
+		SCHOOL_WEEKDAYS.filter((day) =>
+			$academicContext.options?.terms
+				.find((term) => term.id === academicTermId)
+				?.schoolDays.includes(day.code)
+		).map((day) => ({ id: day.code, label: day.label }))
+	);
 	const noRoomValue = '__none__';
 	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
@@ -442,7 +448,9 @@
 			)
 	);
 	let selectedOverviewDay = $state('');
-	const overviewDay = $derived(days.some((day) => day.id === selectedOverviewDay) ? selectedOverviewDay : days[0]?.id ?? '');
+	const overviewDay = $derived(
+		days.some((day) => day.id === selectedOverviewDay) ? selectedOverviewDay : (days[0]?.id ?? '')
+	);
 	let workspaceRoot = $state<HTMLElement | null>(null);
 	let dragInteraction = $state.raw<LocalInteraction | null>(null);
 	let editInteraction = $state.raw<LocalInteraction | null>(null);
@@ -1451,7 +1459,11 @@
 	}
 
 	function validPeriodDay(dayOfWeek: string, periodId: string): boolean {
-		return periodAllowsSchoolDay(controller?.workspace.bellPeriods.find((period) => period.id === periodId), dayOfWeek, days.map((day) => day.id));
+		return periodAllowsSchoolDay(
+			controller?.workspace.bellPeriods.find((period) => period.id === periodId),
+			dayOfWeek,
+			days.map((day) => day.id)
+		);
 	}
 	function cellState(dayOfWeek: string, periodId: string): TimetableCellState {
 		if (!validPeriodDay(dayOfWeek, periodId)) return 'blocked';
@@ -1596,7 +1608,10 @@
 			busy
 		)
 			return;
-		if (!validPeriodDay(dayOfWeek, periodId)) { toast.error('คาบนี้ไม่เปิดใช้ในวันที่เลือก'); return; }
+		if (!validPeriodDay(dayOfWeek, periodId)) {
+			toast.error('คาบนี้ไม่เปิดใช้ในวันที่เลือก');
+			return;
+		}
 		const operationController = controller;
 		const interaction = dragInteraction;
 		const dragSource: TimetableDragSource = controller.dragSource;
@@ -3859,7 +3874,11 @@
 							{#if activeView === 'wholeSchool'}
 								<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 									<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
-									<Select.Root type="single" value={overviewDay} onValueChange={(value) => selectedOverviewDay = value}>
+									<Select.Root
+										type="single"
+										value={overviewDay}
+										onValueChange={(value) => (selectedOverviewDay = value)}
+									>
 										<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
 											{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
 										</Select.Trigger>
@@ -4073,6 +4092,7 @@
 							/>
 						</div>{/if}
 					<TimetableBoard
+						schoolDays={days.map((day) => day.id)}
 						colors={lessonColors}
 						state={controller.board}
 						view={controller.view}

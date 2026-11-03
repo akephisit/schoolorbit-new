@@ -2,13 +2,17 @@
 -- initial first-term preset, including for years that have no terms yet.
 LOCK TABLE academic_years, academic_terms IN SHARE ROW EXCLUSIVE MODE;
 
+CREATE FUNCTION academic_school_days_valid(days text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS $$
+    SELECT days ~ '^(MON|TUE|WED|THU|FRI|SAT|SUN)(,(MON|TUE|WED|THU|FRI|SAT|SUN))*$'
+       AND cardinality(string_to_array(days,',')) =
+           (SELECT count(DISTINCT day) FROM unnest(string_to_array(days,',')) day)
+$$;
+
 DO $$ BEGIN
     IF EXISTS (
         SELECT 1 FROM academic_years
-        WHERE school_days = ''
-           OR school_days !~ '^(MON|TUE|WED|THU|FRI|SAT|SUN)(,(MON|TUE|WED|THU|FRI|SAT|SUN))*$'
-           OR cardinality(string_to_array(school_days, ',')) <>
-              (SELECT count(DISTINCT day) FROM unnest(string_to_array(school_days, ',')) day)
+        WHERE NOT academic_school_days_valid(school_days)
     ) THEN
         RAISE EXCEPTION 'ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET' USING ERRCODE='23514';
     END IF;
@@ -32,7 +36,11 @@ DO $$ DECLARE relation_name text; BEGIN
         'academic_term_transition_receipts','academic_year_transition_receipts',
         'academic_timetable_versions','academic_timetable_blocks',
         'attendance_settings','attendance_days','attendance_sessions',
-        'attendance_records','attendance_term_archives','academic_context_cutover_audit'
+        'attendance_records','attendance_term_archives','academic_context_cutover_audit',
+        'academic_context_receipt_recovery_audit','academic_term_preparation_runs',
+        'attendance_finalized_dates','attendance_calendar_snapshots',
+        'attendance_term_summaries','attendance_term_teacher_summaries',
+        'academic_retention_jobs','behavior_retention_receipts'
     ]) name ORDER BY name LOOP
         IF to_regclass(current_schema()||'.'||relation_name) IS NOT NULL THEN
             EXECUTE format('LOCK TABLE %I IN SHARE MODE',relation_name);
@@ -77,11 +85,12 @@ DO $$ BEGIN
 END $$;
 
 ALTER TABLE academic_terms ALTER COLUMN school_days SET NOT NULL;
-ALTER TABLE academic_terms ALTER COLUMN school_days SET DEFAULT 'MON,TUE,WED,THU,FRI';
 ALTER TABLE academic_terms ADD CONSTRAINT academic_terms_school_days_check CHECK (
-    school_days ~ '^(MON|TUE|WED|THU|FRI|SAT|SUN)(,(MON|TUE|WED|THU|FRI|SAT|SUN))*$'
+    academic_school_days_valid(school_days)
 );
 ALTER TABLE academic_years RENAME COLUMN school_days TO default_school_days;
+ALTER TABLE academic_years ADD CONSTRAINT academic_years_default_school_days_check
+    CHECK(academic_school_days_valid(default_school_days));
 COMMENT ON COLUMN academic_years.default_school_days IS 'Initial weekday preset for a first term; never live term configuration';
 COMMENT ON COLUMN academic_terms.school_days IS 'Independent canonical school weekdays for this term';
 
@@ -103,9 +112,9 @@ END $$;
 
 CREATE TABLE academic_term_school_days_migration_audit (
     singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
-    term_count bigint NOT NULL,
-    mapping_fingerprint text NOT NULL,
-    preservation_evidence jsonb NOT NULL,
+    term_count bigint NOT NULL CHECK(term_count >= 0),
+    mapping_fingerprint text NOT NULL CHECK(mapping_fingerprint ~ '^[0-9a-f]{64}$'),
+    preservation_evidence jsonb NOT NULL CHECK(jsonb_typeof(preservation_evidence)='array'),
     reconciled_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 INSERT INTO academic_term_school_days_migration_audit(term_count,mapping_fingerprint,preservation_evidence)
@@ -113,3 +122,6 @@ SELECT (SELECT count(*) FROM academic_school_days155_mapping),
        (SELECT encode(sha256(convert_to(coalesce(string_agg(to_jsonb(mapping)::text,'' ORDER BY id),''),'UTF8')),'hex')
         FROM academic_school_days155_mapping mapping),
        (SELECT jsonb_agg(to_jsonb(evidence) ORDER BY relation_name) FROM academic_school_days155_before evidence);
+CREATE TRIGGER academic_term_school_days_migration_audit_immutable
+BEFORE UPDATE OR DELETE ON academic_term_school_days_migration_audit
+FOR EACH ROW EXECUTE FUNCTION academic_reject_official_result_mutation();

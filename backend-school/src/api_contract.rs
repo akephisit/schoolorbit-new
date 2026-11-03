@@ -3584,12 +3584,12 @@ mod tests {
             required(&schemas["AcademicYear"]),
             vec![
                 "createdAt",
+                "defaultSchoolDays",
                 "id",
                 "isVisible",
                 "migrated",
                 "name",
                 "rowVersion",
-                "schoolDays",
                 "status",
                 "updatedAt",
                 "year"
@@ -3609,6 +3609,7 @@ mod tests {
                 "migrated",
                 "name",
                 "rowVersion",
+                "schoolDays",
                 "sequence",
                 "status",
                 "termType",
@@ -3674,7 +3675,7 @@ mod tests {
         );
         for field in ["startDate", "endDate", "plannedEndDate", "closedOn"] {
             let mut request =
-                serde_json::json!({"year":2570,"customName":null,"schoolDays":["MON"]});
+                serde_json::json!({"year":2570,"customName":null,"defaultSchoolDays":["MON"]});
             request[field] = serde_json::json!("2027-05-01");
             assert!(serde_json::from_value::<
                 school_academic_core::models::CreateAcademicYearRequest,

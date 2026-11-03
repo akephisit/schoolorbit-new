@@ -26,6 +26,7 @@ async fn predecessor(name: &str) -> PgPool {
 #[derive(Clone, Copy)]
 enum FixtureSchema {
     Before146,
+    Before155,
     Current,
 }
 
@@ -64,13 +65,23 @@ async fn offering(
     ).bind(term).bind(1000+number).bind(date_offset).bind(source).fetch_one(&mut *tx).await.unwrap();
             (start, end)
         }
-        FixtureSchema::Current => {
+        FixtureSchema::Before155 | FixtureSchema::Current => {
             let start = chrono::Utc::now()
                 .with_timezone(&chrono_tz::Asia::Bangkok)
                 .date_naive()
                 + chrono::Duration::days(i64::from(date_offset));
-            sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,offering.academic_year_id,'Coordinator fixture',$2,'COORD-'||$2::text,'custom',false,false,'planning',source_term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms source_term ON source_term.id=offering.academic_term_id WHERE offering.id=$3")
-                .bind(term).bind(1000+number).bind(source).execute(&mut *tx).await.unwrap();
+            let term_sql = if matches!(schema, FixtureSchema::Before155) {
+                "INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT $1,offering.academic_year_id,'Coordinator fixture',$2,'COORD-'||$2::text,'custom',false,false,'planning',source_term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms source_term ON source_term.id=offering.academic_term_id WHERE offering.id=$3"
+            } else {
+                "INSERT INTO academic_terms(school_days,id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id) SELECT 'MON,TUE,WED,THU,FRI',$1,offering.academic_year_id,'Coordinator fixture',$2,'COORD-'||$2::text,'custom',false,false,'planning',source_term.bell_schedule_id FROM learning_offerings offering JOIN academic_terms source_term ON source_term.id=offering.academic_term_id WHERE offering.id=$3"
+            };
+            sqlx::query(sqlx::AssertSqlSafe(term_sql))
+                .bind(term)
+                .bind(1000 + number)
+                .bind(source)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
             (start, start + chrono::Duration::days(20))
         }
     };
@@ -792,9 +803,12 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
 async fn assessment_migration_150_preserves_populated_data_and_exam_source_identity() {
     let pool = predecessor("assessment_migration_150_preservation").await;
     apply_migrations_through(&pool, 149).await.unwrap();
-    let (ready_offering, groups, start, _) = offering(&pool, 1, -10, FixtureSchema::Current).await;
+    let (ready_offering, groups, start, _) =
+        offering(&pool, 1, -10, FixtureSchema::Before155).await;
     teacher(&pool, &groups, PRIMARY, start, None).await;
-    publish_allocation(&pool, ready_offering, start).await;
+    // This fixture is exactly schema149; publication numbers arrive in151.
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT uuidv7(),academic_term_id,academic_year_id,$2,'published',academic_capture_delivery_snapshot(academic_term_id,$2,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$3,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
+        .bind(ready_offering).bind(start).bind(PRIMARY).execute(&pool).await.unwrap();
     existing_plan(&pool, ready_offering, Some(PRIMARY)).await;
     sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) SELECT uuidv7(),learning_group.id,learning_group.academic_term_id,learning_group.academic_year_id,(SELECT id FROM homerooms WHERE academic_year_id=learning_group.academic_year_id AND is_active ORDER BY id LIMIT 1),'manual' FROM learning_groups learning_group WHERE learning_group.id=ANY($1)")
         .bind(&groups).execute(&pool).await.unwrap();

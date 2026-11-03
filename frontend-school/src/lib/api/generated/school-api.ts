@@ -2986,6 +2986,38 @@ export interface paths {
 		patch: operations['updateAcademicTerm'];
 		trace?: never;
 	};
+	'/api/academic/terms/{id}/copy-school-schedule': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['copyAcademicTermSchoolSchedule'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/terms/copy-school-schedule': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createAcademicTermCopySchoolSchedule'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/timetable-blocks/{block_id}': {
 		parameters: {
 			query?: never;
@@ -8931,6 +8963,7 @@ export interface components {
 			bellScheduleSetupTermIds: string[];
 			bellScheduleSetupYearIds: string[];
 			contextSettings: components['schemas']['AcademicContextSettings'];
+			schoolDaysEditableTermIds: string[];
 			terms: components['schemas']['AcademicTerm'][];
 			years: components['schemas']['AcademicYear'][];
 		};
@@ -8951,6 +8984,7 @@ export interface components {
 			name: string;
 			/** Format: int64 */
 			rowVersion: number;
+			schoolDays: string[];
 			/** Format: int32 */
 			sequence: number;
 			status: components['schemas']['AcademicTermStatus'];
@@ -9184,10 +9218,17 @@ export interface components {
 			includedInYearResult: boolean;
 			isVisible: boolean;
 			name: string;
+			schoolDays: string[];
 			/** Format: int32 */
 			sequence: number;
 			status: components['schemas']['AcademicTermStatus'];
 			termType: components['schemas']['AcademicTermType'];
+		};
+		AcademicTermSchoolScheduleCopyResponse: {
+			bellSchedule: components['schemas']['BellSchedule'];
+			canAssignBellSchedule: boolean;
+			canEditSchoolDays: boolean;
+			term: components['schemas']['AcademicTerm'];
 		};
 		/** @enum {string} */
 		AcademicTermStatus: 'planning' | 'ready' | 'active' | 'closing' | 'closed' | 'cancelled';
@@ -9196,6 +9237,7 @@ export interface components {
 		AcademicYear: {
 			/** Format: date-time */
 			createdAt: string;
+			defaultSchoolDays: string[];
 			/** Format: uuid */
 			id: string;
 			isVisible: boolean;
@@ -9203,7 +9245,6 @@ export interface components {
 			name: string;
 			/** Format: int64 */
 			rowVersion: number;
-			schoolDays: string[];
 			status: components['schemas']['AcademicYearStatus'];
 			/** Format: date-time */
 			updatedAt: string;
@@ -9726,6 +9767,7 @@ export interface components {
 				bellScheduleSetupTermIds: string[];
 				bellScheduleSetupYearIds: string[];
 				contextSettings: components['schemas']['AcademicContextSettings'];
+				schoolDaysEditableTermIds: string[];
 				terms: components['schemas']['AcademicTerm'][];
 				years: components['schemas']['AcademicYear'][];
 			};
@@ -9750,6 +9792,7 @@ export interface components {
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
+				schoolDays: string[];
 				/** Format: int32 */
 				sequence: number;
 				status: components['schemas']['AcademicTermStatus'];
@@ -9826,10 +9869,21 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_AcademicTermSchoolScheduleCopyResponse: {
+			data: {
+				bellSchedule: components['schemas']['BellSchedule'];
+				canAssignBellSchedule: boolean;
+				canEditSchoolDays: boolean;
+				term: components['schemas']['AcademicTerm'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_AcademicYear: {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
+				defaultSchoolDays: string[];
 				/** Format: uuid */
 				id: string;
 				isVisible: boolean;
@@ -9837,7 +9891,6 @@ export interface components {
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
-				schoolDays: string[];
 				status: components['schemas']['AcademicYearStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -14263,6 +14316,7 @@ export interface components {
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
+				schoolDays: string[];
 				/** Format: int32 */
 				sequence: number;
 				status: components['schemas']['AcademicTermStatus'];
@@ -14350,6 +14404,7 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
+				defaultSchoolDays: string[];
 				/** Format: uuid */
 				id: string;
 				isVisible: boolean;
@@ -14357,7 +14412,6 @@ export interface components {
 				name: string;
 				/** Format: int64 */
 				rowVersion: number;
-				schoolDays: string[];
 				status: components['schemas']['AcademicYearStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -17568,7 +17622,7 @@ export interface components {
 			startTime: string;
 		};
 		BellSchedulePeriodInput: {
-			applicableDays: string[];
+			applicableDays: string[] | null;
 			endTime: string;
 			isActive: boolean;
 			name?: string | null;
@@ -19477,6 +19531,17 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		CopyAcademicTermSchoolScheduleRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+			schoolDays: string[];
+			/** Format: int64 */
+			sourceBellScheduleRowVersion: number;
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: int64 */
+			sourceTermRowVersion: number;
+		};
 		CopyStudyProgramRequest: {
 			/** Format: int64 */
 			destinationRowVersion: number;
@@ -19787,6 +19852,21 @@ export interface components {
 			idempotencyKey: string;
 			reason: string;
 		};
+		CreateAcademicTermCopySchoolScheduleRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			blocksYearClosure: boolean;
+			customName?: string | null;
+			includedInYearResult: boolean;
+			schoolDays: string[];
+			/** Format: int64 */
+			sourceBellScheduleRowVersion: number;
+			/** Format: uuid */
+			sourceTermId: string;
+			/** Format: int64 */
+			sourceTermRowVersion: number;
+			termType: components['schemas']['AcademicTermType'];
+		};
 		CreateAcademicTermRequest: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -19795,11 +19875,12 @@ export interface components {
 			blocksYearClosure: boolean;
 			customName?: string | null;
 			includedInYearResult: boolean;
+			schoolDays: string[];
 			termType: components['schemas']['AcademicTermType'];
 		};
 		CreateAcademicYearRequest: {
 			customName?: string | null;
-			schoolDays: string[];
+			defaultSchoolDays: string[];
 			/** Format: int32 */
 			year: number;
 		};
@@ -28170,13 +28251,14 @@ export interface components {
 			includedInYearResult: boolean;
 			/** Format: int64 */
 			rowVersion: number;
+			schoolDays: string[];
 			termType: components['schemas']['AcademicTermType'];
 		};
 		UpdateAcademicYearRequest: {
 			customName?: string | null;
+			defaultSchoolDays: string[];
 			/** Format: int64 */
 			rowVersion: number;
-			schoolDays: string[];
 			/** Format: int32 */
 			year: number;
 		};
@@ -44047,6 +44129,147 @@ export interface operations {
 				};
 			};
 			/** @description Academic term row version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	copyAcademicTermSchoolSchedule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Unopened target term identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CopyAcademicTermSchoolScheduleRequest'];
+			};
+		};
+		responses: {
+			/** @description Independent bell schedule and target weekdays assigned atomically */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTermSchoolScheduleCopyResponse'];
+				};
+			};
+			/** @description Invalid school days or term configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source or target context not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source or target revision, reference or lifecycle conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAcademicTermCopySchoolSchedule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateAcademicTermCopySchoolScheduleRequest'];
+			};
+		};
+		responses: {
+			/** @description Term and independent copied bell schedule created atomically */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AcademicTermSchoolScheduleCopyResponse'];
+				};
+			};
+			/** @description Invalid school days or term configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source or target context not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source revision or target lifecycle conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

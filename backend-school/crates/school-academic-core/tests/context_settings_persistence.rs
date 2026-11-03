@@ -163,6 +163,13 @@ async fn term_defaults_require_visible_matching_parents_and_hidden_parents_filte
         &pool,
         actor.user_id,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: year.id,
             term_type: AcademicTermType::Regular,
             custom_name: None,
@@ -349,12 +356,12 @@ fn year_and_term_commands_reject_every_retired_boundary_key() {
             }
         }
     }
-    let year = serde_json::json!({"year":2901,"customName":null,"schoolDays":["MON"]});
+    let year = serde_json::json!({"year":2901,"customName":null,"defaultSchoolDays":["MON"]});
     rejects::<CreateAcademicYearRequest>(year.clone());
     let mut update = year;
     update["rowVersion"] = serde_json::json!(1);
     rejects::<UpdateAcademicYearRequest>(update);
-    let term = serde_json::json!({"termType":"regular","customName":null,"includedInYearResult":true,"blocksYearClosure":true,"bellScheduleId":Uuid::new_v4()});
+    let term = serde_json::json!({"termType":"regular","customName":null,"includedInYearResult":true,"blocksYearClosure":true,"bellScheduleId":Uuid::new_v4(),"schoolDays":["MON"]});
     let mut create = term.clone();
     create["academicYearId"] = serde_json::json!(Uuid::new_v4());
     rejects::<CreateAcademicTermRequest>(create);
@@ -418,6 +425,13 @@ async fn scoped_options_keep_visible_enrollment_history_without_inaccessible_def
         &pool,
         actor_id,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: outside.id,
             term_type: AcademicTermType::Regular,
             custom_name: None,

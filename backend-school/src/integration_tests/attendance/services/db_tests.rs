@@ -423,8 +423,14 @@ async fn attendance_note_migration_blocks_cleanup_when_audit_preservation_fails(
 async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwrite_it() {
     let f = fixture("attendance_first_calendar").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE academic_terms SET school_days='MON,TUE,WED,THU,FRI,SAT' WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     let before = settings::get(&f.pool, TERM).await.unwrap();
     assert_eq!(before.row_version, 0);
+    assert_eq!(before.configuration.weekdays, vec![1, 2, 3, 4, 5, 6]);
     let saved = settings::save_days(
         &f.pool,
         TEACHER,
@@ -441,6 +447,24 @@ async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwri
     .await
     .unwrap();
     assert_eq!(saved.row_version, 1);
+    assert_eq!(saved.configuration.weekdays, vec![1, 2, 3, 4, 5, 6]);
+    sqlx::query("UPDATE academic_terms SET school_days='MON' WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        settings::get(&f.pool, TERM)
+            .await
+            .unwrap()
+            .configuration
+            .weekdays,
+        vec![1, 2, 3, 4, 5, 6]
+    );
+    assert!(matches!(
+        settings::get(&f.pool, Uuid::new_v4()).await,
+        Err(school_errors::AppError::NotFound(_))
+    ));
     assert_eq!(
         saved.configuration.late_after,
         before.configuration.late_after
@@ -3766,6 +3790,21 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
 #[tokio::test]
 async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() {
     let f = fixture("attendance_one_connection").await;
+    sqlx::query("UPDATE academic_terms SET school_days='MON,TUE,WED,THU,FRI,SAT' WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_settings WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
         .bind(date)
@@ -3866,6 +3905,37 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
     .await
     .unwrap();
     assert!(result.archived);
+    let snapshot: sqlx::types::Json<AttendanceConfiguration> = sqlx::query_scalar(
+        "SELECT settings_snapshot FROM attendance_term_archives WHERE academic_term_id=$1",
+    )
+    .bind(TERM)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(snapshot.0.weekdays, vec![1, 2, 3, 4, 5, 6]);
+    // Replaying the accepted archive keeps the original configuration snapshot.
+    purge(
+        &pool,
+        TEACHER,
+        TERM,
+        PurgeAttendanceTerm {
+            expected_records: 0,
+            reason: "archive replay fixture".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let replay: sqlx::types::Json<AttendanceConfiguration> = sqlx::query_scalar(
+        "SELECT settings_snapshot FROM attendance_term_archives WHERE academic_term_id=$1",
+    )
+    .bind(TERM)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(snapshot).unwrap()
+    );
     assert!(
         report(&pool, &actor, report_query(Some(STUDENT), 1, 100))
             .await

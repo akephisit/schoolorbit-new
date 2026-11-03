@@ -1629,7 +1629,7 @@ mod tests {
             .bind(year).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO bell_schedules (id,academic_year_id,code,name) VALUES ($1,$2,'SYNTHETIC','Synthetic workspace schedule')")
             .bind(schedule).bind(year).execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular',true,true,$3,'planning')")
+        sqlx::query("INSERT INTO academic_terms (school_days, id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ( 'MON,TUE,WED,THU,FRI',$1,$2,1,'SYNTHETIC','Synthetic workspace term','regular',true,true,$3,'planning')")
             .bind(term).bind(year).bind(schedule).execute(&pool).await.unwrap();
         let filter = AcademicResourceListFilter {
             includes_school_owned: true,

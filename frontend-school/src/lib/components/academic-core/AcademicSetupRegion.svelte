@@ -53,7 +53,10 @@
 	let bellScheduleSetupTermIds = $state<string[]>([]);
 	let schoolDaysEditableTermIds = $state<string[]>([]);
 	let disposed = false;
-	onDestroy(() => { disposed = true; latest.abort(); });
+	onDestroy(() => {
+		disposed = true;
+		latest.abort();
+	});
 	let loading = $state(true);
 	let workspaceReady = $state(false);
 	let busy = $state({ year: false, term: false, schedule: false, periods: false });
@@ -110,7 +113,12 @@
 			)
 				applyWorkspace(result);
 		} catch (cause) {
-			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
+			if (
+				!disposed &&
+				latest.isCurrent(revision) &&
+				identity === appIdentityKey() &&
+				!isAbortError(cause)
+			)
 				errorMessage = cause instanceof Error ? cause.message : 'โหลดตั้งค่าไม่สำเร็จ';
 		} finally {
 			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
@@ -213,28 +221,58 @@
 	function patchTerm(term: AcademicTerm) {
 		const current = termsByYear.get(term.academicYearId) ?? [];
 		const previous = current.find((item) => item.id === term.id);
-		if (previous && previous.rowVersion > term.rowVersion) return;
-		termsByYear.set(term.academicYearId, [...current.filter((item) => item.id !== term.id), term].sort((a,b) => a.sequence - b.sequence));
+		if (previous && previous.rowVersion > term.rowVersion) return false;
+		termsByYear.set(
+			term.academicYearId,
+			[...current.filter((item) => item.id !== term.id), term].sort(
+				(a, b) => a.sequence - b.sequence
+			)
+		);
+		return true;
 	}
 	function patchCopiedSchoolSchedule(result: AcademicTermSchoolScheduleCopyResponse) {
+		const current = termsByYear
+			.get(result.term.academicYearId)
+			?.find((term) => term.id === result.term.id);
+		if (current && current.rowVersion > result.term.rowVersion) return false;
 		patchTerm(result.term);
 		const previous = bellSchedules.find((schedule) => schedule.id === result.bellSchedule.id);
 		if (!previous || previous.rowVersion <= result.bellSchedule.rowVersion)
-			bellSchedules = [...bellSchedules.filter((schedule) => schedule.id !== result.bellSchedule.id), result.bellSchedule];
-		schoolDaysEditableTermIds = [...schoolDaysEditableTermIds.filter((id) => id !== result.term.id), ...(result.canEditSchoolDays ? [result.term.id] : [])];
-		bellScheduleSetupTermIds = [...bellScheduleSetupTermIds.filter((id) => id !== result.term.id), ...(result.canAssignBellSchedule ? [result.term.id] : [])];
+			bellSchedules = [
+				...bellSchedules.filter((schedule) => schedule.id !== result.bellSchedule.id),
+				result.bellSchedule
+			];
+		schoolDaysEditableTermIds = [
+			...schoolDaysEditableTermIds.filter((id) => id !== result.term.id),
+			...(result.canEditSchoolDays ? [result.term.id] : [])
+		];
+		bellScheduleSetupTermIds = [
+			...bellScheduleSetupTermIds.filter((id) => id !== result.term.id),
+			...(result.canAssignBellSchedule ? [result.term.id] : [])
+		];
+		return true;
 	}
+	async function reconcileTermConflict(cause: unknown, identity: string): Promise<void> {
+		if (cause instanceof ApiClientError && cause.status === 409 && !disposed && identity === appIdentityKey())
+			await loadWorkspace();
+	}
+
 	async function addTerm(draft: Parameters<typeof createAcademicTerm>[0]) {
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
 			const created = await createAcademicTerm(draft);
-			if (disposed || identity !== appIdentityKey()) return created;
+			if (identity !== appIdentityKey()) return created;
+			void academicContext.refreshOptions();
+			if (disposed) return created;
 			mutationRevision += 1;
 			patchTerm(created);
 			schoolDaysEditableTermIds = [...schoolDaysEditableTermIds, created.id];
 			bellScheduleSetupTermIds = [...bellScheduleSetupTermIds, created.id];
 			return created;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
 			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}
@@ -244,23 +282,36 @@
 		busy.term = true;
 		try {
 			const result = await createAcademicTermCopySchoolSchedule(draft);
-			if (disposed || identity !== appIdentityKey()) return result;
+			if (identity !== appIdentityKey()) return result;
+			void academicContext.refreshOptions();
+			if (disposed) return result;
 			mutationRevision += 1;
 			patchCopiedSchoolSchedule(result);
 			return result;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
 			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}
 	}
-	async function copyTermSchoolSchedule(id: string, draft: Parameters<typeof copyAcademicTermSchoolSchedule>[1]) {
+	async function copyTermSchoolSchedule(
+		id: string,
+		draft: Parameters<typeof copyAcademicTermSchoolSchedule>[1]
+	) {
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
 			const result = await copyAcademicTermSchoolSchedule(id, draft);
-			if (disposed || identity !== appIdentityKey()) return result;
+			if (identity !== appIdentityKey()) return result;
+			void academicContext.refreshOptions();
+			if (disposed) return result;
 			mutationRevision += 1;
 			patchCopiedSchoolSchedule(result);
 			return result;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
 			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}
@@ -289,17 +340,15 @@
 		busy.term = true;
 		try {
 			const updated = await updateAcademicTerm(id, draft);
-			if (disposed || identity !== appIdentityKey()) return updated;
+			if (identity !== appIdentityKey()) return updated;
+			void academicContext.refreshOptions();
+			if (disposed) return updated;
 			mutationRevision += 1;
-			termsByYear.set(
-				updated.academicYearId,
-				(termsByYear.get(updated.academicYearId) ?? [])
-					.map((term) =>
-						term.id === updated.id && updated.rowVersion >= term.rowVersion ? updated : term
-					)
-					.sort((a, b) => a.sequence - b.sequence)
-			);
+			patchTerm(updated);
 			return updated;
+		} catch (cause) {
+			await reconcileTermConflict(cause, identity);
+			throw cause;
 		} finally {
 			if (!disposed && identity === appIdentityKey()) busy.term = false;
 		}

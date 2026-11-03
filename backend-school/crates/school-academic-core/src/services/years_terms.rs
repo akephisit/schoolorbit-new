@@ -13,7 +13,6 @@ use super::super::models::{
 };
 use super::{lifecycle_guard, parse_row_version};
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DerivedTermIdentity {
     pub code: String,
@@ -629,7 +628,7 @@ pub(super) async fn update_term_in_transaction(
         && !metadata_unchanged
     {
         return Err(AppError::Conflict(
-            "ภาคเรียนหรือปีที่พร้อมเปิดให้เปลี่ยนได้เฉพาะตารางคาบ โดยคงข้อมูลอื่นเดิม".into(),
+            "ภาคเรียนหรือปีที่พร้อมเปิดให้เปลี่ยนได้เฉพาะวันเรียนและตารางคาบ โดยคงข้อมูลอื่นเดิม".into(),
         ));
     }
     if !matches!(
@@ -652,7 +651,9 @@ pub(super) async fn update_term_in_transaction(
             "SELECT EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE academic_term_id=$1 AND NOT(day_of_week=ANY($2)))")
         .bind(id).bind(&school_days).fetch_one().await?;
     if removed_referenced_day {
-        return Err(AppError::Conflict("วันเรียนที่มีคาบในตารางสอนอ้างอิงอยู่ไม่สามารถนำออกได้".into()));
+        return Err(AppError::Conflict(
+            "วันเรียนที่มีคาบในตารางสอนอ้างอิงอยู่ไม่สามารถนำออกได้".into(),
+        ));
     }
     if current.bell_schedule_id != request.bell_schedule_id {
         if !super::bell_schedules::term_schedule_is_assignable(transaction, id).await? {
@@ -690,9 +691,7 @@ pub(super) async fn update_term_in_transaction(
     let row = match row {
         Some(row) => row,
         None => {
-            return Err(
-                classify_term_update_failure(transaction, id, request.row_version).await?,
-            );
+            return Err(classify_term_update_failure(transaction, id, request.row_version).await?);
         }
     };
     append_audit(

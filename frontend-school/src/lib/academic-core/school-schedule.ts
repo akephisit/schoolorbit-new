@@ -41,24 +41,39 @@ export function previousSchoolScheduleTerm(
 	return terms
 		.filter((term) => {
 			const number = yearNumbers.get(term.academicYearId);
-			return number !== undefined &&
-				(number < year.year || (number === year.year && term.sequence < (target?.sequence ?? Infinity)));
+			return (
+				number !== undefined &&
+				(number < year.year ||
+					(number === year.year && term.sequence < (target?.sequence ?? Infinity)))
+			);
 		})
-		.toSorted((a, b) =>
-			(yearNumbers.get(b.academicYearId)! - yearNumbers.get(a.academicYearId)!) || b.sequence - a.sequence
+		.toSorted(
+			(a, b) =>
+				yearNumbers.get(b.academicYearId)! - yearNumbers.get(a.academicYearId)! ||
+				b.sequence - a.sequence
 		)[0];
 }
 
 export type StoredPeriodSchoolDays =
-	| { ok: true; days: AcademicWeekday[] | null }
-	| { ok: false; error: string };
+	{ ok: true; days: AcademicWeekday[] | null } | { ok: false; error: string };
 
-export function parsePeriodSchoolDays(period: Pick<BellSchedulePeriod, 'applicableDays'>): StoredPeriodSchoolDays {
+export function parsePeriodSchoolDays(
+	period: Pick<BellSchedulePeriod, 'applicableDays'>
+): StoredPeriodSchoolDays {
 	if (period.applicableDays === null) return { ok: true, days: null };
+	if (period.applicableDays === undefined)
+		return { ok: false, error: 'ไม่พบข้อมูลวันเฉพาะคาบ กรุณาโหลดข้อมูลที่ครบถ้วนก่อนบันทึก' };
 	const values = period.applicableDays.split(',');
 	const normalized = normalizeSchoolDays(values);
-	if (values.length === 0 || normalized.length !== values.length || values.some((day) => !SCHOOL_WEEKDAYS.some((item) => item.code === day)))
-		return { ok: false, error: 'รูปแบบวันเฉพาะคาบที่บันทึกไว้ไม่ถูกต้อง กรุณาให้ผู้ดูแลตรวจข้อมูลเดิมก่อนบันทึก' };
+	if (
+		values.length === 0 ||
+		normalized.length !== values.length ||
+		values.some((day) => !SCHOOL_WEEKDAYS.some((item) => item.code === day))
+	)
+		return {
+			ok: false,
+			error: 'รูปแบบวันเฉพาะคาบที่บันทึกไว้ไม่ถูกต้อง กรุณาให้ผู้ดูแลตรวจข้อมูลเดิมก่อนบันทึก'
+		};
 	return { ok: true, days: normalized };
 }
 
@@ -73,10 +88,12 @@ export function periodDaysOutsideTerm(
 	schoolDays: readonly string[]
 ): AcademicWeekday[] {
 	const selected = new Set(schoolDays);
-	return normalizeSchoolDays(periods.flatMap((period) => {
-		const parsed = parsePeriodSchoolDays(period);
-		return parsed.ok ? parsed.days ?? [] : [];
-	})).filter((day) => !selected.has(day));
+	return normalizeSchoolDays(
+		periods.flatMap((period) => {
+			const parsed = parsePeriodSchoolDays(period);
+			return parsed.ok ? (parsed.days ?? []) : [];
+		})
+	).filter((day) => !selected.has(day));
 }
 
 export function periodAllowsSchoolDay(
@@ -86,5 +103,10 @@ export function periodAllowsSchoolDay(
 ): boolean {
 	if (!period?.isActive || !schoolDays.includes(day)) return false;
 	const parsed = parsePeriodSchoolDays(period);
-	return parsed.ok && (parsed.days === null || parsed.days.includes(day as AcademicWeekday));
+	return (
+		parsed.ok &&
+		(parsed.days === null ||
+			(parsed.days.every((value) => schoolDays.includes(value)) &&
+				parsed.days.includes(day as AcademicWeekday)))
+	);
 }

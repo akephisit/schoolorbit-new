@@ -106,7 +106,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
-							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+							schoolDays: ['MON', 'SAT'],
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true

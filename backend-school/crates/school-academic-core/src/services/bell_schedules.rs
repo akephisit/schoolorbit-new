@@ -168,7 +168,9 @@ pub async fn clone_schedule(
         "academic_core.services.bell_schedules.clone_schedule",
     )
     .await?;
-    let result = clone_schedule_in_transaction(&mut transaction, actor_user_id, source_id, request).await?;
+    let result =
+        clone_schedule_in_transaction(&mut transaction, actor_user_id, source_id, request, false)
+            .await?;
     transaction.commit().await?;
     Ok(result)
 }
@@ -178,6 +180,7 @@ pub(super) async fn clone_schedule_in_transaction(
     actor_user_id: Uuid,
     source_id: Uuid,
     request: CloneBellScheduleRequest,
+    creating_term: bool,
 ) -> Result<BellSchedule, AppError> {
     validate_schedule_fields(&request.name)?;
     parse_row_version(request.row_version)?;
@@ -201,7 +204,21 @@ pub(super) async fn clone_schedule_in_transaction(
         .bind(vec![source_year, request.academic_year_id])
         .fetch_all()
         .await?;
-    require_setup_year(transaction, request.academic_year_id).await?;
+    if creating_term {
+        let status =
+            lifecycle_guard::require_year_write_exclusive(transaction, request.academic_year_id)
+                .await?;
+        if !matches!(
+            status,
+            AcademicYearStatus::Planning | AcademicYearStatus::Active
+        ) {
+            return Err(AppError::Conflict(
+                "สร้างภาคเรียนได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
+            ));
+        }
+    } else {
+        require_setup_year(transaction, request.academic_year_id).await?;
+    }
     let actual_version: i64 = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
@@ -215,7 +232,7 @@ pub(super) async fn clone_schedule_in_transaction(
             "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
         ));
     }
-    let source_periods = list_periods_on_connection(transaction, source_id).await?;
+    let source_periods = list_periods_for_copy(transaction, source_id).await?;
     let inputs: Vec<_> = source_periods
         .iter()
         .map(|period| BellSchedulePeriodInput {
@@ -390,6 +407,22 @@ pub(crate) async fn list_periods_on_connection(
         .await?)
 }
 
+pub(super) async fn list_periods_for_copy(
+    connection: &mut sqlx::PgConnection,
+    schedule_id: Uuid,
+) -> Result<Vec<BellSchedulePeriod>, AppError> {
+    let periods: Vec<BellSchedulePeriod> = DbSession::new(connection)
+        .query_as("academic_core.services.bell_schedules.list_periods_for_copy",
+            "SELECT id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$1 ORDER BY order_index,start_time,id LIMIT 1001")
+        .bind(schedule_id).fetch_all().await?;
+    if periods.len() > 1_000 {
+        return Err(AppError::ValidationError(
+            "ตารางคาบต้นฉบับมีคาบเกิน 1,000 คาบ".into(),
+        ));
+    }
+    Ok(periods)
+}
+
 #[derive(Debug)]
 pub struct BellSchedulePeriodsWriteOutcome {
     pub academic_year_id: Uuid,
@@ -447,7 +480,14 @@ pub async fn replace_periods(
             .bind(period.start_time)
             .bind(period.end_time)
             .bind(period.order_index)
-            .bind(period.applicable_days.as_deref().map(normalize_period_days).transpose()?.map(|days| days.join(",")))
+            .bind(
+                period
+                    .applicable_days
+                    .as_deref()
+                    .map(normalize_period_days)
+                    .transpose()?
+                    .map(|days| days.join(",")),
+            )
             .bind(period.is_active)
             .execute()
             .await?;
@@ -502,23 +542,30 @@ pub fn validate_periods(periods: &[BellSchedulePeriodInput]) -> Result<(), AppEr
                 "เวลาเริ่มคาบต้องอยู่ก่อนเวลาสิ้นสุด".to_string(),
             ));
         }
-        if let Some(days) = &period.applicable_days { normalize_period_days(days)?; }
+        if let Some(days) = &period.applicable_days {
+            normalize_period_days(days)?;
+        }
     }
     for (index, period) in periods.iter().enumerate() {
         if !period.is_active {
             continue;
         }
-        let all_days = SCHOOL_DAYS.iter().map(|day| (*day).to_owned()).collect::<Vec<_>>();
+        let all_days = SCHOOL_DAYS
+            .iter()
+            .map(|day| (*day).to_owned())
+            .collect::<Vec<_>>();
         let days = period
             .applicable_days
-            .as_ref().unwrap_or(&all_days)
+            .as_ref()
+            .unwrap_or(&all_days)
             .iter()
             .map(|day| day.trim().to_ascii_uppercase())
             .collect::<HashSet<_>>();
         for other in periods.iter().skip(index + 1).filter(|item| item.is_active) {
             let shares_day = other
                 .applicable_days
-                .as_ref().unwrap_or(&all_days)
+                .as_ref()
+                .unwrap_or(&all_days)
                 .iter()
                 .map(|day| day.trim().to_ascii_uppercase())
                 .any(|day| days.contains(&day));

@@ -52,8 +52,13 @@
 		onReloadContextSettings: () => Promise<void>;
 		onCreateYear: (input: CreateAcademicYearRequest) => Promise<AcademicYear>;
 		onUpdateYear: (id: string, input: UpdateAcademicYearRequest) => Promise<AcademicYear>;
-		onCreateTermCopy: (input: CreateAcademicTermCopySchoolScheduleRequest) => Promise<AcademicTermSchoolScheduleCopyResponse>;
-		onLoadBellSchedulePeriods: (id: string, options?: {signal?: AbortSignal}) => Promise<BellSchedulePeriodsSnapshot>;
+		onCreateTermCopy: (
+			input: CreateAcademicTermCopySchoolScheduleRequest
+		) => Promise<AcademicTermSchoolScheduleCopyResponse>;
+		onLoadBellSchedulePeriods: (
+			id: string,
+			options?: { signal?: AbortSignal }
+		) => Promise<BellSchedulePeriodsSnapshot>;
 		onCreateTerm: (input: CreateAcademicTermRequest) => Promise<AcademicTerm>;
 		onUpdateTerm: (id: string, input: UpdateAcademicTermRequest) => Promise<AcademicTerm>;
 	} = $props();

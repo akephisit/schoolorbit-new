@@ -208,6 +208,7 @@ pub struct BellSchedulePeriodInput {
     pub end_time: NaiveTime,
     pub order_index: i32,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable")]
     pub applicable_days: Option<Vec<String>>,
     pub is_active: bool,
 }

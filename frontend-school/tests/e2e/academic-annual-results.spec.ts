@@ -227,6 +227,7 @@ async function mock(
 							name: 'ภาคเรียนที่ 1',
 							sequence: 1,
 							termType: 'regular',
+							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'closed',
 							includedInYearResult: true,
 							blocksYearClosure: true

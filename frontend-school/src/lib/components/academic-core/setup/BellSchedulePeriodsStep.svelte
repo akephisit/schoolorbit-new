@@ -2,7 +2,11 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import { periodSchoolDayOverride, periodDaysOutsideTerm, SCHOOL_WEEKDAYS } from '#lib/academic-core/school-schedule.js';
+	import {
+		periodSchoolDayOverride,
+		periodDaysOutsideTerm,
+		SCHOOL_WEEKDAYS
+	} from '#lib/academic-core/school-schedule.js';
 	import { bellScheduleBlockMessage } from '#lib/academic-core/period-setup.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
@@ -64,7 +68,9 @@
 
 	const inputPrefix = $derived(term ? `term-${term.id}` : `template-${year.id}`);
 	let selectedScheduleId = $state(untrack(() => term?.bellScheduleId ?? ''));
-	onMount(() => { if (selectedScheduleId) void selectSchedule(selectedScheduleId); });
+	onMount(() => {
+		if (selectedScheduleId) void selectSchedule(selectedScheduleId);
+	});
 	let periods = $state<PeriodDraft[]>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
@@ -76,7 +82,7 @@
 	const latest = new LatestRequest();
 	onMount(() =>
 		registerAcademicContextDirtySource(
-			`bell-periods:${year.id}`,
+			`bell-periods:${inputPrefix}`,
 			() => savedDraft !== '' && JSON.stringify(periods) !== savedDraft
 		)
 	);
@@ -88,14 +94,19 @@
 	const selectedSchedule = $derived(
 		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
 	);
-	const schoolDays = $derived(normalizeSchoolDays(term && term.bellScheduleId === selectedScheduleId ? term.schoolDays : SCHOOL_WEEKDAYS.map((day) => day.code)));
+	const schoolDays = $derived(
+		normalizeSchoolDays(
+			term && term.bellScheduleId === selectedScheduleId
+				? term.schoolDays
+				: SCHOOL_WEEKDAYS.map((day) => day.code)
+		)
+	);
 	const editable = $derived(canManage && selectedSchedule?.editBlockedReason === null);
 	const changed = $derived(
 		baseVersion !== null && (selectedSchedule?.rowVersion ?? 0) > baseVersion
 	);
 
 	function draftFromPeriod(period?: BellSchedulePeriod): PeriodDraft {
-
 		return {
 			name: period?.name ?? null,
 			startTime: period?.startTime.slice(0, 5) ?? '08:30',
@@ -114,6 +125,7 @@
 		const identity = appIdentityKey();
 		selectedScheduleId = id;
 		periods = [];
+		savedDraft = '';
 		comparison = null;
 		baseVersion = null;
 		errorMessage = '';
@@ -126,7 +138,12 @@
 				savedDraft = JSON.stringify(periods);
 			}
 		} catch (error) {
-			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(error))
+			if (
+				!disposed &&
+				latest.isCurrent(revision) &&
+				identity === appIdentityKey() &&
+				!isAbortError(error)
+			)
 				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
 			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
@@ -141,12 +158,19 @@
 		comparing = true;
 		try {
 			const result = await onLoad(scheduleId, { signal });
-			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) comparison = result;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey())
+				comparison = result;
 		} catch (cause) {
-			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
+			if (
+				!disposed &&
+				latest.isCurrent(revision) &&
+				identity === appIdentityKey() &&
+				!isAbortError(cause)
+			)
 				errorMessage = cause instanceof Error ? cause.message : 'โหลดคาบล่าสุดไม่สำเร็จ';
 		} finally {
-			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey()) comparing = false;
+			if (!disposed && latest.isCurrent(revision) && identity === appIdentityKey())
+				comparing = false;
 		}
 	}
 
@@ -174,17 +198,32 @@
 			checked ? [...current, day] : current.filter((item) => item !== day)
 		);
 	}
-	const outsideDays = $derived(periodDaysOutsideTerm(periods.map((period) => ({applicableDays: period.applicableDays?.join(',') ?? null})), schoolDays));
+	const outsideDays = $derived(
+		periodDaysOutsideTerm(
+			periods.map((period) => ({ applicableDays: period.applicableDays?.join(',') ?? null })),
+			schoolDays
+		)
+	);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedSchedule || !editable || changed || busy || baseVersion === null) return;
+		if (
+			!selectedSchedule ||
+			!editable ||
+			changed ||
+			busy ||
+			baseVersion === null ||
+			(term && outsideDays.length > 0)
+		)
+			return;
 		errorMessage = '';
 		if (periods.length === 0) {
 			errorMessage = 'กรุณาเพิ่มคาบเรียนอย่างน้อย 1 คาบ';
 			return;
 		}
-		if (periods.some((period) => period.applicableDays !== null && period.applicableDays.length === 0)) {
+		if (
+			periods.some((period) => period.applicableDays !== null && period.applicableDays.length === 0)
+		) {
 			errorMessage = 'ทุกคาบต้องเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
 		}
@@ -196,7 +235,8 @@
 				periods: periods.map((period) => ({
 					...period,
 					name: period.name?.trim() || null,
-					applicableDays: period.applicableDays === null ? null : normalizeSchoolDays(period.applicableDays)
+					applicableDays:
+						period.applicableDays === null ? null : normalizeSchoolDays(period.applicableDays)
 				}))
 			});
 			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
@@ -214,7 +254,9 @@
 
 <form class="space-y-5" onsubmit={submit}>
 	<div class="space-y-1.5">
-		<Label for={`${inputPrefix}-period-schedule`}>{term ? 'ตารางเวลาของภาคเรียนที่แสดง' : 'ตารางเวลาที่จะจัดคาบ'}</Label>
+		<Label for={`${inputPrefix}-period-schedule`}
+			>{term ? 'ตารางเวลาของภาคเรียนที่แสดง' : 'ตารางเวลาที่จะจัดคาบ'}</Label
+		>
 		<Select.Root
 			type="single"
 			value={selectedScheduleId}
@@ -244,7 +286,9 @@
 			กำลังโหลดคาบเรียน…
 		</p>
 	{:else if selectedSchedule}
-		{#if outsideDays.length}<p role="alert" class="text-sm text-destructive">คาบที่บันทึกมีวันนอกวันเรียนของภาคนี้: {outsideDays.join(', ')} ข้อมูลเดิมยังอยู่ ตรวจวันเรียนและวันเฉพาะคาบก่อนบันทึก</p>{/if}
+		{#if outsideDays.length}<p role="alert" class="text-sm text-destructive">
+				คาบที่บันทึกมีวันนอกวันเรียนของภาคนี้: {outsideDays.join(', ')} ข้อมูลเดิมยังอยู่ ตรวจวันเรียนและวันเฉพาะคาบก่อนบันทึก
+			</p>{/if}
 		{#if selectedSchedule.editBlockedReason}<p class="rounded-lg border bg-muted/20 p-3 text-sm">
 				{bellScheduleBlockMessage(selectedSchedule.editBlockedReason)}
 			</p>{/if}
@@ -311,7 +355,9 @@
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for={`${inputPrefix}-period-start-${index}`}>{term ? 'เริ่มคาบของภาคเรียน' : 'เริ่ม'}</Label>
+							<Label for={`${inputPrefix}-period-start-${index}`}
+								>{term ? 'เริ่มคาบของภาคเรียน' : 'เริ่ม'}</Label
+							>
 							<Input
 								id={`${inputPrefix}-period-start-${index}`}
 								type="time"
@@ -320,8 +366,15 @@
 							/>
 						</div>
 						<div class="space-y-1.5">
-							<Label for={`${inputPrefix}-period-end-${index}`}>{term ? 'สิ้นสุดคาบของภาคเรียน' : 'สิ้นสุด'}</Label>
-							<Input id={`${inputPrefix}-period-end-${index}`} type="time" bind:value={period.endTime} required />
+							<Label for={`${inputPrefix}-period-end-${index}`}
+								>{term ? 'สิ้นสุดคาบของภาคเรียน' : 'สิ้นสุด'}</Label
+							>
+							<Input
+								id={`${inputPrefix}-period-end-${index}`}
+								type="time"
+								bind:value={period.endTime}
+								required
+							/>
 						</div>
 					</div>
 
@@ -343,7 +396,8 @@
 								class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"
 							>
 								<Checkbox
-									checked={period.applicableDays === null || period.applicableDays.includes(day.code)}
+									checked={period.applicableDays === null ||
+										period.applicableDays.includes(day.code)}
 									onCheckedChange={(checked) => toggleDay(index, day.code, checked ?? false)}
 								/>
 								{day.label}
@@ -362,8 +416,15 @@
 				<Button type="button" variant="outline" onclick={addPeriod}>
 					<Plus class="size-4" /> เพิ่มคาบ
 				</Button>
-				<Button type="submit" disabled={busy || changed || periods.length === 0}>
-					<Save class="size-4" /> {term ? 'บันทึกคาบทั้งหมดของภาคเรียน' : 'บันทึกคาบทั้งหมด'}
+				<Button
+					type="submit"
+					disabled={busy ||
+						changed ||
+						periods.length === 0 ||
+						(term !== undefined && outsideDays.length > 0)}
+				>
+					<Save class="size-4" />
+					{term ? 'บันทึกคาบทั้งหมดของภาคเรียน' : 'บันทึกคาบทั้งหมด'}
 				</Button>
 			</div>{/if}
 	{/if}

@@ -54,9 +54,17 @@ impl AttendanceReadContext {
     }
 }
 
-async fn initial_configuration(connection: &mut PgConnection, term: Uuid) -> Result<AttendanceConfiguration, AppError> {
-    let days = school_academic_core::services::school_days::for_term_on_connection(connection, term).await?;
-    Ok(AttendanceConfiguration { weekdays: school_academic_core::services::school_days::iso_weekdays(&days)?, ..AttendanceConfiguration::default() })
+pub(crate) async fn initial_configuration(
+    connection: &mut PgConnection,
+    term: Uuid,
+) -> Result<AttendanceConfiguration, AppError> {
+    let days =
+        school_academic_core::services::school_days::for_term_on_connection(connection, term)
+            .await?;
+    Ok(AttendanceConfiguration {
+        weekdays: school_academic_core::services::school_days::iso_weekdays(&days)?,
+        ..AttendanceConfiguration::default()
+    })
 }
 
 pub async fn save(

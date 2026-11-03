@@ -48,6 +48,16 @@ Failure keeps maintenance active; it never means a transaction was rolled back.
 Normal requests fail closed when
 the tenant schema does not match the release.
 
+School migration 155 moves live weekdays to each term and renames the annual
+preset to `default_school_days`. Deploy under the existing Maintenance Mode and
+drain old writers before applying it. The migration refuses malformed legacy
+presets, reconciles exact backfill and historical evidence, and preserves years
+without terms. After 155 commits, pre-155 School binaries are prohibited because
+they address the retired annual column. Keep maintenance enabled on failure and
+recover with a compatible release or roll forward; never rename the column back,
+modify accepted receipts or bypass migration history. Inspect only bounded
+`ACADEMIC_SCHOOL_DAYS155_*` refusal codes and aggregate audit evidence.
+
 ### Recovery after the completed transfer
 
 The application has accepted PostgreSQL writes. Recover or roll forward using the

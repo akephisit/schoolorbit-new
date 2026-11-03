@@ -31,7 +31,11 @@ function fulfillJson(route: Route, data: unknown) {
 	});
 }
 
-async function mockStaffTimetableApis(page: Page, items: unknown[]) {
+async function mockStaffTimetableApis(
+	page: Page,
+	items: unknown[],
+	schoolDays = ['MON', 'TUE', 'WED', 'THU', 'FRI']
+) {
 	let timetableReads = 0;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -77,7 +81,7 @@ async function mockStaffTimetableApis(page: Page, items: unknown[]) {
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
-							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+							schoolDays,
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true
@@ -357,7 +361,15 @@ for (const width of [390, 614, 1029, 1533]) {
 				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
 				theme
 			);
-			const reads = await mockStaffTimetableApis(page, workspaceEntries());
+			const reads = await mockStaffTimetableApis(page, workspaceEntries(), [
+				'MON',
+				'TUE',
+				'WED',
+				'THU',
+				'FRI',
+				'SAT',
+				'SUN'
+			]);
 			await page.goto('/staff/timetable');
 			await expect(page.getByTestId('personal-timetable-ready')).toBeVisible();
 			await expect
@@ -554,7 +566,15 @@ test('compact landscape keeps both timetable views inside the available main hei
 	page
 }) => {
 	await page.setViewportSize({ width: 614, height: 400 });
-	await mockStaffTimetableApis(page, workspaceEntries());
+	await mockStaffTimetableApis(page, workspaceEntries(), [
+		'MON',
+		'TUE',
+		'WED',
+		'THU',
+		'FRI',
+		'SAT',
+		'SUN'
+	]);
 	await page.goto('/staff/timetable');
 	const daily = page.getByTestId('own-timetable-day-scroll');
 	await expect(daily).toBeVisible();
@@ -569,4 +589,28 @@ test('compact landscape keeps both timetable views inside the available main hei
 	await expect(weekly).toBeVisible();
 	expect((await weekly.boundingBox())!.height).toBeGreaterThan(40);
 	await expectNoOuterOverflow(page);
+});
+
+test('own timetable keeps a configured Saturday visible when it has no lessons', async ({
+	page
+}) => {
+	await mockStaffTimetableApis(
+		page,
+		[makeTimetableBlock(timetableIds.blockA, timetableIds.period1)],
+		['MON', 'SAT']
+	);
+	await page.goto(
+		`/staff/timetable?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+	);
+	await expect(page.getByTestId('own-timetable-week').locator('tbody tr > th')).toHaveText([
+		'จันทร์',
+		'เสาร์'
+	]);
+	await expect(
+		page
+			.getByTestId('own-timetable-week')
+			.locator('tbody tr')
+			.last()
+			.locator('[data-timetable-block]')
+	).toHaveCount(0);
 });

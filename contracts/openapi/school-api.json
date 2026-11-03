@@ -658,6 +658,13 @@
           "contextSettings": {
             "$ref": "#/components/schemas/AcademicContextSettings"
           },
+          "schoolDaysEditableTermIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "terms": {
             "items": {
               "$ref": "#/components/schemas/AcademicTerm"
@@ -677,7 +684,8 @@
           "terms",
           "bellSchedules",
           "bellScheduleSetupYearIds",
-          "bellScheduleSetupTermIds"
+          "bellScheduleSetupTermIds",
+          "schoolDaysEditableTermIds"
         ],
         "type": "object"
       },
@@ -721,6 +729,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "sequence": {
             "format": "int32",
             "type": "integer"
@@ -746,6 +760,7 @@
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
+          "schoolDays",
           "isVisible",
           "status",
           "rowVersion",
@@ -1429,6 +1444,12 @@
           "name": {
             "type": "string"
           },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "sequence": {
             "format": "int32",
             "type": "integer"
@@ -1450,7 +1471,31 @@
           "includedInYearResult",
           "blocksYearClosure",
           "isVisible",
-          "status"
+          "status",
+          "schoolDays"
+        ],
+        "type": "object"
+      },
+      "AcademicTermSchoolScheduleCopyResponse": {
+        "properties": {
+          "bellSchedule": {
+            "$ref": "#/components/schemas/BellSchedule"
+          },
+          "canAssignBellSchedule": {
+            "type": "boolean"
+          },
+          "canEditSchoolDays": {
+            "type": "boolean"
+          },
+          "term": {
+            "$ref": "#/components/schemas/AcademicTerm"
+          }
+        },
+        "required": [
+          "term",
+          "bellSchedule",
+          "canEditSchoolDays",
+          "canAssignBellSchedule"
         ],
         "type": "object"
       },
@@ -1480,6 +1525,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "defaultSchoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -1497,12 +1548,6 @@
             "format": "int64",
             "type": "integer"
           },
-          "schoolDays": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "status": {
             "$ref": "#/components/schemas/AcademicYearStatus"
           },
@@ -1519,7 +1564,7 @@
           "id",
           "year",
           "name",
-          "schoolDays",
+          "defaultSchoolDays",
           "isVisible",
           "status",
           "rowVersion",
@@ -3398,6 +3443,13 @@
               "contextSettings": {
                 "$ref": "#/components/schemas/AcademicContextSettings"
               },
+              "schoolDaysEditableTermIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "terms": {
                 "items": {
                   "$ref": "#/components/schemas/AcademicTerm"
@@ -3417,7 +3469,8 @@
               "terms",
               "bellSchedules",
               "bellScheduleSetupYearIds",
-              "bellScheduleSetupTermIds"
+              "bellScheduleSetupTermIds",
+              "schoolDaysEditableTermIds"
             ],
             "type": "object"
           },
@@ -3476,6 +3529,12 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "schoolDays": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "sequence": {
                 "format": "int32",
                 "type": "integer"
@@ -3501,6 +3560,7 @@
               "includedInYearResult",
               "blocksYearClosure",
               "bellScheduleId",
+              "schoolDays",
               "isVisible",
               "status",
               "rowVersion",
@@ -3754,6 +3814,44 @@
         ],
         "type": "object"
       },
+      "ApiResponse_AcademicTermSchoolScheduleCopyResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "bellSchedule": {
+                "$ref": "#/components/schemas/BellSchedule"
+              },
+              "canAssignBellSchedule": {
+                "type": "boolean"
+              },
+              "canEditSchoolDays": {
+                "type": "boolean"
+              },
+              "term": {
+                "$ref": "#/components/schemas/AcademicTerm"
+              }
+            },
+            "required": [
+              "term",
+              "bellSchedule",
+              "canEditSchoolDays",
+              "canAssignBellSchedule"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_AcademicYear": {
         "properties": {
           "data": {
@@ -3761,6 +3859,12 @@
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "defaultSchoolDays": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "id": {
                 "format": "uuid",
@@ -3779,12 +3883,6 @@
                 "format": "int64",
                 "type": "integer"
               },
-              "schoolDays": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
               "status": {
                 "$ref": "#/components/schemas/AcademicYearStatus"
               },
@@ -3801,7 +3899,7 @@
               "id",
               "year",
               "name",
-              "schoolDays",
+              "defaultSchoolDays",
               "isVisible",
               "status",
               "rowVersion",
@@ -20356,6 +20454,12 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "schoolDays": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "sequence": {
                   "format": "int32",
                   "type": "integer"
@@ -20381,6 +20485,7 @@
                 "includedInYearResult",
                 "blocksYearClosure",
                 "bellScheduleId",
+                "schoolDays",
                 "isVisible",
                 "status",
                 "rowVersion",
@@ -20670,6 +20775,12 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "defaultSchoolDays": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -20687,12 +20798,6 @@
                   "format": "int64",
                   "type": "integer"
                 },
-                "schoolDays": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
                 "status": {
                   "$ref": "#/components/schemas/AcademicYearStatus"
                 },
@@ -20709,7 +20814,7 @@
                 "id",
                 "year",
                 "name",
-                "schoolDays",
+                "defaultSchoolDays",
                 "isVisible",
                 "status",
                 "rowVersion",
@@ -32396,7 +32501,10 @@
             "items": {
               "type": "string"
             },
-            "type": "array"
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "endTime": {
             "type": "string"
@@ -39355,6 +39463,41 @@
         ],
         "type": "object"
       },
+      "CopyAcademicTermSchoolScheduleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceBellScheduleRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceTermRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sourceTermId",
+          "sourceTermRowVersion",
+          "sourceBellScheduleRowVersion",
+          "schoolDays",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
       "CopyStudyProgramRequest": {
         "additionalProperties": false,
         "properties": {
@@ -40549,6 +40692,59 @@
         ],
         "type": "object"
       },
+      "CreateAcademicTermCopySchoolScheduleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blocksYearClosure": {
+            "type": "boolean"
+          },
+          "customName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "includedInYearResult": {
+            "type": "boolean"
+          },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceBellScheduleRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceTermRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "termType": {
+            "$ref": "#/components/schemas/AcademicTermType"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "termType",
+          "includedInYearResult",
+          "blocksYearClosure",
+          "schoolDays",
+          "sourceTermId",
+          "sourceTermRowVersion",
+          "sourceBellScheduleRowVersion"
+        ],
+        "type": "object"
+      },
       "CreateAcademicTermRequest": {
         "additionalProperties": false,
         "properties": {
@@ -40572,6 +40768,12 @@
           "includedInYearResult": {
             "type": "boolean"
           },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "termType": {
             "$ref": "#/components/schemas/AcademicTermType"
           }
@@ -40581,7 +40783,8 @@
           "termType",
           "includedInYearResult",
           "blocksYearClosure",
-          "bellScheduleId"
+          "bellScheduleId",
+          "schoolDays"
         ],
         "type": "object"
       },
@@ -40594,7 +40797,7 @@
               "null"
             ]
           },
-          "schoolDays": {
+          "defaultSchoolDays": {
             "items": {
               "type": "string"
             },
@@ -40607,7 +40810,7 @@
         },
         "required": [
           "year",
-          "schoolDays"
+          "defaultSchoolDays"
         ],
         "type": "object"
       },
@@ -70885,6 +71088,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "schoolDays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "termType": {
             "$ref": "#/components/schemas/AcademicTermType"
           }
@@ -70894,6 +71103,7 @@
           "includedInYearResult",
           "blocksYearClosure",
           "bellScheduleId",
+          "schoolDays",
           "rowVersion"
         ],
         "type": "object"
@@ -70907,15 +71117,15 @@
               "null"
             ]
           },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "schoolDays": {
+          "defaultSchoolDays": {
             "items": {
               "type": "string"
             },
             "type": "array"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
           },
           "year": {
             "format": "int32",
@@ -70924,7 +71134,7 @@
         },
         "required": [
           "year",
-          "schoolDays",
+          "defaultSchoolDays",
           "rowVersion"
         ],
         "type": "object"
@@ -94110,6 +94320,178 @@
               }
             },
             "description": "Academic term row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/terms/{id}/copy-school-schedule": {
+      "post": {
+        "operationId": "copyAcademicTermSchoolSchedule",
+        "parameters": [
+          {
+            "description": "Unopened target term identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyAcademicTermSchoolScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermSchoolScheduleCopyResponse"
+                }
+              }
+            },
+            "description": "Independent bell schedule and target weekdays assigned atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid school days or term configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Term management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source or target context not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source or target revision, reference or lifecycle conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/terms/copy-school-schedule": {
+      "post": {
+        "operationId": "createAcademicTermCopySchoolSchedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAcademicTermCopySchoolScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicTermSchoolScheduleCopyResponse"
+                }
+              }
+            },
+            "description": "Term and independent copied bell schedule created atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid school days or term configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Term management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source or target context not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source revision or target lifecycle conflict"
           }
         },
         "tags": [

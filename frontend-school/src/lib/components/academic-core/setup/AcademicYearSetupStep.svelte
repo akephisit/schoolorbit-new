@@ -51,7 +51,9 @@
 	const displayName = $derived(customName.trim() || standardName);
 
 	let disposed = false;
-	onDestroy(() => { disposed = true; });
+	onDestroy(() => {
+		disposed = true;
+	});
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();

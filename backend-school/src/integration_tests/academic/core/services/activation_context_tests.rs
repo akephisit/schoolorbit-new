@@ -69,7 +69,7 @@ pub(crate) async fn ready_term_for_existing_year(
                 start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
                 end_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
                 order_index: 1,
-                applicable_days: vec!["MON".into()],
+                applicable_days: Some(vec!["MON".into()]),
                 is_active: true,
             }],
         },
@@ -80,6 +80,13 @@ pub(crate) async fn ready_term_for_existing_year(
         pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id,
             term_type: AcademicTermType::Regular,
             custom_name: None,
@@ -141,6 +148,23 @@ async fn activation_context_initial_school_has_no_fabricated_predecessor_and_has
     let later = inspect(&pool, year.id, term.id).await;
     assert!(later.issues.is_empty());
     assert_ne!(before.source_checksum, later.source_checksum);
+    sqlx::query("UPDATE bell_schedule_periods SET applicable_days=NULL WHERE bell_schedule_id=$1")
+        .bind(term.bell_schedule_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET school_days='SAT' WHERE id=$1")
+        .bind(term.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let wildcard = inspect(&pool, year.id, term.id).await;
+    assert_eq!(wildcard.school_days, "SAT");
+    assert!(
+        wildcard.issues.is_empty(),
+        "NULL uses the selected term, never the annual MON preset"
+    );
+    assert!(school_academic_core::services::opening_diagnostics::explain(&wildcard).is_empty());
     sqlx::query("UPDATE bell_schedule_periods SET is_active=false WHERE bell_schedule_id=$1")
         .bind(term.bell_schedule_id)
         .execute(&pool)
@@ -207,6 +231,13 @@ async fn activation_context_requires_closed_prior_context_and_first_future_term(
         &pool,
         actor,
         CreateAcademicTermRequest {
+            school_days: vec![
+                "MON".into(),
+                "TUE".into(),
+                "WED".into(),
+                "THU".into(),
+                "FRI".into(),
+            ],
             academic_year_id: target.id,
             term_type: AcademicTermType::Summer,
             custom_name: None,

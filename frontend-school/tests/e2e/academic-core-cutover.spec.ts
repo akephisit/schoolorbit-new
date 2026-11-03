@@ -93,7 +93,7 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+							schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 							status: 'active',
 							includedInYearResult: true,
 							blocksYearClosure: true
@@ -103,6 +103,15 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 				return;
 			}
 			if (await academic(route, url)) return;
+			if (route.request().method() === 'GET' && /^\/api\/academic\/terms\/[^/]+$/.test(url.pathname)) {await fulfill(route, {...term, id: url.pathname.split('/').at(-1)}); return;}
+			if (url.pathname.endsWith('/periods')) {
+				await fulfill(route, {
+					bellScheduleId: url.pathname.split('/').at(-2),
+					rowVersion: 1,
+					periods: []
+				});
+				return;
+			}
 			if (/^\/api\/academic\/lifecycle\/years\/[^/]+$/.test(url.pathname)) {
 				await fulfill(route, {
 					context: {
@@ -172,7 +181,7 @@ const term = {
 	code: '1',
 	name: 'ภาคเรียนที่ 1',
 	termType: 'regular',
-		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+	schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 	includedInYearResult: true,
 	blocksYearClosure: true,
 	bellScheduleId: ids.bell,
@@ -324,8 +333,16 @@ test('creates a future planning year and configurable regular, summer, and custo
 		return false;
 	});
 	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
-	await expect(page.getByText('ภาคฤดูร้อน')).toBeVisible();
-	await expect(page.getByText('รอบพิเศษ')).toBeVisible();
+	await expect(
+		page
+			.getByRole('region', { name: 'ภาคเรียน', exact: true })
+			.getByText('ภาคฤดูร้อน', { exact: true })
+	).toBeVisible();
+	await expect(
+		page
+			.getByRole('region', { name: 'ภาคเรียน', exact: true })
+			.getByText('รอบพิเศษ', { exact: true })
+	).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มปีการศึกษา' }).click();
 	await page.getByLabel('ปีการศึกษา (พ.ศ.)').fill('2571');
 	await expect(
@@ -822,4 +839,145 @@ test('a settings response with concurrent year metadata requires review before r
 	await page.getByRole('button', { name: 'บันทึกปีการศึกษา', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ปีการศึกษา 2572', exact: true })).toBeVisible();
 	expect(edits).toEqual([expect.objectContaining({ year: 2572, rowVersion: 3 })]);
+});
+
+test('new term previews the previous term and atomically copies edited Saturday with the paired revision', async ({
+	page
+}) => {
+	let copied:
+		import('../../src/lib/api/academic-core').CreateAcademicTermCopySchoolScheduleRequest | null =
+		null;
+	const schedule = {
+		id: ids.bell,
+		academicYearId: ids.year,
+		code: 'NORMAL',
+		name: 'ตารางภาคเดิม',
+		isDefault: true,
+		status: 'draft',
+		rowVersion: 2,
+		editBlockedReason: null,
+		canClone: true,
+		owningOrganizationUnitId: null,
+		createdAt: '',
+		updatedAt: ''
+	};
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [year],
+				terms: [term],
+				bellSchedules: [schedule],
+				bellScheduleSetupYearIds: [ids.year],
+				bellScheduleSetupTermIds: [ids.term],
+				schoolDaysEditableTermIds: [ids.term],
+				contextSettings: null
+			});
+			return true;
+		}
+		if (url.pathname.endsWith('/periods')) {
+			await fulfill(route, {
+				bellScheduleId: url.pathname.split('/').at(-2),
+				rowVersion: 7,
+				periods: [
+					{
+						id: ids.bell + 'p',
+						bellScheduleId: ids.bell,
+						name: 'คาบต้นแบบ',
+						startTime: '08:30',
+						endTime: '09:20',
+						orderIndex: 1,
+						isActive: true,
+						applicableDays: null
+					}
+				]
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/terms/copy-school-schedule') {
+			copied = route.request().postDataJSON();
+			await fulfill(
+				route,
+				{
+					term: {
+						...term,
+						id: '20000000-0000-4000-8000-000000000002',
+						sequence: 2,
+						name: 'ภาคเรียนที่ 2',
+						schoolDays: copied!.schoolDays
+					},
+					bellSchedule: { ...schedule, id: '30000000-0000-4000-8000-000000000002', rowVersion: 1 },
+					canEditSchoolDays: true,
+					canAssignBellSchedule: true
+				},
+				201
+			);
+			return true;
+		}
+		return false;
+	});
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
+	await expect(page.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toContainText('คาบต้นแบบ');
+	await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await page.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true }).click();
+	await expect
+		.poll(() => copied)
+		.toMatchObject({
+			sourceTermId: ids.term,
+			sourceTermRowVersion: 1,
+			sourceBellScheduleRowVersion: 7,
+			schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+		});
+	await expect(
+		page
+			.getByRole('region', { name: 'ภาคเรียน', exact: true })
+			.getByText('ภาคเรียนที่ 2', { exact: true })
+	).toBeVisible();
+});
+
+test('first term uses the retained year preset without requiring fabricated copied periods', async ({
+	page
+}) => {
+	let created: import('../../src/lib/api/academic-core').CreateAcademicTermRequest | null = null;
+	await mockShell(page, async (route, url) => {
+		if (url.pathname === '/api/academic/setup/workspace') {
+			await fulfill(route, {
+				years: [{ ...year, defaultSchoolDays: ['TUE', 'SAT'] }],
+				terms: [],
+				bellSchedules: [
+					{
+						id: ids.bell,
+						academicYearId: ids.year,
+						name: 'ตารางเริ่มต้น',
+						isDefault: true,
+						rowVersion: 1
+					}
+				],
+				bellScheduleSetupYearIds: [ids.year],
+				bellScheduleSetupTermIds: [],
+				schoolDaysEditableTermIds: [],
+				contextSettings: null
+			});
+			return true;
+		}
+		if (url.pathname === '/api/academic/terms' && route.request().method() === 'POST') {
+			created = route.request().postDataJSON();
+			await fulfill(route, { ...term, ...created }, 201);
+			return true;
+		}
+		return false;
+	});
+	await page.goto(`/staff/academic/year-lifecycle?academicYearId=${ids.year}`);
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันอังคาร', exact: true })).toBeChecked();
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeChecked();
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือกวันจันทร์', exact: true })
+	).not.toBeChecked();
+	await page.getByRole('button', { name: 'เพิ่มภาคเรียน', exact: true }).click();
+	await expect
+		.poll(() => created)
+		.toMatchObject({
+			academicYearId: ids.year,
+			bellScheduleId: ids.bell,
+			schoolDays: ['TUE', 'SAT']
+		});
 });

@@ -60,7 +60,9 @@
 	let interactionRevision = 0;
 	onDestroy(() => request.abort());
 
-	const schoolDays = $derived(dayOptions.filter((day) => selectedTerm?.schoolDays.includes(day.value)));
+	const schoolDays = $derived(
+		dayOptions.filter((day) => selectedTerm?.schoolDays.includes(day.value))
+	);
 
 	const canDownloadPdf = $derived(
 		canDownloadStaffOwnTimetablePdf({

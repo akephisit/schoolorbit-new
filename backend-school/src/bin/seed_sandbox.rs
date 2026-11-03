@@ -662,11 +662,11 @@ async fn upsert_terms(
         .scalar::<Uuid>(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
-        INSERT INTO academic_terms (
+        INSERT INTO academic_terms (school_days,
             academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular',
+        VALUES ( 'MON,TUE,WED,THU,FRI',$1, 1, 'TERM-1', 'ภาคเรียนที่ 1', 'regular',
                 true, true, $2, 'active',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET
@@ -693,11 +693,11 @@ async fn upsert_terms(
         .query(
             "school.bin.seed_sandbox.upsert_terms",
             r#"
-        INSERT INTO academic_terms (
+        INSERT INTO academic_terms (school_days,
             academic_year_id, sequence_no, code, name, term_type,
             included_in_year_result, blocks_year_closure, bell_schedule_id, status, metadata
         )
-        VALUES ($1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular',
+        VALUES ( 'MON,TUE,WED,THU,FRI',$1, 2, 'TERM-2', 'ภาคเรียนที่ 2', 'regular',
                 true, true, $2, 'ready',
                 jsonb_build_object('seed', 'sandbox', 'managed_by', 'seed_sandbox'))
         ON CONFLICT (academic_year_id, code) DO UPDATE SET

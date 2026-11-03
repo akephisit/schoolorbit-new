@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { sessionState } from './fixtures/session-state';
+import { installTimetableMock, makeTimetableVersion } from './timetable-test-harness';
 import { id, fulfill, chooseOption } from './fixtures/year-management';
 import type { components } from '../../src/lib/api/generated/school-api';
 type S = components['schemas'];
@@ -29,6 +30,20 @@ async function fixture(
 		readyLegacyName?: boolean;
 		hiddenPlanning?: boolean;
 		timetableDraft?: boolean;
+		sourcePeriodDays?: string | null;
+		copyConflict?: boolean;
+		copyGate?: Promise<void>;
+		multipleYears?: boolean;
+		readonlyNext?: boolean;
+		timetableHarness?: boolean;
+		otherSource?: boolean;
+		previewGate?: Promise<void>;
+		daySaveGate?: Promise<void>;
+		sourceTermConflictOnce?: boolean;
+		targetTermConflictOnce?: boolean;
+		targetActivates?: boolean;
+		sourceTermGate?: Promise<void>;
+		mismatchedSourceSnapshot?: boolean;
 	} = {}
 ) {
 	const status = options.hiddenPlanning
@@ -71,6 +86,16 @@ async function fixture(
 		createdAt: time,
 		updatedAt: time
 	}));
+	if (options.otherSource)
+		terms.push({
+			...terms[0],
+			academicYearId: options.multipleYears ? id(590) : yearId,
+			id: id(591),
+			bellScheduleId: id(592),
+			name: 'ภาคเรียนต้นแบบอื่น',
+			schoolDays: ['SAT']
+		});
+
 	let room = {
 		id: roomId,
 		academicYearId: yearId,
@@ -102,6 +127,9 @@ async function fixture(
 			updatedAt: time
 		}
 	];
+	if (options.otherSource)
+		schedules.push({ ...schedules[0], id: id(592), name: 'ตารางต้นแบบอื่น', rowVersion: 8 });
+
 	const periods: S['BellSchedulePeriod'][] = [
 		{
 			id: id(508),
@@ -111,7 +139,8 @@ async function fixture(
 			endTime: '09:20:00',
 			orderIndex: 1,
 			isActive: true,
-			applicableDays: 'MON,TUE,WED,THU,FRI'
+			applicableDays:
+				options.sourcePeriodDays === undefined ? 'MON,TUE,WED,THU,FRI' : options.sourcePeriodDays
 		}
 	];
 	let identitySwitched = false;
@@ -130,7 +159,10 @@ async function fixture(
 		capacities: [] as S['UpdateHomeroomCapacityRequest'][],
 		clones: [] as S['CloneBellScheduleRequest'][],
 		assignments: [] as S['UpdateAcademicTermRequest'][],
+		copied: [] as S['CopyAcademicTermSchoolScheduleRequest'][],
 		periodWrites: [] as { id: string; body: S['ReplaceBellSchedulePeriodsRequest'] }[],
+		termReads: [] as string[],
+		periodReads: [] as string[],
 		setupReads: 0
 	};
 	await page.route(
@@ -157,6 +189,14 @@ async function fixture(
 							: ['*']
 				});
 			}
+			if (method === 'GET' && /^\/api\/academic\/terms\/[^/]+$/.test(path)) {
+				const termId = path.split('/').at(-1)!;
+				observed.termReads.push(termId);
+				if (options.sourceTermGate && termId === firstTermId) await options.sourceTermGate;
+				const selected = terms.find((term) => term.id === termId);
+				return selected ? fulfill(route, selected) : fulfill(route, 'ไม่พบภาคเรียนต้นแบบ', 404);
+			}
+
 			if (path === '/api/academic/context/options')
 				return fulfill(route, {
 					defaultAcademicYearId: yearId,
@@ -169,12 +209,18 @@ async function fixture(
 				if (identitySwitched && options.replacementWorkspaceGate)
 					await options.replacementWorkspaceGate;
 				return fulfill(route, {
-					years: identitySwitched || options.hiddenPlanning ? [] : [year],
+					years:
+						identitySwitched || options.hiddenPlanning
+							? []
+							: options.multipleYears
+								? [{ ...year, id: id(590), year: 2570, name: 'ปีการศึกษา 2570' }, year]
+								: [year],
 					terms: identitySwitched ? [] : terms,
 					bellSchedules: identitySwitched ? [] : schedules,
 					bellScheduleSetupYearIds: options.closed ? [] : [yearId],
-					bellScheduleSetupTermIds: options.timetableDraft ? [] : [nextTermId],
-					schoolDaysEditableTermIds: options.closed ? [] : [nextTermId],
+					bellScheduleSetupTermIds:
+						options.timetableDraft || options.readonlyNext || terms[1].status === 'active' ? [] : [nextTermId],
+					schoolDaysEditableTermIds: options.closed || options.readonlyNext || terms[1].status === 'active' ? [] : [nextTermId],
 					contextSettings: {
 						defaultAcademicYearId: yearId,
 						defaultAcademicTermId: firstTermId,
@@ -279,20 +325,27 @@ async function fixture(
 					}
 					return fulfill(route, accepted);
 				}
+				observed.periodReads.push(selected);
 				const readCount = (periodReadCounts.get(selected) ?? 0) + 1;
 				periodReadCounts.set(selected, readCount);
+				if (selected === scheduleId && readCount === 2 && options.previewGate)
+					await options.previewGate;
 				if (selected === id(510) && readCount === 2 && options.comparisonGate)
 					await options.comparisonGate;
 				const response = await fulfill(route, {
-					bellScheduleId: selected,
+					bellScheduleId: options.mismatchedSourceSnapshot && readCount > 1 ? id(5999) : selected,
 					rowVersion: schedule.rowVersion,
 					periods: periods.map((period) => ({
 						...period,
-						name: options.periodConflictPerSchedule
-							? selected === id(510)
-								? 'คาบ A ล่าสุด'
-								: 'คาบ B ล่าสุด'
-							: period.name,
+						applicableDays: selected === id(592) ? null : period.applicableDays,
+						name:
+							selected === id(593) ? 'คาบต้นแบบใหม่' : selected === id(592)
+								? 'คาบของต้นแบบอื่น'
+								: options.periodConflictPerSchedule
+									? selected === id(510)
+										? 'คาบ A ล่าสุด'
+										: 'คาบ B ล่าสุด'
+									: period.name,
 						startTime: selected === scheduleId ? period.startTime : periodStart,
 						endTime: periodStart === '10:00:00' ? '10:50:00' : period.endTime,
 						bellScheduleId: selected,
@@ -302,14 +355,53 @@ async function fixture(
 				if (readCount === 2) observed.completedComparisons.push(selected);
 				return response;
 			}
+			if (path === `/api/academic/terms/${nextTermId}/copy-school-schedule` && method === 'POST') {
+				const body = route.request().postDataJSON();
+				observed.copied.push(body);
+				if (options.copyGate) await options.copyGate;
+				if (options.sourceTermConflictOnce && observed.copied.length === 1) {
+					terms[0] = {...terms[0], rowVersion: 2, bellScheduleId: id(593), name: 'ภาคเรียนต้นแบบล่าสุด', schoolDays: ['MON']};
+					schedules.push({...schedules[0], id: id(593), name: 'ตารางต้นแบบใหม่', rowVersion: 9});
+					return fulfill(route, 'ต้นแบบเปลี่ยนแล้ว', 409);
+				}
+				if (options.copyConflict) return fulfill(route, 'ต้นแบบเปลี่ยนแล้ว', 409);
+				const bellSchedule = {
+					...schedules[0],
+					id: id(580),
+					name: 'คาบของภาคเรียนที่ 2',
+					isDefault: false,
+					rowVersion: 1,
+					editBlockedReason: null
+				};
+				schedules.push(bellSchedule);
+				terms[1] = {
+					...terms[1],
+					schoolDays: [...body.schoolDays],
+					bellScheduleId: bellSchedule.id,
+					rowVersion: terms[1].rowVersion + 1
+				};
+				return fulfill(route, {
+					term: terms[1],
+					bellSchedule,
+					canEditSchoolDays: true,
+					canAssignBellSchedule: true
+				});
+			}
+
 			if (path === `/api/academic/terms/${nextTermId}` && method === 'PATCH') {
 				const body = route.request().postDataJSON();
 				observed.assignments.push(body);
+				if (options.targetTermConflictOnce && observed.assignments.length === 1) {
+					terms[1] = {...terms[1], rowVersion: 2, name: 'ภาคเรียนที่ 2 ฉบับล่าสุด', status: options.targetActivates ? 'active' : 'planning'};
+					return fulfill(route, 'ข้อมูลภาคเรียนเปลี่ยนแล้ว', 409);
+				}
 				terms[1] = {
 					...terms[1],
 					bellScheduleId: body.bellScheduleId,
+					schoolDays: body.schoolDays,
 					rowVersion: terms[1].rowVersion + 1
 				};
+				if (options.daySaveGate) await options.daySaveGate;
 				return fulfill(route, terms[1]);
 			}
 			if (path === '/api/menu/user') return fulfill(route, { groups: [] });
@@ -325,6 +417,7 @@ async function fixture(
 					}
 				]);
 			if (path.includes('study-program')) return fulfill(route, []);
+			if (options.timetableHarness) return route.fallback();
 			return fulfill(route, []);
 		}
 	);
@@ -381,7 +474,11 @@ test('term two clones and edits independent periods while term one remains locke
 }) => {
 	const observed = await fixture(page);
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
-	await expect(page.getByText(/ตารางนี้ใช้กับภาคเรียนที่เริ่มใช้แล้ว/)).toBeVisible();
+	await expect(
+		page
+			.getByRole('region', { name: 'คาบเรียนของภาคเรียน', exact: true })
+			.getByText(/ตารางนี้ใช้กับภาคเรียนที่เริ่มใช้แล้ว/)
+	).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: 'แก้ไข ตารางเดิมภาคเรียนที่ 1', exact: true })
 	).toHaveCount(0);
@@ -439,12 +536,7 @@ test('term two may keep the unchanged table without cloning and term one stays l
 	await expect(page.getByLabel('ตารางเวลาที่ภาคเรียนนี้ใช้', { exact: true })).toContainText(
 		'ตารางเดิมภาคเรียนที่ 1'
 	);
-	await chooseOption(
-		page,
-		page.getByLabel('ตารางเวลาที่จะจัดคาบ', { exact: true }),
-		'ตารางเดิมภาคเรียนที่ 1 · ตารางหลัก'
-	);
-	await expect(page.getByLabel('เริ่ม', { exact: true })).toBeDisabled();
+	await expect(page.getByLabel('เริ่มคาบของภาคเรียน', { exact: true })).toBeDisabled();
 	expect(observed.clones).toEqual([]);
 	expect(observed.assignments).toEqual([]);
 	expect(observed.periodWrites).toEqual([]);
@@ -520,6 +612,7 @@ test('time manager can prepare term two with year read and term manage permissio
 }) => {
 	await fixture(page, { termManagerOnly: true });
 	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 	await expect(
 		page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })
 	).toBeVisible();
@@ -625,7 +718,7 @@ test('delayed schedule success refresh cannot restore the previous identity work
 	try {
 		await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
 		await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
-	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+		await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
 		await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ข้อมูลตัวตนเก่า');
 		await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
 		await page.getByRole('button', { name: 'แก้ไข ข้อมูลตัวตนเก่า', exact: true }).click();
@@ -683,6 +776,7 @@ test('initial setup boot accepts its first authenticated route promise after del
 		releaseAuth();
 		await navigation;
 		await expect(page.getByTestId('academic-setup-ready')).toBeVisible();
+		await page.getByRole('button', { name: 'จัดการตารางเวลาต้นแบบเพิ่มเติม', exact: true }).click();
 		await expect(
 			page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })
 		).toBeVisible();
@@ -839,5 +933,265 @@ test('switching schedules supersedes a pending comparison and leaves the next co
 		expect(observed.periodWrites.at(-1)).toMatchObject({ id: id(511), body: { rowVersion: 2 } });
 	} finally {
 		releaseComparison();
+	}
+});
+
+test('term-only deep link edits Saturday in the owning year without changing term one', async ({
+	page
+}) => {
+	const observed = await fixture(page, { multipleYears: true, timetableDraft: true });
+	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+	await expect(page.getByLabel('ปีการศึกษา', { exact: true })).toContainText('2569');
+	await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await page.getByRole('button', { name: 'บันทึกวันเรียน', exact: true }).click();
+	await expect.poll(() => observed.assignments.length).toBe(1);
+	expect(observed.assignments[0].schoolDays).toEqual(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']);
+	await page.reload();
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeChecked();
+	await chooseOption(
+		page,
+		page.getByLabel('ภาคเรียนที่จะตั้งค่า', { exact: true }),
+		'ภาคเรียนที่ 1 · ใช้งาน'
+	);
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })
+	).not.toBeChecked();
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeDisabled();
+});
+
+test('term schedule copy previews NULL days and saves Saturday as an independent atomic snapshot', async ({
+	page
+}) => {
+	const observed = await fixture(page, { sourcePeriodDays: null });
+	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+	await page
+		.getByRole('button', { name: 'คัดลอกวันเรียนและคาบจากภาคเรียนอื่น', exact: true })
+		.click();
+	await expect(page.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toContainText(
+		'ทุกวันเรียนของภาคเรียน'
+	);
+	await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await page.getByRole('button', { name: 'บันทึกวันเรียนและคาบที่คัดลอก', exact: true }).click();
+	await expect.poll(() => observed.copied.length).toBe(1);
+	expect(observed.copied[0]).toEqual({
+		sourceTermId: firstTermId,
+		sourceTermRowVersion: 1,
+		sourceBellScheduleRowVersion: 4,
+		rowVersion: 1,
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+	});
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeChecked();
+	await page.getByRole('button', { name: 'บันทึกคาบทั้งหมดของภาคเรียน', exact: true }).click();
+	await expect.poll(() => observed.periodWrites.length).toBe(1);
+	expect(observed.periodWrites[0].body.periods[0].applicableDays).toBeNull();
+	expect(observed.setupReads).toBe(1);
+});
+
+test('stale copy keeps the edited preview and refuses outside-day overrides', async ({ page }) => {
+	const observed = await fixture(page, { copyConflict: true, sourcePeriodDays: 'MON,SAT' });
+	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+	await page
+		.getByRole('button', { name: 'คัดลอกวันเรียนและคาบจากภาคเรียนอื่น', exact: true })
+		.click();
+	await expect(
+		page.getByText('คาบต้นแบบมีวันนอกวันเรียนที่เลือก:', { exact: false })
+	).toBeVisible();
+	const save = page.getByRole('button', { name: 'บันทึกวันเรียนและคาบที่คัดลอก', exact: true });
+	await expect(save).toBeDisabled();
+	await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await save.click();
+	await expect(page.getByRole('alert').filter({ hasText: 'ต้นแบบเปลี่ยนแล้ว' })).toBeVisible();
+	await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeChecked();
+	expect(observed.copied).toHaveLength(1);
+});
+
+test('malformed persisted period days refuse preview and never become an all-days save', async ({
+	page
+}) => {
+	const observed = await fixture(page, { sourcePeriodDays: '{MON,TUE}' });
+	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+	await page
+		.getByRole('button', { name: 'คัดลอกวันเรียนและคาบจากภาคเรียนอื่น', exact: true })
+		.click();
+	await expect(
+		page.getByRole('alert').filter({ hasText: 'รูปแบบวันเฉพาะคาบที่บันทึกไว้ไม่ถูกต้อง' }).first()
+	).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'บันทึกวันเรียนและคาบที่คัดลอก', exact: true })
+	).toBeDisabled();
+	expect(observed.copied).toEqual([]);
+	expect(observed.periodWrites).toEqual([]);
+});
+
+for (const colorScheme of ['light', 'dark'] as const)
+	test(`reopened readonly term keeps days and assigned periods protected on mobile ${colorScheme}`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.emulateMedia({ colorScheme });
+		const observed = await fixture(page, { readonlyNext: true, readyLegacyName: true });
+		await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+		await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeDisabled();
+		await expect(page.getByLabel('เริ่มคาบของภาคเรียน', { exact: true })).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'บันทึกวันเรียน', exact: true })).toHaveCount(0);
+		expect(observed.assignments).toEqual([]);
+		expect(observed.periodWrites).toEqual([]);
+	});
+
+test('accepted Saturday save refreshes central context before in-app timetable navigation', async ({
+	page
+}) => {
+	await installTimetableMock(page, {
+		versions: ['published', 'draft'].map((status) => ({
+			...makeTimetableVersion(status as 'published' | 'draft'),
+			academicYearId: yearId,
+			academicTermId: nextTermId,
+			bellScheduleId: scheduleId
+		}))
+	});
+	const observed = await fixture(page, { timetableDraft: true, timetableHarness: true });
+	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+	await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+	await page.getByRole('button', { name: 'บันทึกวันเรียน', exact: true }).click();
+	await expect.poll(() => observed.assignments.length).toBe(1);
+	await page.getByRole('link', { name: 'จัดการตารางสอนของ ภาคเรียนที่ 2', exact: true }).click();
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'ชั้น', exact: true }).click();
+	await expect(page.locator('td[data-timetable-day="SAT"]')).toHaveCount(3);
+	expect(observed.authReads).toBe(1);
+	expect(observed.setupReads).toBe(1);
+});
+
+test('a slower previous source preview cannot replace the selected source and copied revisions', async ({
+	page
+}) => {
+	let release = () => {};
+	const previewGate = new Promise<void>((resolve) => (release = resolve));
+	const observed = await fixture(page, {
+		otherSource: true,
+		multipleYears: true,
+		sourcePeriodDays: null,
+		previewGate
+	});
+	try {
+		await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+		await page
+			.getByRole('button', { name: 'คัดลอกวันเรียนและคาบจากภาคเรียนอื่น', exact: true })
+			.click();
+		await chooseOption(
+			page,
+			page.getByLabel('คัดลอกวันเรียนและคาบเรียนจาก', { exact: true }),
+			'ปีการศึกษา 2570 · ภาคเรียนต้นแบบอื่น'
+		);
+		await expect(page.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toContainText(
+			'คาบของต้นแบบอื่น'
+		);
+		release();
+		await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toBeChecked();
+		await page.getByRole('button', { name: 'บันทึกวันเรียนและคาบที่คัดลอก', exact: true }).click();
+		await expect.poll(() => observed.copied.length).toBe(1);
+		expect(observed.copied[0]).toMatchObject({
+			sourceTermId: id(591),
+			sourceBellScheduleRowVersion: 8,
+			schoolDays: ['SAT']
+		});
+	} finally {
+		release();
+	}
+});
+
+for (const failed of [false, true])
+	test(`late copy ${failed ? 'failure' : 'success'} cannot restore a previous authenticated workspace`, async ({
+		page
+	}) => {
+		let release = () => {};
+		const copyGate = new Promise<void>((resolve) => (release = resolve));
+		const observed = await fixture(page, {
+			copyGate,
+			copyConflict: failed,
+			sourcePeriodDays: null
+		});
+		try {
+			await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+			await page
+				.getByRole('button', { name: 'คัดลอกวันเรียนและคาบจากภาคเรียนอื่น', exact: true })
+				.click();
+			await expect(page.getByLabel('ตัวอย่างคาบที่คัดลอก', { exact: true })).toBeVisible();
+			await page
+				.getByRole('button', { name: 'บันทึกวันเรียนและคาบที่คัดลอก', exact: true })
+				.click();
+			await expect.poll(() => observed.copied.length).toBe(1);
+			observed.switchIdentity();
+			await page.evaluate(async () => {
+				const modulePath = '/src/lib/stores/auth.ts';
+				const { authStore } = await import(modulePath);
+				authStore.setUser(
+					{
+						id: '10000000-0000-4000-8000-000000000598',
+						firstName: 'ตัวตนใหม่',
+						lastName: 'ทดสอบ',
+						role: 'staff',
+						user_type: 'staff',
+						status: 'active'
+					},
+					['*']
+				);
+			});
+			await expect(page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true })).toHaveCount(
+				0
+			);
+			const completed = page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname ===
+					`/api/academic/terms/${nextTermId}/copy-school-schedule`
+			);
+			release();
+			await (await completed).finished();
+			await page.evaluate(
+				() =>
+					new Promise<void>((resolve) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+					)
+			);
+			await expect(page.getByText('คาบของภาคเรียนที่ 2', { exact: true })).toHaveCount(0);
+			await expect(page.getByRole('alert').filter({ hasText: 'ต้นแบบเปลี่ยนแล้ว' })).toHaveCount(0);
+		} finally {
+			release();
+		}
+	});
+
+test('accepted day save after leaving setup still refreshes the session discovery cache', async ({
+	page
+}) => {
+	let release = () => {};
+	const daySaveGate = new Promise<void>((resolve) => (release = resolve));
+	await installTimetableMock(page, {
+		versions: ['published', 'draft'].map((status) => ({
+			...makeTimetableVersion(status as 'published' | 'draft'),
+			academicYearId: yearId,
+			academicTermId: nextTermId,
+			bellScheduleId: scheduleId
+		}))
+	});
+	const observed = await fixture(page, {
+		timetableDraft: true,
+		timetableHarness: true,
+		daySaveGate
+	});
+	page.on('dialog', (dialog) => void dialog.accept());
+	try {
+		await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
+		await page.getByRole('checkbox', { name: 'เลือกวันเสาร์', exact: true }).check();
+		await page.getByRole('button', { name: 'บันทึกวันเรียน', exact: true }).click();
+		await expect.poll(() => observed.assignments.length).toBe(1);
+		await page.getByRole('link', { name: 'จัดการตารางสอนของ ภาคเรียนที่ 2', exact: true }).click();
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await page.getByRole('button', { name: 'ชั้น', exact: true }).click();
+		await expect(page.locator('td[data-timetable-day="SAT"]')).toHaveCount(0);
+		release();
+		await expect(page.locator('td[data-timetable-day="SAT"]')).toHaveCount(3);
+		expect(observed.authReads).toBe(1);
+	} finally {
+		release();
 	}
 });

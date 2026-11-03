@@ -356,7 +356,10 @@
 				description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
 			/>
 		{:else if loaded}
-			<PersonalTimetable {blocks} schoolDays={termOptions.find((term) => term.id === selectedTermId)?.schoolDays ?? []} />
+			<PersonalTimetable
+				{blocks}
+				schoolDays={termOptions.find((term) => term.id === selectedTermId)?.schoolDays ?? []}
+			/>
 		{/if}
 	</div>
 </PageShell>

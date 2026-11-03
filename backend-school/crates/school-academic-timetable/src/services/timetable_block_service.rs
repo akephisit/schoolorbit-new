@@ -936,7 +936,14 @@ async fn update_block_in_permit(
         .map(normalize_day)
         .transpose()?
         .unwrap_or_else(|| block.day_of_week.clone());
-    require_period_day(&mut transaction, block.academic_term_id, block.bell_schedule_id, target_period_id, &target_day).await?;
+    require_period_day(
+        &mut transaction,
+        block.academic_term_id,
+        block.bell_schedule_id,
+        target_period_id,
+        &target_day,
+    )
+    .await?;
 
     DbSession::new(&mut *transaction)
         .query(
@@ -1167,8 +1174,22 @@ async fn swap_blocks_in_permit(
         .bind(&ids[..])
         .execute()
         .await?;
-    require_period_day(&mut transaction, block_a.academic_term_id, block_a.bell_schedule_id, block_b.bell_schedule_period_id, &block_b.day_of_week).await?;
-    require_period_day(&mut transaction, block_b.academic_term_id, block_b.bell_schedule_id, block_a.bell_schedule_period_id, &block_a.day_of_week).await?;
+    require_period_day(
+        &mut transaction,
+        block_a.academic_term_id,
+        block_a.bell_schedule_id,
+        block_b.bell_schedule_period_id,
+        &block_b.day_of_week,
+    )
+    .await?;
+    require_period_day(
+        &mut transaction,
+        block_b.academic_term_id,
+        block_b.bell_schedule_id,
+        block_a.bell_schedule_period_id,
+        &block_a.day_of_week,
+    )
+    .await?;
     update_block_slot(
         &mut transaction,
         request.block_a_id,
@@ -1827,6 +1848,14 @@ async fn insert_block(
     series_id: Option<Uuid>,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
+    require_period_day(
+        transaction,
+        version.academic_term_id,
+        version.bell_schedule_id,
+        bell_schedule_period_id,
+        day_of_week,
+    )
+    .await?;
     DbSession::new(&mut **transaction)
         .query(
             "academic_timetable.services.timetable_block_service.insert_block",
@@ -1869,7 +1898,6 @@ async fn deactivate_child(
     row_version: i64,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    require_period_day(transaction, version.academic_term_id, version.bell_schedule_id, bell_schedule_period_id, day_of_week).await?;
     let query = format!(
         "UPDATE {table} SET is_active = false, row_version = row_version + 1, \
          updated_by = $4, updated_at = now() \
@@ -1943,10 +1971,26 @@ mod tests {
     }
 }
 
-async fn require_period_day(transaction: &mut Transaction<'_, Postgres>, term: Uuid, schedule: Uuid, period: Uuid, day: &str) -> Result<(), AppError> {
-    if school_academic_core::services::school_days::period_allows_day_on_connection(transaction, term, schedule, period, day).await? {
+async fn require_period_day(
+    transaction: &mut Transaction<'_, Postgres>,
+    term: Uuid,
+    schedule: Uuid,
+    period: Uuid,
+    day: &str,
+) -> Result<(), AppError> {
+    if school_academic_core::services::school_days::period_allows_day_on_connection(
+        transaction,
+        term,
+        schedule,
+        period,
+        day,
+    )
+    .await?
+    {
         Ok(())
     } else {
-        Err(AppError::ValidationError("คาบหรือวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียนหรือวันที่ใช้คาบ".into()))
+        Err(AppError::ValidationError(
+            "คาบหรือวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียนหรือวันที่ใช้คาบ".into(),
+        ))
     }
 }

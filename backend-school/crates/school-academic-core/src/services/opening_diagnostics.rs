@@ -227,6 +227,16 @@ mod tests {
             assert_eq!(facts.applicable_days.as_deref(), days);
         }
         let first = period(Some("MON"));
+        assert!(
+            bell_diagnostics(
+                Some((year, "ตารางหลัก", VersionStatus::Published)),
+                year,
+                &[period(None)],
+                "MON"
+            )
+            .is_empty(),
+            "NULL means every school day of the selected term"
+        );
         assert!(bell_diagnostics(
             Some((year, "ตารางหลัก", VersionStatus::Published)),
             year,

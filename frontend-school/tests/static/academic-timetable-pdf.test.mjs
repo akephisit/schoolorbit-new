@@ -116,7 +116,10 @@ test('homeroom PDF keeps course, synchronized and special periods with only that
 		'homeroom',
 		'room-a',
 		'ภาคเรียนที่ 1',
-		'2569', undefined, 'full', ['MON', 'SAT']
+		'2569',
+		undefined,
+		'full',
+		['MON', 'SAT']
 	);
 	assert.equal(pages.length, 1);
 	assert.equal(pages[0].title, 'ตารางเรียน ม.1/1');
@@ -175,7 +178,10 @@ test('whole school exports one full week per homeroom from the chosen published 
 		'wholeSchool',
 		null,
 		'ภาคเรียนที่ 1',
-		'2569', undefined, 'full', ['MON', 'SAT']
+		'2569',
+		undefined,
+		'full',
+		['MON', 'SAT']
 	);
 	assert.equal(pages.length, 2);
 	assert.deepEqual(
@@ -240,10 +246,18 @@ test('PDF filenames distinguish teachers, selected batches, versions and page la
 	assert.notEqual(batch, build(['teacher-a', 'teacher-b']).fileName);
 });
 
-
 test('PDF days use the selected term even when empty days have no blocks', () => {
 	const input = workspace();
 	input.blocks = [];
-	const {pages} = buildAcademicTimetablePdfDownload(input, 'homeroom', 'room-a', '', '', undefined, 'full', ['TUE', 'SAT']);
+	const { pages } = buildAcademicTimetablePdfDownload(
+		input,
+		'homeroom',
+		'room-a',
+		'',
+		'',
+		undefined,
+		'full',
+		['TUE', 'SAT']
+	);
 	assert.deepEqual(pages[0].dayValues, ['TUE', 'SAT']);
 });
