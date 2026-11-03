@@ -10,3 +10,6 @@ pub(crate) mod services;
 mod services_tests;
 #[cfg(test)]
 pub(crate) use services_tests::fill_change_set_target_deficits;
+
+#[cfg(test)]
+pub(crate) use services_tests::draft_removal_tests::academic_router as authenticated_academic_router;

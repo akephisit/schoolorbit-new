@@ -541,6 +541,14 @@ mod tests {
             decisions: vec![],
         };
         assert!(validate_input(&input).is_ok());
+        let value = serde_json::to_value(&input).unwrap();
+        assert!(value.get("outcomeEffectiveOn").is_none());
+        assert!(value.get("targetPlacementStartsOn").is_none());
+        for removed in ["outcomeEffectiveOn", "targetPlacementStartsOn"] {
+            let mut stale = value.clone();
+            stale[removed] = serde_json::json!("2026-01-01");
+            assert!(serde_json::from_value::<YearRolloverPreviewInput>(stale).is_err());
+        }
         input.target_year_id = input.source_year_id;
         assert!(validate_input(&input).is_err());
     }

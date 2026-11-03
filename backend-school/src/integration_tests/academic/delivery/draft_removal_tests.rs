@@ -479,7 +479,7 @@ pub(super) fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) 
     )
 }
 
-fn academic_router(
+pub(crate) fn academic_router(
     pool: &PgPool,
     actor: Uuid,
     permissions: &[&str],

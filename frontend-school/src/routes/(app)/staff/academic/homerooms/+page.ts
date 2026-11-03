@@ -4,7 +4,8 @@ import {
 	listGradeLevelOptions,
 	listHomeroomAdvisorsForAcademicYear,
 	listHomerooms,
-	listStudyProgramOptionsForAcademicYear
+	listStudyProgramOptionsForAcademicYear,
+	getHomeroomYearContext
 } from '#lib/api/academic-core.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
@@ -34,6 +35,7 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 					loadHomeroomCollections(
 						{
 							listHomerooms,
+							getHomeroomYearContext,
 							listHomeroomAdvisorsForAcademicYear,
 							listGradeLevelOptions,
 							listStudyProgramOptionsForAcademicYear

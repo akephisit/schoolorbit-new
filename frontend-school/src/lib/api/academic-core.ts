@@ -82,6 +82,14 @@ export const updateAcademicContextSettings = (body: UpdateAcademicContextSetting
 	);
 
 export type Homeroom = Schemas['Homeroom'];
+export const getHomeroomYearContext = (academicYearId: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<Schemas['YearLifecycleContext']>('/api/academic/homerooms/year-context', {
+			...options,
+			query: { academicYearId }
+		}),
+		'โหลดบริบทปีของห้องประจำชั้นไม่สำเร็จ'
+	);
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
 export type HomeroomAdvisorAssignment = Schemas['HomeroomAdvisorAssignment'];
 export type StudentAcademicYear = Schemas['StudentAcademicYear'];

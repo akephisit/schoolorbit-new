@@ -100,7 +100,7 @@ pub async fn create_run(
     )
     .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let previous: Option<(uuid::Uuid, String,chrono::NaiveDate)> = DbSession::new(&mut *tx)
+    let previous: Option<(uuid::Uuid, String,Option<chrono::NaiveDate>)> = DbSession::new(&mut *tx)
         .query_as(
             "academic_lifecycle.services.promotion_runs.create_run",
             "SELECT id,request_checksum,target_placement_starts_on FROM academic_promotion_runs WHERE request_id=$1",
@@ -109,7 +109,7 @@ pub async fn create_run(
         .fetch_optional()
         .await?;
     if let Some((id, original, placement_date)) = previous {
-        if original != checksum || placement_date != input.target_placement_starts_on {
+        if original != checksum || placement_date != Some(input.target_placement_starts_on) {
             return Err(AppError::Conflict(
                 "รหัสคำขอนี้เคยใช้กับข้อมูลหรือผู้ดำเนินการอื่นแล้ว".into(),
             ));

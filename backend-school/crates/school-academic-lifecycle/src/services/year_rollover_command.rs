@@ -93,10 +93,7 @@ pub async fn confirm(
             source_grade_level_id: source.grade_level_id,
             source_study_program_id: source.study_program_id,
             source_row_version: source.row_version,
-            source_checksum: super::checksum(&(
-                source,
-                &declared.decision,
-            ))?,
+            source_checksum: super::checksum(&(source, &declared.decision))?,
             existing_target_student_year_id: source.existing_target_student_year_id,
             decision: declared.decision.clone(),
         });

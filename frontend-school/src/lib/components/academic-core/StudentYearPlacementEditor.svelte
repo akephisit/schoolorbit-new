@@ -142,7 +142,13 @@
 						>{/if}
 				</div>
 				<p class="text-xs text-muted-foreground">
-					{#if placement.status === 'cancelled'}
+					{#if placement.placementScope === 'academic_year'}
+						สมาชิกห้องประจำปีการศึกษานี้{placement.status === 'cancelled'
+							? ' · ยกเลิกแล้ว'
+							: placement.endDate
+								? ` · สิ้นสุด ${placement.endDate}`
+								: ''}
+					{:else if placement.status === 'cancelled'}
 						ยกเลิกการจัดห้องก่อนเริ่มเรียน (เดิมเริ่ม {placement.startDate})
 					{:else}
 						{placement.startDate} – {placement.endDate ?? 'ปัจจุบัน'}

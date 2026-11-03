@@ -624,11 +624,7 @@ pub async fn update_term(
         ));
     }
     if current.bell_schedule_id != request.bell_schedule_id {
-        let pinned: bool = DbSession::new(&mut *transaction)
-            .scalar("academic_core.services.years_terms.update_term",
-                "SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1) OR EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE academic_term_id=$1)")
-            .bind(id).fetch_one().await?;
-        if pinned {
+        if !super::bell_schedules::term_schedule_is_assignable(&mut transaction, id).await? {
             return Err(AppError::Conflict(
                 "ภาคเรียนนี้มีรุ่นตารางสอนที่อ้างอิงตารางคาบเดิม กรุณาจัดการรุ่นตารางสอนก่อนเปลี่ยน".into(),
             ));
@@ -922,8 +918,13 @@ async fn classify_term_update_failure(
         .await?;
     Ok(match state {
         None => AppError::NotFound("ไม่พบภาคเรียน".to_string()),
-        Some((status, _)) if status != AcademicTermStatus::Planning => {
-            AppError::Conflict("แก้ไขได้เฉพาะภาคเรียนสถานะ planning".to_string())
+        Some((status, _))
+            if !matches!(
+                status,
+                AcademicTermStatus::Planning | AcademicTermStatus::Ready
+            ) =>
+        {
+            AppError::Conflict("แก้ไขได้เฉพาะภาคเรียนที่ยังไม่เปิด".to_string())
         }
         Some((_, actual)) => AppError::Conflict(format!(
             "ข้อมูลภาคเรียนถูกแก้ไขแล้ว (expected {expected}, actual {actual})"

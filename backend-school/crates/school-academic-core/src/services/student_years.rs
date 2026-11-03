@@ -98,6 +98,25 @@ pub fn derive_homeroom_identity(
     })
 }
 
+/// Exact homeroom context also covers hidden, empty planning years.
+pub async fn homeroom_year_context(
+    pool: &PgPool,
+    year: Uuid,
+) -> Result<crate::models::YearLifecycleContext, AppError> {
+    if year.is_nil() {
+        return Err(AppError::ValidationError("ระบุปีการศึกษาให้ถูกต้อง".into()));
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.homeroom_year_context",
+    )
+    .await?;
+    DbSession::new(&mut *connection)
+        .query_as("academic_core.services.student_years.homeroom_year_context", "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=$1")
+        .bind(year).fetch_optional().await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))
+}
+
 pub async fn list_homerooms(
     pool: &PgPool,
     academic_year_id: Uuid,
@@ -233,6 +252,19 @@ pub async fn update_homeroom(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
+    let members: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.update_homeroom_capacity_floor",
+            "SELECT count(*) FROM homeroom_placements WHERE homeroom_id=$1 AND status IN ('planned','current')",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
+    if i64::from(request.capacity) < members {
+        return Err(AppError::Conflict(format!(
+            "ความจุห้องต้องไม่น้อยกว่าจำนวนนักเรียนที่จัดไว้ {members} คน"
+        )));
+    }
     let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         academic_year_id,
@@ -299,7 +331,10 @@ pub async fn update_homeroom_capacity(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".into()))?;
     let status = lifecycle_guard::require_year_write_exclusive(&mut transaction, year).await?;
-    if !matches!(status, AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active) {
+    if !matches!(
+        status,
+        AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active
+    ) {
         return Err(AppError::Conflict(
             "ปรับความจุห้องได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
         ));
@@ -997,7 +1032,10 @@ pub async fn transfer_placement(
             "รายการจัดห้องไม่ใช่รายการปัจจุบันหรือถูกแก้ไขแล้ว".to_string(),
         ));
     }
-    if old.start_date.is_some_and(|start| request.transfer_date <= start) {
+    if old
+        .start_date
+        .is_some_and(|start| request.transfer_date <= start)
+    {
         return Err(AppError::ValidationError(
             "วันย้ายห้องต้องอยู่หลังวันเริ่มรายการเดิม".to_string(),
         ));

@@ -53,6 +53,9 @@ mod curriculum_program_order_tests;
 #[path = "curriculum_credit_criteria_tests.rs"]
 mod curriculum_credit_criteria_tests;
 
+#[path = "services/period_setup_tests.rs"]
+mod period_setup_tests;
+
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);

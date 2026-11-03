@@ -347,6 +347,7 @@ pub enum BellScheduleEditBlockReason {
     NoUnopenedTerm,
     AlreadyUsed,
     PinnedTimetable,
+    TimetableReferences,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1262,6 +1263,7 @@ pub struct AcademicSetupWorkspace {
     pub terms: Vec<AcademicTerm>,
     pub bell_schedules: Vec<BellSchedule>,
     pub bell_schedule_setup_year_ids: Vec<Uuid>,
+    pub bell_schedule_setup_term_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

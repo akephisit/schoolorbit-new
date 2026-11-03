@@ -210,6 +210,10 @@ pub fn routes() -> Router<AcademicHttpState> {
             get(handlers::list_homerooms).post(handlers::create_homeroom),
         )
         .route(
+            "/homerooms/year-context",
+            get(handlers::homeroom_year_context),
+        )
+        .route(
             "/homerooms/{id}",
             get(handlers::get_homeroom).patch(handlers::update_homeroom),
         )

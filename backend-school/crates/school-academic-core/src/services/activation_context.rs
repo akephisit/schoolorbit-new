@@ -226,7 +226,11 @@ pub async fn read_activation_state(
     let mut rooms: BTreeMap<Uuid, (Option<i32>, BTreeSet<Uuid>)> = BTreeMap::new();
     let mut placement_counts: BTreeMap<Uuid, usize> = BTreeMap::new();
     for row in placements.iter().filter(|row| {
-        super::placement_interval::contains_date(row.start_date, row.end_date, context.operation_date)
+        super::placement_interval::contains_date(
+            row.start_date,
+            row.end_date,
+            context.operation_date,
+        )
     }) {
         let room = rooms
             .entry(row.homeroom_id)

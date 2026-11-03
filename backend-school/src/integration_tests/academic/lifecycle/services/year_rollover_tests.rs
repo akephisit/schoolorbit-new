@@ -3,6 +3,12 @@ use crate::integration_tests::academic::core;
 use school_academic_lifecycle::services::{confirm_year_rollover, preview_year_rollover};
 use school_permissions::registry::codes;
 
+fn event_date() -> chrono::NaiveDate {
+    chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive()
+}
+
 async fn fixture(name: &str) -> (PgPool, ActorContext, YearRolloverPreviewInput) {
     let (pool, source, target, destination) =
         core::services::promotion_targets::tests::fixture(name).await;
@@ -50,8 +56,6 @@ async fn fixture(name: &str) -> (PgPool, ActorContext, YearRolloverPreviewInput)
     let mut input = YearRolloverPreviewInput {
         source_year_id: year,
         target_year_id: target,
-        outcome_effective_on: end,
-        target_placement_starts_on: today,
         decisions: vec![],
     };
     let preview = preview_year_rollover(&pool, &actor, input.clone())
@@ -168,6 +172,17 @@ async fn manual_year_rollover_all_outcomes_prepare_identity_history_and_exact_co
     assert_eq!(open_terminal, 0);
     let absent_evidence:bool=sqlx::query_scalar("SELECT run.policy_id IS NULL AND bool_and(item.recommendation IS NULL AND item.annual_revision_id IS NULL) FROM academic_promotion_runs run JOIN academic_promotion_run_items item ON item.run_id=run.id WHERE run.id=$1 GROUP BY run.id").bind(first.run_id).fetch_one(&pool).await.unwrap();
     assert!(absent_evidence);
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM homeroom_placements WHERE academic_year_id=$1 AND placement_scope='academic_year' AND start_date IS NULL AND end_date IS NULL").bind(input.target_year_id).fetch_one(&pool).await.unwrap(), 2);
+    let workspace =
+        school_academic_lifecycle::services::get_run_workspace(&pool, &actor, first.run_id)
+            .await
+            .unwrap();
+    assert!(workspace.run.target_placement_starts_on.is_none());
+    assert!(workspace
+        .students
+        .iter()
+        .all(|row| row.item.target_placement_starts_on.is_none()));
+    assert!(sqlx::query_scalar::<_, bool>("SELECT NOT(intent ? 'outcomeEffectiveOn') AND NOT(intent ? 'targetPlacementStartsOn') FROM academic_promotion_run_approvals WHERE run_id=$1").bind(first.run_id).fetch_one(&pool).await.unwrap());
     let after: String =
         sqlx::query_scalar("SELECT md5(string_agg(to_jsonb(u)::text,'' ORDER BY id)) FROM users u")
             .fetch_one(&pool)
@@ -186,7 +201,7 @@ async fn manual_year_rollover_all_outcomes_prepare_identity_history_and_exact_co
     assert_eq!(evidence.missing_students, 0);
     tx.rollback().await.unwrap();
     let mut wrong = command.clone();
-    wrong.preview.outcome_effective_on = wrong.preview.outcome_effective_on.pred_opt().unwrap();
+    wrong.preview.decisions[0].decision.reason = Some("เปลี่ยนผลการยืนยัน".into());
     assert!(matches!(
         confirm_year_rollover(providers, &pool, &actor, wrong).await,
         Err(AppError::Conflict(_))
@@ -260,7 +275,7 @@ async fn manual_year_rollover_stale_capacity_closed_source_and_other_successor_r
     let filler = Uuid::new_v4();
     sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'synthetic-not-login','filler','fixture','student','active')").bind(filler).execute(&pool).await.unwrap();
     let annual:Uuid=sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT uuidv7(),$1,academic_year_id,grade_level_id,study_program_id,'planned' FROM homerooms WHERE id=$2 RETURNING id").bind(filler).bind(room).fetch_one(&pool).await.unwrap();
-    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES(uuidv7(),$1,$2,$3,$4,'planned','promotion')").bind(annual).bind(input.target_year_id).bind(room).bind(input.target_placement_starts_on).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) VALUES(uuidv7(),$1,$2,$3,$4,'planned','promotion')").bind(annual).bind(input.target_year_id).bind(room).bind(event_date()).execute(&pool).await.unwrap();
     let preview = preview_year_rollover(&pool, &actor, input.clone())
         .await
         .unwrap();
@@ -373,6 +388,13 @@ async fn manual_year_rollover_later_hold_resolution_uses_latest_receipt_and_pres
 #[tokio::test]
 async fn manual_year_rollover_receipts_activate_the_prepared_year_without_annual_result_evidence() {
     let (pool, actor, input) = fixture("manual_rollover_activation").await;
+    let promoted = input
+        .decisions
+        .iter()
+        .find(|row| row.decision.outcome == PromotionDecisionOutcome::Promote)
+        .unwrap();
+    sqlx::query("UPDATE homeroom_placements SET placement_scope='academic_year',start_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(promoted.student_academic_year_id).execute(&pool).await.unwrap();
     let command = confirm_input(&pool, &actor, input.clone()).await;
     confirm_year_rollover(
         &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
@@ -417,7 +439,7 @@ async fn manual_year_rollover_receipts_activate_the_prepared_year_without_annual
         &pool,
         actor.user_id,
         input.target_year_id,
-        input.target_placement_starts_on,
+        event_date(),
     )
     .await;
     sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
@@ -463,6 +485,7 @@ async fn manual_year_rollover_receipts_activate_the_prepared_year_without_annual
         .unwrap(),
         0
     );
+    assert_annual_transfer_and_old_year_authorization(&pool, &actor, &input, term.id).await;
 }
 
 #[tokio::test]
@@ -535,8 +558,6 @@ async fn manual_year_rollover_reaffirms_legacy_conditional_target_while_resolvin
     let mut input = YearRolloverPreviewInput {
         source_year_id: run.source_year_id,
         target_year_id: run.target_year_id,
-        outcome_effective_on: run.target_placement_starts_on.pred_opt().unwrap(),
-        target_placement_starts_on: run.target_placement_starts_on,
         decisions: vec![],
     };
     let preview = preview_year_rollover(&pool, &actor, input.clone())
@@ -658,7 +679,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
                 placement_id: Some(selected.placement_id),
                 placement_row_version: Some(selected.row_version),
             }],
-            effective_date: input.target_placement_starts_on,
+            effective_date: event_date(),
             target_homeroom_id: Some(second_room.id),
             reason: "จัดห้องปีใหม่ก่อนเริ่มใช้".into(),
         },
@@ -706,7 +727,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
                 placement_id: Some(selected.placement_id),
                 placement_row_version: Some(selected.row_version),
             }],
-            effective_date: input.target_placement_starts_on,
+            effective_date: event_date(),
             target_homeroom_id: None,
             reason: "ปรับชั้นและแผนก่อนจัดห้องใหม่".into(),
         },
@@ -761,7 +782,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
                 placement_id: None,
                 placement_row_version: None,
             }],
-            effective_date: input.target_placement_starts_on,
+            effective_date: event_date(),
             target_homeroom_id: None,
             reason: "จัดห้องตามแผนปีใหม่ปัจจุบัน".into(),
         },
@@ -854,7 +875,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
         &pool,
         actor.user_id,
         input.target_year_id,
-        input.target_placement_starts_on,
+        event_date(),
     )
     .await;
     let workspace = get_activation_workspace(&pool, &actor, input.target_year_id, term.id)
@@ -997,7 +1018,7 @@ async fn manual_year_rollover_reaffirms_audited_withdrawal_without_reactivating_
         &pool,
         actor.user_id,
         input.target_year_id,
-        input.target_placement_starts_on,
+        event_date(),
     )
     .await;
     let workspace = get_activation_workspace(&pool, &actor, input.target_year_id, term.id)
@@ -1061,7 +1082,7 @@ async fn manual_year_rollover_501_cross_batch_failure_rolls_back_every_owner_the
         SELECT uuidv7(),annual.id,$2,source.homeroom_id,$3,'current','promotion' FROM student_academic_years annual
         CROSS JOIN LATERAL(SELECT homeroom_id FROM homeroom_placements WHERE academic_year_id=$2 ORDER BY id LIMIT 1) source
         WHERE annual.student_id=ANY($1)")
-        .bind(&students).bind(input.source_year_id).bind(input.outcome_effective_on).execute(&pool).await.unwrap();
+        .bind(&students).bind(input.source_year_id).bind(event_date().pred_opt().unwrap()).execute(&pool).await.unwrap();
     let mut decision = template;
     decision.target_homeroom_id = None;
     let mut empty = input.clone();
@@ -1127,6 +1148,20 @@ async fn manual_year_rollover_501_cross_batch_failure_rolls_back_every_owner_the
         .await
         .unwrap();
     assert_eq!(prepared.receipts.len(), 501);
+    let workspace =
+        school_academic_lifecycle::services::get_run_workspace(&pool, &actor, prepared.run_id)
+            .await
+            .unwrap();
+    assert_eq!(workspace.students.len(), 501);
+    assert_eq!(
+        workspace
+            .students
+            .iter()
+            .filter(|row| row.receipt.is_some())
+            .count(),
+        501
+    );
+    assert!(workspace.run.target_placement_starts_on.is_none());
     assert_eq!(
         prepared
             .receipts
@@ -1168,6 +1203,120 @@ async fn batch_owner_fingerprint(pool: &PgPool) -> String {
       'placements',(SELECT md5(string_agg(to_jsonb(row)::text,'' ORDER BY id)) FROM homeroom_placements row),
       'audits',(SELECT md5(string_agg(to_jsonb(row)::text,'' ORDER BY id)) FROM academic_audit_events row)
     )::text").fetch_one(pool).await.unwrap()
+}
+
+async fn assert_annual_transfer_and_old_year_authorization(
+    pool: &PgPool,
+    actor: &ActorContext,
+    input: &YearRolloverPreviewInput,
+    term: Uuid,
+) {
+    use school_academic_core::{
+        models as cm,
+        services::{attendance_roster, student_years},
+    };
+    let source = input
+        .decisions
+        .iter()
+        .find(|row| row.decision.outcome == PromotionDecisionOutcome::Promote)
+        .unwrap();
+    let (student, old_room): (Uuid, Uuid) = sqlx::query_as("SELECT y.student_id,p.homeroom_id FROM student_academic_years y JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE y.id=$1 AND p.placement_scope='academic_year' AND p.status='ended' AND p.end_date IS NULL")
+        .bind(source.student_academic_year_id).fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT DO NOTHING")
+        .bind(old_room).bind(actor.user_id).execute(pool).await.unwrap();
+    assert!(
+        !attendance_roster::advisor_for_student(pool, actor.user_id, student, event_date())
+            .await
+            .unwrap()
+    );
+    let old_term: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_terms WHERE academic_year_id=$1 ORDER BY sequence_no LIMIT 1",
+    )
+    .bind(input.source_year_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let historical = attendance_roster::students(pool, old_term, event_date())
+        .await
+        .unwrap();
+    assert_eq!(
+        historical
+            .iter()
+            .find(|row| row.student_id == student)
+            .unwrap()
+            .homeroom_id,
+        Some(old_room)
+    );
+    let (placement, current_room, version): (Uuid, Uuid, i64) = sqlx::query_as("SELECT p.id,p.homeroom_id,p.row_version FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id WHERE y.student_id=$1 AND y.academic_year_id=$2 AND p.status='current' AND p.placement_scope='academic_year' AND p.start_date IS NULL")
+        .bind(student).bind(input.target_year_id).fetch_one(pool).await.unwrap();
+    let target: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,room_number,capacity,is_active) SELECT uuidv7(),code||'-MOVE',name||' ย้ายจริง',academic_year_id,grade_level_id,study_program_id,'MOVE',10,true FROM homerooms WHERE id=$1 RETURNING id")
+        .bind(current_room).fetch_one(pool).await.unwrap();
+    let request = cm::TransferHomeroomPlacementRequest {
+        target_homeroom_id: target,
+        transfer_date: event_date(),
+        enrollment_type: "transfer".into(),
+        class_number: Some(1),
+        reason: "ย้ายห้องจริงตามทะเบียน".into(),
+        row_version: version,
+        idempotency_key: Uuid::now_v7(),
+    };
+    let moved = student_years::transfer_placement(
+        pool,
+        &crate::http_state::PLACEMENT_ROSTERS,
+        actor.user_id,
+        placement,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved.ended_placement.start_date, None);
+    assert_eq!(moved.ended_placement.end_date, event_date().pred_opt());
+    assert_eq!(
+        moved.new_placement.placement_scope,
+        cm::HomeroomPlacementScope::Dated
+    );
+    assert_eq!(moved.new_placement.start_date, Some(event_date()));
+    let replay = student_years::transfer_placement(
+        pool,
+        &crate::http_state::PLACEMENT_ROSTERS,
+        actor.user_id,
+        placement,
+        request,
+    )
+    .await
+    .unwrap();
+    assert!(replay.replayed);
+    assert_eq!(replay.new_placement.id, moved.new_placement.id);
+    for (date, room) in [
+        (event_date().pred_opt().unwrap(), current_room),
+        (event_date(), target),
+    ] {
+        let roster = attendance_roster::students(pool, term, date).await.unwrap();
+        assert_eq!(
+            roster
+                .iter()
+                .find(|row| row.student_id == student)
+                .unwrap()
+                .homeroom_id,
+            Some(room)
+        );
+        let wrong = attendance_roster::students_in_room(
+            pool,
+            term,
+            date,
+            if room == target { current_room } else { target },
+        )
+        .await
+        .unwrap();
+        assert!(!wrong.iter().any(|row| row.student_id == student));
+    }
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT DO NOTHING")
+        .bind(target).bind(actor.user_id).execute(pool).await.unwrap();
+    assert!(
+        attendance_roster::advisor_for_student(pool, actor.user_id, student, event_date())
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -1295,7 +1444,7 @@ async fn manual_year_rollover_legacy_conditional_current_edits_and_withdrawal_ac
                 placement_id: None,
                 placement_row_version: None,
             }],
-            effective_date: run.target_placement_starts_on,
+            effective_date: run.target_placement_starts_on.unwrap(),
             target_homeroom_id: None,
             reason: "จัดห้องตามแผนปัจจุบัน".into(),
         },
@@ -1329,7 +1478,7 @@ async fn manual_year_rollover_legacy_conditional_current_edits_and_withdrawal_ac
         &pool,
         actor.user_id,
         run.target_year_id,
-        run.target_placement_starts_on,
+        run.target_placement_starts_on.unwrap(),
     )
     .await;
     let workspace = get_activation_workspace(&pool, &actor, run.target_year_id, term.id)

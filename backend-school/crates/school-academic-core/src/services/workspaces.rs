@@ -329,6 +329,7 @@ pub async fn setup_workspace_on_connection(
     )?;
     Ok(AcademicSetupWorkspace {
         bell_schedule_setup_year_ids: bell_schedules::setup_year_ids(connection).await?,
+        bell_schedule_setup_term_ids: bell_schedules::setup_term_ids(connection).await?,
         context_settings: super::context_settings::get_on_connection(connection).await?,
         years,
         terms,

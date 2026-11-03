@@ -251,7 +251,17 @@
 					? workspace.data.context.name
 					: workspace.data.context.termName}
 			</p>
-			<ReadinessFindings findings={workspace.data.findings} acknowledgementId={`ack-${kind}`} {acknowledged} disabled={busy || !!pending} onacknowledged={kind === 'activate' ? undefined : (codes) => { acknowledged = codes; }} />{/if}{#if error}<p role="alert" class="text-sm text-destructive">
+			<ReadinessFindings
+				findings={workspace.data.findings}
+				acknowledgementId={`ack-${kind}`}
+				{acknowledged}
+				disabled={busy || !!pending}
+				onacknowledged={kind === 'activate'
+					? undefined
+					: (codes) => {
+							acknowledged = codes;
+						}}
+			/>{/if}{#if error}<p role="alert" class="text-sm text-destructive">
 				{error}
 			</p>{/if}{#if stale || (!workspace && !loading)}<LoadingButton
 				variant="outline"

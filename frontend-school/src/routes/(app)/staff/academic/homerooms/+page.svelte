@@ -25,8 +25,10 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
+	import { ApiClientError } from '#lib/api/client.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
-	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import type { YearLifecycleWorkspace } from '#lib/api/academic-lifecycle.js';
+	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 
 	let { data }: PageProps = $props();
 	const academicYearId = $derived(data.academicYearId);
@@ -40,8 +42,8 @@
 	let loadedYearId: string | null = null;
 	let mutationRevision = 0;
 	const canManage = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
-	const academicContext = getAcademicContextStore();
-	const yearStatus = $derived($academicContext.options?.years.find((year) => year.id === academicYearId)?.status);
+	let yearContext = $state<YearLifecycleWorkspace['context'] | null>(null);
+	const yearStatus = $derived(yearContext?.status);
 
 	function retryWorkspace() {
 		return invalidate(HOMEROOMS_WORKSPACE_DEPENDENCY);
@@ -56,6 +58,7 @@
 			if (loadedYearId !== yearId) {
 				loadedYearId = yearId;
 				homerooms = [];
+				yearContext = null;
 				advisorsByHomeroom.clear();
 				gradeLevelOptions = [];
 				programOptions = [];
@@ -70,6 +73,7 @@
 				untrack(() => {
 					if (outcome.ok && mutationRevision === initialMutationRevision) {
 						homerooms = outcome.data.homerooms;
+						yearContext = outcome.data.yearContext;
 						advisorsByHomeroom.clear();
 						for (const [roomId, advisors] of outcome.data.advisorsByHomeroomId)
 							advisorsByHomeroom.set(roomId, advisors);
@@ -107,10 +111,26 @@
 	async function editCapacity(room: Homeroom, draft: Parameters<typeof updateHomeroomCapacity>[1]) {
 		const yearId = academicYearId;
 		const identity = appIdentityKey();
-		const updated = await updateHomeroomCapacity(room.id, draft);
+		let updated: Homeroom;
+		try {
+			updated = await updateHomeroomCapacity(room.id, draft);
+		} catch (cause) {
+			if (cause instanceof ApiClientError && cause.status === 409) {
+				const current = await getHomeroom(room.id);
+				if (yearId === academicYearId && identity === appIdentityKey()) {
+					mutationRevision += 1;
+					homerooms = homerooms.map((item) =>
+						item.id === current.id && current.rowVersion >= item.rowVersion ? current : item
+					);
+				}
+			}
+			throw cause;
+		}
 		if (yearId !== academicYearId || identity !== appIdentityKey()) return updated;
 		mutationRevision += 1;
-		homerooms = homerooms.map((item) => item.id === updated.id && updated.rowVersion >= item.rowVersion ? updated : item);
+		homerooms = homerooms.map((item) =>
+			item.id === updated.id && updated.rowVersion >= item.rowVersion ? updated : item
+		);
 		return updated;
 	}
 
@@ -148,6 +168,12 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={retryWorkspace}
 		/>{:else}<div class="relative" aria-busy={loading} data-testid="homerooms-ready">
+			{#if yearContext}<p
+					class="mb-4 rounded-lg border bg-muted/20 px-4 py-3 text-sm"
+					aria-label="ปีการศึกษาของห้องประจำชั้น"
+				>
+					<strong>{yearContext.name}</strong> · {academicStatusLabel(yearContext.status)}
+				</p>{/if}
 			<HomeroomEditor
 				{homerooms}
 				{gradeLevelOptions}

@@ -199,7 +199,7 @@ async fn adjusted_outcome(
     let owned_target_student_year_id =
         resolved_target_student_year_id.or(receipt_target_student_year_id);
     let owned_target_placement_id = resolved_target_placement_id.or(receipt_target_placement_id);
-    let placement_starts_on: chrono::NaiveDate = DbSession::new(&mut **tx)
+    let placement_starts_on: Option<chrono::NaiveDate> = DbSession::new(&mut **tx)
         .scalar(
             "academic_lifecycle.services.promotion_impact_resolutions.placement_intent",
             "SELECT target_placement_starts_on FROM academic_promotion_runs WHERE id=$1",
@@ -213,7 +213,8 @@ async fn adjusted_outcome(
         actor_user_id,
         source_year_id,
         target_year_id,
-        placement_starts_on,
+        placement_starts_on
+            .ok_or_else(|| AppError::Conflict("ประวัติคำสั่งเดิมไม่มีวันที่จัดห้องที่อนุมัติ".into()))?,
         source_student_year_id,
         owned_target_student_year_id,
         owned_target_placement_id,

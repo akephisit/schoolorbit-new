@@ -286,9 +286,7 @@ fn final_status(outcome: Outcome) -> Option<&'static str> {
         _ => Some("completed"),
     }
 }
-fn validate_batch(
-    rows: &[PromotionBatchDeclaration],
-) -> Result<(), AppError> {
+fn validate_batch(rows: &[PromotionBatchDeclaration]) -> Result<(), AppError> {
     if rows.is_empty()
         || rows.len() > 500
         || rows

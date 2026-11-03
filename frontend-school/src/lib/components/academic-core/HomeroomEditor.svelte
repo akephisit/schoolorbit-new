@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 
@@ -16,7 +20,10 @@
 	} from '#lib/api/academic-core.js';
 	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
 	import { compareHomerooms } from '#lib/academic-core/roster-ordering.js';
-	import { canUpdateHomeroomCapacity, homeroomCapacityError } from '#lib/academic-core/period-setup.js';
+	import {
+		canUpdateHomeroomCapacity,
+		homeroomCapacityError
+	} from '#lib/academic-core/period-setup.js';
 	import {
 		programsForGrade,
 		studyProgramLabel
@@ -73,7 +80,11 @@
 	let capacityBusy = $state(false);
 	let capacityError = $state('');
 	const latestCapacityRoom = $derived(homerooms.find((room) => room.id === capacityRoom?.id));
-	const capacityChanged = $derived(!!capacityRoom && !!latestCapacityRoom && capacityRoom.rowVersion !== latestCapacityRoom.rowVersion);
+	const capacityChanged = $derived(
+		!!capacityRoom &&
+			!!latestCapacityRoom &&
+			capacityRoom.rowVersion !== latestCapacityRoom.rowVersion
+	);
 	const canCreate = $derived(canManage && yearStatus === 'planning');
 
 	function editCapacity(room: Homeroom) {
@@ -84,16 +95,29 @@
 
 	async function saveCapacity(event: SubmitEvent) {
 		event.preventDefault();
-		if (!capacityRoom || !canManage || !canUpdateHomeroomCapacity(latestCapacityRoom?.yearStatus ?? capacityRoom.yearStatus) || capacityChanged || capacityBusy) return;
+		if (
+			!capacityRoom ||
+			!canManage ||
+			!yearStatus ||
+			!canUpdateHomeroomCapacity(yearStatus) ||
+			capacityChanged ||
+			capacityBusy
+		)
+			return;
 		capacityError = homeroomCapacityError(capacityDraft, capacityRoom.studentCount);
 		if (capacityError) return;
 		capacityBusy = true;
 		try {
-			await onUpdateCapacity(capacityRoom, { capacity: capacityDraft, rowVersion: capacityRoom.rowVersion });
+			await onUpdateCapacity(capacityRoom, {
+				capacity: capacityDraft,
+				rowVersion: capacityRoom.rowVersion
+			});
 			capacityRoom = null;
 		} catch (cause) {
 			capacityError = cause instanceof Error ? cause.message : 'บันทึกความจุห้องไม่สำเร็จ';
-		} finally { capacityBusy = false; }
+		} finally {
+			capacityBusy = false;
+		}
 	}
 
 	let advisorDialogOpen = $state(false);
@@ -103,6 +127,29 @@
 	let loadingStaff = $state(false);
 	let advisorBusy = $state(false);
 	let advisorError = $state('');
+	onMount(() => {
+		let identity = appIdentityKey();
+		const unsubscribe = authStore.subscribe(() => {
+			const next = appIdentityKey();
+			if (identity !== next) {
+				capacityRoom = null;
+				roomDialogOpen = false;
+				advisorDialogOpen = false;
+				editingRoom = null;
+				advisorRoom = null;
+				staffOptions = [];
+			}
+			identity = next;
+		});
+		const unregister = registerAcademicContextDirtySource(
+			'homeroom-editor',
+			() => !!capacityRoom || roomDialogOpen || advisorDialogOpen
+		);
+		return () => {
+			unsubscribe();
+			unregister();
+		};
+	});
 
 	const selectedGrade = $derived(
 		gradeLevelOptions.find((option) => option.id === roomDraft.gradeLevelId) ?? null
@@ -189,6 +236,7 @@
 
 	async function saveRoom(event: SubmitEvent) {
 		event.preventDefault();
+		if (!canManage || yearStatus !== 'planning' || roomBusy) return;
 		roomError = '';
 		if (!roomDraft.gradeLevelId || !roomDraft.studyProgramId || !roomDraft.roomNumber.trim()) {
 			roomError = 'กรุณาเลือกระดับชั้น แผนการเรียน และระบุเลขห้อง';
@@ -243,7 +291,7 @@
 
 	async function saveAdvisors(event: SubmitEvent) {
 		event.preventDefault();
-		if (!advisorRoom) return;
+		if (!advisorRoom || !canManage || yearStatus !== 'planning' || advisorBusy) return;
 		advisorError = '';
 		if (advisorDrafts.some((advisor) => !advisor.userId)) {
 			advisorError = 'กรุณาเลือกครูให้ครบทุกรายการ';
@@ -331,10 +379,16 @@
 									href={`/staff/academic/homerooms/${room.id}/students?academicYearId=${room.academicYearId}`}
 									>ดูนักเรียน</Button
 								>{/if}
-							{#if canManage && canUpdateHomeroomCapacity(room.yearStatus)}
-								<Button type="button" size="sm" variant="outline" onclick={() => editCapacity(room)} aria-label={`แก้ไขความจุ ${room.name}`}>แก้ไขความจุ</Button>
+							{#if canManage && yearStatus && canUpdateHomeroomCapacity(yearStatus)}
+								<Button
+									type="button"
+									size="sm"
+									variant="outline"
+									onclick={() => editCapacity(room)}
+									aria-label={`แก้ไขความจุ ${room.name}`}>แก้ไขความจุ</Button
+								>
 							{/if}
-							{#if canManage && room.yearStatus === 'planning'}
+							{#if canManage && yearStatus === 'planning'}
 								<div class="flex justify-end gap-1">
 									<Button
 										type="button"
@@ -370,15 +424,58 @@
 	</div>
 </div>
 
-<Dialog.Root open={!!capacityRoom} onOpenChange={(open) => { if (!open && !capacityBusy) capacityRoom = null; }}>
+<Dialog.Root
+	open={!!capacityRoom}
+	onOpenChange={(open) => {
+		if (!open && !capacityBusy) capacityRoom = null;
+	}}
+>
 	<Dialog.Content showCloseButton={!capacityBusy}>
-		<Dialog.Header><Dialog.Title>แก้ไขความจุ {capacityRoom?.name}</Dialog.Title><Dialog.Description>เปลี่ยนจำนวนที่รับได้ของห้อง โดยคงชั้น แผนการเรียน และรายชื่อนักเรียนเดิม</Dialog.Description></Dialog.Header>
+		<Dialog.Header
+			><Dialog.Title>แก้ไขความจุ {capacityRoom?.name}</Dialog.Title><Dialog.Description
+				>เปลี่ยนจำนวนที่รับได้ของห้อง โดยคงชั้น แผนการเรียน และรายชื่อนักเรียนเดิม</Dialog.Description
+			></Dialog.Header
+		>
 		<form class="space-y-4" onsubmit={saveCapacity}>
-			<p class="text-sm">นักเรียนในห้อง {latestCapacityRoom?.studentCount ?? capacityRoom?.studentCount ?? '—'} คน</p>
-			<div class="space-y-2"><Label for="room-capacity-only">ความจุ (คน)</Label><Input id="room-capacity-only" type="number" min={Math.max(1, latestCapacityRoom?.studentCount ?? 0)} step="1" bind:value={capacityDraft} disabled={capacityBusy} required /></div>
-			{#if capacityChanged && latestCapacityRoom}<div role="alert" class="space-y-2 rounded-lg border p-3 text-sm"><p>ข้อมูลห้องเปลี่ยนระหว่างแก้ไข ความจุล่าสุด {latestCapacityRoom.capacity} คน ฉบับร่างของคุณยังอยู่</p><Button type="button" variant="outline" disabled={capacityBusy} onclick={() => { if (latestCapacityRoom) capacityRoom = { ...latestCapacityRoom }; }}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button></div>{/if}
+			<p class="text-sm">
+				นักเรียนในห้อง {latestCapacityRoom?.studentCount ?? capacityRoom?.studentCount ?? '—'} คน
+			</p>
+			<div class="space-y-2">
+				<Label for="room-capacity-only">ความจุ (คน)</Label><Input
+					id="room-capacity-only"
+					type="number"
+					min={Math.max(1, latestCapacityRoom?.studentCount ?? 0)}
+					step="1"
+					bind:value={capacityDraft}
+					disabled={capacityBusy}
+					required
+				/>
+			</div>
+			{#if capacityChanged && latestCapacityRoom}<div
+					role="alert"
+					class="space-y-2 rounded-lg border p-3 text-sm"
+				>
+					<p>
+						ข้อมูลห้องเปลี่ยนระหว่างแก้ไข ความจุล่าสุด {latestCapacityRoom.capacity} คน ฉบับร่างของคุณยังอยู่
+					</p>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={capacityBusy}
+						onclick={() => {
+							if (latestCapacityRoom) capacityRoom = { ...latestCapacityRoom };
+						}}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button
+					>
+				</div>{/if}
 			{#if capacityError}<p role="alert" class="text-sm text-destructive">{capacityError}</p>{/if}
-			<Dialog.Footer>{#if latestCapacityRoom && canUpdateHomeroomCapacity(latestCapacityRoom.yearStatus)}<Button type="submit" disabled={capacityBusy || capacityChanged}>บันทึกความจุ</Button>{:else}<p class="text-sm text-muted-foreground">ปีการศึกษานี้ปิดการแก้ไขความจุแล้ว</p>{/if}</Dialog.Footer>
+			<Dialog.Footer
+				>{#if latestCapacityRoom && yearStatus && canUpdateHomeroomCapacity(yearStatus)}<Button
+						type="submit"
+						disabled={capacityBusy || capacityChanged}>บันทึกความจุ</Button
+					>{:else}<p class="text-sm text-muted-foreground">
+						ปีการศึกษานี้ปิดการแก้ไขความจุแล้ว
+					</p>{/if}</Dialog.Footer
+			>
 		</form>
 	</Dialog.Content>
 </Dialog.Root>

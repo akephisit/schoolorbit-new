@@ -350,7 +350,10 @@ pub async fn mutate_roster(
             if Some(old.row_version) != s.placement_row_version {
                 return Err(AppError::Conflict("ข้อมูลห้องเดิมเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
             }
-            if old.status == HomeroomPlacementStatus::Current && old.start_date.is_some_and(|start| r.effective_date <= start)
+            if old.status == HomeroomPlacementStatus::Current
+                && old
+                    .start_date
+                    .is_some_and(|start| r.effective_date <= start)
             {
                 return Err(AppError::ValidationError(
                     "วันที่ย้ายหรือนำออกต้องอยู่หลังวันที่เริ่มห้องเดิม".into(),

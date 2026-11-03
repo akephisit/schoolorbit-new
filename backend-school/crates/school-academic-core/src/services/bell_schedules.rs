@@ -546,6 +546,44 @@ fn validate_period_days_for_year(
     Ok(())
 }
 
+const ASSIGNABLE_TERMS_SQL: &str = r#"SELECT term.id FROM academic_terms term
+    JOIN academic_years year ON year.id=term.academic_year_id
+    WHERE ($1::uuid IS NULL OR term.id=$1)
+      AND year.status IN ('planning','ready','active') AND term.status IN ('planning','ready')
+      AND NOT EXISTS(SELECT 1 FROM academic_term_transition_receipts receipt
+          WHERE receipt.academic_term_id=term.id AND receipt.action='activate')
+      AND NOT EXISTS(SELECT 1 FROM academic_timetable_versions version WHERE version.academic_term_id=term.id)
+      AND NOT EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.academic_term_id=term.id)
+    ORDER BY year.year,term.sequence_no,term.id"#;
+
+pub(crate) async fn setup_term_ids(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(DbSession::new(connection)
+        .scalar(
+            "academic_core.services.bell_schedules.setup_term_ids",
+            ASSIGNABLE_TERMS_SQL,
+        )
+        .bind(None::<Uuid>)
+        .fetch_all()
+        .await?)
+}
+
+pub(crate) async fn term_schedule_is_assignable(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+) -> Result<bool, AppError> {
+    Ok(DbSession::new(connection)
+        .scalar::<Uuid>(
+            "academic_core.services.bell_schedules.term_schedule_is_assignable",
+            ASSIGNABLE_TERMS_SQL,
+        )
+        .bind(Some(term))
+        .fetch_optional()
+        .await?
+        .is_some())
+}
+
 pub(crate) async fn setup_year_ids(
     connection: &mut sqlx::PgConnection,
 ) -> Result<Vec<Uuid>, AppError> {
@@ -595,6 +633,7 @@ struct ScheduleEditState {
     has_unopened_term: bool,
     already_used: bool,
     pinned_timetable: bool,
+    timetable_references: bool,
 }
 
 impl ScheduleEditState {
@@ -609,6 +648,8 @@ impl ScheduleEditState {
             Some(Reason::AlreadyUsed)
         } else if self.pinned_timetable {
             Some(Reason::PinnedTimetable)
+        } else if self.timetable_references {
+            Some(Reason::TimetableReferences)
         } else if self.year_status == AcademicYearStatus::Active && !self.has_unopened_term {
             Some(Reason::NoUnopenedTerm)
         } else {
@@ -635,7 +676,9 @@ async fn attach_editability(
                         SELECT 1 FROM academic_term_transition_receipts receipt WHERE receipt.action='activate'
                           AND receipt.outcome->'context'->>'bellScheduleId'=schedule.id::text)) AS already_used,
                 EXISTS(SELECT 1 FROM academic_timetable_versions version
-                    WHERE version.bell_schedule_id=schedule.id AND (version.status='published' OR version.published_at IS NOT NULL)) AS pinned_timetable
+                    WHERE version.bell_schedule_id=schedule.id AND (version.status='published' OR version.published_at IS NOT NULL)) AS pinned_timetable,
+                (EXISTS(SELECT 1 FROM academic_timetable_versions version WHERE version.bell_schedule_id=schedule.id)
+                 OR EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.bell_schedule_id=schedule.id)) AS timetable_references
                FROM bell_schedules schedule JOIN academic_years year ON year.id=schedule.academic_year_id
                WHERE schedule.id=ANY($1)"#,
         )
@@ -669,6 +712,11 @@ async fn require_schedule_editable(
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".into()))?;
     require_setup_year(transaction, year).await?;
     let schedule = get_on_connection(transaction, schedule_id).await?;
+    if schedule.edit_blocked_reason == Some(BellScheduleEditBlockReason::TimetableReferences) {
+        return Err(AppError::Conflict(
+            "มีร่างตารางสอนอ้างอิงตารางคาบนี้ กรุณาจัดการร่างตารางสอนก่อนเปลี่ยนคาบ การทำสำเนาไม่ย้ายรายการในร่างเดิม".into(),
+        ));
+    }
     if schedule.edit_blocked_reason.is_some() {
         return Err(AppError::Conflict(
             "ตารางคาบนี้ถูกใช้หรือเผยแพร่แล้ว กรุณาทำสำเนาตารางคาบสำหรับภาคเรียนที่ยังไม่เปิด".into(),
@@ -697,7 +745,7 @@ async fn clear_default_except(
     DbSession::new(&mut **transaction)
         .query(
             "academic_core.services.bell_schedules.clear_default_except",
-            "UPDATE bell_schedules SET is_default = false WHERE academic_year_id = $1 AND id <> $2",
+            "UPDATE bell_schedules SET is_default = false,row_version=row_version+1,updated_at=now() WHERE academic_year_id = $1 AND id <> $2 AND is_default",
         )
         .bind(academic_year_id)
         .bind(schedule_id)

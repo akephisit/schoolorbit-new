@@ -8447,7 +8447,7 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
 mod bulk_group_setup_tests;
 
 #[path = "draft_removal_tests.rs"]
-mod draft_removal_tests;
+pub(super) mod draft_removal_tests;
 
 #[path = "preparation_target_tests.rs"]
 mod preparation_target_tests;

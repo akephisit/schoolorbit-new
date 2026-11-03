@@ -103,6 +103,7 @@ export async function mockYearManagement(
 		activationOnly?: boolean;
 		readyToActivate?: boolean;
 		setupRecords?: boolean;
+		activationFindings?: S['LifecycleFinding'][];
 	} = {}
 ) {
 	const observations = {
@@ -181,6 +182,8 @@ export async function mockYearManagement(
 	function setupWorkspace(): S['AcademicSetupWorkspace'] {
 		return {
 			contextSettings: settings,
+			bellScheduleSetupYearIds: [],
+			bellScheduleSetupTermIds: [],
 			bellSchedules: [],
 			years: options.setupRecords
 				? [currentSource, targetYear].map((year) => ({
@@ -430,10 +433,12 @@ export async function mockYearManagement(
 				if (path.endsWith('/activation'))
 					return fulfill(route, {
 						context,
-						canActivate: true,
+						canActivate: !options.activationFindings?.some(
+							(finding) => finding.severity === 'blocking'
+						),
 						eligiblePlacements: 0,
 						plannedStudents: 0,
-						findings: [],
+						findings: options.activationFindings ?? [],
 						opensYear: false,
 						predecessor: null,
 						sourceChecksum: 'c'.repeat(64),

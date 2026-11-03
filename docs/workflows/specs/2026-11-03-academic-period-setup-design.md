@@ -32,3 +32,10 @@ Delivery requires focused disposable database tests, both Rust feature modes,
 generated contracts, frontend type/static/runtime/browser checks and independent
 Reviewer and QA acceptance. Latest-main integration and selected deployment gates
 remain owned by the coordinator.
+
+The additive schema remains compatible with the old binary only until the first
+date-free rollover or annual NULL-start membership is accepted, whichever occurs
+first. A date-free run also has nullable historical placement-date evidence.
+After that boundary, old binaries must
+not serve traffic; recovery rolls forward under the existing maintenance release
+workflow. Frontend assets and the new backend ship together under that boundary.

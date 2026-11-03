@@ -2628,6 +2628,26 @@ pub async fn list_homerooms(
     .await?))
 }
 
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/homerooms/year-context",operation_id="getHomeroomYearContext",tag="academic",
+    params(AcademicYearQuery),responses((status=200,description="Exact selected homeroom year context",body=ApiResponse<YearLifecycleContext>),
+    (status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Homeroom read permission denied",body=ApiErrorResponse),
+    (status=404,description="Academic year not found",body=ApiErrorResponse),(status=422,description="Invalid academic year",body=ApiErrorResponse))))]
+pub async fn homeroom_year_context(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::homeroom_year_context(
+        &context.tenant.pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
 #[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/homerooms",

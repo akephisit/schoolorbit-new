@@ -124,7 +124,13 @@
 										'ห้องที่ไม่ได้เปิดใช้งาน'}</Table.Cell
 								>
 								<Table.Cell>{placement.classNumber ?? '—'}</Table.Cell>
-								<Table.Cell>{formatCalendarDate(placement.startDate)}</Table.Cell>
+								<Table.Cell
+									>{placement.placementScope === 'academic_year'
+										? 'สมาชิกห้องประจำปีการศึกษานี้'
+										: placement.startDate
+											? formatCalendarDate(placement.startDate)
+											: 'ไม่ระบุวันเริ่ม'}</Table.Cell
+								>
 								<Table.Cell
 									>{placement.endDate ? formatCalendarDate(placement.endDate) : '—'}</Table.Cell
 								>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { untrack } from 'svelte';
@@ -45,6 +46,7 @@
 	const termsByYear = new SvelteMap<string, AcademicTerm[]>();
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let bellScheduleSetupYearIds = $state<string[]>([]);
+	let bellScheduleSetupTermIds = $state<string[]>([]);
 	let loading = $state(true);
 	let workspaceReady = $state(false);
 	let busy = $state({ year: false, term: false, schedule: false, periods: false });
@@ -57,7 +59,12 @@
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
 	const canManage = $derived(
-		$can.hasAll(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+		mode === 'time'
+			? $can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+			: $can.hasAll(
+					PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+					PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
+				)
 	);
 
 	const latest = new LatestRequest();
@@ -71,6 +78,7 @@
 		for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
 		bellSchedules = workspace.bellSchedules;
 		bellScheduleSetupYearIds = workspace.bellScheduleSetupYearIds;
+		bellScheduleSetupTermIds = workspace.bellScheduleSetupTermIds;
 		contextSettings = workspace.contextSettings;
 		workspaceReady = true;
 	}
@@ -119,6 +127,7 @@
 				termsByYear.clear();
 				bellSchedules = [];
 				bellScheduleSetupYearIds = [];
+				bellScheduleSetupTermIds = [];
 				contextSettings = null;
 				workspaceReady = false;
 			}
@@ -261,7 +270,9 @@
 			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
-		} finally { busy.schedule = false; }
+		} finally {
+			busy.schedule = false;
+		}
 	}
 
 	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
@@ -301,6 +312,23 @@
 				];
 			}
 			return periods;
+		} catch (cause) {
+			if (
+				cause instanceof ApiClientError &&
+				cause.status === 409 &&
+				identity === appIdentityKey()
+			) {
+				const schedule = bellSchedules.find((item) => item.id === id);
+				if (schedule) {
+					const refreshed = await listBellSchedules(schedule.academicYearId);
+					if (identity === appIdentityKey())
+						bellSchedules = [
+							...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
+							...refreshed
+						];
+				}
+			}
+			throw cause;
 		} finally {
 			busy.periods = false;
 		}
@@ -352,6 +380,7 @@
 					{bellSchedules}
 					{termsByYear}
 					setupYearIds={bellScheduleSetupYearIds}
+					setupTermIds={bellScheduleSetupTermIds}
 					{canManage}
 					{busy}
 					onCreateBellSchedule={addBellSchedule}
