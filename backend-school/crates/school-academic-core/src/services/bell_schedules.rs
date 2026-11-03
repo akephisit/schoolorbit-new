@@ -7,8 +7,9 @@ use uuid::Uuid;
 use school_errors::AppError;
 
 use super::super::models::{
-    AcademicYearStatus, BellSchedule, BellSchedulePeriod, BellSchedulePeriodInput,
-    CreateBellScheduleRequest, ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
+    AcademicYearStatus, BellSchedule, BellScheduleEditBlockReason, BellSchedulePeriod,
+    BellSchedulePeriodInput, CloneBellScheduleRequest, CreateBellScheduleRequest,
+    ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
 };
 use super::years_terms::append_audit;
 use super::{lifecycle_guard, parse_row_version};
@@ -36,14 +37,16 @@ pub async fn list_on_connection(
         "SELECT {SCHEDULE_COLUMNS} FROM bell_schedules WHERE academic_year_id = $1 \
          ORDER BY is_default DESC, code, id"
     );
-    Ok(DbSession::new(connection)
+    let mut schedules = DbSession::new(connection)
         .query_as(
             "academic_core.services.bell_schedules.list_on_connection",
             sqlx::AssertSqlSafe(sql),
         )
         .bind(academic_year_id)
         .fetch_all()
-        .await?)
+        .await?;
+    attach_editability(connection, &mut schedules).await?;
+    Ok(schedules)
 }
 
 pub(super) async fn list_all(
@@ -54,13 +57,15 @@ pub(super) async fn list_all(
          JOIN academic_years year ON year.id = schedule.academic_year_id \
          ORDER BY year.year DESC, year.id, schedule.is_default DESC, schedule.code, schedule.id"
     );
-    Ok(DbSession::new(connection)
+    let mut schedules = DbSession::new(connection)
         .query_as(
             "academic_core.services.bell_schedules.list_all",
             sqlx::AssertSqlSafe(sql),
         )
         .fetch_all()
-        .await?)
+        .await?;
+    attach_editability(connection, &mut schedules).await?;
+    Ok(schedules)
 }
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<BellSchedule, AppError> {
@@ -77,7 +82,7 @@ pub async fn get_on_connection(
     id: Uuid,
 ) -> Result<BellSchedule, AppError> {
     let sql = format!("SELECT {SCHEDULE_COLUMNS} FROM bell_schedules WHERE id = $1");
-    DbSession::new(connection)
+    let mut schedule: BellSchedule = DbSession::new(connection)
         .query_as(
             "academic_core.services.bell_schedules.get_on_connection",
             sqlx::AssertSqlSafe(sql),
@@ -85,7 +90,9 @@ pub async fn get_on_connection(
         .bind(id)
         .fetch_optional()
         .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".to_string()))
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".to_string()))?;
+    attach_editability(connection, std::slice::from_mut(&mut schedule)).await?;
+    Ok(schedule)
 }
 
 pub async fn create(
@@ -99,7 +106,7 @@ pub async fn create(
         "academic_core.services.bell_schedules.create",
     )
     .await?;
-    require_planning_year(&mut transaction, request.academic_year_id).await?;
+    require_setup_year(&mut transaction, request.academic_year_id).await?;
     let schedule_count: i64 = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.bell_schedules.create",
@@ -120,7 +127,7 @@ pub async fn create(
          owning_organization_unit_id) VALUES ($1, $2, $3, $4, $5, 'draft', $6) \
          RETURNING {SCHEDULE_COLUMNS}"
     );
-    let schedule: BellSchedule = DbSession::new(&mut *transaction)
+    let mut schedule: BellSchedule = DbSession::new(&mut *transaction)
         .query_as(
             "academic_core.services.bell_schedules.create",
             sqlx::AssertSqlSafe(sql),
@@ -145,6 +152,121 @@ pub async fn create(
         serde_json::json!({"isDefault": is_default}),
     )
     .await?;
+    attach_editability(&mut transaction, std::slice::from_mut(&mut schedule)).await?;
+    transaction.commit().await?;
+    Ok(schedule)
+}
+
+pub async fn clone_schedule(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    source_id: Uuid,
+    request: CloneBellScheduleRequest,
+) -> Result<BellSchedule, AppError> {
+    validate_schedule_fields(&request.name)?;
+    parse_row_version(request.row_version)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.bell_schedules.clone_schedule",
+    )
+    .await?;
+    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
+    let source_year: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clone_schedule",
+            "SELECT academic_year_id FROM bell_schedules WHERE id=$1",
+        )
+        .bind(source_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบต้นฉบับ".into()))?;
+    // Source may be historical. Lock both parents in a stable order without
+    // applying the destination's writable-state rule to the historical source.
+    let _: Vec<Uuid> = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clone_schedule",
+            "SELECT id FROM academic_years WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(vec![source_year, request.academic_year_id])
+        .fetch_all()
+        .await?;
+    require_setup_year(&mut transaction, request.academic_year_id).await?;
+    let actual_version: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clone_schedule",
+            "SELECT row_version FROM bell_schedules WHERE id=$1 FOR SHARE",
+        )
+        .bind(source_id)
+        .fetch_one()
+        .await?;
+    if actual_version != request.row_version {
+        return Err(AppError::Conflict(
+            "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
+        ));
+    }
+    let source_periods = list_periods_on_connection(&mut transaction, source_id).await?;
+    let inputs: Vec<_> = source_periods
+        .iter()
+        .map(|period| BellSchedulePeriodInput {
+            name: period.name.clone(),
+            start_time: period.start_time,
+            end_time: period.end_time,
+            order_index: period.order_index,
+            applicable_days: period
+                .applicable_days
+                .as_deref()
+                .map(|days| days.split(',').map(str::to_owned).collect())
+                .unwrap_or_default(),
+            is_active: period.is_active,
+        })
+        .collect();
+    validate_periods(&inputs)?;
+    let school_days: String = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clone_schedule",
+            "SELECT school_days FROM academic_years WHERE id=$1",
+        )
+        .bind(request.academic_year_id)
+        .fetch_one()
+        .await?;
+    validate_period_days_for_year(&inputs, &school_days)?;
+    let count: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clone_schedule",
+            "SELECT count(*) FROM bell_schedules WHERE academic_year_id=$1",
+        )
+        .bind(request.academic_year_id)
+        .fetch_one()
+        .await?;
+    let id = Uuid::now_v7();
+    let sql = format!("INSERT INTO bell_schedules (id,academic_year_id,code,name,is_default,status,owning_organization_unit_id) \
+        VALUES($1,$2,$3,$4,$5,'draft',$6) RETURNING {SCHEDULE_COLUMNS}");
+    let mut schedule: BellSchedule = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.bell_schedules.clone_schedule",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(id)
+        .bind(request.academic_year_id)
+        .bind(if count == 0 {
+            "DEFAULT".to_string()
+        } else {
+            format!("SCHEDULE-{}", count + 1)
+        })
+        .bind(request.name.trim())
+        .bind(count == 0)
+        .bind(request.owning_organization_unit_id)
+        .fetch_one()
+        .await
+        .map_err(map_schedule_write_error)?;
+    DbSession::new(&mut *transaction).query("academic_core.services.bell_schedules.clone_schedule",
+        "INSERT INTO bell_schedule_periods (id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active) \
+         SELECT uuid_generate_v4(),$1,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$2")
+        .bind(id).bind(source_id).execute().await?;
+    append_audit(&mut transaction, "bell_schedule.cloned", "bell_schedule", id,
+        Some(request.academic_year_id), None, actor_user_id,
+        serde_json::json!({"sourceBellScheduleId": source_id, "sourceRowVersion": actual_version, "periodCount": source_periods.len()})).await?;
+    attach_editability(&mut transaction, std::slice::from_mut(&mut schedule)).await?;
     transaction.commit().await?;
     Ok(schedule)
 }
@@ -162,7 +284,7 @@ pub async fn update(
         "academic_core.services.bell_schedules.update",
     )
     .await?;
-    require_schedule_planning_year(&mut transaction, id).await?;
+    require_schedule_editable(&mut transaction, id).await?;
     let (academic_year_id, current_is_default): (Uuid, bool) = DbSession::new(&mut *transaction)
         .query_as(
             "academic_core.services.bell_schedules.update",
@@ -184,7 +306,7 @@ pub async fn update(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $4 AND row_version = $5 RETURNING {SCHEDULE_COLUMNS}"
     );
-    let schedule: BellSchedule = DbSession::new(&mut *transaction)
+    let mut schedule: BellSchedule = DbSession::new(&mut *transaction)
         .query_as(
             "academic_core.services.bell_schedules.update",
             sqlx::AssertSqlSafe(sql),
@@ -209,6 +331,7 @@ pub async fn update(
         serde_json::json!({"rowVersion": schedule.row_version}),
     )
     .await?;
+    attach_editability(&mut transaction, std::slice::from_mut(&mut schedule)).await?;
     transaction.commit().await?;
     Ok(schedule)
 }
@@ -259,7 +382,7 @@ pub async fn replace_periods(
         "academic_core.services.bell_schedules.replace_periods",
     )
     .await?;
-    require_schedule_planning_year(&mut transaction, schedule_id).await?;
+    require_schedule_editable(&mut transaction, schedule_id).await?;
     let (academic_year_id, actual_version): (Uuid, i64) = DbSession::new(&mut *transaction)
         .query_as(
             "academic_core.services.bell_schedules.replace_periods",
@@ -423,34 +546,135 @@ fn validate_period_days_for_year(
     Ok(())
 }
 
-async fn require_planning_year(
+pub(crate) async fn setup_year_ids(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(DbSession::new(connection)
+        .scalar(
+            "academic_core.services.bell_schedules.setup_year_ids",
+            r#"SELECT year.id FROM academic_years year
+               WHERE year.status IN ('planning','ready') OR (year.status='active' AND EXISTS (
+                   SELECT 1 FROM academic_terms term WHERE term.academic_year_id=year.id
+                     AND term.status IN ('planning','ready') AND NOT EXISTS (
+                         SELECT 1 FROM academic_term_transition_receipts receipt
+                         WHERE receipt.academic_term_id=term.id AND receipt.action='activate')))
+               ORDER BY year.year,year.id"#,
+        )
+        .fetch_all()
+        .await?)
+}
+
+async fn require_setup_year(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
     let status =
         lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
-    match status {
-        AcademicYearStatus::Planning => Ok(()),
-        _ => Err(AppError::Conflict(
-            "แก้ไขตารางคาบได้เฉพาะปีการศึกษาสถานะ planning".to_string(),
-        )),
+    if matches!(
+        status,
+        AcademicYearStatus::Planning | AcademicYearStatus::Ready
+    ) {
+        return Ok(());
+    }
+    if status == AcademicYearStatus::Active
+        && setup_year_ids(transaction)
+            .await?
+            .contains(&academic_year_id)
+    {
+        return Ok(());
+    }
+    Err(AppError::Conflict(
+        "จัดตารางคาบได้ในปีที่กำลังเตรียม หรือปีที่ใช้งานซึ่งมีภาคเรียนที่ยังไม่เคยเปิด".into(),
+    ))
+}
+
+#[derive(sqlx::FromRow)]
+struct ScheduleEditState {
+    id: Uuid,
+    year_status: AcademicYearStatus,
+    has_unopened_term: bool,
+    already_used: bool,
+    pinned_timetable: bool,
+}
+
+impl ScheduleEditState {
+    fn blocked_reason(&self) -> Option<BellScheduleEditBlockReason> {
+        use BellScheduleEditBlockReason as Reason;
+        if !matches!(
+            self.year_status,
+            AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active
+        ) {
+            Some(Reason::YearNotEditable)
+        } else if self.already_used {
+            Some(Reason::AlreadyUsed)
+        } else if self.pinned_timetable {
+            Some(Reason::PinnedTimetable)
+        } else if self.year_status == AcademicYearStatus::Active && !self.has_unopened_term {
+            Some(Reason::NoUnopenedTerm)
+        } else {
+            None
+        }
     }
 }
 
-async fn require_schedule_planning_year(
+async fn attach_editability(
+    connection: &mut sqlx::PgConnection,
+    schedules: &mut [BellSchedule],
+) -> Result<(), AppError> {
+    let ids: Vec<_> = schedules.iter().map(|row| row.id).collect();
+    let states: Vec<ScheduleEditState> = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.bell_schedules.attach_editability",
+            r#"SELECT schedule.id,year.status AS year_status,
+                EXISTS(SELECT 1 FROM academic_terms term WHERE term.academic_year_id=year.id
+                    AND term.status IN ('planning','ready') AND NOT EXISTS(
+                        SELECT 1 FROM academic_term_transition_receipts receipt
+                        WHERE receipt.academic_term_id=term.id AND receipt.action='activate')) AS has_unopened_term,
+                (EXISTS(SELECT 1 FROM academic_terms term WHERE term.bell_schedule_id=schedule.id
+                    AND term.status IN ('active','closing','closed')) OR EXISTS(
+                        SELECT 1 FROM academic_term_transition_receipts receipt WHERE receipt.action='activate'
+                          AND receipt.outcome->'context'->>'bellScheduleId'=schedule.id::text)) AS already_used,
+                EXISTS(SELECT 1 FROM academic_timetable_versions version
+                    WHERE version.bell_schedule_id=schedule.id AND (version.status='published' OR version.published_at IS NOT NULL)) AS pinned_timetable
+               FROM bell_schedules schedule JOIN academic_years year ON year.id=schedule.academic_year_id
+               WHERE schedule.id=ANY($1)"#,
+        )
+        .bind(ids)
+        .fetch_all()
+        .await?;
+    let states: std::collections::HashMap<_, _> =
+        states.into_iter().map(|state| (state.id, state)).collect();
+    for schedule in schedules {
+        let state = states
+            .get(&schedule.id)
+            .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".into()))?;
+        schedule.edit_blocked_reason = state.blocked_reason();
+        schedule.can_clone = true;
+    }
+    Ok(())
+}
+
+async fn require_schedule_editable(
     transaction: &mut Transaction<'_, Postgres>,
     schedule_id: Uuid,
 ) -> Result<(), AppError> {
     let year = DbSession::new(&mut **transaction)
         .scalar(
-            "academic_core.services.bell_schedules.require_schedule_planning_year",
+            "academic_core.services.bell_schedules.require_schedule_editable",
             "SELECT academic_year_id FROM bell_schedules WHERE id=$1",
         )
         .bind(schedule_id)
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".into()))?;
-    require_planning_year(transaction, year).await
+    require_setup_year(transaction, year).await?;
+    let schedule = get_on_connection(transaction, schedule_id).await?;
+    if schedule.edit_blocked_reason.is_some() {
+        return Err(AppError::Conflict(
+            "ตารางคาบนี้ถูกใช้หรือเผยแพร่แล้ว กรุณาทำสำเนาตารางคาบสำหรับภาคเรียนที่ยังไม่เปิด".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn clear_default_except(
@@ -458,6 +682,18 @@ async fn clear_default_except(
     academic_year_id: Uuid,
     schedule_id: Uuid,
 ) -> Result<(), AppError> {
+    let defaults: Vec<Uuid> = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.clear_default_except",
+            "SELECT id FROM bell_schedules WHERE academic_year_id=$1 AND id<>$2 AND is_default ORDER BY id",
+        )
+        .bind(academic_year_id)
+        .bind(schedule_id)
+        .fetch_all()
+        .await?;
+    for id in defaults {
+        require_schedule_editable(transaction, id).await?;
+    }
     DbSession::new(&mut **transaction)
         .query(
             "academic_core.services.bell_schedules.clear_default_except",

@@ -179,8 +179,8 @@ pub(super) async fn configuration_conflicts(
                         JOIN users u ON u.id=sy.student_id AND u.status='active'
                         WHERE p.student_academic_year_id=m.student_academic_year_id
                             AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
-                            AND p.end_date IS NULL AND ((o.status='draft' AND (o.ends_on IS NULL OR o.ends_on>=p.start_date))
-                                OR EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR span.ends_on>=p.start_date))))) AS extra_members
+                            AND p.end_date IS NULL AND ((o.status='draft' AND (o.ends_on IS NULL OR p.start_date IS NULL OR o.ends_on>=p.start_date))
+                                OR EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR p.start_date IS NULL OR span.ends_on>=p.start_date))))) AS extra_members
             FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
             JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
             WHERE g.id=ANY($1) AND o.id=$2

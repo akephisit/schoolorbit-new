@@ -1598,7 +1598,7 @@ async fn enrich_roster_preview(
               AND placement.status IN ('current', 'planned')
               AND placement.end_date IS NULL
             ORDER BY (placement.status = 'current') DESC,
-                     placement.start_date DESC, placement.id
+                     placement.start_date DESC NULLS LAST, placement.id
             LIMIT 1
         ) placement ON true
         LEFT JOIN homerooms homeroom ON homeroom.id = placement.homeroom_id

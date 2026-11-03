@@ -35,8 +35,8 @@ pub async fn day_facts_on_connection(
         JOIN student_academic_years y ON y.id=r.student_academic_year_id
         LEFT JOIN LATERAL (SELECT h.homeroom_id FROM homeroom_placements h
             WHERE h.student_academic_year_id=r.student_academic_year_id AND h.status IN ('current','ended')
-            AND h.start_date<=$2 AND (h.end_date IS NULL OR h.end_date>=$2)
-            ORDER BY h.start_date DESC,h.id LIMIT 1) p ON true
+            AND academic_placement_applies_on(h.placement_scope,h.start_date,h.end_date,$2)
+            ORDER BY h.start_date DESC NULLS LAST,h.id LIMIT 1) p ON true
         LEFT JOIN attendance_days d ON d.academic_term_id=s.academic_term_id AND d.date=s.date
         LEFT JOIN attendance_special_rounds special ON special.id=s.special_round_id
         LEFT JOIN attendance_special_templates template ON template.id=special.template_id

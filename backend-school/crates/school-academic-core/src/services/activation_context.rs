@@ -226,10 +226,7 @@ pub async fn read_activation_state(
     let mut rooms: BTreeMap<Uuid, (Option<i32>, BTreeSet<Uuid>)> = BTreeMap::new();
     let mut placement_counts: BTreeMap<Uuid, usize> = BTreeMap::new();
     for row in placements.iter().filter(|row| {
-        row.start_date <= context.operation_date
-            && row
-                .end_date
-                .is_none_or(|date| date >= context.operation_date)
+        super::placement_interval::contains_date(row.start_date, row.end_date, context.operation_date)
     }) {
         let room = rooms
             .entry(row.homeroom_id)
@@ -302,13 +299,13 @@ async fn read_enrollment(
          WHERE student.academic_year_id=$1 ORDER BY student.id LIMIT 10001"
     ).bind(context.academic_year_id).fetch_all().await?;
     let placements: Vec<ActivationPlacement> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_enrollment",
-        "SELECT p.id,p.student_academic_year_id,p.homeroom_id,p.start_date,p.end_date,p.status,p.row_version,
+        "SELECT p.id,p.student_academic_year_id,p.homeroom_id,p.placement_scope,p.start_date,p.end_date,p.status,p.row_version,
          room.row_version AS room_row_version,room.capacity,
          COALESCE(room.academic_year_id=p.academic_year_id AND room.grade_level_id=student.grade_level_id
           AND room.study_program_id=student.study_program_id AND room.is_active IS TRUE
           AND student.status IN ('planned','active')
-          AND (p.end_date IS NULL OR p.end_date>=p.start_date),false) AS reference_valid,
-         (p.status='planned' AND student.status='planned' AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) AS eligible
+          AND (p.start_date IS NULL OR p.end_date IS NULL OR p.end_date>=p.start_date),false) AS reference_valid,
+         (p.status='planned' AND student.status='planned' AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$2)) AS eligible
          FROM homeroom_placements p JOIN student_academic_years student ON student.id=p.student_academic_year_id AND student.academic_year_id=p.academic_year_id
          LEFT JOIN homerooms room ON room.id=p.homeroom_id
          WHERE p.academic_year_id=$1 AND p.status IN ('planned','current') ORDER BY p.id LIMIT 20001"

@@ -195,7 +195,7 @@ async fn project(
             // Provider ordering resolves an end/start boundary in favor of the latest placement.
             let mut students = HashMap::new();
             for p in &placements {
-                if p.start_date <= date && p.end_date.is_none_or(|d| d >= date) {
+                if school_academic_core::services::placement_interval::contains_date(p.start_date, p.end_date, date) {
                     students.entry(p.student_id).or_insert(p);
                 }
             }

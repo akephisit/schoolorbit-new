@@ -9,6 +9,7 @@
 		listStaffOptions,
 		replaceHomeroomAdvisors,
 		updateHomeroom,
+		updateHomeroomCapacity,
 		type CreateHomeroomRequest,
 		type GradeLevelOption,
 		type Homeroom,
@@ -24,6 +25,8 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 
 	let { data }: PageProps = $props();
 	const academicYearId = $derived(data.academicYearId);
@@ -37,6 +40,8 @@
 	let loadedYearId: string | null = null;
 	let mutationRevision = 0;
 	const canManage = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
+	const academicContext = getAcademicContextStore();
+	const yearStatus = $derived($academicContext.options?.years.find((year) => year.id === academicYearId)?.status);
 
 	function retryWorkspace() {
 		return invalidate(HOMEROOMS_WORKSPACE_DEPENDENCY);
@@ -99,6 +104,15 @@
 		homerooms = homerooms.map((item) => (item.id === updated.id ? updated : item));
 		return updated;
 	}
+	async function editCapacity(room: Homeroom, draft: Parameters<typeof updateHomeroomCapacity>[1]) {
+		const yearId = academicYearId;
+		const identity = appIdentityKey();
+		const updated = await updateHomeroomCapacity(room.id, draft);
+		if (yearId !== academicYearId || identity !== appIdentityKey()) return updated;
+		mutationRevision += 1;
+		homerooms = homerooms.map((item) => item.id === updated.id && updated.rowVersion >= item.rowVersion ? updated : item);
+		return updated;
+	}
 
 	async function saveAdvisors(
 		room: Homeroom,
@@ -140,8 +154,10 @@
 				{programOptions}
 				{advisorsByHomeroom}
 				{canManage}
+				{yearStatus}
 				onCreate={addHomeroom}
 				onUpdate={editHomeroom}
+				onUpdateCapacity={editCapacity}
 				onLoadStaffOptions={listStaffOptions}
 				onSaveAdvisors={saveAdvisors}
 			/>

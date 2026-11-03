@@ -61,9 +61,9 @@ pub async fn confirm(
     let confirmation_id = Uuid::now_v7();
     DbSession::new(&mut *tx).query(
         "academic_lifecycle.year_rollover_command.confirm",
-        "INSERT INTO academic_promotion_runs(id,source_year_id,target_year_id,target_placement_starts_on,policy_id,request_id,request_checksum,created_by)
-         VALUES($1,$2,$3,$4,NULL,$5,$6,$7)",
-    ).bind(run_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id).bind(input.preview.target_placement_starts_on)
+        "INSERT INTO academic_promotion_runs(id,source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by)
+         VALUES($1,$2,$3,NULL,$4,$5,$6)",
+    ).bind(run_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id)
         .bind(input.request_id).bind(&checksum).bind(actor.user_id).execute().await?;
     // This is the real single staff confirmation. No policy/result evidence or
     // separate approval/review action is manufactured for the ledger.
@@ -96,8 +96,6 @@ pub async fn confirm(
             source_checksum: super::checksum(&(
                 source,
                 &declared.decision,
-                input.preview.outcome_effective_on,
-                input.preview.target_placement_starts_on,
             ))?,
             existing_target_student_year_id: source.existing_target_student_year_id,
             decision: declared.decision.clone(),
@@ -121,14 +119,14 @@ pub async fn confirm(
     }
     for batch in items.chunks(500) {
         DbSession::new(&mut *tx).query("academic_lifecycle.year_rollover_command.insert_items",
-            "INSERT INTO academic_promotion_run_items(id,run_id,source_year_id,target_year_id,target_placement_starts_on,student_academic_year_id,student_id,
+            "INSERT INTO academic_promotion_run_items(id,run_id,source_year_id,target_year_id,student_academic_year_id,student_id,
              source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id,decision,reviewed_by,reviewed_at,status)
-             SELECT row.id,$2,$3,$4,$5,row.student_academic_year_id,row.student_id,row.source_grade_level_id,row.source_study_program_id,row.source_row_version,
-               NULL,row.source_checksum,NULL,row.existing_target_student_year_id,row.decision,$6,now(),'reviewed'
+             SELECT row.id,$2,$3,$4,row.student_academic_year_id,row.student_id,row.source_grade_level_id,row.source_study_program_id,row.source_row_version,
+               NULL,row.source_checksum,NULL,row.existing_target_student_year_id,row.decision,$5,now(),'reviewed'
              FROM jsonb_to_recordset($1) row(id uuid,student_academic_year_id uuid,student_id uuid,source_grade_level_id uuid,source_study_program_id uuid,
                source_row_version bigint,source_checksum text,existing_target_student_year_id uuid,decision jsonb)")
             .bind(Json(batch)).bind(run_id).bind(input.preview.source_year_id).bind(input.preview.target_year_id)
-            .bind(input.preview.target_placement_starts_on).bind(actor.user_id).execute().await?;
+            .bind(actor.user_id).execute().await?;
     }
     let mut written = vec![];
     for batch in declarations.chunks(500) {
@@ -138,8 +136,6 @@ pub async fn confirm(
                 actor.user_id,
                 input.preview.source_year_id,
                 input.preview.target_year_id,
-                input.preview.outcome_effective_on,
-                input.preview.target_placement_starts_on,
                 batch,
             )
             .await?,

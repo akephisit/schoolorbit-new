@@ -15,7 +15,7 @@ pub(crate) const STUDENT_ROSTER_SQL: &str = r#"
         JOIN homerooms room ON room.id = p.homeroom_id
         WHERE p.student_academic_year_id = y.id
           AND p.status IN ('current', 'planned')
-        ORDER BY (p.status = 'current') DESC, p.start_date DESC, p.id
+        ORDER BY (p.status = 'current') DESC, p.start_date DESC NULLS LAST, p.id
         LIMIT 1
     ) current_room ON TRUE
     WHERE m.learning_group_id = $1 AND m.membership_status = 'active'

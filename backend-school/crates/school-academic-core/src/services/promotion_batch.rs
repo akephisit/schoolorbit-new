@@ -3,7 +3,6 @@ use crate::models::{
     AcademicYearStatus, PromotionDestinationCommand, PromotionDestinationOutcome as Outcome,
     PromotionWriteOutcome, StudentAcademicYearStatus,
 };
-use chrono::NaiveDate;
 use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
@@ -53,11 +52,9 @@ pub async fn apply_declarations(
     actor: Uuid,
     source_year: Uuid,
     target_year: Uuid,
-    effective_on: NaiveDate,
-    starts_on: NaiveDate,
     declarations: &[PromotionBatchDeclaration],
 ) -> Result<Vec<PromotionBatchOutcome>, AppError> {
-    validate_batch(declarations, effective_on, starts_on)?;
+    validate_batch(declarations)?;
     let (source_context, _) =
         promotion_students::validated_run_years(tx, source_year, target_year).await?;
     if source_context.status != AcademicYearStatus::Closed {
@@ -185,14 +182,6 @@ pub async fn apply_declarations(
         });
     }
     let finished: Vec<_> = updates.iter().map(|row| row.id).collect();
-    if !finished.is_empty() {
-        let invalid:bool=DbSession::new(&mut **tx).scalar("academic_core.promotion_batch.placement_dates",
-            "SELECT EXISTS(SELECT 1 FROM homeroom_placements WHERE student_academic_year_id=ANY($1) AND status='current' AND start_date>$2)")
-            .bind(&finished).bind(effective_on).fetch_one().await?;
-        if invalid {
-            return Err(AppError::Conflict("วันสิ้นสุดต้องไม่อยู่ก่อนวันเริ่มห้องปัจจุบัน".into()));
-        }
-    }
     if !annuals.is_empty() {
         DbSession::new(&mut **tx).query("academic_core.promotion_batch.insert_targets",
             "INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status)
@@ -202,17 +191,17 @@ pub async fn apply_declarations(
     }
     if !placements.is_empty() {
         DbSession::new(&mut **tx).query("academic_core.promotion_batch.insert_placements",
-            "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type)
-             SELECT id,student_academic_year_id,$2,homeroom_id,$3,'planned','promotion' FROM jsonb_to_recordset($1)
+            "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,placement_scope,status,enrollment_type)
+             SELECT id,student_academic_year_id,$2,homeroom_id,'academic_year','planned','promotion' FROM jsonb_to_recordset($1)
              row(id uuid,student_academic_year_id uuid,homeroom_id uuid)")
-            .bind(Json(&placements)).bind(target_year).bind(starts_on).execute().await?;
+            .bind(Json(&placements)).bind(target_year).execute().await?;
     }
     if !updates.is_empty() {
         DbSession::new(&mut **tx).query("academic_core.promotion_batch.finish_placements",
-            "UPDATE homeroom_placements SET status=CASE WHEN start_date>$2 THEN 'removed' ELSE 'ended' END,
-             end_date=CASE WHEN start_date>$2 THEN end_date ELSE $2 END,row_version=row_version+1,updated_at=now()
+            "UPDATE homeroom_placements SET status=CASE WHEN status='planned' THEN 'cancelled' ELSE 'ended' END,
+             row_version=row_version+1,updated_at=now()
              WHERE student_academic_year_id=ANY($1) AND status IN ('current','planned')")
-            .bind(&finished).bind(effective_on).execute().await?;
+            .bind(&finished).execute().await?;
         DbSession::new(&mut **tx).query("academic_core.promotion_batch.finish_sources",
             "UPDATE student_academic_years source SET status=row.status,row_version=source.row_version+1,updated_at=now()
              FROM jsonb_to_recordset($1) row(id uuid,status text) WHERE source.id=row.id AND source.status IS DISTINCT FROM row.status")
@@ -236,9 +225,9 @@ pub async fn apply_declarations(
         DbSession::new(&mut **tx).query("academic_core.promotion_batch.audit_sources",
             "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,actor_user_id,payload)
              SELECT 'student_academic_year.rollover_finalized','student_academic_year',row.id,$2,$3,
-               jsonb_build_object('outcome',row.outcome,'effectiveOn',$4::date,'targetYearId',$5::uuid)
+               jsonb_build_object('outcome',row.outcome,'targetYearId',$4::uuid)
              FROM jsonb_to_recordset($1) row(id uuid,outcome text)")
-            .bind(Json(&updates)).bind(source_year).bind(actor).bind(effective_on).bind(target_year).execute().await?;
+            .bind(Json(&updates)).bind(source_year).bind(actor).bind(target_year).execute().await?;
     }
     Ok(results)
 }
@@ -299,12 +288,9 @@ fn final_status(outcome: Outcome) -> Option<&'static str> {
 }
 fn validate_batch(
     rows: &[PromotionBatchDeclaration],
-    effective: NaiveDate,
-    starts: NaiveDate,
 ) -> Result<(), AppError> {
     if rows.is_empty()
         || rows.len() > 500
-        || effective >= starts
         || rows
             .iter()
             .map(|row| row.source.student_academic_year_id)
@@ -322,7 +308,7 @@ fn validate_batch(
         })
     {
         return Err(AppError::ValidationError(
-            "ระบุผลและนักเรียนไม่ซ้ำครั้งละ 1–500 คน พร้อมวันที่ที่ถูกต้อง".into(),
+            "ระบุผลและนักเรียนไม่ซ้ำครั้งละ 1–500 คน".into(),
         ));
     }
     Ok(())

@@ -21,6 +21,9 @@ test('one complete preview confirms all manual outcomes and leaves the new year 
 			fullPage: true
 		});
 	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('button', { name: 'วันสิ้นสุดสถานะปีต้นทาง', exact: true })).toHaveCount(0);
+	await expect(dialog.getByRole('button', { name: 'วันเริ่มจัดห้องปีใหม่', exact: true })).toHaveCount(0);
+	expect(observed.previews[0]).toEqual({ sourceYearId: id(1), targetYearId: id(2), decisions: [] });
 	await expect(
 		dialog.getByRole('button', { name: 'ยืนยันเตรียมรายชื่อนักเรียน', exact: true })
 	).toBeDisabled();
@@ -36,6 +39,9 @@ test('one complete preview confirms all manual outcomes and leaves the new year 
 			fullPage: true
 		});
 	expect(observed.confirms).toHaveLength(1);
+	expect(Object.keys(observed.confirms[0].preview).sort()).toEqual([
+		'decisions', 'sourceYearId', 'targetYearId'
+	]);
 	expect(observed.confirms[0].preview.decisions.map((row) => row.decision.outcome)).toEqual([
 		'promote',
 		'repeat',

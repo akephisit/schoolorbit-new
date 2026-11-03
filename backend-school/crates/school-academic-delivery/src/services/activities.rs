@@ -52,10 +52,9 @@ pub async fn list_registration_options_on_connection(
                    FROM homeroom_placements candidate
                    WHERE candidate.student_academic_year_id = student_year.id
                      AND candidate.status IN ('current', 'planned')
-                     AND candidate.start_date <= (now() AT TIME ZONE 'Asia/Bangkok')::date
-                     AND (candidate.end_date IS NULL OR candidate.end_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)
+                     AND academic_placement_applies_on(candidate.placement_scope,candidate.start_date,candidate.end_date,(now() AT TIME ZONE 'Asia/Bangkok')::date)
                    ORDER BY (candidate.status = 'current') DESC,
-                            candidate.start_date DESC,
+                            candidate.start_date DESC NULLS LAST,
                             candidate.id
                    LIMIT 1
                ) placement ON true
@@ -567,10 +566,10 @@ async fn require_eligible_student(
                FROM homeroom_placements candidate
                WHERE candidate.student_academic_year_id = student_year.id
                  AND candidate.status IN ('current', 'planned')
-                 AND candidate.start_date <= $3
+                 AND (candidate.start_date IS NULL OR candidate.start_date <= $3)
                  AND (candidate.end_date IS NULL OR candidate.end_date >= $2)
                ORDER BY (candidate.status = 'current') DESC,
-                        candidate.start_date DESC,
+                        candidate.start_date DESC NULLS LAST,
                         candidate.id
                LIMIT 1
            ) placement ON true

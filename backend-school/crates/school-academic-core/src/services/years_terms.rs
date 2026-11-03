@@ -582,10 +582,58 @@ pub async fn update_term(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
-    validate_term_context(&mut transaction, academic_year_id, request.bell_schedule_id).await?;
+    let year_status =
+        lifecycle_guard::require_year_write_exclusive(&mut transaction, academic_year_id).await?;
+    if !matches!(
+        year_status,
+        AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active
+    ) {
+        return Err(AppError::Conflict(
+            "เปลี่ยนตารางคาบได้เฉพาะปีที่กำลังเตรียมหรือกำลังใช้งาน".into(),
+        ));
+    }
+    validate_term_schedule(&mut transaction, academic_year_id, request.bell_schedule_id).await?;
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
     validate_term_fields(&identity.name)?;
+    let current = get_term_on_connection(&mut transaction, id).await?;
+    let metadata_unchanged = current.name == identity.name
+        && current.term_type == request.term_type
+        && current.included_in_year_result == request.included_in_year_result
+        && current.blocks_year_closure == request.blocks_year_closure;
+    if (current.status == AcademicTermStatus::Ready || year_status == AcademicYearStatus::Ready)
+        && !metadata_unchanged
+    {
+        return Err(AppError::Conflict(
+            "ภาคเรียนหรือปีที่พร้อมเปิดให้เปลี่ยนได้เฉพาะตารางคาบ โดยคงข้อมูลอื่นเดิม".into(),
+        ));
+    }
+    if !matches!(
+        current.status,
+        AcademicTermStatus::Planning | AcademicTermStatus::Ready
+    ) {
+        return Err(AppError::Conflict("แก้ไขได้เฉพาะภาคเรียนที่ยังไม่เปิด".into()));
+    }
+    let used: bool = DbSession::new(&mut *transaction)
+        .scalar("academic_core.services.years_terms.update_term",
+            "SELECT EXISTS(SELECT 1 FROM academic_term_transition_receipts WHERE academic_term_id=$1 AND action='activate')")
+        .bind(id).fetch_one().await?;
+    if used {
+        return Err(AppError::Conflict(
+            "ภาคเรียนนี้เคยเปิดใช้งานแล้ว เปลี่ยนการตั้งค่าเดิมไม่ได้".into(),
+        ));
+    }
+    if current.bell_schedule_id != request.bell_schedule_id {
+        let pinned: bool = DbSession::new(&mut *transaction)
+            .scalar("academic_core.services.years_terms.update_term",
+                "SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1) OR EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE academic_term_id=$1)")
+            .bind(id).fetch_one().await?;
+        if pinned {
+            return Err(AppError::Conflict(
+                "ภาคเรียนนี้มีรุ่นตารางสอนที่อ้างอิงตารางคาบเดิม กรุณาจัดการรุ่นตารางสอนก่อนเปลี่ยน".into(),
+            ));
+        }
+    }
     let returning = TERM_COLUMNS
         .split(',')
         .map(|column| format!("NEW.{}", column.trim()))
@@ -594,7 +642,7 @@ pub async fn update_term(
     let sql = format!(
         "UPDATE academic_terms SET name = $1, term_type = $2, included_in_year_result = $3, blocks_year_closure = $4, bell_schedule_id = $5, \
          row_version = row_version + 1, updated_at = now() \
-         WHERE id = $6 AND row_version = $7 AND status = 'planning' RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'rowVersion', NEW.row_version) AS after"
+         WHERE id = $6 AND row_version = $7 AND status IN ('planning','ready') RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'rowVersion', NEW.row_version) AS after"
     );
     let row = DbSession::new(&mut *transaction)
         .query_as::<AcademicTermUpdateRow>(
@@ -760,6 +808,14 @@ async fn validate_term_context(
     bell_schedule_id: Uuid,
 ) -> Result<(), AppError> {
     lock_term_planning_year(transaction, academic_year_id).await?;
+    validate_term_schedule(transaction, academic_year_id, bell_schedule_id).await
+}
+
+async fn validate_term_schedule(
+    transaction: &mut Transaction<'_, Postgres>,
+    academic_year_id: Uuid,
+    bell_schedule_id: Uuid,
+) -> Result<(), AppError> {
     let schedule_matches: bool = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.years_terms.validate_term_context",

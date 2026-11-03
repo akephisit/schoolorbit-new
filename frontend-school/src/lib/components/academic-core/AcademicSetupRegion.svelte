@@ -11,6 +11,7 @@
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
+		cloneBellSchedule,
 		listBellSchedulePeriods,
 		listBellSchedules,
 		replaceBellSchedulePeriods,
@@ -43,6 +44,7 @@
 	let years = $state<AcademicYear[]>([]);
 	const termsByYear = new SvelteMap<string, AcademicTerm[]>();
 	let bellSchedules = $state<BellSchedule[]>([]);
+	let bellScheduleSetupYearIds = $state<string[]>([]);
 	let loading = $state(true);
 	let workspaceReady = $state(false);
 	let busy = $state({ year: false, term: false, schedule: false, periods: false });
@@ -68,6 +70,7 @@
 		termsByYear.clear();
 		for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
 		bellSchedules = workspace.bellSchedules;
+		bellScheduleSetupYearIds = workspace.bellScheduleSetupYearIds;
 		contextSettings = workspace.contextSettings;
 		workspaceReady = true;
 	}
@@ -115,6 +118,7 @@
 				years = [];
 				termsByYear.clear();
 				bellSchedules = [];
+				bellScheduleSetupYearIds = [];
 				contextSettings = null;
 				workspaceReady = false;
 			}
@@ -248,6 +252,17 @@
 			busy.schedule = false;
 		}
 	}
+	async function copyBellSchedule(id: string, draft: Parameters<typeof cloneBellSchedule>[1]) {
+		const identity = appIdentityKey();
+		busy.schedule = true;
+		try {
+			const created = await cloneBellSchedule(id, draft);
+			if (identity !== appIdentityKey()) return created;
+			mutationRevision += 1;
+			bellSchedules = [...bellSchedules, created];
+			return created;
+		} finally { busy.schedule = false; }
+	}
 
 	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
 		const identity = appIdentityKey();
@@ -335,9 +350,13 @@
 				<TimeSetupEditor
 					{years}
 					{bellSchedules}
+					{termsByYear}
+					setupYearIds={bellScheduleSetupYearIds}
 					{canManage}
 					{busy}
 					onCreateBellSchedule={addBellSchedule}
+					onCloneBellSchedule={copyBellSchedule}
+					onUpdateTerm={editTerm}
 					onUpdateBellSchedule={editBellSchedule}
 					onLoadBellSchedulePeriods={listBellSchedulePeriods}
 					onReplaceBellSchedulePeriods={saveBellSchedulePeriods}

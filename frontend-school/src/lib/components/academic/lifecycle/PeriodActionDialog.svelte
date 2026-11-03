@@ -19,8 +19,7 @@
 		type YearTransitionRequest
 	} from '#lib/api/academic-lifecycle.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import ReadinessFindings from './ReadinessFindings.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -252,27 +251,7 @@
 					? workspace.data.context.name
 					: workspace.data.context.termName}
 			</p>
-			{#each workspace.data.findings as finding (finding.code)}<div
-					class="space-y-2 rounded-lg border p-3"
-				>
-					<p class={finding.severity === 'blocking' ? 'text-sm text-destructive' : 'text-sm'}>
-						{finding.message}
-					</p>
-					{#if kind !== 'activate' && finding.severity === 'warning'}<div
-							class="flex items-center gap-2"
-						>
-							<Checkbox
-								id={`ack-${kind}-${finding.code}`}
-								checked={acknowledged.includes(finding.code)}
-								disabled={busy || !!pending}
-								onCheckedChange={(checked) => {
-									acknowledged = checked
-										? [...acknowledged, finding.code]
-										: acknowledged.filter((code) => code !== finding.code);
-								}}
-							/><Label for={`ack-${kind}-${finding.code}`}>รับทราบ</Label>
-						</div>{/if}
-				</div>{/each}{/if}{#if error}<p role="alert" class="text-sm text-destructive">
+			<ReadinessFindings findings={workspace.data.findings} acknowledgementId={`ack-${kind}`} {acknowledged} disabled={busy || !!pending} onacknowledged={kind === 'activate' ? undefined : (codes) => { acknowledged = codes; }} />{/if}{#if error}<p role="alert" class="text-sm text-destructive">
 				{error}
 			</p>{/if}{#if stale || (!workspace && !loading)}<LoadingButton
 				variant="outline"

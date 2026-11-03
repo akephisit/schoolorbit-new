@@ -40,6 +40,10 @@ pub fn routes() -> Router<AcademicHttpState> {
             get(handlers::get_bell_schedule).patch(handlers::update_bell_schedule),
         )
         .route(
+            "/bell-schedules/{id}/clone",
+            post(handlers::clone_bell_schedule),
+        )
+        .route(
             "/bell-schedules/{id}/periods",
             get(handlers::list_bell_schedule_periods).put(handlers::replace_bell_schedule_periods),
         )
@@ -208,6 +212,10 @@ pub fn routes() -> Router<AcademicHttpState> {
         .route(
             "/homerooms/{id}",
             get(handlers::get_homeroom).patch(handlers::update_homeroom),
+        )
+        .route(
+            "/homerooms/{id}/capacity",
+            patch(handlers::update_homeroom_capacity),
         )
         .route(
             "/homerooms/{id}/students",

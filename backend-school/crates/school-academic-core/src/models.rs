@@ -332,6 +332,26 @@ pub struct CreateBellScheduleRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloneBellScheduleRequest {
+    pub academic_year_id: Uuid,
+    pub name: String,
+    pub owning_organization_unit_id: Option<Uuid>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BellScheduleEditBlockReason {
+    YearNotEditable,
+    NoUnopenedTerm,
+    AlreadyUsed,
+    PinnedTimetable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateBellScheduleRequest {
     pub name: String,
     pub is_default: bool,
@@ -353,6 +373,10 @@ pub struct BellSchedule {
     pub row_version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(skip)]
+    pub edit_blocked_reason: Option<BellScheduleEditBlockReason>,
+    #[sqlx(skip)]
+    pub can_clone: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -1237,6 +1261,7 @@ pub struct AcademicSetupWorkspace {
     pub years: Vec<AcademicYear>,
     pub terms: Vec<AcademicTerm>,
     pub bell_schedules: Vec<BellSchedule>,
+    pub bell_schedule_setup_year_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1287,6 +1312,14 @@ pub struct UpdateHomeroomRequest {
     pub grade_level_id: Uuid,
     pub room_number: String,
     pub study_program_id: Uuid,
+    pub capacity: i32,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateHomeroomCapacityRequest {
     pub capacity: i32,
     pub row_version: i64,
 }
@@ -1409,6 +1442,16 @@ pub enum HomeroomPlacementStatus {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum HomeroomPlacementScope {
+    #[default]
+    Dated,
+    AcademicYear,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
@@ -1417,7 +1460,9 @@ pub struct HomeroomPlacement {
     pub student_academic_year_id: Uuid,
     pub academic_year_id: Uuid,
     pub homeroom_id: Uuid,
-    pub start_date: NaiveDate,
+    #[serde(default)]
+    pub placement_scope: HomeroomPlacementScope,
+    pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
     pub status: HomeroomPlacementStatus,
     pub enrollment_type: String,
@@ -1476,7 +1521,9 @@ pub struct HomeroomRosterStudent {
     pub gender: Option<String>,
     pub class_number: Option<i32>,
     pub status: HomeroomPlacementStatus,
-    pub start_date: NaiveDate,
+    #[serde(default)]
+    pub placement_scope: HomeroomPlacementScope,
+    pub start_date: Option<NaiveDate>,
     pub row_version: i64,
     pub student_year_row_version: i64,
 }

@@ -4,16 +4,19 @@
 
 	import type {
 		CreateHomeroomRequest,
+		AcademicYear,
 		GradeLevelOption,
 		Homeroom,
 		HomeroomAdvisor,
 		ReplaceHomeroomAdvisorsRequest,
 		StaffOption,
 		StudyProgramOption,
-		UpdateHomeroomRequest
+		UpdateHomeroomRequest,
+		UpdateHomeroomCapacityRequest
 	} from '#lib/api/academic-core.js';
 	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
 	import { compareHomerooms } from '#lib/academic-core/roster-ordering.js';
+	import { canUpdateHomeroomCapacity, homeroomCapacityError } from '#lib/academic-core/period-setup.js';
 	import {
 		programsForGrade,
 		studyProgramLabel
@@ -36,8 +39,10 @@
 		programOptions,
 		advisorsByHomeroom,
 		canManage = false,
+		yearStatus,
 		onCreate,
 		onUpdate,
+		onUpdateCapacity,
 		onLoadStaffOptions,
 		onSaveAdvisors
 	}: {
@@ -46,8 +51,10 @@
 		programOptions: StudyProgramOption[];
 		advisorsByHomeroom: Map<string, HomeroomAdvisor[]>;
 		canManage?: boolean;
+		yearStatus?: AcademicYear['status'];
 		onCreate: (draft: HomeroomDraft) => Promise<Homeroom>;
 		onUpdate: (room: Homeroom, draft: UpdateHomeroomRequest) => Promise<Homeroom>;
+		onUpdateCapacity: (room: Homeroom, draft: UpdateHomeroomCapacityRequest) => Promise<Homeroom>;
 		onLoadStaffOptions: () => Promise<StaffOption[]>;
 		onSaveAdvisors: (
 			room: Homeroom,
@@ -61,6 +68,33 @@
 	let roomBusy = $state(false);
 	let roomError = $state('');
 	let editionId = $state('');
+	let capacityRoom = $state<Homeroom | null>(null);
+	let capacityDraft = $state(1);
+	let capacityBusy = $state(false);
+	let capacityError = $state('');
+	const latestCapacityRoom = $derived(homerooms.find((room) => room.id === capacityRoom?.id));
+	const capacityChanged = $derived(!!capacityRoom && !!latestCapacityRoom && capacityRoom.rowVersion !== latestCapacityRoom.rowVersion);
+	const canCreate = $derived(canManage && yearStatus === 'planning');
+
+	function editCapacity(room: Homeroom) {
+		capacityRoom = { ...room };
+		capacityDraft = room.capacity;
+		capacityError = '';
+	}
+
+	async function saveCapacity(event: SubmitEvent) {
+		event.preventDefault();
+		if (!capacityRoom || !canManage || !canUpdateHomeroomCapacity(latestCapacityRoom?.yearStatus ?? capacityRoom.yearStatus) || capacityChanged || capacityBusy) return;
+		capacityError = homeroomCapacityError(capacityDraft, capacityRoom.studentCount);
+		if (capacityError) return;
+		capacityBusy = true;
+		try {
+			await onUpdateCapacity(capacityRoom, { capacity: capacityDraft, rowVersion: capacityRoom.rowVersion });
+			capacityRoom = null;
+		} catch (cause) {
+			capacityError = cause instanceof Error ? cause.message : 'บันทึกความจุห้องไม่สำเร็จ';
+		} finally { capacityBusy = false; }
+	}
 
 	let advisorDialogOpen = $state(false);
 	let advisorRoom = $state<Homeroom | null>(null);
@@ -241,7 +275,7 @@
 				ชื่อห้องและรหัสสร้างจากระดับชั้นกับเลขห้องโดยอัตโนมัติ
 			</p>
 		</div>
-		{#if canManage}
+		{#if canCreate}
 			<Button type="button" onclick={openCreateDialog}
 				><Plus class="size-4" /> เพิ่มห้องประจำชั้น</Button
 			>
@@ -297,7 +331,10 @@
 									href={`/staff/academic/homerooms/${room.id}/students?academicYearId=${room.academicYearId}`}
 									>ดูนักเรียน</Button
 								>{/if}
-							{#if canManage}
+							{#if canManage && canUpdateHomeroomCapacity(room.yearStatus)}
+								<Button type="button" size="sm" variant="outline" onclick={() => editCapacity(room)} aria-label={`แก้ไขความจุ ${room.name}`}>แก้ไขความจุ</Button>
+							{/if}
+							{#if canManage && room.yearStatus === 'planning'}
 								<div class="flex justify-end gap-1">
 									<Button
 										type="button"
@@ -332,6 +369,19 @@
 		</Table.Root>
 	</div>
 </div>
+
+<Dialog.Root open={!!capacityRoom} onOpenChange={(open) => { if (!open && !capacityBusy) capacityRoom = null; }}>
+	<Dialog.Content showCloseButton={!capacityBusy}>
+		<Dialog.Header><Dialog.Title>แก้ไขความจุ {capacityRoom?.name}</Dialog.Title><Dialog.Description>เปลี่ยนจำนวนที่รับได้ของห้อง โดยคงชั้น แผนการเรียน และรายชื่อนักเรียนเดิม</Dialog.Description></Dialog.Header>
+		<form class="space-y-4" onsubmit={saveCapacity}>
+			<p class="text-sm">นักเรียนในห้อง {latestCapacityRoom?.studentCount ?? capacityRoom?.studentCount ?? '—'} คน</p>
+			<div class="space-y-2"><Label for="room-capacity-only">ความจุ (คน)</Label><Input id="room-capacity-only" type="number" min={Math.max(1, latestCapacityRoom?.studentCount ?? 0)} step="1" bind:value={capacityDraft} disabled={capacityBusy} required /></div>
+			{#if capacityChanged && latestCapacityRoom}<div role="alert" class="space-y-2 rounded-lg border p-3 text-sm"><p>ข้อมูลห้องเปลี่ยนระหว่างแก้ไข ความจุล่าสุด {latestCapacityRoom.capacity} คน ฉบับร่างของคุณยังอยู่</p><Button type="button" variant="outline" disabled={capacityBusy} onclick={() => { if (latestCapacityRoom) capacityRoom = { ...latestCapacityRoom }; }}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button></div>{/if}
+			{#if capacityError}<p role="alert" class="text-sm text-destructive">{capacityError}</p>{/if}
+			<Dialog.Footer>{#if latestCapacityRoom && canUpdateHomeroomCapacity(latestCapacityRoom.yearStatus)}<Button type="submit" disabled={capacityBusy || capacityChanged}>บันทึกความจุ</Button>{:else}<p class="text-sm text-muted-foreground">ปีการศึกษานี้ปิดการแก้ไขความจุแล้ว</p>{/if}</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={roomDialogOpen}>
 	<Dialog.Content class="sm:max-w-xl">

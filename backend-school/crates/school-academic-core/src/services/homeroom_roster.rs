@@ -15,7 +15,7 @@ async fn read_students(
 ) -> Result<Vec<HomeroomRosterStudent>, AppError> {
     let rows = DbSession::new(&mut **tx).query_as::<HomeroomRosterStudent>("academic_core.services.homeroom_roster.read_students", r#"
         SELECT p.id AS placement_id,p.student_academic_year_id,y.student_id,i.student_id AS student_code,
-               u.title,u.first_name,u.last_name,u.gender,p.class_number,p.status,p.start_date,p.row_version,
+               u.title,u.first_name,u.last_name,u.gender,p.class_number,p.status,p.placement_scope,p.start_date,p.row_version,
                y.row_version AS student_year_row_version
         FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id
         JOIN users u ON u.id=y.student_id LEFT JOIN student_info i ON i.user_id=u.id
@@ -350,7 +350,7 @@ pub async fn mutate_roster(
             if Some(old.row_version) != s.placement_row_version {
                 return Err(AppError::Conflict("ข้อมูลห้องเดิมเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
             }
-            if old.status == HomeroomPlacementStatus::Current && r.effective_date <= old.start_date
+            if old.status == HomeroomPlacementStatus::Current && old.start_date.is_some_and(|start| r.effective_date <= start)
             {
                 return Err(AppError::ValidationError(
                     "วันที่ย้ายหรือนำออกต้องอยู่หลังวันที่เริ่มห้องเดิม".into(),
@@ -468,7 +468,8 @@ mod tests {
             gender: None,
             class_number: n,
             status: HomeroomPlacementStatus::Current,
-            start_date: NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            placement_scope: crate::models::HomeroomPlacementScope::Dated,
+            start_date: NaiveDate::from_ymd_opt(2026, 5, 1),
             row_version: 1,
             student_year_row_version: 1,
         }

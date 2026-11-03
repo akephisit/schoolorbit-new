@@ -9,7 +9,10 @@ use uuid::Uuid;
 use super::super::models::{LifecycleFinding, LifecycleSeverity, TermActivationWorkspace};
 use school_academic_core::{
     models::{ActivationIssue, ActivationIssueCode, StudentAcademicYearStatus},
-    services::activation_context,
+    services::{
+        activation_context,
+        opening_diagnostics::{self, DiagnosticResource},
+    },
 };
 use school_academic_delivery::services::opening as delivery_opening;
 use school_academic_timetable::services::timetable_version_service;
@@ -106,11 +109,46 @@ pub(crate) async fn activation_evidence_in_transaction(
         None
     };
 
+    let diagnostics = opening_diagnostics::read(tx, &state).await?;
+    let has_bell_details = diagnostics
+        .iter()
+        .any(|item| item.resource == DiagnosticResource::BellSchedule);
+    let has_room_details = diagnostics
+        .iter()
+        .any(|item| matches!(item.resource, DiagnosticResource::Homeroom(_)));
     let mut findings: Vec<LifecycleFinding> = state
         .issues
         .iter()
+        .filter(|issue| {
+            !(issue.code == ActivationIssueCode::BellSchedule && has_bell_details
+                || issue.code == ActivationIssueCode::RoomCapacity && has_room_details)
+        })
         .map(|issue| core_finding(actor, academic_year_id, academic_term_id, issue))
         .collect();
+    for diagnostic in diagnostics {
+        let resolution_url = match diagnostic.resource {
+            DiagnosticResource::BellSchedule => ((actor
+                .has_permission(codes::ACADEMIC_YEAR_READ_SCHOOL)
+                || actor.has_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL))
+                && (actor.has_permission(codes::ACADEMIC_TERM_READ_SCHOOL)
+                    || actor.has_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)))
+            .then(|| context_url("/staff/academic/core", academic_year_id, academic_term_id)),
+            DiagnosticResource::Homeroom(id) => (actor.has_permission(codes::HOMEROOM_READ_SCHOOL)
+                || actor.has_permission(codes::HOMEROOM_MANAGE_SCHOOL))
+            .then(|| {
+                format!(
+                    "/staff/academic/homerooms?academicYearId={academic_year_id}&homeroomId={id}"
+                )
+            }),
+        };
+        findings.push(LifecycleFinding {
+            code: diagnostic.code.into(),
+            severity: LifecycleSeverity::Blocking,
+            count: 1,
+            message: diagnostic.message,
+            resolution_url,
+        });
+    }
     let eligible_student_years: BTreeSet<_> = state
         .placements
         .iter()
@@ -265,10 +303,11 @@ fn core_finding(
         ActivationIssueCode::EarlierYearOpen => ("earlier_year_open", "ปีการศึกษาก่อนหน้ายังปิดไม่ครบ"),
         ActivationIssueCode::EarlierTermOpen => ("earlier_term_open", "ภาคเรียนก่อนหน้ายังปิดไม่ครบ"),
         ActivationIssueCode::NotFirstTerm => ("not_first_term", "ต้องเปิดภาคเรียนแรกของปีการศึกษาก่อน"),
-        ActivationIssueCode::YearOverlap => ("year_overlap", "ช่วงวันที่ของปีการศึกษาทับกับปีอื่น"),
-        ActivationIssueCode::TermConfiguration => {
-            ("term_configuration", "ข้อมูลวันที่หรือการนับผลของภาคเรียนไม่ถูกต้อง")
-        }
+        ActivationIssueCode::YearOverlap => ("year_overlap", "ข้อมูลปีการศึกษาขัดแย้งกับปีอื่น"),
+        ActivationIssueCode::TermConfiguration => (
+            "term_configuration",
+            "วันเรียนของปีหรือการนับผลของภาคเรียนไม่ถูกต้อง",
+        ),
         ActivationIssueCode::BellSchedule => ("bell_schedule", "ตารางคาบยังไม่มีช่วงเวลาที่ใช้ได้ในวันเรียน"),
         ActivationIssueCode::StudentReference => (
             "student_reference",

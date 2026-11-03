@@ -116,7 +116,7 @@ struct SourcePlacement {
     id: Uuid,
     homeroom_id: Uuid,
     name: String,
-    start_date: chrono::NaiveDate,
+    start_date: Option<chrono::NaiveDate>,
     end_date: Option<chrono::NaiveDate>,
     status: String,
     row_version: i64,
@@ -178,7 +178,7 @@ pub(super) async fn preview_in_transaction(
         "SELECT placement.student_academic_year_id,placement.id,placement.homeroom_id,room.name,placement.start_date,placement.end_date,placement.status,placement.row_version
          FROM homeroom_placements placement JOIN homerooms room ON room.id=placement.homeroom_id
          WHERE placement.academic_year_id=$1 ORDER BY placement.student_academic_year_id,
-           CASE placement.status WHEN 'current' THEN 0 WHEN 'planned' THEN 1 ELSE 2 END,placement.start_date DESC,placement.id DESC LIMIT 100001",
+           CASE placement.status WHEN 'current' THEN 0 WHEN 'planned' THEN 1 ELSE 2 END,placement.start_date DESC NULLS LAST,placement.id DESC LIMIT 100001",
     ).bind(input.source_year_id).fetch_all().await?;
     if placements.len() > 100_000 {
         return Err(AppError::ValidationError("ประวัติห้องต้นทางเกินขอบเขต".into()));
@@ -191,13 +191,6 @@ pub(super) async fn preview_in_transaction(
           LEFT JOIN academic_promotion_execution_receipts receipt ON receipt.item_id=pending.id AND receipt.run_id=run.id
           WHERE run.source_year_id=$1 AND run.target_year_id=$2 AND receipt.item_id IS NULL)",
     ).bind(input.source_year_id).bind(input.target_year_id).fetch_one().await?;
-    let today: chrono::NaiveDate = DbSession::new(&mut **tx)
-        .scalar(
-            "academic_lifecycle.year_rollover.preview_in_transaction",
-            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
-        )
-        .fetch_one()
-        .await?;
     let other_successors:Vec<Uuid>=DbSession::new(&mut **tx).scalar(
         "academic_lifecycle.year_rollover.preview_in_transaction",
         "SELECT DISTINCT item.student_academic_year_id FROM academic_promotion_execution_receipts receipt
@@ -241,11 +234,6 @@ pub(super) async fn preview_in_transaction(
         "rollover.execution_unresolved",
         usize::from(inflight),
         "มีงานเลื่อนชั้นเดิมที่ต้องกู้คืนให้เสร็จก่อนดำเนินการ",
-    );
-    block(
-        "rollover.future_outcome_date",
-        usize::from(input.outcome_effective_on > today),
-        "วันสิ้นสุดต้นทางต้องเป็นวันที่เกิดขึ้นแล้ว",
     );
     block(
         "rollover.empty_roster",
@@ -388,14 +376,6 @@ pub(super) async fn preview_in_transaction(
         students.iter().filter(|row| row.decision.is_none()).count(),
         "ระบุผลของนักเรียนทุกรายก่อนยืนยัน",
     );
-    block(
-        "rollover.placement_date_invalid",
-        placements
-            .iter()
-            .filter(|p| p.status == "current" && p.start_date > input.outcome_effective_on)
-            .count(),
-        "วันสิ้นสุดต้องไม่อยู่ก่อนวันเริ่มห้องปัจจุบัน",
-    );
     for room in &homerooms {
         block(
             "rollover.room_capacity",
@@ -437,8 +417,6 @@ pub(super) async fn preview_in_transaction(
         &homerooms,
         &mappings,
         &students,
-        input.outcome_effective_on,
-        input.target_placement_starts_on,
         inflight,
         &other_successors,
         &current_targets,
@@ -447,8 +425,6 @@ pub(super) async fn preview_in_transaction(
     Ok(YearRolloverPreview {
         source_year,
         target_year,
-        outcome_effective_on: input.outcome_effective_on,
-        target_placement_starts_on: input.target_placement_starts_on,
         students,
         grades,
         programs,
@@ -464,7 +440,6 @@ pub(super) fn validate_input(input: &YearRolloverPreviewInput) -> Result<(), App
         || input.target_year_id.is_nil()
         || input.source_year_id == input.target_year_id
         || input.decisions.len() > 10_000
-        || input.outcome_effective_on >= input.target_placement_starts_on
         || input
             .decisions
             .iter()
@@ -474,7 +449,7 @@ pub(super) fn validate_input(input: &YearRolloverPreviewInput) -> Result<(), App
             != input.decisions.len()
     {
         return Err(AppError::ValidationError(
-            "ระบุปี วันสิ้นสุดต้นทาง วันเริ่มปลายทาง และนักเรียนไม่ซ้ำให้ถูกต้อง".into(),
+            "ระบุปีต้นทาง ปีปลายทาง และนักเรียนไม่ซ้ำให้ถูกต้อง".into(),
         ));
     }
     for row in &input.decisions {
@@ -559,28 +534,22 @@ mod tests {
         assert!(!explicit_boundary("primary", 5));
     }
     #[test]
-    fn manual_input_requires_distinct_years_and_actual_ordered_dates() {
-        let date = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+    fn manual_input_requires_distinct_explicit_years() {
         let mut input = YearRolloverPreviewInput {
             source_year_id: Uuid::new_v4(),
             target_year_id: Uuid::new_v4(),
-            outcome_effective_on: date,
-            target_placement_starts_on: date.succ_opt().unwrap(),
             decisions: vec![],
         };
         assert!(validate_input(&input).is_ok());
-        input.target_placement_starts_on = date;
+        input.target_year_id = input.source_year_id;
         assert!(validate_input(&input).is_err());
     }
 
     #[test]
     fn manual_reasons_reject_plain_formatted_and_thai_national_identifiers() {
-        let date = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
         let mut input = YearRolloverPreviewInput {
             source_year_id: Uuid::new_v4(),
             target_year_id: Uuid::new_v4(),
-            outcome_effective_on: date,
-            target_placement_starts_on: date.succ_opt().unwrap(),
             decisions: vec![YearRolloverStudentInput {
                 student_academic_year_id: Uuid::new_v4(),
                 decision: PromotionDecisionInput {

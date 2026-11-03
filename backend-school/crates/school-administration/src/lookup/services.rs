@@ -594,7 +594,7 @@ pub async fn lookup_students_on_connection(
              WHERE placement.student_academic_year_id = sy.id
                AND placement.academic_year_id = sy.academic_year_id
                AND placement.status IN ('current', 'planned')
-             ORDER BY (placement.status = 'current') DESC, placement.start_date DESC
+             ORDER BY (placement.status = 'current') DESC, placement.start_date DESC NULLS LAST
              LIMIT 1
          ) placement ON true
          LEFT JOIN homerooms h ON h.id = placement.homeroom_id
