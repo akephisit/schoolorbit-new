@@ -29,8 +29,8 @@ pub struct PromotionRunItem {
     pub source_row_version: i64,
     pub annual_revision_id: Option<Uuid>,
     pub source_checksum: String,
-    #[sqlx(json)]
-    pub recommendation: PromotionRecommendation,
+    #[sqlx(json(nullable))]
+    pub recommendation: Option<PromotionRecommendation>,
     pub existing_target_student_year_id: Option<Uuid>,
     #[sqlx(json(nullable))]
     pub decision: Option<PromotionDecisionInput>,

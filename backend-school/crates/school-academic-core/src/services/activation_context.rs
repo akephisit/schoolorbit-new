@@ -73,7 +73,7 @@ pub async fn read_activation_state(
     push(
         &mut issues,
         Code::TermState,
-        usize::from(context.term_status != AcademicTermStatus::Ready),
+        usize::from(!matches!(context.term_status, AcademicTermStatus::Planning | AcademicTermStatus::Ready)),
     );
     push(
         &mut issues,

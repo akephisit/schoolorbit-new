@@ -4,7 +4,6 @@ use super::term_transitions;
 use crate::ports::ExternalLifecyclePort;
 use school_academic_core::ports::PendingTermWork;
 use school_academic_delivery::services as delivery_services;
-use school_academic_results::{self as results, policy::aggregate};
 use school_academic_timetable::services::timetable_version_service;
 use school_authorization::ActorContext;
 use school_errors::AppError;
@@ -21,11 +20,6 @@ pub async fn workspace_in_transaction(
     term: Uuid,
 ) -> Result<TermLifecycleWorkspace, AppError> {
     let context = term_transitions::read_context(tx, year, term).await?;
-    let result_context = results::models::ResultContext {
-        academic_year_id: year,
-        academic_term_id: term,
-    };
-    let coverage = results::services::term_closure_coverage(tx, &result_context).await?;
     let delivery = delivery_services::pending_term_work(tx, year, term).await?;
     let timetable = timetable_version_service::pending_term_work(tx, year, term).await?;
     let exams = external.pending_exam_work(tx, year, term).await?;
@@ -36,41 +30,6 @@ pub async fn workspace_in_transaction(
             .then(|| format!("{path}?academicYearId={year}&academicTermId={term}"))
     };
     let mut findings = Vec::new();
-    let aggregate_url = aggregate::require_aggregate_read(actor).is_ok().then(|| {
-        format!("/staff/academic/results/aggregates?academicYearId={year}&academicTermId={term}")
-    });
-    if !coverage.ready {
-        findings.push(LifecycleFinding {
-            code: "results.incomplete".into(),
-            severity: LifecycleSeverity::Blocking,
-            count: coverage
-                .students
-                .iter()
-                .filter(|student| !student.is_current)
-                .count(),
-            message: if coverage.students.is_empty() {
-                "ยังไม่มีข้อมูลนักเรียนที่ใช้ตรวจผลสรุปภาคเรียน"
-            } else {
-                "ผลสรุปนักเรียนยังไม่ล็อก ไม่ครบ หรือมีข้อมูลต้นทางเปลี่ยนแปลง"
-            }
-            .into(),
-            resolution_url: aggregate_url.clone(),
-        });
-    }
-    let holds = coverage
-        .students
-        .iter()
-        .filter(|student| student.hold_reason.is_some())
-        .count();
-    if holds > 0 {
-        findings.push(LifecycleFinding {
-            code: "results.reviewed_holds".into(),
-            severity: LifecycleSeverity::Warning,
-            count: holds,
-            message: "มีผลค้างที่ฝ่ายวิชาการตรวจและระบุเหตุผลแล้ว ต้องติดตามต่อหลังปิดภาคเรียน".into(),
-            resolution_url: aggregate_url,
-        });
-    }
     for (code, message, work, url) in [
         (
             "delivery",
@@ -130,7 +89,6 @@ pub async fn workspace_in_transaction(
     .collect();
     let source_checksum = super::checksum(&(
         &context,
-        &coverage.source_checksum,
         &delivery,
         &timetable,
         &exams,
@@ -139,7 +97,6 @@ pub async fn workspace_in_transaction(
     Ok(TermLifecycleWorkspace {
         context,
         findings,
-        coverage,
         available_actions,
         source_checksum,
     })

@@ -105,8 +105,7 @@ pub async fn transition_term(
         external
             .require_attendance_delivery_complete(&mut tx, term, before.operation_date)
             .await?;
-        if !workspace.coverage.ready
-            || workspace
+        if workspace
                 .findings
                 .iter()
                 .any(|finding| finding.severity == LifecycleSeverity::Blocking)
@@ -281,7 +280,7 @@ pub(crate) fn target_state(
         (T::Planning, A::Cancel) => Ok(T::Cancelled),
         (T::Active, A::BeginClosing) => Ok(T::Closing),
         (T::Closing, A::CancelClosing) => Ok(T::Active),
-        (T::Closing, A::Close) => Ok(T::Closed),
+        (T::Active | T::Closing, A::Close) => Ok(T::Closed),
         (T::Closed, A::Reopen) => Ok(T::Closing),
         _ => Err(AppError::Conflict(
             "สถานะภาคเรียนหรือปีการศึกษาไม่รองรับการดำเนินการนี้".into(),

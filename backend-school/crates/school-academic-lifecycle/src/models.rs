@@ -24,6 +24,8 @@ mod promotion_impact_resolutions;
 pub use promotion_impact_resolutions::*;
 mod term_preparation;
 pub use term_preparation::*;
+mod year_rollover;
+pub use year_rollover::*;
 mod transitions;
 pub use transitions::*;
 
@@ -33,7 +35,6 @@ pub use transitions::*;
 pub struct YearLifecycleWorkspace {
     pub context: school_academic_core::models::YearLifecycleContext,
     pub terms: Vec<school_academic_core::models::YearTermLifecycleState>,
-    pub coverage: school_academic_results::models::AnnualClosureCoverage,
     pub findings: Vec<LifecycleFinding>,
     pub available_actions: Vec<YearTransitionAction>,
     pub can_close: bool,
@@ -74,7 +75,6 @@ pub struct LifecycleFinding {
 pub struct TermLifecycleWorkspace {
     pub context: school_academic_core::models::TermLifecycleContext,
     pub findings: Vec<LifecycleFinding>,
-    pub coverage: school_academic_results::models::TermClosureCoverage,
     pub available_actions: Vec<TermTransitionAction>,
     pub source_checksum: String,
 }

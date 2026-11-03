@@ -42,7 +42,7 @@ pub(crate) fn target_state(
     match (state, action) {
         (State::Active, Action::BeginClosing) => Ok(State::Closing),
         (State::Closing, Action::CancelClosing) => Ok(State::Active),
-        (State::Closing, Action::Close) => Ok(State::Closed),
+        (State::Active | State::Closing, Action::Close) => Ok(State::Closed),
         _ => Err(AppError::Conflict(
             "สถานะปีการศึกษาไม่รองรับการดำเนินการนี้".into(),
         )),
