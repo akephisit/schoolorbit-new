@@ -104,3 +104,52 @@ test('activation-only staff see settings-manager guidance without a settings lin
 	expect(observed.reads).not.toContain('/api/academic/setup/workspace');
 	expect(observed.settingsWrites).toEqual([]);
 });
+
+test('activation groups exact target calendar and capacity guidance without merging findings', async ({
+	page
+}) => {
+	const calendarUrl = `/staff/attendance/settings?academicYearId=${id(1)}&academicTermId=${id(4)}`;
+	const capacityUrl = `/staff/academic/homerooms?academicYearId=${id(1)}`;
+	await mockYearManagement(page, {
+		active: true,
+		readyToActivate: true,
+		activationFindings: [
+			{
+				code: 'opening.calendar_settings',
+				severity: 'blocking',
+				count: 1,
+				message: 'ยังไม่บันทึกวันนับเข้าเรียนของภาคเรียนที่ 2',
+				resolutionUrl: calendarUrl
+			},
+			{
+				code: 'opening.room_capacity',
+				severity: 'blocking',
+				count: 3,
+				message: 'ม.1/1 มี 43 คน ความจุ 40 คน',
+				resolutionUrl: capacityUrl
+			},
+			{
+				code: 'opening.room_capacity',
+				severity: 'blocking',
+				count: 2,
+				message: 'ม.2/1 มี 42 คน ความจุ 40 คน',
+				resolutionUrl: capacityUrl
+			}
+		]
+	});
+	await page.goto(yearUrl);
+	await page.getByRole('button', { name: 'เปลี่ยนภาคเรียน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	const calendar = dialog.getByRole('region', { name: 'ปฏิทินและตารางเวลา', exact: true });
+	await expect(calendar).toContainText('ยังไม่บันทึกวันนับเข้าเรียนของภาคเรียนที่ 2');
+	await expect(
+		calendar.getByRole('link', { name: 'ไปตรวจและแก้ข้อมูล', exact: true })
+	).toHaveAttribute('href', calendarUrl);
+	const rooms = dialog.getByRole('region', { name: 'นักเรียนและห้องเรียน', exact: true });
+	await expect(rooms).toContainText('ม.1/1 มี 43 คน ความจุ 40 คน');
+	await expect(rooms).toContainText('ม.2/1 มี 42 คน ความจุ 40 คน');
+	await expect(rooms.getByRole('link', { name: 'ไปตรวจและแก้ข้อมูล', exact: true })).toHaveCount(2);
+	await expect(
+		dialog.getByRole('button', { name: 'ยืนยันเปลี่ยนภาคเรียน', exact: true })
+	).toBeDisabled();
+});

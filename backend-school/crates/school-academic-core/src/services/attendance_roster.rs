@@ -31,8 +31,8 @@ pub const ROOM_ROSTER_SQL: &str = r#"WITH dated_placements AS (
     FROM homeroom_placements p
     JOIN academic_terms t ON t.academic_year_id=p.academic_year_id
     WHERE t.id=$1 AND p.status IN ('current','ended')
-      AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)
-    ORDER BY p.student_academic_year_id,p.start_date DESC,p.id
+      AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$2)
+    ORDER BY p.student_academic_year_id,p.start_date DESC NULLS LAST,p.id
 ) SELECT y.student_id,y.id student_academic_year_id,p.class_number
 FROM dated_placements p
 JOIN student_academic_years y ON y.id=p.student_academic_year_id
@@ -113,7 +113,7 @@ pub struct AttendancePlacementSpan {
     pub student_academic_year_id: Uuid,
     pub homeroom_id: Uuid,
     pub class_number: Option<i32>,
-    pub start_date: NaiveDate,
+    pub start_date: Option<NaiveDate>,
     pub end_date: Option<NaiveDate>,
 }
 /// One bounded read for historical coverage, rather than a read for every date.
@@ -149,15 +149,15 @@ async fn placement_spans_scoped(
     );
     query
         .push_bind(term)
-        .push(" AND p.status IN ('current','ended') AND p.start_date<=")
+        .push(" AND p.status IN ('current','ended') AND (p.start_date IS NULL OR p.start_date<=")
         .push_bind(end)
-        .push(" AND (p.end_date IS NULL OR p.end_date>=")
+        .push(") AND (p.end_date IS NULL OR p.end_date>=")
         .push_bind(start)
         .push(")");
     if let Some(student) = student {
         query.push(" AND y.student_id=").push_bind(student);
     }
-    query.push(" ORDER BY y.student_id,p.start_date DESC,p.id LIMIT 100001");
+    query.push(" ORDER BY y.student_id,p.start_date DESC NULLS LAST,p.id LIMIT 100001");
     let rows: Vec<AttendancePlacementSpan> = DbSession::new(&mut *connection)
         .prepared_query_as(
             "academic_core.services.attendance_roster.placement_spans_scoped",
@@ -174,7 +174,7 @@ async fn placement_spans_scoped(
 }
 pub const ALL_STUDENTS_SQL: &str = r#"SELECT y.student_id,y.id student_academic_year_id,concat_ws(' ',u.title,u.first_name,u.last_name) display_name,p.homeroom_id,h.name homeroom_name,p.class_number
  FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=y.student_id AND u.user_type='student'
- LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2) ORDER BY p.start_date DESC,p.id LIMIT 1) p ON true
+ LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN ('current','ended') AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$2) ORDER BY p.start_date DESC NULLS LAST,p.id LIMIT 1) p ON true
  LEFT JOIN homerooms h ON h.id=p.homeroom_id WHERE t.id=$1 AND p.homeroom_id IS NOT NULL ORDER BY h.name,p.class_number NULLS LAST,u.first_name,u.id LIMIT 10001"#;
 
 pub async fn students(
@@ -239,7 +239,7 @@ pub async fn rooms_for_date_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreRoom>, AppError> {
-    Ok(DbSession::new(&mut *connection).query_as("academic_core.services.attendance_roster.rooms_for_date_on_connection", "SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.homeroom_id=h.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) ORDER BY h.name,h.id")
+    Ok(DbSession::new(&mut *connection).query_as("academic_core.services.attendance_roster.rooms_for_date_on_connection", "SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.homeroom_id=h.id AND p.status IN ('current','ended') AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$2)) ORDER BY h.name,h.id")
         .bind(term).bind(date).fetch_all().await?)
 }
 pub async fn advisor_for_student(
@@ -256,11 +256,12 @@ pub async fn advisor_for_student(
     advisor_for_student_on_connection(&mut connection, teacher, student, date).await
 }
 
+/// Current operational authorization; historical advisors never authorize a new enrollment.
 pub async fn advisor_for_student_on_connection(
     connection: &mut sqlx::PgConnection,
     teacher: Uuid,
     student: Uuid,
     date: NaiveDate,
 ) -> Result<bool, AppError> {
-    Ok(DbSession::new(connection).scalar("academic_core.services.attendance_roster.advisor_for_student_on_connection", "SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND p.status IN ('current','ended') AND p.start_date<=$3 AND (p.end_date IS NULL OR p.end_date>=$3))").bind(teacher).bind(student).bind(date).fetch_one().await?)
+    Ok(DbSession::new(connection).scalar("academic_core.services.attendance_roster.advisor_for_student_on_connection", "SELECT EXISTS(SELECT 1 FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN academic_years year ON year.id=y.academic_year_id AND year.status='active' JOIN homeroom_advisors a ON a.homeroom_id=p.homeroom_id WHERE a.user_id=$1 AND y.student_id=$2 AND y.status='active' AND p.status IN ('current','ended') AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$3))").bind(teacher).bind(student).bind(date).fetch_one().await?)
 }

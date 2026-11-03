@@ -615,6 +615,7 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::update_term,
         school_academic_http::core::handlers::delete_term,
         school_academic_http::core::handlers::list_bell_schedules,
+        school_academic_http::core::handlers::clone_bell_schedule,
         school_academic_http::core::handlers::create_bell_schedule,
         school_academic_http::core::handlers::get_bell_schedule,
         school_academic_http::core::handlers::update_bell_schedule,
@@ -681,9 +682,11 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::update_study_program,
         school_academic_http::core::handlers::replace_curriculum_structure,
         school_academic_http::core::handlers::list_homerooms,
+        school_academic_http::core::handlers::homeroom_year_context,
         school_academic_http::core::handlers::create_homeroom,
         school_academic_http::core::handlers::get_homeroom,
         school_academic_http::core::handlers::update_homeroom,
+        school_academic_http::core::handlers::update_homeroom_capacity,
         school_academic_http::core::handlers::list_homeroom_advisors,
         school_academic_http::core::handlers::list_homeroom_advisors_for_year,
         school_academic_http::core::handlers::replace_homeroom_advisors,
@@ -1354,6 +1357,7 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         UpdateBellScheduleRequest,
         BellSchedule,
         BellSchedulePeriod,
+        BellSchedulePeriodsSnapshot,
         GradeProgression,
         GradeProgressionSet,
         CatalogDisplayState,
@@ -1482,7 +1486,7 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<AcademicTerm>,
         ApiResponse<Vec<BellSchedule>>,
         ApiResponse<BellSchedule>,
-        ApiResponse<Vec<BellSchedulePeriod>>,
+        ApiResponse<BellSchedulePeriodsSnapshot>,
         ApiResponse<GradeProgressionSet>,
         ApiResponse<Vec<CatalogSubject>>,
         ApiResponse<CatalogSubjectOverview>,
@@ -7276,8 +7280,34 @@ mod tests {
     }
 
     #[test]
+    fn documents_bell_periods_as_versioned_snapshots() {
+        let document = school_api_value().unwrap();
+        let schema = &document["components"]["schemas"]["BellSchedulePeriodsSnapshot"];
+        let required = schema["required"].as_array().unwrap();
+        for field in ["bellScheduleId", "rowVersion", "periods"] {
+            assert!(required.contains(&serde_json::json!(field)));
+        }
+        for method in ["get", "put"] {
+            let reference = document["paths"]["/api/academic/bell-schedules/{id}/periods"][method]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .unwrap();
+            assert!(reference.contains("BellSchedulePeriodsSnapshot"));
+        }
+    }
+
+    #[test]
     fn documents_manual_year_rollover_and_retires_multistep_mutation_routes() {
         let document = school_api_value().unwrap();
+        assert_eq!(
+            document["paths"]["/api/academic/homerooms/year-context"]["get"]["operationId"],
+            "getHomeroomYearContext"
+        );
+        assert!(
+            document["components"]["schemas"]["AcademicSetupWorkspace"]["properties"]
+                ["bellScheduleSetupTermIds"]
+                .is_object()
+        );
         let root = "/api/academic/lifecycle/year-rollovers";
         for (suffix, method, operation) in [
             ("options", "get", "getYearRolloverOptions"),
@@ -7302,14 +7332,13 @@ mod tests {
         let required = document["components"]["schemas"]["YearRolloverPreviewInput"]["required"]
             .as_array()
             .unwrap();
-        for name in [
-            "sourceYearId",
-            "targetYearId",
-            "outcomeEffectiveOn",
-            "targetPlacementStartsOn",
-            "decisions",
-        ] {
+        for name in ["sourceYearId", "targetYearId", "decisions"] {
             assert!(required.contains(&serde_json::json!(name)));
+        }
+        for schema in ["YearRolloverPreviewInput", "YearRolloverPreview"] {
+            for removed in ["outcomeEffectiveOn", "targetPlacementStartsOn"] {
+                assert!(document["components"]["schemas"][schema]["properties"][removed].is_null());
+            }
         }
         let legacy = "/api/academic/lifecycle/promotion-runs";
         assert_eq!(

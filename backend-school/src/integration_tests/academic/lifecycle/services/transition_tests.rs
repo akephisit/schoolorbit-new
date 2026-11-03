@@ -350,7 +350,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
             .await
             .unwrap();
     }
-    let target_start = calculation.run.target_placement_starts_on;
+    let target_start = calculation.run.target_placement_starts_on.unwrap();
     let term = ready_term_for_existing_year(
         &pool,
         executor.user_id,

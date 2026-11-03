@@ -288,7 +288,7 @@ share the checkout.
 ```
 
 The [roster cases](../backend-school/src/integration_tests/academic/lifecycle/services/year_rollover_tests.rs)
-cover all five outcomes, closed-source/planning-target guards, explicit effective dates,
+cover all five outcomes, closed-source/planning-target guards, exact date-free preview/confirmation payloads,
 prepared-versus-activated state, preserved identities/history/registration, stale/capacity and
 successor refusals, exact concurrent replay and later hold resolution without Results.
 The [policy persistence cases](../backend-school/crates/school-academic-lifecycle/tests/retention_persistence.rs)
@@ -1091,11 +1091,45 @@ source-contract and presentation checks from `frontend-school`:
 node --test tests/static/academic-lifecycle-presentation.test.mjs tests/static/academic-lifecycle-region-loading.test.mjs tests/static/academic-promotion-presentation.test.mjs tests/static/academic-promotion-list-region-loading.test.mjs tests/static/academic-promotion-detail-region-loading.test.mjs tests/static/academic-foundation-clarity.test.mjs tests/static/academic-foundation-route-loading.test.mjs
 ```
 
+For capacity, future-term bell setup and annual room history, run the typed helper cases and
+synthetic browser workflows against the same owned loopback frontend:
+
+```bash
+node --experimental-strip-types --test tests/runtime/academic-period-setup.test.ts tests/runtime/academic-batch-loader.test.ts
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-period-setup.spec.ts tests/e2e/homeroom-roster.spec.ts tests/e2e/academic-term-lifecycle.spec.ts tests/e2e/academic-promotion-runs.spec.ts --project=chromium --workers=1
+```
+
+The fixtures cover active-year capacity-only payloads, pupil-count bounds, closed-year refusal,
+stale revision review with draft retention, hidden planning-year access without year-read
+permission, validated exact-room diagnostic links and harmless unknown-room handling,
+term-two reuse/clone and independent periods while term one stays locked, exact
+term links for timetable draft blockers, grouped calendar/capacity diagnostics and nullable annual
+membership history. The roster fixtures assert the complete date-free payload, all five outcomes,
+large filtered rosters and exact replay. Intercepted browser APIs establish UI behavior; the owned
+PostgreSQL migration and membership suites establish real data preservation and authorization.
+
+Bell-period GET/PUT responses pair the accepted revision and periods from one transaction.
+The success-race fixture keeps a saved draft at revision 2 after another writer advances to
+revision 3; a later metadata read cannot silently rebase that draft. Run its deterministic
+browser case against the owned local frontend:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-period-setup.spec.ts --grep 'successful period save retains its paired revision' --project=chromium --workers=1
+```
+
+The delayed schedule-refresh identity case imports the actual Vite development auth store, so
+run it on the local dev server, alongside the delayed initial-auth boot case. The owning Core
+loader depends on `school:app-identity`; it supplies the new identity's primary promise.
+The region binds a promise when its first authenticated consumer is known, retains normal
+bootstrap, and rejects reusing that same promise or late mutation results for another identity.
+Timetable repair links follow the destination route's actual module permission.
+
 Actual event, offering, placement and Behavior cutoff dates stay in their owning forms.
 Curriculum preparation requires a matching preview after changing the actual offering date.
 Calendar targeting selects an enrollment year explicitly; a cutoff is the final inclusive
-day of a Behavior cycle, with the next cycle starting the following day. Manual roster outcome and
-placement dates are explicit; historical per-item placement evidence remains independent. After stopping the dev
+day of a Behavior cycle, with the next cycle starting the following day. Manual roster preparation sends explicit source/destination year IDs and decisions without civil
+boundary fields; annual membership has nullable civil bounds. Historical dated placement and
+per-item receipt evidence remain independent. After stopping the dev
 server, run the public calendar fixture alone; it owns its API and Vite servers and checks
 unrestricted actual month navigation, cross-month search, focused retry and mobile/desktop themes:
 

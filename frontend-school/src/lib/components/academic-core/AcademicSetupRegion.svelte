@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { untrack } from 'svelte';
@@ -11,12 +12,14 @@
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
+		cloneBellSchedule,
 		listBellSchedulePeriods,
 		listBellSchedules,
 		replaceBellSchedulePeriods,
 		type AcademicTerm,
 		type AcademicYear,
 		type BellSchedule,
+		type BellSchedulePeriodsSnapshot,
 		updateAcademicTerm,
 		updateAcademicYear,
 		updateBellSchedule
@@ -43,6 +46,8 @@
 	let years = $state<AcademicYear[]>([]);
 	const termsByYear = new SvelteMap<string, AcademicTerm[]>();
 	let bellSchedules = $state<BellSchedule[]>([]);
+	let bellScheduleSetupYearIds = $state<string[]>([]);
+	let bellScheduleSetupTermIds = $state<string[]>([]);
 	let loading = $state(true);
 	let workspaceReady = $state(false);
 	let busy = $state({ year: false, term: false, schedule: false, periods: false });
@@ -51,11 +56,20 @@
 	let errorMessage = $state('');
 	let mutationRevision = 0;
 	let regionIdentity = '';
+	const routeLoadOwners = new WeakMap<
+		Promise<RouteLoadResult<AcademicSetupWorkspace | null>>,
+		string
+	>();
 	const canRead = $derived(
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
 	const canManage = $derived(
-		$can.hasAll(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+		mode === 'time'
+			? $can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+			: $can.hasAll(
+					PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+					PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
+				)
 	);
 
 	const latest = new LatestRequest();
@@ -68,6 +82,8 @@
 		termsByYear.clear();
 		for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
 		bellSchedules = workspace.bellSchedules;
+		bellScheduleSetupYearIds = workspace.bellScheduleSetupYearIds;
+		bellScheduleSetupTermIds = workspace.bellScheduleSetupTermIds;
 		contextSettings = workspace.contextSettings;
 		workspaceReady = true;
 	}
@@ -106,6 +122,9 @@
 		const routeResult = workspaceLoad;
 		const identityState = $authStore;
 		const identity = appIdentityKey();
+		if (routeResult && identityState.isAuthenticated && !routeLoadOwners.has(routeResult))
+			routeLoadOwners.set(routeResult, identity);
+		const ownsRouteResult = !!routeResult && routeLoadOwners.get(routeResult) === identity;
 		const { revision } = latest.begin();
 		const initialMutationRevision = mutationRevision;
 		let current = true;
@@ -115,13 +134,16 @@
 				years = [];
 				termsByYear.clear();
 				bellSchedules = [];
+				bellScheduleSetupYearIds = [];
+				bellScheduleSetupTermIds = [];
 				contextSettings = null;
 				workspaceReady = false;
+				busy = { year: false, term: false, schedule: false, periods: false };
 			}
 			errorMessage = '';
 			regionIdentity = identity;
 		});
-		if (routeResult) {
+		if (routeResult && ownsRouteResult) {
 			void routeResult.then((result) => {
 				if (!current || !latest.isCurrent(revision) || identity !== appIdentityKey()) return;
 				untrack(() => {
@@ -131,7 +153,10 @@
 					loading = false;
 				});
 			});
-		}
+		} else
+			untrack(() => {
+				loading = false;
+			});
 		return () => {
 			current = false;
 			latest.abort();
@@ -173,7 +198,7 @@
 			termsByYear.set(created.id, []);
 			return created;
 		} finally {
-			busy.year = false;
+			if (identity === appIdentityKey()) busy.year = false;
 		}
 	}
 
@@ -192,7 +217,7 @@
 			);
 			return created;
 		} finally {
-			busy.term = false;
+			if (identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -210,7 +235,7 @@
 				.sort((a, b) => b.year - a.year);
 			return updated;
 		} finally {
-			busy.year = false;
+			if (identity === appIdentityKey()) busy.year = false;
 		}
 	}
 
@@ -231,7 +256,7 @@
 			);
 			return updated;
 		} finally {
-			busy.term = false;
+			if (identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -245,7 +270,20 @@
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			busy.schedule = false;
+			if (identity === appIdentityKey()) busy.schedule = false;
+		}
+	}
+	async function copyBellSchedule(id: string, draft: Parameters<typeof cloneBellSchedule>[1]) {
+		const identity = appIdentityKey();
+		busy.schedule = true;
+		try {
+			const created = await cloneBellSchedule(id, draft);
+			if (identity !== appIdentityKey()) return created;
+			mutationRevision += 1;
+			bellSchedules = [...bellSchedules, created];
+			return created;
+		} finally {
+			if (identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 
@@ -257,14 +295,36 @@
 			if (identity !== appIdentityKey()) return updated;
 			mutationRevision += 1;
 			const refreshed = await listBellSchedules(updated.academicYearId);
+			if (identity !== appIdentityKey()) return updated;
 			bellSchedules = [
 				...bellSchedules.filter((item) => item.academicYearId !== updated.academicYearId),
 				...refreshed
 			];
 			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
-			busy.schedule = false;
+			if (identity === appIdentityKey()) busy.schedule = false;
 		}
+	}
+
+	function applyPeriodSnapshot(snapshot: BellSchedulePeriodsSnapshot, submittedBase: number) {
+		bellSchedules = bellSchedules.map((schedule) =>
+			schedule.id === snapshot.bellScheduleId &&
+			schedule.rowVersion === submittedBase &&
+			snapshot.rowVersion > schedule.rowVersion
+				? { ...schedule, rowVersion: snapshot.rowVersion }
+				: schedule
+		);
+	}
+
+	async function loadBellSchedulePeriods(
+		id: string,
+		options: Parameters<typeof listBellSchedulePeriods>[1] = {}
+	) {
+		const identity = appIdentityKey();
+		const snapshot = await listBellSchedulePeriods(id, options);
+		if (identity !== appIdentityKey()) return snapshot;
+		mutationRevision += 1;
+		return snapshot;
 	}
 
 	async function saveBellSchedulePeriods(
@@ -274,20 +334,35 @@
 		const identity = appIdentityKey();
 		busy.periods = true;
 		try {
-			const periods = await replaceBellSchedulePeriods(id, draft);
-			if (identity !== appIdentityKey()) return periods;
+			const snapshot = await replaceBellSchedulePeriods(id, draft);
+			if (identity !== appIdentityKey()) return snapshot;
 			mutationRevision += 1;
-			const schedule = bellSchedules.find((item) => item.id === id);
-			if (schedule) {
-				const refreshed = await listBellSchedules(schedule.academicYearId);
-				bellSchedules = [
-					...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
-					...refreshed
-				];
+			applyPeriodSnapshot(snapshot, draft.rowVersion);
+			return snapshot;
+		} catch (cause) {
+			if (
+				cause instanceof ApiClientError &&
+				cause.status === 409 &&
+				identity === appIdentityKey()
+			) {
+				const schedule = bellSchedules.find((item) => item.id === id);
+				if (schedule) {
+					const refreshed = await listBellSchedules(schedule.academicYearId);
+					if (identity === appIdentityKey()) {
+						const versions = new Map(bellSchedules.map((item) => [item.id, item]));
+						bellSchedules = [
+							...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
+							...refreshed.map((item) => {
+								const current = versions.get(item.id);
+								return current && current.rowVersion > item.rowVersion ? current : item;
+							})
+						];
+					}
+				}
 			}
-			return periods;
+			throw cause;
 		} finally {
-			busy.periods = false;
+			if (identity === appIdentityKey()) busy.periods = false;
 		}
 	}
 </script>
@@ -335,11 +410,16 @@
 				<TimeSetupEditor
 					{years}
 					{bellSchedules}
+					{termsByYear}
+					setupYearIds={bellScheduleSetupYearIds}
+					setupTermIds={bellScheduleSetupTermIds}
 					{canManage}
 					{busy}
 					onCreateBellSchedule={addBellSchedule}
+					onCloneBellSchedule={copyBellSchedule}
+					onUpdateTerm={editTerm}
 					onUpdateBellSchedule={editBellSchedule}
-					onLoadBellSchedulePeriods={listBellSchedulePeriods}
+					onLoadBellSchedulePeriods={loadBellSchedulePeriods}
 					onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
 				/>
 			{/if}

@@ -346,7 +346,7 @@ pub async fn verify_prepared_targets(
          JOIN published_study_programs program ON program.id=student_year.study_program_id
          LEFT JOIN LATERAL(SELECT id,homeroom_id,start_date,row_version FROM homeroom_placements
            WHERE student_academic_year_id=student_year.id AND status IN ('planned','current')
-           ORDER BY CASE status WHEN 'current' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1) placement ON true
+           ORDER BY CASE status WHEN 'current' THEN 0 ELSE 1 END,start_date DESC NULLS LAST,id DESC LIMIT 1) placement ON true
          LEFT JOIN homerooms room ON room.id=placement.homeroom_id ORDER BY student_year.id")
         .bind(sqlx::types::Json(targets)).bind(target_year).fetch_all().await?;
     if states.len() != targets.len() {

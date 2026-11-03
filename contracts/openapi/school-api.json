@@ -641,6 +641,20 @@
             },
             "type": "array"
           },
+          "bellScheduleSetupTermIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bellScheduleSetupYearIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "contextSettings": {
             "$ref": "#/components/schemas/AcademicContextSettings"
           },
@@ -661,7 +675,9 @@
           "contextSettings",
           "years",
           "terms",
-          "bellSchedules"
+          "bellSchedules",
+          "bellScheduleSetupYearIds",
+          "bellScheduleSetupTermIds"
         ],
         "type": "object"
       },
@@ -3365,6 +3381,20 @@
                 },
                 "type": "array"
               },
+              "bellScheduleSetupTermIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "bellScheduleSetupYearIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "contextSettings": {
                 "$ref": "#/components/schemas/AcademicContextSettings"
               },
@@ -3385,7 +3415,9 @@
               "contextSettings",
               "years",
               "terms",
-              "bellSchedules"
+              "bellSchedules",
+              "bellScheduleSetupYearIds",
+              "bellScheduleSetupTermIds"
             ],
             "type": "object"
           },
@@ -5834,12 +5866,25 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "canClone": {
+                "type": "boolean"
+              },
               "code": {
                 "type": "string"
               },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
+              },
+              "editBlockedReason": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/BellScheduleEditBlockReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "id": {
                 "format": "uuid",
@@ -5879,7 +5924,47 @@
               "status",
               "rowVersion",
               "createdAt",
-              "updatedAt"
+              "updatedAt",
+              "canClone"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BellSchedulePeriodsSnapshot": {
+        "properties": {
+          "data": {
+            "properties": {
+              "bellScheduleId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "periods": {
+                "items": {
+                  "$ref": "#/components/schemas/BellSchedulePeriod"
+                },
+                "type": "array"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "bellScheduleId",
+              "rowVersion",
+              "periods"
             ],
             "type": "object"
           },
@@ -12090,13 +12175,19 @@
               "migrated": {
                 "type": "boolean"
               },
+              "placementScope": {
+                "$ref": "#/components/schemas/HomeroomPlacementScope"
+              },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
               },
               "startDate": {
                 "format": "date",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "status": {
                 "$ref": "#/components/schemas/HomeroomPlacementStatus"
@@ -12115,7 +12206,6 @@
               "studentAcademicYearId",
               "academicYearId",
               "homeroomId",
-              "startDate",
               "status",
               "enrollmentType",
               "rowVersion",
@@ -21792,12 +21882,25 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "canClone": {
+                  "type": "boolean"
+                },
                 "code": {
                   "type": "string"
                 },
                 "createdAt": {
                   "format": "date-time",
                   "type": "string"
+                },
+                "editBlockedReason": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BellScheduleEditBlockReason"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "id": {
                   "format": "uuid",
@@ -21837,71 +21940,8 @@
                 "status",
                 "rowVersion",
                 "createdAt",
-                "updatedAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_Vec_BellSchedulePeriod": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "applicableDays": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "bellScheduleId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "endTime": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "isActive": {
-                  "type": "boolean"
-                },
-                "name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "orderIndex": {
-                  "format": "int32",
-                  "type": "integer"
-                },
-                "startTime": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "bellScheduleId",
-                "startTime",
-                "endTime",
-                "orderIndex",
-                "isActive"
+                "updatedAt",
+                "canClone"
               ],
               "type": "object"
             },
@@ -25458,13 +25498,19 @@
                 "migrated": {
                   "type": "boolean"
                 },
+                "placementScope": {
+                  "$ref": "#/components/schemas/HomeroomPlacementScope"
+                },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
                 },
                 "startDate": {
                   "format": "date",
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "status": {
                   "$ref": "#/components/schemas/HomeroomPlacementStatus"
@@ -25483,7 +25529,6 @@
                 "studentAcademicYearId",
                 "academicYearId",
                 "homeroomId",
-                "startDate",
                 "status",
                 "enrollmentType",
                 "rowVersion",
@@ -28941,6 +28986,51 @@
         ],
         "type": "object"
       },
+      "ApiResponse_YearLifecycleContext": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/AcademicYearStatus"
+              },
+              "year": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "academicYearId",
+              "year",
+              "name",
+              "status",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_YearLifecycleWorkspace": {
         "properties": {
           "data": {
@@ -29194,10 +29284,6 @@
                 },
                 "type": "array"
               },
-              "outcomeEffectiveOn": {
-                "format": "date",
-                "type": "string"
-              },
               "programs": {
                 "items": {
                   "$ref": "#/components/schemas/YearRolloverProgramReference"
@@ -29216,10 +29302,6 @@
                 },
                 "type": "array"
               },
-              "targetPlacementStartsOn": {
-                "format": "date",
-                "type": "string"
-              },
               "targetYear": {
                 "$ref": "#/components/schemas/YearLifecycleContext"
               }
@@ -29227,8 +29309,6 @@
             "required": [
               "sourceYear",
               "targetYear",
-              "outcomeEffectiveOn",
-              "targetPlacementStartsOn",
               "students",
               "grades",
               "programs",
@@ -32190,12 +32270,25 @@
             "format": "uuid",
             "type": "string"
           },
+          "canClone": {
+            "type": "boolean"
+          },
           "code": {
             "type": "string"
           },
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "editBlockedReason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BellScheduleEditBlockReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "format": "uuid",
@@ -32235,9 +32328,20 @@
           "status",
           "rowVersion",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "canClone"
         ],
         "type": "object"
+      },
+      "BellScheduleEditBlockReason": {
+        "enum": [
+          "year_not_editable",
+          "no_unopened_term",
+          "already_used",
+          "pinned_timetable",
+          "timetable_references"
+        ],
+        "type": "string"
       },
       "BellSchedulePeriod": {
         "properties": {
@@ -32320,6 +32424,30 @@
           "orderIndex",
           "applicableDays",
           "isActive"
+        ],
+        "type": "object"
+      },
+      "BellSchedulePeriodsSnapshot": {
+        "properties": {
+          "bellScheduleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/BellSchedulePeriod"
+            },
+            "type": "array"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bellScheduleId",
+          "rowVersion",
+          "periods"
         ],
         "type": "object"
       },
@@ -38901,6 +39029,35 @@
         "required": [
           "timetableVersionId",
           "academicTermId"
+        ],
+        "type": "object"
+      },
+      "CloneBellScheduleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owningOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "name",
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -51042,13 +51199,19 @@
           "migrated": {
             "type": "boolean"
           },
+          "placementScope": {
+            "$ref": "#/components/schemas/HomeroomPlacementScope"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           },
           "startDate": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/HomeroomPlacementStatus"
@@ -51067,7 +51230,6 @@
           "studentAcademicYearId",
           "academicYearId",
           "homeroomId",
-          "startDate",
           "status",
           "enrollmentType",
           "rowVersion",
@@ -51076,6 +51238,13 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "HomeroomPlacementScope": {
+        "enum": [
+          "dated",
+          "academic_year"
+        ],
+        "type": "string"
       },
       "HomeroomPlacementStatus": {
         "enum": [
@@ -51228,13 +51397,19 @@
             "format": "uuid",
             "type": "string"
           },
+          "placementScope": {
+            "$ref": "#/components/schemas/HomeroomPlacementScope"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           },
           "startDate": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/HomeroomPlacementStatus"
@@ -51271,7 +51446,6 @@
           "firstName",
           "lastName",
           "status",
-          "startDate",
           "rowVersion",
           "studentYearRowVersion"
         ],
@@ -57303,7 +57477,10 @@
           },
           "targetPlacementStartsOn": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "targetYearId": {
             "format": "uuid",
@@ -57318,7 +57495,6 @@
           "id",
           "sourceYearId",
           "targetYearId",
-          "targetPlacementStartsOn",
           "status",
           "rowVersion",
           "createdBy",
@@ -71399,6 +71575,24 @@
         },
         "type": "object"
       },
+      "UpdateHomeroomCapacityRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacity",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
       "UpdateHomeroomNumbersRequest": {
         "additionalProperties": false,
         "properties": {
@@ -73835,10 +74029,6 @@
             },
             "type": "array"
           },
-          "outcomeEffectiveOn": {
-            "format": "date",
-            "type": "string"
-          },
           "programs": {
             "items": {
               "$ref": "#/components/schemas/YearRolloverProgramReference"
@@ -73857,10 +74047,6 @@
             },
             "type": "array"
           },
-          "targetPlacementStartsOn": {
-            "format": "date",
-            "type": "string"
-          },
           "targetYear": {
             "$ref": "#/components/schemas/YearLifecycleContext"
           }
@@ -73868,8 +74054,6 @@
         "required": [
           "sourceYear",
           "targetYear",
-          "outcomeEffectiveOn",
-          "targetPlacementStartsOn",
           "students",
           "grades",
           "programs",
@@ -73889,16 +74073,8 @@
             },
             "type": "array"
           },
-          "outcomeEffectiveOn": {
-            "format": "date",
-            "type": "string"
-          },
           "sourceYearId": {
             "format": "uuid",
-            "type": "string"
-          },
-          "targetPlacementStartsOn": {
-            "format": "date",
             "type": "string"
           },
           "targetYearId": {
@@ -73909,8 +74085,6 @@
         "required": [
           "sourceYearId",
           "targetYearId",
-          "outcomeEffectiveOn",
-          "targetPlacementStartsOn",
           "decisions"
         ],
         "type": "object"
@@ -74832,6 +75006,98 @@
         ]
       }
     },
+    "/api/academic/bell-schedules/{id}/clone": {
+      "post": {
+        "operationId": "cloneBellSchedule",
+        "parameters": [
+          {
+            "description": "Source bell schedule ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneBellScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BellSchedule"
+                }
+              }
+            },
+            "description": "Bell schedule and all periods cloned atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid schedule or incompatible periods"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic term management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source schedule or destination year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Source revision or destination lifecycle conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/bell-schedules/{id}/periods": {
       "get": {
         "operationId": "listBellSchedulePeriods",
@@ -74852,7 +75118,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_BellSchedulePeriod"
+                  "$ref": "#/components/schemas/ApiResponse_BellSchedulePeriodsSnapshot"
                 }
               }
             },
@@ -74922,7 +75188,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_BellSchedulePeriod"
+                  "$ref": "#/components/schemas/ApiResponse_BellSchedulePeriodsSnapshot"
                 }
               }
             },
@@ -82535,6 +82801,98 @@
         ]
       }
     },
+    "/api/academic/homerooms/{id}/capacity": {
+      "patch": {
+        "operationId": "updateHomeroomCapacity",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHomeroomCapacityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Homeroom"
+                }
+              }
+            },
+            "description": "Homeroom capacity updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Capacity must be a positive integer"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale revision, insufficient capacity, or immutable year"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/homerooms/{id}/numbering-preview": {
       "get": {
         "operationId": "previewHomeroomNumbers",
@@ -83043,6 +83401,77 @@
               }
             },
             "description": "Homeroom not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/year-context": {
+      "get": {
+        "operationId": "getHomeroomYearContext",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_YearLifecycleContext"
+                }
+              }
+            },
+            "description": "Exact selected homeroom year context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year"
           }
         },
         "tags": [

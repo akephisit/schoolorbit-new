@@ -23,8 +23,6 @@ export function roster(studentCount = 5): S['YearRolloverPreview'] {
 	return {
 		sourceYear,
 		targetYear,
-		outcomeEffectiveOn: '2026-11-01',
-		targetPlacementStartsOn: '2026-11-02',
 		sourceChecksum: 'a'.repeat(64),
 		canConfirm: false,
 		findings: [],
@@ -105,6 +103,7 @@ export async function mockYearManagement(
 		activationOnly?: boolean;
 		readyToActivate?: boolean;
 		setupRecords?: boolean;
+		activationFindings?: S['LifecycleFinding'][];
 	} = {}
 ) {
 	const observations = {
@@ -183,6 +182,8 @@ export async function mockYearManagement(
 	function setupWorkspace(): S['AcademicSetupWorkspace'] {
 		return {
 			contextSettings: settings,
+			bellScheduleSetupYearIds: [],
+			bellScheduleSetupTermIds: [],
 			bellSchedules: [],
 			years: options.setupRecords
 				? [currentSource, targetYear].map((year) => ({
@@ -319,8 +320,6 @@ export async function mockYearManagement(
 				return fulfill(route, {
 					...base,
 					sourceYear: currentSource,
-					outcomeEffectiveOn: input.outcomeEffectiveOn,
-					targetPlacementStartsOn: input.targetPlacementStartsOn,
 					students: base.students.map((student) => ({
 						...student,
 						decision:
@@ -434,10 +433,12 @@ export async function mockYearManagement(
 				if (path.endsWith('/activation'))
 					return fulfill(route, {
 						context,
-						canActivate: true,
+						canActivate: !options.activationFindings?.some(
+							(finding) => finding.severity === 'blocking'
+						),
 						eligiblePlacements: 0,
 						plannedStudents: 0,
-						findings: [],
+						findings: options.activationFindings ?? [],
 						opensYear: false,
 						predecessor: null,
 						sourceChecksum: 'c'.repeat(64),
@@ -509,17 +510,7 @@ export async function openRoster(page: Page) {
 	await page.goto(yearUrl);
 	await page.getByRole('button', { name: 'ขึ้นปีการศึกษาใหม่', exact: true }).click();
 	await selectOption(page, 'ปีปลายทาง', 'ปีการศึกษา 2570');
-	for (const [label, day] of [
-		['วันสิ้นสุดสถานะปีต้นทาง', 1],
-		['วันเริ่มจัดห้องปีใหม่', 2]
-	] as const) {
-		await page.getByRole('button', { name: label, exact: true }).click();
-		await page
-			.locator('[data-calendar-day]:not([data-outside-month]):visible')
-			.filter({ hasText: new RegExp(`^${day}$`) })
-			.click();
-		await expect(page.locator('[data-calendar-day]:visible')).toHaveCount(0);
-	}
+	await expect(page.getByRole('dialog').locator('[data-slot="date-picker"]')).toHaveCount(0);
 	await page.getByRole('button', { name: 'ดูตัวอย่างรายชื่อนักเรียน', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ปอ เรียนต่อ S1', exact: true })).toBeVisible();
 }

@@ -1,19 +1,29 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 	import type {
 		CreateHomeroomRequest,
+		AcademicYear,
 		GradeLevelOption,
 		Homeroom,
 		HomeroomAdvisor,
 		ReplaceHomeroomAdvisorsRequest,
 		StaffOption,
 		StudyProgramOption,
-		UpdateHomeroomRequest
+		UpdateHomeroomRequest,
+		UpdateHomeroomCapacityRequest
 	} from '#lib/api/academic-core.js';
 	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
 	import { compareHomerooms } from '#lib/academic-core/roster-ordering.js';
+	import {
+		canUpdateHomeroomCapacity,
+		homeroomCapacityError
+	} from '#lib/academic-core/period-setup.js';
 	import {
 		programsForGrade,
 		studyProgramLabel
@@ -36,8 +46,11 @@
 		programOptions,
 		advisorsByHomeroom,
 		canManage = false,
+		yearStatus,
+		targetHomeroomId = null,
 		onCreate,
 		onUpdate,
+		onUpdateCapacity,
 		onLoadStaffOptions,
 		onSaveAdvisors
 	}: {
@@ -46,8 +59,11 @@
 		programOptions: StudyProgramOption[];
 		advisorsByHomeroom: Map<string, HomeroomAdvisor[]>;
 		canManage?: boolean;
+		yearStatus?: AcademicYear['status'];
+		targetHomeroomId?: string | null;
 		onCreate: (draft: HomeroomDraft) => Promise<Homeroom>;
 		onUpdate: (room: Homeroom, draft: UpdateHomeroomRequest) => Promise<Homeroom>;
+		onUpdateCapacity: (room: Homeroom, draft: UpdateHomeroomCapacityRequest) => Promise<Homeroom>;
 		onLoadStaffOptions: () => Promise<StaffOption[]>;
 		onSaveAdvisors: (
 			room: Homeroom,
@@ -61,6 +77,81 @@
 	let roomBusy = $state(false);
 	let roomError = $state('');
 	let editionId = $state('');
+	let roomTable = $state<HTMLDivElement | null>(null);
+	$effect(() => {
+		const target = targetHomeroomId;
+		const container = roomTable;
+		let current = true;
+		if (target && container)
+			void tick().then(() => {
+				if (!current) return;
+				const row = container.querySelector<HTMLTableRowElement>('[data-homeroom-target="true"]');
+				row?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				row?.focus({ preventScroll: true });
+			});
+		return () => {
+			current = false;
+		};
+	});
+	let capacityRoom = $state<Homeroom | null>(null);
+	let capacityDraft = $state(1);
+	let capacityBusy = $state(false);
+	let capacityError = $state('');
+	let capacityDialogGeneration = 0;
+	let capacityOperationGeneration = 0;
+	const latestCapacityRoom = $derived(homerooms.find((room) => room.id === capacityRoom?.id));
+	const capacityChanged = $derived(
+		!!capacityRoom &&
+			!!latestCapacityRoom &&
+			capacityRoom.rowVersion !== latestCapacityRoom.rowVersion
+	);
+	const canCreate = $derived(canManage && yearStatus === 'planning');
+
+	function editCapacity(room: Homeroom) {
+		if (capacityBusy) return;
+		capacityDialogGeneration += 1;
+		capacityRoom = { ...room };
+		capacityDraft = room.capacity;
+		capacityError = '';
+	}
+
+	async function saveCapacity(event: SubmitEvent) {
+		event.preventDefault();
+		if (
+			!capacityRoom ||
+			!canManage ||
+			!yearStatus ||
+			!canUpdateHomeroomCapacity(yearStatus) ||
+			capacityChanged ||
+			capacityBusy
+		)
+			return;
+		capacityError = homeroomCapacityError(capacityDraft, capacityRoom.studentCount);
+		if (capacityError) return;
+		const identity = appIdentityKey();
+		const dialogGeneration = capacityDialogGeneration;
+		const operationGeneration = ++capacityOperationGeneration;
+		const room = capacityRoom;
+		const ownsOperation = () =>
+			identity === appIdentityKey() &&
+			dialogGeneration === capacityDialogGeneration &&
+			operationGeneration === capacityOperationGeneration;
+		const ownsDialog = () => ownsOperation() && capacityRoom?.id === room.id;
+		capacityBusy = true;
+		try {
+			await onUpdateCapacity(room, {
+				capacity: capacityDraft,
+				rowVersion: room.rowVersion
+			});
+			if (!ownsDialog()) return;
+			capacityRoom = null;
+		} catch (cause) {
+			if (!ownsDialog()) return;
+			capacityError = cause instanceof Error ? cause.message : 'บันทึกความจุห้องไม่สำเร็จ';
+		} finally {
+			if (ownsOperation()) capacityBusy = false;
+		}
+	}
 
 	let advisorDialogOpen = $state(false);
 	let advisorRoom = $state<Homeroom | null>(null);
@@ -69,6 +160,35 @@
 	let loadingStaff = $state(false);
 	let advisorBusy = $state(false);
 	let advisorError = $state('');
+	onMount(() => {
+		let identity = appIdentityKey();
+		const unsubscribe = authStore.subscribe(() => {
+			const next = appIdentityKey();
+			if (identity !== next) {
+				capacityDialogGeneration += 1;
+				capacityOperationGeneration += 1;
+				capacityRoom = null;
+				capacityBusy = false;
+				capacityError = '';
+				roomDialogOpen = false;
+				advisorDialogOpen = false;
+				editingRoom = null;
+				advisorRoom = null;
+				staffOptions = [];
+			}
+			identity = next;
+		});
+		const unregister = registerAcademicContextDirtySource(
+			'homeroom-editor',
+			() => !!capacityRoom || roomDialogOpen || advisorDialogOpen
+		);
+		return () => {
+			capacityDialogGeneration += 1;
+			capacityOperationGeneration += 1;
+			unsubscribe();
+			unregister();
+		};
+	});
 
 	const selectedGrade = $derived(
 		gradeLevelOptions.find((option) => option.id === roomDraft.gradeLevelId) ?? null
@@ -155,7 +275,9 @@
 
 	async function saveRoom(event: SubmitEvent) {
 		event.preventDefault();
-		roomError = '';
+		if (!canManage || yearStatus !== 'planning' || roomBusy) return;
+		roomError = homeroomCapacityError(roomDraft.capacity, editingRoom?.studentCount);
+		if (roomError) return;
 		if (!roomDraft.gradeLevelId || !roomDraft.studyProgramId || !roomDraft.roomNumber.trim()) {
 			roomError = 'กรุณาเลือกระดับชั้น แผนการเรียน และระบุเลขห้อง';
 			return;
@@ -209,7 +331,7 @@
 
 	async function saveAdvisors(event: SubmitEvent) {
 		event.preventDefault();
-		if (!advisorRoom) return;
+		if (!advisorRoom || !canManage || yearStatus !== 'planning' || advisorBusy) return;
 		advisorError = '';
 		if (advisorDrafts.some((advisor) => !advisor.userId)) {
 			advisorError = 'กรุณาเลือกครูให้ครบทุกรายการ';
@@ -241,14 +363,14 @@
 				ชื่อห้องและรหัสสร้างจากระดับชั้นกับเลขห้องโดยอัตโนมัติ
 			</p>
 		</div>
-		{#if canManage}
+		{#if canCreate}
 			<Button type="button" onclick={openCreateDialog}
 				><Plus class="size-4" /> เพิ่มห้องประจำชั้น</Button
 			>
 		{/if}
 	</div>
 
-	<div class="overflow-x-auto rounded-xl border bg-card">
+	<div class="overflow-x-auto rounded-xl border bg-card" bind:this={roomTable}>
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
@@ -262,7 +384,11 @@
 			</Table.Header>
 			<Table.Body>
 				{#each [...homerooms].sort(compareHomerooms) as room (room.id)}
-					<Table.Row>
+					<Table.Row
+						data-state={room.id === targetHomeroomId ? 'selected' : undefined}
+						data-homeroom-target={room.id === targetHomeroomId ? 'true' : undefined}
+						tabindex={room.id === targetHomeroomId ? -1 : undefined}
+					>
 						<Table.Cell class="border-s-4 border-s-primary ps-5">
 							<div class="flex items-center gap-3">
 								<div class="rounded-lg bg-primary/10 p-2 text-primary">
@@ -297,7 +423,16 @@
 									href={`/staff/academic/homerooms/${room.id}/students?academicYearId=${room.academicYearId}`}
 									>ดูนักเรียน</Button
 								>{/if}
-							{#if canManage}
+							{#if canManage && yearStatus && canUpdateHomeroomCapacity(yearStatus)}
+								<Button
+									type="button"
+									size="sm"
+									variant="outline"
+									onclick={() => editCapacity(room)}
+									aria-label={`แก้ไขความจุ ${room.name}`}>แก้ไขความจุ</Button
+								>
+							{/if}
+							{#if canManage && yearStatus === 'planning'}
 								<div class="flex justify-end gap-1">
 									<Button
 										type="button"
@@ -332,6 +467,62 @@
 		</Table.Root>
 	</div>
 </div>
+
+<Dialog.Root
+	open={!!capacityRoom}
+	onOpenChange={(open) => {
+		if (!open && !capacityBusy) capacityRoom = null;
+	}}
+>
+	<Dialog.Content showCloseButton={!capacityBusy}>
+		<Dialog.Header
+			><Dialog.Title>แก้ไขความจุ {capacityRoom?.name}</Dialog.Title><Dialog.Description
+				>เปลี่ยนจำนวนที่รับได้ของห้อง โดยคงชั้น แผนการเรียน และรายชื่อนักเรียนเดิม</Dialog.Description
+			></Dialog.Header
+		>
+		<form class="space-y-4" onsubmit={saveCapacity}>
+			<p class="text-sm">
+				นักเรียนในห้อง {latestCapacityRoom?.studentCount ?? capacityRoom?.studentCount ?? '—'} คน
+			</p>
+			<div class="space-y-2">
+				<Label for="room-capacity-only">ความจุ (คน)</Label><Input
+					id="room-capacity-only"
+					type="number"
+					min={Math.max(1, latestCapacityRoom?.studentCount ?? 0)}
+					step="1"
+					bind:value={capacityDraft}
+					disabled={capacityBusy}
+					required
+				/>
+			</div>
+			{#if capacityChanged && latestCapacityRoom}<div
+					role="alert"
+					class="space-y-2 rounded-lg border p-3 text-sm"
+				>
+					<p>
+						ข้อมูลห้องเปลี่ยนระหว่างแก้ไข ความจุล่าสุด {latestCapacityRoom.capacity} คน ฉบับร่างของคุณยังอยู่
+					</p>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={capacityBusy}
+						onclick={() => {
+							if (latestCapacityRoom) capacityRoom = { ...latestCapacityRoom };
+						}}>ตรวจสอบแล้ว ใช้ข้อมูลล่าสุดเป็นฐาน</Button
+					>
+				</div>{/if}
+			{#if capacityError}<p role="alert" class="text-sm text-destructive">{capacityError}</p>{/if}
+			<Dialog.Footer
+				>{#if latestCapacityRoom && yearStatus && canUpdateHomeroomCapacity(yearStatus)}<Button
+						type="submit"
+						disabled={capacityBusy || capacityChanged}>บันทึกความจุ</Button
+					>{:else}<p class="text-sm text-muted-foreground">
+						ปีการศึกษานี้ปิดการแก้ไขความจุแล้ว
+					</p>{/if}</Dialog.Footer
+			>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={roomDialogOpen}>
 	<Dialog.Content class="sm:max-w-xl">
@@ -414,7 +605,7 @@
 					<Input
 						id="homeroom-capacity"
 						type="number"
-						min="1"
+						min={Math.max(1, editingRoom?.studentCount ?? 0)}
 						bind:value={roomDraft.capacity}
 						required
 					/>

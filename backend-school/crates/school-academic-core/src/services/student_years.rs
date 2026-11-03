@@ -11,7 +11,8 @@ use super::super::models::{
     HomeroomPlacement, HomeroomPlacementStatus, HomeroomPlacementTransfer,
     ReplaceHomeroomAdvisorsRequest, StudentAcademicYear, StudentAcademicYearFilter,
     StudentAcademicYearStatus, StudentYearCandidate, StudentYearCandidateQuery,
-    TransferHomeroomPlacementRequest, UpdateHomeroomRequest, UpdateStudentAcademicYearRequest,
+    TransferHomeroomPlacementRequest, UpdateHomeroomCapacityRequest, UpdateHomeroomRequest,
+    UpdateStudentAcademicYearRequest,
 };
 use super::years_terms::append_audit;
 use super::{lifecycle_guard, parse_row_version};
@@ -44,7 +45,7 @@ const STUDENT_YEAR_JOINS: &str = r#"
     JOIN published_study_programs program ON program.id = student_year.study_program_id
 "#;
 const PLACEMENT_COLUMNS: &str = r#"
-    id, student_academic_year_id, academic_year_id, homeroom_id, start_date,
+    id, student_academic_year_id, academic_year_id, homeroom_id, placement_scope, start_date,
     end_date, status, enrollment_type, class_number, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
@@ -95,6 +96,25 @@ pub fn derive_homeroom_identity(
         ),
         name,
     })
+}
+
+/// Exact homeroom context also covers hidden, empty planning years.
+pub async fn homeroom_year_context(
+    pool: &PgPool,
+    year: Uuid,
+) -> Result<crate::models::YearLifecycleContext, AppError> {
+    if year.is_nil() {
+        return Err(AppError::ValidationError("ระบุปีการศึกษาให้ถูกต้อง".into()));
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.homeroom_year_context",
+    )
+    .await?;
+    DbSession::new(&mut *connection)
+        .query_as("academic_core.services.student_years.homeroom_year_context", "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=$1")
+        .bind(year).fetch_optional().await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))
 }
 
 pub async fn list_homerooms(
@@ -232,6 +252,19 @@ pub async fn update_homeroom(
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".to_string()))?;
+    let members: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.update_homeroom_capacity_floor",
+            "SELECT count(*) FROM homeroom_placements WHERE homeroom_id=$1 AND status IN ('planned','current')",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
+    if i64::from(request.capacity) < members {
+        return Err(AppError::Conflict(format!(
+            "ความจุห้องต้องไม่น้อยกว่าจำนวนนักเรียนที่จัดไว้ {members} คน"
+        )));
+    }
     let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         academic_year_id,
@@ -271,6 +304,103 @@ pub async fn update_homeroom(
     }
     transaction.commit().await?;
     get_homeroom(pool, id).await
+}
+
+/// Capacity is independently editable while the year's structure is already in use.
+/// The exclusive year lock also serializes placement writers and lifecycle transitions.
+pub async fn update_homeroom_capacity(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    id: Uuid,
+    request: UpdateHomeroomCapacityRequest,
+) -> Result<Homeroom, AppError> {
+    parse_row_version(request.row_version)?;
+    validate_homeroom_fields(request.capacity)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.update_homeroom_capacity",
+    )
+    .await?;
+    let year: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.update_homeroom_capacity",
+            "SELECT academic_year_id FROM homerooms WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบห้องเรียนประจำชั้น".into()))?;
+    let status = lifecycle_guard::require_year_write_exclusive(&mut transaction, year).await?;
+    if !matches!(
+        status,
+        AcademicYearStatus::Planning | AcademicYearStatus::Ready | AcademicYearStatus::Active
+    ) {
+        return Err(AppError::Conflict(
+            "ปรับความจุห้องได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
+        ));
+    }
+    let sql = format!("SELECT {HOMEROOM_COLUMNS} FROM homerooms WHERE id=$1 FOR UPDATE");
+    let mut room: Homeroom = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.student_years.update_homeroom_capacity",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
+    if room.row_version != request.row_version {
+        return Err(AppError::Conflict("ห้องเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".into()));
+    }
+    let member_count: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.student_years.update_homeroom_capacity",
+            "SELECT count(*) FROM homeroom_placements WHERE homeroom_id=$1 AND status IN ('planned','current')",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
+    if i64::from(request.capacity) < member_count {
+        return Err(AppError::Conflict(format!(
+            "ความจุห้อง {} ต้องไม่น้อยกว่าจำนวนนักเรียนที่จัดไว้ {member_count} คน",
+            room.name
+        )));
+    }
+    room.student_count = Some(member_count);
+    if room.capacity == request.capacity {
+        transaction.commit().await?;
+        return Ok(room);
+    }
+    let previous_capacity = room.capacity;
+    let sql = format!(
+        "UPDATE homerooms SET capacity=$1,row_version=row_version+1,updated_at=now() \
+         WHERE id=$2 AND row_version=$3 RETURNING {HOMEROOM_COLUMNS}"
+    );
+    let mut updated: Homeroom = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.student_years.update_homeroom_capacity",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(request.capacity)
+        .bind(id)
+        .bind(request.row_version)
+        .fetch_one()
+        .await?;
+    updated.student_count = Some(member_count);
+    append_audit(
+        &mut transaction,
+        "homeroom.capacity_updated",
+        "homeroom",
+        id,
+        Some(year),
+        None,
+        actor_user_id,
+        serde_json::json!({"before": {"capacity": previous_capacity, "rowVersion": room.row_version},
+            "after": {"capacity": updated.capacity, "rowVersion": updated.row_version},
+            "studentCount": member_count}),
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(updated)
 }
 
 pub async fn list_advisors(
@@ -442,7 +572,7 @@ pub async fn list_student_years_on_connection(
             FROM homeroom_placements placement JOIN homerooms room ON room.id=placement.homeroom_id
             WHERE placement.student_academic_year_id=student_year.id
               AND placement.status IN ('planned','current')
-            ORDER BY placement.start_date DESC,placement.id LIMIT 1
+            ORDER BY placement.start_date DESC NULLS LAST,placement.id LIMIT 1
         ) current_room ON TRUE
         WHERE student_year.academic_year_id = $1
           AND ($2::uuid IS NULL OR student_year.student_id = $2)
@@ -902,7 +1032,10 @@ pub async fn transfer_placement(
             "รายการจัดห้องไม่ใช่รายการปัจจุบันหรือถูกแก้ไขแล้ว".to_string(),
         ));
     }
-    if request.transfer_date <= old.start_date {
+    if old
+        .start_date
+        .is_some_and(|start| request.transfer_date <= start)
+    {
         return Err(AppError::ValidationError(
             "วันย้ายห้องต้องอยู่หลังวันเริ่มรายการเดิม".to_string(),
         ));

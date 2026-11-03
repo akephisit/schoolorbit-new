@@ -530,7 +530,7 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
             .await
             .unwrap();
     }
-    let target_start = calculation.run.target_placement_starts_on;
+    let target_start = calculation.run.target_placement_starts_on.unwrap();
     let term = ready_term_for_existing_year(
         &pool,
         executor.user_id,

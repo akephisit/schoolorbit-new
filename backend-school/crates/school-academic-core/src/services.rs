@@ -17,6 +17,8 @@ pub mod dated_student_directory;
 pub mod homeroom_roster;
 pub mod lifecycle_context;
 pub mod lifecycle_guard;
+pub mod opening_diagnostics;
+pub mod placement_interval;
 pub mod progressions;
 pub mod promotion_batch;
 #[cfg(feature = "integration-test-support")]

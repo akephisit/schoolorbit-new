@@ -14,6 +14,7 @@ export type AcademicTerm = Schemas['AcademicTerm'];
 export type AcademicTermType = Schemas['AcademicTermType'];
 export type BellSchedule = Schemas['BellSchedule'];
 export type BellSchedulePeriod = Schemas['BellSchedulePeriod'];
+export type BellSchedulePeriodsSnapshot = Schemas['BellSchedulePeriodsSnapshot'];
 export type SubjectGroup = Schemas['SubjectGroup'];
 export type CatalogSubject = Schemas['CatalogSubject'];
 export type CatalogSubjectOverview = Schemas['CatalogSubjectOverview'];
@@ -82,6 +83,14 @@ export const updateAcademicContextSettings = (body: UpdateAcademicContextSetting
 	);
 
 export type Homeroom = Schemas['Homeroom'];
+export const getHomeroomYearContext = (academicYearId: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<Schemas['YearLifecycleContext']>('/api/academic/homerooms/year-context', {
+			...options,
+			query: { academicYearId }
+		}),
+		'โหลดบริบทปีของห้องประจำชั้นไม่สำเร็จ'
+	);
 export type HomeroomAdvisor = Schemas['HomeroomAdvisor'];
 export type HomeroomAdvisorAssignment = Schemas['HomeroomAdvisorAssignment'];
 export type StudentAcademicYear = Schemas['StudentAcademicYear'];
@@ -124,6 +133,8 @@ export type ReplaceCurriculumStructureRequest = Schemas['ReplaceCurriculumStruct
 export type CurriculumStructureRequirementInput = Schemas['CurriculumStructureRequirementInput'];
 export type CreateHomeroomRequest = Schemas['CreateHomeroomRequest'];
 export type UpdateHomeroomRequest = Schemas['UpdateHomeroomRequest'];
+export type UpdateHomeroomCapacityRequest = Schemas['UpdateHomeroomCapacityRequest'];
+export type CloneBellScheduleRequest = Schemas['CloneBellScheduleRequest'];
 export type ReplaceHomeroomAdvisorsRequest = Schemas['ReplaceHomeroomAdvisorsRequest'];
 export type CreateStudentAcademicYearRequest = Schemas['CreateStudentAcademicYearRequest'];
 export type UpdateStudentAcademicYearRequest = Schemas['UpdateStudentAcademicYearRequest'];
@@ -216,6 +227,11 @@ export const createBellSchedule = (body: CreateBellScheduleRequest) =>
 		apiClient.post<BellSchedule>('/api/academic/bell-schedules', body),
 		'สร้างตารางเวลาไม่สำเร็จ'
 	);
+export const cloneBellSchedule = (id: string, body: CloneBellScheduleRequest) =>
+	academicData(
+		apiClient.post<BellSchedule>(`/api/academic/bell-schedules/${id}/clone`, body),
+		'คัดลอกตารางเวลาไม่สำเร็จ'
+	);
 export const updateBellSchedule = (id: string, body: UpdateBellScheduleRequest) =>
 	academicData(
 		apiClient.patch<BellSchedule>(`/api/academic/bell-schedules/${id}`, body),
@@ -223,12 +239,15 @@ export const updateBellSchedule = (id: string, body: UpdateBellScheduleRequest) 
 	);
 export const listBellSchedulePeriods = (id: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`, options),
+		apiClient.get<BellSchedulePeriodsSnapshot>(
+			`/api/academic/bell-schedules/${id}/periods`,
+			options
+		),
 		'ไม่สามารถโหลดคาบเรียนได้'
 	);
 export const replaceBellSchedulePeriods = (id: string, body: ReplaceBellSchedulePeriodsRequest) =>
 	academicData(
-		apiClient.put<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`, body),
+		apiClient.put<BellSchedulePeriodsSnapshot>(`/api/academic/bell-schedules/${id}/periods`, body),
 		'บันทึกคาบเรียนไม่สำเร็จ'
 	);
 
@@ -526,6 +545,11 @@ export const updateHomeroom = (id: string, body: UpdateHomeroomRequest) =>
 	academicData(
 		apiClient.patch<Homeroom>(`/api/academic/homerooms/${id}`, body),
 		'แก้ไขห้องประจำชั้นไม่สำเร็จ'
+	);
+export const updateHomeroomCapacity = (id: string, body: UpdateHomeroomCapacityRequest) =>
+	academicData(
+		apiClient.patch<Homeroom>(`/api/academic/homerooms/${id}/capacity`, body),
+		'บันทึกความจุห้องไม่สำเร็จ'
 	);
 export const listHomeroomAdvisors = (id: string) =>
 	academicData(

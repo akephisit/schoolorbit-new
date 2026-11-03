@@ -39,6 +39,7 @@ function fixture(): HomeroomRoster {
 				classNumber: 1,
 				status: 'current',
 				startDate: '2026-05-01',
+				placementScope: 'dated',
 				rowVersion: 1,
 				studentYearRowVersion: 1
 			},
@@ -54,6 +55,7 @@ function fixture(): HomeroomRoster {
 				classNumber: 2,
 				status: 'current',
 				startDate: '2026-05-01',
+				placementScope: 'dated',
 				rowVersion: 1,
 				studentYearRowVersion: 1
 			}
@@ -229,7 +231,7 @@ test('reader and closed years never fetch action data or show mutation controls'
 	await expect(page.getByText('ปีการศึกษานี้ปิดแล้ว ดูข้อมูลย้อนหลังได้')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'จัดเลขที่', exact: true })).toHaveCount(0);
 });
-for (const entry of ['homeroom', 'annual'] as const)
+for (const entry of ['homeroom', 'annual', 'annualMembership'] as const)
 	test(`${entry} information links open the profile and selected-year history directly`, async ({
 		page
 	}) => {
@@ -266,8 +268,9 @@ for (const entry of ['homeroom', 'annual'] as const)
 			academicYearId: year,
 			homeroomId: room,
 			classNumber: 7,
-			status: 'cancelled',
-			startDate: '2026-05-01',
+			status: entry === 'annualMembership' ? 'current' : 'cancelled',
+			startDate: entry === 'annualMembership' ? null : '2026-05-01',
+			placementScope: entry === 'annualMembership' ? 'academic_year' : 'dated',
 			endDate: null,
 			enrollmentType: 'regular',
 			rowVersion: 1,
@@ -322,6 +325,12 @@ for (const entry of ['homeroom', 'annual'] as const)
 		await page.goto(entryPath);
 		if (entry === 'homeroom') await expect(page.getByTestId('homeroom-roster-ready')).toBeVisible();
 		else await expect(page.getByRole('button', { name: 'จัดห้อง', exact: true })).toBeVisible();
+		if (entry === 'annualMembership') {
+			await page.getByRole('button', { name: 'จัดห้อง', exact: true }).click();
+			await expect(page.getByRole('dialog')).toContainText('สมาชิกห้องประจำปีการศึกษานี้');
+			await expect(page.getByRole('dialog')).not.toContainText(/Invalid Date|null/);
+			await page.keyboard.press('Escape');
+		}
 		await page
 			.getByRole('row')
 			.filter({ hasText: 'ขวัญ' })
@@ -332,7 +341,13 @@ for (const entry of ['homeroom', 'annual'] as const)
 		);
 		await expect(page.getByRole('dialog')).toHaveCount(0);
 		await expect(page.getByTestId('student-profile')).toContainText('เด็กหญิงขวัญ ทดสอบ');
-		await expect(page.getByTestId('student-placement-history')).toContainText('ยกเลิก');
+		await expect(page.getByTestId('student-placement-history')).toContainText(
+			entry === 'annualMembership' ? 'สมาชิกห้องประจำปีการศึกษานี้' : 'ยกเลิก'
+		);
+		if (entry === 'annualMembership')
+			await expect(page.getByTestId('student-placement-history')).not.toContainText(
+				/Invalid Date|null|01\/01\/2513/
+			);
 		await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
 			'href',
 			entryPath
@@ -342,7 +357,7 @@ for (const entry of ['homeroom', 'annual'] as const)
 		);
 		await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
 			'href',
-			`/staff/students?academicYearId=${year}`
+			'/staff/students'
 		);
 	});
 test('a failed primary read can retry without presenting an empty room', async ({ page }) => {

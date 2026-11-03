@@ -111,8 +111,7 @@ WITH active_year AS (
     JOIN active_year y ON y.id = s.academic_year_id
     JOIN users u ON u.id = s.student_id AND u.user_type = 'student'
     LEFT JOIN homeroom_placements p ON p.student_academic_year_id = s.id
-        AND p.status = 'current' AND p.start_date <= CURRENT_DATE
-        AND (p.end_date IS NULL OR p.end_date >= CURRENT_DATE)
+        AND p.status = 'current' AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,CURRENT_DATE)
     LEFT JOIN active_rooms h ON h.id = p.homeroom_id AND h.grade_level_id = s.grade_level_id
     WHERE s.status = 'active'
 ), buckets AS (

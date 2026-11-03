@@ -30,7 +30,6 @@
 	import RolloverDecisionFields from './RolloverDecisionFields.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 
@@ -58,8 +57,6 @@
 	const pageSize = 25;
 	let options = $state<YearRolloverOptions | null>(null);
 	let targetYearId = $state('');
-	let outcomeEffectiveOn = $state<string | undefined>();
-	let targetPlacementStartsOn = $state<string | undefined>();
 	let preview = $state.raw<YearRolloverPreview | null>(null);
 	let drafts = $state<Record<string, RolloverDraft>>({});
 	let bulkDrafts = $state<Record<string, RolloverDraft>>({});
@@ -90,12 +87,10 @@
 	);
 	const decisions = $derived(preview ? rosterDecisions(preview.students, drafts) : []);
 	const input = $derived<YearRolloverPreviewInput | null>(
-		targetYearId && outcomeEffectiveOn && targetPlacementStartsOn
+		targetYearId
 			? {
 					sourceYearId: yearId,
 					targetYearId,
-					outcomeEffectiveOn,
-					targetPlacementStartsOn,
 					decisions
 				}
 			: null
@@ -275,8 +270,6 @@
 				options = null;
 				pending = null;
 				targetYearId = '';
-				outcomeEffectiveOn = undefined;
-				targetPlacementStartsOn = undefined;
 			}
 			identity = next;
 		});
@@ -332,7 +325,7 @@
 					variant="outline"
 					onclick={() => void loadOptions()}>ลองโหลดปีปลายทางอีกครั้ง</Button
 				>{:else}
-				<div class="grid gap-4 md:grid-cols-3">
+				<div class="max-w-md">
 					<div class="space-y-2">
 						<Label for="rollover-target">ปีปลายทาง</Label><Select.Root
 							type="single"
@@ -353,27 +346,9 @@
 								สร้างปีปลายทางในส่วนตั้งค่าปีและภาคเรียนก่อน
 							</p>{/if}
 					</div>
-					<div class="space-y-2">
-						<Label for="rollover-effective">วันสิ้นสุดสถานะปีต้นทาง</Label><DatePicker
-							id="rollover-effective"
-							ariaLabel="วันสิ้นสุดสถานะปีต้นทาง"
-							bind:value={outcomeEffectiveOn}
-							required
-							disabled={busy || !!pending}
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="rollover-start">วันเริ่มจัดห้องปีใหม่</Label><DatePicker
-							id="rollover-start"
-							ariaLabel="วันเริ่มจัดห้องปีใหม่"
-							bind:value={targetPlacementStartsOn}
-							required
-							disabled={busy || !!pending}
-						/>
-					</div>
 				</div>
 				<p class="text-sm text-muted-foreground">
-					วันเริ่มจัดห้องปีใหม่ต้องอยู่หลังวันสิ้นสุดปีต้นทาง ป.6 และ ม.3
+					รายชื่อและห้องปลายทางผูกกับปีการศึกษาที่เลือก การยืนยันนี้ยังไม่เริ่มใช้ปีใหม่ ป.6 และ ม.3
 					เลือกเรียนต่อในโรงเรียนเดิมได้ โดยระบุผลและชั้นปลายทางอย่างชัดเจน
 				</p>
 

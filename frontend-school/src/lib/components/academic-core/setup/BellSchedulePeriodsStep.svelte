@@ -1,8 +1,14 @@
 <script lang="ts">
+	import { onDestroy, onMount } from 'svelte';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { bellScheduleBlockMessage } from '#lib/academic-core/period-setup.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
 		AcademicYear,
 		BellSchedule,
 		BellSchedulePeriod,
+		BellSchedulePeriodsSnapshot,
 		ReplaceBellSchedulePeriodsRequest
 	} from '#lib/api/academic-core.js';
 	import {
@@ -32,6 +38,7 @@
 		year,
 		schedules,
 		busy = false,
+		canManage = false,
 		onLoad,
 		onReplace,
 		onSaved
@@ -39,23 +46,47 @@
 		year: AcademicYear;
 		schedules: BellSchedule[];
 		busy?: boolean;
-		onLoad: (id: string) => Promise<BellSchedulePeriod[]>;
+		canManage?: boolean;
+		onLoad: (
+			id: string,
+			options?: { signal?: AbortSignal }
+		) => Promise<BellSchedulePeriodsSnapshot>;
 		onReplace: (
 			id: string,
 			draft: ReplaceBellSchedulePeriodsRequest
-		) => Promise<BellSchedulePeriod[]>;
-		onSaved: (scheduleId: string, periods: BellSchedulePeriod[]) => void;
+		) => Promise<BellSchedulePeriodsSnapshot>;
+		onSaved: (snapshot: BellSchedulePeriodsSnapshot) => void;
 	} = $props();
 
 	let selectedScheduleId = $state('');
 	let periods = $state<PeriodDraft[]>([]);
 	let loading = $state(false);
 	let errorMessage = $state('');
+	let baseVersion = $state<number | null>(null);
+	let savedDraft = $state('');
+	let comparison = $state<BellSchedulePeriodsSnapshot | null>(null);
+	let comparing = $state(false);
+	let disposed = false;
+	const latest = new LatestRequest();
+	onMount(() =>
+		registerAcademicContextDirtySource(
+			`bell-periods:${year.id}`,
+			() => savedDraft !== '' && JSON.stringify(periods) !== savedDraft
+		)
+	);
+	onDestroy(() => {
+		disposed = true;
+		latest.abort();
+	});
 
 	const selectedSchedule = $derived(
 		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
 	);
 	const schoolDays = $derived(normalizeSchoolDays(year.schoolDays));
+	const editable = $derived(canManage && selectedSchedule?.editBlockedReason === null);
+	const changed = $derived(
+		baseVersion !== null && (selectedSchedule?.rowVersion ?? 0) > baseVersion
+	);
 
 	function draftFromPeriod(period?: BellSchedulePeriod): PeriodDraft {
 		const storedDays = period?.applicableDays?.match(/[A-Za-z]+/g) ?? [];
@@ -70,17 +101,46 @@
 	}
 
 	async function selectSchedule(id: string) {
+		if (busy) return;
+		const { revision, signal } = latest.begin();
+		comparing = false;
+		loading = Boolean(id);
+		const identity = appIdentityKey();
 		selectedScheduleId = id;
 		periods = [];
+		comparison = null;
+		baseVersion = null;
 		errorMessage = '';
 		if (!id) return;
-		loading = true;
 		try {
-			periods = (await onLoad(id)).map((period) => draftFromPeriod(period));
+			const result = await onLoad(id, { signal });
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) {
+				periods = result.periods.map((period) => draftFromPeriod(period));
+				baseVersion = result.rowVersion;
+				savedDraft = JSON.stringify(periods);
+			}
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
+			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(error))
+				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
+		}
+	}
+
+	async function compareLatest() {
+		if (!selectedSchedule || comparing || busy) return;
+		const scheduleId = selectedSchedule.id;
+		const { revision, signal } = latest.begin();
+		const identity = appIdentityKey();
+		comparing = true;
+		try {
+			const result = await onLoad(scheduleId, { signal });
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparison = result;
+		} catch (cause) {
+			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
+				errorMessage = cause instanceof Error ? cause.message : 'โหลดคาบล่าสุดไม่สำเร็จ';
+		} finally {
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparing = false;
 		}
 	}
 
@@ -114,7 +174,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedSchedule) return;
+		if (!selectedSchedule || !editable || changed || busy || baseVersion === null) return;
 		errorMessage = '';
 		if (periods.length === 0) {
 			errorMessage = 'กรุณาเพิ่มคาบเรียนอย่างน้อย 1 คาบ';
@@ -124,18 +184,25 @@
 			errorMessage = 'ทุกคาบต้องเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
 		}
+		const identity = appIdentityKey();
+		const scheduleId = selectedSchedule.id;
 		try {
-			const saved = await onReplace(selectedSchedule.id, {
-				rowVersion: selectedSchedule.rowVersion,
+			const saved = await onReplace(scheduleId, {
+				rowVersion: baseVersion,
 				periods: periods.map((period) => ({
 					...period,
 					name: period.name?.trim() || null,
 					applicableDays: normalizeSchoolDays(period.applicableDays)
 				}))
 			});
-			periods = saved.map((period) => draftFromPeriod(period));
-			onSaved(selectedSchedule.id, saved);
+			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
+			periods = saved.periods.map((period) => draftFromPeriod(period));
+			baseVersion = saved.rowVersion;
+			savedDraft = JSON.stringify(periods);
+			comparison = null;
+			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกคาบเรียนไม่สำเร็จ';
 		}
 	}
@@ -147,6 +214,7 @@
 		<Select.Root
 			type="single"
 			value={selectedScheduleId}
+			disabled={busy}
 			onValueChange={(value) => void selectSchedule(value)}
 		>
 			<Select.Trigger id="period-schedule" class="w-full">
@@ -172,9 +240,40 @@
 			กำลังโหลดคาบเรียน…
 		</p>
 	{:else if selectedSchedule}
+		{#if selectedSchedule.editBlockedReason}<p class="rounded-lg border bg-muted/20 p-3 text-sm">
+				{bellScheduleBlockMessage(selectedSchedule.editBlockedReason)}
+			</p>{/if}
+		{#if changed}<p role="alert" class="rounded-lg border p-3 text-sm text-destructive">
+				ข้อมูลตารางเวลาเปลี่ยนระหว่างแก้ไข คาบที่คุณแก้ไว้ยังอยู่ ตรวจข้อมูลล่าสุดก่อนบันทึกอีกครั้ง
+			</p>
+			<Button
+				type="button"
+				variant="outline"
+				disabled={comparing || busy}
+				onclick={() => void compareLatest()}>โหลดคาบล่าสุดเพื่อเปรียบเทียบ</Button
+			>{/if}
+		{#if comparison && changed}<div class="space-y-2 rounded-lg border p-3 text-sm">
+				<p class="font-medium">คาบที่บันทึกไว้ล่าสุด</p>
+				{#each comparison.periods as period (period.id)}<p>
+						{period.name ?? `คาบ ${period.orderIndex}`} · {period.startTime.slice(
+							0,
+							5
+						)}–{period.endTime.slice(0, 5)}
+					</p>{/each}<Button
+					type="button"
+					variant="outline"
+					disabled={busy || selectedSchedule.rowVersion > comparison.rowVersion}
+					onclick={() => {
+						if (comparison) baseVersion = comparison.rowVersion;
+					}}>ตรวจสอบแล้ว ใช้ฉบับล่าสุดเป็นฐาน</Button
+				>
+			</div>{/if}
 		<div class="space-y-3">
 			{#each periods as period, index (`${selectedSchedule.id}-${index}`)}
-				<fieldset class="space-y-3 rounded-xl border bg-background p-4" disabled={busy}>
+				<fieldset
+					class="space-y-3 rounded-xl border bg-background p-4"
+					disabled={busy || !editable}
+				>
 					<div class="flex items-center justify-between gap-3">
 						<legend class="font-medium">คาบที่ {index + 1}</legend>
 						<Button
@@ -254,14 +353,14 @@
 			{/each}
 		</div>
 
-		<div class="flex flex-wrap gap-2">
-			<Button type="button" variant="outline" onclick={addPeriod}>
-				<Plus class="size-4" /> เพิ่มคาบ
-			</Button>
-			<Button type="submit" disabled={busy || periods.length === 0}>
-				<Save class="size-4" /> บันทึกคาบทั้งหมด
-			</Button>
-		</div>
+		{#if editable}<div class="flex flex-wrap gap-2">
+				<Button type="button" variant="outline" onclick={addPeriod}>
+					<Plus class="size-4" /> เพิ่มคาบ
+				</Button>
+				<Button type="submit" disabled={busy || changed || periods.length === 0}>
+					<Save class="size-4" /> บันทึกคาบทั้งหมด
+				</Button>
+			</div>{/if}
 	{/if}
 
 	{#if errorMessage}

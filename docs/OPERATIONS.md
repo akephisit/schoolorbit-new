@@ -815,15 +815,15 @@ Term detail purge is restricted to authorized managers and closed terms. Preview
 The canonical staff workspace is `/staff/academic/year-lifecycle`. It combines year/term setup,
 period closure and preparation of the next roster. The presentation groups `planning`/`ready`
 as preparation and `active`/`closing` as in use; stored historical statuses and evidence keep
-their original meaning. Closing a term retains the same annual enrollment and dated room
+their original meaning. Closing a term retains the same annual enrollment and room
 history for the next term. Closing terms/years and manually preparing a new roster do not
 require locked Results, annual credit calculations or a promotion policy. Attendance
 finalization/source delivery and actual successor/ownership conflicts retain their guards.
 
 Use the [canonical Lifecycle routes](../backend-school/crates/school-academic-http/src/lifecycle.rs)
 and [typed roster contract](../backend-school/crates/school-academic-lifecycle/src/models/year_rollover.rs).
-`POST /api/academic/lifecycle/year-rollovers/preview` reads the complete roster and explicit
-outcome/placement dates; `POST /api/academic/lifecycle/year-rollovers/confirm` accepts its current
+`POST /api/academic/lifecycle/year-rollovers/preview` reads the complete roster and explicit source/destination
+year identities and decisions; `POST /api/academic/lifecycle/year-rollovers/confirm` accepts its current
 checksum and request identity once. The options/preview reads require
 `academic_promotion.read.school`; confirmation also requires `academic_promotion.execute.school`.
 The source year must be closed and the destination planning. Staff select promote, repeat,
@@ -833,7 +833,42 @@ ambiguous confirmation with its original request identity; do not create a new r
 to retry the same accepted intent. Former policy/run calculation, approval and execution
 commands are retired; their existing evidence remains available through read-only history.
 
-Graduation/transfer finalize annual membership and dated placement through Core and update
+New roster preparation records `placementScope: academic_year` and a null civil start date.
+Existing `dated` placements and receipt evidence retain their original dates. Core's shared
+membership predicate combines annual context with real dated transfers; dated transfer rows
+have precedence with `NULLS LAST`. The frontend labels annual membership explicitly.
+Operational transfer forms still require the real transfer date. Do not backfill today or a
+synthetic school-year boundary to repair an annual membership. Advisor access applies only to
+the active academic year.
+
+Room capacity changes use the narrow revision-checked `/homerooms/{id}/capacity` operation in
+planning, ready or active years. Closed periods remain read-only. Bell setup at
+`/staff/academic/core` can prepare the next unopened term during the active year. Reuse an
+unchanged schedule or clone its periods into independent identities; used/published schedules
+cannot be edited. `timetable_references` means existing draft versions must be managed before
+changing that term's table. Cloning alone does not migrate or rebind existing timetable drafts.
+Use the returned edit capabilities, setup-year IDs and exact setup-term IDs; preparation does
+not activate the term. Homeroom screens load exact year context under room permissions, so a
+hidden planning year remains available to authorized room managers and displays its own name
+and status. Context discovery visibility does not authorize or select a different year.
+
+[Migration 154](../backend-school/migrations/154_academic_year_membership.sql) adds the explicit
+placement scope and shared interval predicate while preserving existing placement facts and
+the promotion ledger. Existing rows receive `dated` scope; it does not reinterpret old dates as
+annual membership. It refuses unresolved execution with
+`ACADEMIC_MEMBERSHIP154_EXECUTION_UNRESOLVED` and compares preserved populations before accepting
+the schema change (`ACADEMIC_MEMBERSHIP154_PRESERVATION_FAILED`). Deploy it with the matching
+backend, generated contracts and frontend under the coordinated all-tenant migration gate.
+Reconcile a refusal on a protected copy; never fabricate dates or rewrite immutable receipts.
+
+The additive schema remains compatible with the old binary only while all persisted data still
+has the old non-null dated shape. The first date-free manual rollover run, including a hold-only
+run with no destination placements, or the first annual membership with a null start date crosses
+the old-binary compatibility boundary. After either event, retain maintenance and repair forward
+with a compatible binary; do not assume that deploying the previous binary is a valid rollback.
+Preserve accepted intent, nullable context records and immutable history during recovery.
+
+Graduation/transfer finalize annual membership and placement through Core and update
 administrative registration through Students in the same transaction. Student UUIDs and
 historical year/room records remain. Account deactivation, session revocation and guardian
 identity deletion are independent operations and are not implied by these declarations.

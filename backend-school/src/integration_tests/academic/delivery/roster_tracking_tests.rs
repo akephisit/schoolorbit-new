@@ -276,6 +276,331 @@ async fn move_student(
 }
 
 #[tokio::test]
+async fn room_tracking_annual_membership_pinned_spans_partition_at_real_transfer() {
+    use school_academic_delivery::services::{attendance_roster, publication};
+    let f = fixture("roster_tracking_annual_pinned_transfer").await;
+    let learner = members(&f, f.groups[0]).await[0].clone();
+    let shared = members(&f, f.groups[2]).await[0].clone();
+    sqlx::query("UPDATE homeroom_placements SET placement_scope='academic_year',start_date=NULL WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(learner.student_academic_year_id).execute(&f.pool).await.unwrap();
+    let other_year: Uuid = sqlx::query_scalar("INSERT INTO academic_years(year,name,school_days,status) SELECT min(year)-1,'Excluded pinned annual history','MON','closed' FROM academic_years RETURNING id").fetch_one(&f.pool).await.unwrap();
+    let other_room: Uuid = sqlx::query_scalar("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT uuidv7(),'FOREIGN-PIN','Other year pin',$1,grade_level_id,'FOREIGN-PIN',study_program_id,40,true FROM homerooms WHERE id=$2 RETURNING id")
+        .bind(other_year).bind(f.room).fetch_one(&f.pool).await.unwrap();
+    let other_annual: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT uuidv7(),student_id,$1,grade_level_id,study_program_id,'active' FROM student_academic_years WHERE id=$2 RETURNING id")
+        .bind(other_year).bind(learner.student_academic_year_id).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,placement_scope,status,enrollment_type) VALUES(uuidv7(),$1,$2,$3,'academic_year','current','promotion')")
+        .bind(other_annual).bind(other_year).bind(other_room).execute(&f.pool).await.unwrap();
+    let foreign_before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('annual',to_jsonb(y),'placements',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM homeroom_placements p WHERE p.student_academic_year_id=y.id)) FROM student_academic_years y WHERE id=$1")
+        .bind(other_annual).fetch_one(&f.pool).await.unwrap();
+    for group in &f.groups[..3] {
+        enable(&f, *group).await;
+    }
+    let group = groups::get(&f.pool, f.groups[0]).await.unwrap();
+    let term = group.academic_term_id;
+    let offering = group.learning_offering_id;
+    let mut connection = f.pool.acquire().await.unwrap();
+    let legacy_source = publication::applicable_on_connection(&mut connection, term, f.day)
+        .await
+        .unwrap()
+        .unwrap();
+    let legacy_snapshot = serde_json::to_value(
+        school_academic_delivery::services::versions::get_version_on_connection(
+            &mut connection,
+            legacy_source.id,
+        )
+        .await
+        .unwrap()
+        .snapshot,
+    )
+    .unwrap();
+    drop(connection);
+    // Remove only the redundant manual group through the real revision owner.
+    // The three tested groups and both rooms remain in an explicit audience pin.
+    let revision = create_runtime_change_set_at(
+        &f.pool,
+        f.actor,
+        term,
+        f.day + Duration::days(1),
+        "annual-pinned-audience",
+    )
+    .await;
+    change_sets::remove_draft_group(
+        &f.pool,
+        f.actor,
+        revision.id,
+        f.groups[3],
+        super::room_scope_tests::removal(&f.pool, revision.id).await,
+    )
+    .await
+    .unwrap();
+    let published = publish_plan(&f.pool, f.actor, revision.id).await;
+    let manual = serde_json::to_value(members(&f, f.groups[3]).await).unwrap();
+    let before = f.day + Duration::days(1);
+    let old_advisor = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM homeroom_advisors WHERE homeroom_id=$1 ORDER BY user_id LIMIT 1",
+    )
+    .bind(f.room)
+    .fetch_optional(&f.pool)
+    .await
+    .unwrap()
+    .unwrap_or(f.actor);
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT DO NOTHING").bind(f.room).bind(old_advisor).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary')")
+        .bind(other_room)
+        .bind(old_advisor)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let new_advisor: Uuid = sqlx::query_scalar("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES(uuidv7(),'annual-advisor-'||uuidv7()::text,'not-a-login','Synthetic','New advisor','staff','active') RETURNING id").fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary')")
+        .bind(f.other)
+        .bind(new_advisor)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let transfer = before + Duration::days(1);
+    let after = transfer + Duration::days(1);
+    move_student(
+        &f,
+        f.room,
+        Some(f.other),
+        learner.student_academic_year_id,
+        transfer,
+    )
+    .await
+    .unwrap();
+    for day in [f.day, before, transfer, after] {
+        let old = school_academic_core::services::attendance_roster::advisor_for_student(
+            &f.pool,
+            old_advisor,
+            learner.student_id,
+            day,
+        )
+        .await
+        .unwrap();
+        let new = school_academic_core::services::attendance_roster::advisor_for_student(
+            &f.pool,
+            new_advisor,
+            learner.student_id,
+            day,
+        )
+        .await
+        .unwrap();
+        assert_eq!(old,day<transfer,"active-year original advisor owns the actual span, despite ended status and unrelated closed-year annual history");
+        assert_eq!(
+            new,
+            day >= transfer,
+            "the destination advisor starts on the real transfer day"
+        );
+    }
+    let placements = school_academic_core::services::student_years::list_placements(
+        &f.pool,
+        learner.student_academic_year_id,
+    )
+    .await
+    .unwrap();
+    assert!(placements.iter().any(
+        |p| p.placement_scope == HomeroomPlacementScope::AcademicYear
+            && p.start_date.is_none()
+            && p.end_date == Some(before)
+            && p.status == HomeroomPlacementStatus::Ended
+    ));
+    assert!(placements
+        .iter()
+        .any(|p| p.placement_scope == HomeroomPlacementScope::Dated
+            && p.start_date == Some(transfer)
+            && p.homeroom_id == f.other
+            && p.status == HomeroomPlacementStatus::Current));
+    assert!(members(&f, f.groups[0])
+        .await
+        .iter()
+        .any(|m| m.id == learner.id && m.left_at == Some(before)));
+    assert!(members(&f, f.groups[2])
+        .await
+        .iter()
+        .any(|m| m.id == shared.id && m.left_at.is_none()));
+    assert_eq!(
+        serde_json::to_value(members(&f, f.groups[3]).await).unwrap(),
+        manual
+    );
+    let mut retained = Vec::new();
+    for group in &f.groups[..3] {
+        retained.push(serde_json::to_value(members(&f, *group).await).unwrap());
+    }
+    let mut connection = f.pool.acquire().await.unwrap();
+    let source = publication::applicable_on_connection(&mut connection, term, before)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(source.id, published.target_delivery_version_id);
+    let legacy = publication::applicable_on_connection(&mut connection, term, f.day)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(legacy.id, legacy_source.id);
+    assert_eq!(
+        serde_json::to_value(
+            school_academic_delivery::services::versions::get_version_on_connection(
+                &mut connection,
+                legacy.id,
+            )
+            .await
+            .unwrap()
+            .snapshot,
+        )
+        .unwrap(),
+        legacy_snapshot,
+        "later explicit scope must preserve the original published snapshot"
+    );
+    assert!(
+        school_academic_delivery::services::audiences::pinned_constraint_on_connection(
+            &mut connection,
+            legacy.id,
+            offering,
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    let legacy_spans = attendance_roster::pinned_membership_spans(
+        &mut connection,
+        legacy.id,
+        &[f.groups[2]],
+        before,
+        after,
+        Some(learner.student_id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(legacy_spans.len(), 1);
+    assert_eq!(
+        (legacy_spans[0].joined_at, legacy_spans[0].left_at),
+        (shared.joined_at, shared.left_at),
+        "the legacy unpinned publication retains its raw membership fallback"
+    );
+    let constraint =
+        school_academic_delivery::services::audiences::pinned_constraint_on_connection(
+            &mut connection,
+            source.id,
+            offering,
+        )
+        .await
+        .unwrap()
+        .expect("real published explicit audience pin");
+    assert!(f.groups[..3]
+        .iter()
+        .all(|group| constraint.allows_group(*group)));
+    let spans = attendance_roster::pinned_membership_spans(
+        &mut connection,
+        source.id,
+        &f.groups[..3],
+        before,
+        after,
+        None,
+    )
+    .await
+    .unwrap();
+    for (group, expected) in [
+        (f.groups[0], vec![(before, Some(before))]),
+        (f.groups[1], vec![(transfer, Some(after))]),
+        (
+            f.groups[2],
+            vec![(before, Some(before)), (transfer, Some(after))],
+        ),
+    ] {
+        let mut actual: Vec<_> = spans
+            .iter()
+            .filter(|m| m.student_id == learner.student_id && m.learning_group_id == group)
+            .map(|m| (m.joined_at, m.left_at))
+            .collect();
+        actual.sort();
+        assert_eq!(actual, expected, "exact annual/dated partition for {group}");
+    }
+    for day in [before, transfer, after] {
+        let pinned = attendance_roster::pinned_students_on_connection(
+            &mut connection,
+            source.id,
+            &f.groups[..3],
+            day,
+        )
+        .await
+        .unwrap();
+        let pupil: Vec<_> = pinned
+            .iter()
+            .filter(|p| p.student_id == learner.student_id)
+            .collect();
+        assert_eq!(
+            pupil.len(),
+            2,
+            "one source/destination group plus the shared group on {day}"
+        );
+        assert!(pupil
+            .iter()
+            .all(|p| p.student_academic_year_id == learner.student_academic_year_id));
+        let mut actual: Vec<_> = pupil.iter().map(|p| p.learning_group_id).collect();
+        actual.sort();
+        let mut expected = vec![
+            if day < transfer {
+                f.groups[0]
+            } else {
+                f.groups[1]
+            },
+            f.groups[2],
+        ];
+        expected.sort();
+        assert_eq!(actual, expected);
+        for group in &f.groups[..3] {
+            let coverage = spans
+                .iter()
+                .filter(|m| {
+                    m.student_id == learner.student_id
+                        && m.learning_group_id == *group
+                        && m.joined_at <= day
+                        && m.left_at.is_none_or(|end| day <= end)
+                })
+                .count();
+            assert_eq!(
+                coverage,
+                usize::from(expected.contains(group)),
+                "no gap or duplicate coverage on {day}"
+            );
+        }
+    }
+    let scoped = attendance_roster::pinned_membership_spans(
+        &mut connection,
+        source.id,
+        &f.groups[..3],
+        before,
+        after,
+        Some(learner.student_id),
+    )
+    .await
+    .unwrap();
+    let fields = |m: &attendance_roster::AttendanceMembershipSpan| {
+        (m.learning_group_id, m.student_id, m.joined_at, m.left_at)
+    };
+    assert_eq!(
+        scoped.iter().map(fields).collect::<Vec<_>>(),
+        spans
+            .iter()
+            .filter(|m| m.student_id == learner.student_id)
+            .map(fields)
+            .collect::<Vec<_>>()
+    );
+    drop(connection);
+    for (group, facts) in f.groups[..3].iter().zip(retained) {
+        assert_eq!(
+            serde_json::to_value(members(&f, *group).await).unwrap(),
+            facts,
+            "pinned projection does not rewrite membership history"
+        );
+    }
+    let foreign_after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('annual',to_jsonb(y),'placements',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM homeroom_placements p WHERE p.student_academic_year_id=y.id)) FROM student_academic_years y WHERE id=$1")
+        .bind(other_annual).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(foreign_after, foreign_before);
+}
+
+#[tokio::test]
 async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_shared_history() {
     let f = fixture("roster_tracking_history").await;
     let old = members(&f, f.groups[0]).await[0].clone();

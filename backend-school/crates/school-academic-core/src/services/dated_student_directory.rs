@@ -50,7 +50,7 @@ pub async fn students_on_connection(
       FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id
       JOIN users u ON u.id=y.student_id AND u.user_type='student' LEFT JOIN student_info s ON s.user_id=u.id
       JOIN grade_levels g ON g.id=y.grade_level_id
-      LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN('current','ended') AND p.start_date<=$2 AND(p.end_date IS NULL OR p.end_date>=$2) ORDER BY p.start_date DESC,p.id LIMIT 1)p ON true
+      LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN('current','ended') AND academic_placement_applies_on(p.placement_scope,p.start_date,p.end_date,$2) ORDER BY p.start_date DESC NULLS LAST,p.id LIMIT 1)p ON true
       LEFT JOIN homerooms h ON h.id=p.homeroom_id WHERE t.id=$1 AND(p.homeroom_id IS NOT NULL OR y.status='active') ORDER BY y.student_id LIMIT 10001"#)
       .bind(term).bind(date).fetch_all().await?;
     if rows.len() > 10000 {

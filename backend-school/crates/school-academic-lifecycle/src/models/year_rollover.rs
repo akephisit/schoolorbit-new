@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
@@ -15,8 +15,6 @@ pub struct YearRolloverStudentInput {
 pub struct YearRolloverPreviewInput {
     pub source_year_id: Uuid,
     pub target_year_id: Uuid,
-    pub outcome_effective_on: NaiveDate,
-    pub target_placement_starts_on: NaiveDate,
     pub decisions: Vec<YearRolloverStudentInput>,
 }
 
@@ -80,8 +78,6 @@ pub struct YearRolloverHomeroomReference {
 pub struct YearRolloverPreview {
     pub source_year: school_academic_core::models::YearLifecycleContext,
     pub target_year: school_academic_core::models::YearLifecycleContext,
-    pub outcome_effective_on: NaiveDate,
-    pub target_placement_starts_on: NaiveDate,
     pub students: Vec<YearRolloverStudent>,
     pub grades: Vec<PromotionGradeReference>,
     pub programs: Vec<YearRolloverProgramReference>,

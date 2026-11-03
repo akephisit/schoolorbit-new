@@ -100,6 +100,10 @@ test('homeroom collection batches advisor assignments once and indexes them by h
 	const record = (name: string, contextId: string, signal: AbortSignal | undefined) =>
 		calls.push({ name, contextId, signal });
 	const deps = {
+		async getHomeroomYearContext(yearId: string, options?: { signal?: AbortSignal }) {
+			record('yearContext', yearId, options?.signal);
+			return { status: 'planning' };
+		},
 		async listHomerooms(yearId: string, options?: { signal?: AbortSignal }) {
 			record('homerooms', yearId, options?.signal);
 			return homerooms;
@@ -130,7 +134,8 @@ test('homeroom collection batches advisor assignments once and indexes them by h
 	assert.equal(result.homerooms.length, 300);
 	assert.equal(result.advisorsByHomeroomId.size, 300);
 	assert.equal(result.advisorsByHomeroomId.get('homeroom-299')?.[0]?.userId, 'staff-299');
-	for (const name of ['homerooms', 'advisors', 'gradeLevels', 'programs'])
+	assert.deepEqual(result.yearContext, { status: 'planning' });
+	for (const name of ['homerooms', 'advisors', 'gradeLevels', 'programs', 'yearContext'])
 		assert.equal(countCalls(calls, name), 1, name);
 	assert.equal(
 		countCalls(calls, 'staff'),

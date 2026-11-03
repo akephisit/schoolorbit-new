@@ -252,8 +252,11 @@ async fn pinned_memberships(
         // at same-day transfer boundaries before testing the pinned room scope.
         let mut boundaries = std::collections::BTreeSet::from([from]);
         for placement in student_placements {
-            if placement.start_date > from && placement.start_date <= until {
-                boundaries.insert(placement.start_date);
+            if let Some(start) = placement
+                .start_date
+                .filter(|start| *start > from && *start <= until)
+            {
+                boundaries.insert(start);
             }
             if let Some(next) = placement.end_date.and_then(|date| date.succ_opt()) {
                 if next > from && next <= until {
@@ -266,7 +269,11 @@ async fn pinned_memberships(
             let room = student_placements
                 .iter()
                 .find(|placement| {
-                    placement.start_date <= date && placement.end_date.is_none_or(|end| end >= date)
+                    school_academic_core::services::placement_interval::contains_date(
+                        placement.start_date,
+                        placement.end_date,
+                        date,
+                    )
                 })
                 .map(|placement| placement.homeroom_id);
             if scope.allows_homeroom(row.learning_group_id, room) {

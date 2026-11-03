@@ -609,6 +609,47 @@ pub async fn create_bell_schedule(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
+    post,
+    path = "/api/academic/bell-schedules/{id}/clone",
+    operation_id = "cloneBellSchedule",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Source bell schedule ID")),
+    request_body = CloneBellScheduleRequest,
+    responses(
+        (status = 201, description = "Bell schedule and all periods cloned atomically", body = ApiResponse<BellSchedule>),
+        (status = 400, description = "Invalid schedule or incompatible periods", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Source schedule or destination year not found", body = ApiErrorResponse),
+        (status = 409, description = "Source revision or destination lifecycle conflict", body = ApiErrorResponse)
+    )
+))]
+pub async fn clone_bell_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CloneBellScheduleRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let schedule =
+        bell_schedules::clone_schedule(&context.tenant.pool, context.actor.user_id, id, request)
+            .await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "bell_schedule",
+        Some(schedule.id),
+        Some(schedule.academic_year_id),
+        None,
+    );
+    Ok(created(schedule))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/bell-schedules/{id}",
     operation_id = "getBellSchedule",
@@ -682,7 +723,7 @@ pub async fn update_bell_schedule(
     tag = "academic",
     params(("id" = Uuid, Path, description = "Bell schedule ID")),
     responses(
-        (status = 200, description = "Bell schedule periods", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 200, description = "Bell schedule periods", body = ApiResponse<BellSchedulePeriodsSnapshot>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
@@ -711,7 +752,7 @@ pub async fn list_bell_schedule_periods(
     params(("id" = Uuid, Path, description = "Bell schedule ID")),
     request_body = ReplaceBellSchedulePeriodsRequest,
     responses(
-        (status = 200, description = "Bell schedule periods replaced", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 200, description = "Bell schedule periods replaced", body = ApiResponse<BellSchedulePeriodsSnapshot>),
         (status = 400, description = "Invalid bell schedule periods", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
@@ -729,18 +770,17 @@ pub async fn replace_bell_schedule_periods(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
-    let periods = bell_schedules::replace_periods(&pool, actor.user_id, id, request).await?;
-    let schedule = bell_schedules::get(&pool, id).await?;
+    let outcome = bell_schedules::replace_periods(&pool, actor.user_id, id, request).await?;
     signal_core_changed(
         &state,
         &session,
         &actor,
         "bell_schedule_periods",
         Some(id),
-        Some(schedule.academic_year_id),
+        Some(outcome.academic_year_id),
         None,
     );
-    Ok(ok(periods))
+    Ok(ok(outcome.snapshot))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -2587,6 +2627,26 @@ pub async fn list_homerooms(
     .await?))
 }
 
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/homerooms/year-context",operation_id="getHomeroomYearContext",tag="academic",
+    params(AcademicYearQuery),responses((status=200,description="Exact selected homeroom year context",body=ApiResponse<YearLifecycleContext>),
+    (status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Homeroom read permission denied",body=ApiErrorResponse),
+    (status=404,description="Academic year not found",body=ApiErrorResponse),(status=422,description="Invalid academic year",body=ApiErrorResponse))))]
+pub async fn homeroom_year_context(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::homeroom_year_context(
+        &context.tenant.pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
 #[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/homerooms",
@@ -2685,6 +2745,51 @@ pub async fn update_homeroom(
         None,
     );
     Ok(ok(homeroom))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    patch,
+    path = "/api/academic/homerooms/{id}/capacity",
+    operation_id = "updateHomeroomCapacity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Homeroom ID")),
+    request_body = UpdateHomeroomCapacityRequest,
+    responses(
+        (status = 200, description = "Homeroom capacity updated", body = ApiResponse<Homeroom>),
+        (status = 400, description = "Capacity must be a positive integer", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale revision, insufficient capacity, or immutable year", body = ApiErrorResponse)
+    )
+))]
+pub async fn update_homeroom_capacity(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateHomeroomCapacityRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
+    let room = student_years::update_homeroom_capacity(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "homeroom",
+        Some(id),
+        Some(room.academic_year_id),
+        None,
+    );
+    Ok(ok(room))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
